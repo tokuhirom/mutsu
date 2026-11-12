@@ -34,6 +34,9 @@ pub(crate) struct MultiPlanLight {
     pub(crate) winners: Vec<MultiLightWinner>,
 }
 
+/// A candidate's shared parameter list (`MethodDef::param_defs`).
+pub(crate) type SharedParams = std::sync::Arc<Vec<crate::ast::ParamDef>>;
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     /// The env-dependent half of a `protect` block's analysis, keyed by the
@@ -388,6 +391,11 @@ pub(crate) struct ResolutionCaches {
     /// after the call has started` (see `method_dispatch_lazy`). Structural,
     /// cleared with `dispatch_multi_candidate`.
     pub(crate) deferral_build_context_free: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// A method candidate's parameter list with its `where` clauses dropped,
+    /// keyed by the original list's address (`resolution_lazy_where`). The
+    /// entry holds the original too, so the address cannot be reused while
+    /// the entry lives. Cleared with the other method caches.
+    pub(crate) nominal_param_defs: rustc_hash::FxHashMap<usize, (SharedParams, SharedParams)>,
     /// Memoized `(class, method) -> does the class's MRO reach a built-in
     /// method of this name` (`Interpreter::class_reaches_builtin_method`):
     /// a function of the MRO and the fixed method table, so cleared with

@@ -4,6 +4,10 @@
 use super::*;
 use crate::ast::Stmt;
 
+/// The attribute of a unit's `EXPORTHOW` stash naming the unit
+/// (`exporthow_stash_of_unit`).
+const EXPORTHOW_UNIT_ATTR: &str = "exporthow-unit";
+
 impl Interpreter {
     /// The `(directive, declarator)` pairs the unit's top-level
     /// `package EXPORTHOW` declares: `package DECLARE { constant pokemon =
@@ -79,6 +83,36 @@ impl Interpreter {
                 Value::package(Symbol::intern(&format!("EXPORTHOW::{directive}"))),
             );
         }
-        Some(Self::make_stash_instance("EXPORTHOW", symbols))
+        let stash = Self::make_stash_instance("EXPORTHOW", symbols);
+        // The unit travels with its stash, so a `merge-symbols` of it into
+        // another unit's `EXPORTHOW` knows whose declarators it carries.
+        if let ValueView::Instance { attributes, .. } = stash.view() {
+            attributes.insert(EXPORTHOW_UNIT_ATTR, Value::str(unit.to_string()));
+        }
+        Some(stash)
+    }
+
+    /// `$EXPORTHOW.WHO.merge-symbols($handle.export-how-package)` while a
+    /// module loads (CompUnit::Util's `re-exporthow`, #17557): the declarators
+    /// of the unit `source` stash carries become the loading module's own, so
+    /// its importers get them. `None` when `source` is no unit's `EXPORTHOW`
+    /// stash or no module is loading.
+    // Cost: O(d), d = declarators of the source unit.
+    pub(crate) fn merge_exporthow_symbols(&mut self, source: &Value) -> Option<Value> {
+        let ValueView::Instance { attributes, .. } = source.view() else {
+            return None;
+        };
+        let unit = attributes.as_map().get(EXPORTHOW_UNIT_ATTR)?.to_string_value();
+        let loading = self.module.module_load_stack.last()?.clone();
+        let declares = self.module.exporthow_declares.get(&unit).cloned()?;
+        let mine = crate::runtime::cow_table_mut(&mut self.module.exporthow_declares)
+            .entry(loading)
+            .or_default();
+        for declare in declares {
+            if !mine.contains(&declare) {
+                mine.push(declare);
+            }
+        }
+        Some(Value::NIL)
     }
 }

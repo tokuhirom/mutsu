@@ -12,7 +12,7 @@ use super::dot_assign::{
 };
 use super::helpers::{
     colonpair_adverb_follows, extract_negative_literal, extract_range_negative_end,
-    is_angle_subscript_key_char, make_negative_subscript_error,
+    is_angle_subscript_key_char, make_negative_subscript_error, reject_modified_non_identifier,
 };
 use crate::ast::{Expr, HyperSliceAdverb, Stmt};
 use crate::parser::expr::operators::{
@@ -1255,6 +1255,9 @@ fn postfix_expr_loop_from<'a>(
             } else {
                 (r, None)
             };
+            if let Some(m) = modifier {
+                reject_modified_non_identifier(m, r)?;
+            }
             if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&')
             {
                 let (r, name_expr) = primary(r)?;

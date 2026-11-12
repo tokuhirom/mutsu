@@ -547,6 +547,7 @@ fn type_method_assign(
             end_index: None,
             spans: Default::default(),
             bare: true,
+            scope: 0,
         },
     ])
 }

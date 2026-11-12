@@ -4193,6 +4193,10 @@ pub(crate) enum OpCode {
         /// `true` for a `BEGIN` body, `false` for `CHECK` (and the other
         /// BEGIN-time regions); names the phaser in X::Comp::BeginTime.
         is_begin: bool,
+        /// The block a nested `BEGIN` was written in (`Stmt::Phaser::scope`),
+        /// which a BEGIN-time `$*R.current-scope` answers (#17515); 0 for the
+        /// unit's own scope.
+        scope: u32,
     },
     /// Marks the end of a CHECK phaser body.
     CheckPhaserEnd,

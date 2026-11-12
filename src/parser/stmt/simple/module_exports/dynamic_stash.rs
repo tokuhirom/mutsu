@@ -19,7 +19,7 @@ type ProbeKey = (String, Vec<String>);
 thread_local! {
     /// Probe results by module name and search path, so a module `use`d from
     /// several files of one process runs at parse time once.
-    static PROBE_CACHE: RefCell<HashMap<ProbeKey, Rc<Vec<InlineModuleExport>>>> =
+    static PROBE_CACHE: RefCell<HashMap<ProbeKey, Rc<ProbedModule>>> =
         RefCell::new(HashMap::new());
 }
 
@@ -31,34 +31,45 @@ thread_local! {
 /// A non-executing parse (`crate::parser::no_execute`) never runs the module:
 /// it contributes nothing, leaving the static scan's exports in place, and is
 /// not cached so a later executing parse still probes.
-pub(super) fn probe_dynamic_exports(module: &str) -> Rc<Vec<InlineModuleExport>> {
+pub(super) fn probe_dynamic_exports(module: &str) -> Rc<ProbedModule> {
     if crate::parser::no_execute::no_execute() {
-        return Rc::new(Vec::new());
+        return Rc::new(ProbedModule::default());
     }
     let lib_paths = super::parser_lib_paths();
     let key = (module.to_string(), lib_paths.clone());
     if let Some(hit) = PROBE_CACHE.with(|c| c.borrow().get(&key).cloned()) {
         return hit;
     }
-    let names =
+    let outcome =
         crate::runtime::parse_time_exports::probe_module_exports(module.to_string(), lib_paths)
             .unwrap_or_default();
-    let exports: Rc<Vec<InlineModuleExport>> = Rc::new(
-        names
-            .into_iter()
-            .map(|export| {
-                let (precedence, associativity) = parser_precedence(export.op_prec.as_ref());
-                InlineModuleExport {
-                    name: export.name,
-                    precedence,
-                    associativity,
-                    is_test_assertion: false,
-                }
-            })
-            .collect(),
-    );
-    PROBE_CACHE.with(|c| c.borrow_mut().insert(key, exports.clone()));
-    exports
+    let exports: Vec<InlineModuleExport> = outcome
+        .exports
+        .into_iter()
+        .map(|export| {
+            let (precedence, associativity) = parser_precedence(export.op_prec.as_ref());
+            InlineModuleExport {
+                name: export.name,
+                precedence,
+                associativity,
+                is_test_assertion: false,
+            }
+        })
+        .collect();
+    let probed = Rc::new(ProbedModule {
+        exports,
+        declarators: outcome.declarators,
+    });
+    PROBE_CACHE.with(|c| c.borrow_mut().insert(key, probed.clone()));
+    probed
+}
+
+/// A probe's result as the parser records it: the exported routines and the
+/// `(directive, declarator)` pairs of the module's `EXPORTHOW`.
+#[derive(Default)]
+pub(super) struct ProbedModule {
+    pub(super) exports: Vec<InlineModuleExport>,
+    pub(super) declarators: Vec<(String, String)>,
 }
 
 /// The parser's numeric precedence level and associativity for a probed

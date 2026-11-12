@@ -233,6 +233,13 @@ impl Compiler {
         // a bare one. Compiling a `Grouped` is transparent, so peeling here
         // changes nothing else.
         let left = left.peel_parens();
+        // `»[+=]»` is `»+=»`: brackets around a hyper's infix only group it,
+        // so the assignment test below must see the infix inside them.
+        let op = op
+            .strip_prefix('[')
+            .and_then(|inner| inner.strip_suffix(']'))
+            .filter(|inner| !inner.is_empty())
+            .unwrap_or(op);
         // Detect assignment hyper-ops (e.g. >>+=>>, >>~=>>)
         // These need to compute with the base op and then assign back.
         // `»=»` is one of them: its base op IS `=`, which yields its right

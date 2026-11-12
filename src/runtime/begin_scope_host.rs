@@ -97,6 +97,16 @@ impl Interpreter {
             // The scope being compiled is the unit's: `$*R.current-scope`
             // answers the compile-time `$*CU`, so `scope =:= $*CU` holds for
             // the unit scope.
+            // A BEGIN of a nested block is in that block's scope (#17515).
+            "current-scope" if self.begin_block_scope_id() != 0 => {
+                let id = self.begin_block_scope_id();
+                Some(Ok(self
+                    .module
+                    .begin_block_scopes
+                    .entry(id)
+                    .or_insert_with(crate::runtime::attach_target::begin_block_scope_node)
+                    .clone()))
+            }
             "current-scope" => Some(Ok(self
                 .env()
                 .get("*CU")
@@ -150,6 +160,13 @@ impl Interpreter {
                 .push((into_block, name.to_string(), value));
             return Ok(Value::NIL);
         }
+        // A module's own BEGIN vivifying its `EXPORTHOW` (CompUnit::Util's
+        // `re-exporthow`): the declarators that reach its importers are the
+        // ones `merge-symbols` then records for the module
+        // (`merge_exporthow_symbols`), so the package itself needs no binding.
+        if name == "EXPORTHOW" && !self.module.module_load_stack.is_empty() {
+            return Ok(Value::NIL);
+        }
         // TODO: install a generated lexical into the unit's scope from a BEGIN
         // phaser of the module itself (#15371): the module's BEGIN runs inside
         // its body, whose top-level scope is not reachable from the phaser's
@@ -178,6 +195,12 @@ impl Interpreter {
             matches!(a.view(), ValueView::Pair(key, value)
                 if key == "current-scope-only" && value.truthy())
         });
+        // A nested block's own scope holds only what the block declares,
+        // which the resolver does not model at BEGIN time: nothing of the
+        // unit's view is in it (#17515).
+        if current_scope_only && self.begin_block_scope_id() != 0 {
+            return Ok(Value::NIL);
+        }
         if let Some(routine) = name.strip_prefix('&') {
             if current_scope_only || self.resolve_code_var(routine).is_nil() {
                 return Ok(Value::NIL);
@@ -196,18 +219,25 @@ impl Interpreter {
             .env()
             .get(&name)
             .is_some_and(|v| matches!(v.deref_container().view(), ValueView::Package(_)));
-        if bound_package || self.is_known_package(&name) {
+        // `EXPORT` / `EXPORTHOW` are a unit's own lexicals in rakudo: the
+        // global packages of those names are no unit's view of them.
+        let unit_lexical_only = matches!(name.as_str(), "EXPORT" | "EXPORTHOW");
+        if bound_package || (!unit_lexical_only && self.is_known_package(&name)) {
             return Ok(Self::lexical_import_declaration(name));
         }
         // A sigilless term: a constant of the scope, or one a `sub EXPORT`
         // merged into the importing unit or block (`set-unit` / `set-lexpad`).
-        // TODO: answer `:current-scope-only` for the block a BEGIN phaser
-        // stands in, not the unit's whole view: a nested block's BEGIN is
-        // lifted to the unit's prologue, which records no scope (#17515).
         if self.compile_time_term(&name).is_some() {
             return Ok(Self::lexical_import_declaration(name));
         }
         Ok(Value::NIL)
+    }
+
+    /// The block id of the innermost open BEGIN-time region: 0 for the unit's
+    /// own scope (#17515).
+    // Cost: O(1).
+    fn begin_block_scope_id(&self) -> u32 {
+        self.control.check_phaser_scopes.last().copied().unwrap_or(0)
     }
 
     /// The sigilless term `name` a BEGIN phaser sees: a binding of its scope,

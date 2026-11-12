@@ -24,7 +24,7 @@ impl Compiler {
 
     /// Compile a CHECK phaser body wrapped in error-catching logic.
     /// If the body throws, the error is wrapped in X::Comp::BeginTime.
-    pub(super) fn compile_check_phaser(&mut self, body: &[Stmt], is_begin: bool) {
+    pub(super) fn compile_check_phaser(&mut self, body: &[Stmt], is_begin: bool, scope: u32) {
         // ADR-0048 Phase 2: BEGIN/CHECK do not take a signature in raku. This
         // is the shared primitive both statement-position phaser kinds route
         // through (see `stmt.rs`'s `Stmt::Phaser` arms), so the check lives
@@ -35,6 +35,7 @@ impl Compiler {
         let start_idx = self.code.emit(OpCode::CheckPhaserStart {
             end_ip: 0,
             is_begin,
+            scope,
         });
         // A `CATCH` in the phaser body handles that body's exceptions, including
         // ones thrown from a call inside it. Compiled inline into the enclosing
@@ -836,6 +837,7 @@ impl Compiler {
                 condition: None,
                 end_index: None,
                 bare: false,
+                scope: 0,
             });
         }
         hoisted.extend(rest);

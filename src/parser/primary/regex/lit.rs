@@ -1519,13 +1519,22 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             },
         ));
     }
+    // `.+name` / `.*name` call every candidate along the MRO, as on an
+    // explicit invocant (`$x.+name`).
     let (r, modifier) = if let Some(stripped) = r.strip_prefix('^') {
         (stripped, Some('^'))
     } else if let Some(stripped) = r.strip_prefix('?') {
         (stripped, Some('?'))
+    } else if let Some(stripped) = r.strip_prefix('+') {
+        (stripped, Some('+'))
+    } else if r.starts_with('*') && !r.starts_with("**") {
+        (&r[1..], Some('*'))
     } else {
         (r, None)
     };
+    if let Some(m) = modifier {
+        crate::parser::expr::reject_modified_non_identifier(m, r)?;
+    }
     // Indirect method name held in a variable, on the topic: `.$name`, `.@names`,
     // `.%h<k>`. This mirrors the explicit-invocant postfix path (`$x.$name`), which
     // builds a `DynamicMethodCall` whose `name_expr` is the variable — a Code object

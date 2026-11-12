@@ -28,6 +28,7 @@ use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use std::collections::HashMap;
 
+mod begin_calls;
 mod declare_keywords;
 mod exported_type;
 mod stash_expr;
@@ -76,6 +77,9 @@ pub(super) struct ModuleDecls {
     /// bare-file module's, one before `unit class`). Its exported variables
     /// are then not all known.
     pub(super) unlisted_exported_vars: bool,
+    /// Whether a BEGIN phaser on the package spine calls a routine of a module
+    /// the module loads (`begin_calls.rs`, #17557).
+    pub(super) begin_calls_loaded_routine: bool,
 }
 
 /// Walk a module's parsed statements once and collect what the importer's
@@ -89,6 +93,7 @@ pub(super) fn scan_module_decls(stmts: &[Stmt]) -> ModuleDecls {
         spine: true,
     };
     walk_stmts(&mut scan, stmts);
+    scan.out.begin_calls_loaded_routine = begin_calls::calls_loaded_routine(stmts);
     scan.out
 }
 

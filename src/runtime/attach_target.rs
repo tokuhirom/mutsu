@@ -93,6 +93,17 @@ fn target_handle(kind: &str, depth: usize) -> Value {
     Value::make_instance(crate::symbol::Symbol::intern(ATTACH_TARGET_CLASS), attrs)
 }
 
+/// A fresh block-scope node: what `$*R.current-scope` answers for a block
+/// other than the unit's (its identity keys CompUnit::Util's installs).
+// Cost: O(1).
+pub(crate) fn begin_block_scope_node() -> Value {
+    Value::rakuast(Box::new(crate::rakuast::RakuAstNode {
+        class: crate::rakuast::RakuAstClass::Block,
+        fields: Vec::new(),
+        origin: Default::default(),
+    }))
+}
+
 /// `$*R`'s `$!export-package`: the `EXPORT` package of the unit being compiled.
 // Cost: O(1).
 fn unit_export_package() -> Value {
@@ -252,11 +263,7 @@ impl Interpreter {
                 if let Some(scope) = attributes.as_map().get(BLOCK_SCOPE_ATTR).cloned() {
                     return Some(Ok(scope));
                 }
-                let scope = Value::rakuast(Box::new(crate::rakuast::RakuAstNode {
-                    class: crate::rakuast::RakuAstClass::Block,
-                    fields: Vec::new(),
-                    origin: Default::default(),
-                }));
+                let scope = begin_block_scope_node();
                 attributes.insert(BLOCK_SCOPE_ATTR, scope.clone());
                 Some(Ok(scope))
             }

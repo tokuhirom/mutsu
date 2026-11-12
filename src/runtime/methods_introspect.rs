@@ -1164,7 +1164,7 @@ impl Interpreter {
     }
 
     /// Dispatch .^name method
-    pub(super) fn dispatch_caret_name(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_caret_name(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         Ok(Value::str(match target.view() {
             ValueView::Package(name) => {
                 let resolved = name.resolve();
