@@ -7,12 +7,13 @@ use super::user_method_probe_memo::probe_key;
 use super::*;
 use crate::meta_ns::MetaNs;
 
-/// Winner of the per-MRO-level race between an explicit user method and a
-/// public attribute accessor (see `resolve_user_method_or_accessor`).
+/// Winner of the per-MRO-level race among user methods and attribute
+/// accessors (see `resolve_user_method_or_accessor`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum UserMethodOrAccessor {
     Method,
     Accessor,
+    ClassScopedAccessor(crate::symbol::Symbol),
 }
 
 /// What a read of a public attribute accessor needs to know about its
@@ -407,17 +408,10 @@ impl Interpreter {
         false
     }
 
-    /// Decide, per MRO level, whether an explicit user method or a public
-    /// attribute accessor handles `method_name` for `class_name`.
-    ///
-    /// In Raku the auto-generated accessor for `has $.x` is an ordinary method
-    /// of its declaring class, so it participates in the MRO like any other
-    /// method: a child's accessor shadows a parent's explicit method of the
-    /// same name (Zef::Distribution's `has $.name` vs its parent
-    /// DependencySpecification's `method name`). Within a single class level
-    /// the priority is: explicit class-local method > public attribute
-    /// accessor > role-composed method (class entities are prioritized over
-    /// role entities — 6.c S14-roles/attributes.t "Class prioritization").
+    /// Choose the method or accessor at each MRO level. A child's accessor
+    /// shadows a parent's method (Zef::Distribution's `has $.name` is one
+    /// example). Within a level: local method, class-scoped accessor, public
+    /// accessor, then role method (6.c S14-roles/attributes.t).
     pub(crate) fn resolve_user_method_or_accessor(
         &mut self,
         class_name: &str,
@@ -460,19 +454,20 @@ impl Interpreter {
         // below re-interned both on every MRO level of every dispatch.
         for cn in mro.iter() {
             let is_ancestor = cn.as_str() != class_name;
-            let (has_local_method, has_role_method, has_attr, has_native) = {
+            let (has_local_method, has_role_method, has_attr, has_class_attr, has_native) = {
                 let registry = self.registry();
                 if let Some(class_def) = registry.classes.get(cn.as_str()) {
                     let (local, role) =
                         registry.user_method_local_role_presence_sym(*cn, name_sym, is_ancestor);
                     let attr = registry.accessor_is_public_sym(*cn, name_sym) == Some(true);
+                    let class_attr = class_def.class_level_attrs.contains_key(method_name);
                     // A built-in class (e.g. Proc) may register a public attribute
                     // for `.raku`/introspection while a native method of the same
                     // name is the real getter (its computed fallbacks differ from
                     // the raw seeded default). The native method wins over the
                     // auto-generated accessor at this level.
                     let native = class_def.native_methods.contains(method_name);
-                    (local, role, attr, native)
+                    (local, role, attr, class_attr, native)
                 } else if let Some(role_def) = registry.roles.get(cn.as_str()) {
                     // A punned role used as a parent class: its own methods
                     // and attribute accessors sit at this MRO level. A stub
@@ -488,13 +483,16 @@ impl Interpreter {
                         .attributes
                         .iter()
                         .any(|a| a.is_public && a.name == method_name);
-                    (local, false, attr, false)
+                    (local, false, attr, false, false)
                 } else {
-                    (false, false, false, false)
+                    (false, false, false, false, false)
                 }
             };
             if has_local_method {
                 return Some(UserMethodOrAccessor::Method);
+            }
+            if has_class_attr {
+                return Some(UserMethodOrAccessor::ClassScopedAccessor(*cn));
             }
             if has_attr {
                 // A native getter for the same name (built-in classes only)

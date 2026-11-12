@@ -50,6 +50,11 @@ impl Interpreter {
             _ => None,
         };
         let class_name = class_sym_opt.map(|s| s.as_str());
+        if let Some(cn) = class_name
+            && let Some(value) = self.winning_class_scoped_accessor(cn, method_sym, &args)
+        {
+            return value;
+        }
         // A quoted or run-time name (`$obj."street"()`) reaches this tail where
         // the plain name is answered by the accessor lane. A class's own
         // `has $.street` accessor outranks a role-composed `method street`
