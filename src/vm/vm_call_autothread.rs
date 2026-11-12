@@ -35,6 +35,7 @@ impl Interpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         // Skip auto-threading for internal functions and junction constructors
         if name.starts_with("__mutsu_")
+            || Self::core_candidate_takes_junction(name)
             || matches!(
                 name,
                 "any"
@@ -218,6 +219,19 @@ impl Interpreter {
         Ok(Some(Value::junction(kind, results)))
     }
 
+    /// Whether the core candidate of operator `name` takes a junction whole
+    /// (a `Mu` parameter), so that a junction argument is never threaded over
+    /// the family, even when the program adds candidates of its own: the core
+    /// truthiness prefixes (Red's `prefix:<!>` over its AST types left
+    /// `!any()` an `any()` instead of `True`).
+    // Cost: O(1).
+    pub(crate) fn core_candidate_takes_junction(name: &str) -> bool {
+        matches!(
+            name,
+            "prefix:<!>" | "prefix:<?>" | "prefix:<so>" | "prefix:<not>"
+        )
+    }
+
     /// Autothread a by-name call of a user routine family reached through a
     /// code value (a lexically imported `proto`/`multi` dispatcher, `&compare`):
     /// a Junction argument that no candidate takes as a whole is threaded, one
@@ -236,7 +250,10 @@ impl Interpreter {
             .filter(|(_, v)| Self::extract_junction_from_arg(v).is_some())
             .map(|(i, _)| i)
             .collect();
-        if junction_indices.is_empty() || name.starts_with("__mutsu_") {
+        if junction_indices.is_empty()
+            || name.starts_with("__mutsu_")
+            || Self::core_candidate_takes_junction(name)
+        {
             return Ok(None);
         }
         let Some(pds) = self.get_func_param_defs_for_autothread(name, args) else {

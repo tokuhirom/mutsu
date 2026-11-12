@@ -57,6 +57,7 @@ mod builtins_multidim_subscript;
 mod builtins_multidim_subscript_adverb;
 mod builtins_postcircumfix;
 mod catch_inline;
+mod catch_inline_readonly;
 mod control_inline;
 mod handler_frame;
 mod cool_routine_forward;

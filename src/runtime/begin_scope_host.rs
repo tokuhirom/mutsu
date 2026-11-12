@@ -112,8 +112,10 @@ impl Interpreter {
             "resolve-lexical-constant-in-setting"
             | "resolve-lexical"
             | "find-generated-lexical" => Some(Ok(Value::NIL)),
-            // The unit's `GLOBALish`.
-            "get-global" => Some(Ok(Value::package(Symbol::intern("GLOBALish")))),
+            // The unit's `GLOBALish`: mutsu's units share `GLOBAL`, as the bare
+            // `GLOBALish` term answers (a stash vivified under it is the
+            // program's, #15371).
+            "get-global" => Some(Ok(Value::package(Symbol::intern("GLOBAL")))),
             _ => None,
         }
     }
@@ -127,6 +129,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         value: Value,
+        into_block: bool,
     ) -> Result<Value, RuntimeError> {
         if name == "&EXPORT" {
             let Some(unit) = self.module.module_load_stack.last().cloned() else {
@@ -137,10 +140,20 @@ impl Interpreter {
             self.module.pending_inner_export_subs.insert(unit, value);
             return Ok(Value::NIL);
         }
-        // TODO: install any other generated lexical into the unit's scope
-        // (CompUnit::Util's `set-unit` / `set-lexpad`, #15371): the module's
-        // BEGIN runs inside its body, whose top-level scope is not reachable
-        // from the phaser's frame yet.
+        // A running `sub EXPORT` merges into its importer (`set-unit` /
+        // `set-lexpad` from EXPORT): the importer's env is not the running one,
+        // so the declaration is installed with the hook's map once it returns
+        // (`install_hook_result`).
+        if !self.module.export_hook_importer_envs.is_empty() {
+            self.module
+                .pending_generated_lexicals
+                .push((into_block, name.to_string(), value));
+            return Ok(Value::NIL);
+        }
+        // TODO: install a generated lexical into the unit's scope from a BEGIN
+        // phaser of the module itself (#15371): the module's BEGIN runs inside
+        // its body, whose top-level scope is not reachable from the phaser's
+        // frame yet.
         Err(RuntimeError::new(format!(
             "merge-generated-lexical-declaration of '{name}' is not supported yet"
         )))

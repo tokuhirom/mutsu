@@ -267,15 +267,23 @@ fn is_operator_routine_name(name: &str) -> bool {
 /// exported name exists only as that key. `&term:<today>` makes the bareword
 /// `today` a term -- the importer's parse must know it, or `today + 1`
 /// parses as the listop call `today(+1)`.
+///
+/// A plain routine is named the same way (`'&config' => -> &block {...}`,
+/// Red's migration artifacts), and the `Map` may be built by a helper the hook
+/// calls (`sub EXPORT($kind) { Red::Migration::Artifact::builders($kind) }`),
+/// so every such key in a module that declares the hook counts: the usual
+/// superset, which only lets the importer's parse read `config { ... }` as a
+/// listop call.
+// Cost: O(n), n = AST nodes of the module.
 pub(super) fn collect_export_hook_literal_keys(
     stmts: &[Stmt],
     exports: &mut HashMap<String, InlineModuleExport>,
 ) {
-    let Some(body) = find_export_sub_body(stmts) else {
+    if find_export_sub_body(stmts).is_none() {
         return;
-    };
+    }
     let mut keys = LiteralPairKeys::default();
-    for stmt in body {
+    for stmt in stmts {
         crate::ast_visit::Visit::visit_stmt(&mut keys, stmt);
     }
     for name in keys.names {
@@ -285,7 +293,17 @@ pub(super) fn collect_export_hook_literal_keys(
     }
 }
 
-/// The `'&category:<sym>' => ...` pair keys an `EXPORT` body spells out.
+/// Whether `name` is an ordinary routine identifier (`config`, `make-table`).
+// Cost: O(k), k = length of `name`.
+fn is_plain_routine_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+}
+
+/// The `'&name' => ...` pair keys a module with an `EXPORT` hook spells out.
 #[derive(Default)]
 struct LiteralPairKeys {
     names: Vec<String>,
@@ -300,7 +318,9 @@ impl<'ast> crate::ast_visit::Visit<'ast> for LiteralPairKeys {
         } = expr
             && let crate::ast::Expr::Literal(key) = left.as_ref()
             && let Some(name) = key.as_str().and_then(|k| k.strip_prefix('&'))
-            && (is_operator_routine_name(name) || name.starts_with("term:<"))
+            && (is_operator_routine_name(name)
+                || name.starts_with("term:<")
+                || is_plain_routine_name(name))
         {
             self.names.push(name.to_string());
         }

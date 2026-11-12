@@ -800,6 +800,8 @@ impl Interpreter {
                 // f(R[Int])` is `R[Int]`, as for any other captured type
                 // (#17076, NativeCall's own `::T` helpers).
                 v
+            } else if let Some(local) = self.package_local_shadow_of_builtin(name) {
+                Value::package(local)
             } else if self.has_type(name) || Self::is_builtin_type(name) {
                 Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
             } else if let Some(qualified) = self.resolve_type_in_current_package(name) {
@@ -868,6 +870,12 @@ impl Interpreter {
             // own decl-seed placeholder (`Package(Any)` under the shared key) for
             // an import alias to `Any` and call every such name a type.
             Value::package(Symbol::intern(&ty))
+        } else if let Some(local) = self.package_local_shadow_of_builtin(name) {
+            // A package-local class named like a built-in one that the
+            // runtime registers as a class (`class Compiler` inside `unit
+            // module Red::Migration::Data`, also `VM`, `Kernel`, `Lock`):
+            // `has_type` below would answer the core class first.
+            Value::package(local)
         } else if !over_scalar && self.has_type(name) {
             // `has_type` also accepts a short name that only resolves through the
             // declaring module's own import aliases (`package_type_aliases`); such

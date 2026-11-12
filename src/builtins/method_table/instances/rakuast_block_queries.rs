@@ -54,6 +54,14 @@ fn bare_block(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(answer.unwrap_or(Value::NIL))
 }
 
+/// `RakuAST::Code.signature` as a plain `RakuAST::Block` answers it: a block
+/// without a declared signature has none (`Nil`). `RakuAST::PointyBlock` and
+/// the routines carry their own `signature` accessor.
+// Cost: O(1).
+fn block_signature(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::NIL)
+}
+
 // Cost: O(f), f = fields of the node.
 fn replace_body(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     target.rakuast_replace_body(args[0].clone())
@@ -183,6 +191,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         arity: 1,
         handler: Handler::Pure(has_phaser),
         flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::Block",
+        name: "signature",
+        arity: 0,
+        handler: Handler::Pure(block_signature),
+        flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
     MethodRow {

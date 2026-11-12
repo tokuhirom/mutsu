@@ -3093,8 +3093,8 @@ impl Interpreter {
         // what the next candidate returned, and a Proxy subclass's
         // `new` doing `callwith(:$FETCH, :$STORE).VAR` wants the
         // Proxy itself (AttrX::Mooish's `AttrProxy`).
-        // The value of an assignment through an `is rw` routine
-        // (`f(...) = v`) is the container it stored into, which a sunk
+        // The value of an assignment through an `is rw` routine or method
+        // (`f(...) = v`, `Type.m = v`) is the container it stored into, which a sunk
         // statement never reads: a FETCH here would run (and may die) where
         // Rakudo runs only the STORE.
         let auto_fetch = !matches!(
@@ -3107,6 +3107,7 @@ impl Interpreter {
                 | "nextsame"
                 | crate::lvalue_call::ASSIGN_NAMED_SUB
                 | crate::lvalue_call::ASSIGN_CALLABLE
+                | crate::lvalue_call::ASSIGN_METHOD
         );
         let result = result?;
         if name == "make" {

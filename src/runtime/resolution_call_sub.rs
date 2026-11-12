@@ -385,7 +385,9 @@ impl Interpreter {
             .filter(|(_, v)| Self::extract_junction_from_arg(v).is_some())
             .map(|(i, _)| i)
             .collect();
-        if junction_indices.is_empty() {
+        if junction_indices.is_empty()
+            || family_name.is_some_and(Self::core_candidate_takes_junction)
+        {
             return Ok(None);
         }
         let mut seen_candidate = false;

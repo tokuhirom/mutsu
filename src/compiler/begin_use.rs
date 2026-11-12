@@ -209,10 +209,10 @@ fn is_pragma_like(module: &str) -> bool {
     )
 }
 
-/// The literal repository specs the unit's `use lib` statements add, in source
-/// order. Only literal spellings are collected: an expression form
-/// (`use lib $dir`) cannot be replayed ahead of the mainline that computes it,
-/// and a preload that then fails to resolve is discarded anyway.
+/// The compile-time repository specs the unit's `use lib` statements add, in
+/// source order (see [`push_literals`]). An expression form that needs the
+/// mainline (`use lib $dir`) cannot be replayed ahead of it, and a preload
+/// that then fails to resolve is discarded anyway.
 ///
 /// Every position is searched (ADR-0137): `use lib` is a BEGIN-time change to
 /// the repository chain wherever it is written — rakudo's chain already holds
@@ -243,18 +243,26 @@ impl<'ast> Visit<'ast> for LibPaths {
     }
 }
 
-/// The string literals of a `use lib` argument list (`'a'`, `'a', 'b'`,
-/// `<a b>`), a shape match: a literal inside any other expression
-/// (`$?FILE.IO.add('lib')`) is not a repository spec.
+/// The repository specs of a `use lib` argument list (`'a'`, `'a', 'b'`,
+/// `<a b>`) that are known at compile time: a string literal, or a path chain
+/// the parser's own fold resolves (`$?FILE.IO.sibling('lib').Str`, with
+/// `$?FILE` already folded to the unit's file). rakudo evaluates `use lib`'s
+/// argument at BEGIN time, so such a chain is a path the hoisted preloads must
+/// see too (CompUnit::Util's tests, #15371); any other expression is not.
 fn push_literals(expr: &Expr, out: &mut Vec<String>) {
     for arg in crate::parser::use_lib_args(expr) {
-        if let Expr::Literal(v) = arg
-            && let ValueView::Str(s) = v.view()
+        let path = match arg {
+            Expr::Literal(v) => match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            },
+            other => crate::parser::fold_use_lib_path(other, None, None),
+        };
+        if let Some(path) = path
+            && !path.is_empty()
+            && !out.contains(&path)
         {
-            let path = s.to_string();
-            if !path.is_empty() && !out.contains(&path) {
-                out.push(path);
-            }
+            out.push(path);
         }
     }
 }

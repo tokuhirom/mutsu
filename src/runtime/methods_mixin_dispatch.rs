@@ -491,6 +491,11 @@ impl Interpreter {
             method
         };
         let mut role_has_method = false;
+        // Whether every candidate the roles supply is a `multi`: those join
+        // the mixed-in value's own multi candidates, as a subclass's do, so a
+        // call none of them accepts falls through to the value's dispatch
+        // (`$driver but LiteralSQL` adding one `translate` candidate).
+        let mut role_candidates_all_multi = true;
         for role_name in role_names {
             // Only what the call reads, copied out of the borrowed def: the
             // whole `RoleDef` (every method) cost ~19k Ir per call (#16215).
@@ -529,6 +534,7 @@ impl Interpreter {
                 continue;
             }
             role_has_method = true;
+            role_candidates_all_multi &= !sole_non_multi;
             let role_param_bindings: Vec<(String, Value)> = mixins
                 .iter()
                 .filter_map(|(key, value)| {
@@ -1007,7 +1013,12 @@ impl Interpreter {
             }
             return Some(Ok(result));
         }
-        if role_has_method {
+        // Fall through only when the mixed-in value has candidates of its own;
+        // otherwise the role's multis are all there are, and none matched.
+        if role_has_method
+            && (!role_candidates_all_multi
+                || self.collect_can_methods(inner, method).is_empty())
+        {
             return Some(Err(
                 super::methods_signature_errors::make_multi_no_match_error(method),
             ));
