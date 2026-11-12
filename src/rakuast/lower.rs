@@ -427,6 +427,15 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
     if let Some(declared) = super::declared_ahead::declared_type(node) {
         return Ok(Stmt::Expr(Expr::Literal(declared)));
     }
+    // A unit variable a package declared ahead closes over: bind the shared
+    // container, then assign the initializer through it (#17522).
+    if let Some((bound, assign)) = super::declared_ahead_vars::rewrite(node) {
+        let mut stmts = vec![lower_stmt_inner(names, &bound)?];
+        if let Some(assign) = assign {
+            stmts.push(lower_stmt_inner(names, &assign)?);
+        }
+        return Ok(Stmt::SyntheticBlock(stmts));
+    }
     if let Some(restored) = super::stub_package::restore(node) {
         return lower_stmt_kept(names, &restored);
     }

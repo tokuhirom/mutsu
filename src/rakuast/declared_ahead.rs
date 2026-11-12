@@ -42,7 +42,7 @@ pub(crate) fn is_package_class(class: RakuAstClass) -> bool {
 
 /// The unit source and `[from, to]` of a node's origin.
 // Cost: O(1).
-fn origin_span(node: &RakuAstNode) -> Option<(Value, i64, i64)> {
+pub(super) fn origin_span(node: &RakuAstNode) -> Option<(Value, i64, i64)> {
     let origin = super::origin::origin_of(node)?;
     let ValueView::Instance { attributes, .. } = origin.view() else {
         return None;
@@ -59,7 +59,7 @@ fn origin_span(node: &RakuAstNode) -> Option<(Value, i64, i64)> {
 
 /// The node a `Value` holds.
 // Cost: O(1).
-fn node_of(value: &Value) -> Option<&RakuAstNode> {
+pub(super) fn node_of(value: &Value) -> Option<&RakuAstNode> {
     match value.view() {
         ValueView::RakuAst(node) => Some(node),
         _ => None,
@@ -80,6 +80,7 @@ pub(crate) fn record_unit_layout(tree: &Value) {
         return;
     };
     let mut rows = Vec::new();
+    let mut vars = Vec::new();
     for field in &list.fields {
         let RakuAstFieldValue::Node(value) = &field.value else {
             continue;
@@ -104,6 +105,10 @@ pub(crate) fn record_unit_layout(tree: &Value) {
                 else {
                     continue;
                 };
+                if expression.class == RakuAstClass::VarDeclarationSimple {
+                    super::declared_ahead_vars::note_unit_var(&mut vars, expression);
+                    continue;
+                }
                 if !is_package_class(expression.class) {
                     continue;
                 }
@@ -122,6 +127,10 @@ pub(crate) fn record_unit_layout(tree: &Value) {
     }
     if let ValueView::Instance { attributes, .. } = source.view() {
         attributes.insert(LAYOUT_ATTR.to_string(), Value::array(rows));
+        attributes.insert(
+            super::declared_ahead_vars::VARS_ATTR.to_string(),
+            Value::array(vars),
+        );
     }
 }
 
@@ -242,4 +251,14 @@ pub(crate) fn toplevel_packages(tree: &RakuAstNode) -> Vec<RakuAstNode> {
 // Cost: O(n), n = length of the name.
 pub(crate) fn package_name(node: &RakuAstNode) -> Option<String> {
     super::lower::call_name_str(node).ok()
+}
+
+/// The first statement of the statement list `tree`.
+// Cost: O(1).
+pub(crate) fn first_statement(tree: &Value) -> Option<Value> {
+    let list = node_of(tree)?;
+    list.fields.iter().find_map(|f| match &f.value {
+        RakuAstFieldValue::Node(v) if node_of(v).is_some() => Some(v.clone()),
+        _ => None,
+    })
 }
