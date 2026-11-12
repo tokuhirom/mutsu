@@ -714,7 +714,12 @@ pub(super) fn map_grep_pullable_by_prefix(_func: Option<&Value>, mode: &MapGrepM
 /// How many positional parameters `func`, a `.map`/`.grep` callback, binds
 /// per call; 1 for a callable that is not a `Sub` (it takes one element).
 // Cost: O(p), p = parameters.
-fn callback_positionals(func: &Value) -> usize {
+pub(crate) fn callback_positionals(func: &Value) -> usize {
+    // A role mixed into a Block (`$block but R`, ParaSeq's `BlockMapper`)
+    // is called through the Block's own signature.
+    if let ValueView::Mixin(inner, _) = func.view() {
+        return callback_positionals(inner);
+    }
     let ValueView::Sub(data) = func.view() else {
         return 1;
     };

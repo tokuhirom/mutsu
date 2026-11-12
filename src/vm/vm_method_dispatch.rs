@@ -1598,6 +1598,10 @@ impl Interpreter {
             }
         }
         let mut overrides: Vec<(crate::symbol::Symbol, Value)> = Vec::new();
+        // One scratch key for the two spelled-key probes below, instead of a
+        // `format!` per attribute key per reading on every method exit that
+        // has an attribute cell in scope (`method args { $!l, $!r }`).
+        let mut probe = String::new();
         {
             let cell_map = cell.as_map();
             for k in cell_map.keys() {
@@ -1627,7 +1631,12 @@ impl Interpreter {
                     match (key_sigil, reading_sigil) {
                         (Some(k), r) if r != Some(k) => continue,
                         (None, Some(r))
-                            if cell_map.contains_key(format!("{}{bare}", r as char).as_str()) =>
+                            if {
+                                probe.clear();
+                                probe.push(r as char);
+                                probe.push_str(bare);
+                                cell_map.contains_key(probe.as_str())
+                            } =>
                         {
                             continue;
                         }
@@ -1688,10 +1697,12 @@ impl Interpreter {
                     // with the instance, and the bare sigilless form below has
                     // no mirror, so those (and a sigilless `has $x`, whose `!x` slot is its
                     // alias) keep this recovery.
-                    if matches!(rank, 1 | 2)
-                        && !cell_map
-                            .contains_key(format!("{ATTR_ALIAS_META_PREFIX}{bare}").as_str())
-                    {
+                    if matches!(rank, 1 | 2) && {
+                        probe.clear();
+                        probe.push_str(ATTR_ALIAS_META_PREFIX);
+                        probe.push_str(bare);
+                        !cell_map.contains_key(probe.as_str())
+                    } {
                         continue;
                     }
                     if rank == 0

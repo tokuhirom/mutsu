@@ -37,6 +37,15 @@ pub(crate) struct MultiPlanLight {
 /// A candidate's shared parameter list (`MethodDef::param_defs`).
 pub(crate) type SharedParams = std::sync::Arc<Vec<crate::ast::ParamDef>>;
 
+/// Which check a memo entry answers: `~~` (`type_object_accepts`) or a
+/// declared-type check (`type_matches_value`), which differ on the edges
+/// (smileys, enums, `Any`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum MemoCheck {
+    Accepts,
+    Matches,
+}
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     /// The env-dependent half of a `protect` block's analysis, keyed by the
@@ -336,6 +345,10 @@ pub(crate) struct ResolutionCaches {
     /// `^compose`). A class not yet registered is never cached (a role punned
     /// to a class on first use must not freeze a negative plan).
     pub(crate) native_ctor_plan_cache: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
+    /// The same plan for a built-in type with a native constructor that is
+    /// not a registered class (`ValueObjAt`): read only while the name is
+    /// still unregistered, and cleared with `native_ctor_plan_cache`.
+    pub(crate) native_ctor_plan_builtin: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
     /// `grammar_has_user_method_sym` answers per `(class, method)`, valid for
     /// one registry write generation (see `user_method_probe_memo.rs`).
     pub(crate) user_method_probe_memo: user_method_probe_memo::UserMethodProbeMemo,
@@ -396,6 +409,10 @@ pub(crate) struct ResolutionCaches {
     /// one method return the same Method object (`===`) without rebuilding it
     /// (#14853). Cleared with the other method caches on a generation change.
     pub(crate) classhow_lookup_cache: rustc_hash::FxHashMap<(Symbol, Symbol, bool), Option<Value>>,
+    /// `.^can` answers for a class receiver, keyed `(class, method)`, so
+    /// repeated calls hand back the same Method objects (`.^lookup`'s twin;
+    /// see `collect_can_methods_memo`). Cleared with `classhow_lookup_cache`.
+    pub(crate) classhow_can_cache: rustc_hash::FxHashMap<(Symbol, Symbol), Vec<Value>>,
     /// Memoized `(class, method) -> can this name's deferral frame be built
     /// after the call has started` (see `method_dispatch_lazy`). Structural,
     /// cleared with `dispatch_multi_candidate`.
@@ -546,6 +563,13 @@ pub(crate) struct ResolutionCaches {
     /// and the arguments' type keys, valid while the registry has not been
     /// written (`Interpreter::mixin_straight_front_hit`). A hit skips the whole
     /// role walk of `dispatch_mixin_method_call`.
+    /// `$obj ~~ T` and declared-type checks for an instance of a user class
+    /// against a nominal user type, by `(class, type, check)`, valid for the registry write generation in
+    /// the first field (`Interpreter::type_object_accepts`, #17331).
+    pub(crate) instance_type_accepts: (
+        u64,
+        rustc_hash::FxHashMap<(Symbol, Symbol, MemoCheck), bool>,
+    ),
     pub(crate) mixin_straight_front: rustc_hash::FxHashMap<
         crate::runtime::MixinFrontKey,
         crate::runtime::MixinFrontEntry,

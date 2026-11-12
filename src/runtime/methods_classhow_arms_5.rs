@@ -76,6 +76,7 @@ impl Interpreter {
                         .insert((class_name.clone(), method_name.clone()));
                 }
                 self.caches.native_ctor_plan_cache.clear();
+                self.caches.native_ctor_plan_builtin.clear();
                 return Ok(Value::NIL);
             }
             Err(RuntimeError::new(format!(
@@ -151,6 +152,7 @@ impl Interpreter {
             // accessors count as installed (`classes_composing_accessors`).
             self.types.classes_composing_accessors.remove(&class_name);
             self.caches.native_ctor_plan_cache.clear();
+            self.caches.native_ctor_plan_builtin.clear();
             // Rakudo returns the composed type object. MOP clients use
             // that result directly (for example Test::Mock calls
             // `$mocker.HOW.compose($mocker).CREATE`), so returning Nil
@@ -230,6 +232,7 @@ impl Interpreter {
                     class_def.mro = mro;
                 }
                 self.caches.native_ctor_plan_cache.clear();
+                self.caches.native_ctor_plan_builtin.clear();
             }
             Ok(Value::NIL)
     }
@@ -322,6 +325,7 @@ impl Interpreter {
                 }
                 // Attribute set changed — drop cached construction plans.
                 self.caches.native_ctor_plan_cache.clear();
+                self.caches.native_ctor_plan_builtin.clear();
             }
             Ok(Value::NIL)
     }

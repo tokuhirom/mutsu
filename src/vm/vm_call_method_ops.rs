@@ -904,6 +904,18 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `.^m` on a class with a user metaclass that declares `m`.
+        if let Some(result) = self.try_custom_how_caret_lane(
+            code,
+            name.raw,
+            arity,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            self.stack.push(result?);
+            return Ok(());
+        }
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.

@@ -108,19 +108,12 @@ impl Interpreter {
         } {
             return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
         }
-        if matches!(
-            name,
-            "Buf"
-                | "Blob"
-                | "buf8"
-                | "buf16"
-                | "buf32"
-                | "buf64"
-                | "blob8"
-                | "blob16"
-                | "blob32"
-                | "blob64"
-        ) {
+        if is_buf_coercer(name) {
+            // A buffer already of the target type is the coercion's result
+            // itself, as for any coercion type (`Blob($utf8)` is `$utf8`).
+            if args.len() == 1 && self.buf_coercion_keeps(name, &value) {
+                return Ok(value);
+            }
             return Ok(Self::build_native_buf_value(Symbol::intern(name), args));
         }
         let coerced = match name {
@@ -157,5 +150,50 @@ impl Interpreter {
             _ => Value::NIL,
         };
         Ok(coerced)
+    }
+}
+
+/// Whether calling the type `name` coerces to a buffer: `Buf`, `Blob`, their
+/// short sized names, or a parameterization (`Buf[uint8]`, `Blob[int16]`).
+// Cost: O(n), n = name length.
+pub(super) fn is_buf_coercer(name: &str) -> bool {
+    matches!(
+        name,
+        "Buf"
+            | "Blob"
+            | "buf8"
+            | "buf16"
+            | "buf32"
+            | "buf64"
+            | "blob8"
+            | "blob16"
+            | "blob32"
+            | "blob64"
+    ) || ["Buf[", "Blob["]
+        .iter()
+        .any(|p| name.starts_with(p) && name.ends_with(']'))
+}
+
+impl Interpreter {
+    /// Whether coercing `value` to the buffer type `name` answers `value`
+    /// itself: it already is one. A parameterized target is compared by
+    /// its element type (`Blob[uint8]` keeps a `utf8` or a `Buf[uint8]`),
+    /// since a plain `Blob` value is not a `Blob[uint8]` (rakudo builds a
+    /// new one there).
+    // Cost: O(n), n = type-name length.
+    fn buf_coercion_keeps(&mut self, name: &str, value: &Value) -> bool {
+        use crate::runtime::utils::normalize_buf_type_name;
+        if matches!(name, "Buf" | "Blob") {
+            return self.type_matches_value(name, value);
+        }
+        let ValueView::Instance { class_name, .. } = value.view() else {
+            return false;
+        };
+        let target = normalize_buf_type_name(name);
+        let own = normalize_buf_type_name(&class_name.resolve());
+        own == target
+            || target
+                .strip_prefix("Blob")
+                .is_some_and(|param| own.strip_prefix("Buf") == Some(param) && param.starts_with('['))
     }
 }

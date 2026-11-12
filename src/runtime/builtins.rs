@@ -640,6 +640,8 @@ impl Interpreter {
             "Int" | "Num" | "Str" | "Bool" | "Uni" | "Rat" | "FatRat" | "Complex" | "Real"
             | "Numeric" | "Buf" | "Blob" | "buf8" | "buf16" | "buf32" | "buf64" | "blob8"
             | "blob16" | "blob32" | "blob64" => self.builtin_coerce(name, &args),
+            // `Buf[uint8]($blob)`: a parameterized buffer type coerces too.
+            n if super::builtins_coerce::is_buf_coercer(n) => self.builtin_coerce(name, &args),
             // `IO($x)` is the coercer form of `$x.IO`.
             "IO" if args.len() == 1 => {
                 let target = args[0].clone();

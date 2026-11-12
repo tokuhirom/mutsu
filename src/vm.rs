@@ -306,6 +306,7 @@ mod vm_lvalue_unit_redirect;
 mod vm_make_ops;
 mod vm_map_grep_chain;
 mod vm_map_grep_pull;
+pub(crate) use vm_map_grep_pull::callback_positionals;
 mod vm_map_grep_pure;
 pub(crate) mod vm_meta_ops;
 pub(crate) mod vm_method_body_package;

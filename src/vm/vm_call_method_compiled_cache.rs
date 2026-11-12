@@ -111,12 +111,14 @@ impl Interpreter {
         self.caches.ctor_lane.clear();
         self.caches.ctor_lane_candidate = None;
         self.caches.native_ctor_plan_cache.clear();
+        self.caches.native_ctor_plan_builtin.clear();
         self.caches.multi_resolve_cache.clear();
         self.caches.multi_type_cacheable.clear();
         self.caches.native_lever_a_override_cache.clear();
         self.caches.resolved_seq_cache.clear();
         self.caches.dispatch_multi_candidate.clear();
         self.caches.classhow_lookup_cache.clear();
+        self.caches.classhow_can_cache.clear();
         self.caches.deferral_build_context_free.clear();
         self.caches.nominal_param_defs.clear();
         self.caches.builtin_method_reached.clear();

@@ -13,7 +13,9 @@ pub(crate) mod array_type_trait;
 pub(crate) mod call_capture;
 mod carray_ref;
 mod carray_view;
-pub(crate) use carray_view::CArrayView;
+pub(crate) use carray_view::{CArrayView, keep_cast_source};
+#[cfg(feature = "libffi")]
+pub(crate) use carray_view::unmanaged_carray_address;
 mod carray_repr;
 mod box_native;
 mod boot_scalar;
