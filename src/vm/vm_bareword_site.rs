@@ -46,12 +46,12 @@ impl Interpreter {
         let generation = self.registry_write_generation();
         let sites = code.constants.len();
         let idx = name_idx as usize;
-        if let Some(sym) = code.bareword_sites.cached(sites, idx, generation)
-            && self.env_leaves_type_name(sym)
-            && self.bare_name_visible_here(sym)
-        {
-            self.stack.push(Value::package(sym));
-            return Ok(());
+        if let Some(value) = code.bareword_sites.cached(sites, idx, generation) {
+            let sym = code.const_sym(name_idx);
+            if self.env_answers_memo(sym, &value) && self.bare_name_visible_here(sym) {
+                self.stack.push(value);
+                return Ok(());
+            }
         }
         let name = Self::const_str(code, name_idx);
         // A `C[T]` spelling of a class with its own `^parameterize` (the
@@ -66,14 +66,46 @@ impl Interpreter {
         let foreign_unit = self.code_is_loaded_module_code(code);
         self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, false, foreign_unit)?;
         self.resolve_unit_lexical_type(code, name_idx);
-        if let Some(ValueView::Package(sym)) = self.stack.last().map(Value::view)
-            && sym == name
-            && bareword_memoizable(name)
-            && self.env_leaves_type_name(sym)
+        let name_sym = code.const_sym(name_idx);
+        let memoizable = match self.stack.last().map(Value::view) {
+            Some(ValueView::Package(sym)) => sym == name && bareword_memoizable(name),
+            // A package-qualified enum key (`Order::Less`) names one
+            // immutable value of a declared enum: the registry decides it.
+            Some(ValueView::Enum { enum_type, key, .. }) => {
+                crate::qualified::is_qualified(name_sym)
+                    && crate::qualified::split_qualified(name_sym) == Some((enum_type, key))
+            }
+            _ => false,
+        };
+        if memoizable
+            && let Some(value) = self.stack.last().cloned()
+            && self.env_answers_memo(name_sym, &value)
         {
-            code.bareword_sites.remember(sites, idx, generation, sym);
+            code.bareword_sites.remember(sites, idx, generation, value);
         }
         Ok(())
+    }
+
+    /// Whether `env` lets the bareword `name` keep answering `value`, the
+    /// site's memo: it binds nothing under the name or its term key, or
+    /// binds that very type object or enum value there (an enum declaration
+    /// binds its type and its `Type::Key` values so). Any other binding may
+    /// be what the resolution chain answers, and it changes without a
+    /// registry write.
+    // Cost: O(1), two `env` probes.
+    fn env_answers_memo(&self, name: Symbol, value: &Value) -> bool {
+        let holds = |bound: Option<&Value>| match bound {
+            None => true,
+            Some(bound) => {
+                matches!(bound.view(), ValueView::Package(p) if p == name)
+                    || same_memo_value(bound, value)
+            }
+        };
+        holds(self.env().get_sym(name))
+            && holds(
+                self.env()
+                    .get_sym(crate::runtime::term_names::term_key_sym(name)),
+            )
     }
 
     /// `OpCode::GetTypeCapture`: push the live binding of the type capture
@@ -211,4 +243,26 @@ impl Interpreter {
 // Cost: O(|name|).
 fn bareword_memoizable(name: &str) -> bool {
     !name.contains('[') && crate::runtime::types::strip_type_smiley(name).1.is_none()
+}
+
+/// Whether `a` and `b` are the same memoizable bareword answer: one type
+/// object, or one enum value (by type and key).
+// Cost: O(1).
+fn same_memo_value(a: &Value, b: &Value) -> bool {
+    match (a.view(), b.view()) {
+        (ValueView::Package(x), ValueView::Package(y)) => x == y,
+        (
+            ValueView::Enum {
+                enum_type: t1,
+                key: k1,
+                ..
+            },
+            ValueView::Enum {
+                enum_type: t2,
+                key: k2,
+                ..
+            },
+        ) => t1 == t2 && k1 == k2,
+        _ => false,
+    }
 }

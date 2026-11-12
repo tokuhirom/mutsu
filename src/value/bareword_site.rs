@@ -11,13 +11,14 @@
 //!
 //! What the memo may assume, and what it re-checks on every hit, is decided
 //! by the reader (`Interpreter::exec_get_bare_word_op`); this type only stores
-//! `(generation, type object)`.
+//! `(generation, value)`: the type object, or a package-qualified enum value
+//! (`Order::Less`), which names one immutable value just as stably.
 
-use crate::symbol::Symbol;
+use crate::value::Value;
 use std::sync::{Mutex, OnceLock};
 
-/// One site's memo: the generation it was resolved under, and the type object.
-type Word = Mutex<Option<(u64, Symbol)>>;
+/// One site's memo: the generation it was resolved under, and the value.
+type Word = Mutex<Option<(u64, Value)>>;
 
 /// One memo per string constant of a chunk.
 #[derive(Debug, Default)]
@@ -39,26 +40,26 @@ impl BarewordSiteCaches {
             .get_or_init(|| (0..sites).map(|_| Mutex::new(None)).collect())
     }
 
-    /// The type object constant `idx` resolved to under `generation`, if the
-    /// site remembered one then.
+    /// The value constant `idx` resolved to under `generation`, if the site
+    /// remembered one then.
     // Cost: O(1), one uncontended lock.
     #[inline]
-    pub(crate) fn cached(&self, sites: usize, idx: usize, generation: u64) -> Option<Symbol> {
-        match *self.words(sites).get(idx)?.lock().ok()? {
-            Some((g, sym)) if g == generation => Some(sym),
+    pub(crate) fn cached(&self, sites: usize, idx: usize, generation: u64) -> Option<Value> {
+        match &*self.words(sites).get(idx)?.lock().ok()? {
+            Some((g, value)) if *g == generation => Some(value.clone()),
             _ => None,
         }
     }
 
-    /// Remember that constant `idx` resolved to type object `sym` under
+    /// Remember that constant `idx` resolved to `value` under
     /// `generation` (read before the resolution ran, so a resolution that
     /// itself declared something is not remembered past it).
     // Cost: O(1), one uncontended lock.
-    pub(crate) fn remember(&self, sites: usize, idx: usize, generation: u64, sym: Symbol) {
+    pub(crate) fn remember(&self, sites: usize, idx: usize, generation: u64, value: Value) {
         if let Some(word) = self.words(sites).get(idx)
             && let Ok(mut w) = word.lock()
         {
-            *w = Some((generation, sym));
+            *w = Some((generation, value));
         }
     }
 }
