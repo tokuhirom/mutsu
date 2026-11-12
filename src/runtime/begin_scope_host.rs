@@ -172,7 +172,20 @@ impl Interpreter {
         else {
             return Ok(Value::NIL);
         };
-        if crate::core_type_names::contains(&name) || name.starts_with(['$', '@', '%', '&']) {
+        // A routine (`get-lexical('&postcircumfix:<{ }>')`) resolves from the
+        // whole lexical view, the setting's included, unless the query is
+        // for the current scope alone.
+        if let Some(routine) = name.strip_prefix('&') {
+            let current_scope_only = args.iter().any(|a| {
+                matches!(a.view(), ValueView::Pair(key, value)
+                    if key == "current-scope-only" && value.truthy())
+            });
+            if current_scope_only || self.resolve_code_var(routine).is_nil() {
+                return Ok(Value::NIL);
+            }
+            return Ok(Self::lexical_import_declaration(name));
+        }
+        if crate::core_type_names::contains(&name) || name.starts_with(['$', '@', '%']) {
             return Ok(Value::NIL);
         }
         let Some(value) = self.env().get(&name).cloned() else {
@@ -185,11 +198,15 @@ impl Interpreter {
         // The resolver's own form of the declaration: its `compile-time-value`
         // reads the name in the scope that asks (`external_value`).
         let _ = value;
+        Ok(Self::lexical_import_declaration(name))
+    }
+
+    /// The resolver's `RakuAST::Declaration::Import` for `name`: its
+    /// `compile-time-value` reads the name in the scope that asks.
+    // Cost: O(1).
+    fn lexical_import_declaration(name: String) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("lexical-name".to_string(), Value::str(name));
-        Ok(Value::make_instance(
-            Symbol::intern("RakuAST::Declaration::Import"),
-            attrs,
-        ))
+        Value::make_instance(Symbol::intern("RakuAST::Declaration::Import"), attrs)
     }
 }

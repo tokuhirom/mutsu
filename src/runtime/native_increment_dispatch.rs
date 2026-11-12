@@ -162,14 +162,8 @@ impl Interpreter {
         let operand = self.increment_operand(arg);
         // An export table binds a multi as a dispatcher `Sub` that carries its
         // candidates; a plain `Sub` is its own single candidate.
-        let candidates: Vec<Value> = match data
-            .env
-            .get("__mutsu_multi_dispatch_candidates")
-            .map(Value::view)
-        {
-            Some(ValueView::Array(cands, _)) => cands.iter().cloned().collect(),
-            _ => vec![callable.clone()],
-        };
+        let candidates: Vec<Value> =
+            Self::captured_dispatch_candidates(&data).unwrap_or_else(|| vec![callable.clone()]);
         !candidates.iter().any(|cand| match cand.view() {
             ValueView::Sub(d) => d
                 .param_defs

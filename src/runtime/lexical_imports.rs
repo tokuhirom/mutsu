@@ -883,11 +883,7 @@ impl Interpreter {
         }
         let candidates_of = |value: &Value| -> Vec<Value> {
             match value.view() {
-                ValueView::Sub(data) => data
-                    .env
-                    .get_sym(crate::symbol::wk::multi_dispatch_candidates())
-                    .and_then(|list| list.as_list_items().map(ToOwned::to_owned))
-                    .unwrap_or_default(),
+                ValueView::Sub(data) => Self::captured_dispatch_candidates(&data).unwrap_or_default(),
                 _ => Vec::new(),
             }
         };
