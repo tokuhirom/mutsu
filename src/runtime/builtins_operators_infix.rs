@@ -1,8 +1,3 @@
-// Note: call_infix_routine is 476 lines on its own; adding required helpers
-// (infix_uses_numeric_bridge, infix_is_strictly_numeric) and the two free
-// functions it calls (parse_hyper_infix, assignment_metaop_base) brings this
-// file to ~565 lines — marginally over the 500-line guideline, but unavoidable
-// without splitting the function body itself.
 use super::*;
 use crate::rakuast::hyper_assign::assignment_metaop_base;
 use crate::symbol::Symbol;
@@ -141,6 +136,22 @@ impl Interpreter {
         // site named the variables it passed, and `=:=` asks whether those
         // are one container. Two named scalar variables are identical only
         // when they share a binding root.
+        if let [left, right] = args
+            && matches!(op, "=:=" | "!=:=")
+            && (left.unwrap_varref().is_container_ref()
+                || right.unwrap_varref().is_container_ref())
+        {
+            let left = self
+                .call_site_source_cell(0)
+                .unwrap_or_else(|| left.unwrap_varref());
+            let right = self
+                .call_site_source_cell(1)
+                .unwrap_or_else(|| right.unwrap_varref());
+            let same = crate::value::identity::container_identity_identical(
+                left, right,
+            );
+            return Ok(Value::truth(same == (op == "=:=")));
+        }
         if args.len() == 2
             && matches!(op, "=:=" | "!=:=")
             && let Some(same) = self.call_site_containers_identical(args)
@@ -344,118 +355,8 @@ impl Interpreter {
             }
             return Ok(args[0].clone());
         }
-        // Sequence operators: dispatch directly to eval_sequence
-        match op {
-            "..." | "...^" | "^..." | "^...^" => {
-                let exclude_end = op == "...^" || op == "^...^";
-                let exclude_start = op.starts_with('^');
-
-                let mut result = if args.len() > 2 {
-                    // Chained sequence: multiple waypoints
-                    // args = [seed, waypoint1, waypoint2, ..., endpoint]
-                    // Each waypoint can be a list: first element is endpoint for
-                    // previous segment, whole list is seed for next segment.
-                    self.eval_chained_sequence(&args, exclude_end)?
-                } else {
-                    let left = args[0].clone();
-                    let right = args.last().cloned().unwrap_or(Value::NIL);
-                    self.eval_sequence(left, right, exclude_end)?
-                };
-
-                if exclude_start {
-                    // Remove the first element
-                    let new_result = match result.view() {
-                        ValueView::Array(items, kind) if !items.is_empty() => {
-                            let new_items = items[1..].to_vec();
-                            Some(if kind.is_real_array() {
-                                Value::real_array(new_items)
-                            } else {
-                                Value::array(new_items)
-                            })
-                        }
-                        ValueView::LazyList(ll) => Some(Value::lazy_list(crate::gc::Gc::new(
-                            crate::value::LazyList::new_skip_first_pipe(Value::lazy_list(
-                                ll.clone(),
-                            )),
-                        ))),
-                        _ => None,
-                    };
-                    if let Some(new_result) = new_result {
-                        result = new_result;
-                    }
-                }
-                return Ok(result);
-            }
-            _ => {}
-        }
-        // Short-circuit operators need special handling
-        match op {
-            "andthen" => {
-                let mut acc = args[0].clone();
-                for rhs in &args[1..] {
-                    if !crate::runtime::types::value_is_defined(&acc) {
-                        // Return Empty (empty Slip) when LHS is not defined
-                        return Ok(Value::slip_arc(std::sync::Arc::new(vec![])));
-                    }
-                    acc = rhs.clone();
-                }
-                return Ok(acc);
-            }
-            "notandthen" => {
-                let mut acc = args[0].clone();
-                for rhs in &args[1..] {
-                    if crate::runtime::types::value_is_defined(&acc) {
-                        return Ok(Value::NIL);
-                    }
-                    acc = rhs.clone();
-                }
-                return Ok(acc);
-            }
-            "orelse" => {
-                let mut acc = args[0].clone();
-                for rhs in &args[1..] {
-                    if crate::runtime::types::value_is_defined(&acc) {
-                        return Ok(acc);
-                    }
-                    acc = rhs.clone();
-                }
-                return Ok(acc);
-            }
-            "//" => {
-                let mut acc = args[0].clone();
-                for rhs in &args[1..] {
-                    if crate::runtime::types::value_is_defined(&acc) {
-                        return Ok(acc);
-                    }
-                    // When RHS is a Sub, invoke it (thunking behavior)
-                    acc = if let ValueView::Sub(_) = rhs.view() {
-                        self.call_sub_value(rhs.clone(), vec![])?
-                    } else {
-                        rhs.clone()
-                    };
-                }
-                return Ok(acc);
-            }
-            "^^" | "xor" => {
-                // XOR: exactly one operand must be truthy
-                let mut truthy_val: Option<Value> = None;
-                for arg in &args {
-                    // Invoke Sub operands (thunking behavior)
-                    let val = if let ValueView::Sub(_) = arg.view() {
-                        self.call_sub_value(arg.clone(), vec![])?
-                    } else {
-                        arg.clone()
-                    };
-                    if val.truthy() {
-                        if truthy_val.is_some() {
-                            return Ok(Value::NIL);
-                        }
-                        truthy_val = Some(val);
-                    }
-                }
-                return Ok(truthy_val.unwrap_or(Value::NIL));
-            }
-            _ => {}
+        if let Some(result) = self.call_infix_sequence_or_short(op, &args)? {
+            return Ok(result);
         }
         // Set operators: check for Failure and lazy list values
         if is_set_op {
@@ -592,65 +493,3 @@ fn parse_hyper_infix(op: &str) -> Option<(&str, bool, bool)> {
     Some((inner, dwim_left, dwim_right))
 }
 
-impl Interpreter {
-    /// Whether the two variables the current call site passed share one
-    /// container, or `None` when the call site did not name two variables.
-    // Cost: O(c), c = length of the `:=` alias chains of the two names.
-    fn call_site_containers_identical(&self, args: &[Value]) -> Option<bool> {
-        let sources = self.pending_call_arg_sources()?;
-        let plain_value = |v: &Value| {
-            let held = v.unwrap_varref().clone().into_deref();
-            // An itemized element (`$(3)`) is a Scalar holding the plain value.
-            let held = match held.view() {
-                ValueView::Scalar(inner) => inner.clone(),
-                _ => held,
-            };
-            matches!(
-                held.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Rat(..)
-                    | ValueView::FatRat(..)
-                    | ValueView::Complex(..)
-            )
-        };
-        let (left, right) = match sources.as_slice() {
-            [Some(left), Some(right)] => (left, right),
-            // A named scalar variable against an unnamed operand (a call result, a
-            // literal): the variable's Scalar is never the operand's, which is a
-            // plain value or another call's result -- `&with($first, &as($next))`.
-            [Some(named), None] | [None, Some(named)] => {
-                return (!named.starts_with(['@', '%', '&']) && args.iter().all(plain_value))
-                    .then_some(false);
-            }
-            _ => return None,
-        };
-        let root = |name: &str| {
-            // A sigilless parameter is stored under its term key.
-            let direct = self.resolve_alias_root(name).into_owned();
-            if direct != name {
-                return direct;
-            }
-            let keyed = crate::term_names::term_key(name);
-            let resolved = self.resolve_alias_root(&keyed).into_owned();
-            if resolved == keyed { direct } else { resolved }
-        };
-        let (left_root, right_root) = (root(left), root(right));
-        // A sigilless term is judged like the operator form (`exec_container_eq_named_op`)
-        // judges it: two distinct names holding plain values are distinct containers.
-        let scalar = |name: &str| !name.starts_with(['@', '%', '&']);
-        if left_root == right_root {
-            return Some(true);
-        }
-        // Distinct roots: two scalar variables hold distinct containers when
-        // they hold plain values. Type objects, code objects, enum values,
-        // aggregates and objects are singletons or may be bare `:=` bindings,
-        // which the operator form (`exec_container_eq_named_op`) leaves to
-        // value identity, so they keep the value comparison here too.
-        (scalar(&left_root) && scalar(&right_root) && args.iter().all(plain_value))
-            .then_some(false)
-    }
-}
