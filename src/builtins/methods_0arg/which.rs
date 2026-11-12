@@ -103,21 +103,14 @@ pub(crate) fn which_of(target: &Value) -> Value {
     }
     // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
     let is_value_type = has_value_identity(target);
+    // A type object's identity text is a function of its name alone, so it
+    // is rendered once per name and thread (#17331: Monad builds a cache key
+    // from two or three `.WHICH`es of type objects per operation).
+    if let ValueView::Package(name) = target.view() {
+        let text = package_which_text(name);
+        return objat_instance(text, is_value_type);
+    }
     let which_str = match target.view() {
-        ValueView::Package(name) => {
-            let resolved = name.resolve();
-            let key = type_identity_name(&resolved);
-            let id = if key.len() == resolved.len() {
-                name.id()
-            } else {
-                Symbol::intern(&key).id()
-            };
-            format!(
-                "{}|U{}",
-                crate::value::user_facing_type_name(&resolved),
-                crate::value::which_id::shown(id as u64)
-            )
-        }
         ValueView::CustomType(c) => {
             format!(
                 "{}|U{}",
@@ -419,8 +412,49 @@ pub(crate) fn which_of(target: &Value) -> Value {
             )
         }
     };
+    objat_instance(Value::str(which_str), is_value_type)
+}
+
+/// An `ObjAt` (or `ValueObjAt`) carrying the identity text `text`.
+// Cost: O(1) (one instance allocation).
+fn objat_instance(text: Value, is_value_type: bool) -> Value {
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("WHICH".to_string(), Value::str(which_str));
-    let objat_class = if is_value_type { "ValueObjAt" } else { "ObjAt" };
-    Value::make_instance(Symbol::intern(objat_class), attrs)
+    attrs.insert("WHICH".to_string(), text);
+    let objat_class = if is_value_type {
+        Symbol::intern("ValueObjAt")
+    } else {
+        Symbol::intern("ObjAt")
+    };
+    Value::make_instance(objat_class, attrs)
+}
+
+thread_local! {
+    /// [`package_which_text`]'s memo, per thread: the rendered identity text
+    /// of each type object asked for, keyed by its name.
+    static PACKAGE_WHICH_TEXT: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Value>> =
+        std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
+/// The identity text of the type object `name` (`Int|U3168000000123`): its
+/// user-facing name and the id of its identity name, which strips the
+/// default-parameterization mark so a pun and its role share one.
+// Cost: O(1) expected on a hit; O(n) on the first ask, n = the name's length.
+fn package_which_text(name: Symbol) -> Value {
+    if let Some(text) = PACKAGE_WHICH_TEXT.with(|memo| memo.borrow().get(&name).cloned()) {
+        return text;
+    }
+    let resolved = name.resolve();
+    let key = type_identity_name(&resolved);
+    let id = if key.len() == resolved.len() {
+        name.id()
+    } else {
+        Symbol::intern(&key).id()
+    };
+    let text = Value::str(format!(
+        "{}|U{}",
+        crate::value::user_facing_type_name(&resolved),
+        crate::value::which_id::shown(id as u64)
+    ));
+    PACKAGE_WHICH_TEXT.with(|memo| memo.borrow_mut().insert(name, text.clone()));
+    text
 }
