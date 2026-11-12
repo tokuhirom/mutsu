@@ -450,6 +450,18 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `.^m` on a class with a user metaclass that declares `m`.
+        if let Some(result) = self.try_custom_how_caret_lane(
+            code,
+            name.raw,
+            arity,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // ADR-0121 D3: a generated accessor already resolved to a slot of the
         // receiver's layout reads it before the probe chain runs (see
         // `vm_accessor_lane`).
