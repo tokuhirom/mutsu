@@ -449,6 +449,13 @@ impl Interpreter {
         // over a module's own classes out of the resolution caches: Text::CSV's
         // three `CSV::Row.push` candidates re-ran the whole candidate walk on
         // every field pushed (#9494).
+        // `::?CLASS` / `::?ROLE` (`multi method WHICH(::?CLASS:D:)`) name the
+        // candidate's own class (the composing class, for a role method): a
+        // fixed nominal type for a given receiver class, which is part of
+        // every resolution cache key.
+        if matches!(base, "::?CLASS" | "::?ROLE") {
+            return false;
+        }
         if base.contains(':') {
             let registry = self.registry();
             if !(registry.classes.contains_key(base) || registry.roles.contains_key(base)) {
