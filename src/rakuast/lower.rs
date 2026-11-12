@@ -422,6 +422,11 @@ fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
 /// written [`crate::ast::parsed::ParsedStmt::MethodAssignDecl`] (in `Stmt::Ast`), which an
 /// expression-position declaration lowers differently.
 pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // A package whose type its `meta-object` already declared is not declared
+    // again: the statement is that type (ADR-17472).
+    if let Some(declared) = super::declared_ahead::declared_type(node) {
+        return Ok(Stmt::Expr(Expr::Literal(declared)));
+    }
     if let Some(restored) = super::stub_package::restore(node) {
         return lower_stmt_kept(names, &restored);
     }

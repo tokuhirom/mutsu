@@ -28,6 +28,9 @@ impl Interpreter {
             crate::rakuast::str_dot_ast_checked(&scope, source, &Self::str_ast_unit_check)
         };
         crate::parser::clear_parser_lib_paths();
+        if let Ok(tree) = &result {
+            crate::rakuast::declared_ahead::record_unit_layout(tree);
+        }
         result
     }
 
@@ -64,6 +67,9 @@ impl Interpreter {
             &Self::str_ast_unit_check,
         );
         crate::parser::clear_parser_lib_paths();
+        if let Ok(tree) = &result {
+            crate::rakuast::declared_ahead::record_unit_layout(tree);
+        }
         result
     }
 
