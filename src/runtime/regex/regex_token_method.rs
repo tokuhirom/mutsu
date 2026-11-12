@@ -285,7 +285,7 @@ impl Interpreter {
         name: &str,
         call_args: Vec<Value>,
         chain: &[(u64, Value)],
-        parse_call: Option<(&str, &[Value])>,
+        parse_call: Option<(&str, &[Value], Option<(usize, bool)>)>,
     ) -> Result<Value, RuntimeError> {
         if chain.is_empty() {
             return Err(RuntimeError::new(
@@ -302,14 +302,25 @@ impl Interpreter {
             "__mutsu_token_method_wrapper_name".to_string(),
             Value::str(name.to_string()),
         );
-        if let Some((method, parse_args)) = parse_call {
+        if let Some((method, parse_args, cp_position)) = parse_call {
             original_env.insert(
                 "__mutsu_token_method_wrapper_parse_method".to_string(),
                 Value::str(method.to_string()),
             );
             original_env.insert(
                 "__mutsu_token_method_wrapper_parse_args".to_string(),
-                Value::real_array(parse_args.to_vec()),
+                match cp_position {
+                    Some((position, anchored)) => {
+                        let mut named = crate::value::ValueMap::default();
+                        named.insert("cp-position".to_string(), Value::int(position as i64));
+                        named.insert(
+                            "anchored".to_string(),
+                            if anchored { Value::TRUE } else { Value::FALSE },
+                        );
+                        Value::capture(parse_args.to_vec(), named)
+                    }
+                    None => Value::real_array(parse_args.to_vec()),
+                },
             );
         }
         let original = Value::make_sub(

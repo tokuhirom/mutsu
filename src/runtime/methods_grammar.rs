@@ -768,7 +768,38 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let parsed = self.dispatch_package_parse_impl(receiver, package_name, method, args);
+        self.dispatch_package_parse_with_cp_position(receiver, package_name, method, args, None)
+    }
+
+    /// Internal cursor dispatch: `position` is already a code-point offset.
+    // Cost: O(n), n = parsed text length, plus the grammar's rules.
+    pub(crate) fn dispatch_package_parse_at_cp(
+        &mut self,
+        package_name: &str,
+        method: &str,
+        args: &[Value],
+        position: usize,
+        anchored: bool,
+    ) -> Result<Value, RuntimeError> {
+        self.dispatch_package_parse_with_cp_position(
+            None,
+            package_name,
+            method,
+            args,
+            Some((position, anchored)),
+        )
+    }
+
+    pub(super) fn dispatch_package_parse_with_cp_position(
+        &mut self,
+        receiver: Option<&Value>,
+        package_name: &str,
+        method: &str,
+        args: &[Value],
+        cp_position: Option<(usize, bool)>,
+    ) -> Result<Value, RuntimeError> {
+        let parsed =
+            self.dispatch_package_parse_impl(receiver, package_name, method, args, cp_position);
         // A parse that answered (a Match, or a failed Match) is over: a subrule
         // argument-binding error it recorded without raising belongs to that
         // parse alone and must not surface from the next unrelated `~~` or
@@ -794,6 +825,7 @@ impl Interpreter {
         package_name: &str,
         method: &str,
         args: &[Value],
+        cp_position: Option<(usize, bool)>,
     ) -> Result<Value, RuntimeError> {
         // A previous parse may have returned a failed Match before consuming a
         // subrule binding error from the thread-local slot. Each parse starts
@@ -891,6 +923,18 @@ impl Interpreter {
         } else {
             source_text
         };
+        if let Some((position, anchored)) = cp_position {
+            if anchored {
+                start_pos = Some(position);
+                continue_pos = None;
+            } else {
+                continue_pos = Some(position);
+                start_pos = None;
+            }
+        } else {
+            start_pos = start_pos.map(|pos| crate::value::match_helpers::grapheme_to_cp_index(&text, pos));
+            continue_pos = continue_pos.map(|pos| crate::value::match_helpers::grapheme_to_cp_index(&text, pos));
+        }
 
         // Every cursor this parse mints is of the grammar's type from the
         // start, not only once the parse finished (#12943).
@@ -948,7 +992,7 @@ impl Interpreter {
             return self.call_wrapped_start_rule(
                 package_name,
                 &start_rule,
-                (method, args),
+                (method, args, cp_position),
                 Self::token_wrap_cursor(&text, pos),
                 &chain,
             );
@@ -970,6 +1014,7 @@ impl Interpreter {
                     &start_call.package,
                     &start_call.method,
                     &start_call.args,
+                    None,
                 ))
             } else if matches!(method, "parse" | "parsefile") {
                 // TODO: `.subparse` is not wrapped: a rule called on a cursor
