@@ -1043,22 +1043,6 @@ impl Value {
                 .get("name")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Method"
-                || class_name == "Submethod"
-                || class_name == "Sub"
-                || class_name == "Routine"
-                || crate::value::attribute_class::is_attribute_class(class_name) =>
-            {
-                attributes
-                    .as_map()
-                    .get("name")
-                    .map(|v: &Value| v.to_string_value())
-                    .unwrap_or_else(|| format!("{}()", class_name))
-            }
             ValueView::Instance { attributes, .. }
                 if attributes.contains_key("year")
                     && attributes.contains_key("month")
@@ -1119,6 +1103,22 @@ impl Value {
                 if let Some(payload) = super::numeric_payload::numeric_payload_of(&attributes) =>
             {
                 payload.to_string_value()
+            }
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Method"
+                || class_name == "Submethod"
+                || class_name == "Sub"
+                || class_name == "Routine"
+                || crate::value::attribute_class::is_attribute_class(class_name) =>
+            {
+                attributes
+                    .as_map()
+                    .get("name")
+                    .map(|v: &Value| v.to_string_value())
+                    .unwrap_or_else(|| format!("{}()", class_name))
             }
             // A subclass of native `Version` (`class Foo is Version {}`) carries
             // its built `Version` in `__mutsu_version_value` (#8070); stringify

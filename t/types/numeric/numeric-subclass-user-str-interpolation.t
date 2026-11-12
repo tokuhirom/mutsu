@@ -1,6 +1,6 @@
 use Test;
 
-plan 14;
+plan 18;
 
 # #10992: an `Int`/`Num` subclass's own `Str` is what interpolation and
 # prefix `~` render. Both go through `.Stringy`, which `Numeric` defines as
@@ -27,6 +27,15 @@ is "{$p}", '4', 'a subclass without its own Str interpolates its payload';
 is ~$p, '4', 'prefix ~ of a plain subclass is its payload';
 is $p.Stringy, '4', '.Stringy of a plain subclass is its payload';
 isa-ok $p.Stringy, Str, '.Stringy of a plain subclass is a Str';
+
+# A user class can have the same name as a built-in callable class. Its
+# numeric payload still determines the default string representation.
+class Sub is Int { }
+my $sub = Sub.new(3);
+is $sub.Str, '3', 'Sub subclass Str uses its Int payload';
+is $sub.Stringy, '3', 'Sub subclass Stringy uses its Int payload';
+is $sub.gist, '3', 'Sub subclass gist uses its Int payload';
+is "$sub", '3', 'Sub subclass interpolation uses its Int payload';
 
 class PlainNum is Num { }
 is ~PlainNum.new(2.5e0), '2.5', 'prefix ~ of a plain Num subclass is its payload';
