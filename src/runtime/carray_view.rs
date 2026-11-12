@@ -121,6 +121,7 @@ pub(crate) fn keep_cast_source(cast: &Value, source: &Value) {
 /// A native call hands a `CArray` parameter this address as it is, as
 /// MoarVM's CArray REPR passes its `storage` pointer.
 // Cost: O(1).
+#[cfg(feature = "libffi")]
 pub(crate) fn unmanaged_carray_address(v: &Value) -> Option<usize> {
     if let Some(view) = CArrayView::of(v) {
         return Some(view.addr);
