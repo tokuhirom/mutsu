@@ -90,3 +90,4 @@ mod builtins_system_require;
 mod builtins_system_run;
 mod builtins_unbase;
 pub(crate) mod exit_aware_read;
+pub(crate) mod live_pipe_lines;
