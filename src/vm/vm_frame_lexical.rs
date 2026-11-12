@@ -344,7 +344,6 @@ impl Interpreter {
                 &args,
                 Some(code),
             )
-            && !Self::call_shares_container_into_scalar_param(cf, &args)
         {
             self.call_compiled_function_positional_light(
                 cf,
@@ -355,7 +354,6 @@ impl Interpreter {
                 Some(code),
             )?
         } else if Self::is_light_call_eligible(cf, name)
-            && !Self::call_shares_container_into_scalar_param(cf, &args)
             && !Self::call_shares_container_into_named_scalar_param(
                 cf,
                 &args,

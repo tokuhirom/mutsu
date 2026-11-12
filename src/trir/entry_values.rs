@@ -34,7 +34,7 @@ impl Interpreter {
             let view = v.view();
             matches!(view, ValueView::Junction { .. })
                 || Self::callsite_line_of_view(&view).is_some()
-        }) || Self::call_shares_container_into_scalar_param(cf, args);
+        });
         if declines {
             return None;
         }

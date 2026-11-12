@@ -83,7 +83,7 @@ impl Interpreter {
                         args,
                         Some(code),
                         where_verified,
-                    ) && !Self::call_shares_container_into_scalar_param(cf, args)
+                    )
                 })
         });
         if !admitted {
