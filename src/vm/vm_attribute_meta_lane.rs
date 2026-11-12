@@ -43,20 +43,18 @@ impl Interpreter {
     /// stack untouched and the call to the generic path.
     // Cost: O(1) for the guard (a name compare, a tag test, a memoized
     // `has_user_method` probe, an argument scan); a hit costs the row.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn try_attribute_meta_lane(
         &mut self,
         code: &CompiledCode,
         method: &str,
         method_sym: crate::symbol::Symbol,
         arity: u32,
-        modifier_idx: Option<u32>,
-        quoted: bool,
+        plain_call: bool,
         arg_sources_idx: Option<u32>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // `plain_call`: no `.^`/`.?`/`.!` modifier and no quoted name.
         if !lane_method(method)
-            || modifier_idx.is_some()
-            || quoted
+            || !plain_call
             || self.accessor_ref_pending
             || self.has_any_wrap_chains()
             || crate::runtime::find_method_intercept::any_user_find_method()

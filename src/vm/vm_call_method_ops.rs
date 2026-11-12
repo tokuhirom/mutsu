@@ -884,8 +884,7 @@ impl Interpreter {
             name.raw,
             name.sym,
             arity,
-            modifier_idx,
-            quoted,
+            modifier_idx.is_none() && !quoted,
             arg_sources_idx,
         ) {
             self.stack.push(result?);
