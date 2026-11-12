@@ -74,6 +74,7 @@ impl Interpreter {
         // A build override disqualifies the class from the native
         // default constructor — drop any cached plan for it.
         self.caches.native_ctor_plan_cache.clear();
+        self.caches.native_ctor_plan_builtin.clear();
         Ok(target.clone())
     }
 

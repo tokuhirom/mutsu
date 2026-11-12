@@ -325,10 +325,24 @@ impl Interpreter {
                 return self.vm_call_method_mut_with_values(target_name, target, method, args);
             }
         }
-        if matches!(
-            method,
-            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-        ) {
+        // `WHICH` and `WHY` are ordinary methods in rakudo (the others are
+        // macros), so a user class's own `method WHICH` takes the
+        // user-method dispatch below instead of the reflection carrier, which
+        // reached it only after the whole `call_method_mut_with_values` probe
+        // chain (~22k instructions per call; Red's `Red::AST.WHICH`).
+        let user_ordinary_pseudo = matches!(method, "WHICH" | "WHY")
+            && match target.view() {
+                ValueView::Instance { class_name, .. } => {
+                    self.has_user_method_sym(class_name.as_str(), method_sym)
+                }
+                _ => false,
+            };
+        if !user_ordinary_pseudo
+            && matches!(
+                method,
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            )
+        {
             // CARRIER: MOP pseudo-methods, mut (reflection). See ledger §C.
             crate::vm::vm_stats::record_method_fallback(method);
             return loan_env!(
