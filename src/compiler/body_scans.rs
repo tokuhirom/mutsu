@@ -462,3 +462,45 @@ pub(super) fn expr_declares_bound_var(expr: &Expr) -> bool {
     scan.visit_expr(expr);
     scan.found
 }
+
+/// Finds what keeps a single `for` parameter from a local slot of its own
+/// (`compile_for_construct`): a declaration of the same name anywhere in the
+/// body (a nested block's `my` shares a same-named slot in the default build,
+/// where the by-name binding gave it its own scope), or a routine declaration
+/// or `use` (an `our sub` closes over the parameter by name).
+struct LoopParamSlotHazard<'n> {
+    name: &'n str,
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for LoopParamSlotHazard<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        if self.found {
+            return;
+        }
+        match stmt {
+            Stmt::VarDecl { name, .. }
+                if name == self.name || name.strip_prefix('$') == Some(self.name) =>
+            {
+                self.found = true
+            }
+            Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. } | Stmt::Use { .. } => self.found = true,
+            _ => walk_stmt(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        if !self.found {
+            walk_expr(self, expr);
+        }
+    }
+}
+
+/// Whether a loop body declares `name` again at any depth, or declares a
+/// routine or imports (see [`LoopParamSlotHazard`]).
+// Cost: O(n), n = size of `stmts`.
+pub(super) fn loop_param_slot_hazard(stmts: &[Stmt], name: &str) -> bool {
+    let mut scan = LoopParamSlotHazard { name, found: false };
+    walk_stmts(&mut scan, stmts);
+    scan.found
+}

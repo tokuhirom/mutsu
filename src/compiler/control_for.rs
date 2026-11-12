@@ -336,6 +336,27 @@ impl Compiler {
         // If the for-loop parameter name already has a local slot (e.g. from a
         // prior `my $i` in an enclosing scope), tell the VM so it can keep the
         // local in sync with the env on each iteration and on redo.
+        // A plain scalar parameter with no slot yet gets one for the loop
+        // (#17530): the VM binds it into `param_local` as well as `env` on every
+        // iteration, so a body read is a slot read instead of a by-name scope
+        // walk. The slot is retired after the loop (as a multi-parameter loop's
+        // fresh names are), so a later read of the name is the enclosing
+        // binding again. A body that declares the name again or declares a
+        // routine keeps the by-name binding (`loop_param_slot_hazard`).
+        let fresh_single_param = param
+            .as_ref()
+            .filter(|p| {
+                !p.is_empty()
+                    && p.as_str() != "_"
+                    && !p.starts_with(['@', '%', '&', '\\', '^', '!', '.', '*', '?'])
+                    && !p.contains("::")
+                    && !self.local_map.contains_key(p.as_str())
+                    && !super::body_scans::loop_param_slot_hazard(&loop_body, p)
+            })
+            .cloned();
+        if let Some(p) = &fresh_single_param {
+            self.alloc_local(p);
+        }
         let param_local = param
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
@@ -728,6 +749,11 @@ impl Compiler {
             if let Some(slot) = self.local_map.remove(name) {
                 self.retired_loop_param_slots.insert(name.clone(), slot);
             }
+        }
+        if let Some(name) = &fresh_single_param
+            && let Some(slot) = self.local_map.remove(name)
+        {
+            self.retired_loop_param_slots.insert(name.clone(), slot);
         }
         // Restore the single named loop param after the post (LAST) phasers ran.
         // The ForLoop opcode deferred this restore (pushing its saved binding)
