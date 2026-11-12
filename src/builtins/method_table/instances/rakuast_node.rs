@@ -254,6 +254,10 @@ fn external_value(
     if crate::core_type_names::contains(&name) {
         return Some(Ok(Value::package(Symbol::intern(&name))));
     }
+    // A term bound in the asking scope, a `sub EXPORT`'s import included.
+    if let Some(term) = interp.compile_time_term(&name) {
+        return Some(Ok(term));
+    }
     Some(interp.eval_code_string(&name))
 }
 

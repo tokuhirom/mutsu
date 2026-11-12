@@ -7,7 +7,7 @@ use Test;
 # literal: it is still in force for the BEGIN-time load of the block's module.
 # Checked against rakudo (RakuAST frontend).
 
-plan 6;
+plan 9;
 
 use lib $?FILE.IO.parent(2).sibling('lib').Str;
 
@@ -26,3 +26,10 @@ sub top-level-use() {
 }
 is-deeply top-level-use(), ('from-unit', 'from-pad'), 'a use in a routine body';
 is unit-term, 'from-unit', 'and the unit keeps its own';
+
+# An `EVAL`'d unit's `use` replays the hook its pre-run ran: the merged
+# declarations come with the map.
+use MONKEY-SEE-NO-EVAL;
+is EVAL(q|use GeneratedLexicals; unit-term|), 'from-unit', 'a unit declaration in an EVAL';
+is EVAL(q|use GeneratedLexicals; pad-term|), 'from-pad', 'a block declaration in an EVAL';
+is EVAL(q|{ use GeneratedLexicals; unit-term }|), 'from-unit', 'in a block of an EVAL';
