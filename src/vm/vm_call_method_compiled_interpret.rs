@@ -547,10 +547,10 @@ impl Interpreter {
             self.refresh_method_caches_for_generation();
             let cn = class_sym.as_str();
             let cache_key = (class_sym, method_sym);
+            if let Some(value) = self.winning_class_scoped_accessor(cn, method_sym, &args) {
+                return value;
+            }
 
-            // Fast method dispatch cache: skip wrap chain check, compiled_code
-            // extraction, and param_def eligibility scans for known-fast methods.
-            //
             // ADR-0019 E10: no `!self.has_any_wrap_chains()` guard here anymore.
             // That used to disable this cache PROGRAM-WIDE the instant any method
             // anywhere was wrapped, even for completely unrelated methods. It is
