@@ -43,6 +43,14 @@ impl Interpreter {
                     | "none"
                     | "so"
                     | "not"
+                    // The core truthiness prefixes take `Mu`: a junction is
+                    // their argument, not threaded over, even when the program
+                    // adds candidates of its own (Red's `prefix:<!>` over its
+                    // AST types; `!any()` is `True`).
+                    | "prefix:<!>"
+                    | "prefix:<?>"
+                    | "prefix:<so>"
+                    | "prefix:<not>"
                     | "defined"
                     | "return"
                     | "return-rw"

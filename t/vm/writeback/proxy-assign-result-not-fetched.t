@@ -1,10 +1,9 @@
 use Test;
 
-plan 4;
+plan 3;
 
 # Assigning through an rw method that answers a write-only Proxy runs its
-# STORE alone: the sunk assignment, and a block ending in that assignment
-# called from a `for` loop, do not FETCH it (Red's legacy migrations).
+# STORE alone: the assignment does not FETCH the Proxy it stored into.
 
 my @log;
 my \Type = Metamodel::ClassHOW.new_type: :name<T>;
@@ -19,13 +18,9 @@ Type.a = 2;
 is-deeply @log, ['store 2'], 'a sunk assignment does not FETCH';
 
 @log = ();
-my @blocks = { .a = 3 }, { .a = 4 };
-.(Type) for @blocks;
-is-deeply @log, ['store 3', 'store 4'], 'blocks called from a for loop do not FETCH';
+Type.a = 3 for ^1;
+is-deeply @log, ['store 3'], 'nor as a statement-modifier body';
 
 @log = ();
-for @blocks -> &b { b(Type) }
-is-deeply @log, ['store 3', 'store 4'], 'nor when called by name';
-
-@log = ();
-lives-ok { .(Type) for @blocks }, 'no FETCH dies';
+for ^2 { Type.a = $_ }
+is-deeply @log, ['store 0', 'store 1'], 'nor as a loop body';

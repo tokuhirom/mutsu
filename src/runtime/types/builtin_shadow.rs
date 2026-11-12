@@ -28,6 +28,9 @@ impl Interpreter {
         crate::qualified::package_ancestors(pkg)
             .filter(|p| !crate::qualified::is_global_package(*p))
             .map(|p| crate::qualified::qualified(p, name_sym))
-            .find(|q| self.has_type_direct(q.as_str()))
+            // Only a type declared by its short name inside the package is
+            // its lexical: `class Foo::List` (or a loaded `unit class
+            // Pkg::List`) leaves a bare `List` the core one (#12907).
+            .find(|q| self.has_type_direct(q.as_str()) && !self.is_compound_declared_name(q.as_str()))
     }
 }

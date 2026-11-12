@@ -131,7 +131,7 @@ impl Interpreter {
     /// Whether `name` was declared with a compound name outside its own
     /// parent prefix (see [`Self::note_compound_declared_type`]).
     // Cost: O(1), one hash probe.
-    fn is_compound_declared_name(&self, name: &str) -> bool {
+    pub(crate) fn is_compound_declared_name(&self, name: &str) -> bool {
         self.registry()
             .compound_declared_types
             .contains_key(name)
