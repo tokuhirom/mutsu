@@ -4449,18 +4449,7 @@ impl Interpreter {
                     }
                     // Check if this named arg was consumed by a named param or colon placeholder
                     let consumed = param_defs.iter().any(|pd| {
-                        if (pd.named && pd.name == *key)
-                            || pd.name == format!(":{}", key)
-                            || pd.name == format!("@:{}", key)
-                            || pd.name == format!("%:{}", key)
-                            || pd.name == format!("&:{}", key)
-                            // Named params with sigils: :@l has name "@l", match key "l"
-                            || (pd.named && pd.name == format!("*{}", key))
-                            || (pd.named
-                                && (pd.name == format!("@{}", key)
-                                    || pd.name == format!("%{}", key)
-                                    || pd.name == format!("&{}", key)))
-                        {
+                        if named_param_consumes_key(pd, key.as_str()) {
                             return true;
                         }
                         // Also check inner named aliases from sub-signatures,
@@ -4638,4 +4627,22 @@ fn surplus_positional_error(
             positional_arg_count + invocant,
         ))
     })
+}
+
+/// Whether the parameter `pd` takes the named argument `key`: a named
+/// parameter of that name, bare or behind a sigil/twigil (`:@l` is `@l`,
+/// `:$*x` is `*x`), or a colon placeholder of any sigil (`$:key`, `@:key`).
+/// Compared by prefix, so checking a call's named arguments allocates
+/// nothing (it used to build eight candidate names per parameter).
+// Cost: O(len(name)).
+fn named_param_consumes_key(pd: &ParamDef, key: &str) -> bool {
+    let name = pd.name.as_str();
+    (pd.named && name == key)
+        || [":", "@:", "%:", "&:"]
+            .iter()
+            .any(|prefix| name.strip_prefix(prefix) == Some(key))
+        || (pd.named
+            && ["*", "@", "%", "&"]
+                .iter()
+                .any(|prefix| name.strip_prefix(prefix) == Some(key)))
 }

@@ -248,6 +248,15 @@ pub(crate) struct ResolutionCaches {
     pub(crate) multi_dispatch_candidates_memo: MultiDispatchCandidatesMemo,
     /// `(fn_resolve_gen, proto_gen)` the memo above was filled under.
     pub(crate) multi_dispatch_candidates_memo_gen: (u64, u64),
+    /// Memo of a trivial proto's winning candidate
+    /// (`resolve_proto_candidate_with_types`), keyed like
+    /// [`Self::multi_dispatch_candidates_memo`] plus the argument type keys.
+    /// Dropped wholesale when `(fn_resolve_gen, proto_gen)` moves, never
+    /// revived by a recurring generation: a block-scoped `proto` leaves the
+    /// family generations as they were, so only an exact match is sound.
+    pub(crate) proto_winner_memo: crate::runtime::ProtoWinnerMemo,
+    /// `(fn_resolve_gen, proto_gen)` the memo above was filled under.
+    pub(crate) proto_winner_memo_gen: (u64, u64),
     /// Keyed by `(callee name, callsite package)` for the same reason as
     /// [`Self::pos_light_call_cache`] below.
     ///

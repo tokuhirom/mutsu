@@ -262,20 +262,23 @@ impl Interpreter {
     /// one a closure captured from an earlier block, and is not its candidate.
     // Cost: O(c), c = candidates in the family.
     pub(crate) fn captured_candidates_are_live(&self, name: &str, captured: &[Value]) -> bool {
-        let live = self.resolve_all_multi_candidates(name);
-        live.len() == captured.len()
-            && live.iter().zip(captured).all(|(live, captured)| {
-                matches!(
-                    captured.view(),
-                    ValueView::Sub(data)
-                        if data.package == live.package
-                            && data.name == live.name
-                            && match (&data.compiled_routine, live.compiled_fn()) {
-                                (Some(c), Some(l)) => c.fingerprint == l.fingerprint,
-                                _ => true,
-                            }
-                )
-            })
+        captured_match_live(&self.resolve_all_multi_candidates(name), captured)
+    }
+
+    /// [`Self::captured_candidates_are_live`] over the per-generation candidate
+    /// memo ([`Self::resolve_all_multi_candidates_cached_sym`]): the same live
+    /// list, gathered once per name, package context and registry generation
+    /// instead of once per call of the dispatcher. A call through an imported
+    /// `&name` dispatcher runs this check on every call, and the gather walked
+    /// every candidate key of the family each time (#15786).
+    // Cost: O(c) on a memo hit, c = candidates in the family; the gather on a miss.
+    pub(crate) fn captured_candidates_are_live_memo(
+        &mut self,
+        name: &str,
+        captured: &[Value],
+    ) -> bool {
+        let live = self.resolve_all_multi_candidates_cached_sym(name, Symbol::intern(name));
+        captured_match_live(&live, captured)
     }
 
     /// Whether every candidate in `captured` is still one of the candidates
@@ -286,25 +289,15 @@ impl Interpreter {
     /// [`Self::captured_candidates_are_live`], applied per candidate.
     // Cost: O(c * k), c = live candidates, k = captured candidates.
     pub(crate) fn captured_candidates_are_live_subset(
-        &self,
+        &mut self,
         name: &str,
         captured: &[Value],
     ) -> bool {
-        let live = self.resolve_all_multi_candidates(name);
+        let live = self.resolve_all_multi_candidates_cached_sym(name, Symbol::intern(name));
         !captured.is_empty()
-            && captured.iter().all(|captured| {
-                let ValueView::Sub(data) = captured.view() else {
-                    return false;
-                };
-                live.iter().any(|live| {
-                    data.package == live.package
-                        && data.name == live.name
-                        && match (&data.compiled_routine, live.compiled_fn()) {
-                            (Some(c), Some(l)) => c.fingerprint == l.fingerprint,
-                            _ => true,
-                        }
-                })
-            })
+            && captured
+                .iter()
+                .all(|captured| live.iter().any(|live| is_same_candidate(captured, live)))
     }
 
     /// Whether `v` is a multi dispatcher code value of the family `name`.
@@ -1068,7 +1061,7 @@ impl Interpreter {
                 if let Some(ValueView::Str(name)) =
                     data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
                 {
-                    let exactly_live = self.captured_candidates_are_live(&name, &candidates);
+                    let exactly_live = self.captured_candidates_are_live_memo(&name, &candidates);
                     // The family grew since the capture (#15925); not again
                     // while this dispatcher's own by-name call is running.
                     let grown_live = !exactly_live
@@ -1159,7 +1152,7 @@ impl Interpreter {
                         // of the same name does not count: an imported
                         // family's dispatcher called after its block exited
                         // must not reach the importing unit's own `multi`.
-                        if self.captured_candidates_are_live(&name, &candidates) {
+                        if self.captured_candidates_are_live_memo(&name, &candidates) {
                             // By name, as the dispatch above does: a family
                             // spelled like a core routine (`unlink`) must not
                             // reach the built-in arm of `call_function`.
@@ -1290,4 +1283,31 @@ impl Interpreter {
         }
         Err(RuntimeError::new("Callable expected"))
     }
+}
+
+/// Whether `captured`, a dispatcher's candidate list, is exactly `live`, the
+/// family's current one, candidate by candidate ([`is_same_candidate`]).
+// Cost: O(c), c = candidates.
+fn captured_match_live(live: &[Arc<FunctionDef>], captured: &[Value]) -> bool {
+    live.len() == captured.len()
+        && live
+            .iter()
+            .zip(captured)
+            .all(|(live, captured)| is_same_candidate(captured, live))
+}
+
+/// Whether the captured candidate code value is the live candidate `live`:
+/// same package and name, and the same body when both are compiled.
+// Cost: O(1).
+fn is_same_candidate(captured: &Value, live: &FunctionDef) -> bool {
+    matches!(
+        captured.view(),
+        ValueView::Sub(data)
+            if data.package == live.package
+                && data.name == live.name
+                && match (&data.compiled_routine, live.compiled_fn()) {
+                    (Some(c), Some(l)) => c.fingerprint == l.fingerprint,
+                    _ => true,
+                }
+    )
 }
