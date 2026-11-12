@@ -445,6 +445,7 @@ impl Interpreter {
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,
+            inner_subs_are_closures: false,
             declares_inner_routines: false,
             captured_fatal_mode: false,
             named_call_plan: None,

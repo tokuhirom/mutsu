@@ -423,7 +423,10 @@ impl Interpreter {
         // A body that touches `$/`, `$!` or `$_` reuses only a frame that
         // owns them, so they are never another frame's (`env::routine_owned`).
         let owns_state = cf.code.uses_routine_state || (cf.code.reads_topic && cf.code.is_routine);
+        // A closure the body creates captures up to its frame root, so a body
+        // with closures always gets a root of its own (#17497).
         let caller_env = if self.env().overlay_is_shared_empty()
+            && cf.code.closure_compiled_codes.is_empty()
             && (!outer_is_unit
                 || (self.env().is_empty_unit_frame()
                     && cf.code.unit_hidden_lexicals.is_none()
@@ -439,6 +442,19 @@ impl Interpreter {
             }
             Some(std::mem::replace(self.env_mut(), frame))
         };
+        // A closure the body creates may `return` from this routine: like the
+        // full call path, the frame names the routine it belongs to, which is
+        // what the closure's `return` targets (#17497).
+        if !cf.code.closure_compiled_codes.is_empty() && !func_name.is_empty() {
+            let callable_key = crate::runtime::Interpreter::callable_id_key_for_syms(
+                cf.package_sym(),
+                func_name_sym,
+            );
+            let callable_id = self.registration_callable_id(callable_key).unwrap_or(0);
+            if callable_id != 0 {
+                self.env_mut().set_callable_id(callable_id);
+            }
+        }
 
         // Read-through to the caller (parent tier) for the initial value of a
         // local that shadows a same-named caller variable, matching the prior

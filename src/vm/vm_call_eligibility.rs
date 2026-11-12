@@ -523,8 +523,11 @@ impl Interpreter {
             && !cf.is_raw
             && !cf.empty_sig
             && cf.param_local_slots.is_some()
-            // Exclude functions with inner closures/blocks (may use phasers, closures, etc.)
-            && !cf.has_inner_subs
+            // Exclude functions with inner routines, `for` loops or code-value
+            // calls (phasers, the routine registry snapshot, ...). A body whose
+            // only inner code is closures is served in a frame of its own
+            // (`call_compiled_function_positional_light_at`, #17497).
+            && (!cf.has_inner_subs || cf.inner_subs_are_closures)
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
             // callframe / CALLER:: need the frame-pushing path (see fast path).
