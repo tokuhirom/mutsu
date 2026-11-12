@@ -178,6 +178,7 @@ mod postfix_grouping;
 mod prefix_call;
 mod proto;
 pub(crate) use proto::{routine_multiness, routine_param_defs};
+mod node_origin_debug;
 mod quoted_string;
 mod react;
 mod regex_char_class;
@@ -264,7 +265,7 @@ pub struct RakuAstNode {
 /// absent fields stand for ([`empty_fields`]). It takes no part in a node's
 /// equality: two trees that differ only in where they were written are the
 /// same tree.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct NodeOrigin(
     pub Option<Value>,
     pub empty_fields::EmptyOrigins,
