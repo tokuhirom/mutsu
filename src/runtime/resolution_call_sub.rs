@@ -664,13 +664,7 @@ impl Interpreter {
         let ValueView::Sub(data) = dispatcher.view() else {
             return self.call_sub_value(dispatcher.clone(), args);
         };
-        let candidates: Vec<Value> = data
-            .env
-            .get_sym(crate::symbol::wk::multi_dispatch_candidates())
-            .cloned()
-            .and_then(Value::into_array)
-            .map(|(items, _)| items.iter().cloned().collect())
-            .unwrap_or_default();
+        let candidates: Vec<Value> = Self::captured_dispatch_candidates(&data).unwrap_or_default();
         let family = match data.env.get("__mutsu_multi_dispatch_name").map(Value::view) {
             Some(ValueView::Str(name)) => Some(name.to_string()),
             _ => None,
@@ -1052,13 +1046,7 @@ impl Interpreter {
                 return self.call_function(&routine_name, call_args);
             }
             // Multi-dispatch dispatcher: captured multi candidates from resolve_code_var
-            if let Some((candidates_arc, _)) = data
-                .env
-                .get("__mutsu_multi_dispatch_candidates")
-                .cloned()
-                .and_then(Value::into_array)
-            {
-                let candidates = (*candidates_arc).clone();
+            if let Some(candidates) = Self::captured_dispatch_candidates(&data) {
                 let func_for_family = func.clone();
                 let family_name = match data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
                 {

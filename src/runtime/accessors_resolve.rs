@@ -371,6 +371,30 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(next))
     }
 
+    /// `dispatcher` carrying its family's `proto`: run by a call when its body
+    /// does more than `{*}` ([`Self::with_dispatch_proto`]), and otherwise
+    /// kept for introspection only (`wk::multi_dispatch_declared_proto`).
+    // Cost: O(e), e = the proto's captured env (one code object built).
+    pub(crate) fn with_declared_proto(
+        &self,
+        dispatcher: Value,
+        proto: &crate::runtime::FunctionDef,
+    ) -> Value {
+        if !crate::runtime::lexical_imports::proto_body_only_dispatches(&proto.body) {
+            return self.with_dispatch_proto(dispatcher, proto);
+        }
+        let ValueView::Sub(data) = dispatcher.view() else {
+            return dispatcher;
+        };
+        let proto_value = self.sub_value_from_function_def(proto.clone());
+        let mut next: crate::value::SubData = (**data).clone();
+        // The dispatcher belongs where its proto was declared (`&Pkg::f`).
+        next.package = proto.package;
+        next.env
+            .insert_sym(crate::symbol::wk::multi_dispatch_declared_proto(), proto_value);
+        Value::sub_value(crate::gc::Gc::new(next))
+    }
+
     /// `dispatcher` (a [`Self::sub_value_from_multi_candidates`] value over
     /// user candidates of the built-in operator `name`, `infix:<+>`) falling
     /// back to the operator itself when no captured candidate accepts a call
@@ -986,6 +1010,16 @@ impl Interpreter {
                 && let Some(regex_value) = self.extract_token_regex_value(lookup_name)
             {
                 Value::routine_token_capture(package, name, std::sync::Arc::new(regex_value))
+            } else if !is_regex_ref
+                && let Some(proto) = self.resolve_proto_function(lookup_name)
+            {
+                // A routine proto with no candidates yet (`my proto f(Int)
+                // {*}` as a value, CompUnit::Util's `push-unit-multi`) is a
+                // dispatcher of its own: it outlives its declaring scope, takes
+                // `add_dispatchee`, and answers the proto's signature. A by-name
+                // handle lost all three once the scope was gone.
+                let dispatcher = self.sub_value_from_multi_candidates(lookup_name, Vec::new());
+                self.with_declared_proto(dispatcher, &proto)
             } else {
                 Value::routine_parts(package, name, is_regex_ref)
             }

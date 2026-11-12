@@ -85,14 +85,27 @@ impl Interpreter {
                 Some(self),
             ));
         }
+        // The proto the dispatcher was built with is its own, wherever the
+        // name now resolves (a candidate `add_dispatchee` registered under the
+        // name generates a protoless family there).
+        for key in [
+            crate::symbol::wk::multi_dispatch_declared_proto(),
+            crate::symbol::wk::multi_dispatch_proto(),
+        ] {
+            if let Some(proto) = data.env.get_sym(key)
+                && let ValueView::Sub(proto) = proto.view()
+            {
+                return Some(self.sub_signature_value(&proto));
+            }
+        }
         if let Some(sig) = self.dispatcher_signature(&data.package.resolve(), &disp_name) {
             return Some(sig);
         }
         // The name's own scope has popped (an imported multi used after its
         // import scope ended): only the captured candidates are left, so the
         // dispatcher is answered as the generated proto.
-        // TODO: capture the declared proto alongside the candidates so a
-        // declared proto's own signature survives here too.
+        // TODO: capture the declared proto alongside the candidates of every
+        // dispatcher, not only a candidate-less one (`with_declared_proto`).
         data.env
             .contains_key("__mutsu_multi_dispatch_candidates")
             .then(|| self.proto_signature_value(None))

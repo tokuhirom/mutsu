@@ -48,6 +48,7 @@ impl Interpreter {
         let _ = (target, data, &args);
         if method == "add_dispatchee" && args.len() == 1 {
             let (package, name) = (data.package.resolve(), data.name.resolve());
+            Self::grow_captured_dispatcher(data, &args[0]);
             return Some(
                 self.add_routine_dispatchee(&package, &name, &args[0])
                     .map(|()| target.clone()),
@@ -82,11 +83,7 @@ impl Interpreter {
                     let mut known: std::collections::HashSet<_> =
                         name_based.iter().filter_map(fingerprint).collect();
                     let mut union = name_based;
-                    if let Some(ValueView::Array(cands, _)) = data
-                        .env
-                        .get("__mutsu_multi_dispatch_candidates")
-                        .map(Value::view)
-                    {
+                    if let Some(cands) = Self::captured_dispatch_candidates(data) {
                         for cand in cands.iter() {
                             if fingerprint(cand).is_some_and(|f| known.insert(f)) {
                                 union.push(cand.clone());
@@ -97,11 +94,7 @@ impl Interpreter {
                 }
             }
             // Fall back to captured candidates (for out-of-scope multi subs)
-            if let Some(ValueView::Array(cands, _)) = data
-                .env
-                .get("__mutsu_multi_dispatch_candidates")
-                .map(Value::view)
-            {
+            if let Some(cands) = Self::captured_dispatch_candidates(data) {
                 if cands.is_empty() {
                     let builtin = self.builtin_routine_candidates(
                         &data.package.resolve(),
@@ -239,11 +232,7 @@ impl Interpreter {
                 }
             }
             // Fall back to captured candidates
-            if let Some(ValueView::Array(cands, _)) = data
-                .env
-                .get("__mutsu_multi_dispatch_candidates")
-                .map(Value::view)
-            {
+            if let Some(cands) = Self::captured_dispatch_candidates(data) {
                 let call_args = Self::capture_to_call_args(&args[0]);
                 if cands.is_empty() {
                     let builtin = self.builtin_routine_candidates(
