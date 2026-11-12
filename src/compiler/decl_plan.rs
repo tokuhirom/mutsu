@@ -359,7 +359,7 @@ impl Compiler {
             is_hoisted_shell,
         );
         let body_plan = self.compile_class_body_plan(body, package_name.as_deref(), *is_hidden);
-        self.code.add_class_decl_plan(
+        let plan_idx = self.code.add_class_decl_plan(
             stmt,
             name_expr.is_none() && self.decl_name_is_prequalified(),
             name_chunk,
@@ -371,7 +371,20 @@ impl Compiler {
             method_outer_lexical_slots,
             body_plan,
             pass,
-        )
+        );
+        // Inside a routine (`current_package` is its `Pkg::&name` state
+        // scope) the declaration belongs to the routine's package, which is
+        // what `package_name` above and the methods' `::?CLASS` were compiled
+        // for. The runtime package need not be that one: a method body does
+        // not always switch to its class (`method_body_package`), and an
+        // `EVAL` from a method runs with the caller's (#17547).
+        if self.current_package.contains("::&") {
+            let package = Symbol::intern(self.runtime_current_package());
+            if let Some(plan) = self.code.class_decl_plans.last_mut() {
+                plan.compile_package = Some(package);
+            }
+        }
+        plan_idx
     }
 
     /// Lower a class body into its ordered, typed op mirror (ADR-0019

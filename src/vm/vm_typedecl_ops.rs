@@ -189,6 +189,7 @@ impl Interpreter {
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
             name_is_prequalified,
+            compile_package,
             name_chunk,
             parents,
             class_is_rw,
@@ -226,7 +227,7 @@ impl Interpreter {
             } else {
                 name.resolve()
             };
-            let current_package_sym = self.current_package_sym();
+            let current_package_sym = compile_package.unwrap_or_else(|| self.current_package_sym());
             let current_package = current_package_sym.as_str();
             let resolved_sym = Symbol::intern(&resolved_name);
             let qualified_name = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
@@ -616,6 +617,30 @@ impl Interpreter {
             // and that hook runs when the class composes, below.
             let how_hook_before = self.class_how_compose_hook(&storage_name);
             let attr_type_aliases = self.attr_type_aliases_of(code, attr_decls);
+            // A `my class` names itself inside its own body (traits, BEGIN
+            // blocks, attribute defaults): rakudo installs the lexical at the
+            // start of the declaration. The parents above were resolved
+            // first, so `my class C is C` still reaches the outer `C`
+            // (#17547: without it a body's bare name fell through to the
+            // package lookup, which an `EVAL` run from a method does not
+            // anchor to the method's class).
+            if *is_lexical && storage_name.contains('\u{0}') {
+                self.bind_lexical_type_keys(
+                    &storage_name,
+                    &[qualified_name.as_str(), resolved_name.as_str()],
+                );
+                // The bare spelling's env alias, which the registration below
+                // writes again: a body read resolves `{package}::Name` through
+                // it, and one left by an earlier run of the same `EVAL`
+                // would otherwise answer with that run's type.
+                if !resolved_is_qualified && resolved_name != qualified_name {
+                    self.save_lexical_type_binding_for_scope_exit(&resolved_name);
+                    self.env_mut().insert(
+                        resolved_name.clone(),
+                        Value::package(Symbol::intern(&storage_name)),
+                    );
+                }
+            }
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(
