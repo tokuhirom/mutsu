@@ -1293,6 +1293,7 @@ impl Interpreter {
             self.compile_class_methods(&name_str);
             // Augment can add methods/attributes — drop cached construction plans.
             self.caches.native_ctor_plan_cache.clear();
+            self.caches.native_ctor_plan_builtin.clear();
             Ok(())
         } else {
             Err(RuntimeError::new("AugmentClass expects AugmentClass stmt"))

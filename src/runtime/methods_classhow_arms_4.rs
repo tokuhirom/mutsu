@@ -551,6 +551,7 @@ impl Interpreter {
             // Class shape changed (an added BUILD/TWEAK/new flips ctor
             // eligibility) — drop cached construction plans.
             self.caches.native_ctor_plan_cache.clear();
+            self.caches.native_ctor_plan_builtin.clear();
             // Return Nil even if the class was not found (e.g. built-in types
             // like Rat that are not in the user-defined class registry).
             // Raku's add_method returns the method name; returning Nil is

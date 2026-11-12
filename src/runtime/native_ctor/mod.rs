@@ -145,6 +145,12 @@ static CTORS: &[(&str, CtorFn, bool, bool)] = &[
 
 /// The native constructor of `class_name`, a class name without type arguments.
 // Cost: O(log c), c = the number of constructors.
+/// Whether `class_name` is a built-in type with a native constructor.
+// Cost: O(log t), t = table rows.
+pub(crate) fn has_native_ctor(class_name: &str) -> bool {
+    lookup(class_name).is_some()
+}
+
 pub(super) fn lookup(class_name: &str) -> Option<NativeCtor> {
     let i = CTORS.binary_search_by_key(&class_name, |entry| entry.0).ok()?;
     let (_, run, unless_user_new, fast) = CTORS[i];

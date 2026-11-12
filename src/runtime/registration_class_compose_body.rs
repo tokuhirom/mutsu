@@ -200,6 +200,7 @@ impl Interpreter {
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(class_name));
         self.caches.native_ctor_plan_cache.clear();
+        self.caches.native_ctor_plan_builtin.clear();
         Ok(())
     }
 

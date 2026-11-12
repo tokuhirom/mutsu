@@ -111,6 +111,7 @@ impl Interpreter {
         self.caches.ctor_lane.clear();
         self.caches.ctor_lane_candidate = None;
         self.caches.native_ctor_plan_cache.clear();
+        self.caches.native_ctor_plan_builtin.clear();
         self.caches.multi_resolve_cache.clear();
         self.caches.multi_type_cacheable.clear();
         self.caches.native_lever_a_override_cache.clear();
