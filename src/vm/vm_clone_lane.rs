@@ -28,7 +28,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if method_sym.as_str() != "clone"
-            || self.has_any_wrap_chains()
+            || self.registry().method_name_ever_wrapped("clone")
             || crate::runtime::find_method_intercept::any_user_find_method()
             || !args.iter().all(|a| matches!(a.view(), ValueView::Pair(..)))
         {

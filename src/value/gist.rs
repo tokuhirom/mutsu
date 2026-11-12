@@ -32,7 +32,13 @@ pub(crate) fn str_needs_dispatch(value: &Value) -> bool {
         }
         let inner = v.deref_container();
         let v = inner.descalarize();
-        if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
+        if let ValueView::Instance { class_name, .. } = v.view() {
+            // A plain `ObjAt` / `ValueObjAt` (a `.WHICH` result) stringifies
+            // to its identity text; no user method can change that (a subclass
+            // or a role mixin has another class name).
+            return !matches!(class_name.as_str(), "ObjAt" | "ValueObjAt");
+        }
+        if matches!(v.view(), ValueView::Mixin(..)) {
             return true;
         }
         if let Some(id) = container_id(v)

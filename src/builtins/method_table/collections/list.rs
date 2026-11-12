@@ -587,6 +587,14 @@ pub(crate) fn join_items(items: &[Value], sep: &str) -> Option<Value> {
     if items.iter().any(|v| {
         v.with_deref(|inner| {
             let inner = inner.descalarize();
+            // A plain `ObjAt` / `ValueObjAt` (a `.WHICH` result) stringifies to
+            // its identity text, which no user method can change: a subclass
+            // or a role mixin has another class name.
+            if let ValueView::Instance { class_name, .. } = inner.view()
+                && matches!(class_name.as_str(), "ObjAt" | "ValueObjAt")
+            {
+                return false;
+            }
             matches!(
                 inner.view(),
                 ValueView::Instance { .. }

@@ -66,7 +66,9 @@ impl Interpreter {
         // compiles `.VAR` itself, so a `method VAR` a Proxy subclass declares is
         // never called there either.
         if kind == PseudoKind::Var {
-            if !matches!(target.view(), ValueView::Proxy { .. }) || self.has_any_wrap_chains() {
+            if !matches!(target.view(), ValueView::Proxy { .. })
+                || self.registry().method_name_ever_wrapped(method)
+            {
                 return None;
             }
             let target = self.stack.pop()?;
@@ -86,8 +88,9 @@ impl Interpreter {
         if crate::runtime::boot_collection::is_boot_collection_invocant(target) {
             return None;
         }
-        // A wrapped method could intercept the call on the generic path.
-        if self.has_any_wrap_chains() {
+        // A wrap of this method could intercept the call on the generic path
+        // (a wrap of any other method cannot).
+        if self.registry().method_name_ever_wrapped(method) {
             return None;
         }
         let target = target.clone();

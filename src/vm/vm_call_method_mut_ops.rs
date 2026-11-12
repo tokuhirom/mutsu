@@ -450,6 +450,13 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `.^can(NAME)` on an ordinary user class (#17552).
+        if let Some(result) =
+            self.try_caret_can_lane(code, name.raw, arity, modifier_idx, quoted)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // `.^m` on a class with a user metaclass that declares `m`.
         if let Some(result) = self.try_custom_how_caret_lane(
             code,
@@ -492,7 +499,7 @@ impl Interpreter {
             && !quoted
             && arg_sources_idx.is_none()
             && !self.accessor_ref_pending
-            && !self.has_any_wrap_chains()
+            && !self.registry().method_name_ever_wrapped(name.raw)
             && !Self::scalar_early_lane_skips(name.raw)
             && !crate::runtime::find_method_intercept::any_user_find_method()
             && let Some(target) = self.stack.last()
