@@ -41,6 +41,12 @@ type ExportedTokenDefs = HashMap<String, HashMap<String, Vec<std::sync::Arc<Func
 /// see `Interpreter::multi_dispatch_candidates_memo`. `units` is
 /// `(current unit, executing unit, import-table generation)` for a family with
 /// import records, whose list depends on the asking unit (#11004), else `None`.
+/// See `ResolutionCaches::proto_winner_memo`: (name, current package, frame
+/// lexical package, argument type keys) to the winner.
+pub(crate) type ProtoWinnerMemo = rustc_hash::FxHashMap<
+    (Symbol, Symbol, Option<Symbol>, Vec<Symbol>),
+    std::sync::Arc<FunctionDef>,
+>;
 pub(crate) type MultiDispatchCandidatesMemo = rustc_hash::FxHashMap<
     (
         Symbol,

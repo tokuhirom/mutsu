@@ -358,16 +358,59 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-    ) -> Result<Option<FunctionDef>, RuntimeError> {
+    ) -> Resolved {
         if crate::qualified::is_qualified_str(name) {
             let candidates = self.qualified_multi_candidates(name);
-            return Ok(self
-                .choose_best_matching_candidate(name, arg_values, candidates)?
-                .map(|def| (*def).clone()));
+            return self.choose_best_matching_candidate(name, arg_values, candidates);
         }
-        Ok(self
-            .resolve_function_with_types(name, arg_values)?
-            .map(|a| (*a).clone()))
+        self.resolve_proto_winner_memoized(name, arg_values)
+    }
+
+    /// [`Self::resolve_function_with_types`] for a proto family, remembered
+    /// per argument types while the functions map and the protos stay exactly
+    /// as they were: a call through a trivial proto re-ranked every candidate
+    /// on each call (#15786). A family whose winner depends on argument
+    /// VALUES (`where`, subsets), a compunit-scoped family, and arguments
+    /// that cannot be keyed by type resolve fresh, as do errors.
+    // Cost: O(a) on a hit, a = arguments (the type keys); a resolution on a miss.
+    fn resolve_proto_winner_memoized(&mut self, name: &str, arg_values: &[Value]) -> Resolved {
+        let name_sym = Symbol::intern(name);
+        let Some(arg_keys) = self.multi_arg_type_keys_with_named(arg_values) else {
+            return self.resolve_function_with_types(name, arg_values);
+        };
+        let pkg_sym = self.current_package_sym();
+        if self.operator_has_import_scope_sym(name_sym)
+            || !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name)
+        {
+            return self.resolve_function_with_types_keyed(name, arg_values, Some(&arg_keys));
+        }
+        let generation = (
+            self.caches.fn_resolve_gen,
+            self.registry().proto_generation(),
+        );
+        if self.caches.proto_winner_memo_gen != generation {
+            self.caches.proto_winner_memo.clear();
+            self.caches.proto_winner_memo_gen = generation;
+        }
+        let key = (
+            name_sym,
+            pkg_sym,
+            self.routine_stack()
+                .last()
+                .and_then(|frame| frame.lexical_package),
+            arg_keys,
+        );
+        if let Some(hit) = self.caches.proto_winner_memo.get(&key) {
+            return Ok(Some(hit.clone()));
+        }
+        let resolved = self.resolve_function_with_types_keyed(name, arg_values, Some(&key.3))?;
+        // A resolution that itself registered something is not remembered.
+        if let Some(def) = &resolved
+            && (self.caches.fn_resolve_gen, self.registry().proto_generation()) == generation
+        {
+            self.caches.proto_winner_memo.insert(key, def.clone());
+        }
+        Ok(resolved)
     }
 
     /// The `X::Multi::NoMatch` a call that reached a routine's candidate set

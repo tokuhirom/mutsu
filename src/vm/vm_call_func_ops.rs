@@ -3137,7 +3137,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: &[Value],
-    ) -> Option<crate::ast::FunctionDef> {
+    ) -> Option<Arc<crate::ast::FunctionDef>> {
         use crate::ast::{Expr, Stmt};
         if self.is_interpreter_handled_function(name) {
             return None;
