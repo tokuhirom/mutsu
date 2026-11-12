@@ -24,3 +24,14 @@ nor when the body died. Red finishes its SQLite `BEGIN IMMEDIATE` statement in
 such a `LEAVE`; the unfinished statement then made the later `COMMIT` fail with
 "SQL statements in progress" (t/132). The body is now a phaser block scope, as
 an `if` branch with phasers already was.
+
+Two more from Red's fixture tests (t/159, t/160):
+
+- A coercion return type (`--> Hash()`, `--> Array()`) read a not-yet-run
+  `.map`/`.grep` Seq through its empty seed, so Red's `^column-values` answered
+  `{}` and saved fixture rows lost every column.
+- A metamethod (`method ^populate`) of a type declared through a custom
+  `EXPORTHOW::DECLARE` HOW now reaches the HOW's `add_meta_method`, and a
+  `.wrap` made there is what `.^populate` runs; `Metamodel::ClassHOW` gained a
+  native `add_meta_method` for the re-add through
+  `self.Metamodel::ClassHOW::add_meta_method`.
