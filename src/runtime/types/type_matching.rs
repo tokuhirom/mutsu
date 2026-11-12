@@ -2704,7 +2704,11 @@ fn core_scalar_satisfies(constraint: &str, value: &Value) -> bool {
         // A built-in aggregate, pair or code value is a concrete `Any` (never a
         // `Junction`, which has its own view); a code value is `Callable`.
         // These are what a binder asks of an untyped or `&`-sigil parameter.
-        ValueView::Array(..) | ValueView::Hash(_) => matches!(name, "Any" | "Mu"),
+        // A raw native-element `VMArray` (`BOOTIntArray`) is no `Any`; the
+        // full check below decides every raw VM collection.
+        ValueView::Array(..) | ValueView::Hash(_) if !value.is_vm_array() && !value.is_vm_hash() => {
+            matches!(name, "Any" | "Mu")
+        }
         ValueView::Pair(..) | ValueView::ValuePair(..) => matches!(name, "Pair" | "Any" | "Mu"),
         ValueView::Sub(_) | ValueView::Routine { .. } => {
             matches!(name, "Callable" | "Any" | "Mu")
