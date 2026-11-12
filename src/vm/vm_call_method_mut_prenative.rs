@@ -354,4 +354,68 @@ impl Interpreter {
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "caret-name");
         Some(self.dispatch_caret_name(&target))
     }
+
+    /// `$obj.^m` / `Type.^m` (unquoted, no arguments) on a class whose
+    /// metaobject is a user metaclass instance (`class_how_values`: an
+    /// EXPORTHOW declarator such as Red's `model`, or `new_type`) that
+    /// declares `m` itself. `.^m` is `$obj.HOW.m($obj)`, so the HOW's own
+    /// compiled method is run directly with the receiver as its argument;
+    /// the general path reached the same method only after the whole probe
+    /// chain (~23k instructions per call; Red's `$model.^as`).
+    // Cost: O(1) amortized to decide (hash probes and memoized MRO probes);
+    // the HOW method's own cost for a hit.
+    pub(super) fn try_custom_how_caret_lane(
+        &mut self,
+        code: &CompiledCode,
+        method: &str,
+        arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if arity != 0
+            || quoted
+            || arg_sources_idx.is_some()
+            || self.accessor_ref_pending
+            || modifier_idx.map(|idx| Self::const_str(code, idx)) != Some("^")
+            || self.has_any_wrap_chains()
+            || crate::runtime::find_method_intercept::any_user_find_method()
+        {
+            return None;
+        }
+        let target = self.stack.last()?.clone();
+        let class = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Package(name) => name,
+            _ => return None,
+        };
+        let how = self
+            .registry()
+            .class_how_values
+            .get(class.as_str())
+            .cloned()?;
+        let how_class = match how.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            _ => return None,
+        };
+        let method_sym = crate::symbol::Symbol::intern(method);
+        let caret_sym = crate::symbol::Symbol::intern(&format!("^{method}"));
+        if !self.registry().classes.contains_key(how_class.as_str())
+            || self.has_user_method_sym(class.as_str(), caret_sym)
+            || !self.has_user_method_sym(how_class.as_str(), method_sym)
+        {
+            return None;
+        }
+        let result = self.try_dispatch_compiled_method_direct_as(
+            how_class,
+            &how,
+            method,
+            std::slice::from_ref(&target),
+        )?;
+        self.pending_call_arg_source_slots.clear();
+        self.set_pending_call_arg_sources(None);
+        self.stack.pop();
+        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "custom-how-caret");
+        Some(result)
+    }
 }
