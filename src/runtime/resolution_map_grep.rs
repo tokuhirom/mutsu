@@ -1055,6 +1055,27 @@ impl Interpreter {
             return loop_result;
         }
         if let Some(func) = func {
+            // A role mixed into a multi-parameter Block (`-> $a, $b {...} but R`)
+            // takes its elements a group at a time, as the Block does; a short
+            // final group raises "Too few positionals" from the call, as on
+            // rakudo.
+            if matches!(func.view(), ValueView::Mixin(..)) {
+                let arity = crate::vm::callback_positionals(&func).max(1);
+                if arity > 1 {
+                    let mut i = 0usize;
+                    while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
+                        src.has(i + arity);
+                        let end = (i + arity).min(src.buf.len());
+                        let chunk: Vec<Value> = src.buf[i..end].to_vec();
+                        i = end;
+                        out.consumed = consumed_base + i;
+                        let value = self.call_sub_value(func.clone(), chunk)?;
+                        let value = self.reify_finite_pipe_value(value)?;
+                        push_map_value(&mut out.produced, value);
+                    }
+                    return Ok(());
+                }
+            }
             let mut i = 0usize;
             while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
                 let item = src.buf[i].clone();

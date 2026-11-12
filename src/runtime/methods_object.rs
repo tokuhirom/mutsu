@@ -381,6 +381,16 @@ impl Interpreter {
         }
         let cn_resolved = class_name.as_str();
         let registered = self.registry().classes.contains_key(cn_resolved);
+        // A built-in type with a native constructor (`ValueObjAt`, `Date`,
+        // ...) is not a registered class, so its plan is not frozen below;
+        // it is kept here instead, valid while the name stays unregistered
+        // (Red's `ValueObjAt.new` rebuilt it on every call, ~4k Ir).
+        let builtin_ctor = !registered && super::native_ctor::has_native_ctor(cn_resolved);
+        if builtin_ctor
+            && let Some(plan) = self.caches.native_ctor_plan_builtin.get(&class_name)
+        {
+            return plan.clone();
+        }
         let eligible = self.is_native_default_constructible(cn_resolved);
         let eligible_when_user_new_declines =
             !eligible && self.is_native_default_constructible_with(cn_resolved, true);
@@ -715,6 +725,10 @@ impl Interpreter {
         if registered {
             self.caches
                 .native_ctor_plan_cache
+                .insert(class_name, plan.clone());
+        } else if builtin_ctor {
+            self.caches
+                .native_ctor_plan_builtin
                 .insert(class_name, plan.clone());
         }
         plan

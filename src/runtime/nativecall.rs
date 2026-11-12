@@ -1461,6 +1461,10 @@ fn marshal_carray_arg(
         }
         return Ok((Type::pointer(), storage_arg(node)));
     }
+    // An unmanaged CArray (a `nativecast` view of C memory) is its address.
+    if let Some(addr) = crate::runtime::unmanaged_carray_address(&resolve_arg(raw)) {
+        return Ok((Type::pointer(), ArgOwner::Ptr(addr as *const std::ffi::c_void)));
+    }
     // Anything else that is defined is not an array C can be handed: refuse it
     // (#11529). Building an empty per-call buffer for it instead passed C a
     // dangling non-NULL pointer, and a callee that read through it crashed.

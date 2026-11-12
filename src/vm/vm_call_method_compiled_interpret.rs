@@ -391,10 +391,22 @@ impl Interpreter {
         // CARRIER: MOP pseudo-methods (reflection; no bytecode form). See ledger §C.
         // Pseudo-methods must always go through the interpreter which handles
         // them specially — never intercept via the compiled fast path.
-        if matches!(
-            method,
-            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-        ) {
+        // `WHICH` and `WHY` are ordinary methods in rakudo: a user class's own
+        // takes the user-method dispatch below (see the mut twin,
+        // `try_compiled_method_mut_or_interpret_sym_inner`).
+        let user_ordinary_pseudo = matches!(method, "WHICH" | "WHY")
+            && match target.view() {
+                ValueView::Instance { class_name, .. } => {
+                    self.has_user_method_sym(class_name.as_str(), method_sym)
+                }
+                _ => false,
+            };
+        if !user_ordinary_pseudo
+            && matches!(
+                method,
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            )
+        {
             crate::vm::vm_stats::record_method_fallback(method);
             return loan_env!(self, call_method_with_values(target, method, args));
         }
