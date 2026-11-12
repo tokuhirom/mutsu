@@ -3287,6 +3287,13 @@ pub(crate) enum Stmt {
         /// form shares the enclosing block's lexical scope.
         #[serde(default)]
         bare: bool,
+        /// For a nested `BEGIN`: the block it was written in, as an id every
+        /// `BEGIN` of that block shares (`begin_prologue::nested` assigns it,
+        /// whether it lifts the phaser into the unit's prologue or not). A
+        /// BEGIN-time `$*R.current-scope` answers that block (#17515). 0 at the
+        /// unit's top level and for every other phaser.
+        #[serde(default)]
+        scope: u32,
     },
     ProtoDecl {
         name: Symbol,

@@ -897,6 +897,13 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `.^name` on an ordinary user class (#17552).
+        if let Some(result) =
+            self.try_caret_name_lane(code, name.raw, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.

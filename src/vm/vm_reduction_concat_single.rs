@@ -23,6 +23,12 @@ impl Interpreter {
         &mut self,
         list: &mut Vec<Value>,
     ) -> Result<Option<Value>, RuntimeError> {
+        // A captured `$` lexical read inside a closure (`-> { [~] ($x,) }`)
+        // arrives as a `ContainerRef` to its shared cell: the candidate is
+        // chosen by the value it holds.
+        if list[0].is_container_ref() {
+            list[0] = list[0].deref_container();
+        }
         if let ValueView::Array(items, _) = list[0].view() {
             let items: Vec<Value> = items.iter().cloned().collect();
             if items.is_empty() {

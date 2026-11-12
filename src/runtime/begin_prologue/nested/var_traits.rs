@@ -167,6 +167,7 @@ fn entry_phasers(name: &str, site: &str) -> Vec<Stmt> {
                 condition,
                 end_index: None,
                 bare: false,
+                scope: 0,
             }
         })
         .collect()
@@ -253,6 +254,7 @@ pub(crate) fn lift_unit_var_traits(stmts: &mut Vec<Stmt>) {
             condition: None,
             end_index: None,
             bare: false,
+            scope: 0,
         });
         entry.extend(entry_phasers(&name, &site));
     }
