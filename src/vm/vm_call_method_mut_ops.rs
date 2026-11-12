@@ -424,6 +424,19 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // A reading metamethod of a plain `Attribute` (`vm_attribute_meta_lane`).
+        if let Some(result) = self.try_attribute_meta_lane(
+            code,
+            name.raw,
+            name.sym,
+            arity,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // `Mu.take` on a user-class instance (`vm_take_method_lane`).
         if let Some(result) =
             self.try_take_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
