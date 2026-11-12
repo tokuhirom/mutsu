@@ -2,17 +2,24 @@ use super::vm_misc_ops::*;
 use super::*;
 use crate::value::ValueMap;
 
+pub(super) enum TypeCheckMode {
+    Assignment,
+    Binding,
+    Parameter,
+}
+
 impl Interpreter {
     pub(super) fn exec_type_check_op_inner(
         &mut self,
         code: &CompiledCode,
         tc_idx: u32,
         var_name_idx: Option<u32>,
-        bind_mode: bool,
-        parameter_mode: bool,
+        mode: TypeCheckMode,
         has_explicit_initializer: bool,
         smiley_from_pragma: bool,
     ) -> Result<(), RuntimeError> {
+        let bind_mode = !matches!(mode, TypeCheckMode::Assignment);
+        let parameter_mode = matches!(mode, TypeCheckMode::Parameter);
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
         // Set again below only when this check fully matched the value, so the
         // declaration store right after it can skip a second match.

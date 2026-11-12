@@ -1,3 +1,4 @@
+use super::vm_misc_typecheck::TypeCheckMode;
 use super::*;
 
 impl Interpreter {
@@ -347,8 +348,7 @@ impl Interpreter {
             code,
             tc_idx,
             var_name_idx,
-            false,
-            false,
+            TypeCheckMode::Assignment,
             has_explicit_initializer,
             smiley_from_pragma,
         )
@@ -362,7 +362,14 @@ impl Interpreter {
         tc_idx: u32,
         var_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true, false, false, false)
+        self.exec_type_check_op_inner(
+            code,
+            tc_idx,
+            var_name_idx,
+            TypeCheckMode::Binding,
+            false,
+            false,
+        )
     }
 
     /// Check a pointy parameter with the same error as a routine parameter.
@@ -373,6 +380,13 @@ impl Interpreter {
         tc_idx: u32,
         var_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true, true, false, false)
+        self.exec_type_check_op_inner(
+            code,
+            tc_idx,
+            var_name_idx,
+            TypeCheckMode::Parameter,
+            false,
+            false,
+        )
     }
 }
