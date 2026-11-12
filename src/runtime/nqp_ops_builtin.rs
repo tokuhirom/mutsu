@@ -642,6 +642,10 @@ impl Interpreter {
             }
             // A role attribute lives in the mixin's role cell; anything else
             // is the inner value's (see `nqp_attr_value`).
+            // A Block's phaser table bound on a code object with a role mixed
+            // in (`block_phaser_table`).
+            ValueView::Mixin(..)
+                if attr == "$!phasers" && Self::bind_block_phaser_table(obj, val.clone()) => {}
             ValueView::Mixin(inner, mixins)
                 if !mixins.set_role_attribute_by_name(attr_key, val.clone()) =>
             {
@@ -703,6 +707,12 @@ impl Interpreter {
     }
 
     pub(super) fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
+        // A Block's phaser table (`Block`'s `$!phasers`).
+        if name == "$!phasers"
+            && let Some(table) = Self::block_phaser_table(obj)
+        {
+            return Some(table);
+        }
         if Self::nqp_attr_bare(name) == "descriptor"
             && let Some(desc) = Self::nqp_container_descriptor(obj)
         {

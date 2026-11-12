@@ -364,11 +364,34 @@ impl Interpreter {
     /// over every element for a full read. An infinite/lazy-pipe source
     /// (`make_lazy_pipe`) is O(1) per call and one callback per element
     /// pulled.
+    /// The callback a `.map` / `.grep` iterates with: a role mixed into a
+    /// Block (`$block but R`, ParaSeq's `BlockMapper`) is iterated as the
+    /// Block itself -- its signature, `last`/`next` and loop phasers -- as
+    /// rakudo does, unless a composed role takes over `CALL-ME`. Iterating it
+    /// as an opaque callable bound one element per call, let `last` escape as
+    /// a bare control exception, and never ran `FIRST`/`NEXT`/`LAST`.
+    // Cost: O(r), r = roles mixed in.
+    pub(crate) fn loop_callback(&self, args: Vec<Value>) -> Vec<Value> {
+        let mut args = args;
+        if let Some(first) = args.first()
+            && let ValueView::Mixin(inner, _) = first.view()
+            && let ValueView::Sub(data) = inner.view()
+            && !self.mixin_composes_method(first, "CALL-ME")
+        {
+            // A phaser table bound on the mixin (`$!phasers`) replaces the
+            // block's loop phasers.
+            args[0] = Self::block_with_bound_phasers(first, &data)
+                .unwrap_or_else(|| inner.as_ref().clone());
+        }
+        args
+    }
+
     pub(crate) fn dispatch_map_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let args = self.loop_callback(args);
         let target = Self::mixin_iteration_target(target);
         Self::validate_map_callable(args.first(), &target)?;
         // A not-yet-run `.map`/`.grep` receiver: chain onto its source so the

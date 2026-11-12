@@ -3,7 +3,7 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn builtin_map(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let func = args.first().cloned();
+        let func = self.loop_callback(args.iter().take(1).cloned().collect()).pop();
         let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
         // Check if the source is a single named array variable for rw writeback
         let source_var = if args.len() == 2 {

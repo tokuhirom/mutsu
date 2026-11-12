@@ -82,14 +82,33 @@ pub(crate) fn distinct_adverbs(args: &[Value]) -> (Option<Value>, Option<Value>)
     let mut with_func: Option<Value> = None;
     for arg in args {
         if let Some((key, value)) = adverb_pair(arg) {
+            // `:$with` passes the variable's container; the adverb is the
+            // callable it holds.
             if key == "as" && value.truthy() {
-                as_func = Some(value.clone());
+                as_func = Some(value.deref_container());
             } else if key == "with" && value.truthy() {
-                with_func = Some(value.clone());
+                with_func = Some(value.deref_container());
             }
         }
     }
     (as_func, with_func)
+}
+
+impl Interpreter {
+    /// `:with(&[===])` is the default comparison: rakudo takes the plain
+    /// (hashed) path for it rather than calling the comparator per pair, so
+    /// the core `===` (a built-in `Routine` value) is dropped here. A user
+    /// `infix:<===>` (a `Sub`) is a comparator like any other.
+    // Cost: O(1).
+    pub(crate) fn distinct_comparator(&self, with_fn: Option<Value>) -> Option<Value> {
+        let func = with_fn?;
+        if let ValueView::Routine { name, .. } = func.view()
+            && name == "infix:<===>"
+        {
+            return None;
+        }
+        Some(func)
+    }
 }
 
 impl DistinctState {
@@ -120,6 +139,11 @@ impl Interpreter {
         state: &mut DistinctState,
         item: &Value,
     ) -> Result<bool, RuntimeError> {
+        // On the first element (nothing seen yet): a core `===` comparator is
+        // the default rule (`distinct_comparator`).
+        if state.with_fn.is_some() && state.with_seen.is_empty() && state.prev.is_none() {
+            state.with_fn = self.distinct_comparator(state.with_fn.take());
+        }
         let key = match state.as_fn.clone() {
             // `squish` keeps only the previous needle and rakudo never caches
             // it there (see `cache_seq_needle`).
@@ -149,12 +173,25 @@ impl Interpreter {
             // A user comparator defines its own equality class, which the
             // index cannot model, so `:with` keeps the full scan (rakudo's
             // `:with` path is quadratic for the same reason).
+            // The seen keys are read in place: cloning the whole list per
+            // element made the scan O(u) allocations on top of its calls.
+            // A built-in infix operator (`:with(&[==])`) is applied directly,
+            // not called as a routine per pair.
+            let infix = match func.view() {
+                ValueView::Routine { name, .. } => name
+                    .as_str()
+                    .strip_prefix("infix:<")
+                    .and_then(|s| s.strip_suffix('>'))
+                    .map(str::to_string),
+                _ => None,
+            };
             let mut found = false;
-            for prev in state.with_seen.clone() {
-                if self
-                    .call_sub_value(func.clone(), vec![prev, key.clone()])?
-                    .truthy()
-                {
+            for prev in state.with_seen.iter() {
+                let same = match &infix {
+                    Some(op) => self.call_infix_routine(op, &[prev.clone(), key.clone()])?,
+                    None => self.call_sub_value(func.clone(), vec![prev.clone(), key.clone()])?,
+                };
+                if same.truthy() {
                     found = true;
                     break;
                 }

@@ -624,10 +624,11 @@ impl Interpreter {
             // pull happens wherever the Seq is consumed -- rakudo writes back
             // at consumption too (`my @a=1,2,3; @a.map({$_++})` leaves
             // `[2 3 4]` only because a sunk statement consumes the Seq).
+            let func = self.loop_callback(args.iter().take(1).cloned().collect()).pop();
             return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
                 items,
                 pos: 0,
-                func: args.first().cloned(),
+                func,
                 fatal: self.module.fatal_mode,
                 mode: crate::value::MapGrepMode::MapRw(target.clone()),
                 plan: Default::default(),
