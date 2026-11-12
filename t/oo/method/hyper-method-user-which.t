@@ -5,7 +5,7 @@ use Test;
 # as the scalar `$obj.WHICH` does (the hyper path dispatches it through the
 # compiled user-method dispatch).
 
-plan 8;
+plan 11;
 
 class P { has $.v; method WHICH { ValueObjAt.new("P|$!v") } }
 class Q {
@@ -33,3 +33,19 @@ class Node {
 }
 my $tree = Node.new(args => (Node.new(args => (P.new(:v(1)),)), P.new(:v(2))));
 is $tree.WHICH.Str, "Node|Node|P|1|P|2", 'recursive user WHICH through the hyper';
+
+# Elements read out of attribute containers (`$!l, $!r`) and out of a `.grep`
+# alias still run the user method, and the method's own writes stick.
+class Pair2 {
+    has $.l; has $.r;
+    method args { $!l, $!r }
+    method WHICH { ValueObjAt.new: "Pair2|" ~ $.args>>.WHICH.join("|") }
+}
+is Pair2.new(l => P.new(:v(3)), r => P.new(:v(4))).WHICH.Str, "Pair2|P|3|P|4",
+    'elements of an attribute-container list';
+
+class Counter { has $.n = 0; method bump { $!n++; self }; method WHY { "n=$!n" } }
+my @c = Counter.new, Counter.new;
+@c.grep(*.defined)>>.bump;
+is @c.map(*.n).join(","), "1,1", 'a user method mutates its object through a grep alias';
+is @c.grep(*.defined)>>.WHY.join(","), "n=1,n=1", 'and the elements stay the same objects';
