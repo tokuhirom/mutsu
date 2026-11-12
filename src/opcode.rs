@@ -5921,10 +5921,6 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) name: Symbol,
     /// The compiler has already made this literal declaration name absolute.
     pub(crate) name_is_prequalified: bool,
-    /// The package the declaration was compiled in, when it stands inside a
-    /// routine: the name is qualified by it rather than by the package the
-    /// runtime happens to be in (#17547). `None` elsewhere.
-    pub(crate) compile_package: Option<Symbol>,
     /// The compiled chunk producing a runtime-resolved type name
     /// (`class ::($name) {...}`). `None` for the ordinary literal-name form.
     pub(crate) name_chunk: Option<CompiledDeclExpr>,
@@ -13724,7 +13720,6 @@ impl CompiledCode {
         self.class_decl_plans.push(CompiledClassDeclPlan {
             name: *name,
             name_is_prequalified,
-            compile_package: None,
             name_chunk,
             parents: parents.clone(),
             class_is_rw: *class_is_rw,

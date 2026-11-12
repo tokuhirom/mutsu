@@ -189,7 +189,6 @@ impl Interpreter {
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
             name_is_prequalified,
-            compile_package,
             name_chunk,
             parents,
             class_is_rw,
@@ -227,7 +226,7 @@ impl Interpreter {
             } else {
                 name.resolve()
             };
-            let current_package_sym = compile_package.unwrap_or_else(|| self.current_package_sym());
+            let current_package_sym = self.current_package_sym();
             let current_package = current_package_sym.as_str();
             let resolved_sym = Symbol::intern(&resolved_name);
             let qualified_name = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
