@@ -20,6 +20,20 @@ impl Interpreter {
         self.is_native_default_constructible_with(cn_resolved, false)
     }
 
+    /// The class a mixin class name (`Base+{R}+{S}`) is built on, past every
+    /// `+{...}` suffix; any other name as it is.
+    // Cost: O(n), n = length of the name.
+    fn mixin_root_base(name: &str) -> &str {
+        let mut base = name;
+        while base.ends_with('}')
+            && let Some(at) = base.rfind("+{")
+            && at > 0
+        {
+            base = &base[..at];
+        }
+        base
+    }
+
     /// [`Self::is_native_default_constructible`], optionally disregarding user
     /// `new` candidates: with `allow_user_new`, a class qualifies when the
     /// default constructor is the one that runs once no user `new` candidate
@@ -35,7 +49,11 @@ impl Interpreter {
         // (`R[Int].^pun`): its attribute constraints are substituted in the
         // plan (`role_bound_attribute_constraints`) and nothing else about its
         // construction reads the bindings.
-        if cn_resolved.contains('[') && !self.role_pun_native_constructible(cn_resolved) {
+        // A registered mixin class (`R[Int]+{M}`, what `.new` on a
+        // `pun but M` type object builds) is judged by its root base: the
+        // roles mixed onto it are vetted with the rest of the MRO below.
+        let parametric_name = Self::mixin_root_base(cn_resolved);
+        if parametric_name.contains('[') && !self.role_pun_native_constructible(parametric_name) {
             return false;
         }
         // A `::`-namespaced name is allowed: built-in exception types

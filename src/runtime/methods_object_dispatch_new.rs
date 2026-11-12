@@ -518,6 +518,9 @@ impl Interpreter {
             {
                 return self.dispatch_new(Value::package(Symbol::intern(&mixin_class)), args);
             }
+            if let Some(mixin_class) = self.mixin_type_object_class(inner.as_ref(), mixins)? {
+                return self.dispatch_new(Value::package(Symbol::intern(&mixin_class)), args);
+            }
             let base_instance = self.dispatch_new(inner.as_ref().clone(), args)?;
             return self.compose_mixin_type_roles(base_instance, mixins);
         }

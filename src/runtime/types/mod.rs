@@ -23,6 +23,7 @@ mod omitted_optional;
 mod param_exprs;
 mod readonly_capture;
 mod role_candidate;
+mod mixin_type_object_class;
 mod role_mixin_class;
 mod roles;
 mod signature;
