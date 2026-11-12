@@ -128,6 +128,7 @@ pub(super) fn lower(
         condition,
         end_index: None,
         bare: false,
+        scope: 0,
     })
 }
 

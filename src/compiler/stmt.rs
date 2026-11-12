@@ -1724,6 +1724,7 @@ impl Compiler {
                     Some(self.code.emit(OpCode::CheckPhaserStart {
                         end_ip: 0,
                         is_begin: false,
+                        scope: 0,
                     }))
                 } else {
                     None
@@ -4148,11 +4149,12 @@ impl Compiler {
             } => {
                 // CHECK phasers run at compile time. If an error occurs inside
                 // a CHECK phaser, Raku wraps it in X::Comp::BeginTime.
-                self.compile_check_phaser(body, false);
+                self.compile_check_phaser(body, false, 0);
             }
             Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body,
+                scope,
                 ..
             } => {
                 // BEGIN runs at compile time; an error thrown inside it is wrapped
@@ -4170,7 +4172,7 @@ impl Compiler {
                         self.compile_stmt(s);
                     }
                 } else {
-                    self.compile_check_phaser(body, true);
+                    self.compile_check_phaser(body, true, *scope);
                 }
             }
             Stmt::Phaser {
@@ -4204,6 +4206,7 @@ impl Compiler {
                     condition: None,
                     end_index: *end_index,
                     bare: false,
+                    scope: 0,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id = super::compile_session::mint();

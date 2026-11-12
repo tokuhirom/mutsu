@@ -144,6 +144,10 @@ pub(crate) struct ModuleState {
     /// whether the declaration targets the block the `use` is in (`set-lexpad`)
     /// rather than the importing unit (`set-unit`).
     pub(crate) pending_generated_lexicals: Vec<GeneratedLexical>,
+    /// The `$*R.current-scope` a BEGIN phaser of a nested block answers, one
+    /// per block id (`CheckPhaserStart::scope`), so every BEGIN of the block
+    /// sees the same scope object (#17515).
+    pub(crate) begin_block_scopes: HashMap<u32, Value>,
     /// Each loaded module's EXPORT (own `sub EXPORT` or a Slangify-style
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
@@ -772,6 +776,7 @@ impl ModuleState {
             pending_use_export_args: None,
             pending_inner_export_subs: ValueMap::default(),
             pending_generated_lexicals: Vec::new(),
+            begin_block_scopes: HashMap::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: Default::default(),
@@ -896,6 +901,7 @@ impl ModuleState {
             pending_use_export_args: None,
             pending_inner_export_subs: ValueMap::default(),
             pending_generated_lexicals: Vec::new(),
+            begin_block_scopes: HashMap::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: self.loaded_modules.clone(),

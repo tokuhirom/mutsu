@@ -409,6 +409,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             condition: _,
             end_index: _,
             bare: _,
+            scope: _,
         } => v.visit_stmts(body),
         Stmt::ProtoDecl {
             is_hidden_from_backtrace: _,

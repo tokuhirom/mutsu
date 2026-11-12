@@ -696,6 +696,7 @@ impl Interpreter {
                             condition: None,
                             end_index: None,
                             bare: false,
+                            scope: 0,
                         }
                     } else {
                         s

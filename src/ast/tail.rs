@@ -83,6 +83,7 @@ mod tests {
             condition: None,
             end_index: None,
             bare: false,
+            scope: 0,
         }
     }
 

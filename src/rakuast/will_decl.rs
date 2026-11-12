@@ -48,6 +48,7 @@ pub(super) fn wrap(stmt: Stmt, var_name: &str, will_phasers: Vec<(PhaserKind, Ve
             condition: None,
             end_index: None,
             bare: false,
+            scope: 0,
         });
     }
     Stmt::SyntheticBlock(stmts)
