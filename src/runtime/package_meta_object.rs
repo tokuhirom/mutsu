@@ -27,16 +27,31 @@ impl Interpreter {
                 node.class.printed_name()
             )));
         };
-        // TODO: rakudo creates the type at BEGIN time inside the unit's own
-        // lexical scope, so its methods close over the unit's `my` variables.
-        // mutsu has no BEGIN-time phase for a tree: the declaration runs in a
-        // unit of its own (the prelude plus the declaration), and a method
-        // reading a `my` of the original unit does not compile here.
+        // rakudo creates the type at BEGIN time inside the unit's own lexical
+        // scope; mutsu has no BEGIN-time phase for a tree, so the declaration
+        // runs in a unit of its own: the prelude, the unit's earlier lexicals
+        // (shared with its `EVAL`, `declared_ahead_vars`) and the declaration.
         let unit = self.str_ast_with_paths(&prelude, false)?;
         let ValueView::RakuAst(unit) = unit.view() else {
             return Err(RuntimeError::new("RakuAST: the prelude of a declaration is no unit"));
         };
         let mut unit = unit.clone();
+        // The unit's earlier lexicals, each bound to the container the unit's
+        // own `EVAL` shares (#17522): the package's methods close over them.
+        for var in crate::rakuast::declared_ahead_vars::unit_vars_before(node) {
+            let decl = self.str_ast_with_paths(&format!("{} {};", var.scope, var.name), false)?;
+            let Some(statement) = crate::rakuast::declared_ahead::first_statement(&decl) else {
+                continue;
+            };
+            let statement = match var.cell {
+                Some(cell) => crate::rakuast::declared_ahead_vars::bind_statement(&statement, cell),
+                None => statement,
+            };
+            unit.fields.push(RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(statement),
+            });
+        }
         unit.fields.push(RakuAstField {
             name: None,
             value: RakuAstFieldValue::Node(crate::rakuast::as_statement(&Value::rakuast(
