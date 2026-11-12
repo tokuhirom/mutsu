@@ -262,11 +262,20 @@ fn strict_pragma(stmt: &Stmt) -> Option<bool> {
 /// (`x`, `@a`, `&f`). A lifted BEGIN may read these, because the prologue runs
 /// in the unit's frame.
 ///
+/// A blockless phaser (`BEGIN my $u = 1`) declares into the unit too (#17567).
+///
 /// A `unit module` body is not looked into: a BEGIN in a package body is never
 /// lifted (see `nested::walk`), so no lifted BEGIN reads its lexicals.
 // Cost: O(n), n = number of statements in the unit's own scope.
 fn unit_lexical_names(stmts: &[Stmt]) -> HashSet<String> {
     let mut names = HashSet::new();
+    add_scope_names(stmts, &mut names);
+    names
+}
+
+// Cost: O(n), n = number of statements in the scope, blockless phaser bodies
+// included.
+fn add_scope_names(stmts: &[Stmt], names: &mut HashSet<String>) {
     for stmt in crate::ast::scope_members(stmts) {
         match stmt {
             Stmt::VarDecl { name, .. } => {
@@ -275,10 +284,12 @@ fn unit_lexical_names(stmts: &[Stmt]) -> HashSet<String> {
             Stmt::SubDecl { name, .. } => {
                 names.insert(format!("&{}", name.resolve()));
             }
+            Stmt::Phaser {
+                body, bare: true, ..
+            } => add_scope_names(body, names),
             _ => {}
         }
     }
-    names
 }
 
 /// Give every exported declaration nested in a unit's code a BEGIN-time
