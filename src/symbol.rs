@@ -828,6 +828,22 @@ pub(crate) mod wk {
         pair_payload => "__mutsu_pair_value";
         range_payload => "__mutsu_range_value";
         seq_payload => "__mutsu_seq_value";
+        /// The attributes a built-in `Iterator` instance's dispatch shape is
+        /// read from (`value::dispatch_shape::iterator_kind::shape_of`), asked on
+        /// every method call on an iterator. Each must equal its string
+        /// constant there.
+        iter_items => "items";
+        iter_map_grep_stream => "map_grep_stream";
+        iter_squish_source => "squish_source";
+        iter_not_predictive => "not_predictive";
+        iter_known_count => "known_count";
+        iter_lazy_source => "lazy_source";
+        /// The read position of an array-backed iterator
+        /// (`builtin_iterator_call`).
+        iter_index => "index";
+        /// The `SharedChannel` a `ConcBlockingQueue`-repr instance carries
+        /// (`nqp_ops_async::queue_of`), read on every `nqp::push`/`shift`.
+        nqp_queue => "queue";
         version_payload => "__mutsu_version_value";
         depspec_payload => "__mutsu_depspec_value";
         capture_payload => "__mutsu_capture_value";

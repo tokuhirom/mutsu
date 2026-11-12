@@ -75,20 +75,49 @@ pub(crate) fn native_iterator_determinism(value: &Value) -> Option<(bool, bool)>
 /// it has left, `Iterator` alone for a stream (Rakudo's map iterator), a
 /// `squish` scan (`Any::Squish-With`) and an iterator over a lazy source with
 /// no known count (a `gather`, an unending range).
-// Cost: O(1), four attribute probes.
-pub(crate) fn shape_of<'a>(mut attribute: impl FnMut(&str) -> Option<&'a Value>) -> DispatchShape {
+// Cost: O(1), four attribute probes, each by a pre-interned symbol: this
+// runs on every method call on an iterator.
+pub(crate) fn shape_of<'a>(
+    mut attribute: impl FnMut(crate::symbol::Symbol) -> Option<&'a Value>,
+) -> DispatchShape {
+    use crate::symbol::wk;
     let array_backed = matches!(
-        attribute("items").map(Value::view),
+        attribute(wk::iter_items()).map(Value::view),
         Some(ValueView::Array(..))
     );
     let predictive = array_backed
-        && attribute(MAP_GREP_STREAM_ATTR).is_none()
-        && attribute("squish_source").is_none()
-        && attribute(NOT_PREDICTIVE_ITERATOR_ATTR).is_none()
-        && (attribute("known_count").is_some() || attribute("lazy_source").is_none());
+        && attribute(wk::iter_map_grep_stream()).is_none()
+        && attribute(wk::iter_squish_source()).is_none()
+        && attribute(wk::iter_not_predictive()).is_none()
+        && (attribute(wk::iter_known_count()).is_some()
+            || attribute(wk::iter_lazy_source()).is_none());
     if predictive {
         DispatchShape::PredictiveIterator
     } else {
         DispatchShape::Iterator
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::symbol::wk;
+
+    /// `shape_of` reads by the pre-interned symbols; each must name the
+    /// attribute its string constant (or literal) names where the iterator
+    /// instances are built.
+    #[test]
+    fn iterator_shape_symbols_match_their_names() {
+        let pairs = [
+            (wk::iter_items(), "items"),
+            (wk::iter_map_grep_stream(), super::MAP_GREP_STREAM_ATTR),
+            (wk::iter_squish_source(), "squish_source"),
+            (wk::iter_not_predictive(), super::NOT_PREDICTIVE_ITERATOR_ATTR),
+            (wk::iter_known_count(), "known_count"),
+            (wk::iter_lazy_source(), "lazy_source"),
+            (wk::iter_index(), "index"),
+        ];
+        for (sym, name) in pairs {
+            assert_eq!(sym.as_str(), name);
+        }
     }
 }

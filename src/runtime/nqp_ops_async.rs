@@ -52,7 +52,7 @@ fn queue_of(v: &Value) -> Option<(Symbol, SharedChannel)> {
     else {
         return None;
     };
-    let channel = attributes.as_map().get(QUEUE_ATTR).cloned()?;
+    let channel = attributes.as_map().get(crate::symbol::wk::nqp_queue()).cloned()?;
     match channel.view() {
         ValueView::Channel(c) => Some((class_name, (*c).clone())),
         _ => None,
@@ -345,5 +345,14 @@ impl Interpreter {
         )
         .map_err(crate::runtime::builtins_system::refused_thread_error)?;
         Ok(handle)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// `queue_of` reads the channel by the pre-interned symbol.
+    #[test]
+    fn queue_symbol_matches_the_attribute_name() {
+        assert_eq!(crate::symbol::wk::nqp_queue().as_str(), super::QUEUE_ATTR);
     }
 }
