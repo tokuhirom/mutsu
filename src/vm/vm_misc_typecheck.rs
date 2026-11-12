@@ -9,6 +9,7 @@ impl Interpreter {
         tc_idx: u32,
         var_name_idx: Option<u32>,
         bind_mode: bool,
+        parameter_mode: bool,
         has_explicit_initializer: bool,
         smiley_from_pragma: bool,
     ) -> Result<(), RuntimeError> {
@@ -497,7 +498,15 @@ impl Interpreter {
                     return Err(RuntimeError::typed("X::Syntax::Number::LiteralType", attrs));
                 }
                 if bind_mode {
-                    return Err(self.type_check_binding_failure(base_constraint, &value));
+                    return Err(if parameter_mode {
+                        self.typecheck_binding_parameter_failure(
+                            var_name.unwrap_or(""),
+                            base_constraint,
+                            &value,
+                        )
+                    } else {
+                        self.type_check_binding_failure(base_constraint, &value)
+                    });
                 }
                 let coerced = match base_constraint {
                     "Str" => Some(Value::str(crate::runtime::utils::coerce_to_str(&value))),
@@ -630,7 +639,15 @@ impl Interpreter {
             // the constraint unchanged when no capture of that name is bound.
             let reported = self.resolved_type_capture_name(constraint);
             if bind_mode {
-                return Err(self.type_check_binding_failure(&reported, &value));
+                return Err(if parameter_mode {
+                    self.typecheck_binding_parameter_failure(
+                        var_name.unwrap_or(""),
+                        &reported,
+                        &value,
+                    )
+                } else {
+                    self.type_check_binding_failure(&reported, &value)
+                });
             }
             return Err(self.typecheck_assignment_failure(&reported, &value, var_name));
         }

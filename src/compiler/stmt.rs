@@ -1965,7 +1965,10 @@ impl Compiler {
                     // check wrapped in a VarRef, which only the bind check
                     // looks through. A sigilless name in a list declaration
                     // (`my (\b where "x") = ...`) is assigned, not bound.
-                    if marks.sigilless_decl {
+                    if marks.pointy_param {
+                        self.code
+                            .emit(OpCode::TypeCheckParam(tc_idx, Some(var_name_idx)));
+                    } else if marks.sigilless_decl {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')

@@ -99,12 +99,13 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         Stmt::VarDecl {
             marks: crate::ast::var_marks::VarMarks {
                 pointy_copy: true,
+                pointy_param: true,
                 ..Default::default()
             },
             anonymous: false,
             name: pd.name.clone(),
             expr,
-            type_constraint: pd.type_constraint.clone(),
+            type_constraint: pd.pointy_type_constraint().map(str::to_string),
             is_state: false,
             is_our: false,
             is_dynamic: false,
@@ -164,11 +165,14 @@ fn pointy_topic_bind_inner(pd: &ParamDef) -> Stmt {
         // rejects it as such (`OpCode::AssignReadOnly`). A code alias has no
         // writeback semantics to lose, so a declaration is the exact form.
         Stmt::VarDecl {
-            marks: Default::default(),
+            marks: crate::ast::var_marks::VarMarks {
+                pointy_param: true,
+                ..Default::default()
+            },
             anonymous: false,
             name: pd.name.clone(),
             expr: Expr::Var("_".to_string()),
-            type_constraint: None,
+            type_constraint: pd.pointy_type_constraint().map(str::to_string),
             is_state: false,
             is_our: false,
             is_dynamic: false,
@@ -245,12 +249,13 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
     Stmt::VarDecl {
         marks: crate::ast::var_marks::VarMarks {
             term: sigilless_term(sigilless),
+            pointy_param: true,
             ..Default::default()
         },
         anonymous: false,
         name: name.to_string(),
         expr: source.clone(),
-        type_constraint: None,
+        type_constraint: name.starts_with('&').then(|| "Callable".to_string()),
         is_state: false,
         is_our: false,
         is_dynamic: false,
@@ -285,12 +290,13 @@ pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
     Stmt::VarDecl {
         marks: crate::ast::var_marks::VarMarks {
             term: sigilless_term(pd.sigilless),
+            pointy_param: true,
             ..Default::default()
         },
         anonymous: false,
         name: pd.name.clone(),
         expr: source.clone(),
-        type_constraint: pd.type_constraint.clone(),
+        type_constraint: pd.pointy_type_constraint().map(str::to_string),
         is_state: false,
         is_our: false,
         is_dynamic: false,

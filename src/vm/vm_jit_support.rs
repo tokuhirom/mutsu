@@ -99,6 +99,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             // typed `my` ran interpreted (#11467).
             | OpCode::TypeCheck(..)
             | OpCode::TypeCheckBind(..)
+            | OpCode::TypeCheckParam(..)
             // Increment / decrement
             | OpCode::PostIncrement(..)
             | OpCode::PostDecrement(..)

@@ -348,6 +348,7 @@ impl Interpreter {
             tc_idx,
             var_name_idx,
             false,
+            false,
             has_explicit_initializer,
             smiley_from_pragma,
         )
@@ -361,6 +362,17 @@ impl Interpreter {
         tc_idx: u32,
         var_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true, false, false)
+        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true, false, false, false)
+    }
+
+    /// Check a pointy parameter with the same error as a routine parameter.
+    // Cost: O(1) for a scalar; O(e) for a typed aggregate, e = elements checked.
+    pub(super) fn exec_type_check_param_op(
+        &mut self,
+        code: &CompiledCode,
+        tc_idx: u32,
+        var_name_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true, true, false, false)
     }
 }

@@ -689,6 +689,13 @@ impl ParamDef {
         self.type_constraint.as_deref()
     }
 
+    /// The implicit binding type of a code-sigil pointy parameter is Callable.
+    pub(crate) fn pointy_type_constraint(&self) -> Option<&str> {
+        self.type_constraint
+            .as_deref()
+            .or_else(|| self.name.starts_with('&').then_some("Callable"))
+    }
+
     /// True when the *source* declares a parameter spelled `$self` — an explicit
     /// invocant (`method m($self: $n)`, `method symbol(::?CLASS $self: ...)`) or
     /// an ordinary parameter (`sub ($self)`, `-> $self, $x`). A parser-synthesized
