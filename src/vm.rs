@@ -206,6 +206,7 @@ mod vm_operator_values;
 mod vm_pseudo_method_lane;
 mod vm_role_default_pun;
 mod vm_string_concat_user;
+mod vm_take_method_lane;
 mod vm_trailing_sub_decl;
 pub(crate) use vm_operator_values::StrCmp;
 mod vm_compile_diagnostics;

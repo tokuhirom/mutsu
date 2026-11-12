@@ -424,6 +424,13 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `Mu.take` on a user-class instance (`vm_take_method_lane`).
+        if let Some(result) =
+            self.try_take_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // ADR-0121 D3: a generated accessor already resolved to a slot of the
         // receiver's layout reads it before the probe chain runs (see
         // `vm_accessor_lane`).

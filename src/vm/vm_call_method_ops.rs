@@ -878,6 +878,13 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `Mu.take` on a user-class instance (`vm_take_method_lane`).
+        if let Some(result) =
+            self.try_take_method_lane(name.raw, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
