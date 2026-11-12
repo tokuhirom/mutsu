@@ -57,15 +57,24 @@ impl Interpreter {
         depth: u32,
         out: &mut std::collections::HashSet<usize>,
     ) {
-        if let Some(id) = Self::handle_id_from_value(value) {
-            out.insert(id);
-            return;
+        // Scalar wrappers and container references are unwrapped in a loop,
+        // not by recursion: a chain of them can be arbitrarily long (one level
+        // per nested `$*PROMISE` rebinding in ParaSeq's batches), and each
+        // level used to cost a stack frame until the walk overflowed.
+        let mut value = value.clone();
+        loop {
+            if let Some(id) = Self::handle_id_from_value(&value) {
+                out.insert(id);
+                return;
+            }
+            let next = match value.view() {
+                ValueView::Scalar(inner) => inner.clone(),
+                ValueView::ContainerRef(_) => value.deref_container(),
+                _ => break,
+            };
+            value = next;
         }
         match value.view() {
-            ValueView::Scalar(inner) => Self::collect_handle_ids(inner, depth, out),
-            ValueView::ContainerRef(_) => {
-                Self::collect_handle_ids(&value.deref_container(), depth, out)
-            }
             ValueView::Instance { attributes, .. } if depth > 0 => {
                 // The read guard is released before recursing: an object
                 // graph that reaches this instance again (a parent holding
