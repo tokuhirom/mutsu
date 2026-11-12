@@ -312,12 +312,18 @@ impl Interpreter {
         // Method arguments may arrive with their `VarRef` already stripped;
         // the call site's argument-source names say which were variables.
         let sources = self.pending_call_arg_sources();
+        // A source that is itself a read-only binding in the caller (a
+        // sigilless parameter bound to a value, `my \x = ...`) has no
+        // writable container to alias: binding it is binding its value, the
+        // same `Readonly` bind `light_sigilless_bind` gives such a `VarRef`.
         let names_variable = |idx: usize| {
             sources
                 .and_then(|s| s.get(idx))
                 .and_then(|n| n.as_deref())
                 .is_some_and(|n| {
-                    !crate::symbol::Symbol::lookup(n).is_some_and(|s| s.is_frame_fixture())
+                    let sym = crate::symbol::Symbol::lookup(n);
+                    !sym.is_some_and(|s| s.is_frame_fixture())
+                        && !self.name_is_readonly_binding_for(n, sym)
                 })
         };
         let mut positional = args

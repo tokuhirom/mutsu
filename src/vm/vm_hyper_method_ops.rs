@@ -816,11 +816,15 @@ impl Interpreter {
                 method.as_str(),
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
+            // `WHICH` and `WHY` are ordinary methods in rakudo (the rest are
+            // macros): a user class's own takes the user-method dispatch even
+            // unquoted, as on the scalar `CallMethod` path (#17580).
+            let ordinary_pseudo = matches!(method.as_str(), "WHICH" | "WHY");
             let mut skip_native = method == "VAR";
             // Set when the element is an object whose class declares the
             // method: see the leaf dispatch below.
             let mut user_method_on_instance = false;
-            if !skip_native && (quoted || !pseudo) {
+            if !skip_native && (quoted || !pseudo || ordinary_pseudo) {
                 let class_name = if item.is_lazy_match_value() {
                     // Lazy Match: read the cursor class off the node (a grammar
                     // cursor reports the grammar's own type) — no materialization.
@@ -836,7 +840,7 @@ impl Interpreter {
                     && self.has_user_method(&cn, &method)
                 {
                     skip_native = true;
-                    user_method_on_instance = !pseudo
+                    user_method_on_instance = (!pseudo || ordinary_pseudo)
                         && hyper_cell.is_none()
                         && !item.is_lazy_match_value()
                         && matches!(item.view(), ValueView::Instance { .. });
