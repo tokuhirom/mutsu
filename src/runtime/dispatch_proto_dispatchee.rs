@@ -42,16 +42,15 @@ impl Interpreter {
             }
             _ => other.clone(),
         };
-        match other.view() {
-            ValueView::Sub(odata) => match Self::captured_dispatch_candidates(&odata) {
+        if let ValueView::Sub(odata) = other.view() {
+            match Self::captured_dispatch_candidates(&odata) {
                 Some(candidates) => {
                     for candidate in candidates {
                         data.routine_cell.add_dispatchee(candidate);
                     }
                 }
                 None => data.routine_cell.add_dispatchee(other.clone()),
-            },
-            _ => {}
+            }
         }
     }
 
