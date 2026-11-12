@@ -402,7 +402,7 @@ impl Interpreter {
         &self,
         module: &str,
         args: &[Value],
-    ) -> Option<(Value, Vec<(bool, String, Value)>)> {
+    ) -> Option<(Value, Vec<crate::runtime::module_state::GeneratedLexical>)> {
         if self.module.eval_hook_results.is_empty() {
             return None;
         }
