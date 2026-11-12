@@ -11,7 +11,6 @@
 //! (`Interpreter::carried_state_owners_of`); a `Promise`/`Channel` payload is
 //! read by `promise_channel_receiver_of`, which answers on the payload.
 
-use super::io_concurrency::supplier_scheduler::SUPPLIER_SUBCLASS;
 use crate::value::{Value, ValueView};
 
 /// The reserved attribute an instance of a user subclass of a repository class
@@ -22,9 +21,6 @@ pub(crate) const REPO_SUBCLASS: &str = "__mutsu_repo_subclass";
 
 const INSTALLATION: &[&str] = &["CompUnit::Repository::Installation"];
 const FILE_SYSTEM: &[&str] = &["CompUnit::Repository::FileSystem"];
-
-/// `Proc::Async`'s state attribute (`Interpreter::proc_async_state`).
-const PROC_ASYNC_STATE: &str = "__mutsu_proc_async_state";
 
 const PROC_ASYNC: &[&str] = &["Proc::Async"];
 const SUPPLIER: &[&str] = &["Supplier"];
@@ -49,15 +45,16 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
         _ => {}
     }
     let attributes = attributes.as_map();
-    if attributes.contains_key(PROC_ASYNC_STATE) {
+    // `Proc::Async`'s state attribute (`Interpreter::proc_async_state`).
+    if attributes.contains_key(crate::symbol::wk::proc_async_state()) {
         Some(PROC_ASYNC)
-    } else if let Some(kind) = attributes.get(REPO_SUBCLASS) {
+    } else if let Some(kind) = attributes.get(crate::symbol::wk::repo_subclass()) {
         Some(if kind.to_string_value() == "file" {
             FILE_SYSTEM
         } else {
             INSTALLATION
         })
-    } else if attributes.contains_key(SUPPLIER_SUBCLASS) {
+    } else if attributes.contains_key(crate::symbol::wk::supplier_subclass()) {
         Some(SUPPLIER)
     } else if attributes
         .get(crate::runtime::nqp_ops_list::iteration_buffer_items_key())

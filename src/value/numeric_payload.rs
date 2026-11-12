@@ -3,6 +3,7 @@
 //! builtins so `Value`'s own coercions read it without naming
 //! `builtins::native_base` (#10779), which answers the native methods.
 
+use crate::symbol::wk;
 use crate::value::{InstanceAttrs, Value, ValueView};
 
 /// The reserved attribute an `is Int` subclass instance keeps its payload in.
@@ -20,9 +21,9 @@ pub(crate) const STR_PAYLOAD: &str = "__mutsu_str_value";
 // Cost: O(1) (at most three attribute-map lookups).
 pub(crate) fn numeric_payload_of(attributes: &InstanceAttrs) -> Option<Value> {
     let map = attributes.as_map();
-    map.get(INT_PAYLOAD)
-        .or_else(|| map.get(NUM_PAYLOAD))
-        .or_else(|| map.get(RAT_PAYLOAD))
+    map.get(wk::int_payload())
+        .or_else(|| map.get(wk::num_payload()))
+        .or_else(|| map.get(wk::rat_payload()))
         .cloned()
 }
 
@@ -48,10 +49,10 @@ pub(crate) fn native_base_payload(target: &Value) -> Option<Value> {
         return None;
     };
     let map = attributes.as_map();
-    map.get(INT_PAYLOAD)
-        .or_else(|| map.get(NUM_PAYLOAD))
-        .or_else(|| map.get(RAT_PAYLOAD))
-        .or_else(|| map.get(STR_PAYLOAD))
-        .or_else(|| map.get(super::types::NATIVE_BACKING_ATTR))
+    map.get(wk::int_payload())
+        .or_else(|| map.get(wk::num_payload()))
+        .or_else(|| map.get(wk::rat_payload()))
+        .or_else(|| map.get(wk::str_payload()))
+        .or_else(|| map.get(wk::native_backing()))
         .cloned()
 }

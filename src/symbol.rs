@@ -813,6 +813,28 @@ pub(crate) mod wk {
         array_storage => "__mutsu_array_storage";
         hash_storage => "__mutsu_hash_storage";
         baggy_data => "__baggy_data__";
+        /// The reserved attributes an instance of a user subclass of a
+        /// built-in value type carries its payload in
+        /// (`value::numeric_payload`, `builtins::native_base`), and the state
+        /// keys `method_table::carried_state` recognizes an instance by. Asked
+        /// of every instance a native method probe meets, so they are read by
+        /// symbol rather than re-hashed as strings (#17530). Each must equal
+        /// its string constant (`wk_payload_keys_match_their_constants`).
+        int_payload => "__mutsu_int_value";
+        num_payload => "__mutsu_num_value";
+        rat_payload => "__mutsu_rat_value";
+        str_payload => "__mutsu_str_value";
+        native_backing => "__mutsu_native_backing";
+        pair_payload => "__mutsu_pair_value";
+        range_payload => "__mutsu_range_value";
+        seq_payload => "__mutsu_seq_value";
+        version_payload => "__mutsu_version_value";
+        depspec_payload => "__mutsu_depspec_value";
+        capture_payload => "__mutsu_capture_value";
+        capture_hash => "__mutsu_capture_hash";
+        proc_async_state => "__mutsu_proc_async_state";
+        repo_subclass => "__mutsu_repo_subclass";
+        supplier_subclass => "__mutsu_supplier_subclass";
         /// The marker an `Attribute` meta-object's instance carries; asked of every
         /// `Instance` a type check sees (`attribute_identity::is_bootstrapattr`).
         bootstrapattr_marker => "__mutsu_is_bootstrapattr";
