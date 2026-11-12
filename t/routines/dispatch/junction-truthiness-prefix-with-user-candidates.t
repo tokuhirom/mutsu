@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 9;
 
 # The core truthiness prefixes take `Mu`: a junction is their argument and is
 # not threaded over, even when the program declares candidates of its own.
@@ -16,3 +16,12 @@ is-deeply (?any()), False, '?any() is False';
 is (!Foo.new), 'foo', 'the user candidate still answers its own type';
 my @external;
 is-deeply [Foo].grep({ !(.^name eq any(@external)) }).List, (Foo,), 'grep through a negated empty junction';
+
+# The same through an imported candidate.
+{
+    use lib 't/lib';
+    use JunctionNotOp;
+    is-deeply (!any()), True, 'imported: !any() is True';
+    is-deeply (!any(1, 0)), False, 'imported: !any(1, 0) collapses';
+    is (!Node.new), 'node', 'imported: the user candidate answers its own type';
+}
