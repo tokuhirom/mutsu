@@ -47,8 +47,8 @@ impl Interpreter {
         let sites = code.constants.len();
         let idx = name_idx as usize;
         if let Some(sym) = code.bareword_sites.cached(sites, idx, generation)
-            && self.env_leaves_type_name(sym)
-            && self.bare_name_visible_here(sym)
+            && self.env_leaves_type_name_as(code.const_sym(name_idx), sym)
+            && self.bare_name_visible_here(code.const_sym(name_idx))
         {
             self.stack.push(Value::package(sym));
             return Ok(());
@@ -65,11 +65,19 @@ impl Interpreter {
         }
         let foreign_unit = self.code_is_loaded_module_code(code);
         self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, false, foreign_unit)?;
-        self.resolve_unit_lexical_type(code, name_idx);
+        let unit_lexical = self.resolve_unit_lexical_type(code, name_idx);
+        // The type object of the name's own spelling, or the unit-level
+        // lexical (`my`) type of that spelling under its ADR-0047 storage
+        // name: a module's `my class` read from the module's own subs
+        // (ParaSeq's `ParaStats`, `BufferIterator`, ...) resolved through the
+        // whole chain on every execution because only the first form was
+        // remembered (#17337). Only the unit-level one: the memo is shared by
+        // every site of the chunk spelling the name, and a block-scoped
+        // lexical type is not the answer outside its block.
         if let Some(ValueView::Package(sym)) = self.stack.last().map(Value::view)
-            && sym == name
+            && (sym == name || (unit_lexical && is_lexical_storage_of(sym, name)))
             && bareword_memoizable(name)
-            && self.env_leaves_type_name(sym)
+            && self.env_leaves_type_name_as(code.const_sym(name_idx), sym)
         {
             code.bareword_sites.remember(sites, idx, generation, sym);
         }
@@ -97,19 +105,22 @@ impl Interpreter {
     /// when it has one: the load may have bound it in a tier the code's static
     /// link skips (a `use` under an `EVAL`'s import region, #17129).
     // Cost: O(1).
-    fn resolve_unit_lexical_type(&mut self, code: &CompiledCode, name_idx: u32) {
+    /// Returns whether it replaced the answer.
+    fn resolve_unit_lexical_type(&mut self, code: &CompiledCode, name_idx: u32) -> bool {
         let Some(unit) = code.source_file else {
-            return;
+            return false;
         };
         let name = code.const_sym(name_idx);
         if !matches!(self.stack.last().map(Value::view), Some(ValueView::Str(s)) if s.as_str() == name.as_str())
         {
-            return;
+            return false;
         }
         if let Some(storage) = self.unit_lexical_type(unit, name) {
             self.stack.pop();
             self.stack.push(Value::package(storage));
+            return true;
         }
+        false
     }
 
     /// `OpCode::GetBareWordOverScalar`: the bare word resolution minus the
@@ -136,9 +147,20 @@ impl Interpreter {
     /// without a registry write either.
     // Cost: O(1), two `env` probes.
     pub(crate) fn env_leaves_type_name(&self, name: Symbol) -> bool {
+        self.env_leaves_type_name_as(name, name)
+    }
+
+    /// [`Self::env_leaves_type_name`] for a bareword `name` that resolves to
+    /// the type object `resolved`: `name` itself, or the storage name of the
+    /// lexical type of that spelling. A binding of `name` to `resolved` (the
+    /// declaration's own) leaves it; any other binding does not.
+    // Cost: O(1), two `env` probes.
+    pub(crate) fn env_leaves_type_name_as(&self, name: Symbol, resolved: Symbol) -> bool {
         let leaves = match self.env().get_sym(name) {
             None => true,
-            Some(v) => matches!(v.view(), ValueView::Package(p) if p == name),
+            Some(v) => {
+                matches!(v.view(), ValueView::Package(p) if p == name || p == resolved)
+            }
         };
         leaves
             && self
@@ -202,6 +224,17 @@ impl Interpreter {
                 .map(|key| Symbol::intern(&key)),
         }
     }
+}
+
+/// Whether `sym` is the ADR-0047 storage name of a lexical type spelled
+/// `name` (`Name\u{0}<decl-id>`, possibly package-qualified).
+// Cost: O(|sym|).
+fn is_lexical_storage_of(sym: Symbol, name: &str) -> bool {
+    crate::qualified::unqualified_part(sym).with_str(|short| {
+        short
+            .split_once('\u{0}')
+            .is_some_and(|(head, _)| head == name)
+    })
 }
 
 /// Whether a bareword spelled `name` may be remembered once it resolved to
