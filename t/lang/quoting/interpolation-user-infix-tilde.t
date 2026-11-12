@@ -3,7 +3,20 @@ use Test;
 # #15932: in the scope of a user `multi infix:<~>`, a string interpolation
 # asks its candidates with the pieces as they are, like `"A: " ~ $a`.
 
-plan 4;
+plan 7;
+
+{
+    sub infix:<~>($a, $b) { "[$a|$b]" }
+    is 'a' ~ 'b', '[a|b]', 'an explicit user concat still selects the user operator';
+    is "left { 'a' ~ 'b' }", 'left [a|b]',
+        'interpolation in a user concat body does not recursively call it';
+}
+
+{
+    multi infix:<~>($a, $b) is default { 'user' }
+    my $s = 'value';
+    is "prefix $s", 'prefix value', 'core Str pair outranks a generic user multi';
+}
 
 {
     my class A { method Str { self } }
