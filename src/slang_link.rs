@@ -95,11 +95,10 @@ impl SlangHost {
         back_call: &mut dyn FnMut(&str, usize, BackCallDynamics) -> HostAnswer,
     ) -> HostAnswer {
         let (text, start) = unit.unwrap_or((source, 0));
-        // Positions cross as code-point offsets, the engine's own unit (the
-        // host's `subparse(:pos)` and a shim's cursor position are such), except
-        // the `.to` the host reports for a finished production: a Match's
-        // visible position counts graphemes, so it is converted back against the
-        // text the host matched in (#17486).
+        // The parser sends code-point offsets, the engine's own unit. The host
+        // converts the initial offset for its public `subparse(:pos)` call;
+        // shim cursor positions remain code points. A finished production's
+        // visible `.to` counts graphemes and is converted back here (#17486).
         use crate::value::match_helpers::grapheme_to_cp_index;
         self.to_host
             .send(ToHost::Hook {

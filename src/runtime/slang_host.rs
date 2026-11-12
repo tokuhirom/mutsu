@@ -369,7 +369,13 @@ impl Interpreter {
                         Value::str(source.to_string()),
                         grammar_roles,
                         action_roles,
-                        Value::pair("pos".to_string(), Value::int(start as i64)),
+                        Value::pair(
+                            "pos".to_string(),
+                            Value::int(
+                                crate::value::match_helpers::cp_to_grapheme_index(source, start)
+                                    as i64,
+                            ),
+                        ),
                     ];
                     if let Some(node) = node {
                         args.push(Value::pair("node".to_string(), node));
