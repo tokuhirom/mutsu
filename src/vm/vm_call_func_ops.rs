@@ -9,6 +9,12 @@ use crate::symbol::Symbol;
 pub(super) enum CodeVarBinding {
     /// Resolve `&name` by name from the running frame.
     ByName,
+    /// The running frame's own `&name` slot, resolved by the compiler
+    /// (`OpCode::CallOnCodeVar::local_slot`): a `&`-sigil parameter or
+    /// `my &name` in scope at the call. Its binding is the callee, as
+    /// `GetCodeVarLocal` reads it for `&name` as a value; an unset slot falls
+    /// back to the by-name resolution.
+    Local(u32),
     /// A closure's captured binding, by upvalue index
     /// (`OpCode::CallOnCodeVar::upvalue`).
     Upvalue(u32),
@@ -2058,6 +2064,11 @@ impl Interpreter {
         // frame's env chain (see `OpCode::CallOnCodeVar::upvalue`).
         let captured = match binding {
             CodeVarBinding::ByName | CodeVarBinding::Routine(_) => None,
+            CodeVarBinding::Local(slot) => self
+                .locals
+                .get(slot as usize)
+                .map(|v| v.clone().into_deref())
+                .filter(|v| !v.is_nil()),
             CodeVarBinding::Upvalue(index) => self.code_var_upvalue(code, index, name_idx),
             CodeVarBinding::Bound(value) => Some(value),
         };

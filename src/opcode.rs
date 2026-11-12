@@ -3063,6 +3063,12 @@ pub(crate) enum OpCode {
         /// and the by-name resolution above stays the fallback when the
         /// upvalue array holds no entry for it.
         upvalue: Option<u32>,
+        /// The running frame's own `&name` slot in scope at the call (a
+        /// `&`-sigil parameter such as `:&cmp`, or a `my &name`), resolved as
+        /// `GetCodeVarLocal` resolves `&name` as a value. The callee is that
+        /// slot's binding, read by index instead of through the by-name env
+        /// walk; an unset slot falls back to the by-name resolution.
+        local_slot: Option<u32>,
     },
     /// Third field: true when this is a bare block `{ }`, false for `sub { }`.
     MakeAnonSub(u32, Option<u32>, bool),
@@ -8564,6 +8570,10 @@ impl CompiledCode {
                 OpCode::GetLocalMetaAssign { slot, .. }
                 | OpCode::SetLocalDecl { slot, .. }
                 | OpCode::GetCodeVarLocal { slot, .. } => Some(*slot),
+                OpCode::CallOnCodeVar {
+                    local_slot: Some(slot),
+                    ..
+                } => Some(*slot),
                 _ => None,
             };
             if let Some(needed) = slot.and_then(|slot| slots.get_mut(slot as usize)) {
