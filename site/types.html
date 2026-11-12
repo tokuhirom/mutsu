@@ -249,9 +249,9 @@ function renderNode(name, tree, depth) {
   const row = tree.rows.get(name);
   const label = el(row ? 'a' : 'span', row ? 'type-label' : 'type-label type-ancestor', name);
   if (row) {
-    label.href = srcHref(DATA.sources.catalog, row.def_line);
+    label.href = srcHref(row.def_file, row.def_line);
     label.rel = 'noopener';
-    label.title = `${l.source} ${DATA.sources.catalog.split('/').pop()}:${row.def_line}`;
+    label.title = `${l.source} ${row.def_file.split('/').pop()}:${row.def_line}`;
   }
   line.appendChild(label);
   if (row) label.title = `${row.mro.join(' → ')}\n${label.title}`;
