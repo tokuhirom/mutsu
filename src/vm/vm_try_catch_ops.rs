@@ -745,6 +745,7 @@ impl Interpreter {
                 installing_method_depth: self.method_class_depth(),
                 return_target,
                 installing_package: self.current_package_sym(),
+                installing_readonly_journal: self.lexicals.readonly_undo.borrow().len(),
                 handler,
             });
     }

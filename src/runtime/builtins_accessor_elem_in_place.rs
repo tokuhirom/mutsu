@@ -16,9 +16,13 @@ impl Interpreter {
     /// env and other instances, but not a `:=` alias in a local slot, which
     /// kept the old container (#10897).
     ///
+    /// An rw method named apart from the attribute it exposes is matched by
+    /// the container's identity instead of by name.
+    ///
     /// Anything else -- an accessor returning a copy, a computed container, an
     /// argumented accessor -- is left to that general path.
-    // Cost: O(1) expected, plus the attribute lookup.
+    // Cost: O(1) expected for an accessor named as its attribute; O(a), a =
+    // the instance's attributes, when the method is named apart from it.
     pub(super) fn store_accessor_element_in_place(
         &mut self,
         target: &Value,
@@ -32,10 +36,21 @@ impl Interpreter {
         };
         let held = {
             let map = attributes.as_map();
-            let Some(slot) = map.get(method) else {
-                return Ok(false);
-            };
-            Self::deref_lvalue_value(slot.clone())
+            match map.get(method) {
+                Some(slot) => Self::deref_lvalue_value(slot.clone()),
+                // An rw method named apart from its attribute (`method hh()
+                // is rw { nqp::getattr(self, P, '%!h') }`) hands back one of
+                // the instance's own containers all the same: find it by
+                // identity (#17476).
+                None => match map
+                    .values()
+                    .map(|slot| Self::deref_lvalue_value(slot.clone()))
+                    .find(|held| Self::same_aggregate(held, current))
+                {
+                    Some(held) => held,
+                    None => return Ok(false),
+                },
+            }
         };
         // An element is a Scalar and cannot hold `Nil`: it takes the
         // container's own default (ADR-0049), as `decay_nil_container_elements`
@@ -90,6 +105,16 @@ impl Interpreter {
                 Ok(current.array_set_in_place(idx, value.clone()))
             }
             _ => Ok(false),
+        }
+    }
+
+    /// Whether `a` and `b` are the same `Hash`/`Array` node.
+    // Cost: O(1).
+    fn same_aggregate(a: &Value, b: &Value) -> bool {
+        match (a.view(), b.view()) {
+            (ValueView::Hash(x), ValueView::Hash(y)) => crate::gc::Gc::ptr_eq(&x, &y),
+            (ValueView::Array(x, _), ValueView::Array(y, _)) => crate::gc::Gc::ptr_eq(&x, &y),
+            _ => false,
         }
     }
 }

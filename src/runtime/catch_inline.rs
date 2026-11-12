@@ -101,6 +101,7 @@ impl Interpreter {
             let routine_depth = entry.installing_routine_depth;
             let method_depth = entry.installing_method_depth;
             let installing_package = entry.installing_package;
+            let installing_readonly_journal = entry.installing_readonly_journal;
             let code = handler.code.clone();
             let catch_begin = handler.catch_begin;
             let control_begin = handler.control_begin;
@@ -134,6 +135,7 @@ impl Interpreter {
             if installing_package != throw_package {
                 self.set_current_package_sym(installing_package);
             }
+            let readonly = self.enter_handler_readonly_state(installing_readonly_journal);
             let outcome = self.run_catch_handler_inline(
                 &code,
                 (catch_begin, control_begin),
@@ -141,6 +143,9 @@ impl Interpreter {
                 &fns,
                 err,
             );
+            if let Some(saved) = readonly {
+                self.restore_readonly_state(saved);
+            }
             self.control.catch_handlers.extend(inner);
             self.routine_stack.truncate(routine_len);
             if let Some(tail) = method_tail {
