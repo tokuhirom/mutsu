@@ -654,6 +654,39 @@ impl Interpreter {
                     Err(_) => true,
                 }
             }
+            // A Junction collapses through its eigenstates' own `Bool`, as
+            // rakudo's `Junction.Bool` does: a user `Bool` method of an
+            // eigenstate runs (Red's query ASTs explore their branches from
+            // it, #17513), and the walk short-circuits exactly where rakudo
+            // stops asking -- `any` at the first true, `all` at the first
+            // false, `one` at the second true, `none` at the first true.
+            ValueView::Junction { kind, values } => {
+                let values: Vec<Value> = values.to_vec();
+                let mut seen_true = 0usize;
+                for value in &values {
+                    let truth = self.eval_truthy_impl(value, error);
+                    if error.is_some() {
+                        return false;
+                    }
+                    match (kind, truth) {
+                        (crate::value::JunctionKind::Any, true) => return true,
+                        (crate::value::JunctionKind::All, false) => return false,
+                        (crate::value::JunctionKind::None, true) => return false,
+                        (crate::value::JunctionKind::One, true) => {
+                            seen_true += 1;
+                            if seen_true > 1 {
+                                return false;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                match kind {
+                    crate::value::JunctionKind::Any => false,
+                    crate::value::JunctionKind::All | crate::value::JunctionKind::None => true,
+                    crate::value::JunctionKind::One => seen_true == 1,
+                }
+            }
             // The IMPLICIT topic of a bare regex coerces quietly -- see
             // `quiet_topic_for_regex_match`.
             ValueView::Regex(_)

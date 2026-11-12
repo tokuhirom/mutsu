@@ -948,8 +948,12 @@ impl Interpreter {
     fn enforce_coercion_return(&mut self, spec: &str, value: Value) -> Result<Value, RuntimeError> {
         // The coercion reads a plain gather's elements through pure code
         // (ADR-11678).
+        // A not-yet-run `.map`/`.grep` Seq (ADR-0058) likewise: the pure
+        // coercion would read its still-empty seed, so `--> Hash()` of a
+        // `.map` answered `{}` (#17513, Red's `^column-values`).
         if spec.contains('(') {
             self.reify_gather_seq(&value)?;
+            self.reify_map_grep_seq(&value)?;
         }
         // Parse the coercion type: strip smiley from the whole spec first
         let (spec_no_smiley, outer_smiley) = super::types::strip_type_smiley(spec);

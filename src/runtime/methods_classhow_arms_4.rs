@@ -12,6 +12,21 @@ impl Interpreter {
     }
 
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
+    /// `Metamodel::MetaMethodContainer.add_meta_method(type, name, method)`: a
+    /// metamethod (`method ^name`) is the type's `^name` method, which a
+    /// `.^name` call on the type reaches.
+    pub(crate) fn mop_add_meta_method(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let mut args = args;
+        if let Some(name) = args.get(1) {
+            let name = name.to_string_value();
+            if !name.starts_with('^') {
+                args[1] = Value::str(format!("^{name}"));
+            }
+        }
+        self.mop_add_method_kind(args, false)
+    }
+
+    // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     /// `Metamodel::PrivateMethodContainer.add_private_method`: the same install as
     /// `add_method`, but the definition lands in the private namespace.
     pub(crate) fn mop_add_private_method(
