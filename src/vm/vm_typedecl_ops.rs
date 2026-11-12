@@ -632,7 +632,17 @@ impl Interpreter {
                 // writes again: a body read resolves `{package}::Name` through
                 // it, and one left by an earlier run of the same `EVAL`
                 // would otherwise answer with that run's type.
-                if !resolved_is_qualified && resolved_name != qualified_name {
+                // Only a binding to another lexical declaration of this same
+                // qualified name is replaced; an outer type of the same
+                // spelling stays visible outside the body.
+                let stale_prefix = format!("{qualified_name}\u{0}");
+                let stale_alias = !resolved_is_qualified
+                    && resolved_name != qualified_name
+                    && self.env().get(&resolved_name).is_some_and(|v| {
+                        matches!(v.view(), ValueView::Package(p)
+                            if p.as_str().starts_with(&stale_prefix) && p.as_str() != storage_name)
+                    });
+                if stale_alias {
                     self.save_lexical_type_binding_for_scope_exit(&resolved_name);
                     self.env_mut().insert(
                         resolved_name.clone(),
