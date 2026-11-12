@@ -336,6 +336,10 @@ pub(crate) struct ResolutionCaches {
     /// `^compose`). A class not yet registered is never cached (a role punned
     /// to a class on first use must not freeze a negative plan).
     pub(crate) native_ctor_plan_cache: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
+    /// The same plan for a built-in type with a native constructor that is
+    /// not a registered class (`ValueObjAt`): read only while the name is
+    /// still unregistered, and cleared with `native_ctor_plan_cache`.
+    pub(crate) native_ctor_plan_builtin: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
     /// `grammar_has_user_method_sym` answers per `(class, method)`, valid for
     /// one registry write generation (see `user_method_probe_memo.rs`).
     pub(crate) user_method_probe_memo: user_method_probe_memo::UserMethodProbeMemo,
