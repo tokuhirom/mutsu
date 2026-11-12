@@ -358,7 +358,13 @@ pub(super) fn try_keyword_dispatch(
         };
         let (r, _) = ws1(r)?;
         let (r, mut stmt) = class_decl_body(r, !is_our)?;
-        if let Stmt::ClassDecl { marks, .. } = &mut stmt {
+        // Through the export wrapper: `our event X is export { ... }` parses
+        // to the declaration inside an export registration, and a mark set
+        // only on a bare `ClassDecl` left the exported class without its
+        // declarator's HOW.
+        if let Some(Stmt::ClassDecl { marks, .. }) =
+            crate::ast::package_header::declaration_mut(&mut stmt)
+        {
             marks.declarator = Some(kw);
         }
         return Ok(Some((r, stmt)));
