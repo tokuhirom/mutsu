@@ -1415,13 +1415,11 @@ impl Interpreter {
         // The kind a binding cell carries for this bind, if it gets one (see
         // the store below).
         let code_var_bind = code.locals[idx].starts_with('&') && bind_marks_immutable;
-        let readonly_binding_kind = if !code.locals[idx].starts_with(['@', '%'])
+        let readonly_binding_kind = if !code.locals[idx].starts_with(['@', '%', '&'])
             && Self::binding_cell_keeps_value_semantics(&raw_popped)
         {
             if bind_marks_type_object {
                 Some(crate::ast::ReadonlyKind::TypeObject)
-            } else if code_var_bind {
-                Some(crate::ast::ReadonlyKind::ImmutableValue)
             } else if bind_marks_immutable {
                 Some(crate::ast::ReadonlyKind::Immutable)
             } else {
