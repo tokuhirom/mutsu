@@ -221,7 +221,9 @@ fn slice(_: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer
 /// `Mu.take`: the receiver taken into the enclosing `gather`, and returned.
 // Cost: O(1).
 fn take(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    Some(i.take_value(t.clone()).map(|()| t.clone()))
+    // `Mu.take` is `take self`: the statement's semantics, including the
+    // `X::ControlFlow` outside a gather and a `CONTROL` that handles `CX::Take`.
+    Some(i.take_statement(t.clone()).map(|()| t.clone()))
 }
 
 /// `Bag.new-from-pairs(...)` / `BagHash.new-from-pairs(...)`: the pairs'
