@@ -643,7 +643,7 @@ impl Interpreter {
         )
     }
 
-    fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
+    pub(super) fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
         let idx = idx as usize;
         // The slot's name, the pending store flavours, and every metadata lane
         // the full path would consult — see
