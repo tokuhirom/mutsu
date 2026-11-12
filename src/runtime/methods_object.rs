@@ -30,8 +30,12 @@ impl Interpreter {
         allow_user_new: bool,
     ) -> bool {
         // A parametric type name (`Hash[Int,Str]`, `array[int]`) needs the
-        // interpreter's parametric construction machinery — keep it out.
-        if cn_resolved.contains('[') {
+        // interpreter's parametric construction machinery -- except the pun of
+        // a user parametric role whose type arguments are all type objects
+        // (`R[Int].^pun`): its attribute constraints are substituted in the
+        // plan (`role_bound_attribute_constraints`) and nothing else about its
+        // construction reads the bindings.
+        if cn_resolved.contains('[') && !self.role_pun_native_constructible(cn_resolved) {
             return false;
         }
         // A `::`-namespaced name is allowed: built-in exception types
@@ -157,8 +161,14 @@ impl Interpreter {
                         || p == "Cool"
                         || registry.classes.contains_key(p)
                         || Self::native_ctor_composable_role(&registry, p)
+                        // The parametric role a pun is composed from: its type
+                        // arguments are this class's bindings, vetted below.
+                        || (registry.class_role_param_bindings.contains_key(&cls)
+                            && p.split_once('[')
+                                .is_some_and(|(base, _)| registry.roles.contains_key(base)))
                 })
-                && !registry.class_role_param_bindings.contains_key(&cls)
+                && (!registry.class_role_param_bindings.contains_key(&cls)
+                    || Self::role_bindings_native_ok(&registry, &cls, class_def))
                 && class_def.attributes.iter().all(
                     |attr| {
                         let name = &attr.name;
@@ -364,8 +374,9 @@ impl Interpreter {
             user_buildall,
         ) = if registered {
             let class_attrs = std::sync::Arc::new(self.collect_class_attributes(cn_resolved));
+            let collected = self.collect_attribute_type_constraints(cn_resolved);
             let type_constraints =
-                std::sync::Arc::new(self.collect_attribute_type_constraints(cn_resolved));
+                std::sync::Arc::new(self.role_bound_attribute_constraints(cn_resolved, collected));
             let mro = self.mro_readonly(cn_resolved);
             let registry = self.registry();
             let mut has_build = mro
