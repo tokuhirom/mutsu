@@ -147,6 +147,7 @@ pub(super) fn lift_in_stmt<'a>(
         frames: Vec::new(),
         lifted,
         next_owner: "",
+        begin_scope: 0,
     };
     walker.walk_stmt(stmt, None);
 }
@@ -158,6 +159,9 @@ struct Walker<'a> {
     lifted: &'a mut Lifted,
     /// The owner type of the next scope `visit_stmts_mut` opens.
     next_owner: &'static str,
+    /// The block id ([`Frame::scope_id`]) of the BEGIN being lifted, which its
+    /// prologue effect keeps (#17515).
+    begin_scope: u32,
 }
 
 #[derive(Default)]
@@ -191,6 +195,9 @@ struct Frame {
     /// The type of the code object whose body the scope is (`Sub`, `Method`,
     /// ...), as `Variable.block.^name` reports it; empty for a plain block.
     owner: &'static str,
+    /// The id every BEGIN written directly in this scope carries
+    /// (`Stmt::Phaser::scope`), assigned when the first one is met; 0 until then.
+    scope_id: u32,
 }
 
 struct Binding {
@@ -228,7 +235,27 @@ enum Edit {
     },
 }
 
+/// A fresh block id for the BEGINs of one scope (`Frame::scope_id`).
+// Cost: O(1).
+fn next_begin_scope_id() -> u32 {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 impl Walker<'_> {
+    /// The block id of the innermost scope, assigned on first use.
+    // Cost: O(1).
+    fn current_scope_id(&mut self) -> u32 {
+        let Some(frame) = self.frames.last_mut() else {
+            return 0;
+        };
+        if frame.scope_id == 0 {
+            frame.scope_id = next_begin_scope_id();
+        }
+        frame.scope_id
+    }
+
     fn current_frame(&mut self) -> &mut Frame {
         self.frames
             .last_mut()
@@ -391,6 +418,7 @@ impl Walker<'_> {
                 condition: None,
                 end_index: None,
                 bare: false,
+                scope: self.begin_scope,
             });
         } else {
             let body = self.run_in_packages(inner);
@@ -400,6 +428,7 @@ impl Walker<'_> {
                 condition: None,
                 end_index: None,
                 bare: false,
+                scope: 0,
             });
         }
         true

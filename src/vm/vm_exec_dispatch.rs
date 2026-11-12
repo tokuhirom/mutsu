@@ -7235,12 +7235,15 @@ impl Interpreter {
 
             // -- CHECK Phaser scope --
             // Cost: O(1).
-            OpCode::CheckPhaserStart { is_begin, .. } => {
+            OpCode::CheckPhaserStart {
+                is_begin, scope, ..
+            } => {
                 self.sync_source_line(code, *ip);
                 self.control.check_phaser_depth += 1;
                 self.control
                     .check_phaser_kinds
                     .push(if *is_begin { "BEGIN" } else { "CHECK" });
+                self.control.check_phaser_scopes.push(*scope);
                 // ADR-0041 §9: a name reference evaluated at BEGIN time sees
                 // only declarations the program has textually reached.
                 self.begin_time_enter();
@@ -7250,6 +7253,7 @@ impl Interpreter {
             OpCode::CheckPhaserEnd => {
                 self.control.check_phaser_depth = self.control.check_phaser_depth.saturating_sub(1);
                 self.control.check_phaser_kinds.pop();
+                self.control.check_phaser_scopes.pop();
                 self.begin_time_leave();
                 *ip += 1;
             }

@@ -668,6 +668,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
                 condition,
                 end_index,
                 bare,
+                scope,
             } => {
                 if let [Stmt::Given { topic, .. }] = body.as_mut_slice() {
                     *topic = Expr::Var(name.clone());
@@ -678,6 +679,7 @@ fn partition_will_begin(inner: Vec<Stmt>, prologue: &mut Vec<Stmt>, rest: &mut V
                     condition,
                     end_index,
                     bare,
+                    scope,
                 });
             }
             other => later.push(other),

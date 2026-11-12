@@ -122,6 +122,9 @@ pub(crate) struct ControlState {
     /// Phaser word (`BEGIN`/`CHECK`) of each open `CheckPhaserStart`, aligned
     /// with `check_phaser_depth`; names the phaser in X::Comp::BeginTime.
     pub(crate) check_phaser_kinds: Vec<&'static str>,
+    /// The block id (`CheckPhaserStart::scope`) of each open BEGIN-time
+    /// region, aligned with `check_phaser_kinds`.
+    pub(crate) check_phaser_scopes: Vec<u32>,
     /// One frame per open BEGIN-time region: the registry entries that region
     /// hid, and the defs to put back when it closes. Depth-aligned with
     /// `check_phaser_depth`.

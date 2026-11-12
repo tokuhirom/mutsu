@@ -111,16 +111,23 @@ impl Walker<'_> {
             Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body,
+                scope,
                 ..
             } => {
                 let (Some((index, is_tail)), false) = (loc, self.frames.is_empty()) else {
                     return;
                 };
+                // The block it was written in, kept whether it is lifted or
+                // not: a BEGIN-time `$*R.current-scope` answers it (#17515).
+                *scope = self.current_scope_id();
+                self.begin_scope = *scope;
                 // A BEGIN that ends its block is the block's value. The value
                 // of a type's body is not observable.
                 let is_tail = is_tail && !self.directly_in_package();
                 let slot = is_tail.then(|| next_slot("__begin_value_"));
-                if self.lift(body, slot.as_deref(), &PhaserKind::Begin) {
+                let lifted = self.lift(body, slot.as_deref(), &PhaserKind::Begin);
+                self.begin_scope = 0;
+                if lifted {
                     self.edit_lifted(index, slot);
                 }
             }
