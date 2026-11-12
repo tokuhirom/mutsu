@@ -25,6 +25,8 @@
 
 use super::super::*;
 
+pub(crate) use crate::runtime::resolution_caches::MemoCheck;
+
 impl Interpreter {
     /// Whether `left` matches the type object named `type_name`
     /// (`left ~~ type_name`). See [`Self::type_object_accepts_uncached`] for
@@ -33,9 +35,37 @@ impl Interpreter {
     // Cost: O(1) expected on a memo hit (two hash probes and a scope lookup
     // of the name); a miss is the O(d) check, d = MRO length.
     pub(crate) fn type_object_accepts(&mut self, left: &Value, type_name: Symbol) -> bool {
-        let Some(key) = self.type_accepts_memo_key(left, type_name) else {
+        let Some((class, _)) = self.instance_nominal_memo_key(left, type_name.as_str(), false)
+        else {
             return self.type_object_accepts_uncached(left, type_name);
         };
+        self.memoized_instance_type_check((class, type_name, MemoCheck::Accepts), |vm| {
+            vm.type_object_accepts_uncached(left, type_name)
+        })
+    }
+
+    /// The memo key for `type_matches_value(constraint, value)` (a parameter,
+    /// return or assignment type check), or `None` when the answer may depend
+    /// on more than the instance's class and the type. A `:D` smiley is
+    /// admitted: an instance is always definite.
+    // Cost: as [`Self::instance_nominal_memo_key`], plus one intern.
+    pub(crate) fn type_matches_memo_key(
+        &self,
+        value: &Value,
+        constraint: &str,
+    ) -> Option<(Symbol, Symbol, MemoCheck)> {
+        let (class, _) = self.instance_nominal_memo_key(value, constraint, true)?;
+        Some((class, Symbol::intern(constraint), MemoCheck::Matches))
+    }
+
+    /// Answer `key` from the memo, or run `check` and remember its answer
+    /// under the registry generation it was computed for.
+    // Cost: O(1) expected on a hit; `check` on a miss.
+    pub(crate) fn memoized_instance_type_check(
+        &mut self,
+        key: (Symbol, Symbol, MemoCheck),
+        check: impl FnOnce(&mut Self) -> bool,
+    ) -> bool {
         let generation = self.registry_write_generation();
         let memo = &mut self.caches.instance_type_accepts;
         if memo.0 != generation {
@@ -45,7 +75,7 @@ impl Interpreter {
         if let Some(&hit) = memo.1.get(&key) {
             return hit;
         }
-        let answer = self.type_object_accepts_uncached(left, type_name);
+        let answer = check(self);
         // The check may have written the registry (a published mixin class
         // adopted on this thread): remember it only under the generation the
         // answer was computed for.
@@ -55,18 +85,28 @@ impl Interpreter {
         answer
     }
 
-    /// The memo key `(class, type)` for `left ~~ type_name`, or `None` when
-    /// the answer may depend on more than the two (see the module docs).
-    // Cost: O(n) in the type name's length plus two registry probes and one
-    // scope lookup of the name.
-    fn type_accepts_memo_key(&self, left: &Value, type_name: Symbol) -> Option<(Symbol, Symbol)> {
+    /// The instance's class and the type's name when `left` checked against
+    /// the nominal type `ty` can be memoized (see the module docs), else
+    /// `None`. With `allow_definite`, a `:D` smiley is admitted (the type
+    /// returned is the name without it).
+    // Cost: O(n) in the type name's length plus three registry probes and
+    // one scope lookup of the name.
+    fn instance_nominal_memo_key<'t>(
+        &self,
+        left: &Value,
+        ty: &'t str,
+        allow_definite: bool,
+    ) -> Option<(Symbol, &'t str)> {
         let ValueView::Instance { class_name, .. } = left.view() else {
             return None;
         };
         if left.is_lazy_match_value() || left.is_match_instance() {
             return None;
         }
-        let ty = type_name.as_str();
+        let ty = match ty.strip_suffix(":D") {
+            Some(base) if allow_definite => base,
+            _ => ty,
+        };
         // A smiley (`R:D`) or a parameterization (`R[Int]`) keeps the full check.
         if ty.is_empty()
             || ty.ends_with(":D")
@@ -95,9 +135,9 @@ impl Interpreter {
         // anything else bound under the name (a constant, a term) shadows it.
         match self.type_name_binding(ty) {
             None => {}
-            Some(bound) if matches!(bound.view(), ValueView::Package(p) if p == type_name) => {}
+            Some(bound) if matches!(bound.view(), ValueView::Package(p) if p == ty) => {}
             Some(_) => return None,
         }
-        Some((class_name, type_name))
+        Some((class_name, ty))
     }
 }

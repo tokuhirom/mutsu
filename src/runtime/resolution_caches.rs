@@ -37,6 +37,15 @@ pub(crate) struct MultiPlanLight {
 /// A candidate's shared parameter list (`MethodDef::param_defs`).
 pub(crate) type SharedParams = std::sync::Arc<Vec<crate::ast::ParamDef>>;
 
+/// Which check a memo entry answers: `~~` (`type_object_accepts`) or a
+/// declared-type check (`type_matches_value`), which differ on the edges
+/// (smileys, enums, `Any`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum MemoCheck {
+    Accepts,
+    Matches,
+}
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     /// The env-dependent half of a `protect` block's analysis, keyed by the
@@ -537,10 +546,13 @@ pub(crate) struct ResolutionCaches {
     /// and the arguments' type keys, valid while the registry has not been
     /// written (`Interpreter::mixin_straight_front_hit`). A hit skips the whole
     /// role walk of `dispatch_mixin_method_call`.
-    /// `$obj ~~ T` for an instance of a user class against a nominal user
-    /// type, by `(class, type)`, valid for the registry write generation in
+    /// `$obj ~~ T` and declared-type checks for an instance of a user class
+    /// against a nominal user type, by `(class, type, check)`, valid for the registry write generation in
     /// the first field (`Interpreter::type_object_accepts`, #17331).
-    pub(crate) instance_type_accepts: (u64, rustc_hash::FxHashMap<(Symbol, Symbol), bool>),
+    pub(crate) instance_type_accepts: (
+        u64,
+        rustc_hash::FxHashMap<(Symbol, Symbol, MemoCheck), bool>,
+    ),
     pub(crate) mixin_straight_front: rustc_hash::FxHashMap<
         crate::runtime::MixinFrontKey,
         crate::runtime::MixinFrontEntry,
