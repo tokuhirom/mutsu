@@ -11,9 +11,10 @@
 //! match per candidate, a second resolution of the winner and a fingerprint per
 //! candidate. Almost every frame is popped unread, so a call records only what
 //! the build needs ([`PendingMethodDispatch`]) and reserves its push-order
-//! token. [`Interpreter::materialize_pending_method_dispatch`] builds every
-//! still-pending frame the moment a deferral builtin needs the innermost one,
-//! so the builtins see exactly the stack an eager push would have left.
+//! token. [`Interpreter::materialize_pending_method_dispatch`] builds the
+//! innermost still-pending frame the moment a deferral builtin needs it, so
+//! the builtins (which read only the innermost frame) see what an eager push
+//! would have left.
 use super::*;
 use crate::symbol::Symbol;
 
@@ -296,27 +297,44 @@ impl Interpreter {
         }
     }
 
-    /// Build every pending method frame into `method_dispatch_stack` (in token
-    /// order). Called by each deferral builtin before it looks for the
-    /// innermost dispatch frame.
-    // Cost: O(1) when nothing is pending; otherwise the eager build's cost per
-    // pending frame, each frame built at most once.
+    /// Build the innermost pending method frame into `method_dispatch_stack`
+    /// (in token order). Called by each deferral builtin before it looks for
+    /// the innermost dispatch frame.
+    // Cost: O(1) when nothing is pending; otherwise the eager build's cost for
+    // the one innermost frame, each frame built at most once.
     pub(super) fn materialize_pending_method_dispatch(&mut self) {
         self.materialize_pending_method_frames();
         self.materialize_lazy_deferral_tail();
     }
 
-    // Cost: O(1) when nothing is pending; otherwise the eager build's cost per
-    // pending frame, each frame built at most once.
+    // Cost: O(1) when nothing is pending or the innermost frame is built;
+    // otherwise the eager build's cost for that one frame.
     fn materialize_pending_method_frames(&mut self) {
-        if self.dispatch.pending_method_dispatch.is_empty() {
+        // Only the innermost method frame is ever read (every deferral builtin
+        // looks at `method_dispatch_stack.last()`), so only a pending entry
+        // newer than the newest built frame is built; the outer pending calls
+        // stay pending until a deferral inside one of them needs it. Building
+        // them all here made every `nextsame` in a nested multi-method chain
+        // re-match the candidates of every enclosing call.
+        let Some(top) = self.dispatch.pending_method_dispatch.last() else {
+            return;
+        };
+        if self
+            .dispatch
+            .method_dispatch_stack
+            .last()
+            .is_some_and(|f| f.dispatch_token > top.dispatch_token)
+        {
             return;
         }
-        let unbuilt = std::mem::take(&mut self.dispatch.pending_method_dispatch);
+        let Some(entry) = self.dispatch.pending_method_dispatch.pop() else {
+            return;
+        };
+        let depth = self.dispatch.pending_method_dispatch.len();
         // Resolving the winner resets this flag; the caller's view of the
         // last dispatch must not change because a frame was built late.
         let saved_ambiguous = self.dispatch.dispatch_ambiguous;
-        for entry in unbuilt {
+        {
             let call = entry.call;
             let frame = self.build_method_dispatch_frame(
                 &call.receiver_class.resolve(),
@@ -335,7 +353,7 @@ impl Interpreter {
         self.dispatch.dispatch_ambiguous = saved_ambiguous;
         // A `where` clause run by the build may make method calls of its own;
         // they push and pop their own pending entries during the build.
-        debug_assert!(self.dispatch.pending_method_dispatch.is_empty());
+        debug_assert_eq!(self.dispatch.pending_method_dispatch.len(), depth);
     }
 
 }
@@ -343,8 +361,12 @@ impl Interpreter {
 fn param_match_is_context_free(pd: &ParamDef) -> bool {
     let reads_call_site =
         pd.sigilless || pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw"));
-    let runs_user_code = pd.where_constraint.is_some()
-        || pd.sub_signature.is_some()
+    // A `where` clause is not on this list: rakudo checks a deferral
+    // candidate's constraints when the dispatch resumes (`callsame` & co.), in
+    // the callee's dynamic scope, not when the call is made — so a late build
+    // is the faithful one (#17552's Red optimizer evaluated every candidate's
+    // `where` on every call).
+    let runs_user_code = pd.sub_signature.is_some()
         || pd.outer_sub_signature.is_some()
         || pd.code_signature.is_some()
         || pd.shape_constraints.is_some();

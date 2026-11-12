@@ -57,6 +57,7 @@ pub(crate) use method_rival::Rival;
 mod resolution_private_method;
 mod resolution_qualified_enclosing;
 mod resolution_sequence;
+mod resolution_lazy_where;
 pub(crate) mod signal_table;
 mod signature_type_canon;
 pub(crate) mod stream_decoder_object;
