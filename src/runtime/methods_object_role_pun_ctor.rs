@@ -50,7 +50,7 @@ impl Interpreter {
             && class_def.attribute_types.values().all(|tc| match Self::role_binding_of(bindings, tc) {
                 Some(v) => is_type(v),
                 None => !bindings.keys().any(|k| {
-                    let k = k.trim_start_matches("::");
+                    let k = crate::qualified::type_capture_name(k).unwrap_or(k);
                     !k.is_empty() && !k.starts_with("__") && tc.contains(k)
                 }),
             })
@@ -91,7 +91,7 @@ impl Interpreter {
         bindings.get(tc).or_else(|| {
             bindings
                 .iter()
-                .find(|(k, _)| k.strip_prefix("::") == Some(tc))
+                .find(|(k, _)| crate::qualified::type_capture_name(k) == Some(tc))
                 .map(|(_, v)| v)
         })
     }
