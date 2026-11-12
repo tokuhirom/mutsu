@@ -169,8 +169,14 @@ const HOST_ENTRY_SOURCE: &str = r#"
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::Built;
 our $Mutsu::Slang::Host::A;
+our $Mutsu::Slang::Host::Roles;
 sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block, Int :$pos = 0) {
-    unless $Mutsu::Slang::Host::G.defined {
+    # The composed grammar is a type object, which is never `.defined`: key the
+    # cache on the roles it was composed from, so it is built once per slang
+    # registration rather than once per production.
+    my $roles = (|@groles, '|', |@aroles).map(*.WHICH).join(' ');
+    unless $Mutsu::Slang::Host::A.defined && $Mutsu::Slang::Host::Roles eq $roles {
+        $Mutsu::Slang::Host::Roles = $roles;
         my $g = Metamodel::GrammarHOW.new_type(:name<Raku::Grammar>);
         $g.^add_parent(Mutsu::Slang::Host::Base);
         $g.^add_role($_) for @groles;
