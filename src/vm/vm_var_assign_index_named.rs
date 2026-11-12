@@ -1234,28 +1234,25 @@ impl Interpreter {
         } else {
             val
         };
-        // A `:=` element bind to an immutable literal (`%h<i> := 137`,
-        // `@a[0] := 137`) makes that element read-only: a later plain `=`
-        // assignment must throw rather than write through the shared cell. Same
-        // allowlist as the scalar literal-bind RO (vm_var_assign_set_local.rs):
-        // pure immutable scalar kinds, and no named container source (a bind to
-        // a variable stays writable-through). Marked after the store completes;
-        // consulted at the element-assign chokepoint below.
-        let is_literal_ro_bind = bind_mode
-            && bind_sources.iter().all(|s| s.is_none())
-            && matches!(
-                val.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Rat(..)
-                    | ValueView::Complex(..)
-            );
-        // Store the literal in a read-only cell (as `.BIND-POS` does) so the
-        // restriction travels with the element, whatever name reaches the array.
-        let val = if is_literal_ro_bind {
+        // A bind without a named source container holds the value itself.
+        // BIND-POS/BIND-KEY make that element read-only for every value kind,
+        // including Blocks, objects and computed aggregates. A source that
+        // already supplies its own cell keeps that cell through bound_element.
+        let readonly_code_source_without_cell = bind_sources
+            .first()
+            .and_then(Option::as_deref)
+            .is_some_and(|name| {
+                name.starts_with('&')
+                    && self.is_readonly(name)
+                    && !matches!(
+                        self.env().get(name).map(Value::view),
+                        Some(ValueView::ContainerRef(_))
+                    )
+            });
+        let val = if bind_mode
+            && (bind_sources.iter().all(|s| s.is_none()) || readonly_code_source_without_cell)
+            && !matches!(val.view(), ValueView::HashEntryRef { .. })
+        {
             Value::bound_element(val)
         } else {
             val
