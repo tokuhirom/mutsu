@@ -42,6 +42,7 @@ mod ctor_names;
 mod decl_origins;
 mod decl_shape_origins;
 pub(crate) mod declared_ahead;
+pub(crate) mod declared_ahead_vars;
 pub(crate) mod diagnostics;
 mod doc_block;
 pub(crate) mod doc_block_queries;

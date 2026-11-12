@@ -1524,6 +1524,9 @@ impl Interpreter {
                     Some(sym) if bare.len() == name.len() => self.unmark_readonly_sym(sym),
                     _ => self.unmark_readonly(bare),
                 }
+                if name.starts_with('&') {
+                    self.unmark_readonly(name);
+                }
             }
             // A self-recursive closure declaration (`my $f = -> $n { $f($n-1) }`)
             // boxed this very local into a cell while evaluating its own
@@ -1649,6 +1652,23 @@ impl Interpreter {
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Alias);
             record_on_own_binding(self, &bare, crate::ast::ReadonlyKind::Alias);
+        }
+        // Code variables retain their sigil in the lexical store. Keep an
+        // exact key too, so an unrelated `$f` cannot decide whether `&f` has
+        // a writable source container during an indexed bind.
+        if code.locals[idx].starts_with('&') {
+            let kind = if bind_marks_immutable || bind_marks_non_scalar_container {
+                Some(crate::ast::ReadonlyKind::Immutable)
+            } else if bind_marks_type_object {
+                Some(crate::ast::ReadonlyKind::TypeObject)
+            } else if bind_marks_itemized_scalar {
+                Some(crate::ast::ReadonlyKind::Alias)
+            } else {
+                None
+            };
+            if let Some(kind) = kind {
+                self.mark_readonly_with(&code.locals[idx], kind);
+            }
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.

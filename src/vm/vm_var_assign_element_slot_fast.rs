@@ -163,11 +163,8 @@ impl Interpreter {
                     _ => return None,
                 }
             } else if matches!(value.view(), ValueView::Sub(_) | ValueView::Instance { .. }) {
-                // No container to share (`:= &code` of a `my &c := {...}`, a
-                // routine, an object): the element holds the value itself.
-                // Literals (which bind read-only) and aggregates (which get a
-                // fresh cell) are the generic path's.
-                (value.clone(), value, true)
+                // No container to share: BIND-POS makes the element read-only.
+                (Value::bound_element(value.clone()), value, true)
             } else {
                 return None;
             }

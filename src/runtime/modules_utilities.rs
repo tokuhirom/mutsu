@@ -3,7 +3,7 @@ mod mixin_wrapped_methods;
 mod core_io_candidates;
 mod operator_scope;
 mod otf_call_entry;
-pub(crate) use otf_call_entry::OtfCallEntry;
+pub(crate) use otf_call_entry::{OtfCallEntry, OtfCallKey};
 mod parametric_role_pun_memo;
 pub(crate) use parametric_role_pun_memo::ParamRolePunEntries;
 mod plain_fn_resolve_memo;

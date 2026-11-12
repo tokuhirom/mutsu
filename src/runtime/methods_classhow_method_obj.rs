@@ -1276,6 +1276,7 @@ impl Interpreter {
                         | "add_attribute"
                         | "add_method"
                         | "add_private_method"
+                        | "add_meta_method"
                         | "add_multi_method"
                         | "add_fallback"
                         | "set_body_block"

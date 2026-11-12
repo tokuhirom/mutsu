@@ -856,6 +856,8 @@ impl Interpreter {
                 .owner_method_names(class_name)
                 .into_iter()
                 .map(|name| name.resolve())
+                // A metamethod (`method ^name`) goes to `add_meta_method`.
+                .filter(|name| !name.starts_with('^'))
                 .filter(|name| {
                     registry
                         .user_method_overloads(class_name, name)
@@ -904,6 +906,51 @@ impl Interpreter {
                     vec![
                         type_obj.clone(),
                         Value::str(method_name.clone()),
+                        method_obj,
+                    ],
+                )?;
+            }
+        }
+        if self.declare_how_has_user_method(&how_val, "add_meta_method") {
+            // Each metamethod (`method ^name`) reaches the HOW's
+            // `add_meta_method(type, name, method)`, as rakudo's World passes
+            // it; a `.wrap` there lands in the type's `^name` wrap chain
+            // (Red keeps a custom `^populate` and wraps it to accept fixture
+            // rows).
+            let registry = self.registry();
+            let mut meta_names: Vec<String> = registry
+                .owner_method_names(class_name)
+                .into_iter()
+                .map(|name| name.resolve())
+                .filter(|name| name.starts_with('^'))
+                .collect();
+            drop(registry);
+            meta_names.sort();
+            for meta_name in meta_names {
+                let Some(overloads) = self
+                    .registry()
+                    .user_method_overloads(class_name, &meta_name)
+                    .map(|defs| defs.into_iter().collect::<Vec<_>>())
+                else {
+                    continue;
+                };
+                let Some(first) = overloads.first() else {
+                    continue;
+                };
+                let method_obj = self.make_method_object_with_owner(
+                    &meta_name,
+                    first,
+                    false,
+                    first.return_type.clone(),
+                    Some(&overloads),
+                    Some(class_name),
+                );
+                self.call_method_with_values(
+                    how_val.clone(),
+                    "add_meta_method",
+                    vec![
+                        type_obj.clone(),
+                        Value::str(meta_name[1..].to_string()),
                         method_obj,
                     ],
                 )?;

@@ -167,10 +167,19 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
+        // A `Scalar` item wrapper is transparent to numification, like a
+        // mixin's base value: a Bool stored in a Hash element keeps one as its
+        // rendering marker, and reaches this table through that element's
+        // container when a user `infix:<==>` candidate declined the call
+        // (#17513).
         let to_complex = |v: &Value| -> Option<(f64, f64)> {
             let mut cur = v;
-            while let ValueView::Mixin(inner, _) = cur.view() {
-                cur = inner;
+            loop {
+                cur = match cur.view() {
+                    ValueView::Mixin(inner, _) => inner,
+                    ValueView::Scalar(inner) => inner,
+                    _ => break,
+                };
             }
             match cur.view() {
                 ValueView::Complex(r, i) => Some((r, i)),
@@ -179,8 +188,12 @@ impl Interpreter {
         };
         let to_num = |v: &Value| -> f64 {
             let mut cur = v;
-            while let ValueView::Mixin(inner, _) = cur.view() {
-                cur = inner;
+            loop {
+                cur = match cur.view() {
+                    ValueView::Mixin(inner, _) => inner,
+                    ValueView::Scalar(inner) => inner,
+                    _ => break,
+                };
             }
             match cur.view() {
                 ValueView::Int(i) => i as f64,

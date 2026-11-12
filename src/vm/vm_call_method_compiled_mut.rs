@@ -128,6 +128,15 @@ impl Interpreter {
         // every later call on the same role is one `HashSet` hit.
         if let Some(name) = package_sym {
             let pkg = name.as_str();
+            // A memoized redirect answers before the role probes below.
+            if let Some(pun) = self.role_default_pun_memo_hit(name, method_sym) {
+                return self.try_compiled_method_mut_or_interpret_sym(
+                    target_name,
+                    Value::package(pun),
+                    method_sym,
+                    args,
+                );
+            }
             if !self.registry().classes.contains_key(pkg) && self.is_role(pkg) {
                 // A parametric role whose type parameters all have defaults
                 // puns to that default parameterization, as `.new` already
@@ -137,10 +146,7 @@ impl Interpreter {
                 // included: it must see the defaults too, #11652); a
                 // meta-method such as `.^name` still answers for the role
                 // itself.
-                if !crate::runtime::role_type_object_keeps_mu_method(method)
-                    && self.role_or_parent_has_method(&self.role_group_name(pkg), method)
-                    && let Some(punned) = self.default_parametric_role_pun(&target)?
-                {
+                if let Some(punned) = self.role_default_pun_redirect(&target, name, method_sym)? {
                     return self.try_compiled_method_mut_or_interpret_sym(
                         target_name,
                         punned,

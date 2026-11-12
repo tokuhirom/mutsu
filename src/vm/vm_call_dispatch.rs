@@ -637,10 +637,8 @@ impl Interpreter {
             let generation = self.caches.fn_resolve_gen;
             self.caches.otf_call_cache.insert(
                 generation,
-                name_sym,
+                (name_sym, callsite_pkg, unit),
                 crate::runtime::OtfCallEntry {
-                    callsite_pkg,
-                    unit,
                     def_pkg: def.package,
                     cf: Arc::clone(&cf),
                 },

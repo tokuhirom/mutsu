@@ -71,3 +71,23 @@ lowering RakuAST::Class".
   EEL tests `.^isa(Event)` before it renames.
 - **Answer an anonymous stand-in**, as `Routine.meta-object` does for a routine
   before it is declared: loses the identity across `EVAL` that EEL needs.
+
+## 5. Amendment (2026-11-12, #17522): the unit's earlier lexicals
+
+The gap §3 recorded — a method of a package declared ahead could not read a
+`my` declared earlier in its unit — is closed without a BEGIN-time phase:
+
+- `.AST` also records the unit's top-level `my`/`our` declarations (name and
+  start offset) on the unit source.
+- Declaring a package ahead adds those declarations to the ahead unit. Each
+  `my` is bound there to a shared container (a `ContainerRef` cell holding
+  `Any`, an empty `Array` or an empty `Hash`), recorded on the unit source by
+  the declaration's offset; the package's methods close over it.
+- When the unit is `EVAL`ed, its own declaration of such a variable lowers to
+  a bind of that same container followed by the assignment of its initializer
+  through it (`declared_ahead_vars::rewrite`). The methods then read what the
+  `EVAL` stored, as in rakudo; before the `EVAL` they read an undefined value,
+  as rakudo's BEGIN-time lexpad does.
+- An `our` is declared again in the ahead unit, so the package compiles, but
+  is not shared yet (binding the package symbol to a container loops through
+  the package store); that remains a TODO.

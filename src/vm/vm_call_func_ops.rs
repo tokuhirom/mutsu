@@ -1254,19 +1254,22 @@ impl Interpreter {
                 // does not key on (the multi fork resolves per-call via
                 // resolve_function_with_types instead). Guard the lookup, not the
                 // gen check, so a multi call never clears the whole cache.
-                // The cache is also package-blind, so an entry is only reusable
-                // from the package it was resolved under (PLAN 8.22): a `unit
-                // module Foo`'s non-exported sub must not stay callable by its
-                // bare name once control returns to the consumer's GLOBAL scope.
-                // A package mismatch leaves the entry in place for the package
-                // that does own it.
+                // An entry is only reusable from the package it was resolved
+                // under (PLAN 8.22): a `unit module Foo`'s non-exported sub must
+                // not stay callable by its bare name once control returns to the
+                // consumer's GLOBAL scope. The callsite package (and a private
+                // routine's unit) is part of the key, so calls of one name from
+                // several packages keep one entry each instead of evicting each
+                // other.
                 let cur_pkg_sym = self.current_package_sym();
                 if !self.has_multi_candidates_cached_sym(name_sym)
                     && let Some((def_pkg_sym, cf)) = self
                         .caches
                         .otf_call_cache
-                        .get(self.caches.fn_resolve_gen, &name_sym)
-                        .filter(|entry| entry.callsite_pkg == cur_pkg_sym && entry.unit == otf_unit)
+                        .get(
+                            self.caches.fn_resolve_gen,
+                            &(name_sym, cur_pkg_sym, otf_unit),
+                        )
                         .map(|entry| (entry.def_pkg, Arc::clone(&entry.cf)))
                 {
                     let arity_usize = arity as usize;
