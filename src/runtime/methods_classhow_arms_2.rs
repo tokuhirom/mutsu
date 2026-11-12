@@ -377,7 +377,47 @@ impl Interpreter {
             // The method name is always the last argument. When called via ^can,
             // the args may be [Package, target, method_name] due to Package insertion.
             let method_name = args.last().unwrap().to_string_value();
-            let results = self.collect_can_methods(invocant, &method_name);
+            let results = self.collect_can_methods_memo(invocant, &method_name);
             Ok(Value::array(results))
+    }
+
+    /// [`Self::collect_can_methods`], memoized for a class receiver.
+    ///
+    /// rakudo's `.^can` hands back the class's own Method objects, the same
+    /// ones every time; building them here (attribute map, Signature,
+    /// callable) cost ~100k Ir per call (Red's `Red::Column.gist` asks
+    /// `$model.HOW.^can("as")` for every column it renders). A class or
+    /// instance receiver's answer is a function of (class, method) and the
+    /// registry, so it is kept under the method generation, exactly like
+    /// `.^lookup`'s (`classhow_lookup`). A mixin, an enum value or any other
+    /// value derives its owner from the value and is not memoized, and
+    /// neither is a call while a multi of that name is still being declared.
+    // Cost: O(1) amortized on a hit; `collect_can_methods`' cost on a miss.
+    fn collect_can_methods_memo(&mut self, invocant: &Value, method_name: &str) -> Vec<Value> {
+        let class_sym = match invocant.view() {
+            ValueView::Package(name) => name,
+            // An `Attribute` answers `DEPRECATED` from its own trait state.
+            ValueView::Instance { class_name, .. }
+                if !crate::value::attribute_class::is_attribute_class(class_name) =>
+            {
+                class_name
+            }
+            _ => return self.collect_can_methods(invocant, method_name),
+        };
+        if self.can_hides_pending_multi(invocant, method_name) {
+            return Vec::new();
+        }
+        self.refresh_method_caches_for_generation();
+        let key = (class_sym, Symbol::intern(method_name));
+        if let Some(hit) = self.caches.classhow_can_cache.get(&key) {
+            return hit.clone();
+        }
+        let found = self.collect_can_methods(invocant, method_name);
+        // Collecting may itself register something; only an answer computed
+        // at the current generation is stored.
+        if self.registry().method_generation == self.caches.method_cache_generation {
+            self.caches.classhow_can_cache.insert(key, found.clone());
+        }
+        found
     }
 }

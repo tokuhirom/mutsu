@@ -820,7 +820,7 @@ impl Interpreter {
     /// `^add_multi_method` (rakudo holds those until `compose`), with no
     /// inherited method of the name behind them.
     // Cost: O(d), d = the class's MRO depth.
-    fn can_hides_pending_multi(&mut self, target: &Value, method_name: &str) -> bool {
+    pub(super) fn can_hides_pending_multi(&mut self, target: &Value, method_name: &str) -> bool {
         if self.registry().pending_multi_methods.is_empty() {
             return false;
         }
