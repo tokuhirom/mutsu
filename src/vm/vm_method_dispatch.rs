@@ -1315,6 +1315,7 @@ impl Interpreter {
                     // shadow a same-named key of the caller's own enum (#16361).
                     || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
                     || bound_by_sub_signature(&method_def.param_defs, s)
+                    || bound_by_type_capture(&method_def.param_defs, s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
                     || dynamic_decl_local(&cc.locals, s)
@@ -3176,6 +3177,7 @@ impl Interpreter {
                         // As in the primary merge path above (#16361).
                         || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
                         || bound_by_sub_signature(&method_def.param_defs, s)
+                        || bound_by_type_capture(&method_def.param_defs, s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                         // Env-only `my` declarations (no compiled slot, e.g.
                         // `if (my $file = ...)`) are frame state too — same
@@ -3428,6 +3430,24 @@ fn is_attr_twigil_shaped(s: &str) -> bool {
 /// Whether `name` is bound by a parameter's sub-signature (`:mq(@)! ($media,)`):
 /// such a variable is as frame-local as the parameter itself.
 // Cost: O(p), p = parameters and sub-signature entries of the method.
+/// Whether `name` is an env key a `::T` type capture of the method's own
+/// signature binds for this call: the captured name (`T`), its
+/// package-qualified mirror (`Pkg::T`), or its bound marker
+/// (`bind_type_capture`). The capture is the callee's lexical; merged back,
+/// it rebound a caller's own same-named capture (`method a(::T \t) {
+/// self.b(Int); T }` answered `Int`), which broke Red's `add-column`.
+// Cost: O(p), p = parameters.
+fn bound_by_type_capture(param_defs: &[crate::ast::ParamDef], name: &str) -> bool {
+    let name = name
+        .strip_prefix(crate::meta_ns::MetaNs::TypeCaptureBound.prefix())
+        .unwrap_or(name);
+    let bare = crate::str_scan::rsplit_once_double_colon(name).map_or(name, |(_, bare)| bare);
+    param_defs.iter().any(|pd| {
+        pd.captured_type_name()
+            .is_some_and(|t| t == name || t == bare)
+    })
+}
+
 fn bound_by_sub_signature(param_defs: &[crate::ast::ParamDef], name: &str) -> bool {
     param_defs.iter().any(|pd| {
         [

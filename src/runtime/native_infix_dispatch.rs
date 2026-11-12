@@ -506,21 +506,30 @@ impl Interpreter {
         for (param, core_type) in params.iter().zip([core.sig.0, core.sig.1]) {
             // Only a plain nominal type takes part; a literal, coercion or
             // sub-signature parameter leaves the question to the key.
+            // A coercion type (`Str()`, `Int(Str)`) ranks as its target type,
+            // as rakudo's candidate sort does: `(Str() $a, Red::AST $b)` is as
+            // narrow as the core `(Str:D, Any:D)` in its first parameter and
+            // narrower in its second, so it takes `"p" ~ $ast` (Red's
+            // projections), where the count-and-distance key below called the
+            // pair a tie depending on how the role's MRO happened to measure.
+            let constraint = param.type_constraint.as_deref().map(|t| {
+                match t.split_once('(') {
+                    Some((target, rest)) if rest.ends_with(')') && !target.is_empty() => target,
+                    _ => t,
+                }
+            });
             if param.literal_value.is_some()
                 || param.where_constraint.is_some()
                 || param.sub_signature.is_some()
                 || param.code_signature.is_some()
-                || param.type_constraint.as_deref().is_some_and(|t| t.contains(['(', '[']))
+                || constraint.is_some_and(|t| t.contains(['(', '[']))
             {
                 return None;
             }
-            let user = param
-                .type_constraint
-                .as_deref()
-                .map_or_else(|| Symbol::intern("Any"), nominal);
+            let user = constraint.map_or_else(|| Symbol::intern("Any"), nominal);
             // An enum value or other non-type name used as a parameter
             // constraint is a value match, not a nominal type.
-            if let Some(t) = param.type_constraint.as_deref() {
+            if let Some(t) = constraint {
                 let base = nominal(t).with_str(str::to_owned);
                 if self.is_subset_type_name(&base)
                     || !self.has_type(&base)
