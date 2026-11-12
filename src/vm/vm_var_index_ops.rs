@@ -874,13 +874,24 @@ impl Interpreter {
         if !is_positional {
             return Self::hash_fast_path_element(&self.stack[n - 2], &self.stack[n - 1]);
         }
-        let ValueView::Int(i) = self.stack[n - 1].view() else {
+        Self::plain_positional_element(&self.stack[n - 2], &self.stack[n - 1])
+    }
+
+    /// The positional half of [`Self::index_fast_path_element`] on an explicit
+    /// (target, index) pair: also what the core subscript routine behind a
+    /// builtin `.AT-POS` answers first (`Interpreter::core_subscript`), since
+    /// the overload-suppression flag that routine sets only concerns the user
+    /// candidates this shape never consults.
+    // Cost: O(1) (an `Int` read of a plain array).
+    #[inline]
+    pub(crate) fn plain_positional_element(target: &Value, index: &Value) -> Option<Value> {
+        let ValueView::Int(i) = index.view() else {
             return None;
         };
         if i < 0 {
             return None;
         }
-        let ValueView::Array(items, kind) = self.stack[n - 2].view() else {
+        let ValueView::Array(items, kind) = target.view() else {
             return None;
         };
         // `Shaped` dies on an out-of-range read and defaults its unwritten
@@ -903,10 +914,8 @@ impl Interpreter {
         // Another thread's `push`/`shift` can be restructuring the node; read
         // under its stripe (ADR-0068, #13016). One relaxed load until a second
         // mutator thread exists.
-        let _structure = crate::value::container_lock::ContainerStructGuard::acquire_for(
-            None,
-            &self.stack[n - 2],
-        );
+        let _structure =
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target);
         let Some(elem) = items.get(i as usize) else {
             // Past the end of an untyped real Array the read is its element
             // default, `Any` (`typed_container_default`); a List's is `Nil`,

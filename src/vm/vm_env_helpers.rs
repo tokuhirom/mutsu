@@ -2826,7 +2826,18 @@ impl Interpreter {
     fn apply_pending_rw_writeback_slow(&mut self, code: &CompiledCode) {
         {
             let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
+            // The sources this drain already wrote into one of THIS frame's
+            // slots. The list can name a variable twice (a call's rw writeback
+            // plus an alias-chain write of the same caller variable); the
+            // second copy is the same write, and its baked slot was consumed by
+            // the first, so it would otherwise read as "baked for another
+            // frame" and park in the retain-on-miss list for the rest of the
+            // frame, which also keeps every method-table site lane off.
+            let mut applied: Vec<String> = Vec::new();
             for source in sources {
+                if applied.contains(&source) {
+                    continue;
+                }
                 // `self` is the implicit invocant binding of the current method
                 // frame, never a caller lexical. A nested accessor/Proxy callback
                 // may temporarily reuse that env key for its `$self` parameter;
@@ -2891,6 +2902,7 @@ impl Interpreter {
                     {
                         self.locals[slot] = val;
                     }
+                    applied.push(source);
                 } else {
                     // The owning slot is not in THIS frame. Don't drop the source:
                     // it belongs to a frame further up the stack (e.g. a sibling

@@ -2,6 +2,30 @@ use super::*;
 use crate::ast::var_marks::TermMark;
 
 impl Compiler {
+    /// Whether an expression-position scalar declaration (`(my int $j =
+    /// $i)` inside an `nqp::stmts`, `(my $x = f())` as an argument) takes a
+    /// local slot like the statement form, instead of living in `env` only.
+    /// The slot is what every later read and store of the name in this
+    /// frame resolves to (`GetLocal`/`AssignExprLocal`), where the env-only
+    /// form paid a by-name lookup per access -- in a loop body, per
+    /// iteration. Left env-only: `state` (its own slot route), anonymous
+    /// scalars, container sigils (their own rules above), a declaration with
+    /// a trait (`is default(...)` is applied by the env-only store path),
+    /// and compiler temporaries (`__with_tmp_*`), whose stores keep the
+    /// value un-itemized.
+    fn expr_scalar_decl_takes_slot(
+        name: &str,
+        is_state: bool,
+        anonymous_scalar: bool,
+        no_traits: bool,
+    ) -> bool {
+        !is_state
+            && !anonymous_scalar
+            && no_traits
+            && !name.starts_with(['@', '%', '&', '_', '!', '.', '*', '?'])
+            && !crate::qualified::is_qualified_str(name)
+    }
+
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
         let rewritten = Self::is_feed_modifier(stmt)
             .then(|| self.hoist_feed_sinks(stmt))
@@ -279,6 +303,12 @@ impl Compiler {
                             }))
                         || is_constant_decl
                         || Self::is_scalar_bind_decl(name, *bind)
+                        || Self::expr_scalar_decl_takes_slot(
+                            name,
+                            *is_state,
+                            anonymous_scalar,
+                            custom_traits.is_empty(),
+                        )
                         || self.call_arg_decl_slots.contains(name))
                 {
                     // ADR-0039 slice 2: a container declaration in expression
@@ -1510,6 +1540,9 @@ impl Compiler {
                 }
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
+            // A `&name` local in scope here is the callee's home, read through
+            // ITS slot (see `OpCode::CallOnCodeVar::local_slot`).
+            let local_slot = self.local_map.get(format!("&{name}").as_str()).copied();
             self.note_unscoped_amp_read(name);
             self.note_lexsub_code_var(name);
             if let Some(chain_idx) = self.lexical_import_chain_idx(Symbol::intern(name)) {
@@ -1521,6 +1554,7 @@ impl Compiler {
                 arg_sources_idx,
                 bare_args,
                 upvalue: None,
+                local_slot,
             });
         } else {
             self.compile_expr(target);
