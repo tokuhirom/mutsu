@@ -5,7 +5,7 @@ use nqp;
 # storage another hash already uses writes into that shared storage (#16888,
 # EEL 0.3's `Event.EEL-hash` view of a capture's `%!hash`).
 
-plan 7;
+plan 11;
 
 sub view-of(%h) {
     my $hash := nqp::create(Hash);
@@ -47,6 +47,25 @@ $e.add('data', 5);
 is-deeply %caps.keys.sort, <a data>, "a capture's hash view writes the shared captures";
 %caps<b> = 2;
 is-deeply $e.hash.keys.sort, <a b data>, 'and the capture still shares them';
+
+# The storage read inline, as EEL 0.3's `EEL-hash` does: every view of the
+# capture, old or new, names the capture's one store (#17413).
+class InlineEv is Capture is Any {
+    method live-hash {
+        my $hash := nqp::create(Hash);
+        nqp::bindattr(nqp::decont($hash), Map, '$!storage', nqp::getattr(self, Capture, '%!hash'));
+        $hash
+    }
+}
+my $f = InlineEv.new(:hash({x => 1}));
+my %first := $f.live-hash;
+my %second := $f.live-hash;
+%second<z> = 3;
+is %first<z>, 3, 'an earlier view sees a write through a later one';
+is $f<z>, 3, 'and so does the capture';
+%first<w> = 4;
+is %second<w>, 4, 'a later view sees a write through an earlier one';
+is $f<w>, 4, 'and so does the capture';
 
 # A target someone else holds keeps receiving the storage (#12672).
 sub fill(%h) {
