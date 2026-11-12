@@ -208,7 +208,15 @@ impl Interpreter {
         };
         match found {
             None => self.lexicals.process_dynamics.get(key),
-            Some(v) => self.process_value_for_binding(key, &v).unwrap_or(Some(v)),
+            // The process binding reads the current published value; a
+            // lexical one (`my %*ENV = ...` in scope) is the env's own answer.
+            // Collapsing that `Some(None)` to `None` lost a `my %*ENV` once
+            // anything had written the process `%*ENV` (#17513: Red hands its
+            // child processes their environment that way).
+            Some(v) => match self.process_value_for_binding(key, &v) {
+                Some(Some(current)) => Some(current),
+                _ => Some(v),
+            },
         }
     }
 
