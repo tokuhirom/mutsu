@@ -41,6 +41,7 @@ pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, S
         custom_traits: traits.custom,
         is_unit: false,
         is_my,
+        decl_id: crate::ast::next_class_decl_id(),
         spans,
     };
     Ok((

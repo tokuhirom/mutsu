@@ -431,6 +431,19 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     } else {
         super::super::simple::superseded_declarator("role")
     };
+    // A role body runs once per composition, which instantiates its
+    // declarations under the role's own names: a `my package` there is the
+    // role's, not one declaration with a storage name of its own (#17477).
+    for stmt in body.iter_mut() {
+        if let Stmt::Package {
+            is_my: true,
+            decl_id,
+            ..
+        } = stmt
+        {
+            *decl_id = 0;
+        }
+    }
     let role_stmt = Stmt::RoleDecl {
         spans,
         name: Symbol::intern(&name),

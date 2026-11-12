@@ -2609,6 +2609,11 @@ pub(crate) enum Stmt {
         is_unit: bool,
         /// True when declared with `my package` (lexically scoped).
         is_my: bool,
+        /// The declaration's identity (`next_class_decl_id`): a `my package`
+        /// is stored under `Name\0<decl_id>`, so two declarations of one name
+        /// keep separate stashes (#17477). 0 for one the parser did not write.
+        #[serde(default)]
+        decl_id: u64,
         /// Where the name and block were written (ADR-10723 Stage 2); `None`
         /// for a declaration nobody wrote or a `unit` one.
         #[serde(default)]

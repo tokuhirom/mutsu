@@ -890,6 +890,7 @@ impl Interpreter {
             // so it gets suppressed when the enclosing block scope exits.
             if *is_lexical {
                 if storage_name.contains('\u{0}') {
+                    self.adopt_lexical_type_metadata(&storage_name);
                     self.bind_lexical_type_keys(
                         &storage_name,
                         &[qualified_name.as_str(), resolved_name.as_str()],

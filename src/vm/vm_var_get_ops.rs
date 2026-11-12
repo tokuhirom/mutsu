@@ -1102,6 +1102,14 @@ impl Interpreter {
                     )
                 {
                     Value::package(Symbol::intern(name))
+                // `Pk::E` where `Pk` is a lexical package or class bound to its
+                // declaration's storage name (`Pk\0<id>`, #17477): the nested
+                // type lives under that name.
+                } else if let Some(real) = self.resolve_package_alias_prefix(name)
+                    && let base = crate::runtime::types::strip_type_smiley(&real).0
+                    && (self.has_type(base) || self.is_known_package(base))
+                {
+                    Value::package(Symbol::intern(&real))
                 // `Packet::Sub::Inner` where `Packet::Sub` is the short name a
                 // `use` of a module's `our class Packet::Sub` installed: the
                 // class's stash carries its nested type under the real name
