@@ -41,9 +41,7 @@ impl Interpreter {
         let name = self.stack.last()?;
         // A plain name; a Pair would be a named argument, anything else is
         // left to the generic path's coercion.
-        if name.as_str().is_none() {
-            return None;
-        }
+        name.as_str()?;
         let class = match target.view() {
             ValueView::Instance { class_name, .. } => class_name,
             ValueView::Package(name) => name,
