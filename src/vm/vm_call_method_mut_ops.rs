@@ -451,9 +451,7 @@ impl Interpreter {
             return Ok(());
         }
         // `.^can(NAME)` on an ordinary user class (#17552).
-        if let Some(result) =
-            self.try_caret_can_lane(code, name.raw, arity, modifier_idx, quoted)
-        {
+        if let Some(result) = self.try_caret_can_lane(code, name.raw, arity, modifier_idx, quoted) {
             self.stack.push(result?);
             return Ok(());
         }
