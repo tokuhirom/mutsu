@@ -1061,6 +1061,13 @@ impl Compiler {
                     // A routine call's value: whether its `sink` runs depends on
                     // whether the callee hands back a container (#11537).
                     self.emit_sink_pop_call(*name);
+                } else if matches!(expr, Expr::CallOn { target, .. }
+                    if matches!(target.as_ref(), Expr::Var(name) if name == "_"))
+                {
+                    // `.(args);` calls the topic: its Proxy result is not
+                    // FETCHed, and a fresh value it answers runs its user
+                    // `sink` (#17500).
+                    self.code.emit(OpCode::SinkPopKeepProxy(true, true));
                 } else {
                     self.code.emit(OpCode::SinkPop(
                         Self::stmt_value_may_user_sink(expr),

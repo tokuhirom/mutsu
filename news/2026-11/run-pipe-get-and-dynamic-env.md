@@ -20,3 +20,11 @@ is true as soon as `@r` holds a second value. Rakudo's core `ne` is
 `not a eq b` over the whole operands, so the comparison means "equal to none
 of them". Red's table-removal loop, `@pending.grep({ $_ ne any(@ready) })`,
 never shrank and the test hung.
+
+And a fourth (#17500, t/145): a statement that calls the topic (`.(args);`,
+`.(Type) for @blocks`) FETCHed the Proxy the call handed back, where rakudo
+leaves it alone. Red's legacy `^migrate` runs `.(Type) for @blocks` over
+`{ .first = .original * 2 }`, whose `is rw` accessor answers a write-only Proxy
+whose FETCH dies. Such a statement now sinks through `SinkPopKeepProxy`, which
+still runs a user `sink` method; a call through a variable or an element is
+FETCHed as before.
