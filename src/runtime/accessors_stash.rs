@@ -652,7 +652,13 @@ impl Interpreter {
             // (`OUR.WHO.BIND-KEY: .key, .value for Other::` inside `package
             // EXPORT::MANDATORY`) is one of its exports, as for `OUR::{'&name'}
             // := &name`.
-            if sigil == Some('&') {
+            if sigil == Some('&') && Self::export_stash_tag(&package).is_some() {
+                // A routine bound into an export tag's stash through its
+                // `.WHO` (`$WHO<DEFAULT>.WHO<&foo> := ...`, CompUnit::Util's
+                // `set-unit('EXPORT::DEFAULT::&foo', ...)`) is an export of
+                // that tag, as `EXPORT::DEFAULT::<&foo> := ...` makes it (#15371).
+                self.publish_package_stash_symbol(package.clone(), "&", bare, &binding);
+            } else if sigil == Some('&') {
                 self.publish_our_pseudo_stash_symbol(&format!("&OUR::{bare}"), &binding);
             } else if Self::export_stash_tag(&package).is_some() {
                 // A type or variable copied across (`ANN`, `$var`) is an export

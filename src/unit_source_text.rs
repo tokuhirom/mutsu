@@ -134,6 +134,41 @@ impl Drop for ExportPhaseGuard {
     }
 }
 
+/// While alive, the active unit counts as in its compile phase again. A
+/// block-scoped `use` re-runs its module's `sub EXPORT` when the block runs
+/// (`rerun_module_export`), after the unit's compile phase ended; in rakudo
+/// that `use` runs at compile time, so the hook still sees `$*CU` (#15371).
+pub(crate) struct ReopenCompilePhaseGuard(Option<(usize, bool)>);
+
+impl ReopenCompilePhaseGuard {
+    // Cost: O(u), u = units on the stack.
+    pub(crate) fn enter() -> Self {
+        UNITS.with(|units| {
+            let mut units = units.borrow_mut();
+            let index = active_index(&units);
+            Self(index.and_then(|i| {
+                let unit = units.get_mut(i)?;
+                let was = unit.compiled;
+                unit.compiled = false;
+                Some((i, was))
+            }))
+        })
+    }
+}
+
+impl Drop for ReopenCompilePhaseGuard {
+    fn drop(&mut self) {
+        UNITS.with(|units| {
+            let mut units = units.borrow_mut();
+            if let Some((i, was)) = self.0
+                && let Some(unit) = units.get_mut(i)
+            {
+                unit.compiled = was;
+            }
+        });
+    }
+}
+
 /// `$cu.add-check-code($code)`: queue `code` on the innermost unit still in
 /// its compile phase, to run (with no arguments) at its CHECK phase.
 // Cost: O(1) amortized.

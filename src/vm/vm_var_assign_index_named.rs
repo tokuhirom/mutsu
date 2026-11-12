@@ -6121,6 +6121,33 @@ impl Interpreter {
             Err(raw_val) => (raw_val, None, false),
         };
 
+        // A package's stash reached through an expression
+        // (`$WHO<DEFAULT>.WHO<&foo> := ...`, CompUnit::Util's `set-in-WHO`)
+        // installs the symbol in the package, as the named store of a stash held
+        // in a variable does (#15371).
+        if !is_positional
+            && let stash = target.deref_container().descalarize().clone()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = stash.view()
+            && is_stash_class_name(class_name.as_str())
+            && attributes
+                .as_map()
+                .get("name")
+                .is_some_and(|name| !name.to_string_value().is_empty())
+            && !crate::qualified::is_qualified_str(&key)
+        {
+            let source = match bind_source.as_deref() {
+                Some(name) if was_bind && !name.contains('\0') => Some(name),
+                _ => None,
+            };
+            let bound = self.bind_stash_key(code, &stash, &key, val, source)?;
+            self.stack.push(bound);
+            return Ok(());
+        }
+
         // An element that IS a `Proxy` (`@bound[1] := item(...)`) mediates its
         // own store, as in the named op (ADR-0040 §9): `get()[1] = 5` fires the
         // element's `STORE` rather than replacing the binding with a plain value.

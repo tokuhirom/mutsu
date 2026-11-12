@@ -1931,6 +1931,10 @@ impl Interpreter {
                 Ok(()) => {
                     // `$*CU` in the module's `sub EXPORT` is the importing unit.
                     let _export_phase = crate::unit_source_text::ExportPhaseGuard::enter();
+                    // A module first loaded by a `use` in a block runs when the
+                    // block does, after the importer's compile phase; in rakudo
+                    // that `use` is compile time, so `$*CU` is still there (#15371).
+                    let _compile_phase = crate::unit_source_text::ReopenCompilePhaseGuard::enter();
                     self.apply_module_export(export_args.unwrap_or_default(), module_body_env)
                 }
                 Err(err) => Err(err),
