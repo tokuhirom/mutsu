@@ -14599,6 +14599,13 @@ pub(crate) struct CompiledFunction {
     /// When true, parameters must be written to env (not just locals) so that
     /// nested functions can capture them via closure.
     pub(crate) has_inner_subs: bool,
+    /// True when `has_inner_subs` is set by closures alone: the body creates
+    /// blocks/closures (`closure_compiled_codes`) but declares no routine or
+    /// subset, has no `for` loop and calls no code value. The positional-light
+    /// path serves such a body in a frame of its own, whose root a closure it
+    /// creates captures up to, with every captured parameter mirrored into it
+    /// (`needs_env_sync`), exactly as the full path's scoped overlay (#17497).
+    pub(crate) inner_subs_are_closures: bool,
     /// True if the function body *directly* declares a lexical routine via a
     /// top-level `RegisterDecl(Sub)` / `RegisterSubset` opcode (`my sub`, a bare
     /// nested `sub`/`regex`/`token`/`rule`, or a `subset`). Such a routine is
@@ -15030,22 +15037,22 @@ impl CompiledFunction {
 
     /// Detect whether the function body contains inner sub declarations or closures.
     pub(crate) fn detect_inner_subs(&mut self) {
-        self.has_inner_subs = !self.code.closure_compiled_codes.is_empty()
-            || self.code.ops.iter().any(|op| {
-                // A frame-lexical routine (ADR-0113) is not an inner sub in
-                // this sense: it is never registered, and every local it can
-                // read by name is kept env-synced by `compute_needs_env_sync`
-                // (its `RegisterDecl` still counts as a lazy body there).
-                if let OpCode::RegisterDecl(idx) = op
-                    && let Some(CompiledDeclPlanRef::Sub(plan)) =
-                        self.code.decl_plans.get(*idx as usize)
-                    && self.code.is_frame_lexical_sub_plan(*plan)
-                {
-                    return false;
-                }
-                matches!(
-                    op,
-                    OpCode::RegisterDecl(..)
+        let has_closures = !self.code.closure_compiled_codes.is_empty();
+        let has_other = self.code.ops.iter().any(|op| {
+            // A frame-lexical routine (ADR-0113) is not an inner sub in
+            // this sense: it is never registered, and every local it can
+            // read by name is kept env-synced by `compute_needs_env_sync`
+            // (its `RegisterDecl` still counts as a lazy body there).
+            if let OpCode::RegisterDecl(idx) = op
+                && let Some(CompiledDeclPlanRef::Sub(plan)) =
+                    self.code.decl_plans.get(*idx as usize)
+                && self.code.is_frame_lexical_sub_plan(*plan)
+            {
+                return false;
+            }
+            matches!(
+                op,
+                OpCode::RegisterDecl(..)
                         | OpCode::RegisterSubset { .. }
                         // CallOnValue/CallOnCodeVar may invoke closures that do `return`
                         // targeting an outer routine, requiring the routine stack.
@@ -15053,8 +15060,10 @@ impl CompiledFunction {
                         | OpCode::CallOnCodeVar { .. }
                         // ForLoop may have FIRST/NEXT/LAST phasers that need proper state
                         | OpCode::ForLoop(..)
-                )
-            });
+            )
+        });
+        self.has_inner_subs = has_closures || has_other;
+        self.inner_subs_are_closures = has_closures && !has_other;
         // A routine declared directly in this body (not inside a nested
         // BlockScope, which restores the registry itself) is lexical to the
         // body and must be unregistered on return unless it escapes.
@@ -15355,6 +15364,7 @@ mod compiled_fns_identity {
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,
+            inner_subs_are_closures: false,
             declares_inner_routines: false,
             captured_fatal_mode: false,
             named_call_plan: None,

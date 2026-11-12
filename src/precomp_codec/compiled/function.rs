@@ -32,6 +32,7 @@ impl Encode for CompiledFunction {
             param_local_slots,
             params_fill_frame,
             has_inner_subs,
+            inner_subs_are_closures,
             declares_inner_routines,
             captured_fatal_mode,
             named_call_plan,
@@ -74,6 +75,7 @@ impl Encode for CompiledFunction {
         param_local_slots.encode(encoder)?;
         params_fill_frame.encode(encoder)?;
         has_inner_subs.encode(encoder)?;
+        inner_subs_are_closures.encode(encoder)?;
         declares_inner_routines.encode(encoder)?;
         captured_fatal_mode.encode(encoder)?;
         named_call_plan.encode(encoder)?;
@@ -124,6 +126,7 @@ impl Decode<DecodeCtx> for CompiledFunction {
             param_local_slots: Decode::decode(decoder)?,
             params_fill_frame: Decode::decode(decoder)?,
             has_inner_subs: Decode::decode(decoder)?,
+            inner_subs_are_closures: Decode::decode(decoder)?,
             declares_inner_routines: Decode::decode(decoder)?,
             captured_fatal_mode: Decode::decode(decoder)?,
             named_call_plan: Decode::decode(decoder)?,
