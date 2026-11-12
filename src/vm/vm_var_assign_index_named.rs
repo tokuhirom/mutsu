@@ -1250,6 +1250,8 @@ impl Interpreter {
                     )
             });
         let val = if bind_mode
+            && !idx_is_slice
+            && !matches!(idx.view(), ValueView::LazyList(_))
             && (bind_sources.iter().all(|s| s.is_none()) || readonly_code_source_without_cell)
             && !matches!(val.view(), ValueView::HashEntryRef { .. })
         {
