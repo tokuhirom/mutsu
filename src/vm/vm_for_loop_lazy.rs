@@ -1,4 +1,5 @@
 use super::vm_control_ops::ForLoopSpec;
+use super::vm_for_loop_body::LoopItemSink;
 use super::*;
 
 impl Interpreter {
@@ -59,7 +60,7 @@ impl Interpreter {
         // `save_loop_topic_local`): the loop must mirror each item into it.
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
-        let chunk_mode = !spec.multi_param_names.is_empty();
+        let chunk_mode = LoopItemSink::of(spec);
         let saved_topic_source = self.topic_state.topic_source_var.take();
         let saved_topic_readonly = self.readonly_kind("_");
 
@@ -394,7 +395,7 @@ impl Interpreter {
         // `save_loop_topic_local`): the loop must mirror each item into it.
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
-        let chunk_mode = !spec.multi_param_names.is_empty();
+        let chunk_mode = LoopItemSink::of(spec);
         let saved_topic_source = self.topic_state.topic_source_var.take();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         // ADR-0052 Slice 1: unconditional base, truncated after every iteration.

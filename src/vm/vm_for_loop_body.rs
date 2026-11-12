@@ -3,6 +3,31 @@ use super::vm_for_loop_items::ForItemIter;
 use super::vm_for_loop_map_grep::MapGrepStream;
 use super::*;
 
+/// Where a `for` loop puts each iteration's item (see
+/// [`Interpreter::set_loop_topic`]).
+#[derive(Clone, Copy)]
+pub(super) enum LoopItemSink {
+    /// The topic `$_` (and the frame's topic slot): a one-parameter loop.
+    Topic,
+    /// A multi-parameter loop's batch, by name in `env`.
+    ChunkEnv,
+    /// A multi-parameter loop's batch, in this local slot.
+    ChunkLocal(usize),
+}
+
+impl LoopItemSink {
+    // Cost: O(1).
+    pub(super) fn of(spec: &ForLoopSpec) -> Self {
+        if spec.multi_param_names.is_empty() {
+            LoopItemSink::Topic
+        } else if let Some(slot) = spec.chunk_local {
+            LoopItemSink::ChunkLocal(slot as usize)
+        } else {
+            LoopItemSink::ChunkEnv
+        }
+    }
+}
+
 impl Interpreter {
     /// Put the enclosing `$_` back after a `for` loop. A `for` block owns its
     /// topic — raku binds `$_` as the block's own implicit parameter — so the
@@ -74,17 +99,27 @@ impl Interpreter {
     /// when it has one (see [`Interpreter::save_loop_topic_local`]).
     ///
     /// A multi-parameter loop (`chunk_mode`) leaves `$_` alone and hands the
-    /// batch to its parameter binds through the hidden `wk::for_chunk()` key.
+    /// batch to its parameter binds through the hidden `__mutsu_for_chunk`
+    /// variable: its local slot when the compiler gave it one
+    /// (`ForLoopSpec::chunk_local`), else the `wk::for_chunk()` env key.
+    // Cost: O(1) (one slot store, or one env insert).
     pub(super) fn set_loop_topic(
         &mut self,
         topic_local: Option<usize>,
-        chunk_mode: bool,
+        chunk_mode: LoopItemSink,
         val: Value,
     ) {
-        if chunk_mode {
-            self.env_mut()
-                .insert_sym_noting(crate::symbol::wk::for_chunk(), val);
-            return;
+        match chunk_mode {
+            LoopItemSink::Topic => {}
+            LoopItemSink::ChunkLocal(slot) => {
+                self.locals[slot] = val;
+                return;
+            }
+            LoopItemSink::ChunkEnv => {
+                self.env_mut()
+                    .insert_sym_noting(crate::symbol::wk::for_chunk(), val);
+                return;
+            }
         }
         if let Some(slot) = topic_local {
             self.locals[slot] = val.clone();
@@ -264,7 +299,7 @@ impl Interpreter {
         // `save_loop_topic_local`): the loop must mirror each item into it.
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
-        let chunk_mode = !spec.multi_param_names.is_empty();
+        let chunk_mode = LoopItemSink::of(spec);
         let saved_topic_source = self.topic_state.topic_source_var.take();
         let saved_quanthash_bind = std::mem::take(&mut self.topic_state.quanthash_bind_params);
         // The tagged source name plus its compile-time-baked local slot (§1.5):

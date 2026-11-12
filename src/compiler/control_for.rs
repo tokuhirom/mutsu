@@ -478,19 +478,27 @@ impl Compiler {
             // No param_def means default (Mu) — no autothreading.
             None => false,
         };
+        // A multi-parameter loop's batch reaches its parameter binds (the body
+        // prefix built by `build_for_bind_stmts`) through a local slot, not
+        // the env (`ForLoopSpec::chunk_local`). A `race`/`hyper` loop runs the
+        // body on other interpreters, which keep the by-name key.
+        let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
+        let chunk_local =
+            (!params.is_empty() && !threaded).then(|| self.alloc_local("__mutsu_for_chunk"));
         let loop_idx = self
             .code
             .emit(OpCode::ForLoop(Box::new(crate::opcode::ForLoopSpec {
                 param_idx,
                 param_local,
                 topic_local,
+                chunk_local,
                 source_container_local,
                 body_end: 0,
                 block_callable_local,
                 label: label.clone(),
                 arity,
                 collect,
-                threaded: matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper),
+                threaded,
                 // is_rw: param is writable (don't mark readonly)
                 is_rw: has_rw || has_copy || has_raw,
                 // do_writeback: actually write back modifications to the source
