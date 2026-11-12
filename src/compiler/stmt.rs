@@ -3996,10 +3996,12 @@ impl Compiler {
                     // one name keep separate stashes (#17477).
                     // `EXPORT` / `EXPORTHOW` (and their tags) are found by name
                     // by the export machinery, so they keep it.
+                    // A qualified name (`my package My::Package`) is looked up
+                    // segment by segment, which a storage name would break.
                     let export_stash = matches!(
                         name.resolve().split("::").next(),
                         Some("EXPORT" | "EXPORTHOW")
-                    );
+                    ) || crate::qualified::is_qualified_str(&name.resolve());
                     let qualified_name = if *is_my && *decl_id != 0 && !export_stash {
                         format!("{qualified_name}\u{0}{decl_id}")
                     } else {

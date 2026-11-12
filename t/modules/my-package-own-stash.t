@@ -5,7 +5,7 @@ use Test;
 # `set-in-WHO` over a fresh `my package tmp` in each EVAL). Checked against
 # rakudo.
 
-plan 14;
+plan 16;
 
 { my package P {}; P.WHO<$x> := 1; is P.WHO.keys, '$x', 'a stash entry lands in the package'; }
 { my package P {}; is P.WHO.keys.elems, 0, 'a second declaration of the name starts empty'; }
@@ -38,3 +38,7 @@ my class VersionedClass:ver<2.0> { class Nested { } }
 is VersionedClass.^ver, v2.0, 'a lexical class keeps its version';
 my VersionedClass::Nested $n = VersionedClass::Nested.new;
 isa-ok $n, VersionedClass::Nested, 'its nested class is a variable type';
+
+my package EnumHolder { our enum Mode <off on> }
+is EnumHolder::Mode::on.value, 1, 'an enum value of a lexical package';
+is EnumHolder::Mode::on.WHAT.^name, 'Mode', 'its enum keeps its declared name';

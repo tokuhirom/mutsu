@@ -188,6 +188,11 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
         }
         return std::borrow::Cow::Borrowed(name);
     }
+    // An enum of a lexical package (`my package P { our enum E }`) is keyed
+    // under the package's storage name and displays as declared too (#17477).
+    if let Some(declared) = super::enum_display_name(name) {
+        return std::borrow::Cow::Owned(declared);
+    }
     let segments = crate::qualified::segments(crate::symbol::Symbol::intern(name));
     // An anonymous type has no name of its own, so a trailing anonymous
     // segment drops the enclosing package (`Mx::__ANON_ROLE_0__\0<id>`).
