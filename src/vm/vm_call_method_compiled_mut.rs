@@ -95,6 +95,15 @@ impl Interpreter {
             self.dispatch.method_dispatch_pure = true;
             return result;
         }
+        // `Mu.clone` on a user-class instance (`vm_clone_lane`).
+        if package_sym.is_none()
+            && let Some(result) = self.try_clone_instance_lane(&target, method_sym, &args)
+        {
+            // A typed twiddle's `where` constraint is user code: impure, as
+            // the cascade leaves it.
+            self.dispatch.method_dispatch_pure = false;
+            return result;
+        }
         if let Some(class_name) = new_on_package
             && crate::runtime::types::strip_type_smiley(class_name.as_str())
                 .1

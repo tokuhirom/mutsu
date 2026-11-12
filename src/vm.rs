@@ -191,6 +191,7 @@ mod vm_call_nqp;
 mod vm_call_resolve;
 pub(crate) mod vm_call_state_guard;
 mod vm_catch_dispatch;
+mod vm_clone_lane;
 mod vm_closure_dispatch;
 mod vm_closure_light_bind;
 mod vm_closure_light_call;

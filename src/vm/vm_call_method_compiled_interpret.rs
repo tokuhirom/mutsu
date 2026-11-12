@@ -97,6 +97,15 @@ impl Interpreter {
             self.dispatch.method_dispatch_pure = true;
             return result;
         }
+        // `Mu.clone` on a user-class instance (`vm_clone_lane`).
+        if package_sym.is_none()
+            && let Some(result) = self.try_clone_instance_lane(&target, method_sym, &args)
+        {
+            // A typed twiddle's `where` constraint is user code: impure, as
+            // the cascade leaves it.
+            self.dispatch.method_dispatch_pure = false;
+            return result;
+        }
         if let Some(name) = package_sym {
             let role_name = name.as_str();
             // A parametric role whose type parameters all have defaults puns
