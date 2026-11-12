@@ -16,7 +16,7 @@ pub(crate) fn method_lvalue_target_name(target: &Expr) -> Option<String> {
 
 pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.container_var_key(),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::CodeVar(_) => expr.var_key(),
         // For indexed expressions like @a[1], encode as "@a\x00idx\x001"
         // so that binding can track the specific array/hash element.
         Expr::Index { .. } => expr.element_source_key(),

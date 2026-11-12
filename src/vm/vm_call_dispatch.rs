@@ -626,18 +626,22 @@ impl Interpreter {
         let name_sym = def.name;
         let cache_by_name =
             resolved_by_bare_name && !self.has_multi_candidates_cached_sym(name_sym);
-        if cache_by_name {
+        if cache_by_name && let Ok(unit) = self.otf_entry_unit_for(def) {
             // Keyed to the *callsite* package, not `def.package`: the cache
             // answers "what does this bare name mean here", and a module's
             // non-exported sub means nothing outside its own package. The
             // defining package rides along so a cache hit runs the body under
-            // the same package this (uncached) call does.
-            let cur_pkg_sym = self.current_package_sym();
+            // the same package this (uncached) call does. A compunit-private
+            // routine is recorded under its unit (`otf_call_entry.rs`).
+            let callsite_pkg = self.current_package_sym();
             let generation = self.caches.fn_resolve_gen;
             self.caches.otf_call_cache.insert(
                 generation,
-                name_sym,
-                (cur_pkg_sym, def.package, Arc::clone(&cf)),
+                (name_sym, callsite_pkg, unit),
+                crate::runtime::OtfCallEntry {
+                    def_pkg: def.package,
+                    cf: Arc::clone(&cf),
+                },
             );
         }
 

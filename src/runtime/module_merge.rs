@@ -79,6 +79,11 @@ pub(crate) struct ModuleVisibility {
     /// load came from an `EVAL` (`Test`'s `use-ok`) reached `Cow::cow` only
     /// through a grant its own `use Acme::Cow;` never made.
     pub(crate) module_granted_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
+    /// The modules whose GLOBAL a module merged into its own at BEGIN time
+    /// (`GLOBALish.WHO.merge-symbols($handle.globalish-package)`,
+    /// CompUnit::Util's `steal-globalish`), keyed by that module: whoever
+    /// merges the module merges these too.
+    pub(crate) globalish_reexports: std::sync::Arc<HashMap<String, HashSet<String>>>,
     /// ADR-11136: the module whose load published each bare package-scope
     /// name (a class, role, enum, subset, package, `our` sub or term) its own
     /// body declared. A name the program or a module had published before
@@ -508,6 +513,7 @@ impl Interpreter {
                 scope.merged_modules.insert(module_sym);
             }
             self.env.insert_sym(MetaNs::ModuleMerge.key(module_sym), Value::TRUE);
+            self.merge_globalish_reexports(importer, module);
             return;
         }
         crate::runtime::cow_table_mut(&mut self.module.module_visibility.unit_merged_modules)
@@ -518,6 +524,68 @@ impl Interpreter {
             .entry(importer)
             .or_default()
             .extend(granted.iter().cloned());
+        self.merge_globalish_reexports(importer, module);
+    }
+
+    /// Merge into `importer` the modules whose GLOBAL `module` merged into
+    /// its own (`globalish_reexports`), each with the packages its first load
+    /// granted, transitively.
+    // Cost: O(m * g), m = modules reached, g = packages each granted.
+    fn merge_globalish_reexports(&mut self, importer: Symbol, module: &str) {
+        let Some(stolen) = self
+            .module
+            .module_visibility
+            .globalish_reexports
+            .get(module)
+            .cloned()
+        else {
+            return;
+        };
+        for source in stolen {
+            if source == module || self.module_merged_here(Symbol::intern(&source)) {
+                continue;
+            }
+            let mut grant = self
+                .module
+                .module_visibility
+                .module_granted_packages
+                .get(&source)
+                .cloned()
+                .unwrap_or_default();
+            grant.insert(source.clone());
+            self.merge_module_into_importer(importer, &source, &grant);
+        }
+    }
+
+    /// `GLOBALish.WHO.merge-symbols($handle.globalish-package)` with the
+    /// GLOBAL of the loaded module `source`: the module being loaded now
+    /// re-exports it to whoever merges it, and code outside every module load
+    /// merges it into its own unit at once.
+    // Cost: O(g), g = packages `source` granted.
+    pub(crate) fn merge_module_globalish(&mut self, source: &str) {
+        match self.module.module_load_stack.last().cloned() {
+            Some(loading) if loading != source => {
+                crate::runtime::cow_table_mut(
+                    &mut self.module.module_visibility.globalish_reexports,
+                )
+                .entry(loading)
+                .or_default()
+                .insert(source.to_string());
+            }
+            Some(_) => {}
+            None => {
+                let mut grant = self
+                    .module
+                    .module_visibility
+                    .module_granted_packages
+                    .get(source)
+                    .cloned()
+                    .unwrap_or_default();
+                grant.insert(source.to_string());
+                let importer = self.executing_unit_sym_for_module_load();
+                self.merge_module_into_importer(importer, source, &grant);
+            }
+        }
     }
 
     /// Whether `module`'s GLOBAL is merged into the code running right now:

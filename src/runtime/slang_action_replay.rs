@@ -200,11 +200,15 @@ impl Interpreter {
             return match_obj;
         };
         let name = class_name.resolve();
-        if !super::metamodel_new_type::is_minted_type_name(&name) {
-            return match_obj;
-        }
-        let Some((shown, _)) = name.split_once('\u{0}') else {
-            return match_obj;
+        // The host mints its grammar under the plain name the first time it
+        // composes one, and under a minted `Raku::Grammar\0<id>` after that.
+        let shown = if super::metamodel_new_type::is_minted_type_name(&name) {
+            match name.split_once('\u{0}') {
+                Some((shown, _)) => shown,
+                None => return match_obj,
+            }
+        } else {
+            name.as_str()
         };
         if shown != "Raku::Grammar"
             || self.registry().classes.contains_key(&*name)

@@ -164,7 +164,10 @@ impl Interpreter {
         name_idx: u32,
     ) -> bool {
         let name = code.constants[name_idx as usize].to_string_value();
-        let Some(callable) = self.lexical_amp_var_callable(Some(code), &name) else {
+        let Some(callable) = self
+            .lexical_amp_override_for_call(code, name_idx)
+            .or_else(|| self.lexical_amp_var_callable(Some(code), &name))
+        else {
             return false;
         };
         let ValueView::Sub(data) = callable.view() else {

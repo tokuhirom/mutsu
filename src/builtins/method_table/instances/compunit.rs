@@ -208,7 +208,16 @@ fn globalish_package(
     _named: Named<'_>,
 ) -> Answer {
     let symbols = attr(target, "globalish-symbols")?;
-    Some(Ok(interp.make_globalish_package(symbols.as_ref())))
+    let package = interp.make_globalish_package(symbols.as_ref());
+    // A file-system unit's GLOBAL is the program's: the stash also names the
+    // unit, so merging it publishes that unit's symbols (`merge_module_globalish`).
+    if symbols.is_none()
+        && let Some(Some(unit)) = attr(target, "unit-name")
+        && let ValueView::Instance { attributes, .. } = package.view()
+    {
+        attributes.insert("globalish-module", unit);
+    }
+    Some(Ok(package))
 }
 
 /// `CompUnit::Handle.unit`: the unit's lexical pad. A handle built over a pad

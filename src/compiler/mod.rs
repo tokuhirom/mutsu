@@ -1130,6 +1130,7 @@ mod helpers_dynamic;
 mod helpers_method_body;
 pub(crate) use crate::op_names as helpers_ops;
 pub(crate) use helpers_method_body::method_body_key;
+mod helpers_phaser_try;
 mod helpers_phasers;
 mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
@@ -5589,6 +5590,18 @@ impl Compiler {
     }
 
     pub(super) fn compile_phaser_block_scope(&mut self, stmts: &[Stmt], mode: PhaserBlockResult) {
+        self.compile_phaser_block_scope_inner(stmts, mode, None);
+    }
+
+    /// [`Self::compile_phaser_block_scope`], optionally compiling the body
+    /// section as a `CATCH`/`CONTROL` region (see
+    /// [`helpers_phaser_try::PhaserTryRegion`]).
+    pub(in crate::compiler) fn compile_phaser_block_scope_inner(
+        &mut self,
+        stmts: &[Stmt],
+        mode: PhaserBlockResult,
+        try_region: Option<helpers_phaser_try::PhaserTryRegion>,
+    ) {
         let idx = self.code.emit(OpCode::BlockScope {
             pre_end: 0,
             enter_end: 0,
@@ -5699,7 +5712,14 @@ impl Compiler {
                 )
             })
             .collect();
-        if last_is_enter {
+        if let Some(region) = try_region {
+            // The handler runs inside the scope, before its LEAVE phasers and
+            // with its lexicals still live (rakudo's order).
+            let nil_tail = stmts
+                .get(last_idx)
+                .is_some_and(crate::ast::is_nil_valued_tail_phaser);
+            self.compile_phaser_scope_try_body(&body_stmts, region, nil_tail);
+        } else if last_is_enter {
             // The block result comes from the trailing ENTER phaser, so none of the
             // (earlier) non-phaser body statements provide the value; compile them
             // all in sink context and materialize the captured ENTER value.

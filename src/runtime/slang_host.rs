@@ -169,8 +169,14 @@ const HOST_ENTRY_SOURCE: &str = r#"
 our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::Built;
 our $Mutsu::Slang::Host::A;
-sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block, Int :$pos = 0) {
-    unless $Mutsu::Slang::Host::G.defined {
+our $Mutsu::Slang::Host::Roles;
+sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block, Int :$pos = 0, :$compose-only) {
+    # The composed grammar is a type object, which is never `.defined`: key the
+    # cache on the roles it was composed from, so it is built once per slang
+    # registration rather than once per production.
+    my $roles = (|@groles, '|', |@aroles).map(*.WHICH).join(' ');
+    unless $Mutsu::Slang::Host::A.defined && $Mutsu::Slang::Host::Roles eq $roles {
+        $Mutsu::Slang::Host::Roles = $roles;
         my $g = Metamodel::GrammarHOW.new_type(:name<Raku::Grammar>);
         $g.^add_parent(Mutsu::Slang::Host::Base);
         $g.^add_role($_) for @groles;
@@ -182,6 +188,7 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$blo
         $Mutsu::Slang::Host::G = $g;
         $Mutsu::Slang::Host::A = $a.new;
     }
+    return if $compose-only;
     if $node.defined {
         # A numeric literal's `$/` is the text it was written as, holding the
         # capture the core grammar's `numish` has (`integer`, `decimal-number`,
@@ -325,8 +332,14 @@ impl Interpreter {
             ))
         } else {
             HOOK_DEPTH.with(|d| d.set(depth + 1));
+            // Composed outside the class log: the host's own grammar and
+            // actions are not classes the production installed, so they must
+            // not be replayed into the unit (where the grammar would lack its
+            // host base's `panic`).
+            let composed = self.compose_slang_host();
             super::slang_class_replay::begin_class_log();
-            let answer = self.run_slang_hook(rule, source, start, node, block);
+            let answer =
+                composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block));
             super::slang_class_replay::end_class_log();
             HOOK_DEPTH.with(|d| d.set(depth));
             answer
@@ -336,6 +349,36 @@ impl Interpreter {
                 .as_ref()
                 .is_some_and(|link| link.to_parser.send(FromHost::Done(answer)).is_ok())
         })
+    }
+
+    /// The host's entry sub, compiled on first use.
+    // Cost: O(1) after the first call, which compiles the host program.
+    fn slang_host_entry(&mut self) -> Result<Value, String> {
+        if let Some(run) = HOST_ENTRY.with(|e| e.borrow().clone()) {
+            return Ok(run);
+        }
+        let entry = self
+            .eval_code_string(&format!("{HOST_PRELUDE}{HOST_STUBS}{HOST_ENTRY_SOURCE}"))
+            .map_err(|e| e.message.to_string())?;
+        HOST_ENTRY.with(|e| *e.borrow_mut() = Some(entry.clone()));
+        Ok(entry)
+    }
+
+    /// Compose (or reuse) the grammar and actions classes for the slang's
+    /// current roles.
+    // Cost: O(1) when the roles are unchanged; the composition otherwise.
+    fn compose_slang_host(&mut self) -> Result<(), String> {
+        let run = self.slang_host_entry()?;
+        let args = vec![
+            Value::str(String::new()),
+            Value::str(String::new()),
+            Value::array(self.regex_state.slang_grammar_roles.clone()),
+            Value::array(self.regex_state.slang_action_roles.clone()),
+            Value::pair("compose-only".to_string(), Value::TRUE),
+        ];
+        self.call_sub_value(run, args)
+            .map(|_| ())
+            .map_err(|e| e.message.to_string())
     }
 
     /// Match `rule` at character offset `start` of `source` with the composed
@@ -349,15 +392,7 @@ impl Interpreter {
         node: Option<Value>,
         block: Option<Value>,
     ) -> HostAnswer {
-        let mut run = HOST_ENTRY.with(|e| e.borrow().clone());
-        if run.is_none() {
-            let entry = self
-                .eval_code_string(&format!("{HOST_PRELUDE}{HOST_STUBS}{HOST_ENTRY_SOURCE}"))
-                .map_err(|e| e.message.to_string())?;
-            HOST_ENTRY.with(|e| *e.borrow_mut() = Some(entry.clone()));
-            run = Some(entry);
-        }
-        let run = run.unwrap_or(Value::NIL);
+        let run = self.slang_host_entry()?;
         let grammar_roles = Value::array(self.regex_state.slang_grammar_roles.clone());
         let action_roles = Value::array(self.regex_state.slang_action_roles.clone());
         let answer = self

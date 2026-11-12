@@ -733,7 +733,7 @@ impl Interpreter {
     ) {
         let return_target = handler
             .as_ref()
-            .and_then(|_| crate::runtime::return_target::return_target_in_env(self.env()));
+            .and_then(|_| self.catch_handler_return_target());
         self.control
             .catch_handlers
             .push(crate::vm::CatchHandlerEntry {

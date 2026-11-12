@@ -267,6 +267,21 @@ impl Interpreter {
                         && !e.is_yield_signal()
                         && !cf.code.lets_succeed_through(&e) =>
                 {
+                    // A `return` a `CATCH` handler raised at this routine's
+                    // throw site (ADR-0072) returns from the routine that
+                    // installed the handler, not from the routine that threw:
+                    // pass it on, as the light and named paths do for any
+                    // targeted return (`vm_call_light.rs`). Only that kind:
+                    // this path binds no callable id, so an ordinary `return`
+                    // of the routine's own carries the caller's stamp.
+                    if e.raised_by_catch().is_some()
+                        && let Some(target_id) = e.return_target_callable_id()
+                        && self.registration_clone_id(&cf.package, fn_name) != Some(target_id)
+                    {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        result = Err(e);
+                        break;
+                    }
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
