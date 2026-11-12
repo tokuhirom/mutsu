@@ -17,7 +17,10 @@ impl Interpreter {
         if let Some(bindings) = method_def.role_param_bindings.as_deref() {
             for (name, value) in bindings {
                 if name != "?CLASS" {
-                    self.env_mut().insert(name.clone(), value.clone());
+                    // Interned in place: `insert` would clone the name into a
+                    // `String` only to intern it.
+                    let sym = Symbol::intern(name);
+                    self.env_mut().insert_sym_noting(sym, value.clone());
                 }
             }
         }
@@ -68,9 +71,9 @@ impl Interpreter {
         owner_class: &str,
         method_name: &str,
         method_def: &crate::runtime::MethodDef,
-    ) -> Vec<String> {
-        let mut installed = Vec::new();
+    ) -> std::sync::Arc<[String]> {
         if matches!(method_name, "BUILD" | "TWEAK") {
+            let mut installed = Vec::new();
             // Construction-phase role methods are run with the consuming class
             // as the receiver even when their owner is the role declaration.
             // Its concrete role bindings must win over the bare role pun's
@@ -90,16 +93,68 @@ impl Interpreter {
                     }
                 }
             }
-        } else if let Some(role_bindings) = self
-            .class_role_param_bindings(owner_class)
-            .or_else(|| self.class_role_param_bindings(receiver_class_name))
-        {
-            for (name, value) in role_bindings {
-                installed.push(name.clone());
-                self.env_mut().insert(name, value);
-            }
+            self.apply_method_role_bindings(method_def);
+            return installed.into();
+        }
+        let memo = self.method_role_bindings(owner_class, receiver_class_name);
+        for (sym, value) in memo.pairs.iter() {
+            self.env_mut().insert_sym_noting(*sym, value.clone());
         }
         self.apply_method_role_bindings(method_def);
-        installed
+        memo.names
     }
+
+    /// The class-level bindings an ordinary (not `BUILD`/`TWEAK`) role method
+    /// call installs: the owner's `class_role_param_bindings` entry, or the
+    /// receiver's when the owner has none. A pure function of that table, so
+    /// it is read once per `(owner, receiver)` and table state instead of
+    /// cloning the per-class map (and its `String` keys) on every call
+    /// (#17331).
+    // Cost: O(1) expected on a hit (one hash probe and a table-state compare);
+    // O(b) on a miss, b = the class's bindings.
+    fn method_role_bindings(
+        &mut self,
+        owner_class: &str,
+        receiver: &str,
+    ) -> MethodRoleBindingsMemo {
+        let key = (Symbol::intern(owner_class), Symbol::intern(receiver));
+        let state = self.registry().class_role_param_bindings.state_id();
+        if let Some(memo) = self.caches.method_role_bindings_memo.get(&key)
+            && memo.state == state
+        {
+            return memo.clone();
+        }
+        let bindings = self
+            .class_role_param_bindings(owner_class)
+            .or_else(|| self.class_role_param_bindings(receiver))
+            .unwrap_or_default();
+        let mut pairs = Vec::with_capacity(bindings.len());
+        let mut names = Vec::with_capacity(bindings.len());
+        for (name, value) in bindings {
+            pairs.push((Symbol::intern(&name), value));
+            names.push(name);
+        }
+        let memo = MethodRoleBindingsMemo {
+            state,
+            pairs: pairs.into(),
+            names: names.into(),
+        };
+        self.caches
+            .method_role_bindings_memo
+            .insert(key, memo.clone());
+        memo
+    }
+}
+
+/// One `(owner, receiver)` entry of [`ResolutionCaches::method_role_bindings_memo`]:
+/// the bindings in the order they are installed, their names for the exit
+/// merge, and the table state they were read under.
+///
+/// [`ResolutionCaches::method_role_bindings_memo`]:
+///     crate::runtime::resolution_caches::ResolutionCaches::method_role_bindings_memo
+#[derive(Clone)]
+pub(crate) struct MethodRoleBindingsMemo {
+    state: (usize, u64),
+    pairs: std::sync::Arc<[(Symbol, Value)]>,
+    names: std::sync::Arc<[String]>,
 }

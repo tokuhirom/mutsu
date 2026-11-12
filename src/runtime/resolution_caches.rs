@@ -635,6 +635,15 @@ pub(crate) struct ResolutionCaches {
     /// re-dispatches to, per `(role, method)`, with the registry write
     /// generation it was recorded under (`vm_role_default_pun.rs`).
     pub(crate) role_default_pun_memo: HashMap<(Symbol, Symbol), (Symbol, u64)>,
+    /// The class-level role composition bindings a method call installs, per
+    /// `(owner, receiver)`, with the `class_role_param_bindings` table state
+    /// they were read from (`vm_method_role_bindings.rs`).
+    pub(crate) method_role_bindings_memo:
+        rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodRoleBindingsMemo>,
+    /// A method's resolved return spec, per `(owner, spec)`, with the registry
+    /// and package-alias state it was resolved under (`vm_method_return_spec.rs`).
+    pub(crate) method_return_spec_memo:
+        rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodReturnSpecMemo>,
 }
 
 impl ResolutionCaches {
