@@ -5,7 +5,7 @@ use Test;
 # there sees and keeps must not change: Monad's type helpers are this shape
 # (`absent(hit) ?? publish-type(key, { ... }) !! hit`).
 
-plan 12;
+plan 13;
 
 sub with-block(&b) { b() }
 
@@ -41,3 +41,7 @@ my $x = 'caller';
 sub shadow($x) { with-block({ $x }) }
 is shadow('param'), 'param', 'the closure sees the parameter, not the caller';
 is $x, 'caller', "the caller's same-named variable is untouched";
+
+sub run-block($v, &b) { b($v); 'block fell through' }
+sub returns-from-pointy($v) { run-block($v, -> $x { return $x }) }
+is returns-from-pointy(42), 42, "a pointy block's return leaves the routine that made it";

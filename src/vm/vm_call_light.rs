@@ -442,6 +442,19 @@ impl Interpreter {
             }
             Some(std::mem::replace(self.env_mut(), frame))
         };
+        // A closure the body creates may `return` from this routine: like the
+        // full call path, the frame names the routine it belongs to, which is
+        // what the closure's `return` targets (#17497).
+        if !cf.code.closure_compiled_codes.is_empty() && !func_name.is_empty() {
+            let callable_key = crate::runtime::Interpreter::callable_id_key_for_syms(
+                cf.package_sym(),
+                func_name_sym,
+            );
+            let callable_id = self.registration_callable_id(callable_key).unwrap_or(0);
+            if callable_id != 0 {
+                self.env_mut().set_callable_id(callable_id);
+            }
+        }
 
         // Read-through to the caller (parent tier) for the initial value of a
         // local that shadows a same-named caller variable, matching the prior
