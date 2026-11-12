@@ -1095,11 +1095,22 @@ pub(super) fn routine_meta_object(
     {
         return Some(Ok(declared));
     }
+    // The stand-in is built once per node: a second `meta-object` call answers
+    // the object the first one returned, with whatever a `does` mixed into it
+    // (#17415).
+    if let Some(memo) = target.rakuast_memo_meta_object() {
+        return Some(Ok(memo));
+    }
     let mut anonymous = node.clone();
     // A stand-in before the declaration runs (a slang action at parse time): a
     // nameless routine, which is no `proto`/`multi` candidate of anything.
     anonymous
         .fields
         .retain(|f| f.name != Some("name") && f.name != Some("multiness"));
-    Some(interp.eval_rakuast_node(&Value::rakuast(Box::new(anonymous))))
+    anonymous.origin.4 = None;
+    let stand_in = interp.eval_rakuast_node(&Value::rakuast(Box::new(anonymous)));
+    if let Ok(routine) = &stand_in {
+        target.set_rakuast_memo_meta_object(routine.clone());
+    }
+    Some(stand_in)
 }

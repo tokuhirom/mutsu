@@ -805,9 +805,17 @@ impl Interpreter {
                 // snapshot the value and sever every alias of that cell. Only the
                 // value flows back; the cell identity (shared with `$a`) survives,
                 // so post-return `$val++` / `$a = …` keep observing one container.
-                if let Some(ValueView::ContainerRef(arc)) =
+                if let Some(ValueView::ContainerRef(binding)) =
                     target_env.get(source_name).map(Value::view)
                 {
+                    // A variable a closure rebinds holds a binding cell whose
+                    // content is its container (ADR-12529 §3): the value flows
+                    // into that container, and the binding cell -- shared with
+                    // the slot and every capturing closure -- is left intact.
+                    // Storing the bare value into the binding cell cut the
+                    // variable loose from it, so a closure's later `%h := ...`
+                    // no longer reached the declaring frame (#17454).
+                    let arc = Self::value_cell_of(&binding);
                     // The param's final value may itself be a *different* cell: an
                     // aliased container argument (`WrapVarRef`) binds the param
                     // through a fresh cell of its own. Storing that cell into the

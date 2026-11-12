@@ -6042,6 +6042,12 @@ impl Interpreter {
         } else {
             target
         };
+        if !is_positional
+            && let Some(result) = self.try_stash_bound_entry_store(&target, &idx, &raw_val)?
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         // A Range (including one held in an itemized Scalar) is Positional but
         // immutable.  Reject a computed-target element write before the generic
         // path treats it as a scalar to auto-vivify.

@@ -273,6 +273,10 @@ pub struct NodeOrigin(
     /// The package a `Method`'s implicit invocant parameter is typed by
     /// (`implicit_signature`); `None` outside a package.
     pub Option<Box<str>>,
+    /// The routine `meta-object` built for a routine node not declared yet
+    /// (a slang action at parse time), so every call answers the same object,
+    /// as rakudo memoizes it on the node (#17415).
+    pub Option<Value>,
 );
 
 impl PartialEq for NodeOrigin {
