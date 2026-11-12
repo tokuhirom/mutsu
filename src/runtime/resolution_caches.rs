@@ -529,6 +529,10 @@ pub(crate) struct ResolutionCaches {
     /// and the arguments' type keys, valid while the registry has not been
     /// written (`Interpreter::mixin_straight_front_hit`). A hit skips the whole
     /// role walk of `dispatch_mixin_method_call`.
+    /// `$obj ~~ T` for an instance of a user class against a nominal user
+    /// type, by `(class, type)`, valid for the registry write generation in
+    /// the first field (`Interpreter::type_object_accepts`, #17331).
+    pub(crate) instance_type_accepts: (u64, rustc_hash::FxHashMap<(Symbol, Symbol), bool>),
     pub(crate) mixin_straight_front: rustc_hash::FxHashMap<
         crate::runtime::MixinFrontKey,
         crate::runtime::MixinFrontEntry,

@@ -359,7 +359,7 @@ impl Interpreter {
     /// matching `Any`. `nqp::istype` used to call `type_matches_value`
     /// directly and skip all three (`nqp::istype(M, Any)` was 1).
     // Cost: O(d), d = MRO length of the checked type.
-    pub(crate) fn type_object_accepts(
+    pub(super) fn type_object_accepts_uncached(
         &mut self,
         left: &Value,
         type_name: crate::symbol::Symbol,
