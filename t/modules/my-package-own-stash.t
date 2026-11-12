@@ -5,7 +5,7 @@ use Test;
 # `set-in-WHO` over a fresh `my package tmp` in each EVAL). Checked against
 # rakudo.
 
-plan 16;
+plan 17;
 
 { my package P {}; P.WHO<$x> := 1; is P.WHO.keys, '$x', 'a stash entry lands in the package'; }
 { my package P {}; is P.WHO.keys.elems, 0, 'a second declaration of the name starts empty'; }
@@ -42,3 +42,6 @@ isa-ok $n, VersionedClass::Nested, 'its nested class is a variable type';
 my package EnumHolder { our enum Mode <off on> }
 is EnumHolder::Mode::on.value, 1, 'an enum value of a lexical package';
 is EnumHolder::Mode::on.WHAT.^name, 'Mode', 'its enum keeps its declared name';
+
+my package Indirect { our @bar = 42, 1 }
+is @::("Indirect::bar")[0], 42, 'an our variable by its symbolic name';
