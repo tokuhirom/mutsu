@@ -16,8 +16,9 @@
 //! - the type is a registered class or role named without a smiley or a
 //!   parameterization, and is not a subset (whose `where` reads the value);
 //! - at this point of the program the name is not re-bound: no type capture
-//!   or package alias resolves it (`try_resolved_type_capture_name`) and no
-//!   lexical term or constant of that name is in scope (`type_name_binding`).
+//!   or package alias resolves it (`try_resolved_type_capture_name`), and
+//!   the name is bound in scope to nothing but that very type object
+//!   (`type_name_binding`; a constant or term of the name shadows it).
 //!
 //! Every registry write may change an MRO or a composition, so the table is
 //! dropped whenever the registry's write generation moves.
@@ -87,9 +88,15 @@ impl Interpreter {
                 return None;
             }
         }
-        if self.try_resolved_type_capture_name(ty).is_some() || self.type_name_binding(ty).is_some()
-        {
+        if self.try_resolved_type_capture_name(ty).is_some() {
             return None;
+        }
+        // A lexical type declaration binds its own name to its type object;
+        // anything else bound under the name (a constant, a term) shadows it.
+        match self.type_name_binding(ty) {
+            None => {}
+            Some(bound) if matches!(bound.view(), ValueView::Package(p) if p == type_name) => {}
+            Some(_) => return None,
         }
         Some((class_name, type_name))
     }
