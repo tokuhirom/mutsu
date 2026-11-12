@@ -118,6 +118,7 @@ impl Interpreter {
         self.caches.resolved_seq_cache.clear();
         self.caches.dispatch_multi_candidate.clear();
         self.caches.classhow_lookup_cache.clear();
+        self.caches.classhow_can_cache.clear();
         self.caches.deferral_build_context_free.clear();
         self.caches.nominal_param_defs.clear();
         self.caches.builtin_method_reached.clear();

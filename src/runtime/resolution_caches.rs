@@ -391,6 +391,10 @@ pub(crate) struct ResolutionCaches {
     /// one method return the same Method object (`===`) without rebuilding it
     /// (#14853). Cleared with the other method caches on a generation change.
     pub(crate) classhow_lookup_cache: rustc_hash::FxHashMap<(Symbol, Symbol, bool), Option<Value>>,
+    /// `.^can` answers for a class receiver, keyed `(class, method)`, so
+    /// repeated calls hand back the same Method objects (`.^lookup`'s twin;
+    /// see `collect_can_methods_memo`). Cleared with `classhow_lookup_cache`.
+    pub(crate) classhow_can_cache: rustc_hash::FxHashMap<(Symbol, Symbol), Vec<Value>>,
     /// Memoized `(class, method) -> can this name's deferral frame be built
     /// after the call has started` (see `method_dispatch_lazy`). Structural,
     /// cleared with `dispatch_multi_candidate`.
