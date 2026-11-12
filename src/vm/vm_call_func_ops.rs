@@ -790,8 +790,6 @@ impl Interpreter {
                         }
                         // Slice 2d: array/hash into a plain `$` param must share the
                         // caller's container -> fall through to the slow path.
-                        let share_into_scalar =
-                            Self::call_shares_container_into_scalar_param(cf, stack_args);
                         // ADR-0110: a routine the compiler proved typed and
                         // resolved runs its own chunk, which needs none of
                         // the binder, frame, overlay and metadata work the
@@ -809,7 +807,6 @@ impl Interpreter {
                             && !has_junction
                             && !call_has_slip
                             && !call_has_named
-                            && !share_into_scalar
                             && cl.is_none()
                         {
                             let start = self.stack.len() - arity_usize;
@@ -824,7 +821,6 @@ impl Interpreter {
                         if !has_junction
                             && !call_has_slip
                             && !call_has_named
-                            && !share_into_scalar
                             // This cache is keyed by NAME, so one entry serves
                             // every arity the call sites use. A routine the
                             // light paths may serve only at full arity
@@ -1191,10 +1187,6 @@ impl Interpreter {
                         && !named_share
                         && !has_junction
                         && !call_has_slip
-                        && !Self::call_shares_container_into_scalar_param(
-                            cf,
-                            &self.stack[self.stack.len() - arity_usize..],
-                        )
                     {
                         let start = self.stack.len() - arity_usize;
                         // Pooled args buffer (J4d): `drain(..).collect()` was one
@@ -1297,8 +1289,6 @@ impl Interpreter {
                         // arg-source table to find the caller variable, so decode
                         // it here (only on an otf-cache hit).
                         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
-                        let share_into_scalar =
-                            Self::call_shares_container_into_scalar_param(&cf, &args);
                         let named_share = Self::call_shares_container_into_named_scalar_param(
                             &cf,
                             &args,
@@ -1320,8 +1310,7 @@ impl Interpreter {
                         // routinely is.
                         let body_fns = cf.compiled_fns.clone();
                         let compiled_fns = body_fns.as_deref().unwrap_or(compiled_fns);
-                        let result = if !share_into_scalar
-                            && !named_share
+                        let result = if !named_share
                             && !has_junction
                             && !mainline_capture_blocked
                             && Self::is_light_call_eligible(&cf, name_str)
@@ -1333,8 +1322,7 @@ impl Interpreter {
                                 name_str,
                                 name_sym,
                             )
-                        } else if !share_into_scalar
-                            && !named_share
+                        } else if !named_share
                             && !mainline_capture_blocked
                             && !call_has_named
                             && self.is_positional_light_call_eligible(
@@ -2384,7 +2372,6 @@ impl Interpreter {
                         &args,
                         Some(code),
                     )
-                    && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !self.has_multi_candidates_cached_sym(name_sym)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
@@ -2459,7 +2446,6 @@ impl Interpreter {
                 // (roast/S06-multi/positional-vs-named.t).
                 if Self::is_light_call_eligible(cf, name)
                     && !self.has_multi_candidates_cached_sym(name_sym)
-                    && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !Self::call_shares_container_into_named_scalar_param(
                         cf,
                         &args,
@@ -2517,7 +2503,6 @@ impl Interpreter {
                         Some(code),
                         where_verified,
                     )
-                    && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
                     && !self.light_call_blocked_by_mainline_capture(name)

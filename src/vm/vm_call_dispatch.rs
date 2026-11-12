@@ -719,7 +719,6 @@ impl Interpreter {
                 // `is_positional_light_call_eligible`'s own doc comment.
                 None,
             )
-            && !Self::call_shares_container_into_scalar_param(&cf, &args)
             && !loan_env!(self, routine_is_test_assertion_by_name(&name, &args))
             && self.wrap_sub_id_for_name(&name).is_none()
             && !self.light_call_blocked_by_mainline_capture(&name);

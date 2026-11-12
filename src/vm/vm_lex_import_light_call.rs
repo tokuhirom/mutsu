@@ -51,7 +51,6 @@ impl Interpreter {
         let args = &self.stack[start..end];
         let light = !args.iter().any(Self::arg_needs_general_call)
             && self.is_positional_light_call_eligible(cf, name, args.len(), args, Some(code))
-            && !Self::call_shares_container_into_scalar_param(cf, args)
             && self.wrap_sub_id_for_name(name).is_none();
         if !light {
             return Ok(false);

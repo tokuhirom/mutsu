@@ -615,35 +615,6 @@ impl Interpreter {
             })
     }
 
-    /// Slice 2d: detect a call that passes an array/hash *value* to a plain
-    /// readonly scalar `$` param. Raku binds the same mutable container in that
-    /// case (`$n.push` / `$n[0]=` / `my @a := @$n` all mutate the caller's
-    /// container), which the slot-only fast paths (light / positional_light)
-    /// cannot express — they bind a detached copy into a local slot. Such calls
-    /// must take the slow `bind_function_args_values` path, which promotes the
-    /// param to a shared cell and registers the rw writeback. The common case
-    /// (scalar args to `$` params, e.g. `fib($n)`) returns false cheaply, so the
-    /// fast paths are preserved.
-    pub(crate) fn call_shares_container_into_scalar_param(
-        cf: &CompiledFunction,
-        args: &[Value],
-    ) -> bool {
-        // Cheapest rejection first: most calls pass non-container args (e.g.
-        // `fib($n-1)`), so check the arg value before touching the param meta.
-        args.iter().enumerate().any(|(i, arg)| {
-            Self::arg_is_container_value(arg)
-                && cf.param_defs.get(i).is_some_and(|pd| {
-                    Self::is_plain_scalar_param_name(&pd.name)
-                        && !pd.slurpy
-                        && !pd.double_slurpy
-                        && !pd.is_invocant
-                        && !pd.sigilless
-                        && pd.no_traits()
-                        && pd.sub_signature.is_none()
-                })
-        })
-    }
-
     /// True when `arg` is a varref-capture for an `@`/`%` *array/hash variable*
     /// holding an `Array`/`Hash`. Only an `@`/`%` source needs the cell-promotion:
     /// the fast paths copy the array out of the `@`-variable into the param slot
@@ -665,7 +636,7 @@ impl Interpreter {
             && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
     }
 
-    /// Method analogue of `call_shares_container_into_scalar_param`: true when
+    /// True when
     /// an array/hash *variable* argument is passed into a plain readonly scalar
     /// `$` param of a method. Raku binds the same mutable container, so such a
     /// call must take the slow `bind_function_args_values` path (which promotes
