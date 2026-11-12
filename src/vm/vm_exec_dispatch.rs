@@ -2061,6 +2061,21 @@ impl Interpreter {
                     // it to a Hash would drop the subclass and its methods.
                     self.check_associative_bind_value(&name, &raw_val)?;
                     raw_val
+                } else if name.starts_with('%')
+                    && (is_bind_ctx || is_rebind)
+                    && matches!(raw_val.deref_container().view(), ValueView::Hash(..))
+                {
+                    // `%h := $hash` binds the Hash itself, exactly as the
+                    // `SetLocal` twin does (`vm_var_assign_set_local.rs`, its
+                    // `is_bind` arm). Coercing it like an assignment took a
+                    // snapshot of a shared node, so a by-name bind (a closure
+                    // whose `%h` is not a slot of its own frame, e.g. EEL's
+                    // RakuAST-built `%state := $_` restore block) held a
+                    // copy that later writes through the source never reached.
+                    let raw_val = raw_val.into_deref().deitemize_for_sigil_bind();
+                    self.check_associative_bind_value(&name, &raw_val)?;
+                    self.check_hash_bind_value_type(&name, &raw_val)?;
+                    raw_val
                 } else if name.starts_with('%') {
                     // Apply quant-hash (SetHash/BagHash/MixHash) coercion first
                     // so that typed container assignment sees a Set/Bag/Mix,
