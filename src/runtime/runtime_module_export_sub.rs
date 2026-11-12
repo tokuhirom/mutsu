@@ -188,7 +188,7 @@ impl Interpreter {
                 // a `die` must not leave the importer running in the module's env.
                 self.restore_caller_env_keeping_dynamics(caller_env);
                 let result = result?;
-                self.install_export_map(&result, importer.as_deref());
+                self.install_hook_result(&result, importer.as_deref());
                 if let Some(m) = self.module.module_load_stack.last().cloned() {
                     self.module
                         .module_export_defs
@@ -242,7 +242,7 @@ impl Interpreter {
         if let Some(m) = self.module.module_load_stack.last().cloned() {
             self.record_eval_hook_result(&m, &hook_args, &result);
         }
-        self.install_export_map(&result, importer.as_deref());
+        self.install_hook_result(&result, importer.as_deref());
         if let Some(m) = self.module.module_load_stack.last().cloned() {
             // `module_env` is the module's own scope: a re-`use` of an
             // already-loaded module re-runs EXPORT there too (see
@@ -292,6 +292,9 @@ impl Interpreter {
         let Some(def) = self.module.module_export_defs.get(module).cloned() else {
             return Ok(());
         };
+        // The block's `use` runs at compile time in rakudo: its hook sees the
+        // importing unit as `$*CU` (#15371).
+        let _compile_phase = crate::unit_source_text::ReopenCompilePhaseGuard::enter();
         let export_args = self
             .module
             .pending_use_export_args
@@ -304,7 +307,7 @@ impl Interpreter {
             && let Some(result) = self.replay_eval_hook_result(module, &export_args)
         {
             let importer = self.module.module_load_stack.last().cloned();
-            self.install_export_map(&result, importer.as_deref());
+            self.install_hook_result(&result, importer.as_deref());
             return Ok(());
         }
         let hook_args = export_args.clone();
@@ -364,7 +367,7 @@ impl Interpreter {
         let result = result?;
         let importer = self.module.module_load_stack.last().cloned();
         self.record_eval_hook_result(module, &hook_args, &result);
-        self.install_export_map(&result, importer.as_deref());
+        self.install_hook_result(&result, importer.as_deref());
         Ok(())
     }
 
@@ -399,6 +402,64 @@ impl Interpreter {
             .eval_hook_results
             .get(&Self::hook_replay_key(module, args))
             .cloned()
+    }
+
+    /// Install what a `sub EXPORT` produced for its importer: the map it
+    /// returned, then the declarations it merged into the importer's scope
+    /// while it ran (`pending_generated_lexicals`).
+    // Cost: O(s), s = symbols installed.
+    fn install_hook_result(&mut self, result: &Value, importer: Option<&str>) {
+        self.install_export_map(result, importer);
+        let generated = std::mem::take(&mut self.module.pending_generated_lexicals);
+        for (into_block, name, value) in generated {
+            if into_block {
+                self.install_export_symbol(name, value, importer);
+            } else {
+                self.install_unit_generated_lexical(name, value, importer);
+            }
+        }
+    }
+
+    /// Install a declaration a `sub EXPORT` merged into its importing unit
+    /// (`set-unit`). At the unit's top level that is where an export goes
+    /// anyway. A `use` inside a block runs its hook twice: in the BEGIN-time
+    /// preload at the head of the unit (`push_preload_scope`), whose installs
+    /// are otherwise dropped, and again where the block's `use` stands. The
+    /// unit's declaration belongs to the first: it is bound in the unit's env
+    /// there, past the preload scope's rollback, so it outlives the block.
+    // Cost: as `install_export_symbol`.
+    fn install_unit_generated_lexical(&mut self, key: String, value: Value, importer: Option<&str>) {
+        let in_preload = importer.is_none()
+            && self
+                .module
+                .import_scope_stack
+                .last()
+                .is_some_and(|scope| !scope.scope_classes);
+        if !in_preload {
+            self.install_export_symbol(key, value, importer);
+            return;
+        }
+        let value = if key.starts_with(['$', '@', '%']) {
+            value
+        } else {
+            value.into_deref()
+        };
+        match key.chars().next() {
+            Some('$') => {
+                self.env.insert_sym(Symbol::intern(&key[1..]), value);
+            }
+            Some('&' | '@' | '%') => {
+                self.env.insert_sym(Symbol::intern(&key), value);
+            }
+            _ => {
+                self.module
+                    .export_term_override_names
+                    .insert(Symbol::intern(&key));
+                let term_key = crate::runtime::term_names::term_key(&key);
+                self.env.insert_sym(Symbol::intern(&term_key), value.clone());
+                self.env.insert_sym(Symbol::intern(&key), value);
+            }
+        }
     }
 
     /// Install the symbols named by an `EXPORT` return value. Accepts a single

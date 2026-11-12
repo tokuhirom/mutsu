@@ -132,6 +132,13 @@ pub(crate) struct ModuleState {
     /// entry: the imported sub becomes that module's own EXPORT for *its*
     /// importers, called with their `use` arguments.
     pub(crate) pending_inner_export_subs: ValueMap,
+    /// Declarations a running `sub EXPORT` asked to merge into its importer's
+    /// scope (`$*CU.merge-generated-lexical-declaration`, CompUnit::Util's
+    /// `set-unit` / `set-lexpad`, #15371): installed with the hook's returned
+    /// map once the hook is done and the importer's env is back. The flag is
+    /// whether the declaration targets the block the `use` is in (`set-lexpad`)
+    /// rather than the importing unit (`set-unit`).
+    pub(crate) pending_generated_lexicals: Vec<(bool, String, Value)>,
     /// Each loaded module's EXPORT (own `sub EXPORT` or a Slangify-style
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
@@ -758,6 +765,7 @@ impl ModuleState {
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
             pending_inner_export_subs: ValueMap::default(),
+            pending_generated_lexicals: Vec::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: Default::default(),
@@ -881,6 +889,7 @@ impl ModuleState {
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
             pending_inner_export_subs: ValueMap::default(),
+            pending_generated_lexicals: Vec::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
             loaded_modules: self.loaded_modules.clone(),

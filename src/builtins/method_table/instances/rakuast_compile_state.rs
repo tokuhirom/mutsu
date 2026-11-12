@@ -90,14 +90,24 @@ fn import_lexical_name(target: &Value, _args: &[Value]) -> Result<Value, Runtime
 // Cost: O(f) plus the install (`merge_generated_lexical`).
 fn merge_generated_lexical(
     interp: &mut crate::runtime::Interpreter,
-    _target: &Value,
+    target: &Value,
     args: &[Value],
     _named: crate::builtins::method_table::Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     let decl = args.first()?;
     let name = built_import_field(decl, "lexical-name")?.to_string_value();
     let value = built_import_field(decl, "compile-time-value").unwrap_or(Value::NIL);
-    Some(interp.merge_generated_lexical(&name, value))
+    // The block scope `$*R.current-scope` answers inside a block, or the unit.
+    let into_block = matches!(target.view(), ValueView::RakuAst(node)
+        if node.class == crate::rakuast::RakuAstClass::Block);
+    Some(interp.merge_generated_lexical(&name, value, into_block))
+}
+
+/// `$scope.find-generated-lexical($name)`: no generated declaration is read
+/// back from a scope; CompUnit::Util reads its own installs from its table.
+// Cost: O(1).
+fn find_generated_lexical(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::NIL)
 }
 
 // Cost: O(f).
@@ -176,6 +186,23 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Interp(merge_generated_lexical),
         flags: RowFlags::OWNER_ONLY,
         named: &["resolver", "force"],
+    },
+    MethodRow {
+        owner: "RakuAST::Block",
+        name: "merge-generated-lexical-declaration",
+        arity: 1,
+        handler: Handler::Interp(merge_generated_lexical),
+        flags: RowFlags::OWNER_ONLY,
+        named: &["resolver", "force"],
+    },
+    unit_row("find-generated-lexical", 1, find_generated_lexical),
+    MethodRow {
+        owner: "RakuAST::Block",
+        name: "find-generated-lexical",
+        arity: 1,
+        handler: Handler::Pure(find_generated_lexical),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
     },
     MethodRow {
         owner: "RakuAST::Declaration::Import",

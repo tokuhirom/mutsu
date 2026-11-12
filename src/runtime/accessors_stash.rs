@@ -654,6 +654,13 @@ impl Interpreter {
             // := &name`.
             if sigil == Some('&') {
                 self.publish_our_pseudo_stash_symbol(&format!("&OUR::{bare}"), &binding);
+                // A routine bound into an export tag's stash through its
+                // `.WHO` (`$WHO<DEFAULT>.WHO<&foo> := ...`, CompUnit::Util's
+                // `set-unit('EXPORT::DEFAULT::&foo', ...)`) is also an export of
+                // that tag, as `EXPORT::DEFAULT::<&foo> := ...` makes it (#15371).
+                if Self::export_stash_tag(&package).is_some() {
+                    self.publish_package_stash_symbol(package.clone(), "&", bare, &binding);
+                }
             } else if Self::export_stash_tag(&package).is_some() {
                 // A type or variable copied across (`ANN`, `$var`) is an export
                 // of the module just the same.

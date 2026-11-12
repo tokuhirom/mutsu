@@ -51,6 +51,10 @@ pub(crate) const VAR_TRAIT_PHASER_KINDS: &[&str] = &[
 
 pub(crate) const VARIABLE_BLOCK_MARK: &str = "__mutsu_var_block";
 
+/// The resolver attribute holding the block scope `$*R.current-scope`
+/// answers for a `use` inside a block.
+const BLOCK_SCOPE_ATTR: &str = "current-block-scope";
+
 /// The LEAVE phasers attached to one module body's own compunit while it
 /// loads, plus the import-scope depth its body started at: a `use` whose
 /// depth is no deeper than that is at the module's top level, with no
@@ -226,6 +230,35 @@ impl Interpreter {
                     )));
                 };
                 Some(self.add_leave_phaser(target, phaser))
+            }
+            // Inside a block, the scope a `use` is compiled in is that block,
+            // not the unit (`set-lexpad` installs there, `set-unit` into `$*CU`,
+            // #15371). The node is kept on the resolver, so every call of the
+            // hook answers the same one (CompUnit::Util keys its installs by
+            // the scope's identity).
+            // Cost: O(1).
+            // The BEGIN-time preload's run of a hook (`depth` -1, see the
+            // module docs) stands for a `use` inside a block too: only nested
+            // `use`s are preloaded. A module body's own BEGIN is no hook.
+            (RESOLVER_CLASS, "current-scope")
+                if match int_attr(target, "depth") {
+                    Some(d) if d >= 0 => !self.find_attach_target(target, "block").is_nil(),
+                    _ => !self.module.export_hook_importer_envs.is_empty(),
+                } =>
+            {
+                let ValueView::Instance { attributes, .. } = target.view() else {
+                    return None;
+                };
+                if let Some(scope) = attributes.as_map().get(BLOCK_SCOPE_ATTR).cloned() {
+                    return Some(Ok(scope));
+                }
+                let scope = Value::rakuast(Box::new(crate::rakuast::RakuAstNode {
+                    class: crate::rakuast::RakuAstClass::Block,
+                    fields: Vec::new(),
+                    origin: Default::default(),
+                }));
+                attributes.insert(BLOCK_SCOPE_ATTR, scope.clone());
+                Some(Ok(scope))
             }
             (RESOLVER_CLASS, _) => self.dispatch_begin_scope_method(method, args),
             _ => None,
