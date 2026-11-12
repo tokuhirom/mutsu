@@ -213,6 +213,7 @@ impl Interpreter {
             | OpCode::SinkPop(..)
             | OpCode::SinkPopAssign
             | OpCode::SinkPopCall(..)
+            | OpCode::SinkPopKeepProxy(..)
             | OpCode::ThrowIfFailure
             | OpCode::WarnSuppressPop
             | OpCode::WarnSuppressPush => self.exec_ops_group_07(code, ip, compiled_fns),

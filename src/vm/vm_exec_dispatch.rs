@@ -5122,7 +5122,8 @@ impl Interpreter {
             //
             // `SinkPopCall`: as `SinkPop(false, true)`, plus O(1) to resolve the
             // callee when the value has a user `sink` method.
-            OpCode::SinkPop(..) | OpCode::SinkPopCall(_) => {
+            // `SinkPopKeepProxy`: as `SinkPop`, without the Proxy FETCH.
+            OpCode::SinkPop(..) | OpCode::SinkPopCall(_) | OpCode::SinkPopKeepProxy(..) => {
                 self.sync_source_line(code, *ip);
                 // `sink_call`: the callee of a `SinkPopCall`, whose value may
                 // still be spared by `sink_call_may_explode` -- asked only once
@@ -5130,7 +5131,8 @@ impl Interpreter {
                 // a by-name callee lookup and almost every sunk call returns a
                 // value that sinks to nothing.
                 let (user_sink, may_explode_failure, sink_call) = match &code.ops[*ip] {
-                    OpCode::SinkPop(user_sink, may_explode_failure) => {
+                    OpCode::SinkPop(user_sink, may_explode_failure)
+                    | OpCode::SinkPopKeepProxy(user_sink, may_explode_failure) => {
                         (*user_sink, *may_explode_failure, None)
                     }
                     OpCode::SinkPopCall(name_idx) => (

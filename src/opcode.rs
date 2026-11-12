@@ -2556,6 +2556,11 @@ pub(crate) enum OpCode {
     /// resolved only once a value with a user `sink` is in hand. Otherwise as
     /// `SinkPop(false, true)`.
     SinkPopCall(u32),
+    /// [`OpCode::SinkPop`] for a statement that calls the topic
+    /// (`.(args);`, `.(Type) for @blocks`): a Proxy the call hands back is
+    /// not FETCHed, as rakudo's method-form call on `$_` leaves it alone
+    /// (#17500), while a user `sink` method still runs.
+    SinkPopKeepProxy(bool, bool),
     /// Pop the value of an assignment used as a statement (`%h{$k} = ...;`,
     /// `@a[$i] = ...;`). Rakudo treats assignment statements as wanted, not
     /// sunk: an assigned unhandled Failure is stored, never thrown — except

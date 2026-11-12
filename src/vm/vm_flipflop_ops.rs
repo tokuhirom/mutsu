@@ -95,6 +95,26 @@ impl Interpreter {
                         || matches!(right_plain.view(), ValueView::Junction { .. }))
                     && !self.user_infix_accepts_junction(&infix_name, &left_plain, &right_plain)
                 {
+                    // A negated comparison is the negation of its positive
+                    // form, which threads and then collapses: rakudo's core
+                    // `infix:<ne>(\a, \b) { not a eq b }` takes the Junction
+                    // whole, so `$x ne any(@r)` is "equal to none of them",
+                    // not a Junction of `ne`s that is true for any second
+                    // element (#17513: Red's table-removal loop never shrank).
+                    if let Some(positive) = Self::negated_comparison_base(&name) {
+                        let threaded = self.thread_user_infix_junction(
+                            positive,
+                            modifier.as_deref(),
+                            left_plain,
+                            right_plain,
+                            code,
+                            compiled_fns,
+                        )?;
+                        let truth = self.eval_truthy_result(&threaded)?;
+                        self.apply_pending_rw_writeback(code);
+                        self.stack.push(Value::truth(!truth));
+                        return Ok(());
+                    }
                     let threaded = self.thread_user_infix_junction(
                         &name,
                         modifier.as_deref(),
@@ -202,6 +222,18 @@ impl Interpreter {
     /// Autothread a Junction operand through a user `infix:<op>`, one eigenstate
     /// at a time, re-entering the ordinary two-operand path for each leaf.
     // Cost: O(k * c), k = eigenstates, c = cost of one leaf call.
+    /// The positive comparison a negated comparison operator negates:
+    /// `ne` is `not eq`, `!=` is `not ==`, as rakudo defines them over
+    /// whole (un-threaded) operands. `None` for every other operator.
+    // Cost: O(1).
+    fn negated_comparison_base(name: &str) -> Option<&'static str> {
+        match name {
+            "ne" => Some("eq"),
+            "!=" | "!==" => Some("=="),
+            _ => None,
+        }
+    }
+
     fn thread_user_infix_junction(
         &mut self,
         name: &str,

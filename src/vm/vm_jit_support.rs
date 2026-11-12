@@ -176,6 +176,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             // Sink context (forces lazies / throws unhandled Failures)
             | OpCode::SinkPop(_, _)
             | OpCode::SinkPopCall(_)
+            | OpCode::SinkPopKeepProxy(_, _)
             // Topic / context markers
             | OpCode::MarkBindContext
             | OpCode::MarkVarDeclContext

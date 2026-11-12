@@ -36,6 +36,7 @@ impl Interpreter {
                     | OpCode::SetLocalDecl { .. }
                     | OpCode::SinkPop(..)
                     | OpCode::SinkPopCall(_)
+                    | OpCode::SinkPopKeepProxy(..)
                     | OpCode::ThrowIfFailure
                     | OpCode::TypeCheck(..)
                     | OpCode::IndexAssignExprNamed { .. }
@@ -96,7 +97,10 @@ impl Interpreter {
         // it, so a resumed handler continues with the next op either way.
         if matches!(
             code.ops[*ip],
-            OpCode::SinkPop(..) | OpCode::SinkPopCall(_) | OpCode::ThrowIfFailure
+            OpCode::SinkPop(..)
+                | OpCode::SinkPopCall(_)
+                | OpCode::SinkPopKeepProxy(..)
+                | OpCode::ThrowIfFailure
         ) {
             if !Self::is_inline_catchable(&err) || err.catch_inline_verdict().is_some() {
                 return Err(err);

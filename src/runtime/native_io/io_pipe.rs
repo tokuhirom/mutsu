@@ -148,13 +148,30 @@ impl Interpreter {
                 {
                     // Do NOT close stdin here -- let the explicit .close handle it.
                     // Closing stdin prematurely breaks concurrent writes from `start` blocks.
+                    // What a line-at-a-time `get` read ahead precedes the
+                    // rest of the pipe.
+                    let with_pending = |is_err: bool, rest: Option<String>| {
+                        let pending = crate::runtime::live_pipe_lines::take_pending(pid, is_err);
+                        if pending.is_empty() {
+                            return rest;
+                        }
+                        let mut text = String::from_utf8_lossy(&pending).into_owned();
+                        text.push_str(&rest.unwrap_or_default());
+                        Some(text)
+                    };
                     let captured_out: Option<String> = if state.capture_out {
-                        state.child.stdout.take().and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok())
+                        with_pending(
+                            false,
+                            state.child.stdout.take().and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok()),
+                        )
                     } else {
                         None
                     };
                     let captured_err: Option<String> = if state.capture_err {
-                        state.child.stderr.take().and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok())
+                        with_pending(
+                            true,
+                            state.child.stderr.take().and_then(|s| crate::runtime::exit_aware_read::slurp_pipe(s).ok()),
+                        )
                     } else {
                         None
                     };
@@ -226,7 +243,15 @@ impl Interpreter {
                     };
                     return Ok(Value::array(lines));
                 }
+                // A line at a time while the child runs: it may answer a
+                // line and then wait on its stdin for the parent.
                 "get" => {
+                    if let Some(line) = crate::runtime::live_pipe_lines::read_line(
+                        live_pid,
+                        pipe_type == "err",
+                    ) {
+                        return Ok(line.map(Value::str).unwrap_or(Value::NIL));
+                    }
                     let content = finalize_and_get_content();
                     let line = content.lines().next().unwrap_or("");
                     return Ok(Value::str(line.to_string()));
