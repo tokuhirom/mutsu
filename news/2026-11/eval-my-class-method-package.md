@@ -1,23 +1,19 @@
-# A `my class` EVAL'd from a method keeps one identity
+# A `my class` names itself inside its own body
 
-A `my class` declared by an `EVAL` or `EVALFILE` that runs inside a method
-belongs to the method's package, as in rakudo. For `L.load`, the class is
-`L::FT`. mutsu compiled its methods' `::?CLASS` for `L::FT` but registered the
-type as plain `FT`. A method body does not always switch the runtime package
-to its class, so the registration used the global package instead.
+A `my class` used to bind its own name only after its body had run. When
+something in the body named the class, the name was resolved through the
+package lookup instead. Two body features do this: trait arguments
+(`is referencing(*.id, :model(FixtureTree))`) and attribute defaults.
 
-There was a second problem in the same place. The class's own name was only
-bound after its body had run, so a trait argument in the body that named the
-class (`is referencing(*.id, :model(FixtureTree))`) resolved through the
-package lookup. It could pick up the type left by an earlier evaluation of the
-same file.
+The package lookup is a problem when the same `EVAL` or `EVALFILE` runs
+several times from a method. An earlier run of that code has already left a
+binding of the bare name to its own class, so the lookup could hand back that
+older type instead of the class being declared.
 
-Two changes fix this:
-
-- A class declaration compiled inside a routine now carries the package it
-  was compiled in.
-- A `my class` binds its name before its body runs.
+The lexical binding is now installed before the body runs, as rakudo does. A
+bare-name alias left by an earlier evaluation of the same declaration is
+replaced at that point. An outer type with the same spelling is left alone.
 
 Red's t/160 loads its configuration file with `EVALFILE` once per fixture
 command. Its "cyclic row references are rejected" test now passes, and the
-file matches raku (#17547).
+whole file matches raku (#17547).
