@@ -41,6 +41,37 @@ impl Interpreter {
         }
         // A `$` scalar with a plain name (no `@`/`%`/`&`, no attribute twigil).
         code.simple_scalar_local_desc(idx)?;
+        self.env_free_slot_unshared(code, name, idx, false)
+            .then_some(idx)
+    }
+
+    /// The half of [`Self::env_free_decl_slot`] that does not depend on the
+    /// slot's sigil: nothing reads the slot by name, nothing boxes it, and no
+    /// name-keyed metadata of it exists to clear.
+    // Cost: O(1), as `env_free_decl_slot`.
+    #[inline]
+    fn env_free_slot_unshared(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        idx: usize,
+        sigilless_term: bool,
+    ) -> bool {
+        self.env_free_slot_unshared_opt(code, name, idx, sigilless_term)
+            .is_some()
+    }
+
+    /// [`Self::env_free_slot_unshared`] as an `Option`. A sigilless term's
+    /// own readonly marker is not a reason to decline: the `SetTermMark` ops
+    /// around its declaration reset it before the store and set it after.
+    #[inline]
+    fn env_free_slot_unshared_opt(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        idx: usize,
+        sigilless_term: bool,
+    ) -> Option<usize> {
         // Nothing reads the slot by name, and no sibling slot shares the name.
         if code.needs_env_sync.get(idx).copied().unwrap_or(true)
             || code.dup_named_locals.get(idx).copied().unwrap_or(true)
@@ -75,7 +106,8 @@ impl Interpreter {
         // full cascade for every declaration in it (~1.2K instructions each);
         // the per-name "ever an env key" bit answers the question this lane
         // actually has (#15981).
-        if (crate::env::sigilless_readonly_keys_possible()
+        if (!sigilless_term
+            && crate::env::sigilless_readonly_keys_possible()
             && code
                 .readonly_sym(idx)
                 .is_none_or(crate::symbol::maybe_env_key))
@@ -154,6 +186,67 @@ impl Interpreter {
         {
             self.clear_constant_marker(name);
         }
+        self.locals[idx] = v;
+        true
+    }
+}
+
+impl Interpreter {
+    /// The `SetLocalDecl` store of a sigilless term's declaration, `my \k =
+    /// <value>`, whose slot is the term's only home: the declaration steps of
+    /// the generic store (`constant` marker, readonly reset) and the slot
+    /// write, nothing else (#17331).
+    ///
+    /// Taken only when the marks are exactly the declaration's own
+    /// (`vardecl` + `constant` + initializer, no bind flavour: a `my \k =
+    /// $var` aliasing a container compiles to a bind and declines), the value
+    /// is a tag-probed inert scalar payload (no container, Proxy, Seq or
+    /// Failure to treat), the slot holds no write-through cell, and every
+    /// name-keyed lane the cascade consults is clear — the same predicates as
+    /// [`Self::exec_set_local_decl_fast`]. Declines (`false`, nothing
+    /// consumed) otherwise.
+    // Cost: O(1) plus one env write for the `constant` marker.
+    pub(super) fn exec_set_local_sigilless_decl_fast(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> bool {
+        let idx = idx as usize;
+        if !self.mark_ctx.only_constant_declaration_marks() {
+            return false;
+        }
+        let Some(name) = code.locals.get(idx) else {
+            return false;
+        };
+        if name.len() < 2 || !name.starts_with('\\') || idx >= self.locals.len() {
+            return false;
+        }
+        let Some(desc) = code.binding_descs.get(idx) else {
+            return false;
+        };
+        if !self.env_free_slot_unshared(code, name, idx, true)
+            || !self.set_local_scalar_metadata_lanes_clear(code, idx, desc)
+            || Self::slot_type_constraint_possible(code, idx)
+        {
+            return false;
+        }
+        let Some(v) = self.stack.last() else {
+            return false;
+        };
+        if !v.is_inert_scalar_store_payload() || !self.locals[idx].is_plain_scalar_store_slot() {
+            return false;
+        }
+        // -- committed: from here the store cannot fall back --
+        let v = self.stack.pop().unwrap_or(Value::NIL);
+        self.mark_ctx.consume_for_store();
+        let name = name.clone();
+        self.clear_var_default(&name);
+        if !self.no_readonly_vars()
+            && let Some(sym) = code.locals_sym.get(idx).copied()
+        {
+            self.unmark_readonly_sym(sym);
+        }
+        self.note_constant_marker(&name);
         self.locals[idx] = v;
         true
     }

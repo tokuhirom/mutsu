@@ -130,6 +130,18 @@ impl MarkContextState {
         pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
     }
 
+    /// Whether the pending marks are exactly those of a sigilless term's
+    /// declaration (`my \k = EXPR`): `vardecl`, `constant` and the explicit
+    /// initializer, and no bind, rebind, shaped, raw-param or array-share
+    /// flavour. Leaves the word alone, like [`Self::only_declaration_marks`].
+    #[inline]
+    pub(crate) fn only_constant_declaration_marks(&self) -> bool {
+        const REQUIRED: u16 = bit::VARDECL | bit::CONSTANT | bit::EXPLICIT_INITIALIZER;
+        const ALLOWED: u16 = REQUIRED | bit::DECL_TYPECHECKED;
+        let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
+        pending & REQUIRED == REQUIRED && pending & !ALLOWED == 0
+    }
+
     /// Snapshot the flag word and clear everything a store consumes, in one
     /// load and one store. See [`MarkFlags`].
     #[inline]
