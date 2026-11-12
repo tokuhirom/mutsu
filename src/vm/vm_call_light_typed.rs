@@ -92,6 +92,10 @@ impl Interpreter {
         // callee's routine-level `my $x` must not register in the caller's active
         // `BlockScope` frame and be reverted at the caller's block exit.
         let saved_block_declared_vars = self.lexicals.block_declared_vars.push_frame();
+        // `:=` / sigilless bind pairs are per-frame slot indices: a callee's
+        // pairs must neither see the caller's nor outlive the call (they
+        // accumulated once per call and made every later store scan them).
+        let mut saved_local_bind_pairs = std::mem::take(&mut self.local_bind_pairs);
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / alias / @_ env writes below
@@ -578,6 +582,7 @@ impl Interpreter {
             self.lexicals
                 .block_declared_vars
                 .pop_frame(saved_block_declared_vars);
+            self.local_bind_pairs = std::mem::take(&mut saved_local_bind_pairs);
             self.current_unit = saved_unit;
             return Err(e);
         }
@@ -843,6 +848,7 @@ impl Interpreter {
                 self.lexicals
                     .block_declared_vars
                     .pop_frame(saved_block_declared_vars);
+                self.local_bind_pairs = std::mem::take(&mut saved_local_bind_pairs);
                 self.finish_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
                 self.current_unit = saved_unit;
@@ -904,6 +910,7 @@ impl Interpreter {
         self.lexicals
             .block_declared_vars
             .pop_frame(saved_block_declared_vars);
+        self.local_bind_pairs = std::mem::take(&mut saved_local_bind_pairs);
 
         // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 
