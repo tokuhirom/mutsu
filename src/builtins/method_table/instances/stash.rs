@@ -37,5 +37,11 @@ fn merge_symbols(
     if interp.stash_is_unit_export_target(target) {
         return Some(Ok(interp.merge_unit_export_symbols(args.first()?)));
     }
+    // `$EXPORTHOW.WHO.merge-symbols($handle.export-how-package)` (CompUnit::Util
+    // `re-exporthow`): the source unit's declarators become the loading
+    // module's.
+    if let Some(merged) = interp.merge_exporthow_symbols(args.first()?) {
+        return Some(Ok(merged));
+    }
     Some(Ok(interp.merge_global_symbols(args.first()?)))
 }

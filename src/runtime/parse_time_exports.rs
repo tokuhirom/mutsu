@@ -45,6 +45,14 @@ pub(crate) struct ProbedExport {
     pub(crate) op_prec: Option<crate::op_prec::OpPrec>,
 }
 
+/// What a probe learned: the routines the module exports and the
+/// `(directive, declarator)` pairs of its `EXPORTHOW` (`DECLARE`/`SUPERSEDE`).
+#[derive(Default)]
+pub(crate) struct ProbeOutcome {
+    pub(crate) exports: Vec<ProbedExport>,
+    pub(crate) declarators: Vec<(String, String)>,
+}
+
 /// Run `use <module>` in a fresh interpreter on a fresh thread and return the
 /// names (sigil-less, e.g. `postfix:<USD>`) of every routine the module's load
 /// registered as exported, under any tag. `lib_paths` is the parser's current
@@ -58,16 +66,16 @@ pub(crate) struct ProbedExport {
 pub(crate) fn probe_module_exports(
     module: String,
     lib_paths: Vec<String>,
-) -> Result<Vec<ProbedExport>, String> {
+) -> Result<ProbeOutcome, String> {
     let mut chain = PROBE_CHAIN.with(|c| c.borrow().clone());
     if chain.contains(&module) {
-        return Ok(Vec::new());
+        return Ok(ProbeOutcome::default());
     }
     chain.push(module.clone());
     let handle = crate::runtime::builtins_system::try_spawn_user_thread(
         PROBE_THREAD_NAME,
         crate::runtime::builtins_system::StackPolicy::Required,
-        move || -> Result<Vec<ProbedExport>, String> {
+        move || -> Result<ProbeOutcome, String> {
             PROBE_CHAIN.with(|c| *c.borrow_mut() = chain);
             let mut interp = Interpreter::new();
             for path in lib_paths {
@@ -82,12 +90,25 @@ pub(crate) fn probe_module_exports(
                     ProbedExport { name, op_prec }
                 })
                 .collect();
+            // The `EXPORTHOW` declarators the load recorded for the module,
+            // a BEGIN-time merge included (#17557).
+            let declarators = interp
+                .module
+                .exporthow_declares
+                .get(&module)
+                .cloned()
+                .unwrap_or_default();
             // A module whose `EXPORT` hook wants arguments (`use M <a b>`)
             // dies when probed with none, but its body has already bound the
             // routines it exports through the stash: keep those names.
             match loaded {
-                Err(e) if names.is_empty() => Err(e.message.to_string()),
-                _ => Ok(names),
+                Err(e) if names.is_empty() && declarators.is_empty() => {
+                    Err(e.message.to_string())
+                }
+                _ => Ok(ProbeOutcome {
+                    exports: names,
+                    declarators,
+                }),
             }
         },
     )
