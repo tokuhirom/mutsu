@@ -9,7 +9,10 @@
 //!
 //! This lane asks them directly when the call is an unquoted, argument-less
 //! `.WHAT` / `.HOW` and the receiver is a plain scalar value (`Int`, `Num`,
-//! `Str`, `Bool`) or a type object (`Package`). Every other call -- quoted, a
+//! `Str`, `Bool`), a type object (`Package`), or a collection or number value
+//! that carries its own type (`Hash`, `Array`, `Pair`, `Rat`, a `Range`, ...;
+//! see `pseudo_lane_value_receiver`, `.WHAT` only; #17530: EEL's `$v.WHAT === Int || ...` test
+//! on a `Hash` cost ~31k instructions per `.WHAT`). Every other call -- quoted, a
 //! modifier, arguments, an accessor-ref marker, a wrapped method, any other
 //! receiver (a container, a Proxy, an Instance, a Failure, ...) -- falls
 //! through to the generic path unchanged, which is the miss tail.
@@ -72,15 +75,9 @@ impl Interpreter {
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "pseudo-lane");
             return Some(Ok(Value::proxy_var_object(target, String::new())));
         }
-        if !matches!(
-            target.view(),
-            ValueView::Int(_)
-                | ValueView::BigInt(_)
-                | ValueView::Num(_)
-                | ValueView::Str(_)
-                | ValueView::Bool(_)
-                | ValueView::Package(_)
-        ) {
+        if !Self::pseudo_lane_scalar_receiver(target)
+            && (kind != PseudoKind::What || !Self::pseudo_lane_value_receiver(target))
+        {
             return None;
         }
         // A `BOOT*` type object (and a raw VM collection) answers its meta
@@ -105,5 +102,55 @@ impl Interpreter {
         } else {
             self.dispatch_how(&target, &[])
         })
+    }
+
+    /// A plain scalar or a type object: its `.WHAT` and `.HOW` are answered by
+    /// `dispatch_what` / `dispatch_how` on the value alone.
+    // Cost: O(1), one tag test.
+    fn pseudo_lane_scalar_receiver(target: &Value) -> bool {
+        matches!(
+            target.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Package(_)
+        )
+    }
+
+    /// A collection or number value whose `.WHAT` the generic path answers with
+    /// `dispatch_what` on the value itself, with nothing in front of it that
+    /// reads anything but the value (`Hash`, `Array`/`List`, `Pair`, `Rat`,
+    /// `Complex`, a `Range`, a `QuantHash`). A typed or shaped collection
+    /// carries its type on the value (`container_type_metadata`), which
+    /// `dispatch_what` reads. `.HOW` is left to the generic path for these: a
+    /// typed collection's meta-object is built there.
+    ///
+    /// Not admitted, because the generic path does something to them first:
+    /// a container or `.VAR` view (decontainerized, or answered as `Scalar`),
+    /// a `Proxy` (FETCHed), a lazy list or `Seq` (the read paths that reify
+    /// it), a `Junction`, an `Instance` (mixins, user classes; the
+    /// `CallMethodMut` MOP lane covers those), a `Failure`, and any other kind.
+    // Cost: O(1), one tag test.
+    fn pseudo_lane_value_receiver(target: &Value) -> bool {
+        matches!(
+            target.view(),
+            ValueView::Hash(_)
+                | ValueView::Array(..)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..)
+        )
     }
 }
