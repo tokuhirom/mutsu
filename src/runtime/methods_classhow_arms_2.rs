@@ -404,6 +404,12 @@ impl Interpreter {
             }
             _ => return self.collect_can_methods(invocant, method_name),
         };
+        // A built-in opaque value (an iterator) answers by its own shape: an
+        // array-backed iterator is a `PredictiveIterator`, an unending one is
+        // not, under one class name.
+        if crate::builtins::method_table::opaque_owners_of(invocant).is_some() {
+            return self.collect_can_methods(invocant, method_name);
+        }
         if self.can_hides_pending_multi(invocant, method_name) {
             return Vec::new();
         }
