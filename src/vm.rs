@@ -311,6 +311,7 @@ pub(crate) mod vm_method_body_package;
 pub(crate) mod vm_method_call_attrs;
 pub(crate) mod vm_method_dispatch;
 mod vm_method_finalize;
+mod vm_method_role_bindings;
 mod vm_method_straight;
 pub(crate) mod vm_misc_assign;
 pub(crate) mod vm_misc_block;

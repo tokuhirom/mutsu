@@ -6,20 +6,6 @@ use crate::value::AttrMap;
 pub(crate) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl Interpreter {
-    /// Put a method's own composition bindings (a role's type parameters and the
-    /// role-body lexicals persisted with the composition) into the method's env.
-    /// `::?CLASS` is the frame record's, not an env key.
-    // Cost: O(b), b = the method's bindings.
-    fn apply_method_role_bindings(&mut self, method_def: &crate::runtime::MethodDef) {
-        if let Some(bindings) = method_def.role_param_bindings.as_deref() {
-            for (name, value) in bindings {
-                if name != "?CLASS" {
-                    self.env_mut().insert(name.clone(), value.clone());
-                }
-            }
-        }
-    }
-
     /// Ordinary methods own state through their declaring/composing type;
     /// inherited methods retain that owner. A metamethod instead belongs to
     /// each receiver's HOW, including dynamically composed receiver types.
@@ -270,12 +256,9 @@ impl Interpreter {
                 pd.captured_type_name().is_some()
                     && !(pd.captures_class_fixture() && pd.is_invocant && role_blind)
             });
-            let has_role_bindings = !role_blind
-                && (method_def.role_param_bindings.is_some()
-                    || self.class_role_param_bindings(owner_class).is_some()
-                    || self
-                        .class_role_param_bindings(receiver_class_name)
-                        .is_some());
+            // Role composition bindings do not keep a call off the fast path:
+            // the fast binder installs them too (`install_method_role_bindings`,
+            // #17331).
             // Classify arguments the way the slow binder does
             // (`bind_function_args_values`): a string-keyed `Pair` (after VarRef
             // unwrap) is a named argument; everything else is positional. Two
@@ -428,7 +411,6 @@ impl Interpreter {
                 && !has_invocant_constraint
                 && !has_type_capture
                 && !has_attr_aliases
-                && !has_role_bindings
                 && !has_complex_params
                 && !needs_default_eval
                 && !has_arg_mismatch
@@ -572,48 +554,13 @@ impl Interpreter {
         let method_callable_id = crate::value::next_instance_id();
         self.env_mut().set_callable_id(method_callable_id as i64);
 
-        // Role param bindings. The per-class map (`class_role_param_bindings`)
-        // carries more than type-param bindings (`T => Int`) — composing a
-        // role with a nested generic class (`role R[::T] { my package G {
-        // class A is Array[T] {} } }`) also stores a per-composition rename
-        // entry keyed by the class's UNPARAMETRIZED name (`"G::A" =>
-        // Package("R::G::A[Int]")`, see
-        // `registration_class_compose_body.rs`'s `rename_generic_composed_class`
-        // call), which a bareword read of `G::A` inside the method body
-        // resolves through this same env injection. So the class-level map
-        // must always be applied first; the candidate's own
-        // `role_param_bindings` (present when the SAME role is composed
-        // twice with different type args, `does R[Int] does R[Str]` — the
-        // class-level map is last-write-wins there) is then overlaid on top
-        // to correct just the type-param keys for this specific candidate.
-        if matches!(method_name, "BUILD" | "TWEAK") {
-            // Construction-phase role methods are run with the consuming class
-            // as the receiver even when their owner is the role declaration.
-            // Its concrete role bindings must win over the bare role pun's
-            // default bindings so captures such as `ValueType()` coerce
-            // constructor arguments against the consuming class's type.
-            if let Some(role_bindings) = self.class_role_param_bindings(receiver_class_name) {
-                for (name, value) in &role_bindings {
-                    self.env_mut().insert(name.clone(), value.clone());
-                }
-            }
-            if let Some(role_bindings) = self.class_role_param_bindings(owner_class) {
-                for (name, value) in &role_bindings {
-                    if !self.env().contains_key(name) {
-                        self.env_mut().insert(name.clone(), value.clone());
-                    }
-                }
-            }
-        } else if let Some(role_bindings) = self.class_role_param_bindings(owner_class) {
-            for (name, value) in &role_bindings {
-                self.env_mut().insert(name.clone(), value.clone());
-            }
-        } else if let Some(role_bindings) = self.class_role_param_bindings(receiver_class_name) {
-            for (name, value) in &role_bindings {
-                self.env_mut().insert(name.clone(), value.clone());
-            }
-        }
-        self.apply_method_role_bindings(method_def);
+        // Role param bindings (see `install_method_role_bindings`).
+        self.install_method_role_bindings(
+            receiver_class_name,
+            owner_class,
+            method_name,
+            method_def,
+        );
         // A method can carry its defining lexical environment either from an
         // `.^add_method` closure literal or from a class declared in a routine.
         // Install these true lexical captures before parameter binding.
@@ -2220,6 +2167,22 @@ impl Interpreter {
             scoped.mark_owns_routine_state();
             self.set_env(scoped);
         }
+        // A role method's composition bindings, installed into the overlay
+        // before the parameters bind (a `T`-typed parameter resolves `T`
+        // through them), exactly as the full binder does. Their names are this
+        // frame's own and are kept out of the exit merge below.
+        let has_role_bindings =
+            self.method_has_role_bindings(method_def, owner_class, receiver_class_name);
+        let role_binding_names: Vec<String> = if has_role_bindings {
+            self.install_method_role_bindings(
+                receiver_class_name,
+                owner_class,
+                method_name,
+                method_def,
+            )
+        } else {
+            Vec::new()
+        };
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class_sym(owner_sym, Some(owner_is_role));
         // See the matching comment in `call_compiled_method`.
@@ -2608,7 +2571,14 @@ impl Interpreter {
         // frame push at the bottom — re-interning a name is a thread-local
         // string-hash round trip, not free.
         // `owner_sym` was interned for the method-class frame push above.
-        let class_val = Value::package(owner_sym);
+        // A role method composed into a mixin sees the mixin type as
+        // `::?CLASS` (the binding `dispatch_mixin_method_call` stages), as in
+        // the full binder.
+        let class_val = method_def
+            .role_param_bindings
+            .as_deref()
+            .and_then(|b| b.iter().find(|(n, _)| n == "?CLASS"))
+            .map_or_else(|| Value::package(owner_sym), |(_, v)| v.clone());
         let method_callable_id = crate::value::next_instance_id();
         let any_val = Value::package(crate::symbol::wk::any());
 
@@ -2622,6 +2592,11 @@ impl Interpreter {
         // unrelated CALLER lexical sharing the name does not — the statics are the
         // class's own lexicals and the method body is inside their scope.
         self.inject_class_body_statics(owner_class);
+        // As in the full binder: a role method's own bindings are closer than
+        // the statics of a class the role is declared in.
+        if owner_is_role && has_role_bindings {
+            self.apply_method_role_bindings(method_def);
+        }
         // ADR-14843: the frame's record (pushed below with the routine frame) is
         // the only home of `self`, `__ANON_STATE#`, `?CLASS` and `?ROLE`; the
         // frame writes none of the four keys.
@@ -2759,6 +2734,11 @@ impl Interpreter {
             }
             if dynamic_add_method {
                 env.insert("__mutsu_declared_method_capture".to_string(), Value::int(2));
+            }
+            // A composed role's type parameters are more specific than a
+            // lexical capture with the same spelling (see the full binder).
+            if has_role_bindings {
+                self.apply_method_role_bindings(method_def);
             }
         }
 
@@ -2938,7 +2918,7 @@ impl Interpreter {
             method_callable_id,
             crate::runtime::routine_stack::FrameFixtures {
                 invocant: Some(base.clone()),
-                class: Some(Value::package(owner_sym)),
+                class: Some(class_val),
                 role: role_context.as_deref().map(crate::symbol::Symbol::intern),
             },
         );
@@ -3174,6 +3154,13 @@ impl Interpreter {
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
+                        // This call's role composition bindings (see the
+                        // primary merge path's matching arm).
+                        || role_binding_names.iter().any(|n| n == s)
+                        || method_def
+                            .role_param_bindings
+                            .as_deref()
+                            .is_some_and(|b| b.iter().any(|(n, _)| n == s))
                         // As in the primary merge path above (#16361).
                         || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
                         || bound_by_sub_signature(&method_def.param_defs, s)

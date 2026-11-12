@@ -841,6 +841,15 @@ impl Interpreter {
         spec: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // `--> Mu` admits every value, a container or a `Proxy` included,
+        // which is handed back as it is. It is the return type of every type
+        // hook in Monad (`method maybe-type(--> Mu)`), so the resolution and
+        // the checks below ran on each of those calls to reach this (#17331).
+        // A `subset Mu` cannot be declared (the name exists), but the registry
+        // is asked rather than assumed.
+        if spec == "Mu" && !self.is_subset_type_name("Mu") {
+            return Ok(value);
+        }
         let resolved_spec = self.resolved_type_capture_name(spec);
         let spec = resolved_spec.as_str();
         // An `is rw` routine hands back a CONTAINER (ADR-0059). The return
