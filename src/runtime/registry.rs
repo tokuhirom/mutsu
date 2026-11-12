@@ -205,6 +205,12 @@ impl AugmentCutoff {
     }
 }
 
+/// `source-facing name -> the mangled type keys carrying it`; see
+/// [`Registry::lexical_type_keys_for`].
+type LexicalTypeNameIndex = rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>>;
+/// `short name -> class key`; see [`Registry::class_key_by_short_name`].
+type ClassShortNameIndex = rustc_hash::FxHashMap<Box<str>, Box<str>>;
+
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
     /// `user_facing_type_name -> class key` for the `base+{roles}` mixin classes, valid
@@ -864,14 +870,13 @@ pub(crate) struct Registry {
     /// Behind an `Arc` (as is [`Self::class_short_names`]) so the copy-on-write
     /// clone of a registry a worker thread's first write makes shares the
     /// built index instead of deep-copying it (#17337).
-    lexical_type_names:
-        std::sync::OnceLock<std::sync::Arc<rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>>>>,
+    lexical_type_names: std::sync::OnceLock<std::sync::Arc<LexicalTypeNameIndex>>,
     /// `short name -> class key` for every class whose key is qualified: the
     /// part after the LAST `::` of the key, pointing at the smallest key with
     /// that tail. Built on first query and dropped by
     /// [`RegistryWriteGuard`]'s `DerefMut` together with
     /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
-    class_short_names: std::sync::OnceLock<std::sync::Arc<rustc_hash::FxHashMap<Box<str>, Box<str>>>>,
+    class_short_names: std::sync::OnceLock<std::sync::Arc<ClassShortNameIndex>>,
     /// `source-facing name -> mangled registry key` answers of the four-map
     /// scan in `Interpreter::resolve_lexical_type_key`, dropped on every
     /// registry write with the other indexes above.
