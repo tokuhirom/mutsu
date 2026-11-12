@@ -1119,11 +1119,11 @@ impl Compiler {
         self.rw_tail_branch = saved;
     }
 
-    /// Compile one statement of a routine body. When it is the body's tail
-    /// `given` (or `with`) and the routine is `is rw` / `is raw`, the value its
-    /// taken `when`/`default` (or its own last statement) yields is the
-    /// routine's return, so that tail compiles as a container (#9060).
     pub(super) fn compile_routine_stmt(&mut self, stmt: &Stmt, is_tail: bool) {
+        if is_tail && matches!(stmt, Stmt::ProtoDecl { .. }) {
+            self.compile_expr_do_stmt(stmt);
+            return;
+        }
         self.rw_tail_branch =
             is_tail && self.rw_tail && !self.rw_tail_block && matches!(stmt, Stmt::Given { .. });
         self.compile_stmt(stmt);

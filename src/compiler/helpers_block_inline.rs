@@ -379,14 +379,8 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    // An `if`/`unless` in block-final position should yield its
-                    // taken branch's value (like `do if ...`), not Nil. This
-                    // matters e.g. for `do { if $c { ... } }` and statement-form
-                    // `with`/`without` (lowered to an `if`) used as expressions.
-                    // The topic-binding form (`if EXPR -> $x { ... }` / an `elsif`
-                    // with a pointy) must go through `compile_do_if_expr_bound` so
-                    // the taken branch's value still flows out (matching the
-                    // `given`/`when` tail path in `compile_when_tail_stmt`).
+                    // A block-final `if` yields its taken branch's value.
+                    // Use the bound form so pointy topics also flow through.
                     Stmt::If {
                         cond,
                         then_branch,
@@ -415,7 +409,12 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    Stmt::SubDecl { name, .. } => {
+                    Stmt::SubDecl { name, .. }
+                    | Stmt::ProtoDecl {
+                        name,
+                        is_method: false,
+                        ..
+                    } => {
                         self.compile_stmt(stmt);
                         self.compile_expr(&Expr::CodeVar(name.resolve()));
                         self.pop_dynamic_scope_lexical(saved);
