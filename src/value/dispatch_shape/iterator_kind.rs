@@ -111,7 +111,10 @@ mod tests {
             (wk::iter_items(), "items"),
             (wk::iter_map_grep_stream(), super::MAP_GREP_STREAM_ATTR),
             (wk::iter_squish_source(), "squish_source"),
-            (wk::iter_not_predictive(), super::NOT_PREDICTIVE_ITERATOR_ATTR),
+            (
+                wk::iter_not_predictive(),
+                super::NOT_PREDICTIVE_ITERATOR_ATTR,
+            ),
             (wk::iter_known_count(), "known_count"),
             (wk::iter_lazy_source(), "lazy_source"),
             (wk::iter_index(), "index"),
