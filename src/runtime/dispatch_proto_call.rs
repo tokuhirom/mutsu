@@ -370,8 +370,9 @@ impl Interpreter {
     /// per argument types while the functions map and the protos stay exactly
     /// as they were: a call through a trivial proto re-ranked every candidate
     /// on each call (#15786). A family whose winner depends on argument
-    /// VALUES (`where`, subsets), a compunit-scoped family, and arguments
-    /// that cannot be keyed by type resolve fresh, as do errors.
+    /// VALUES (`where`, subsets) and arguments that cannot be keyed by type
+    /// resolve fresh, as do errors; a compunit-scoped family is keyed by the
+    /// units that decide it.
     // Cost: O(a) on a hit, a = arguments (the type keys); a resolution on a miss.
     fn resolve_proto_winner_memoized(&mut self, name: &str, arg_values: &[Value]) -> Resolved {
         let name_sym = Symbol::intern(name);
@@ -379,11 +380,19 @@ impl Interpreter {
             return self.resolve_function_with_types(name, arg_values);
         };
         let pkg_sym = self.current_package_sym();
-        if self.operator_has_import_scope_sym(name_sym)
-            || !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name)
-        {
+        if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
             return self.resolve_function_with_types_keyed(name, arg_values, Some(&arg_keys));
         }
+        // A compunit-scoped family's winner depends on the executing unit
+        // (#11004): the units that decide it join the key, as they do the
+        // candidate memo's (`resolve_all_multi_candidates_cached_sym`).
+        let units = self.operator_has_import_scope_sym(name_sym).then(|| {
+            (
+                self.current_unit,
+                self.executing_unit_sym(),
+                self.module.operator_import_gen,
+            )
+        });
         let generation = (
             self.caches.fn_resolve_gen,
             self.registry().proto_generation(),
@@ -398,12 +407,13 @@ impl Interpreter {
             self.routine_stack()
                 .last()
                 .and_then(|frame| frame.lexical_package),
+            units,
             arg_keys,
         );
         if let Some(hit) = self.caches.proto_winner_memo.get(&key) {
             return Ok(Some(hit.clone()));
         }
-        let resolved = self.resolve_function_with_types_keyed(name, arg_values, Some(&key.3))?;
+        let resolved = self.resolve_function_with_types_keyed(name, arg_values, Some(&key.4))?;
         // A resolution that itself registered something is not remembered.
         if let Some(def) = &resolved
             && (self.caches.fn_resolve_gen, self.registry().proto_generation()) == generation
