@@ -5,7 +5,7 @@ use Test;
 # answer must still follow everything that can change it: a composition made
 # later, a lexical name that shadows the type, a subset, a smiley.
 
-plan 15;
+plan 21;
 
 role R { }
 role S { }
@@ -41,3 +41,17 @@ class P { has $.n }
 subset Big of P where *.n > 10;
 ok  P.new(n => 20) ~~ Big, 'a subset accepts by value';
 nok P.new(n => 1) ~~ Big, 'and rejects by value';
+
+# Declared-type checks (parameters, returns, assignments) share the memo.
+sub takes-r(R $x --> R) { $x }
+is takes-r($c).^name, 'C', 'an R parameter and return accept an R';
+throws-like { takes-r(D.new) }, X::TypeCheck::Binding::Parameter, 'and reject a non-R';
+sub definite(--> R:D) { C.new }
+is definite().^name, 'C', 'a :D return accepts an instance';
+sub type-object(--> R:D) { C }
+throws-like { type-object() }, X::TypeCheck::Return, 'but not a type object';
+my R $slot = $c;
+throws-like { $slot = D.new }, X::TypeCheck::Assignment, 'a typed variable rejects a non-R';
+sub by-subset(Big $x) { 1 }
+throws-like { by-subset(P.new(n => 1)) }, X::TypeCheck::Binding::Parameter,
+    'a subset parameter still runs its where';
