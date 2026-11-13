@@ -660,36 +660,31 @@ impl Interpreter {
         self.eval_eval_string(s)
     }
 
+    /// Sink a routine's return value when its return spec is a definite
+    /// value (`--> Nil`, `--> 42`): run a lazy list or an unconsumed Seq for
+    /// its side effects.
+    // Cost: O(1) unless the value is lazy; then the forced elements.
     pub(crate) fn sink_for_definite_return(&mut self, value: &Value) -> Result<(), RuntimeError> {
         match value.view() {
             ValueView::LazyList(list) => {
-                let items = self.force_lazy_list(&list)?;
-                for item in &items {
-                    self.sink_for_definite_return(item)?;
-                }
+                self.force_lazy_list(&list)?;
                 Ok(())
             }
             // ADR-0058: `.map`/`.grep` return a not-yet-run `Seq` whose callback
-            // fires on first consumption. A plain `Deref` read (what
-            // `as_list_items` below does) sees the empty seed and never
-            // triggers it, so a routine whose tail is a bare `.map` and whose
+            // fires on first consumption. A plain `Deref` read sees the empty
+            // seed and never triggers it, so a routine whose tail is a bare `.map` and whose
             // `--> Nil`/etc. return spec forces a sink (as `OpCode::SinkPop`
             // does for an ordinary sunk statement) must drain it the same way
             // here, or the callback's side effects are silently dropped.
             ValueView::Seq(body) if body.needs_touch() => {
                 let body = std::sync::Arc::clone(&body);
                 self.sink_seq_body(&body)?;
-                for item in body.iter() {
-                    self.sink_for_definite_return(&item.clone())?;
-                }
                 Ok(())
             }
-            _ if value.as_list_items().is_some() => {
-                for item in value.as_list_items().unwrap().iter() {
-                    self.sink_for_definite_return(item)?;
-                }
-                Ok(())
-            }
+            // Sinking a List or an Array sinks the container, not its
+            // elements: rakudo leaves an unrun `.map` held in one alone (a
+            // routine ending in `@a.push(...)` under `--> Nil` returned the
+            // whole array and walked it on every call).
             _ => Ok(()),
         }
     }
