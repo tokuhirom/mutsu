@@ -1,6 +1,6 @@
 //! The method-table lane for a receiver with no dispatch shape (#17331).
 //!
-//! [`vm_method_site_lane`](super::vm_method_site_lane) answers a built-in
+//! [`vm_method_site_lane`] answers a built-in
 //! method on a receiver of a built-in shape from the method table, past the
 //! full `CallMethodMut` path's probes. A type object or an instance of a user
 //! class, a role type object and `Any`/`Mu` themselves have no shape, so their
