@@ -93,7 +93,9 @@ impl Interpreter {
         // lexical type is not the answer outside its block.
         let memoizable = match self.stack.last().map(Value::view) {
             Some(ValueView::Package(sym)) => {
-                (sym == name || (unit_lexical && is_lexical_storage_of(sym, name)))
+                (sym == name
+                    || (is_lexical_storage_of(sym, name)
+                        && (unit_lexical || self.is_unit_lexical_type_of(code, name_sym, sym))))
                     && bareword_memoizable(name)
                     && self.env_leaves_type_name_as(name_sym, sym)
             }
@@ -172,6 +174,16 @@ impl Interpreter {
     /// link skips (a `use` under an `EVAL`'s import region, #17129).
     // Cost: O(1).
     /// Returns whether it replaced the answer.
+    /// Whether `storage` is the unit-level lexical (`my`) type `code`'s own
+    /// compunit declared under the spelling `name` -- the answer the bareword
+    /// chain gives for it everywhere in that unit, whichever branch of the
+    /// chain produced it.
+    // Cost: O(1), one hash probe.
+    fn is_unit_lexical_type_of(&self, code: &CompiledCode, name: Symbol, storage: Symbol) -> bool {
+        code.source_file
+            .is_some_and(|unit| self.unit_lexical_type(unit, name) == Some(storage))
+    }
+
     fn resolve_unit_lexical_type(&mut self, code: &CompiledCode, name_idx: u32) -> bool {
         let Some(unit) = code.source_file else {
             return false;
