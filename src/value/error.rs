@@ -508,13 +508,17 @@ impl RuntimeError {
     pub(crate) fn set_catch_return_depth(&mut self, v: Option<usize>) {
         self.cold_mut().catch_return_depth = v;
     }
-    /// Whether a routine frame at index `frame_index` of the routine stack
-    /// lies above the routine a `CATCH`-raised `return` belongs to, so it
-    /// must let the signal pass.
+    /// For a `return` a cross-frame `CATCH` raised: whether the routine frame
+    /// at index `frame_index` of the routine stack lets it pass (`Some(true)`:
+    /// the frame was pushed after the handler's routine) or takes it
+    /// (`Some(false)`: the first routine frame unwound at or below the
+    /// installer is the installer). `None` for any other signal, which the
+    /// caller matches by callable id. Depth, not id, decides here: a proto and
+    /// the candidate its `{*}` runs share an id, and a qualified call
+    /// (`Pkg::f`) may bind none.
     // Cost: O(1).
-    pub(crate) fn return_passes_routine_frame(&self, frame_index: usize) -> bool {
-        self.catch_return_depth()
-            .is_some_and(|depth| frame_index >= depth)
+    pub(crate) fn catch_return_passes_frame(&self, frame_index: usize) -> Option<bool> {
+        self.catch_return_depth().map(|depth| frame_index >= depth)
     }
     pub(crate) fn set_catch_inline_verdict(&mut self, v: Option<(u64, CatchInlineVerdict)>) {
         self.cold_mut().catch_inline_verdict = v;

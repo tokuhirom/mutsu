@@ -1117,12 +1117,15 @@ impl Interpreter {
                         // escaping toward an enclosing routine past this one) was
                         // swallowed here unconditionally instead of propagating
                         // to its actual target.
-                        if e.return_passes_routine_frame(routine_frame_index) {
+                        let catch_verdict = e.catch_return_passes_frame(routine_frame_index);
+                        if catch_verdict == Some(true) {
                             loan_env!(self, restore_let_saves(let_mark));
                             result = Err(e);
                             break;
                         }
-                        if let Some(target_id) = e.return_target_callable_id() {
+                        if catch_verdict.is_none()
+                            && let Some(target_id) = e.return_target_callable_id()
+                        {
                             let my_id = self.registration_clone_id(&cf.package, func_name);
                             if my_id != Some(target_id) {
                                 loan_env!(self, restore_let_saves(let_mark));

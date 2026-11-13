@@ -282,11 +282,15 @@ impl Interpreter {
                     // targeted return (`vm_call_light.rs`). Only that kind:
                     // this path binds no callable id, so an ordinary `return`
                     // of the routine's own carries the caller's stamp.
-                    if e.return_passes_routine_frame(routine_frame_index)
-                        || (e.raised_by_catch().is_some()
-                            && e.return_target_callable_id().is_some_and(|target_id| {
-                                self.registration_clone_id(&cf.package, fn_name) != Some(target_id)
-                            }))
+                    if e
+                        .catch_return_passes_frame(routine_frame_index)
+                        .unwrap_or_else(|| {
+                            e.raised_by_catch().is_some()
+                                && e.return_target_callable_id().is_some_and(|target_id| {
+                                    self.registration_clone_id(&cf.package, fn_name)
+                                        != Some(target_id)
+                                })
+                        })
                     {
                         loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
