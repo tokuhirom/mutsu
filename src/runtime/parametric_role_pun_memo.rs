@@ -71,6 +71,32 @@ impl Interpreter {
             .map(|(_, pun, _)| *pun)
     }
 
+    /// Replace a parameterized role type object at `stack[receiver_idx]` with
+    /// the pun class a call of `method` on it was re-dispatched to before
+    /// (`param_role_pun_memo_get`), so the `CallMethod`/`CallMethodMut` site
+    /// dispatches to the pun directly. Without it the call walked the site's
+    /// whole probe chain, fell into `call_method_with_values`, walked its
+    /// probes up to the memo, and only then re-dispatched to the pun through
+    /// the general path again: ~45k instructions for a trivial method against
+    /// ~15k on the pun itself (#17331). The re-dispatch is exactly what the
+    /// memo hit there does, so the answer is the same.
+    // Cost: O(e * a), as `param_role_pun_memo_get`.
+    pub(crate) fn pun_memoized_parametric_receiver(&mut self, receiver_idx: usize, method: Symbol) {
+        let Some(target) = self.stack.get(receiver_idx) else {
+            return;
+        };
+        let ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } = target.view()
+        else {
+            return;
+        };
+        if let Some(pun) = self.param_role_pun_memo_get(base_name, type_args, method) {
+            self.stack[receiver_idx] = Value::package(pun);
+        }
+    }
+
     /// Record that a call of `method` on `base[type_args]` re-dispatches to
     /// the pun class `pun`. A no-op when an argument is not a plain type
     /// object. An entry of the same arguments recorded under an older
