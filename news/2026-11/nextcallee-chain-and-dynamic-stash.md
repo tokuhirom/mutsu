@@ -31,3 +31,8 @@ block table brought to Unicode 17 as MoarVM has it (Red t/121).
 implemented; `static_id` is the same for the code a CHECK phase saw and the
 code the restarted unit runs, so Red's compiled-callable guard accepts it
 (t/124).
+
+A lexical `my regex wb` (or `ww`, `same`) shadows the built-in assertion in
+its `<?wb>` and `<!wb>` spellings too (Red t/113), and a regex property
+predicate of any expression (`<:Block({ ... })>`) has its `.AST` tree (Red
+t/121).

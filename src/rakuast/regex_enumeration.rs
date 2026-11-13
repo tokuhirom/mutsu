@@ -106,10 +106,9 @@ fn view_predicate(names: &NameScope, predicate: &PropertyPredicate) -> Result<Va
         PropertyPredicate::Args(text) => {
             let expr = crate::parser::parse_adverb_argument(text)
                 .ok_or_else(|| super::view::unsupported("property predicate"))?;
+            // Any expression has a tree (`<:Block({ ... })>` as Red's
+            // compiler reads it); only lowering one back needs its source.
             let value = super::view::view_expr(names, &expr)?;
-            if crate::regex_tree::expression_argument_source(&expr).is_none() {
-                return Err(super::view::unsupported("property predicate"));
-            }
             let semilist = RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::SemiList,
