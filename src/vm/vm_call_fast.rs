@@ -245,6 +245,7 @@ impl Interpreter {
             Arc::as_ptr(&cf.code) as usize,
             cf.code.outer_is_unit,
         );
+        let routine_frame_index = self.routine_stack_len() - 1;
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
@@ -281,9 +282,11 @@ impl Interpreter {
                     // targeted return (`vm_call_light.rs`). Only that kind:
                     // this path binds no callable id, so an ordinary `return`
                     // of the routine's own carries the caller's stamp.
-                    if e.raised_by_catch().is_some()
-                        && let Some(target_id) = e.return_target_callable_id()
-                        && self.registration_clone_id(&cf.package, fn_name) != Some(target_id)
+                    if e.return_passes_routine_frame(routine_frame_index)
+                        || (e.raised_by_catch().is_some()
+                            && e.return_target_callable_id().is_some_and(|target_id| {
+                                self.registration_clone_id(&cf.package, fn_name) != Some(target_id)
+                            }))
                     {
                         loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);
