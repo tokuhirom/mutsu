@@ -86,11 +86,18 @@ impl Interpreter {
         // full cascade for every declaration in it (~1.2K instructions each);
         // the per-name "ever an env key" bit answers the question this lane
         // actually has (#15981).
-        // A lean bound term's own marker is settled by its `MarkSigillessBind`
-        // on every declaration (written for a value, cleared for a container),
-        // so the declaration has nothing of it to clear.
+        // A lean term's readonly marker is nobody's to read: a lean readonly
+        // term is readonly by its slot's flags and keeps no marker, and a lean
+        // bound term's marker is settled by its own `MarkSigillessBind` on
+        // every declaration (written for a value, cleared for a container).
+        // So a marker of the same name left in the visible env -- typically by
+        // a routine's sigilless parameter of that name (`sub publish(Str
+        // \key, ...)` next to `my \key = ...`), which latches the name as an
+        // env key for the whole program -- is not one the declaration has to
+        // clear, and must not push every later declaration onto the general
+        // store (#17331).
         if (crate::env::sigilless_readonly_keys_possible()
-            && !lean_bound
+            && !lean_term
             && code
                 .readonly_sym(idx)
                 .is_none_or(crate::symbol::maybe_env_key))
