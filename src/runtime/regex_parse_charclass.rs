@@ -519,6 +519,10 @@ impl Interpreter {
         // holds the negatives written before the first positive part.
         let mut lead_negative_items: Vec<ClassItem> = Vec::new();
         let mut lead_negative = false;
+        // `[a] - [b] + [c]` is `([a] - [b]) + [c]`: the class built so far,
+        // when a `+` part follows a subtraction, which the later parts unite
+        // with (and later subtractions filter).
+        let mut united: Option<RegexAtom> = None;
         let mut remaining = input.trim();
 
         // First part may be just [content] (implicitly positive) or +[content] or -[content]
@@ -565,7 +569,25 @@ impl Interpreter {
                     // If the class itself is negated (e.g. due to \C/\X escapes),
                     // swap the positive/negative assignment
                     let effective_adding = if class.negated { !adding } else { adding };
-                    if effective_adding {
+                    if effective_adding
+                        && !negative_items.is_empty()
+                        && (!positive_items.is_empty() || united.is_some())
+                    {
+                        let added = std::mem::take(&mut positive_items);
+                        let rest = std::mem::take(&mut negative_items);
+                        united = Some(match united.take() {
+                            Some(prefix) => Self::union_alternation(prefix, added, rest),
+                            None => Self::union_alternation(
+                                RegexAtom::CharClass(CharClass {
+                                    items: added,
+                                    negated: false,
+                                }),
+                                Vec::new(),
+                                rest,
+                            ),
+                        });
+                        positive_items.extend(class.items);
+                    } else if effective_adding {
                         positive_items.extend(class.items);
                     } else if lead_negative && positive_items.is_empty() {
                         lead_negative_items.extend(class.items);
@@ -578,6 +600,9 @@ impl Interpreter {
             }
         }
 
+        if let Some(prefix) = united {
+            return Some(Self::union_alternation(prefix, positive_items, negative_items));
+        }
         if lead_negative && !positive_items.is_empty() && !lead_negative_items.is_empty() {
             return Some(Self::union_with_negated_lead(
                 lead_negative_items,
@@ -640,62 +665,6 @@ impl Interpreter {
                 negative: negative_items,
             })
         }
-    }
-
-    /// `-[lead] + [pos] - [rest]`: every character except `lead`, united with
-    /// `pos`, minus `rest`. Desugared to `[ <-[lead]> | <[pos]> ]`, each branch
-    /// guarded by `<!before <[rest]>>` when a later subtraction exists.
-    fn union_with_negated_lead(
-        lead: Vec<ClassItem>,
-        positive: Vec<ClassItem>,
-        rest: Vec<ClassItem>,
-    ) -> RegexAtom {
-        let pattern = |tokens: Vec<RegexAtom>| RegexPattern {
-            tokens: tokens
-                .into_iter()
-                .map(|atom| RegexToken {
-                    atom,
-                    quant: RegexQuant::One,
-                    named_capture: None,
-                    secondary_named_capture: None,
-                    hash_capture: None,
-                    force_list_capture: false,
-                    ratchet: false,
-                    frugal: false,
-                    separator: None,
-                    from_runtime_interpolation: false,
-                    subrule_call_capture: false,
-                })
-                .collect(),
-            anchor_start: false,
-            anchor_end: false,
-            ignore_case: false,
-            ignore_mark: false,
-            derived: Default::default(),
-        };
-        let guard = (!rest.is_empty()).then(|| RegexAtom::Lookaround {
-            pattern: pattern(vec![RegexAtom::CompositeClass {
-                positive: rest,
-                negative: vec![],
-            }]),
-            negated: true,
-            is_behind: false,
-        });
-        let branch = |atom: RegexAtom| {
-            let mut atoms: Vec<RegexAtom> = guard.iter().cloned().collect();
-            atoms.push(atom);
-            pattern(atoms)
-        };
-        RegexAtom::Alternation(vec![
-            branch(RegexAtom::CharClass(CharClass {
-                items: lead,
-                negated: true,
-            })),
-            branch(RegexAtom::CharClass(CharClass {
-                items: positive,
-                negated: false,
-            })),
-        ])
     }
 
     /// Find the position of the closing ']' in a bracket character class,
