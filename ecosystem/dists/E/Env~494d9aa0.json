@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 122,
         "plan": 122,
-        "secs": 0.23,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 122,
         "plan": 122,
-        "secs": 1.28,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did we keep a correctly joined PATH",
-        "nok": 2,
-        "ok": 13,
+        "nok": 0,
+        "ok": 15,
         "plan": 15,
-        "secs": 0.12,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-specific.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.86,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,10 +58,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-12",
+    "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b7189a78",
+    "mutsu_commit": "8f508678",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -73,13 +72,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/NV/ENV/960669e9769c391ba07f1d933a058af881b22c90.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 137,
     "baseline_files": 2,
-    "mutsu_assertions": 135,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 137,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.99"
 }

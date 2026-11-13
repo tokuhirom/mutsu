@@ -4,66 +4,27 @@
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
-      "Commands",
-      "Prompt"
+      "JSON::Fast",
+      "Terminal-API",
+      "Terminal::ANSIColor",
+      "Terminal::ANSIParser",
+      "Terminal::Capabilities",
+      "Terminal::LineEditor",
+      "Text::MiscUtils"
     ],
     "unresolved": []
   },
   "dist": "Rakuish",
   "files": [
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-incomplete.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02-platform.t",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 3.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
       "cmp": "no_baseline",
-      "path": "t/03-eval.t",
+      "path": "t/01-sys-fs.t",
       "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
+        "first_failure": "Failed to create directory '/tmp/rakuish-v3-fs-2' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.96,
+        "secs": 16.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,93 +32,13 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/04-loop.t",
+      "path": "t/02-sys-session.t",
       "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
+        "first_failure": "Failed to create directory '/tmp/rakuish-v3-session-2' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.55,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/05-slow.t",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 1.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/06-slow-run.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/07-summary.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/08-run.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.86,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -165,363 +46,11 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/09-complete.t",
+      "path": "t/03-sys-proc.t",
       "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
+        "first_failure": "Failed to create directory '/tmp/rakuish-v3-proc-2' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
-        "plan": null,
-        "secs": 2.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/10-time.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/11-load.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/12-ctrlc.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.66,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/13-repl.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/14-bin.t",
-      "raku": {
-        "first_failure": "raku -c 语法检查通过 (rc=1)",
-        "nok": 1,
-        "ok": 3,
-        "plan": 4,
-        "secs": 3.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/15-color.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/16-lexical.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/17-render.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/18-backtick.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/19-cd.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/20-path-complete.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.79,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/21-command-highlight.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/22-ls-color.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/23-replay.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.66,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/24-error-beautify.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/25-help.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/26-raku-complete.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/27-rc.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/28-multiline.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/29-autoshell.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/30-path-quote.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/31-shell-lexer.t",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 1.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/32-shell-parser.t",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 1.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/33-shell-expand.t",
-      "raku": {
-        "first_failure": "Failed to create directory '/tmp/rakuish-glob-test' with mode '0o777': Failed to mkdir: read-only file system",
-        "nok": 0,
-        "ok": 11,
         "plan": null,
         "secs": 1.1,
         "skip": 0,
@@ -531,69 +60,13 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/34-shell-exec.t",
+      "path": "t/04-dsl-command.t",
       "raku": {
-        "first_failure": "Cannot resolve caller trim(Nil:U: ); none of these signatures matches:",
-        "nok": 2,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/35-shell-session.t",
-      "raku": {
-        "first_failure": "export：设置后跨行存活",
-        "nok": 10,
-        "ok": 13,
-        "plan": 23,
-        "secs": 1.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/36-shell-andor.t",
-      "raku": {
-        "first_failure": "&&：成功才跑后面那条",
-        "nok": 7,
-        "ok": 7,
-        "plan": 14,
-        "secs": 1.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/37-shell-cmdsub.t",
-      "raku": {
-        "first_failure": "No such method 'lines' for invocant of type 'Any'",
-        "nok": 11,
-        "ok": 2,
-        "plan": null,
-        "secs": 5.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/38-shell-heredoc.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
+        "first_failure": "Failed to create directory '/tmp/v3-dsl-cmd-2' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.28,
+        "secs": 11.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -601,13 +74,13 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/39-shell-special-params.t",
+      "path": "t/05-repl-session.t",
       "raku": {
-        "first_failure": "a b",
-        "nok": 9,
-        "ok": 4,
+        "first_failure": "Failed to create directory '/tmp/rakuish-side-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 14,
         "plan": null,
-        "secs": 5.52,
+        "secs": 30.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -615,41 +88,13 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/40-shell-arith.t",
+      "path": "t/06-sandbox-agent.t",
       "raku": {
-        "first_failure": "执行层：算术展开",
-        "nok": 4,
-        "ok": 9,
-        "plan": 13,
-        "secs": 1.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/41-shell-param.t",
-      "raku": {
-        "first_failure": "取值与长度",
-        "nok": 12,
-        "ok": 2,
-        "plan": 14,
-        "secs": 1.83,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/42-shell-engine.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
+        "first_failure": "Failed to create directory '/tmp/v3-agent-t-2' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.24,
+        "secs": 7.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -657,111 +102,13 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/43-script.t",
+      "path": "t/07-entrypoints.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/rk-2-4014.rakuish: Read-only file system",
-        "nok": 0,
-        "ok": 0,
-        "plan": 24,
-        "secs": 0.93,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/44-result.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
+        "first_failure": "Failed to create directory '/tmp/rk-entry-2' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/45-builtins.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/46-rdsl-sugar.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/47-run-display.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/48-complete-p3.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/49-p4-cells.t",
-      "raku": {
-        "first_failure": "Could not find JSON::Fast in:",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.14,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/50-p5-script.t",
-      "raku": {
-        "first_failure": "Failed to create directory '/tmp/rk-p51-d-2-9978' with mode '0o777': Failed to mkdir: read-only file system",
-        "nok": 0,
-        "ok": 0,
-        "plan": 12,
-        "secs": 1.02,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -771,9 +118,462 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
+        "ok": 59,
+        "plan": 59,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/08-result-render.t",
+      "raku": {
+        "nok": 0,
+        "ok": 59,
+        "plan": 59,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-repl-display.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-display-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-repl-shell.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-shell-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-data-table.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-data-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 30,
+        "plan": null,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.32,
+        "skip": 11,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-data-engine.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.82,
+        "skip": 11,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.94,
+        "skip": 17,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/13-data-sqlite.t",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.86,
+        "skip": 17,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-explore.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-explore-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 51,
+        "plan": 51,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/15-repl-ui.t",
+      "raku": {
+        "nok": 0,
+        "ok": 51,
+        "plan": 51,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'say' for invocant of type 'IO::Socket::INET'",
+        "nok": 0,
+        "ok": 9,
+        "plan": null,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/16-agent-serve.t",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.94,
+        "skip": 18,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/17-data-parquet.t",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 0.88,
+        "skip": 18,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/18-repl-types-glob.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-types-glob-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-repl-experience.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-exp-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.62,
+        "skip": 20,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/20-data-cursor.t",
+      "raku": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 0.89,
+        "skip": 20,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/21-agent-worker.t",
+      "raku": {
+        "first_failure": "worker 握手成功（启动成本隔离在连接建立阶段）",
+        "nok": 9,
+        "ok": 20,
+        "plan": 29,
+        "secs": 1.83,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.89,
+        "skip": 33,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/22-data-csv.t",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.73,
+        "skip": 33,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 1.44,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/23-sql-complete.t",
+      "raku": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 0.92,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 1.61,
+        "skip": 19,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/24-csv-dialect.t",
+      "raku": {
+        "nok": 0,
+        "ok": 57,
+        "plan": 57,
+        "secs": 0.82,
+        "skip": 19,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-describe-complete.t",
+      "raku": {
+        "first_failure": "注册会话 Engine 并建表成功",
+        "nok": 4,
+        "ok": 65,
+        "plan": 69,
+        "secs": 1.25,
+        "skip": 5,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/26-nested-repl.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-v3-tty-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-interrupt.t",
+      "raku": {
+        "first_failure": "真 PTY：REPL 正常启动到第一个 prompt",
+        "nok": 7,
+        "ok": 8,
+        "plan": 15,
+        "secs": 45.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/28-pty-exec.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-pty-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/29-pty-capability.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-pty-cap-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/30-tty-exec-sigint.t",
+      "raku": {
+        "first_failure": "真 PTY：REPL 出现第一个 prompt",
+        "nok": 10,
+        "ok": 0,
+        "plan": 10,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/31-tty-termios.t",
+      "raku": {
+        "first_failure": "canonical 基线的 termios 位图可读",
+        "nok": 9,
+        "ok": 4,
+        "plan": 13,
+        "secs": 0.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/32-job-control.t",
+      "raku": {
+        "first_failure": "真 PTY：整段探针跑完（宿主全程存活）",
+        "nok": 9,
+        "ok": 2,
+        "plan": 11,
+        "secs": 65.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 77,
+        "plan": 77,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/33-colors.t",
+      "raku": {
+        "nok": 0,
+        "ok": 77,
+        "plan": 77,
+        "secs": 1.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.14,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -783,67 +583,72 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.88,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "path": "t/52-script-shebang.t",
-      "raku": {
-        "first_failure": "Failed to open file /tmp/rk-shebang-2-1617-a.sh: Read-only file system",
+      "cmp": "parity",
+      "mutsu": {
         "nok": 0,
-        "ok": 0,
-        "plan": 14,
-        "secs": 0.87,
+        "ok": 30,
+        "plan": 30,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/53-native-parity.t",
+        "verdict": "pass"
+      },
+      "path": "t/52-load-all-modules.t",
       "raku": {
-        "first_failure": "native：`[ -n 空参数 ]` 判假（与 bash 一致）",
-        "nok": 3,
-        "ok": 5,
-        "plan": 8,
-        "secs": 1.25,
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       }
     }
   ],
   "load": {
-    "Rakuish::Builtins": "ok",
-    "Rakuish::Eval": "ok",
+    "Rakuish::Agent": "ok",
+    "Rakuish::Agent::Server": "ok",
+    "Rakuish::Agent::Worker": "ok",
+    "Rakuish::Command": "ok",
+    "Rakuish::DSL": "ok",
+    "Rakuish::Data": "ok",
+    "Rakuish::Data::CsvOptions": "ok",
+    "Rakuish::Data::Cursor": "ok",
+    "Rakuish::Data::Engine": "ok",
+    "Rakuish::Data::Engine::DuckDB": "ok",
+    "Rakuish::Data::Engine::SQLite": "ok",
+    "Rakuish::Data::Pager": "ok",
+    "Rakuish::Data::Table": "ok",
     "Rakuish::Incomplete": "ok",
-    "Rakuish::JSONServer": "raku_also_fails",
-    "Rakuish::Loop": "raku_also_fails",
-    "Rakuish::NativeSocket": "ok",
-    "Rakuish::Platform": "ok",
+    "Rakuish::REPL::Chrome": "ok",
+    "Rakuish::REPL::Highlight": "ok",
+    "Rakuish::REPL::Hints": "ok",
+    "Rakuish::REPL::Keymap": "ok",
+    "Rakuish::REPL::Plugins": "ok",
+    "Rakuish::REPL::Session": "ok",
+    "Rakuish::REPL::Shell": "ok",
+    "Rakuish::REPL::SqlComplete": "ok",
     "Rakuish::Result": "ok",
-    "Rakuish::Script": "ok",
-    "Rakuish::Shell::Arith": "ok",
-    "Rakuish::Shell::Engine": "ok",
-    "Rakuish::Shell::Exec": "ok",
-    "Rakuish::Shell::Expand": "ok",
-    "Rakuish::Shell::Heredoc": "ok",
-    "Rakuish::Shell::Lexer": "ok",
-    "Rakuish::Shell::Parser": "ok",
-    "Rakuish::Shell::Session": "ok",
-    "Rakuish::Slow": "ok"
+    "Rakuish::Result::Renderer": "ok",
+    "Rakuish::Sandbox": "ok",
+    "Rakuish::Sys": "ok",
+    "Rakuish::Sys::FS": "ok",
+    "Rakuish::Sys::PosixSpawn": "ok",
+    "Rakuish::Sys::Proc": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b7189a78",
+    "mutsu_commit": "8f508678",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -852,15 +657,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/R/AK/RAKUISH/913270930801a9290dd4d8fa41fd99b8d69173f0.tar.gz"
+    "url": "https://360.zef.pm/R/AK/RAKUISH/13a6abf86c35fe870f7d5bb071dec2d03c5dc425.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 52,
-    "baseline_files": 8,
-    "mutsu_assertions": 52,
-    "parity_files": 8,
-    "regressed_files": 0
+    "baseline_assertions": 488,
+    "baseline_files": 13,
+    "mutsu_assertions": 478,
+    "parity_files": 12,
+    "regressed_files": 1
   },
-  "version": "0.20.0"
+  "version": "0.74.0"
 }

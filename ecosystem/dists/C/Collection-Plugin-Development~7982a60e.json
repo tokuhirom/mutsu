@@ -1,24 +1,80 @@
 {
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Collection",
+      "File::Directory::Tree",
+      "File::Temp",
+      "JSON::Class",
+      "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "LibCurl",
+      "License::SPDX",
+      "META6",
+      "NativeLibs",
+      "Pod::From::Cache",
+      "Pod::Load",
+      "PrettyDump",
+      "Raku::Pod::Render",
+      "RakuConfig",
+      "Template::Mustache",
+      "Terminal::ANSIColor",
+      "Terminal::Spinners",
+      "Test::Deeply::Relaxed",
+      "Test::META",
+      "Test::Output",
+      "Test::Run",
+      "Test::When",
+      "URI"
+    ],
+    "unresolved": []
+  },
   "dist": "Collection-Plugin-Development",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-basic.rakutest",
+      "raku": {
+        "first_failure": "Test::CollectionPlugin module can be use-d ok",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
+  "load": {
+    "Collection::AddPlugin": "raku_also_fails",
+    "Collection::ModConfig": "raku_also_fails",
+    "Collection::PreparePlugins": "raku_also_fails",
+    "Collection::TestAllPlugins": "raku_also_fails",
+    "Test::CollectionPlugin": "ok"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-12",
+    "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b7189a78",
+    "mutsu_commit": "8f508678",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
     "sandbox": "bwrap"
   },
-  "note": "harness error: AbsoluteLinkError: 'dist/trial/OgdenWebb/plugins' is a link to an absolute path",
   "schema": 1,
   "source": {
     "index": "fez",
     "url": "https://360.zef.pm/C/OL/COLLECTIONPLUGINDEVELOPMENT/8116c6a241e5783507929394653de159e10d1415.tar.gz"
   },
-  "status": "skipped",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

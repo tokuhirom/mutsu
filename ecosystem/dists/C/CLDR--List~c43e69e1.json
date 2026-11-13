@@ -14,17 +14,17 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.09,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/01-load.t",
+      "path": "t/01-load.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.71,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,12 +41,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/format.t",
+      "path": "t/format.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.57,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,10 +58,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-12",
+    "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b7189a78",
+    "mutsu_commit": "8f508678",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -70,7 +70,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/C/CLDR%3A%3AList/CLDR%3A%3AList%3Aver%3C%2A%3E%3Aauth%3Cgithub%3Apatch%3E.tar.gz"
+    "url": "https://360.zef.pm/C/LD/CLDR_LIST/2b1456db63084b2bc38b6851f904aeb60a0f99f8.tar.gz"
   },
   "status": "green",
   "totals": {
@@ -80,5 +80,5 @@
     "parity_files": 2,
     "regressed_files": 0
   },
-  "version": "*"
+  "version": "0.2"
 }

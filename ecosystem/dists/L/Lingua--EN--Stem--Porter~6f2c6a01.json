@@ -3,18 +3,7 @@
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
-    "resolved": [
-      "JSON::Class",
-      "JSON::Fast",
-      "JSON::Marshal",
-      "JSON::Name",
-      "JSON::OptIn",
-      "JSON::Unmarshal",
-      "License::SPDX",
-      "META6",
-      "Test::META",
-      "URI"
-    ],
+    "resolved": [],
     "unresolved": []
   },
   "dist": "Lingua::EN::Stem::Porter",
@@ -25,39 +14,17 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.62,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/00-meta.t",
+      "path": "t/00-use.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 18.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/00-use.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.63,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,17 +36,17 @@
         "nok": 0,
         "ok": 30428,
         "plan": 30428,
-        "secs": 6.54,
+        "secs": 13.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/01-wordlist.t",
+      "path": "t/01-wordlist.rakutest",
       "raku": {
         "nok": 0,
         "ok": 30428,
         "plan": 30428,
-        "secs": 9.7,
+        "secs": 19.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +61,7 @@
     "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b7189a78",
+    "mutsu_commit": "8f508678",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -103,15 +70,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://raw.githubusercontent.com/raku/REA/main/archive/L/Lingua%3A%3AEN%3A%3AStem%3A%3APorter/Lingua%3A%3AEN%3A%3AStem%3A%3APorter%3Aver%3Cv1.0%3E%3Aauth%3Cgithub%3Araku-community-modules%3E.tar.gz"
+    "url": "https://360.zef.pm/L/IN/LINGUA_EN_STEM_PORTER/6b3ae1d5d5b353b60061194aa210961a4aaeb11d.tar.gz"
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 30430,
-    "baseline_files": 3,
-    "mutsu_assertions": 30430,
-    "parity_files": 3,
+    "baseline_assertions": 30429,
+    "baseline_files": 2,
+    "mutsu_assertions": 30429,
+    "parity_files": 2,
     "regressed_files": 0
   },
-  "version": "v1.0"
+  "version": "1.2"
 }

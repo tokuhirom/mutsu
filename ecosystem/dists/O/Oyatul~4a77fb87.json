@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.16,
+        "secs": 0.13,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.61,
+        "secs": 0.62,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.43,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.46,
+        "secs": 5.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 95,
         "plan": 95,
-        "secs": 0.56,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 95,
         "plan": 95,
-        "secs": 1.51,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 0.77,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 2.16,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,11 +102,11 @@
       "cmp": "no_baseline",
       "path": "t/040-synopsis.t",
       "raku": {
-        "first_failure": "run /home/runner/.cache/mutsu-ecosystem/run/ecosweep-fht_3x0z/dist/Oyatul-0.0.9/t/010-use.t",
+        "first_failure": "run /home/runner/.cache/mutsu-ecosystem/run/ecosweep-fqf8ekhn/dist/Oyatul-0.0.9/t/010-use.t",
         "nok": 3,
         "ok": 2,
         "plan": 5,
-        "secs": 5.01,
+        "secs": 3.7,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -121,7 +121,7 @@
     "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "b7189a78",
+    "mutsu_commit": "8f508678",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
