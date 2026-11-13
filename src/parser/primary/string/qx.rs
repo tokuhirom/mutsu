@@ -61,30 +61,3 @@ pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
         },
     ))
 }
-
-/// Parse backtick command form: `...`.
-/// This is equivalent to `qx` with interpolation enabled.
-pub(crate) fn backtick_qx_string(input: &str) -> PResult<'_, Expr> {
-    if crate::parser::stmt::simple::match_user_declared_circumfix_op(input).is_some() {
-        return Err(PError::expected("backtick qx string"));
-    }
-    let body = input
-        .strip_prefix('`')
-        .ok_or_else(|| PError::expected("backtick qx string"))?;
-    let end = body
-        .find('`')
-        .ok_or_else(|| PError::expected("closing '`'"))?;
-    let content = &body[..end];
-    let rest = &body[end + 1..];
-    // Backtick command quoting is qqx-equivalent: full interpolation, including
-    // `{ EXPR }` closure blocks (the delimiter is a backtick, never a brace).
-    let command_expr = interpolate_string_content_with_modes(content, true, true)?;
-    Ok((
-        rest,
-        Expr::Call {
-            name: Symbol::intern("QX"),
-            args: vec![command_expr],
-            listop: false,
-        },
-    ))
-}

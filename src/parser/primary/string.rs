@@ -40,7 +40,6 @@ pub(in crate::parser) use quoted::{
     smart_single_quoted_string,
 };
 pub(super) use quotewords::parse_quotewords_quoted_atom;
-pub(super) use qx::backtick_qx_string;
 
 pub(in crate::parser) use interp_content::{
     interpolate_string_content, interpolate_string_content_with_modes,
