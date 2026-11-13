@@ -165,3 +165,13 @@ only on File::Which), so it skips 6 of 8; mutsu bundles HTTP::UserAgent, so the 
 http://example.com for real, which the sweep sandbox cannot reach, and both `lives-ok` fetches die. \
 Same situation as Dev::ContainerizedService and SOAP::Client: hiding the bundled module from \
 `require` would not be a fix (user decision 2026-11-03, #15525)."""
+
+[[divergence]]
+dist = "Rakudo::Options"
+file = "t/02-with.rakutest"
+shape = { verdict = "fail", ok = 0, nok = 1, plan = 4, first_failure = "did we create a spesh log file" }
+issue = 16953
+reason = """the test runs a child with `MVM_SPESH_LOG=<file>` and expects MoarVM's specializer to \
+write that log. `MVM_SPESH_LOG` is a MoarVM implementation artefact the language does not specify \
+and mutsu has no spesh; the issue recommended accepting the divergence and the maintainer closed it \
+as completed (2026-11-08, #16953)."""

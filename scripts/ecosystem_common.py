@@ -40,11 +40,36 @@ REA_URL = "https://raw.githubusercontent.com/Raku/REA/main/META.json"
 
 CACHE_DIR = os.path.expanduser("~/.cache/mutsu-ecosystem")
 
-# Names the compiler supplies; never a distribution to resolve.
+# Names the compiler supplies; never a distribution to resolve. `CORE` is the
+# name of rakudo's own core distribution (`CORE:ver<6.d>:auth<perl>`, which a
+# distribution lists to require a language version -- Learn::Raku::With) and
+# `v6` is the language-version pragma (Touch); neither is an ecosystem
+# distribution, so treating them as unresolvable left both `blocked_dep`.
 CORE_PROVIDED = {
     "Test", "NativeCall", "nqp", "Telemetry", "MONKEY", "MONKEY-SEE-NO-EVAL",
-    "experimental", "lib", "Pod::To::Text",
+    "experimental", "lib", "Pod::To::Text", "CORE", "v6",
 }
+
+
+def _rakudo_core_library() -> set[str]:
+    """The modules of rakudo's own core library, as vendored verbatim in
+    `modules/Rakudo-Core` (its META6 `provides`). rakudo resolves each with no
+    installed distribution (`raku -e 'use RakuAST::Deparse::Highlight'`), so a
+    dependency on one is compiler-provided, never an ecosystem distribution to
+    resolve. Without this, Rakuast::RakuDoc::Render, Elucid8::Build and
+    Air-Plugin-RakuDoc were `blocked_dep` on RakuAST::Deparse::Highlight."""
+    meta = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "modules", "Rakudo-Core", "META6.json",
+    )
+    try:
+        with open(meta, encoding="utf-8") as fh:
+            return set(json.load(fh).get("provides") or {})
+    except (OSError, ValueError):
+        return set()
+
+
+CORE_PROVIDED |= _rakudo_core_library()
 
 _DEP_NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*(?:::[A-Za-z0-9_-]+)*)")
 # A dependency string is a name followed by zero or more `:key<value>`
@@ -94,7 +119,31 @@ def source_axis(root: str) -> str:
 
 
 def version_key(v):
-    return [(0, int(x)) if x.isdigit() else (1, x) for x in re.split(r"[.\-+]", str(v))]
+    """Order versions the way Raku's `Version` does, so "the newest release"
+    is the one zef would pick.
+
+    A leading `v` is not a part (`v0.1.1` is `0.1.1`), an alphabetic part
+    sorts below a numeric one (`Version.new("readline.0.1.6") < v0.1.8`), and
+    the whatever-version `*` sorts below every real one. Comparing the raw
+    text instead made `v0.1.1`, `*` and `readline.0.1.6` outrank every
+    numbered release, so the sweep measured a years-old tarball (often one
+    predating META6.json) for IRC::TextColor, Readline, HTML::Template and
+    SQL::NamedPlaceholder.
+    """
+    text = str(v).strip()
+    if re.match(r"^v\d", text):
+        text = text[1:]
+    if text in ("", "*"):
+        return [(-1, "")]
+    key = []
+    for part in re.split(r"[.\-+]", text):
+        if part.isdigit():
+            key.append((1, int(part)))
+        elif part == "*":
+            key.append((-1, ""))
+        else:
+            key.append((0, part))
+    return key
 
 
 def dep_names(meta: dict, *, include_test: bool = True) -> list[str]:
@@ -296,11 +345,40 @@ def fetch_tarball(url: str, cache_dir: str) -> str:
     if not os.path.exists(cache_path):
         with urllib.request.urlopen(url, timeout=120) as response:
             data = response.read()
-        tmp = cache_path + ".part"
-        with open(tmp, "wb") as fh:
-            fh.write(data)
-        os.replace(tmp, cache_path)
+        # A per-writer temporary name: the sweep fetches in a thread pool, and
+        # two distributions sharing a dependency used to race on one fixed
+        # `.part` name -- the loser's `os.replace` found the file already moved
+        # and the whole distribution was recorded as a harness error
+        # (L10N::EN, FileNotFoundError on its `.part`).
+        fd, tmp = tempfile.mkstemp(dir=cache_dir, suffix=".part")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, cache_path)
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
     return cache_path
+
+
+def _data_filter_dropping_escaping_links(member, dest_path):
+    """tarfile's `data` filter, except that a symlink or hard link pointing at
+    an absolute path or outside the archive is skipped instead of aborting
+    the whole extraction.
+
+    Such a link is an author's stray local symlink (`CHANGES-old.md ->
+    /home/<author>/...`); its target exists on no other machine, so the link is
+    dangling for every installer and dropping it changes nothing either
+    interpreter can see. Raising instead (`AbsoluteLinkError`) left Gnome::Gtk3,
+    GOTO, App::Urls, Sway::PreviewKeys and Collection-Plugin-Development
+    unmeasured. Every other `data`-filter refusal (absolute or escaping member
+    paths, device files) still aborts.
+    """
+    try:
+        return tarfile.data_filter(member, dest_path)
+    except (tarfile.AbsoluteLinkError, tarfile.LinkOutsideDestinationError):
+        return None
 
 
 def extract_dist(tar_path: str, dest: str) -> str | None:
@@ -308,7 +386,7 @@ def extract_dist(tar_path: str, dest: str) -> str | None:
     holding META6.json), or None when there is no META6.json."""
     os.makedirs(dest, exist_ok=True)
     with tarfile.open(tar_path) as tf:
-        tf.extractall(dest, filter="data")
+        tf.extractall(dest, filter=_data_filter_dropping_escaping_links)
     if os.path.exists(os.path.join(dest, "META6.json")):
         return dest
     subdirs = [os.path.join(dest, e) for e in os.listdir(dest)]
