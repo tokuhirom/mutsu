@@ -332,10 +332,12 @@ fn set_value(i: &mut Interpreter, target: &Value, args: &[Value], _named: Named<
     // — gets one.
     // TODO: promote the source variable to a shared cell so later writes
     // through either side are seen by both.
-    let source_cell = i.container_of_arg_source(1).filter(|cell| match cell.view() {
-        ValueView::ContainerRef(c) => !Interpreter::cell_binds_a_non_scalar(&c),
-        _ => true,
-    });
+    let source_cell = i
+        .container_of_arg_source(1)
+        .filter(|cell| match cell.view() {
+            ValueView::ContainerRef(c) => !Interpreter::cell_binds_a_non_scalar(&c),
+            _ => true,
+        });
     let bound = source_cell.unwrap_or_else(|| {
         let itemized_aggregate = match args[1].view() {
             ValueView::Array(_, kind) => kind.is_itemized(),
