@@ -34,6 +34,10 @@ impl BindingFlags {
     const PLAIN_LOCAL: u8 = 0b01;
     /// See [`BindingFlags::simple_scalar_local`].
     const SIMPLE_SCALAR_LOCAL: u8 = 0b10;
+    /// See [`BindingFlags::readonly_term`].
+    const READONLY_TERM: u8 = 0b100;
+    /// See [`BindingFlags::readonly_term`].
+    const OTHER_TERM_DECL: u8 = 0b1000;
 
     #[inline]
     pub(crate) fn new(plain_local: bool, simple_scalar_local: bool) -> Self {
@@ -53,6 +57,29 @@ impl BindingFlags {
     #[inline]
     pub(crate) fn plain_local(self) -> bool {
         self.0 & Self::PLAIN_LOCAL != 0
+    }
+
+    /// True if every declaration of the slot is a readonly sigilless term
+    /// (`my \k = EXPR` with a non-variable `EXPR`, `TermMark::Readonly`) and
+    /// at least one exists: the term is bound to a value, never to a
+    /// container, so it is readonly by construction (ADR-17376). A parameter,
+    /// a bound term (`my \k = $x`) or any other declaration sharing the slot
+    /// clears it.
+    #[inline]
+    pub(crate) fn readonly_term(self) -> bool {
+        self.0 & (Self::READONLY_TERM | Self::OTHER_TERM_DECL) == Self::READONLY_TERM
+    }
+
+    /// Record a readonly sigilless term declaration of the slot.
+    #[inline]
+    pub(crate) fn note_readonly_term_decl(&mut self) {
+        self.0 |= Self::READONLY_TERM;
+    }
+
+    /// Record a binding of the slot that is not a readonly term declaration.
+    #[inline]
+    pub(crate) fn note_other_term_decl(&mut self) {
+        self.0 |= Self::OTHER_TERM_DECL;
     }
 
     /// True if a store into the slot may take the plain-scalar fast path in

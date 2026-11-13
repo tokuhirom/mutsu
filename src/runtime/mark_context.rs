@@ -130,6 +130,18 @@ impl MarkContextState {
         pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
     }
 
+    /// [`Self::only_declaration_marks`] for a sigilless term declaration,
+    /// which also compiles in constant context (ADR-17376).
+    // Cost: O(1).
+    pub(crate) fn only_term_declaration_marks(&self) -> bool {
+        const ALLOWED: u16 = bit::VARDECL
+            | bit::EXPLICIT_INITIALIZER
+            | bit::DECL_TYPECHECKED
+            | bit::CONSTANT;
+        let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
+        pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
+    }
+
     /// Snapshot the flag word and clear everything a store consumes, in one
     /// load and one store. See [`MarkFlags`].
     #[inline]
