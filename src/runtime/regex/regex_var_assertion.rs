@@ -34,7 +34,7 @@ impl Interpreter {
         val: Option<Value>,
         ignore_case: bool,
     ) -> VarInterpTarget {
-        let val = val.unwrap_or(Value::NIL);
+        let val = self.regex_routine_as_regex_value(val.unwrap_or(Value::NIL));
         let is_regex = matches!(
             val.view(),
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)

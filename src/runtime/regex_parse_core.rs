@@ -4144,6 +4144,10 @@ impl Interpreter {
                                                 return None;
                                             }
                                         };
+                                        // A named regex/token held in the variable
+                                        // (`my $p = &protocol; /<$p>/`) is a Regex too:
+                                        // interpolate its source, not its name.
+                                        let value = self.regex_routine_as_regex_value(value);
                                         // An undefined value has no `INTERPOLATE_ASSERTION`
                                         // candidate in rakudo: the match dies (#13042).
                                         if let Some(err) =
