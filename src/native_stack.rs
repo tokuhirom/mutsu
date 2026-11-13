@@ -117,6 +117,7 @@ pub(crate) fn headroom_exhausted() -> bool {
 pub(crate) const LOGICAL_STACK_BYTES: usize = 256 * 1024 * 1024;
 
 /// The size of one stack segment a growing thread maps when it runs low.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const SEGMENT_BYTES: usize = 64 * 1024 * 1024;
 
 thread_local! {
@@ -129,6 +130,7 @@ thread_local! {
 /// The segments a thread that starts on `initial` bytes needs to reach the
 /// usable depth of a [`LOGICAL_STACK_BYTES`] stack.
 // Cost: O(1).
+#[cfg(not(target_arch = "wasm32"))]
 fn segments_for(initial: usize) -> u32 {
     let target = LOGICAL_STACK_BYTES - reserve_for(LOGICAL_STACK_BYTES);
     let have = initial.saturating_sub(reserve_for(initial));
@@ -139,6 +141,7 @@ fn segments_for(initial: usize) -> u32 {
 /// Arm the guard for a user-code thread that starts on `initial` bytes of
 /// stack (see [`init_thread_stack_floor`]) and may grow in segments up to the
 /// depth of a [`LOGICAL_STACK_BYTES`] stack (ADR-17392).
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn init_growable_thread_stack(initial: usize) {
     init_thread_stack_floor(initial);
     if stack_floor_armed() && cfg!(all(feature = "native", not(target_arch = "wasm32"))) {
