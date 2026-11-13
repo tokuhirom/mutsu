@@ -26,7 +26,9 @@
 //! - the method name is none the full path inspects by name before its native
 //!   probe (`scalar_early_lane_skips`, `dispatch_branches_before_native_probe`);
 //! - no accessor-ref marker is pending, no user `find_method` exists anywhere,
-//!   and no writeback is pending (the full path would drain it at this call);
+//!   and no rw writeback is pending (the full path would drain it at this
+//!   call); the retain-on-miss caller-var writebacks are drained after the
+//!   answer instead, as the full path drains them (`finish_method_site_lane`);
 //! - the receiver has a `DispatchShape` and the table has a row for
 //!   `(shape, method, arity)`, whose handler binds these arguments (a
 //!   `Handler::Narrow` row may decline them);
@@ -118,7 +120,6 @@ impl Interpreter {
         }
         if self.accessor_ref_pending
             || !self.pending_rw_writeback_sources.is_empty()
-            || !self.pending_caller_var_writeback.is_empty()
             || !self.pending_local_updates.is_empty()
             || crate::runtime::find_method_intercept::any_user_find_method()
             // A wrapped built-in method runs its wrapper, not the row (#12506).
@@ -307,6 +308,16 @@ impl Interpreter {
                     // around a `@list.contains(...)` in release builds.
                     self.apply_pending_rw_writeback(code);
                     self.drain_pending_local_updates_after_call(code);
+                } else {
+                    // The caller-var writebacks still pending from earlier
+                    // calls are claimed here exactly as the full path's
+                    // post-call drain claims them (`apply_pending_rw_writeback`
+                    // in `call_method_mut_site_around`). The list is
+                    // retain-on-miss and keeps names no live frame owns (a
+                    // module-scope `my` written from a closure), so declining
+                    // the lane while it is non-empty turned the lane off for
+                    // the rest of the process (#17331).
+                    self.apply_pending_caller_var_writeback(code);
                 }
                 Ok(())
             }
