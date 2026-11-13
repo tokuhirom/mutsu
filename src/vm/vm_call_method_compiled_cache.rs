@@ -437,6 +437,19 @@ impl Interpreter {
     /// value-refining numeric pseudo-types, and a subset (an implicit `where`).
     pub(crate) fn type_constraint_is_value_dependent(&self, tc: &str) -> bool {
         let (base, _smiley) = crate::runtime::types::strip_type_smiley(tc);
+        // The name of a declared class or role is nominal whatever it spells:
+        // a parameterized role's pun (`R\0default[Any,:cmp(infix:<cmp>)]`,
+        // what `::?CLASS` is substituted with in such a role's candidates)
+        // carries the `(` and `:` of its arguments, which the coercion and
+        // enum-value tests below would otherwise read as a refinement. That
+        // kept every multi method of a role with a named parameter out of the
+        // resolution caches (Concurrent::PriorityQueue's `push`, #15786).
+        if base.contains(['(', ':']) {
+            let registry = self.registry();
+            if registry.classes.contains_key(base) || registry.roles.contains_key(base) {
+                return false;
+            }
+        }
         // A `Int:D()` coercion-with-smiley keeps its `(` here, so it is still
         // caught: only the trailing smiley is peeled.
         if base.contains('(') {
