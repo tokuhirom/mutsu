@@ -3120,6 +3120,20 @@ impl Interpreter {
         loan_env!(self, maybe_fetch_rw_proxy(result, auto_fetch))
     }
 
+    /// Whether a signature is exactly one bare capture parameter (`(|)`, no
+    /// name, type, `where` or sub-signature), which binds any argument list.
+    // Cost: O(1).
+    fn is_bare_capture_signature(params: &[crate::ast::ParamDef]) -> bool {
+        matches!(params, [pd] if pd.name == "_capture"
+            && pd.slurpy
+            && pd.sigilless
+            && !pd.named
+            && pd.type_constraint.is_none()
+            && pd.where_constraint.is_none()
+            && pd.sub_signature.is_none()
+            && pd.outer_sub_signature.is_none())
+    }
+
     /// Whether a resolved `FunctionDef` is simple enough to compile on-the-fly to
     /// bytecode and run via the Interpreter (instead of tree-walking it through the
     /// interpreter): a plain body and no default/where/code-signature/`&`-code
@@ -3138,20 +3152,6 @@ impl Interpreter {
     ///   raises the proper `X::Multi::NoMatch` / `X::Multi::Ambiguous`);
     /// - the winning candidate is not OTF-compilable, or declares `state` (whose
     ///   shared-cell identity the OTF body-fingerprint cache cannot preserve).
-    /// Whether a signature is exactly one bare capture parameter (`(|)`, no
-    /// name, type, `where` or sub-signature), which binds any argument list.
-    // Cost: O(1).
-    fn is_bare_capture_signature(params: &[crate::ast::ParamDef]) -> bool {
-        matches!(params, [pd] if pd.name == "_capture"
-            && pd.slurpy
-            && pd.sigilless
-            && !pd.named
-            && pd.type_constraint.is_none()
-            && pd.where_constraint.is_none()
-            && pd.sub_signature.is_none()
-            && pd.outer_sub_signature.is_none())
-    }
-
     pub(super) fn vm_resolve_trivial_proto_candidate(
         &mut self,
         name: &str,
