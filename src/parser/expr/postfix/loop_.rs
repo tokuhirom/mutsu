@@ -1027,13 +1027,14 @@ fn postfix_expr_loop_from<'a>(
                 "either . to call a method, or whitespace to delimit a pointy block",
             ));
         }
-        // `:exists` / `:!exists` on a bare named match capture (`$<foo>:exists`)
-        // is sugar for `$/<foo>:exists`. The `<foo>` was already consumed while
+        // A subscript adverb (`:exists`, `:!exists`, `:delete`, `:k`, ...) on a
+        // bare named match capture (`$<foo>:exists`) is sugar for
+        // `$/<foo>:exists`. The `<foo>` was already consumed while
         // parsing the `$<foo>` term, so the adverb never reached the `<...>`
         // subscript branch — rewrite the capture to the equivalent `$/{'foo'}`
         // index target here so the shared exists-adverb machinery applies.
         if let Expr::CaptureVar(name) = &expr
-            && (rest.starts_with(":exists") || rest.starts_with(":!exists"))
+            && super::adverb::starts_with_subscript_adverb(rest)
         {
             let target = Expr::Index {
                 target: Box::new(Expr::Var("/".to_string())),
@@ -1052,7 +1053,7 @@ fn postfix_expr_loop_from<'a>(
         if let Expr::Var(name) = &expr
             && !name.is_empty()
             && name.bytes().all(|b| b.is_ascii_digit())
-            && (rest.starts_with(":exists") || rest.starts_with(":!exists"))
+            && super::adverb::starts_with_subscript_adverb(rest)
             && let Ok(position) = name.parse::<i64>()
         {
             let target = Expr::Index {

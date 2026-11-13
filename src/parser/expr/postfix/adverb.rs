@@ -105,3 +105,21 @@ pub(crate) fn has_exists_adverb(expr: &Expr) -> bool {
     matches!(expr, Expr::Ast(node)
         if matches!(node.as_ref(), ParsedExpr::SubscriptAdverbs(s) if s.has_exists()))
 }
+
+/// Whether `input` opens with a subscript adverb glued to the term before it:
+/// `:exists`, `:delete`, `:k`, `:v`, `:kv` or `:p`, each also negated (`:!k`).
+// Cost: O(1).
+pub(super) fn starts_with_subscript_adverb(input: &str) -> bool {
+    let Some(after) = input.strip_prefix(':') else {
+        return false;
+    };
+    let after = after.strip_prefix('!').unwrap_or(after);
+    ["exists", "delete", "kv", "k", "v", "p"].iter().any(|name| {
+        after.strip_prefix(name).is_some_and(|tail| {
+            !tail
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        })
+    })
+}

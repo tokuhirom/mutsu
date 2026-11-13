@@ -274,30 +274,9 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     // fell through to the bare-`@` (anonymous array) case, silently leaving
     // the `0` unconsumed as a stray following token.
     if twigil.is_empty()
-        && let Some(first) = rest.chars().next()
-        && first.is_ascii_digit()
+        && let Some(parsed) = numbered_capture_contextualized(rest, "list")
     {
-        let digits_end = rest
-            .find(|c: char| !c.is_ascii_digit())
-            .unwrap_or(rest.len());
-        let digits = &rest[..digits_end];
-        let trimmed = digits.trim_start_matches('0');
-        let name = if trimmed.is_empty() {
-            "0".to_string()
-        } else {
-            trimmed.to_string()
-        };
-        return Ok((
-            &rest[digits_end..],
-            Expr::MethodCall {
-                target: Box::new(Expr::Var(name)),
-                name: crate::symbol::Symbol::intern("list"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
-                sugar: true,
-            },
-        ));
+        return Ok(parsed);
     }
     // Contextualized scalar specials (e.g., @$/, @$_): parse `$...` then lift
     // to an array variable targeting the same underlying name.
@@ -517,6 +496,12 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
+    // Numbered positional-capture hash (`%0`, `%1`, ...): `$N.hash`.
+    if twigil.is_empty()
+        && let Some(parsed) = numbered_capture_contextualized(rest, "hash")
+    {
+        return Ok(parsed);
+    }
     // Contextualized scalar specials (e.g., %$h, %$/, %$_): parse `$...` then
     // coerce to hash context via a `.hash` method call.
     if twigil.is_empty()
@@ -1211,4 +1196,30 @@ fn unbracketed_meta_op(op: &str) -> std::borrow::Cow<'_, str> {
         return std::borrow::Cow::Owned(format!("{meta}{}", unbracketed_meta_op(inner)));
     }
     std::borrow::Cow::Borrowed(op)
+}
+
+/// `@N` / `%N`: the numbered capture `$N` contextualized by `method` (`list`
+/// for `@N`, `hash` for `%N`), as Raku defines them. `None` when `rest` does
+/// not open with a digit.
+// Cost: O(d), d = digits of the capture number.
+fn numbered_capture_contextualized<'a>(rest: &'a str, method: &str) -> Option<(&'a str, Expr)> {
+    if !rest.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    let digits_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    let trimmed = rest[..digits_end].trim_start_matches('0');
+    let name = if trimmed.is_empty() { "0" } else { trimmed };
+    Some((
+        &rest[digits_end..],
+        Expr::MethodCall {
+            target: Box::new(Expr::Var(name.to_string())),
+            name: crate::symbol::Symbol::intern(method),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+            sugar: true,
+        },
+    ))
 }

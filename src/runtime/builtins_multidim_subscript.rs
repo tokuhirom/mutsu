@@ -319,6 +319,19 @@ impl Interpreter {
         }
     }
 
+    /// The captures a subscript adverb on the Match `target` reads: its
+    /// positional captures under `[...]`, its named-capture map otherwise.
+    /// `None` when `target` is no Match.
+    // Cost: O(c), c = captures, to copy them out.
+    fn match_subscript_view(target: &Value, positional: Option<bool>) -> Option<Value> {
+        target.match_named()?;
+        if positional == Some(true) {
+            Some(target.match_positional_list(true))
+        } else {
+            target.match_named_map()
+        }
+    }
+
     pub(super) fn builtin_subscript_adverb(
         &mut self,
         args: &[Value],
@@ -397,6 +410,14 @@ impl Interpreter {
                 target_is_coerced_list = true;
                 target_is_coerced_scalar = true;
                 Value::real_array(vec![t.with_hash_itemized(false)])
+            } else if let Some(view) = Self::match_subscript_view(&t, subscript_is_positional)
+                && !args[2].to_string_value().contains("delete")
+            {
+                // A Match reads `$/<x>:k` / `$/[0]:v` from its captures: the
+                // named-capture map or the positional captures. (`:delete`
+                // stays on the Match, which refuses it.)
+                target_is_coerced_list = subscript_is_positional == Some(true);
+                view
             } else if subscript_is_positional == Some(true) && self.is_user_positional_object(&t) {
                 // Rich Positional instances (including roles whose methods are
                 // kept in the role registry) need the same value/key/exists
