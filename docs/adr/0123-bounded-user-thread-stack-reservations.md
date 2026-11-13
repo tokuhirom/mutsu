@@ -1,6 +1,7 @@
 # ADR-0123: User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it
 
-- **Status**: Accepted (user approval 2026-09-25; implemented with #9377)
+- **Status**: Accepted (user approval 2026-09-25; implemented with #9377). D2 (the stack tiers)
+  and its §6 amendment are superseded by [ADR-17392](17392-user-thread-stacks-grow-in-segments.md)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9377](https://github.com/tokuhirom/mutsu/issues/9377). Supersedes the growth rule
   of [ADR-0020](0020-shared-worker-pool.md) §3.2 ("grow whenever there are more queued tasks than

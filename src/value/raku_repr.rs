@@ -835,8 +835,10 @@ fn raku_value_node(v: &Value) -> String {
         return rendered;
     }
     // #11217: stop descending when the native stack runs low.
-    if crate::value::render_guard::render_too_deep() {
-        return crate::value::render_guard::TRUNCATED.to_string();
+    if let Some(rendered) =
+        crate::value::render_guard::render_on_fresh_segment(|| raku_value_node(v))
+    {
+        return rendered;
     }
     match v.view() {
         // A `:=`-bound element holds a `ContainerRef` cell; render the held

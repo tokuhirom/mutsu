@@ -194,8 +194,10 @@ fn gist_route(v: &Value) -> GistRoute {
 /// One element's gist inside a list, `Seq` or `Slip`.
 // Cost: O(d), d = rendered size of the element (nested aggregates render in full).
 fn gist_item(v: &Value) -> String {
-    if crate::value::render_guard::render_too_deep() {
-        return crate::value::render_guard::TRUNCATED.to_string();
+    if let Some(rendered) =
+        crate::value::render_guard::render_on_fresh_segment(|| gist_item(v))
+    {
+        return rendered;
     }
     match v.view() {
         ValueView::Nil => "Nil".to_string(),
@@ -296,8 +298,10 @@ fn gist_item(v: &Value) -> String {
 // cells the same way. Gist such a cell as the type object `(Any)`.
 // Lists/Seqs keep a genuine Nil, so this only applies to real arrays.
 fn gist_real_array_item(v: &Value) -> String {
-    if crate::value::render_guard::render_too_deep() {
-        return crate::value::render_guard::TRUNCATED.to_string();
+    if let Some(rendered) =
+        crate::value::render_guard::render_on_fresh_segment(|| gist_real_array_item(v))
+    {
+        return rendered;
     }
     match v.view() {
         ValueView::Nil => "(Any)".to_string(),

@@ -66,10 +66,10 @@ where
         .unwrap_or_else(|e| panic!("failed to spawn worker thread: {e:?}"))
 }
 
-/// Spawn a user-code thread (see [`spawn_user_thread`]) under `policy`,
-/// stepping down through `stack_budget::STACK_TIERS` when the budget or the
-/// OS cannot afford the full stack, and reporting failure instead of
-/// panicking (ADR-0123).
+/// Spawn a user-code thread (see [`spawn_user_thread`]) under `policy` on
+/// `stack_budget::initial_stack_bytes`, past the budget only when `policy`
+/// requires the thread, and reporting failure instead of panicking (ADR-0123,
+/// ADR-17392).
 pub(crate) fn try_spawn_user_thread<F, T>(
     name: &str,
     policy: StackPolicy,
@@ -79,42 +79,27 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    use crate::runtime::stack_budget::{STACK_TIERS, reserve_over_budget, try_reserve};
+    use crate::runtime::stack_budget::{initial_stack_bytes, reserve_over_budget, try_reserve};
     // `Builder::spawn` consumes its closure even when it fails, so the body
     // lives in a slot each attempt borrows from; a refused attempt drops only
     // its handle on the slot.
     let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(f)));
     let mut last_os_error = None;
-    // Optional growth only ever takes a full-size stack, so which worker a
-    // task lands on never changes how deep it may recurse.
-    if let Some(reservation) = try_reserve(STACK_TIERS[0]) {
+    // Every user-code thread starts on the same stack, so which worker a task
+    // lands on never changes how deep it may recurse: the whole logical stack
+    // when the address space is unlimited, and otherwise a small one that
+    // grows in segments as deep as it recurses (ADR-17392).
+    let size = initial_stack_bytes();
+    if let Some(reservation) = try_reserve(size) {
         match spawn_registered_thread(name, Some(reservation), slot.clone()) {
             Ok(handle) => return Ok(handle),
             Err(e) => last_os_error = Some(e),
         }
     }
-    if policy == StackPolicy::Required {
-        // A thread that has to exist steps down through the smaller tiers
-        // while one still fits the budget, and only past the budget if none
-        // does -- then with the SMALLEST tier (ADR-0123 D2). Retrying the full
-        // size past the budget let a burst of blocked `start` workers (32
-        // callers parked on one `await`) take a 256 MiB stack each until the
-        // OS refused, spending the heap's half of `RLIMIT_AS`: the next
-        // `malloc` aborted the process, or a later spawn broke its promise
-        // with EAGAIN (the JobQueue distribution's t/01-queue under the
-        // ecosystem sandbox's 6 GB limit).
-        for &size in &STACK_TIERS[1..] {
-            let Some(reservation) = try_reserve(size) else {
-                continue;
-            };
-            // An OS refusal here falls through to the smallest tier below,
-            // whose own error is the one reported.
-            if let Ok(handle) = spawn_registered_thread(name, Some(reservation), slot.clone()) {
-                return Ok(handle);
-            }
-        }
-        let smallest = *STACK_TIERS.last().expect("STACK_TIERS is non-empty");
-        return spawn_registered_thread(name, Some(reserve_over_budget(smallest)), slot)
+    if policy == StackPolicy::Required && last_os_error.is_none() {
+        // A thread that has to exist is created past the budget: the budget is
+        // the line for optional growth, not a hard cap (ADR-0123 D2).
+        return spawn_registered_thread(name, Some(reserve_over_budget(size)), slot)
             .map_err(SpawnError::Os);
     }
     Err(match last_os_error {
@@ -216,7 +201,7 @@ where
         // `vm_stack_guard`'s module docs describe.
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(size) = stack_size {
-            crate::vm::vm_stack_guard::init_thread_stack_floor(size);
+            crate::native_stack::init_growable_thread_stack(size);
         }
         struct WorkerGuard;
         impl Drop for WorkerGuard {

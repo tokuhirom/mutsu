@@ -302,7 +302,20 @@ impl Interpreter {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
-        self.guard_native_stack()?;
+        crate::guard_native_stack!(
+            self,
+            self.call_compiled_closure_in_unit(
+                data,
+                cc,
+                args,
+                ClosureTopic {
+                    explicit: explicit_topic,
+                    capture_rw: capture_rw_topic,
+                    site,
+                },
+                compiled_fns,
+            )
+        );
         // RAII (`MarkContextGuard`,
         // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
         // isolate the "mark context" one-shot flag family (bind_context et

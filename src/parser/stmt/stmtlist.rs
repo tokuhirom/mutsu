@@ -318,6 +318,13 @@ fn stmt_list_inner(
     emit_setline: bool,
     suppressed: bool,
 ) -> PResult<'_, Vec<Stmt>> {
+    // A thread that may grow continues on a fresh stack segment (ADR-17392).
+    crate::grow_and_reenter!(stmt_list_inner(
+        input,
+        allow_mainline_capture,
+        emit_setline,
+        suppressed
+    ));
     let _nesting = crate::parser::NestingGuard::enter(input)?;
     // A slang's `statementlist` wrapper parses the list from its start (not the
     // rest of a list it was activated in, as in rakudo).
