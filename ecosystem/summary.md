@@ -7,18 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **97.7%** (1303/1334) |
-| file parity | 98.6% (5030/5103) |
+| **dist parity** (published headline) | **97.8%** (1304/1334) |
+| file parity | 98.6% (5030/5102) |
 | assertion parity | 99.2% |
-| accepted divergences (out of the KPI, ADR-0130) | 11 file(s) |
+| accepted divergences (out of the KPI, ADR-0130) | 12 file(s) |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 2 |
 | `blocked_load` | 9 |
-| `green` | 1303 |
+| `green` | 1304 |
 | `no_baseline` | 330 |
-| `partial` | 21 |
+| `partial` | 20 |
 | `red` | 10 |
 
 ## Distributions
@@ -1276,7 +1276,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Rakudo-Type-Introspection` | 0.0.3 | red | 0/2 |
 | `Rakudo::Cache` | 0.0.4 | green | 1/1 |
 | `Rakudo::CORE::META` | 0.0.12 | green | 1/1 |
-| `Rakudo::Options` | 0.0.5 | partial | 4/5 |
+| `Rakudo::Options` | 0.0.5 | green | 4/4 |
 | `Rakudo::Version` | 0.0.6 | red | 0/1 |
 | `rakudoc` | 0.2.6 | partial | 3/4 |
 | `rakudoc2man` | 0.0.2 | green | 1/1 |
