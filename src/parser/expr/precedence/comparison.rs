@@ -37,21 +37,28 @@ fn comparison_tail(rest: &str, left: Expr, mode: ExprMode) -> PResult<'_, Expr> 
         (len == ulen).then(|| (op.token_kind(), r[..len].to_string()))
     });
     let (r, expr) = comparison_tail_ops(rest, left, mode)?;
-    if let Some((kind, name)) = shadowed
-        && matches!(&expr, Expr::Binary { op, .. } if *op == kind)
-        && let Expr::Binary { left, right, .. } = expr
-    {
-        return Ok((
-            r,
-            Expr::InfixFunc {
-                name,
-                left,
-                right: vec![*right],
-                modifier: None,
+    Ok((r, shadowed_comparison_call(expr, shadowed)))
+}
+
+/// `expr` as the call of the user operator that exactly shadows its
+/// comparison (`shadowed`: the operator's token and spelling), when it is that
+/// one comparison; else `expr` unchanged.
+// Cost: O(1).
+fn shadowed_comparison_call(expr: Expr, shadowed: Option<(TokenKind, String)>) -> Expr {
+    match (expr, shadowed) {
+        (
+            Expr::Binary {
+                left, op, right, ..
             },
-        ));
+            Some((kind, name)),
+        ) if op == kind => Expr::InfixFunc {
+            name,
+            left,
+            right: vec![*right],
+            modifier: None,
+        },
+        (expr, _) => expr,
     }
-    Ok((r, expr))
 }
 
 fn comparison_tail_ops(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Expr> {

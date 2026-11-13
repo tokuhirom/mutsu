@@ -441,20 +441,23 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
 /// `contains_whatever`, `count_whatever` and the placeholder replacement all
 /// read the operands through this one accessor.
 pub(crate) fn operator_call_operands(expr: &Expr) -> Option<&[Expr]> {
-    match expr {
-        Expr::Call { name, args, .. } => {
-            let name = name.resolve();
-            (name.starts_with("prefix:<") || name.starts_with("postfix:<"))
-                .then_some(args.as_slice())
-        }
-        // A user candidate of a core prefix keeps its RakuAST spelling.
+    // A user candidate of a core prefix keeps its RakuAST spelling.
+    let expr = match expr {
         Expr::Spelled(spelled)
             if matches!(
                 spelled.spelling,
                 crate::ast::spelled::Spelling::UserPrefixOperator
             ) =>
         {
-            operator_call_operands(&spelled.expr)
+            &spelled.expr
+        }
+        expr => expr,
+    };
+    match expr {
+        Expr::Call { name, args, .. } => {
+            let name = name.resolve();
+            (name.starts_with("prefix:<") || name.starts_with("postfix:<"))
+                .then_some(args.as_slice())
         }
         _ => None,
     }
