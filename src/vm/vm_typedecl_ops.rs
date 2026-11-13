@@ -33,8 +33,10 @@ impl Interpreter {
                 let classes_before = self.registry().classes.clone();
                 match self.exec_register_class_op(code, plan_idx, compiled_fns) {
                     Ok(()) => {
+                        // A lexical (`my`) class is not in GLOBAL: no session
+                        // could see it anyway (#17642).
                         let plan = &code.class_decl_plans[plan_idx as usize];
-                        if plan.name_chunk.is_none() {
+                        if plan.name_chunk.is_none() && !plan.is_lexical {
                             self.note_main_unit_type(plan.name);
                         }
                         Ok(())
@@ -50,7 +52,10 @@ impl Interpreter {
                 self.note_type_body_written_lexicals(code);
                 match self.exec_register_role_op(code, plan_idx, compiled_fns) {
                     Ok(()) => {
-                        self.note_main_unit_type(code.role_decl_plans[plan_idx as usize].name);
+                        let plan = &code.role_decl_plans[plan_idx as usize];
+                        if !plan.is_lexical {
+                            self.note_main_unit_type(plan.name);
+                        }
                         Ok(())
                     }
                     Err(_) if code.role_decl_plans[plan_idx as usize].pass.hoisted => Ok(()),
@@ -90,7 +95,9 @@ impl Interpreter {
             ..
         } = stmt
         {
-            self.note_main_unit_type(*name);
+            if !*is_my {
+                self.note_main_unit_type(*name);
+            }
             let result = loan_env!(
                 self,
                 register_enum_decl(
