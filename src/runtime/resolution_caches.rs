@@ -132,6 +132,15 @@ pub(crate) struct ResolutionCaches {
     pub(super) gather_compile_cache:
         HashMap<MapGrepCacheKey, (std::sync::Arc<CompiledCode>, std::sync::Arc<CompiledFns>)>,
     pub(super) private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
+    /// The shapeless method-table lane's verdicts (`vm_shapeless_site_lane`):
+    /// the row (or a remembered miss) answering a zero-argument built-in
+    /// method on a receiver with no dispatch shape, keyed by the receiver's
+    /// type, whether it is the type object, and the method, for one registry
+    /// write generation. Starts empty per thread (a pure recomputable memo).
+    pub(crate) shapeless_site_lane: rustc_hash::FxHashMap<
+        (Symbol, bool, Symbol),
+        (u64, Option<crate::builtins::method_table::RowId>),
+    >,
     /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
     /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
     /// `.parse`/subparse is re-entered many times against a stable token registry

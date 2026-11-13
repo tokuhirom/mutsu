@@ -122,7 +122,22 @@ impl Interpreter {
             return None;
         }
         let base = self.stack.len().checked_sub(arity + 1)?;
-        let receiver = Receiver::of(&self.stack[base])?;
+        let Some(receiver) = Receiver::of(&self.stack[base]) else {
+            // A receiver with no shape: a type object or instance of a user
+            // class, a role type object, `Any` (`vm_shapeless_site_lane`).
+            if arity != 0 {
+                return None;
+            }
+            let row = self.shapeless_site_lane_row(code, name_idx, target_name_idx, base)?;
+            let target = &self.stack[base];
+            let result = method_table::invoke(row, target, &[])?;
+            return Some(SiteLaneAnswer {
+                result,
+                row,
+                arity,
+                pure: true,
+            });
+        };
         if !method_table::shape_has_row(receiver, code.const_sym(name_idx)) {
             return None;
         }
