@@ -167,7 +167,8 @@ impl Interpreter {
         {
             return false;
         }
-        let (Some(body), Some(signature)) = (cc.body_name_tokens(), method_def.signature_name_tokens())
+        let (Some(body), Some(signature)) =
+            (cc.body_name_tokens(), method_def.signature_name_tokens())
         else {
             return false;
         };
