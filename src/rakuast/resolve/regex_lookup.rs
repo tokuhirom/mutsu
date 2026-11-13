@@ -39,7 +39,10 @@ pub(super) fn rule_name(node: &RakuAstNode) -> Option<String> {
 /// the declaration in scope when there is one.
 // Cost: O(d), d = scope depth.
 pub(super) fn record(node: &mut RakuAstNode, scopes: &Scopes) {
-    if !matches!(node.class, C::RegexAssertionNamed | C::RegexAssertionNamedArgs) {
+    if !matches!(
+        node.class,
+        C::RegexAssertionNamed | C::RegexAssertionNamedArgs
+    ) {
         return;
     }
     let Some(name) = rule_name(node) else {
@@ -54,13 +57,18 @@ pub(super) fn record(node: &mut RakuAstNode, scopes: &Scopes) {
 /// `None` when `node` is no named assertion.
 // Cost: O(1).
 pub(in crate::rakuast) fn implicit_lookups(node: &RakuAstNode) -> Option<Value> {
-    if !matches!(node.class, C::RegexAssertionNamed | C::RegexAssertionNamedArgs) {
+    if !matches!(
+        node.class,
+        C::RegexAssertionNamed | C::RegexAssertionNamedArgs
+    ) {
         return None;
     }
     // A node no resolution pass walked still looks its name up, unresolved.
-    let lookup = node.origin.2.clone().or_else(|| {
-        rule_name(node).map(|name| Value::rakuast(Box::new(lookup_node(&name))))
-    });
+    let lookup = node
+        .origin
+        .2
+        .clone()
+        .or_else(|| rule_name(node).map(|name| Value::rakuast(Box::new(lookup_node(&name)))));
     Some(Value::array(lookup.into_iter().collect()))
 }
 
@@ -94,7 +102,10 @@ fn regex_declarations(node: &RakuAstNode) -> HashMap<String, Value> {
         if is_regex_declaration(held.class)
             && let Some(name) = rule_name(held)
         {
-            found.insert(format!("&{name}"), Value::rakuast(Box::new(RakuAstNode::clone(held))));
+            found.insert(
+                format!("&{name}"),
+                Value::rakuast(Box::new(RakuAstNode::clone(held))),
+            );
         }
         if !opens_scope(held.class) {
             found.extend(regex_declarations(held));
@@ -134,12 +145,18 @@ fn walk_assertions(node: &mut RakuAstNode, scopes: &mut Vec<HashMap<String, Valu
     if opened {
         scopes.pop();
     }
-    if matches!(node.class, C::RegexAssertionNamed | C::RegexAssertionNamedArgs)
-        && let Some(name) = rule_name(node)
+    if matches!(
+        node.class,
+        C::RegexAssertionNamed | C::RegexAssertionNamedArgs
+    ) && let Some(name) = rule_name(node)
     {
         let lexical = format!("&{name}");
         let mut lookup = lookup_node(&name);
-        lookup.origin.2 = scopes.iter().rev().find_map(|scope| scope.get(&lexical)).cloned();
+        lookup.origin.2 = scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(&lexical))
+            .cloned();
         node.origin.2 = Some(Value::rakuast(Box::new(lookup)));
     }
 }
@@ -166,7 +183,10 @@ pub(crate) fn regex_with_declarations(regex: &Value) -> Option<Value> {
             }],
         }))
     };
-    let mut statements: Vec<Value> = declarations.iter().map(|(_, decl)| statement(decl)).collect();
+    let mut statements: Vec<Value> = declarations
+        .iter()
+        .map(|(_, decl)| statement(decl))
+        .collect();
     statements.push(statement(regex));
     Some(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
@@ -186,8 +206,10 @@ fn collect_declarations(value: &Value, out: &mut Vec<(String, Value)>) {
     let ValueView::RakuAst(node) = value.view() else {
         return;
     };
-    if matches!(node.class, C::RegexAssertionNamed | C::RegexAssertionNamedArgs)
-        && let Some(lookup) = &node.origin.2
+    if matches!(
+        node.class,
+        C::RegexAssertionNamed | C::RegexAssertionNamedArgs
+    ) && let Some(lookup) = &node.origin.2
         && let ValueView::RakuAst(lookup) = lookup.view()
         && let Some(declaration) = &lookup.origin.2
         && let ValueView::RakuAst(decl) = declaration.view()
@@ -200,7 +222,9 @@ fn collect_declarations(value: &Value, out: &mut Vec<(String, Value)>) {
     for field in &node.fields {
         match &field.value {
             RakuAstFieldValue::Node(child) => collect_declarations(child, out),
-            RakuAstFieldValue::List(items) => items.iter().for_each(|i| collect_declarations(i, out)),
+            RakuAstFieldValue::List(items) => {
+                items.iter().for_each(|i| collect_declarations(i, out))
+            }
             RakuAstFieldValue::Adverb(_) => {}
         }
     }

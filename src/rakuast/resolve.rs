@@ -34,8 +34,8 @@ use std::collections::HashMap;
 
 mod regex_lookup;
 mod scope;
-pub(super) use regex_lookup::{annotate_assertions, implicit_lookups};
 pub(crate) use regex_lookup::regex_with_declarations;
+pub(super) use regex_lookup::{annotate_assertions, implicit_lookups};
 pub(crate) use scope::{resolve_lexical, resolve_node_in};
 
 use super::lower::{call_name_str, leaf_str, positional_leaf};
@@ -364,7 +364,10 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
     if regex_lookup::is_regex_declaration(held.class)
         && let Some(name) = regex_lookup::rule_name(held)
     {
-        scopes.declare(format!("&{name}"), Value::rakuast(Box::new(RakuAstNode::clone(held))));
+        scopes.declare(
+            format!("&{name}"),
+            Value::rakuast(Box::new(RakuAstNode::clone(held))),
+        );
     }
     if let Some(name) = super::declared_routines::declared_by(held)
         && held.class == C::Sub
