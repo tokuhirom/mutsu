@@ -4,7 +4,9 @@
 - **Date**: 2026-11-12
 - **Issue**: [#17337](https://github.com/tokuhirom/mutsu/issues/17337) (ParaSeq's degree-3
   block `map` costs ~1 ms per 16-element batch)
-- **Related**: ADR-0020 (shared worker pool; "`clone_for_thread` is a per-task contract"),
+- **Related**: ADR-15967 §4.1 (the target: long-lived per-worker execution contexts over a
+  shared world; this ADR is an interim step towards it), ADR-0020 (shared worker pool;
+  "`clone_for_thread` is a per-task contract"),
   ADR-0113 (frame-lexical routines), ADR-0010 / ADR-16595 (what a spawned interpreter shares
   with its parent), ADR-12814 (concurrency memory safety follows rakudo), `docs/security.md`
 
@@ -86,14 +88,20 @@ registry (no write happened since it was counted), and the interpreter that coun
 so no other interpreter counts on from it and the property `registry_gen.rs` relies on -- a
 generation value is meaningful for one registry content only -- still holds.
 
-### D3. Not adopted: one long-lived interpreter per worker
+### D3. Relation to ADR-15967 §4.1: an interim step, not the long-lived context
 
-Keeping the previous task's interpreter and swapping the new task's program state into it gave
-the same speed, but makes every one of the ~300 fields of the forked subsystems a soundness
-decision (which state is the task's, which the worker's), and a field added later defaults to
-the wrong side silently. D2 inverts the default: everything is the fresh fork's unless it is a
-listed cache, and a cache is moved only under a check that does not depend on what the cache
-contains.
+ADR-15967 §4.1 (Accepted) sets the target of the `start` path: one shared world, and a pool
+worker that owns a long-lived execution context -- VM registers, frame stack, its per-thread
+caches -- created with the worker, not per task. D2 is the part of that target that can land
+before the world/execution cut: the caches already outlive the task on their worker. It does
+not take the shortcut the experiment in §1 measured -- keeping the previous task's whole
+`Interpreter` and swapping the new task's `env` and lineage store into it -- because while the
+world is still forked per task, every one of the ~300 fields of the forked subsystems would be a
+soundness decision (task's or worker's?), and a field added later would default to the wrong
+side silently. D2 inverts that default: everything is the fresh fork's unless it is a listed
+cache, and a cache moves only under a check that does not depend on what the cache contains.
+When the world is shared (ADR-15967 §4.1's design ADR, after ADR-16595 slice 4), the fork, and
+with it this handoff, has no job left; the caches then simply stay in the worker's context.
 
 ## 3. Consequences
 

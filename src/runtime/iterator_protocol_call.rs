@@ -232,15 +232,17 @@ impl crate::Interpreter {
         // per call made a `pull-one` loop over n elements O(n^2) (#16475).
         let (shared, index, lazy_source) = {
             let map = attributes.as_map();
-            let shared = match map.get("items").map(Value::view) {
+            // By pre-interned symbol: this runs on every `pull-one`.
+            use crate::symbol::wk;
+            let shared = match map.get(wk::iter_items()).map(Value::view) {
                 Some(ValueView::Array(values, ..)) => Some(crate::gc::Gc::clone(&values)),
                 _ => None,
             };
-            let index = match map.get("index").map(Value::view) {
+            let index = match map.get(wk::iter_index()).map(Value::view) {
                 Some(ValueView::Int(i)) if i >= 0 => i as usize,
                 _ => 0,
             };
-            (shared, index, map.get("lazy_source").cloned())
+            (shared, index, map.get(wk::iter_lazy_source()).cloned())
         };
         let mut shared = shared;
         let mut shared_len = shared.as_ref().map_or(0, |a| a.as_slice().len());

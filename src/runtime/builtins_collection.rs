@@ -14,7 +14,7 @@ pub(crate) fn make_inclusive_range_pub(left: Value, right: Value) -> Value {
 }
 
 /// Format the result of `first()` according to adverb flags (:k, :kv, :p).
-pub(super) fn format_first_result(
+pub(crate) fn format_first_result(
     idx: usize,
     value: Value,
     has_k: bool,

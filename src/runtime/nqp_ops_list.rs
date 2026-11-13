@@ -399,6 +399,37 @@ impl Interpreter {
         )
     }
 
+    /// `nqp::slice($list, $start, $end)` of an element store (a list, an
+    /// `IterationBuffer`): a new store of the same kind holding elements
+    /// `$start ..= $end`. As in MoarVM, a negative index counts from the end,
+    /// and a range that is empty or reaches outside the store is an error.
+    /// `None` for anything that is not an element store (a Buf slices bytes).
+    // Cost: O(n), n = elements of the source (the same-kind copy is made by
+    // `nqp::clone`, then cut down to the slice).
+    pub(crate) fn nqp_slice_elems(
+        &mut self,
+        source: &Value,
+        start: i64,
+        end: i64,
+    ) -> Option<Result<Value, RuntimeError>> {
+        nqp_backing_array(source)?;
+        let elems = Self::nqp_elems_of(source)?;
+        let len = elems.len() as i64;
+        let start = if start < 0 { start + len } else { start };
+        let end = if end < 0 { end + len } else { end };
+        if start < 0 || end < start || start >= len || end >= len {
+            return Some(Err(RuntimeError::new(
+                "MVMArray: Slice index out of bounds",
+            )));
+        }
+        let kept: Vec<Value> = elems[start as usize..=end as usize].to_vec();
+        let copy = match self.call_nqp_op_str("clone", std::slice::from_ref(source))? {
+            Ok(copy) => copy,
+            Err(e) => return Some(Err(e)),
+        };
+        Some(Self::nqp_with_elems_mut("slice", &copy, |e| *e = kept).map(|()| copy))
+    }
+
     /// Try an untyped list/hash `nqp::` op. `None` means "not an op this table
     /// knows" — the caller then raises the loud unsupported-op error.
     pub(crate) fn call_nqp_op_list(

@@ -53,7 +53,14 @@ impl Interpreter {
                 _ => self.env_answers_memo(name_sym, &value),
             };
             if env_ok && self.bare_name_visible_here(name_sym) {
-                self.stack.push(value);
+                // The sentinel is pushed as a fresh handle, not the shared
+                // memo's: every thread running this chunk would otherwise
+                // bump one refcount.
+                self.stack.push(if value.is_iteration_end() {
+                    Value::iteration_end()
+                } else {
+                    value
+                });
                 return Ok(());
             }
         }
@@ -84,6 +91,19 @@ impl Interpreter {
                 (sym == name || (unit_lexical && is_lexical_storage_of(sym, name)))
                     && bareword_memoizable(name)
                     && self.env_leaves_type_name_as(name_sym, sym)
+            }
+            // The `IterationEnd` sentinel, which the chain answers only after
+            // every declaration of the name had first refusal: a `sub`,
+            // `constant` or type of that name is a registry write or an `env`
+            // binding, which the generation and the re-check cover. It is read
+            // on every `pull-one` of a user iterator.
+            Some(ValueView::Instance { .. })
+                if name == "IterationEnd"
+                    && self.stack.last().is_some_and(Value::is_iteration_end) =>
+            {
+                self.stack
+                    .last()
+                    .is_some_and(|v| self.env_answers_memo(name_sym, v))
             }
             // A package-qualified enum key (`Order::Less`) names one
             // immutable value of a declared enum: the registry decides it.

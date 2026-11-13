@@ -40,7 +40,8 @@ impl Value {
     /// merely spells "IterationEnd" is not the sentinel (#9809).
     // Cost: O(1) (one attribute-cell allocation).
     pub fn iteration_end() -> Self {
-        let class = crate::symbol::Symbol::intern("Mu");
+        static MU: std::sync::OnceLock<crate::symbol::Symbol> = std::sync::OnceLock::new();
+        let class = *MU.get_or_init(|| crate::symbol::Symbol::intern("Mu"));
         Value::from_repr(ValueRepr::Instance {
             class_name: class,
             attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(

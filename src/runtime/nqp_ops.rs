@@ -699,9 +699,14 @@ impl Interpreter {
             // -- slice / splice (buf) --
             // nqp::slice($buf, $start, $end) — END-INCLUSIVE, same class out.
             // `$start`/`$end` count elements, whatever the buffer's width.
-            // Cost: O(k), k = bytes sliced (the source is borrowed, not copied).
+            // Cost: O(k), k = bytes sliced (the source is borrowed, not copied);
+            // O(n) for a list (`nqp_slice_elems`), n = its elements.
             "slice" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
+                // A list or an IterationBuffer slices its elements.
+                if let Some(r) = self.nqp_slice_elems(&buf, iarg(args, 1), iarg(args, 2)) {
+                    return Some(r);
+                }
                 let start = iarg(args, 1).max(0) as usize;
                 let end = iarg(args, 2);
                 let piece = with_buf_storage_of(op, &buf, |bytes, w| {
