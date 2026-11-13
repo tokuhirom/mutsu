@@ -83,7 +83,12 @@ impl Interpreter {
         {
             return None;
         }
-        Some(self.call_infix_routine(op, args))
+        // The value IS the operator routine, so it is the core operator body
+        // that runs: neither a lexical `&infix:<op>` of the scope that calls
+        // the value (a closure the value never saw; raku's `&[cmp]` taken
+        // outside it still answers `Less`) nor the user candidates, which the
+        // two probes above have just ruled out, may answer for it.
+        Some(self.call_core_infix_routine(op, args))
     }
 
     /// `acc op rhs` for the built-in operator `op`: a user candidate, a
