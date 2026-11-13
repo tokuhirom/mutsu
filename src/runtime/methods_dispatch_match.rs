@@ -583,13 +583,17 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    /// True when the instance's class (or an ancestor) declares its own `print`.
+    /// True when the instance's class (or an ancestor) declares its own
+    /// `print`, or is a built-in class with one (`IO::Socket::INET`, whose
+    /// `$sock.say(...)` is `Mu.say` writing through the socket's `print`).
+    // Cost: O(m + k), m = classes in the MRO, k = `print` rows.
     fn instance_has_own_print(&mut self, target: &Value) -> bool {
         let ValueView::Instance { class_name, .. } = target.view() else {
             return false;
         };
         let cls = class_name.resolve();
         self.class_has_user_method(&cls, "print")
+            || crate::builtins::method_table::owner_has_row(&cls, "print")
     }
 
     /// `Mu.say(\x)` / `Mu.say(|)` (and `put`): the fallback for a class that
