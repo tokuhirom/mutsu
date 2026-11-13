@@ -1866,13 +1866,14 @@ impl Interpreter {
                             None
                         };
                         match decision {
-                            // A rebind replaces a binding to a value or a type
-                            // object, as `rebind_of_immutable` lets it above.
-                            Some(crate::vm::vm_check_read_only::FreeVarBinding::Readonly(
-                                crate::ast::ReadonlyKind::Immutable
-                                | crate::ast::ReadonlyKind::TypeObject,
-                                _,
-                            )) if is_rebind => {}
+                            // The decision is the previous `:=`'s binding cell
+                            // (ADR-11142): a rebind replaces that binding
+                            // wholesale, whatever it was bound to -- a value, a
+                            // type object, or another readonly container such as
+                            // a routine's parameter (`$x := $param` in a sub
+                            // called twice, #17641).
+                            Some(crate::vm::vm_check_read_only::FreeVarBinding::Readonly(..))
+                                if is_rebind => {}
                             Some(crate::vm::vm_check_read_only::FreeVarBinding::Readonly(
                                 kind,
                                 bound,
