@@ -25,3 +25,23 @@ declaration's closure with its whole environment and ran Red's t/106 out of
 memory.
 
 Red's `t/106-compiled-regex.rakutest` now matches rakudo (33/33).
+
+The same work brought several related fixes:
+
+- `RakuAST::Regex::Assertion::Named(::Args).get-implicit-lookups` answers the
+  `&name` lookup of `<name>`, resolved to a `my regex` / `token` / `rule` in
+  scope (a builtin rule's lookup stays unresolved). `Str.AST` records these
+  lookups too, and `QuotedRegex.compile-time-value` declares the rules they
+  resolved to ahead of the regex, so `<pair>` calls the lexical `pair`. An
+  `rx//` quoted regex has a compile-time value as well.
+- `Parameter.signature-constraint` answers the `Signature` type object.
+- `<.at(N)>`, `<?at(N)>` and `<!at(N)>` work, not only `<at(N)>`.
+- A `multi infix:<~>` (or `&&`, `||`, `^^`, `//`) with no precedence trait
+  keeps the core operator's precedence. It used to sit at the additive level,
+  so after `use Red` the expression `'b' x 3 ~ 'a'` parsed as
+  `'b' x (3 ~ 'a')`.
+- When a unit runs its CHECK-rewritten tree, the program that tree replaced
+  no longer runs its own unit-level LEAVE phasers and pre-installed END
+  phasers as well. Each now runs once, from the tree.
+
+Red's t/110, t/112, t/114 and t/115 now match rakudo too.
