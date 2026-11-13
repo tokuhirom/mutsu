@@ -836,6 +836,8 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
 }
 
 fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
+    // A thread that may grow continues on a fresh stack segment (ADR-17392).
+    crate::grow_and_reenter!(primary_term(input, fresh));
     let _nesting = crate::parser::NestingGuard::enter(input)?;
     if let Some(cached) = PRIMARY_MEMO.get(input) {
         *fresh = false;

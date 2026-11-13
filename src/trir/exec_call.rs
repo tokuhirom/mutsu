@@ -92,7 +92,10 @@ impl Interpreter {
         // ADR-0100: refuse while there is still stack to raise with, so deep
         // TRIR recursion becomes a catchable exception rather than a
         // guard-page abort.
-        self.guard_native_stack()?;
+        crate::guard_native_stack!(
+            self,
+            self.exec_trir_inner_call(chunk, site, frame, compiled_fns)
+        );
 
         // The VALUE arguments were pushed left to right, so they are the top
         // `n_nat` entries of the native bank and the top `n_obj` of the boxed

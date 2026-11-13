@@ -7,10 +7,11 @@
 //! stack and aborted the process, inside a single method call -- out of reach
 //! of the ADR-0100 call-boundary guard.
 //!
-//! The renderers call [`render_too_deep`] on entering a container. When the
-//! thread is within its ADR-0100 reserve, the renderer stops descending
-//! (yielding [`TRUNCATED`] for that subtree) and the overflow is recorded on
-//! the thread. Whoever turns the rendered string into a Raku result -- the
+//! The renderers call [`render_on_fresh_segment`] on entering a container.
+//! When the thread is within its ADR-0100 reserve, a thread that may grow
+//! renders the subtree on a fresh stack segment (ADR-17392); any other stops
+//! descending (yielding [`TRUNCATED`] for that subtree) and the overflow is
+//! recorded on the thread. Whoever turns the rendered string into a Raku result -- the
 //! method-row dispatcher, `say` / `put` / `print` -- calls
 //! [`take_render_overflow`] and raises the catchable "Too deep recursion"
 //! error instead of using the truncated text. rakudo grows its stack on the
@@ -33,18 +34,25 @@ thread_local! {
     static OVERFLOWED: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Whether a renderer about to descend into a container must stop: the thread
-/// is inside its native-stack reserve. Records the overflow when it is.
-/// Always false on a thread with no armed stack floor.
-// Cost: O(1).
+/// When the native stack runs low at a container: `Some` of the subtree
+/// rendered on a fresh stack segment -- `render` is the renderer called again
+/// for this node (ADR-17392) -- or, when the thread may not grow, of the
+/// truncation marker with the overflow recorded (see the module docs).
+/// `None` while there is headroom: render here.
+// Cost: O(1) plus `render` when it runs.
 #[inline]
-pub(crate) fn render_too_deep() -> bool {
-    if crate::native_stack::headroom_exhausted() {
-        OVERFLOWED.with(|c| c.set(true));
-        ANY_OVERFLOW.store(true, Ordering::Relaxed);
-        return true;
+pub(crate) fn render_on_fresh_segment(render: impl FnOnce() -> String) -> Option<String> {
+    if !crate::native_stack::headroom_exhausted() {
+        return None;
     }
-    false
+    Some(match crate::native_stack::take_segment() {
+        Some(segment) => segment.run(render),
+        None => {
+            OVERFLOWED.with(|c| c.set(true));
+            ANY_OVERFLOW.store(true, Ordering::Relaxed);
+            TRUNCATED.to_string()
+        }
+    })
 }
 
 /// Consume this thread's pending render overflow, if any.

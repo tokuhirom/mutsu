@@ -112,8 +112,11 @@ impl Interpreter {
             return None;
         }
 
-        if let Err(e) = self.guard_native_stack() {
-            return Some(Err(e));
+        if self.stack_check_due() {
+            crate::grow_and_reenter!(self.run_straight_line_method(method_def, target, args));
+            if let Err(e) = crate::vm::vm_stack_guard::check_now() {
+                return Some(Err(e));
+            }
         }
         let unit = self.unit_of_source_sym(cc.source_file);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);

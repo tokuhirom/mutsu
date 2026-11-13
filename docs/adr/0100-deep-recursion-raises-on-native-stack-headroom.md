@@ -3,6 +3,9 @@
 - Status: Accepted (implemented). Point 7 and the fixed 16 MiB reserve are amended by
   [ADR-0123](0123-bounded-user-thread-stack-reservations.md): user-code threads may get a smaller
   stack tier under address-space pressure, and the reserve scales as `min(16 MiB, stack / 4)`.
+  The rejection of segmented stacks is reversed by
+  [ADR-17392](17392-user-thread-stacks-grow-in-segments.md): under an address-space limit a
+  user-code thread starts small and grows in segments, up to the same logical depth.
 - Date: 2026-09-13
 - Issue: [#8232](https://github.com/tokuhirom/mutsu/issues/8232)
 

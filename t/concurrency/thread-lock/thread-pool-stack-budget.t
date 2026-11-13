@@ -63,7 +63,7 @@ else {
 
     # A burst of workers that all BLOCK on one promise forces the pool to grow
     # past the budget (every worker is blocked). Those required threads must
-    # step DOWN the stack tiers: taking a full 256 MiB stack each past the
+    # stay small (ADR-17392's initial stack): taking a full 256 MiB stack each past the
     # budget spent the heap's half of the limit, so a later spawn broke its
     # promise with EAGAIN or the next malloc aborted the process (the JobQueue
     # distribution's t/01-queue under the ecosystem sandbox's 6 GB limit).
@@ -85,7 +85,7 @@ else {
     # Leave the process almost no address space beyond what it already uses,
     # so no thread stack fits: every refusal must be a catchable X::AdHoc.
     # The child lowers its own `RLIMIT_AS` to its current size plus a slack
-    # below the smallest stack tier (4 MiB in a release build, ADR-0123 §6).
+    # below the smallest stack (2 MiB in a release build, ADR-17392).
     # Measuring in-process makes the slack exact: a separate calibration run
     # varied by a whole 64 MiB malloc arena under load, enough for a 4 MiB
     # stack to fit and the refusal to go missing.

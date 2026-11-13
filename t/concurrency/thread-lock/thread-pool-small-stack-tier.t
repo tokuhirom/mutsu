@@ -1,12 +1,13 @@
 use Test;
 
-# ADR-0123 §6 (#17392): once the stack budget is spent, a worker that has to
-# exist takes the smallest stack tier -- 4 MiB in a release build, 32 MiB in a
-# debug one -- so hundreds of `start` blocks parked in `await` fit a limited
-# address space (Log::Dispatch's t/040-threaded parks 500 under the ecosystem
-# sandbox's `ulimit -v 6000000`). A worker on the smallest tier is still
-# guarded: deep recursion there raises a catchable error instead of crashing.
-# `MUTSU_STACK_BUDGET_MB=0` puts every worker on that tier.
+# ADR-17392 (#17392): under a stack budget every worker starts on the smallest
+# guardable stack -- 2 MiB in a release build, 16 MiB in a debug one -- so
+# hundreds of `start` blocks parked in `await` fit a limited address space
+# (Log::Dispatch's t/040-threaded parks 500 under the ecosystem sandbox's
+# `ulimit -v 6000000`). A worker grows in stack segments only while the
+# budget affords one; `MUTSU_STACK_BUDGET_MB=0` affords none, so each worker
+# stays on its small stack, and deep recursion there still raises a
+# catchable error instead of crashing.
 #
 # The recursion half has no rakudo counterpart: rakudo grows its call stack
 # on the heap and recurses until it runs out of memory (ADR-0100).
@@ -41,7 +42,7 @@ sub run-child(Str $code, *%env) {
     my ($exit, $out, $err) = run-child($code, MUTSU_STACK_BUDGET_MB => 0);
     my @lines = $out.lines;
     is @lines[0], 'Too deep recursion (out of stack space)',
-        'deep sub recursion on a smallest-tier worker raises';
+        'deep sub recursion on a small-stack worker raises';
     is @lines[1], 'Too deep recursion (out of stack space)', '... so does method recursion';
     is @lines[2], 'Too deep recursion (out of stack space)', '... and recursion through a closure';
     is @lines[3], 'recursed', '... after a real recursion depth';
@@ -49,7 +50,7 @@ sub run-child(Str $code, *%env) {
 }
 
 # A burst of workers parked on one promise, every one of them on the
-# smallest tier.
+# small initial stack.
 {
     my $code = q:to/CODE/;
         my $starter = Promise.new;
@@ -63,5 +64,5 @@ sub run-child(Str $code, *%env) {
         say [+] await @worker;
         CODE
     my ($exit, $out, $err) = run-child($code, MUTSU_STACK_BUDGET_MB => 0);
-    is $out.trim, '4950', '100 parked workers on the smallest tier all finish';
+    is $out.trim, '4950', '100 parked workers on small stacks all finish';
 }

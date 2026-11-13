@@ -137,8 +137,10 @@ impl Interpreter {
             }
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
                 use crate::value::ArrayKind;
-                if crate::value::render_guard::render_too_deep() {
-                    return crate::value::render_guard::TRUNCATED.to_string();
+                if let Some(rendered) =
+                    crate::value::render_guard::render_on_fresh_segment(|| gist_item(interp, value))
+                {
+                    return rendered;
                 }
                 // Subtrees with no dispatch-needing element render via the pure,
                 // bracket-correct fast path.
