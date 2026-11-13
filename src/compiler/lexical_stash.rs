@@ -118,6 +118,28 @@ impl Compiler {
                 Value::int(crate::opcode::LEXICAL_STASH_EXPORT_SLOT),
             ]));
         }
+        // Every routine and every compilation unit's mainline declares `$/`,
+        // `$!` and `$¢` in its outermost frame (rakudo's `MY::` of a sub,
+        // method or mainline lists them; a bare block or pointy block does
+        // not). They are read by name, so the frame's current match/error
+        // shows, `Nil` until something sets it (#17674).
+        let root_index = self.enclosing_scopes.len() + self.unit_root_scope;
+        let declares_specials =
+            self.is_routine || !self.in_lexical_scope;
+        if declares_specials && (outermost..=target_index).contains(&root_index) {
+            let root_depth = depth + (target_index - root_index);
+            for (display, name) in [("$!", "!"), ("$/", "/"), ("$¢", "¢")] {
+                if seen.contains(name) || seen.contains(display) {
+                    continue;
+                }
+                entries.push(Value::array(vec![
+                    Value::str(display.to_string()),
+                    Value::str(name.to_string()),
+                    Value::int(root_depth as i64),
+                    Value::int(-1),
+                ]));
+            }
+        }
         let spec_idx = self.code.add_constant(Value::array(entries));
         // `LEXICAL::` is every lexical visible from the frame, so its routines
         // are all the visible ones; only `MY::` is narrowed to the frame's own.
