@@ -13,3 +13,9 @@ nothing (the later subtraction was applied to the whole class).
 
 `UInt.^refinee` is `Int`, so a loop that walks a subset chain down to its
 nominal type ends there instead of dying on the builtin subset.
+
+`$obj ~~ 'text'` compares against the object's `.Str`, as `Str.ACCEPTS` does
+in Rakudo, not `.Stringy`; a `.Str` that dies, or answers an object with no
+string payload (Red's symbolic columns), dies the smartmatch instead of
+answering `False`. Red's traditional path relies on that to fall back to its
+in-memory grep for `.name ~~ 'foo'` (t/109).

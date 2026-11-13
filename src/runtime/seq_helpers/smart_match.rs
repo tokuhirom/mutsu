@@ -2298,25 +2298,26 @@ impl Interpreter {
             (ValueView::Instance { .. }, ValueView::Str(s)) if left.is_match_instance() => {
                 **s == left.to_string_value()
             }
-            // Instance ~~ Str for a class with a user `.Stringy` or `.Str`
-            // (own or inherited): `Str.ACCEPTS(Any:D)` compares against the
-            // object's stringification -- `.Stringy`, whose default is `.Str`
-            // -- so the object decides (Tinky's `$state ~~ $name`). Rakudo
-            // treats a stringification that dies as a non-match.
+            // Instance ~~ Str for a class with a user `.Str` (own or
+            // inherited): `Str.ACCEPTS(Any:D)` compares against the object's
+            // `.Str`, so the object decides (Tinky's `$state ~~ $name`). A
+            // `.Str` that dies, or answers an object with no string payload
+            // (`method Str { self }`, Red's symbolic columns), dies the
+            // smartmatch, as `nqp::unbox_s` does in Rakudo.
             (ValueView::Instance { class_name, .. }, ValueView::Str(s))
-                if {
-                    let cn = class_name.resolve();
-                    self.has_user_method(&cn, "Stringy") || self.has_user_method(&cn, "Str")
-                } =>
+                if self.has_user_method(&class_name.resolve(), "Str") =>
             {
                 let s = s.clone();
-                let method = if self.has_user_method(&class_name.resolve(), "Stringy") {
-                    "Stringy"
-                } else {
-                    "Str"
-                };
-                self.call_method_with_values(left.clone(), method, vec![])
-                    .is_ok_and(|v| *s == v.to_string_value())
+                match self
+                    .call_method_with_values(left.clone(), "Str", vec![])
+                    .and_then(|v| crate::runtime::unbox_str_answer(&v))
+                {
+                    Ok(text) => *s == text,
+                    Err(e) => {
+                        err.get_or_insert(e);
+                        false
+                    }
+                }
             }
             // An instance of a `Str` subclass (`class S is Str`) stringifies
             // as its string payload, which `Str.ACCEPTS(Any:D)` compares.
