@@ -863,17 +863,22 @@ mod tests {
         assert!(plain.currently_acyclic());
         // A cell whose value is itself a Gc-bearing node has an edge, so it
         // may be on a cycle and must be buffered.
-        let holds_node =
-            crate::value::ContainerCell::new(Value::Array(crate::gc::Gc::new(ArrayData::default()), crate::value::ArrayKind::Array));
+        let holds_node = crate::value::ContainerCell::new(Value::Array(
+            crate::gc::Gc::new(ArrayData::default()),
+            crate::value::ArrayKind::Array,
+        ));
         assert!(!holds_node.currently_acyclic());
         // A `ContainerRef` value (a binding chain) is a node edge too.
-        let holds_ref = crate::value::ContainerCell::new(Value::ContainerRef(
-            crate::gc::Gc::new(crate::value::ContainerCell::new(Value::Int(1))),
-        ));
+        let holds_ref = crate::value::ContainerCell::new(Value::ContainerRef(crate::gc::Gc::new(
+            crate::value::ContainerCell::new(Value::Int(1)),
+        )));
         assert!(!holds_ref.currently_acyclic());
         // A default value is an extra edge even over an immediate.
         let with_default = crate::value::ContainerCell::new(Value::Int(7));
-        with_default.set_default(Value::Array(crate::gc::Gc::new(ArrayData::default()), crate::value::ArrayKind::Array));
+        with_default.set_default(Value::Array(
+            crate::gc::Gc::new(ArrayData::default()),
+            crate::value::ArrayKind::Array,
+        ));
         assert!(!with_default.currently_acyclic());
     }
 
