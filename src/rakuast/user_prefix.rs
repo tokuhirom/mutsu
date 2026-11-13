@@ -105,7 +105,10 @@ pub(super) fn view_core_override(
         RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::ApplyPrefix,
-            fields: vec![node_field(Some("prefix"), prefix), node_field(Some("operand"), operand)],
+            fields: vec![
+                node_field(Some("prefix"), prefix),
+                node_field(Some("operand"), operand),
+            ],
         }
     }))
 }

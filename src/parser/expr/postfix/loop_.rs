@@ -323,9 +323,8 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             // A user candidate of a core prefix (`multi prefix:<!>`) is still
             // the operator application in RakuAST (Red's `!$/.defined`).
             if crate::rakuast::user_prefix_overrides_core(&name) {
-                result = Expr::spelled(result, || {
-                    crate::ast::spelled::Spelling::UserPrefixOperator
-                });
+                result =
+                    Expr::spelled(result, || crate::ast::spelled::Spelling::UserPrefixOperator);
             }
             // Apply loose postfix operators (declared `is looser(&prefix:<...>)`)
             loop {

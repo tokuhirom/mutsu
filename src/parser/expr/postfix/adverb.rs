@@ -114,12 +114,14 @@ pub(super) fn starts_with_subscript_adverb(input: &str) -> bool {
         return false;
     };
     let after = after.strip_prefix('!').unwrap_or(after);
-    ["exists", "delete", "kv", "k", "v", "p"].iter().any(|name| {
-        after.strip_prefix(name).is_some_and(|tail| {
-            !tail
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    ["exists", "delete", "kv", "k", "v", "p"]
+        .iter()
+        .any(|name| {
+            after.strip_prefix(name).is_some_and(|tail| {
+                !tail
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
+            })
         })
-    })
 }

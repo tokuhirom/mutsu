@@ -138,7 +138,10 @@ pub(super) fn view_interpolated(expr: &Expr) -> Option<RakuAstNode> {
 /// `Var::PositionalCapture` as the variable the parser reads a capture
 /// through.
 // Cost: O(1).
-pub(super) fn lower_positional(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_positional(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Expr, RuntimeError> {
     let n = match super::lower::positional_leaf(node)?.view() {
         ValueView::Int(n) if n >= 0 => n,
         _ => return Err(unsupported(node)),
@@ -152,7 +155,10 @@ pub(super) fn lower_positional(names: &NameScope, node: &RakuAstNode) -> Result<
 /// The subscript adverbs (`colonpairs`) of a capture variable, lowered, or
 /// `None` when it has none.
 // Cost: O(p), p = size of the adverbs.
-fn lower_colonpairs(names: &NameScope, node: &RakuAstNode) -> Result<Option<Vec<Expr>>, RuntimeError> {
+fn lower_colonpairs(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Option<Vec<Expr>>, RuntimeError> {
     let Some(field) = node.fields.iter().find(|f| f.name == Some("colonpairs")) else {
         return Ok(None);
     };
@@ -190,7 +196,10 @@ fn adverbed(index: Expr, positional: bool, pairs: Vec<Expr>) -> Result<Expr, Run
 /// `$<x>:exists` / `$0:delete` as the capture variable carrying its subscript
 /// adverbs in `colonpairs`, as rakudo keeps them.
 // Cost: O(p), p = size of the adverbs.
-pub(super) fn view_with_adverbs(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_with_adverbs(
+    names: &NameScope,
+    expr: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let wrong = || RuntimeError::new("RakuAST: capture adverb spelling without its subscript");
     let Expr::Ast(parsed) = expr else {
         return Err(wrong());
@@ -198,7 +207,12 @@ pub(super) fn view_with_adverbs(names: &NameScope, expr: &Expr) -> Result<RakuAs
     let ParsedExpr::SubscriptAdverbs(adverbs) = parsed.as_ref() else {
         return Err(wrong());
     };
-    let Expr::Index { index, is_positional, .. } = &adverbs.subscript else {
+    let Expr::Index {
+        index,
+        is_positional,
+        ..
+    } = &adverbs.subscript
+    else {
         return Err(wrong());
     };
     let Expr::Literal(index) = index.as_ref() else {

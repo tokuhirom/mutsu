@@ -1,7 +1,6 @@
 //! Unicode property data tables for uniprop.
 //! Extracted from uniprop.rs to keep individual files under 500 lines.
 
-
 /// Unicode Block lookup.
 pub(super) fn unicode_block(ch: char) -> String {
     crate::builtins::unicode_blocks::block_index(ch as u32)

@@ -4087,7 +4087,9 @@ pub fn local_attribute_names(class_name: &str) -> Option<Vec<&'static str>> {
 /// otherwise whatever the accessor of that name answers.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn attribute_value(node: &RakuAstNode, attribute: &str) -> Value {
-    let bare = attribute.trim_start_matches(['$', '@', '%', '&']).trim_start_matches(['!', '.']);
+    let bare = attribute
+        .trim_start_matches(['$', '@', '%', '&'])
+        .trim_start_matches(['!', '.']);
     if let Some(field) = node.fields.iter().find(|f| f.name == Some(bare)) {
         return field_to_value(&field.value);
     }

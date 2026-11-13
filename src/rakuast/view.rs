@@ -2513,7 +2513,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::CaptureAdverbs => super::match_vars::view_with_adverbs(names, &spelled.expr),
             Spelling::UserPrefixOperator => {
                 super::user_prefix::view_core_override(names, &spelled.expr).unwrap_or_else(|| {
-                    Err(unsupported("user prefix operator spelling without its call"))
+                    Err(unsupported(
+                        "user prefix operator spelling without its call",
+                    ))
                 })
             }
             Spelling::PrefixCall => {
