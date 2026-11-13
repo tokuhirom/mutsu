@@ -9,8 +9,11 @@ module-scope tables and the `our` store -- about 20,000 instructions per bound p
 `type_matches_value_why` now answers a plain `Mu` constraint at once unless the program declared
 its own class named `Mu`. AttrX::Mooish passes an instance through such parameters on every
 lazy-attribute access: a method call with one `Mu $x` parameter given an instance drops from
-about 10 us to 6 us, and one round of its `t/090-concurrent` workload (`new`, three predicates,
-two lazy builds, a clear) from 6.37M to 5.92M instructions (-7%).
+35.8K to 33.6K instructions (-6%), and one round of its `t/090-concurrent` workload (`new`,
+three predicates, two lazy builds, a clear) from 7.73M to 7.32M (-5.4%). These figures are
+callgrind on a non-incremental profiling build, both binaries warmed before measuring. They replace
+the figures first published with the change, which a cold module-precompilation cache on one
+side of the comparison had inflated.
 
 `t/types/mu-constraint-accepts-everything.t` pins what `Mu` accepts (an instance of a class that is
 not `Any`, a type object, `Nil`, a Junction, a Proxy's value) and that `Any` still rejects a
