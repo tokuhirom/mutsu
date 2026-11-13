@@ -1643,6 +1643,13 @@ impl Interpreter {
         if val.is_nil() {
             return true;
         }
+        // An itemized value is checked as what it holds, as the parameter
+        // check (`fast_type_check_tagged`) and the by-name return check do: a
+        // Bool read out of a real Hash element is itemized
+        // (`itemize_for_hash_element`), so `sub f(%h --> Bool) { %h<k> }` was
+        // refused with "expected Bool but got Bool (False)" (EEL's
+        // `nullable`).
+        let val = val.descalarize();
         // A native `returns int`/`returns str`/`returns num` is not actually
         // enforced by the general binder today (a `sub f() returns int {
         // True }` returns the unconverted `Bool`, not an `Int`), so admitting
@@ -1669,6 +1676,9 @@ impl Interpreter {
             // `next-ancestor`) and `Any` every one but `Mu` itself.
             ValueView::Package(sym) => {
                 sym == name_sym
+                    // The `Bool` type object is an `Int` type object too, as
+                    // in the parameter check (`fast_type_check_tagged`).
+                    || (kind == T::Int && sym.with_str(|n| n == "Bool"))
                     || match kind {
                         T::Wild => name_sym.with_str(|n| n == "Mu") || sym.with_str(|s| s != "Mu"),
                         _ => false,
@@ -1678,7 +1688,8 @@ impl Interpreter {
             ValueView::Int(_) | ValueView::BigInt(_) => matches!(kind, T::Int | T::Wild),
             ValueView::Str(_) => matches!(kind, T::Str | T::Wild),
             ValueView::Num(_) => matches!(kind, T::Num | T::Wild),
-            ValueView::Bool(_) => matches!(kind, T::Bool | T::Wild),
+            // `Bool` is-an `Int`: it satisfies an `Int` return type too.
+            ValueView::Bool(_) => matches!(kind, T::Bool | T::Int | T::Wild),
             ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
             _ => kind == T::Wild,
         }
