@@ -519,8 +519,14 @@ impl Interpreter {
     fn light_signature_static_ok(cf: &CompiledFunction, where_verified: bool) -> bool {
         cf.code.state_locals.is_empty()
             && !cf.is_cached
+            // `is raw` is admitted: its raw return is compiled into the body
+            // (`compile_routine_closure_body`'s `rw` flag) and the call site's
+            // Proxy FETCH decision reads `returns_container`, both shared with
+            // the general path, and a sigilless parameter already binds the
+            // caller's container on this path (`vm_call_light_sigilless.rs`).
+            // `is rw` stays out: its lvalue-return contract
+            // (`rw_return_context`) is only set up by the full path.
             && !cf.is_rw
-            && !cf.is_raw
             && !cf.empty_sig
             && cf.param_local_slots.is_some()
             // Exclude functions with inner routines, `for` loops or code-value

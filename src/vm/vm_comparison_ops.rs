@@ -362,7 +362,15 @@ impl Interpreter {
         // instructions per `==` on two `int` locals (#12151). `NaN == NaN` is
         // False under IEEE `==`, the same answer the generic path gives.
         if !self.user_infix_override("infix:<==>") {
-            match (left.view(), right.view()) {
+            // An operand handed over in its container (`&[==]` called with
+            // what an `is raw` routine returned, as `squish(:&as, :&with)`
+            // does) compares its value: a scalar container is looked through
+            // for the fast path, which the generic path's numeric bridge
+            // would do anyway.
+            let peek = |v: &Value| v.is_container_ref().then(|| v.deref_clone());
+            let (lc, rc) = (peek(&left), peek(&right));
+            let (l, r) = (lc.as_ref().unwrap_or(&left), rc.as_ref().unwrap_or(&right));
+            match (l.view(), r.view()) {
                 (ValueView::Int(a), ValueView::Int(b)) => return Ok(Value::truth(a == b)),
                 (ValueView::Num(a), ValueView::Num(b)) => return Ok(Value::truth(a == b)),
                 _ => {}
