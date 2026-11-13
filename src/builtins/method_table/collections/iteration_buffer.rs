@@ -69,7 +69,8 @@ fn list_items(list: Option<&Value>) -> Vec<Value> {
     }
 }
 
-/// The receiver's elements; `None` for a receiver that is no instance.
+/// A copy of the receiver's elements; `None` for a receiver that is no
+/// instance.
 // Cost: O(n), n = elements (copied).
 fn items(target: &Value) -> Option<Vec<Value>> {
     match target.view() {
@@ -80,24 +81,17 @@ fn items(target: &Value) -> Option<Vec<Value>> {
     }
 }
 
-/// Stores `new_items` as the receiver's elements, in its shared attribute
-/// cell, and answers the receiver.
-// Cost: O(a), a = the instance's attributes.
-fn store(target: &Value, new_items: Vec<Value>) -> Value {
-    let ValueView::Instance {
-        class_name,
-        attributes,
-        id,
-    } = target.view()
-    else {
-        return target.clone();
-    };
-    let mut updated = attributes.to_map();
-    updated.insert(
-        ITERATION_BUFFER_ITEMS.to_string(),
-        Value::real_array(new_items),
-    );
-    Value::write_back_sharing(&attributes, class_name, updated, id)
+/// Runs `f` over the receiver's element storage in place -- the same store,
+/// and the same editor, as the `nqp::` list ops (`nqp::push`, `nqp::bindpos`,
+/// ...) use on a buffer, so a `List` taken from the buffer earlier sees the
+/// edit, as in Rakudo, where that `List`'s `$!reified` is the buffer itself.
+/// `None` for a receiver that is no instance.
+// Cost: O(1) plus f.
+fn edit<R>(target: &Value, f: impl FnOnce(&mut Vec<Value>) -> R) -> Option<Result<R, RuntimeError>> {
+    if !matches!(target.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    Some(Interpreter::nqp_with_elems_mut("push", target, f))
 }
 
 /// The elements an `append`/`prepend` argument contributes: another buffer's
@@ -121,79 +115,89 @@ fn mu() -> Value {
 }
 
 /// `IterationBuffer.elems`.
-// Cost: O(n), n = elements (the elements are copied out).
+// Cost: O(1).
 fn elems(target: &Value, _args: &[Value]) -> Answer {
-    items(target).map(|items| Ok(Value::int(items.len() as i64)))
+    if !matches!(target.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    let len = Interpreter::nqp_elems_len_of(target).unwrap_or(0);
+    Some(Ok(Value::int(len as i64)))
 }
 
-/// `IterationBuffer.AT-POS($i)`: the element, `Mu` past the end.
-// Cost: O(n), n = elements (copied).
+/// `IterationBuffer.AT-POS($i)`: the element, `Mu` past the end. A negative
+/// index counts from the end, as for every positional op on the VM array
+/// (`nqp::atpos`).
+// Cost: O(1).
 fn at_pos(target: &Value, args: &[Value]) -> Answer {
-    let items = items(target)?;
-    let index = crate::runtime::to_int(&args[0]);
-    Some(Ok(usize::try_from(index)
-        .ok()
-        .and_then(|index| items.get(index).cloned())
-        .unwrap_or_else(mu)))
+    if !matches!(target.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    let len = Interpreter::nqp_elems_len_of(target).unwrap_or(0);
+    let index = match crate::runtime::nqp_backing::resolve_index(
+        crate::runtime::to_int(&args[0]),
+        len,
+    ) {
+        Ok(index) => index,
+        Err(e) => return Some(Err(e)),
+    };
+    Some(Ok(Interpreter::nqp_elem_at(target, index).unwrap_or_else(mu)))
 }
 
 /// `IterationBuffer.BIND-POS($i, $value)`: binds the element, growing the
-/// buffer with `Mu` up to it.
-// Cost: O(n), n = elements.
+/// buffer with `Mu` up to it; a negative index counts from the end
+/// (`nqp::bindpos`).
+// Cost: O(1) amortized; O(i - n) when growing, i = index, n = elements.
 fn bind_pos(target: &Value, args: &[Value]) -> Answer {
-    let mut items = items(target)?;
-    if let Ok(index) = usize::try_from(crate::runtime::to_int(&args[0])) {
-        if index >= items.len() {
-            items.resize(index + 1, mu());
-        }
-        items[index] = args[1].clone();
+    if !matches!(target.view(), ValueView::Instance { .. }) {
+        return None;
     }
-    store(target, items);
-    Some(Ok(args[1].clone()))
+    Some(crate::runtime::nqp_backing::bind_elem(
+        "BIND-POS",
+        target,
+        crate::runtime::to_int(&args[0]),
+        args[1].clone(),
+        mu(),
+    ))
 }
 
 /// `IterationBuffer.push(*@values)`: answers the last value pushed.
-// Cost: O(n + a), n = elements, a = arguments.
+// Cost: O(a) amortized, a = arguments.
 fn push(target: &Value, args: &[Value]) -> Answer {
-    let mut items = items(target)?;
-    items.extend(args.iter().cloned());
-    store(target, items);
-    Some(Ok(args.last().cloned().unwrap_or(Value::NIL)))
+    let pushed = edit(target, |items| items.extend(args.iter().cloned()))?;
+    Some(pushed.map(|()| args.last().cloned().unwrap_or(Value::NIL)))
 }
 
 /// `IterationBuffer.unshift(*@values)`: answers the last value given.
-// Cost: O(n + a), n = elements, a = arguments.
+// Cost: O(n + a), n = elements, a = arguments. MoarVM: O(a) amortized -- see #17658.
 fn unshift(target: &Value, args: &[Value]) -> Answer {
-    let items = items(target)?;
-    let mut prepended = args.to_vec();
-    prepended.extend(items);
-    store(target, prepended);
-    Some(Ok(args.last().cloned().unwrap_or(Value::NIL)))
+    let unshifted = edit(target, |items| {
+        items.splice(0..0, args.iter().cloned());
+    })?;
+    Some(unshifted.map(|()| args.last().cloned().unwrap_or(Value::NIL)))
 }
 
 /// `IterationBuffer.append(@values)`: answers the buffer.
-// Cost: O(n + a), n = elements, a = elements appended.
+// Cost: O(a) amortized, a = elements appended.
 fn append(target: &Value, args: &[Value]) -> Answer {
-    let mut items = items(target)?;
-    items.extend(argument_items(&args[0]));
-    Some(Ok(store(target, items)))
+    let appended = argument_items(&args[0]);
+    let done = edit(target, |items| items.extend(appended))?;
+    Some(done.map(|()| target.clone()))
 }
 
 /// `IterationBuffer.prepend(@values)`: answers the buffer.
-// Cost: O(n + a), n = elements, a = elements prepended.
+// Cost: O(n + a), n = elements, a = elements prepended. MoarVM: O(a) amortized -- see #17658.
 fn prepend(target: &Value, args: &[Value]) -> Answer {
-    let items = items(target)?;
-    let mut prepended = argument_items(&args[0]);
-    prepended.extend(items);
-    Some(Ok(store(target, prepended)))
+    let prepended = argument_items(&args[0]);
+    let done = edit(target, |items| {
+        items.splice(0..0, prepended);
+    })?;
+    Some(done.map(|()| target.clone()))
 }
 
 /// `IterationBuffer.clear`.
-// Cost: O(a), a = the instance's attributes.
+// Cost: O(n), n = elements (dropped).
 fn clear(target: &Value, _args: &[Value]) -> Answer {
-    items(target)?;
-    store(target, Vec::new());
-    Some(Ok(Value::NIL))
+    Some(edit(target, Vec::clear)?.map(|()| Value::NIL))
 }
 
 /// `IterationBuffer.List`.
@@ -218,13 +222,13 @@ fn list(target: &Value, _args: &[Value]) -> Answer {
 }
 
 /// `IterationBuffer.Slip`.
-// Cost: O(n), n = elements.
+// Cost: O(n), n = elements (copied). Rakudo: O(1) (the Slip shares the buffer) -- see #17658.
 fn slip(target: &Value, _args: &[Value]) -> Answer {
     items(target).map(|items| Ok(Value::slip(items)))
 }
 
 /// `IterationBuffer.Seq`.
-// Cost: O(n), n = elements.
+// Cost: O(n), n = elements (copied). Rakudo: O(1) (the Seq iterates the buffer) -- see #17658.
 fn seq(target: &Value, _args: &[Value]) -> Answer {
     items(target).map(|items| Ok(Value::seq(items)))
 }
