@@ -1552,8 +1552,15 @@ impl Interpreter {
                 // -> @x { &p(@x) } }`): no assignment, bind or rw sink can
                 // reach that binding during the invocation, so the snapshot
                 // is the binding (ADR-12529 §2.1).
+                // A routine-nested sub reads its declaring routine's readonly
+                // parameter through an alias that holds the value itself, not
+                // a cell (`lexsub_alias_cell`): that binding is just as fixed,
+                // so a closure the sub creates freezes it too.
                 if resolved.is_container_ref()
-                    || (!resolved.is_nil() && code.readonly_code_params.contains(sym))
+                    || (!resolved.is_nil()
+                        && (code.readonly_code_params.contains(sym)
+                            || (code.free_var_syms.contains(sym)
+                                && self.lexsub_alias_is_readonly_snapshot(*sym, &resolved))))
                 {
                     Some(resolved)
                 } else {

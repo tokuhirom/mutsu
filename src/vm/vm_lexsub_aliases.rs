@@ -299,6 +299,18 @@ impl Interpreter {
                 return None;
             }
             let cur = self.locals.get(slot)?.clone();
+            // A readonly signature parameter (no `is copy`/`rw`/`raw`) keeps
+            // its binding for the whole invocation: nothing can assign or
+            // rebind it, and rakudo binds it to the argument's VALUE. Alias
+            // that value itself instead of boxing the slot: a cell here is a
+            // shared container every thread the sub's closures run on must
+            // lock to read (ParaSeq's `processor` sub cued per batch read the
+            // method's `&by`/`$direction` through one contended cell, #17337).
+            // `capture_upvalues` freezes a closure's capture of it on the same
+            // terms (an alias that is not a cell is such a snapshot).
+            if code.readonly_code_params.contains(&a.var) && !cur.is_nil() {
+                return Some(cur.into_deref());
+            }
             if cur.is_container_ref() {
                 return Some(cur);
             }
@@ -337,6 +349,23 @@ impl Interpreter {
             .lexsub_alias_slot(&name)
             .or_else(|| self.env().get_sym(a.var))?;
         found.is_container_ref().then(|| found.clone())
+    }
+
+    /// Whether the running routine-nested sub reads its free variable `var`
+    /// through an alias that holds a VALUE, not a cell, and `resolved` is that
+    /// value: the alias of a readonly signature parameter of the declaring
+    /// routine (see `lexsub_alias_cell`), whose binding never changes. Every
+    /// other alias is a cell, so a non-cell alias is exactly such a snapshot.
+    // Cost: O(a), a = aliases bound for the running sub (a handful).
+    pub(crate) fn lexsub_alias_is_readonly_snapshot(&self, var: Symbol, resolved: &Value) -> bool {
+        if !self.lexsub_alias_frame_active() {
+            return false;
+        }
+        // `resolve`, not `with_str`: the alias lookup must not run under the
+        // symbol table's read lock.
+        let name = var.resolve();
+        self.lexsub_alias_slot_sym(&name, Some(var))
+            .is_some_and(|alias| !alias.is_container_ref() && alias.same_binding(resolved))
     }
 
     /// The alias local `name` resolves through while the running routine is a
