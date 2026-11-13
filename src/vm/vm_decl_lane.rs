@@ -102,7 +102,16 @@ impl Interpreter {
                 .readonly_sym(idx)
                 .is_none_or(crate::symbol::maybe_env_key))
             || (crate::env::closure_meta_keys_possible()
-                && code.alias_sym(idx).is_none_or(crate::symbol::maybe_env_key))
+                && code
+                    .alias_sym(idx)
+                    .is_none_or(crate::symbol::maybe_env_key)
+                // A lean term's alias key is latched program-wide as soon as
+                // any binding of the name was ever aliased (the general bind of
+                // `my \h = $c{k}` records one for its bind temp, and a light
+                // call's frame merges it into its caller). The term's own
+                // store clears a visible one exactly as the general store does
+                // (`clear_lean_term_alias`), so it does not decline here.
+                && (!lean_term || code.alias_sym(idx).is_none()))
             || !self.local_bind_pairs.is_empty()
             || !self.pending_alias_bind_names.is_empty()
         {
@@ -226,7 +235,10 @@ impl Interpreter {
             Some(_) => return false,
             None => top,
         };
-        if !source.is_inert_scalar_store_payload() || !self.locals[idx].is_plain_scalar_store_slot()
+        // A role-mixin value (`$P.^pun but Some`, Monad's cached types) is a
+        // value like any other here: a bind stores it as is.
+        if !(source.is_inert_scalar_store_payload() || source.is_mixin_value())
+            || !self.locals[idx].is_plain_scalar_store_slot()
         {
             return false;
         }
@@ -234,6 +246,7 @@ impl Interpreter {
         let v = source.clone();
         self.stack.pop();
         self.mark_ctx.consume_for_store();
+        self.clear_lean_term_alias(code, idx);
         self.clear_var_default(name);
         if !self.no_readonly_vars() {
             self.unmark_readonly_sym(term_sym);
@@ -283,6 +296,7 @@ impl Interpreter {
         // -- committed: from here the store cannot fall back --
         let v = self.stack.pop().unwrap_or(Value::NIL);
         self.mark_ctx.consume_for_store();
+        self.clear_lean_term_alias(code, idx);
         self.clear_var_default(name);
         if !self.no_readonly_vars()
             && let Some(sym) = code.locals_sym.get(idx).copied()
@@ -299,5 +313,21 @@ impl Interpreter {
         }
         self.locals[idx] = v;
         true
+    }
+
+    /// Clear a stale `__mutsu_sigilless_alias::` key of lean term slot `idx`
+    /// that is visible from this frame, as the general declaration store does
+    /// for every `my`: the term is bound afresh, so an alias a former binding
+    /// of the name recorded no longer describes it.
+    // Cost: O(d) env probe, d = env chain depth; O(1) when no alias key of the
+    // name ever existed.
+    fn clear_lean_term_alias(&mut self, code: &CompiledCode, idx: usize) {
+        if crate::env::closure_meta_keys_possible()
+            && let Some(sym) = code.alias_sym(idx)
+            && crate::symbol::maybe_env_key(sym)
+            && self.env().contains_key_sym(sym)
+        {
+            self.env_mut().remove_sym(sym);
+        }
     }
 }
