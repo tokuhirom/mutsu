@@ -40,10 +40,8 @@ fn call(
     // of a whole-node snapshot (ADR-0068 §22).
     let sample_leaf = crate::value::container_read::is_element_sample_read(row.name)
         && !matches!(row.handler, Handler::Interp(_));
-    let leaf_read =
-        sample_leaf || crate::value::container_read::is_leaf_structure_read(row.name);
-    let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live()
-        && leaf_read
+    let leaf_read = sample_leaf || crate::value::container_read::is_leaf_structure_read(row.name);
+    let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live() && leaf_read
     {
         crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
     } else {
