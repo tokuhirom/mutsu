@@ -171,6 +171,40 @@ impl Interpreter {
         }
         None
     }
+    /// A bare name whose type is not visible here (a module's not merged here,
+    /// ADR-11136; the main program's, from a REPL session unit, #17642). The
+    /// type is hidden, not the name: a routine of that spelling in scope here
+    /// is what the term means (a REPL session's `sub Out`, run from a module
+    /// that declares `class Out`, #17087). Otherwise the name is undeclared.
+    // Cost: an env probe and a routine resolution, plus the call.
+    pub(crate) fn push_hidden_type_name(
+        &mut self,
+        name: &str,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let lexical = self
+            .env()
+            .get(&format!("&{name}"))
+            .filter(|callable| {
+                matches!(
+                    callable.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                )
+            })
+            .cloned();
+        let value = if let Some(callable) = lexical {
+            self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?
+        } else if self.has_function(name) || self.has_multi_function(name) {
+            self.call_bare_routine_term(name, compiled_fns)?
+        } else {
+            return Err(RuntimeError::undeclared_symbols(format!(
+                "Undeclared name:\n    {name} used at line 1"
+            )));
+        };
+        self.stack.push(value);
+        Ok(())
+    }
+
     /// A bare term naming a routine: the nullary call of it.
     // Cost: one routine resolution and call.
     fn call_bare_routine_term(
@@ -317,30 +351,7 @@ impl Interpreter {
         // resolves only where that module's GLOBAL is merged: in the scope that
         // ran its `need`/`use`, or in the module itself (ADR-11136).
         if self.module_name_hidden_here(name) {
-            // The type is hidden, not the name: a routine of that spelling in
-            // scope here is what the term means (a REPL session's `sub Out`,
-            // run from a module that declares `class Out`, #17087).
-            let lexical = self
-                .env()
-                .get(&format!("&{name}"))
-                .filter(|callable| {
-                    matches!(
-                        callable.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    )
-                })
-                .cloned();
-            let value = if let Some(callable) = lexical {
-                self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?
-            } else if self.has_function(name) || self.has_multi_function(name) {
-                self.call_bare_routine_term(name, compiled_fns)?
-            } else {
-                return Err(RuntimeError::undeclared_symbols(format!(
-                    "Undeclared name:\n    {name} used at line 1"
-                )));
-            };
-            self.stack.push(value);
-            return Ok(());
+            return self.push_hidden_type_name(name, compiled_fns);
         }
         // Rakudo's core `REPL` and `Perl6::Compiler` classes are registered
         // on first use (runtime::repl_compiler), like `nqp::getcomp` does.

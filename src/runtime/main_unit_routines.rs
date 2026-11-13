@@ -81,7 +81,7 @@ impl Interpreter {
 
     /// Whether `unit` is the main program, or an `EVAL` compiled inside it.
     // Cost: O(e), e = nesting of `EVAL`s (bounded).
-    fn is_main_lineage(&self, unit: Symbol) -> bool {
+    pub(super) fn is_main_lineage(&self, unit: Symbol) -> bool {
         let mut unit = Some(unit);
         for _ in 0..64 {
             let Some(sym) = unit else {

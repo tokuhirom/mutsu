@@ -261,7 +261,10 @@ impl UndeclaredName<'_> {
         // merged (ADR-11136); the snippet may merge it itself (`use M; C`).
         // A routine of that spelling in scope is still known: the module's
         // type is hidden, not the name (#17087).
-        if interp.module_name_hidden_here(name) {
+        if interp.module_name_hidden_here(name)
+            || Symbol::lookup(name)
+                .is_some_and(|sym| interp.main_type_hidden_in_unit(interp.current_unit, sym))
+        {
             return self.declared.contains(name)
                 || interp.has_function(name)
                 || interp.has_multi_function_unindexed(name)

@@ -571,6 +571,13 @@ impl Interpreter {
         if let Some(parent_unit) = parent_unit {
             crate::runtime::note_eval_unit_parent(unit_sym, parent_unit);
         }
+        // A session's unit: its first one (no outer context), or one run in
+        // the context a session unit left (`runtime::repl_session_scope`).
+        if let Some(ReplUnit { parent }) = repl_unit
+            && parent.is_none_or(|p| self.unit_in_repl_session(p))
+        {
+            self.repl_compiler.session_units.insert(unit_sym);
+        }
         let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));
