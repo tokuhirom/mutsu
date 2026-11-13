@@ -485,18 +485,17 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
         statement: bool,
         failed: Option<RuntimeError>,
     }
-    impl crate::ast_visit::VisitMut for Pass {
-        // The refinement a `use` makes ends with the block that holds it.
-        // Each statement is offered to a `statement` override after its own
-        // contents were, with the span its `SetLine` marker records.
-        fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-            let enclosing = self.enabled;
+    impl Pass {
+        /// Visit the statements of one list, offering each to a `statement`
+        /// override after its own contents were, with the span its `SetLine`
+        /// marker records.
+        fn visit_list(&mut self, body: &mut [Stmt]) {
             let mut span = None;
             for stmt in body.iter_mut() {
                 if let Stmt::SetLine(_, at) = stmt {
                     span = Some(*at);
                 }
-                self.visit_stmt_mut(stmt);
+                crate::ast_visit::VisitMut::visit_stmt_mut(self, stmt);
                 if !self.statement
                     || !self.enabled
                     || self.failed.is_some()
@@ -513,6 +512,13 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
                     Err(e) => self.failed = Some(e),
                 }
             }
+        }
+    }
+    impl crate::ast_visit::VisitMut for Pass {
+        // The refinement a `use` makes ends with the block that holds it.
+        fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
+            let enclosing = self.enabled;
+            self.visit_list(body);
             self.enabled = enclosing;
         }
         fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
@@ -574,9 +580,7 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
         statement: crate::parser::slang_overrides_action("statement"),
         failed: None,
     };
-    for stmt in stmts.iter_mut() {
-        crate::ast_visit::VisitMut::visit_stmt_mut(&mut pass, stmt);
-    }
+    pass.visit_list(stmts);
     pass.failed.map_or(Ok(()), Err)
 }
 
