@@ -1043,6 +1043,22 @@ fn raku_value_node(v: &Value) -> String {
                 } => Some(key_str.clone()),
                 _ => None,
             };
+            // An allomorph key (`IntStr`) is a Str too: rakudo's Pair.raku takes
+            // the colonpair form when its string is identifier-like
+            // (`IntStr.new(2, "k") => 1` is `:k(1)`), and the full `.raku`
+            // otherwise (`IntStr.new(2, "2") => 1`).
+            if str_key.is_none()
+                && let ValueView::Mixin(inner, mixins) = key.view()
+                && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+                && let Some(key_str) = mixins.get("Str").map(Value::to_string_value)
+                && is_adverbial_pair_key(&key_str)
+            {
+                return match value.view() {
+                    ValueView::Bool(true) => format!(":{}", key_str),
+                    ValueView::Bool(false) => format!(":!{}", key_str),
+                    _ => format!(":{}({})", key_str, raku_value(value)),
+                };
+            }
             if let Some(key_str) = str_key.as_deref() {
                 let ident_like = is_adverbial_pair_key(key_str);
                 if ident_like {
