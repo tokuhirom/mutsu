@@ -606,9 +606,14 @@ impl Interpreter {
     pub(super) fn read_self_attr_raw_slot(&self, code: &CompiledCode, idx: usize) -> Option<Value> {
         let (bare, is_private, sigil) = code.local_attr_key(idx)?;
         let self_val = self.attr_access_self(code)?;
-        self.with_self_attr(&self_val, Some((code, idx)), bare, is_private, sigil, |_, map, key| {
-            map.get_vivify(key).cloned()
-        })
+        self.with_self_attr(
+            &self_val,
+            Some((code, idx)),
+            bare,
+            is_private,
+            sigil,
+            |_, map, key| map.get_vivify(key).cloned(),
+        )
         .flatten()
     }
 
