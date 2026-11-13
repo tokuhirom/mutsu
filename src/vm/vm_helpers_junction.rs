@@ -461,6 +461,21 @@ impl Interpreter {
         generated_from: usize,
         cached_len: Option<usize>,
     ) -> Result<(), RuntimeError> {
+        if let Some(native) = state.native.clone() {
+            // The history length at which the cache holds `needed` elements.
+            let target = match cached_len {
+                Some(c) => needed.saturating_sub(c).saturating_add(generated_from),
+                None => needed,
+            };
+            return self.run_native_sequence(
+                &native,
+                state,
+                cache,
+                history,
+                target,
+                generated_from,
+            );
+        }
         let generator = state.generator.clone();
         let mut published = generated_from;
 
@@ -609,7 +624,7 @@ impl Interpreter {
 /// its own list -- sees them. Positions the cache already had may hold a user
 /// override and are not touched (see `fill_sequence_cache`).
 // Cost: O(k), k = the newly generated elements.
-fn publish_generated(
+pub(super) fn publish_generated(
     cache: &std::sync::Mutex<Option<Vec<Value>>>,
     history: &[Value],
     published: &mut usize,
