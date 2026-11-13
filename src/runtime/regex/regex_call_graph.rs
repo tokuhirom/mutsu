@@ -395,7 +395,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> b
         | RegexAtom::VarInterpMarkless(_)
         | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
-        | RegexAtom::AtPosition(_)
+        | RegexAtom::AtPosition(..)
         | RegexAtom::TildeMarker => true,
         // User code. See the module header: it names no edge the walk can
         // record, but it is recorded, because the left-recursion gate refuses

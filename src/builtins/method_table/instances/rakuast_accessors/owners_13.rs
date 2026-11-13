@@ -3,6 +3,46 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Term::Rand",
+        &[
+            "RakuAST::Term::Rand",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Term::Reduce",
+        &[
+            "RakuAST::Term::Reduce",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Term::Self",
+        &[
+            "RakuAST::Term::Self",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Term::TopicCall",
+        &[
+            "RakuAST::Term::TopicCall",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Term::Whatever",
         &[
             "RakuAST::Term::Whatever",
@@ -128,53 +168,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::Type::Coercion",
             "RakuAST::Type::Derived",
-            "RakuAST::Type",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Type::Definedness",
-        &[
-            "RakuAST::Type::Definedness",
-            "RakuAST::Type::Derived",
-            "RakuAST::Type",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Type::Enum",
-        &[
-            "RakuAST::Type::Enum",
-            "RakuAST::Type",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Type::Parameterized",
-        &[
-            "RakuAST::Type::Parameterized",
-            "RakuAST::Type::Derived",
-            "RakuAST::Type",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Type::Setting",
-        &[
-            "RakuAST::Type::Setting",
-            "RakuAST::Type::Simple",
             "RakuAST::Type",
             "RakuAST::Term",
             "RakuAST::Termish",

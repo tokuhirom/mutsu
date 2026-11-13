@@ -278,7 +278,7 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut CallSink) -> Opti
         | RegexAtom::CodeInterp { .. }
         | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
-        | RegexAtom::AtPosition(_)
+        | RegexAtom::AtPosition(..)
         | RegexAtom::TildeMarker
         | RegexAtom::CodeAssertion { .. }
         | RegexAtom::VarDecl { .. } => Some(true),

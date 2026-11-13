@@ -111,7 +111,6 @@ fn resolve_outside_scopes(
     None
 }
 
-
 /// `$resolver.resolve-lexical($name)` with `scopes` pushed (outermost first):
 /// the declaration of `name` in the innermost scope that declares it, else an
 /// import or the setting's. `None` when nothing declares it.

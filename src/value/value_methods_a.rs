@@ -388,9 +388,7 @@ impl Value {
     /// is seen by every holder. `false` when this is not a RakuAST node.
     // Cost: O(1).
     pub(crate) fn replace_rakuast_node(&self, node: crate::rakuast::RakuAstNode) -> bool {
-        self.0
-            .with_rakuast_inplace(|held| *held = node)
-            .is_some()
+        self.0.with_rakuast_inplace(|held| *held = node).is_some()
     }
     /// The routine `meta-object` memoized on this RakuAST node, if any.
     // Cost: O(1).

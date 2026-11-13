@@ -488,8 +488,9 @@ pub(crate) enum RegexAtom {
     SameAssertion {
         negated: bool,
     },
-    /// `<at(N)>` — zero-width assertion: match at position N
-    AtPosition(usize),
+    /// `<at(N)>` (also `<.at(N)>`, `<?at(N)>`) — zero-width assertion: match
+    /// at position N; `<!at(N)>` (negated) matches anywhere else.
+    AtPosition(usize, bool),
     /// `<~~>` — recursive self-match: match the *enclosing* regex (or, inside a
     /// grammar token/rule, that rule's body) again at the current position. The
     /// payload is the enclosing pattern's source text, which the match-time

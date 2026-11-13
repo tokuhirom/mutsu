@@ -7857,6 +7857,13 @@ impl Interpreter {
                     // compile run again with the tree; skipping what already ran
                     // needs the tree to remember which statements are the prologue.
                     crate::unit_source_text::mark_next_tree_rewritten();
+                    // The main program that ends here leaves its END phasers
+                    // to the tree, which declares them again (a module or
+                    // `EVAL` unit runs inside a compunit frame of its own).
+                    let main_unit = self.control.compunit_leave_frames.is_empty();
+                    if main_unit {
+                        self.drop_main_end_phasers();
+                    }
                     // The types the first compile declared are declared again.
                     let outer = std::mem::replace(
                         &mut self.module.suppress_cross_eval_class_redeclaration_check,
@@ -7864,6 +7871,8 @@ impl Interpreter {
                     );
                     let result = self.eval_rakuast_node(&cu);
                     self.module.suppress_cross_eval_class_redeclaration_check = outer;
+                    // Its LEAVE phasers too (`run_unit` reads the flag).
+                    self.control.mainline_superseded |= main_unit;
                     result?;
                     *ip = code.ops.len();
                     return Ok(());

@@ -27,7 +27,10 @@ fn set_operands(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
             "set-operands is only available on an operator application",
         ));
     };
-    let operands = args.first().map(crate::value::to_list::value_to_list).unwrap_or_default();
+    let operands = args
+        .first()
+        .map(crate::value::to_list::value_to_list)
+        .unwrap_or_default();
     if operands
         .iter()
         .any(|operand| !matches!(operand.view(), ValueView::RakuAst(_)))

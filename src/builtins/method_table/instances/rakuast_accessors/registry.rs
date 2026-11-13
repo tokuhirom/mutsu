@@ -7,7 +7,7 @@ mod rows_1;
 mod rows_2;
 
 const PARTS: &[&[MethodRow]] = &[rows_0::ROWS, rows_1::ROWS, rows_2::ROWS];
-const N: usize = 488;
+const N: usize = 492;
 pub(super) static ROWS: [MethodRow; N] = flatten();
 
 const fn flatten() -> [MethodRow; N] {

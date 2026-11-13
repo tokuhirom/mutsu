@@ -194,7 +194,7 @@ mod regex_variable_alias;
 mod regex_view;
 mod render;
 mod resolve;
-pub(crate) use resolve::{resolve_lexical, resolve_node_in};
+pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_in};
 mod role;
 mod role_header;
 mod role_implicit;
@@ -1960,6 +1960,19 @@ pub fn compile_time_compunit(
     shadowed_terms::scan(&node);
     resolve::annotate(&mut node, imported, imported_type);
     Ok(Value::rakuast(Box::new(node)))
+}
+
+/// Resolve the `<name>` assertions of a tree `Str.AST` built to the regex
+/// declarations in scope, as rakudo's `.AST` hands out a resolved tree
+/// (Red's regex compiler inlines a `my regex` it finds this way, #17501).
+// Cost: O(n * d), n = nodes of the tree, d = scope depth.
+pub(crate) fn annotate_str_ast(tree: Value) -> Value {
+    let ValueView::RakuAst(node) = tree.view() else {
+        return tree;
+    };
+    let mut node = RakuAstNode::clone(node);
+    resolve::annotate_assertions(&mut node);
+    Value::rakuast(Box::new(node))
 }
 
 /// Resolve the lookups of the node a slang production's core rule built

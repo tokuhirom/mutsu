@@ -121,6 +121,20 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
         return Some(resolve::container_type(node));
     }
+    // A parameter's code-signature constraint (`&c:(Int)`) is a
+    // `FakeSignature`; any other parameter answers the `Signature` type object.
+    // TODO: the parameter node does not carry a `&c:(...)` constraint yet, so
+    // such a parameter answers the type object too (see #17501's follow-ups).
+    if method == "signature-constraint" && node.class == RakuAstClass::Parameter {
+        return Some(Value::package(crate::symbol::Symbol::intern(
+            "RakuAST::Signature",
+        )));
+    }
+    if method == "get-implicit-lookups"
+        && let Some(lookups) = resolve::implicit_lookups(node)
+    {
+        return Some(lookups);
+    }
     if is_resolvable_lookup(node.class) {
         match method {
             // A package declaration keeps its qualified name there, not a resolution.

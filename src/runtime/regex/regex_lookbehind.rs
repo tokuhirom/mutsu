@@ -229,7 +229,7 @@ fn atom_max_graphemes(
         | RegexAtom::CaptureEndMarker
         | RegexAtom::StartOfLine
         | RegexAtom::EndOfLine
-        | RegexAtom::AtPosition(_)
+        | RegexAtom::AtPosition(..)
         | RegexAtom::LeftWordBoundary
         | RegexAtom::RightWordBoundary
         | RegexAtom::WordBoundary { .. }

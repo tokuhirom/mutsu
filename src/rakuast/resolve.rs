@@ -32,7 +32,10 @@
 
 use std::collections::HashMap;
 
+mod regex_lookup;
 mod scope;
+pub(super) use regex_lookup::{annotate_assertions, implicit_lookups};
+pub(crate) use regex_lookup::regex_with_declarations;
 pub(crate) use scope::{resolve_lexical, resolve_node_in};
 
 use super::lower::{call_name_str, leaf_str, positional_leaf};
@@ -317,6 +320,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     {
         node.origin.2 = Some(return_type(decl));
     }
+    regex_lookup::record(node, scopes);
     if let Some(resolution) = resolve(node, scopes) {
         node.origin.2 = Some(resolution);
     }
@@ -354,6 +358,13 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
             format!("attr:{sigil}!{}", &variable[sigil.len_utf8()..]),
             child.clone(),
         );
+    }
+    // `my regex foo` is `&foo`, which a `<foo>` assertion looks up; the
+    // assertion's resolution is the whole declaration (its body is inlined).
+    if regex_lookup::is_regex_declaration(held.class)
+        && let Some(name) = regex_lookup::rule_name(held)
+    {
+        scopes.declare(format!("&{name}"), Value::rakuast(Box::new(RakuAstNode::clone(held))));
     }
     if let Some(name) = super::declared_routines::declared_by(held)
         && held.class == C::Sub

@@ -3,6 +3,37 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Regex::Alternation",
+        &[
+            "RakuAST::Regex::Alternation",
+            "RakuAST::Regex::Branching",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::Anchor::BeginningOfLine",
+        &[
+            "RakuAST::Regex::Anchor::BeginningOfLine",
+            "RakuAST::Regex::Anchor",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::Anchor::BeginningOfString",
+        &[
+            "RakuAST::Regex::Anchor::BeginningOfString",
+            "RakuAST::Regex::Anchor",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Regex::Anchor::EndOfLine",
         &[
             "RakuAST::Regex::Anchor::EndOfLine",
@@ -188,36 +219,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::BackReference::Named",
-        &[
-            "RakuAST::Regex::BackReference::Named",
-            "RakuAST::Regex::BackReference",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::BackReference::Positional",
-        &[
-            "RakuAST::Regex::BackReference::Positional",
-            "RakuAST::Regex::BackReference",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Backtrack::Frugal",
-        &[
-            "RakuAST::Regex::Backtrack::Frugal",
-            "RakuAST::Regex::Backtrack",
             "RakuAST::Node",
         ],
     ),

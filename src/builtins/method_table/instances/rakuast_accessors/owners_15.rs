@@ -3,6 +3,54 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::VarDeclaration::Anonymous",
+        &[
+            "RakuAST::VarDeclaration::Anonymous",
+            "RakuAST::VarDeclaration::Simple",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::VarDeclaration::Constant",
+        &[
+            "RakuAST::VarDeclaration::Constant",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::VarDeclaration::Implicit::Constant",
+        &[
+            "RakuAST::VarDeclaration::Implicit::Constant",
+            "RakuAST::VarDeclaration::Implicit",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::VarDeclaration::Implicit::Self",
+        &[
+            "RakuAST::VarDeclaration::Implicit::Self",
+            "RakuAST::VarDeclaration::Implicit",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::VarDeclaration::Placeholder::Named",
+        &[
+            "RakuAST::VarDeclaration::Placeholder::Named",
+            "RakuAST::VarDeclaration::Placeholder",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::VarDeclaration::Placeholder::Positional",
         &[
             "RakuAST::VarDeclaration::Placeholder::Positional",

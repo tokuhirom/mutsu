@@ -61,6 +61,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Contextualizer::Hash", "sigil"),
     row!("RakuAST::Contextualizer::Item", "sigil"),
     row!("RakuAST::Contextualizer::List", "sigil"),
+    row!("RakuAST::Declaration::External", "lexical-name"),
     row!("RakuAST::Doc::Block", "Str"),
     row!("RakuAST::Doc::Block", "abbreviated"),
     row!("RakuAST::Doc::Block", "config"),
@@ -155,6 +156,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Parameter", "names"),
     row!("RakuAST::Parameter", "optional"),
     row!("RakuAST::Parameter", "outer-type"),
+    row!("RakuAST::Parameter", "signature-constraint"),
     row!("RakuAST::Parameter", "slurpy"),
     row!("RakuAST::Parameter", "sub-signature"),
     row!("RakuAST::Parameter", "target"),
@@ -200,6 +202,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::QuotedString", "has-variables"),
     row!("RakuAST::QuotedString", "processors"),
     row!("RakuAST::QuotedString", "segments"),
-    row!("RakuAST::Regex::Assertion::Alias", "assertion"),
-    row!("RakuAST::Regex::Assertion::Alias", "name"),
 ];

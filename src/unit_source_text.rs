@@ -457,7 +457,7 @@ fn fingerprint_value(value: &Value, hasher: &mut impl std::hash::Hasher) {
                 }
             }
         }
-        ValueView::Mixin(inner, _) => fingerprint_value(&inner, hasher),
+        ValueView::Mixin(inner, _) => fingerprint_value(inner, hasher),
         ValueView::Int(i) => i.hash(hasher),
         ValueView::Num(n) => n.to_bits().hash(hasher),
         ValueView::Bool(b) => b.hash(hasher),

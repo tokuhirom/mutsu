@@ -3,6 +3,30 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Statement::Trusts",
+        &[
+            "RakuAST::Statement::Trusts",
+            "RakuAST::Statement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Statement::Unless",
+        &[
+            "RakuAST::Statement::Unless",
+            "RakuAST::Statement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Statement::Use",
+        &[
+            "RakuAST::Statement::Use",
+            "RakuAST::Statement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Statement::When",
         &[
             "RakuAST::Statement::When",
@@ -149,42 +173,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::StatementPrefix::Gather",
         &[
             "RakuAST::StatementPrefix::Gather",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Hyper",
-        &[
-            "RakuAST::StatementPrefix::Hyper",
-            "RakuAST::StatementPrefix::CallMethod",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Lazy",
-        &[
-            "RakuAST::StatementPrefix::Lazy",
-            "RakuAST::StatementPrefix::CallMethod",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Once",
-        &[
-            "RakuAST::StatementPrefix::Once",
-            "RakuAST::StatementPrefix::Blorst",
             "RakuAST::StatementPrefix",
             "RakuAST::Term",
             "RakuAST::Termish",
