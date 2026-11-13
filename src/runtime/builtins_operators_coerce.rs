@@ -65,6 +65,23 @@ impl Interpreter {
             }
             return Ok(value);
         }
+        // A plain `Date` numifies to its day count, its native `Numeric` row:
+        // answer it here rather than after two role checks and a dynamic
+        // `.Numeric` call (`$start == $date` was ~18x slower than rakudo).
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+            && class_name.as_str() == "Date"
+            && !self.has_user_method("Date", "Numeric")
+        {
+            let (year, month, day) =
+                crate::value::temporal_core::date_attrs(&attributes.to_map());
+            return Ok(Value::int(crate::value::temporal_core::daycount(
+                year, month, day,
+            )));
+        }
         // A subclass of native Version stores its comparable payload in the
         // instance attributes. Use that payload for the shared numeric
         // comparison routines, while leaving a user-defined Numeric method

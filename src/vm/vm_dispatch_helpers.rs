@@ -453,9 +453,24 @@ impl Interpreter {
     /// numeric one. Deliberately restricted to `Instance` values: the built-in
     /// numeric `Value` variants are handled by their own candidates, and so is
     /// an `Int` subclass instance, which takes the `Int` candidates.
+    // Cost: O(1) for an instance of a built-in class (a catalog lookup);
+    // otherwise `type_matches_value`'s.
     pub(crate) fn is_real_role_object(&mut self, value: &Value) -> bool {
-        matches!(value.view(), ValueView::Instance { .. })
-            && crate::builtins::native_base::numeric_subclass_payload(value).is_none()
+        let ValueView::Instance { class_name, .. } = value.view() else {
+            return false;
+        };
+        // An instance of a built-in class (`Date`, `Duration`) does `Real`
+        // exactly when its catalog entry says so: answer that without the
+        // full type check, which re-ran on every operator call. Only while
+        // the program declares neither name itself.
+        let class = class_name.as_str();
+        if !self.types.user_declared_classes.contains(class)
+            && !self.types.user_declared_classes.contains("Real")
+            && crate::builtin_types::catalog::builtin_type_info(class).is_some()
+        {
+            return crate::builtin_types::ancestry::builtin_type_is_a(class, "Real");
+        }
+        crate::builtins::native_base::numeric_subclass_payload(value).is_none()
             && !Self::is_buf_value(value)
             && value.match_str_value().is_none()
             && self.type_matches_value("Real", value)
