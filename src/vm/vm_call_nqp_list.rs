@@ -66,28 +66,37 @@ impl Interpreter {
         };
         let start = self.stack.len() - arity;
         let operands = &self.stack[start..];
-        if !is_plain_iteration_buffer(&operands[0])
-            || operands
-                .iter()
-                .any(|v| v.as_varref().is_some() || v.is_proxy_value())
+        if operands
+            .iter()
+            .any(|v| v.as_varref().is_some() || v.is_proxy_value())
         {
+            return false;
+        }
+        // A buffer held in a captured or bound variable arrives as the
+        // variable's cell; every op reads through it (`with_nqp_backing_array`
+        // derefs a cell), so the buffer itself is the operand.
+        let buffer = if operands[0].is_container_ref() {
+            operands[0].deref_container()
+        } else {
+            operands[0].clone()
+        };
+        if !is_plain_iteration_buffer(&buffer) {
             return false;
         }
         let result = match op {
             ListOp::AtPos => {
-                let ValueView::Int(idx) = operands[1].view() else {
+                let ValueView::Int(idx) = operands[1].deref_container().view() else {
                     return false;
                 };
-                crate::runtime::nqp_backing::elem_at(&operands[0], idx)
-                    .map(|e| e.unwrap_or(Value::NIL))
+                crate::runtime::nqp_backing::elem_at(&buffer, idx).map(|e| e.unwrap_or(Value::NIL))
             }
             ListOp::Elems => Ok(Value::int(
-                Self::nqp_elems_len_of(&operands[0]).unwrap_or(0) as i64,
+                Self::nqp_elems_len_of(&buffer).unwrap_or(0) as i64
             )),
             ListOp::Push => {
-                crate::runtime::nqp_backing::push_elem("push", &operands[0], operands[1].clone())
+                crate::runtime::nqp_backing::push_elem("push", &buffer, operands[1].clone())
             }
-            ListOp::Shift => Self::nqp_shift("shift", &operands[0]),
+            ListOp::Shift => Self::nqp_shift("shift", &buffer),
         };
         let Ok(result) = result else {
             // An error (`atpos` before the start) is raised by the general
