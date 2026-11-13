@@ -517,6 +517,17 @@ impl Interpreter {
         }
     }
 
+    /// A named regex/token passed as a VALUE normalized to a `Regex` value built
+    /// from its source, as `<$var>` and the `.match`/`.subst`/`.comb` family
+    /// need; any other value is returned unchanged.
+    // Cost: as `named_regex_routine_pattern` for a regex routine; O(1) otherwise.
+    pub(in crate::runtime) fn regex_routine_as_regex_value(&self, value: Value) -> Value {
+        match self.named_regex_routine_pattern(&value) {
+            Some(p) => Value::regex(p),
+            None => value,
+        }
+    }
+
     /// The regex source behind a named regex/token passed as a VALUE
     /// (`&Named`, or a hash/array slot holding it): a `Routine` with
     /// `is_regex`. Prefers the reference's own captured identity (#8680) over
@@ -525,7 +536,7 @@ impl Interpreter {
     /// (or an unresolvable name), so a caller keeps the value it was given.
     // Cost: O(1) lookups plus the O(p) clone of the pattern, p = pattern length.
     pub(in crate::runtime) fn named_regex_routine_pattern(
-        &mut self,
+        &self,
         value: &Value,
     ) -> Option<String> {
         let ValueView::Routine {
