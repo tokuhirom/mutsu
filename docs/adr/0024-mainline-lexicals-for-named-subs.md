@@ -489,3 +489,22 @@ reserved `unit_lexicals` key, frame-active predicate, writeback suppression,
 closure-capture injection) — they are corrections to how faithfully the
 *existing* VM machinery (shadow slots, the light-call fast paths, the
 env-direct read/write shortcuts) had to be taught about the new store.
+
+## Amendment (2026-11-13, #17331): point 3's call-path exclusion is retired
+
+Point 3 above excluded every `mainline_lexical_subs` member from the light,
+positional-light, fast, multi-light and plan-light call paths because those
+paths ran "frameless" and `mainline_lexical_frame_active()` keys off the last
+`routine_stack` frame. ADR-0037 Slice 1 later made every one of them push a
+`RoutineFrame` with the routine's name and its body's code address
+(`push_routine_with_visibility`), which is exactly what
+`active_unit_lexical_entry` matches against, so the predicate now fires on
+those paths too and the exclusion only cost speed: a module's helper sub that
+reads a module-scope `my` (Monad's `$type-cache` in `some-type`,
+`parameterized`, `publish-type`, ...) always took the general named-call path,
+~64k instructions per call against ~25k. The exclusion
+(`light_call_blocked_by_mainline_capture`) is removed. Verified against the
+375 `t/` files that exercise mainline lexicals, free variables, unit lexicals
+and lexical subs, and pinned by `t/routines/sub-capturing-mainline-lexical-light-call.t`
+(reads, writes, a shadowing block per row 2a, calls from another routine, a
+closure and a `map` block, sigilless parameters).

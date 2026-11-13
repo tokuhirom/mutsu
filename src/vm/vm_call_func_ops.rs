@@ -113,25 +113,6 @@ impl Interpreter {
         };
     }
 
-    /// ADR-0024: `mainline_lexical_frame_active` (the read/write resolver for
-    /// a mainline named sub's captured free variables) keys off the LAST
-    /// `routine_stack` frame. This predicate predates ADR-0037 Slice 1, which
-    /// made every "light"/"fast" compiled-call path (`call_compiled_function_fast`,
-    /// `call_compiled_function_light[_spec]`, `call_compiled_function_positional_light`)
-    /// push a `RoutineFrame` unconditionally, so the frame is no longer
-    /// missing on these paths. This exclusion has not been re-verified
-    /// against that; keep forcing a mainline-lexical-capturing sub onto the
-    /// frame-pushing path (`call_compiled_function_named[_inner]`) by
-    /// excluding it from every light/fast eligibility check at the call site
-    /// until it is. `mainline_lexical_subs` is empty for the overwhelmingly
-    /// common program, so this is one `is_empty` test beyond what those
-    /// checks already do.
-    #[inline]
-    pub(super) fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
-        !self.lexicals.mainline_lexical_subs.is_empty()
-            && self.lexicals.mainline_lexical_subs.contains_key(name)
-    }
-
     /// Names of builtin listops/functions that a same-named user-defined
     /// subroutine may shadow. When both exist, the user sub wins.
     ///
@@ -1305,8 +1286,6 @@ impl Interpreter {
                         let has_junction = args
                             .iter()
                             .any(|v| matches!(v.view(), ValueView::Junction { .. }));
-                        let mainline_capture_blocked =
-                            self.light_call_blocked_by_mainline_capture(name_str);
                         // Run the body against the routine's OWN nested-sub
                         // table when it carries one, exactly as the uncached
                         // `compile_and_call_function_def` does (ADR-0019
@@ -1318,7 +1297,6 @@ impl Interpreter {
                         let compiled_fns = body_fns.as_deref().unwrap_or(compiled_fns);
                         let result = if !named_share
                             && !has_junction
-                            && !mainline_capture_blocked
                             && Self::is_light_call_eligible(&cf, name_str)
                         {
                             self.call_compiled_function_light(
@@ -1329,7 +1307,6 @@ impl Interpreter {
                                 name_sym,
                             )
                         } else if !named_share
-                            && !mainline_capture_blocked
                             && !call_has_named
                             && self.is_positional_light_call_eligible(
                                 &cf,
@@ -1442,7 +1419,6 @@ impl Interpreter {
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
                 && Self::is_fast_call_eligible(cf, name_str)
-                && !self.light_call_blocked_by_mainline_capture(name_str)
                 && !cf.is_raw
             {
                 // Pop the callsite pair arg(s) from the stack and extract callsite line
@@ -2394,8 +2370,7 @@ impl Interpreter {
                     )
                     && !self.has_multi_candidates_cached_sym(name_sym)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
-                    && self.wrap_sub_id_for_name(name).is_none()
-                    && !self.light_call_blocked_by_mainline_capture(name);
+                    && self.wrap_sub_id_for_name(name).is_none();
                 if positional_light {
                     let cur_pkg_sym = self.current_package_sym();
                     if self
@@ -2473,7 +2448,6 @@ impl Interpreter {
                     )
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
-                    && !self.light_call_blocked_by_mainline_capture(name)
                 {
                     // Populate light-call cache so subsequent calls skip resolution
                     let cur_pkg_sym = self.current_package_sym();
@@ -2525,7 +2499,6 @@ impl Interpreter {
                     )
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
-                    && !self.light_call_blocked_by_mainline_capture(name)
                 {
                     self.note_multi_light_call(
                         name,

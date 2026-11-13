@@ -720,8 +720,7 @@ impl Interpreter {
                 None,
             )
             && !loan_env!(self, routine_is_test_assertion_by_name(&name, &args))
-            && self.wrap_sub_id_for_name(&name).is_none()
-            && !self.light_call_blocked_by_mainline_capture(&name);
+            && self.wrap_sub_id_for_name(&name).is_none();
         // #8697: `def` is, by this function's own contract, an ALREADY
         // resolved winner -- every caller obtained it from a value-dependent
         // match (multi/proto candidate resolution, or a redispatch's own
