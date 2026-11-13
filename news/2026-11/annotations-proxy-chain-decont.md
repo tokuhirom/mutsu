@@ -2,8 +2,8 @@
 
 The `annotations` distribution's `Keeper` container coerces to a Map through
 `Map.new: reverse @of Z=> self.Seq`, where `@of` defaults to a Seq of `Binder`
-proxies whose `FETCH is raw` answers another Proxy. Four divergences from
-rakudo met there, and all are fixed:
+proxies whose `FETCH is raw` answers another Proxy. Investigating it turned up
+these divergences from rakudo, all fixed:
 
 - `Map.new` / `Hash.new` now read an itemized Pair (`my $p = a => 1;
   Map.new(($p,))`) as a Pair instead of dying with "Odd number of elements".
@@ -18,4 +18,5 @@ rakudo met there, and all are fixed:
 - `Pair.raku` with an allomorph key (`IntStr.new(2, "k") => 1`) uses the
   colonpair form when the string is identifier-like, like rakudo.
 
-`annotations`' `t/01-containers.rakutest` and `t/02-direct.rakutest` now pass.
+The annotations suite itself was made to pass by #17713; these are the
+further rakudo differences found on the same path.
