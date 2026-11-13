@@ -54,7 +54,8 @@ impl Interpreter {
                         && self.lexical_memo_still_in_scope(code, name_sym, sym)
                 }
                 ValueView::Enum { .. } if !crate::qualified::is_qualified(name_sym) => {
-                    (chunk_declares_no_types(code) || self.env_binds_name_to_value(name_sym, &value))
+                    (chunk_declares_no_types(code)
+                        || self.env_binds_name_to_value(name_sym, &value))
                         && self.env_answers_memo(name_sym, &value)
                 }
                 _ => self.env_answers_memo(name_sym, &value),
