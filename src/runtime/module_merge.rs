@@ -96,6 +96,10 @@ pub(crate) struct ModuleVisibility {
     /// its own under (`sub item`); module code keeps the core one
     /// (`runtime::main_unit_routines`).
     pub(crate) main_shadowing_routines: std::sync::Arc<HashSet<Symbol>>,
+    /// #17642: the bare names of the types the main program's lineage
+    /// declared, which a REPL session's units do not see
+    /// (`runtime::repl_session_scope`).
+    pub(crate) main_declared_types: std::sync::Arc<HashSet<Symbol>>,
     /// ADR-11136: the compunit each loaded module's source is.
     pub(crate) module_units: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// The values of `module_units`: the compunits of the modules whose body

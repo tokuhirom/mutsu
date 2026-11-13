@@ -74,6 +74,11 @@ impl Interpreter {
             self.stack.push(ty);
             return Ok(());
         }
+        // A type the main program declared, read from a REPL session's unit
+        // (#17642).
+        if self.main_type_hidden_in_code(code, code.const_sym(name_idx)) {
+            return self.push_hidden_type_name(name, compiled_fns);
+        }
         let foreign_unit = self.code_is_loaded_module_code(code);
         self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, false, foreign_unit)?;
         let unit_lexical = self.resolve_unit_lexical_type(code, name_idx);
@@ -194,6 +199,9 @@ impl Interpreter {
         name_idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        if self.main_type_hidden_in_code(code, code.const_sym(name_idx)) {
+            return self.push_hidden_type_name(Self::const_str(code, name_idx), compiled_fns);
+        }
         let foreign_unit = self.code_is_loaded_module_code(code);
         self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, true, foreign_unit)
     }

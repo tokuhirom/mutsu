@@ -102,6 +102,8 @@ pub(crate) struct ReplCompilerState {
     /// Compiler objects registered by `nqp::bindcomp` under a language other
     /// than `Raku` (whose compiler is `compiler`), for `nqp::getcomp`.
     bound_compilers: HashMap<String, Value>,
+    /// The units REPL sessions ran (`runtime::repl_session_scope`).
+    pub(crate) session_units: HashSet<Symbol>,
 }
 
 impl Interpreter {

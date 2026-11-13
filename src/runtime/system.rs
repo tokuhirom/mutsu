@@ -306,11 +306,22 @@ impl Interpreter {
         op_assoc: &HashMap<String, String>,
     ) -> Result<Value, RuntimeError> {
         let user_sub_names = self.collect_eval_user_sub_names();
-        let user_type_names = self.collect_eval_user_type_names();
+        let mut user_type_names = self.collect_eval_user_type_names();
         let user_value_term_names = self.collect_eval_user_value_term_names();
         // Parsing and static module probes can reset parser import tables.
         // Capture the calling unit's names before either step.
-        let caller_names = (self.eval_caller_type_names(), self.eval_caller_enum_value_names());
+        let mut caller_names = (self.eval_caller_type_names(), self.eval_caller_enum_value_names());
+        // A REPL session's unit does not know the main program's types
+        // (`runtime::repl_session_scope`): `Out(...)` is a call there.
+        // Nor a module's it has not merged (ADR-11136), which the parse of an
+        // ordinary EVAL keeps knowing.
+        if let Some(hidden) = self.session_hidden_type_names() {
+            let visible = |name: &String| {
+                !hidden.contains(name.as_str()) && !self.module_name_hidden_here(name)
+            };
+            user_type_names.retain(&visible);
+            caller_names.0.retain(&visible);
+        }
         // Make module search paths visible to the parser so that `use Foo`
         // inside the EVAL'd code can resolve and register Foo's exported sub
         // names (needed for parenless calls like `use Foo; bar`).

@@ -67,6 +67,7 @@ mod methods_grammar_wrapped_start;
 pub(crate) mod methods_instance_ops;
 pub(crate) mod module_merge;
 mod main_unit_routines;
+mod repl_session_scope;
 mod module_preload_failure;
 mod pragma_monkey_eval;
 mod pragma_strict;

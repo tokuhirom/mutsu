@@ -32,7 +32,13 @@ impl Interpreter {
                 // the keys missing from it if the declaration dies.
                 let classes_before = self.registry().classes.clone();
                 match self.exec_register_class_op(code, plan_idx, compiled_fns) {
-                    Ok(()) => Ok(()),
+                    Ok(()) => {
+                        let plan = &code.class_decl_plans[plan_idx as usize];
+                        if plan.name_chunk.is_none() {
+                            self.note_main_unit_type(plan.name);
+                        }
+                        Ok(())
+                    }
                     Err(_) if code.class_decl_plans[plan_idx as usize].pass.hoisted => Ok(()),
                     Err(error) => {
                         self.note_failed_eval_class_decl(&classes_before);
@@ -43,7 +49,10 @@ impl Interpreter {
             Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
                 self.note_type_body_written_lexicals(code);
                 match self.exec_register_role_op(code, plan_idx, compiled_fns) {
-                    Ok(()) => Ok(()),
+                    Ok(()) => {
+                        self.note_main_unit_type(code.role_decl_plans[plan_idx as usize].name);
+                        Ok(())
+                    }
                     Err(_) if code.role_decl_plans[plan_idx as usize].pass.hoisted => Ok(()),
                     Err(error) => Err(error),
                 }
@@ -81,6 +90,7 @@ impl Interpreter {
             ..
         } = stmt
         {
+            self.note_main_unit_type(*name);
             let result = loan_env!(
                 self,
                 register_enum_decl(
