@@ -2360,19 +2360,18 @@ impl Interpreter {
             }
             // A transparent proto (`proto f(|) {*}`, `vm_transparent_proto.rs`)
             // dispatches as the implicit one does: through the candidates.
-            let compiled = if !self.has_opaque_proto_cached_sym(name, name_sym)
-                && !lexical_rw_callable
-            {
-                self.find_compiled_function_memo(
-                    compiled_fns,
-                    name,
-                    name_sym,
-                    &args,
-                    &mut multi_def_memo,
-                )
-            } else {
-                None
-            };
+            let compiled =
+                if !self.has_opaque_proto_cached_sym(name, name_sym) && !lexical_rw_callable {
+                    self.find_compiled_function_memo(
+                        compiled_fns,
+                        name,
+                        name_sym,
+                        &args,
+                        &mut multi_def_memo,
+                    )
+                } else {
+                    None
+                };
             self.set_pending_call_arg_sources(None);
             // A `where` constraint that threw while candidate matching ran is
             // an exception of the *call*, not a "candidate does not match":
