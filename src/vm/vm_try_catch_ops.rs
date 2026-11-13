@@ -31,17 +31,13 @@ impl Interpreter {
         if is_bare_block {
             let call_line = self.current_source_line();
             let call_file = self.executing_source_file_sym();
-            // An inlined bare block belongs to its enclosing routine, and runs
-            // in that routine's file: a module routine's `try { $v }` reads
-            // the module's file-scope `$v` through that file's compunit
-            // (#17732).
-            let def_file = self.routine_stack().last().and_then(|frame| frame.def_file);
             self.push_block_routine_with_location(
                 self.current_package_sym(),
                 Symbol::intern(""),
                 call_line,
                 call_file,
-                def_file,
+                // An inlined bare block belongs to its enclosing routine.
+                None,
             );
         }
         // A genuine `try` block implicitly turns on `use fatal` for its whole
