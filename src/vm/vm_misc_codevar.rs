@@ -817,8 +817,14 @@ impl Interpreter {
         } else {
             Value::NIL
         };
-        let val = if val.is_proxy_value() {
-            self.fetch_proxy_operand(val)?
+        // A `:=`-bound element may sit in a container cell around the Proxy.
+        let bound = if val.is_container_ref() {
+            val.deref_container()
+        } else {
+            val.clone()
+        };
+        let val = if bound.is_proxy_value() {
+            self.fetch_proxy_operand(bound)?
         } else {
             val
         };
