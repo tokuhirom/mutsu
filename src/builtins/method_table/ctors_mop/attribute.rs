@@ -325,12 +325,26 @@ fn set_value(i: &mut Interpreter, target: &Value, args: &[Value], _named: Named<
     // `nqp::assign` through it stores into the slot (EEL's state copier,
     // #17418). Rakudo binds the variable's own Scalar; this one is not shared
     // with the variable.
+    // A `$`-variable `:=`-bound straight to an Array/Hash or to a value
+    // (`my $x := Array.new`, a raw parameter) has no Scalar: rakudo binds the
+    // aggregate itself, so `get_value(...).VAR` is the Array (AttrX::Mooish's
+    // `unbind-proxy`). Only an aggregate that came out of a Scalar — itemized
+    // — gets one.
     // TODO: promote the source variable to a shared cell so later writes
     // through either side are seen by both.
-    let bound = i.container_of_arg_source(1).unwrap_or_else(|| {
-        if i.arg_source_is_scalar_var(1)
-            && matches!(args[1].view(), ValueView::Array(..) | ValueView::Hash(_))
-        {
+    let source_cell = i
+        .container_of_arg_source(1)
+        .filter(|cell| match cell.view() {
+            ValueView::ContainerRef(c) => !Interpreter::cell_binds_a_non_scalar(&c),
+            _ => true,
+        });
+    let bound = source_cell.unwrap_or_else(|| {
+        let itemized_aggregate = match args[1].view() {
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Hash(_) => args[1].hash_is_itemized(),
+            _ => false,
+        };
+        if i.arg_source_is_scalar_var(1) && itemized_aggregate {
             Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
                 args[1].clone(),
             )))
