@@ -23,28 +23,32 @@ use std::cell::Cell;
 /// a stack segment ([`SEGMENT_BYTES`]).
 pub(crate) const STACK_RESERVE_BYTES: usize = 16 * 1024 * 1024;
 
-/// A stack smaller than this is left unguarded: its reserve would no longer
-/// cover one check interval's worth of overshoot plus the unwind. A worker's
-/// initial stack under an address-space budget
-/// (`stack_budget::initial_stack_bytes`, ADR-17392) is exactly this.
-///
-/// A debug build needs 32 MiB (an 8 MiB reserve over a ~5 MiB worst-case
-/// interval overshoot). A release frame is about a tenth of a debug one
-/// (measured 6-17 KiB per Raku call level: plain sub, method, `.map`
-/// closure), so one interval overshoots well under 1 MiB and an 8 MiB stack
-/// with its 2 MiB reserve is guarded (ADR-0123 §6).
+/// The smallest reserve that still covers one check interval's worst-case
+/// overshoot plus the unwind (ADR-0123 §6). A debug build needs 8 MiB (over a
+/// ~5 MiB worst-case interval overshoot). A release frame is about a tenth of
+/// a debug one (measured 6-17 KiB per Raku call level: plain sub, method,
+/// `.map` closure), so one interval overshoots well under 1 MiB and 1 MiB
+/// suffices.
 #[cfg(debug_assertions)]
-pub(crate) const MIN_GUARDABLE_STACK_BYTES: usize = 32 * 1024 * 1024;
+const MIN_RESERVE_BYTES: usize = 8 * 1024 * 1024;
 #[cfg(not(debug_assertions))]
-pub(crate) const MIN_GUARDABLE_STACK_BYTES: usize = 4 * 1024 * 1024;
+const MIN_RESERVE_BYTES: usize = 1024 * 1024;
+
+/// A stack smaller than this is left unguarded: half of it is
+/// [`MIN_RESERVE_BYTES`], and below that no headroom would be left above the
+/// reserve. A worker's initial stack under an address-space budget
+/// (`stack_budget::initial_stack_bytes`, ADR-17392) is exactly this: 16 MiB in
+/// a debug build, 2 MiB in a release one. The thread goes deeper on segments,
+/// so only what a parked worker costs depends on it.
+pub(crate) const MIN_GUARDABLE_STACK_BYTES: usize = 2 * MIN_RESERVE_BYTES;
 
 /// The reserve kept below the guard on a stack of `stack_size` bytes:
-/// [`STACK_RESERVE_BYTES`], or a quarter of a smaller stack (8 MiB on the
-/// 32 MiB tier -- still above the ~5 MiB worst-case interval overshoot of a
-/// debug build, see `vm::vm_stack_guard::STACK_CHECK_INTERVAL`; 2 MiB on a
-/// release build's 8 MiB tier, against an overshoot under 1 MiB).
+/// [`STACK_RESERVE_BYTES`], or a quarter of a smaller stack, but never less
+/// than [`MIN_RESERVE_BYTES`] (see `vm::vm_stack_guard::STACK_CHECK_INTERVAL`
+/// for the overshoot it covers). So the smallest guardable stack keeps half of
+/// itself, 1 MiB in a release build; a 64 MiB segment keeps 16 MiB.
 fn reserve_for(stack_size: usize) -> usize {
-    STACK_RESERVE_BYTES.min(stack_size / 4)
+    STACK_RESERVE_BYTES.min(stack_size / 4).max(MIN_RESERVE_BYTES)
 }
 
 thread_local! {
@@ -301,7 +305,7 @@ mod tests {
                 // Usable headroom is the stack minus the reserve, give or take
                 // the few bytes between `top` and the arming call's own frame.
                 let usable = top - floor;
-                let expected = MIN_GUARDABLE_STACK_BYTES * 2 - STACK_RESERVE_BYTES;
+                let expected = MIN_GUARDABLE_STACK_BYTES * 2 - reserve_for(MIN_GUARDABLE_STACK_BYTES * 2);
                 assert!(
                     usable.abs_diff(expected) < 64 * 1024,
                     "usable {usable} vs expected {expected}"
@@ -373,9 +377,10 @@ mod tests {
     }
 
     #[test]
-    fn the_smallest_stack_keeps_a_quarter_as_its_reserve() {
+    fn the_smallest_stack_keeps_half_as_its_reserve() {
         // ADR-17392: a worker's small initial stack under an address-space
-        // budget is still guarded, with a proportionally smaller reserve.
+        // budget is still guarded, with the smallest reserve that covers one
+        // check interval.
         let size = MIN_GUARDABLE_STACK_BYTES;
         std::thread::Builder::new()
             .stack_size(size)
@@ -383,9 +388,9 @@ mod tests {
                 let top = approx_stack_pointer();
                 init_thread_stack_floor(size);
                 let floor = STACK_FLOOR.with(|c| c.get());
-                assert_ne!(floor, 0, "the smallest tier must be guarded");
+                assert_ne!(floor, 0, "the smallest stack must be guarded");
                 let usable = top - floor;
-                let expected = size - size / 4;
+                let expected = size - MIN_RESERVE_BYTES;
                 assert!(
                     usable.abs_diff(expected) < 64 * 1024,
                     "usable {usable} vs expected {expected}"
