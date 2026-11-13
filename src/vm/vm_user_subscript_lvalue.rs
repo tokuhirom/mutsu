@@ -125,6 +125,33 @@ impl Interpreter {
         if self.unit_visible_captured_family(op_sym).is_some() {
             return true;
         }
+        self.function_table_has_user_subscript(op_name, is_positional)
+    }
+
+    /// Whether a user `postcircumfix` routine could answer an ordinary
+    /// element read that the read fast path (`index_fast_path_element`) would
+    /// otherwise serve: an operator scope is open, a `sub EXPORT` hook handed
+    /// out an operator family, or the function table holds a routine of that
+    /// name. Conservative (an open scope or any exported family declines the
+    /// fast path, and the general path makes the precise check) and cheaper
+    /// than [`Self::user_subscript_candidate_possible`]: no env probe.
+    // Cost: O(1) with an unchanged function table; O(f) once per
+    // function-table version, f = registered routines.
+    #[inline]
+    pub(super) fn user_subscript_routine_may_answer(&self, is_positional: bool) -> bool {
+        !self.dispatch.lexical_operator_scopes.is_empty()
+            || !self.module.export_amp_override_names.is_empty()
+            || self.function_table_has_user_subscript(
+                crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional),
+                is_positional,
+            )
+    }
+
+    /// Whether the function table holds a routine named `op_name` (the
+    /// `postcircumfix` of the subscript kind), memoized per table version.
+    // Cost: O(1) with an unchanged function table; O(f) once per
+    // function-table version, f = registered routines.
+    fn function_table_has_user_subscript(&self, op_name: &str, is_positional: bool) -> bool {
         let version = self.registry().functions.version();
         let (known_bit, answer_bit) = if is_positional {
             (1u8, 2u8)
