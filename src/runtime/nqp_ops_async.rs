@@ -43,7 +43,16 @@ pub(crate) fn operand(v: &Value) -> Value {
 /// The channel of a `ConcBlockingQueue` instance.
 // Cost: O(1).
 fn queue_of(v: &Value) -> Option<(Symbol, SharedChannel)> {
-    let v = operand(v);
+    // A plain instance is its own operand: every list op on an
+    // `IterationBuffer` asks this first, so the unwrapping clone is paid only
+    // by a wrapped or containerized argument.
+    let unwrapped;
+    let v = if matches!(v.view(), ValueView::Instance { .. }) {
+        v
+    } else {
+        unwrapped = operand(v);
+        &unwrapped
+    };
     let ValueView::Instance {
         class_name,
         attributes,

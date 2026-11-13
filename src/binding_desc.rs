@@ -123,6 +123,9 @@ pub(crate) enum DeclaredConstraint {
     /// one slot with two constraints; the env, which is scoped, can tell them
     /// apart and the bake cannot. Falls back to the probe.
     Conflicting,
+    /// `uint` / `uint64`. (Last, so the variants before it keep their
+    /// encoded index in a precompiled unit.)
+    NativeUint,
 }
 
 impl DeclaredConstraint {
@@ -134,6 +137,7 @@ impl DeclaredConstraint {
     pub(crate) fn classify(tc: &str) -> Self {
         match tc.trim() {
             "int" | "int64" => DeclaredConstraint::NativeInt,
+            "uint" | "uint64" => DeclaredConstraint::NativeUint,
             "str" => DeclaredConstraint::NativeStr,
             "num" | "num64" => DeclaredConstraint::NativeNum,
             _ => DeclaredConstraint::NonNative,

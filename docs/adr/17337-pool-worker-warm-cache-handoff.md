@@ -103,6 +103,35 @@ cache, and a cache moves only under a check that does not depend on what the cac
 When the world is shared (ADR-15967 §4.1's design ADR, after ADR-16595 slice 4), the fork, and
 with it this handoff, has no job left; the caches then simply stay in the worker's context.
 
+### D4. A registry generation names one registry content (amendment, 2026-11-13)
+
+This settles the first open question below, and goes further than it proposed. Measured after
+D2: three pool tasks running the same chunk paid ~2x the per-call time of one task (`PS.new` in
+a loop: 6.7 us alone, 13.2 us with three tasks), while three separate processes paid none. The
+memos that live in compiled chunks shared by every interpreter of the process (the bareword
+type-object memo, TRIR's `ClassOperandSite`, the method-table call-site lane, the
+`LexImportCall` site memo) are keyed on the registry write generation, and every interpreter
+counted it in a range of its own. So a site that two workers ran was remembered for one worker
+and missed by the other, which re-resolved it and overwrote the memo: with three workers almost
+every call missed.
+
+The generation's values now come from one process-wide sequence (`registry_gen.rs`): a new
+interpreter starts at a value nobody has had, and every registry write moves its interpreter to
+another such value. A value therefore names one registry content, and two interpreters with the
+same value have the same content. A fork starts with its parent's registry snapshot, so it
+starts at its parent's generation, and the memos its parent (or a sibling fork of the same
+snapshot) filled are current for it. The first registry write on either side moves that side to
+a fresh value; nothing is ever counted on from a value another interpreter holds. The
+lexical-import generation, which keys the `LexImportCall` site memo, follows the same rule.
+
+A memo filled by another interpreter is used under exactly the conditions the same interpreter
+already used it under: the generation says the declarations are the same, and whatever else
+the memo depends on (env, frames, the current package) it must already re-check on a hit,
+because within one interpreter those change between two runs of the same site too.
+
+With D4 the three-task loop runs at 10.7 us per call (from 13.2), and ParaSeq's degree-3
+`.max(:p)` over 200,000 elements takes 1.9 s (from 2.1).
+
 ## 3. Consequences
 
 - The 200k-element degree-3 block map: 6.5 s -> ~1.7 s (rakudo 0.2 s). ParaSeq `t/01-basic`
@@ -118,9 +147,7 @@ with it this handoff, has no job left; the caches then simply stay in the worker
 
 ## 4. Open questions
 
-- The fork still begins a fresh registry-generation epoch when there is nothing to adopt (a
-  worker's first task, or after a registry write), so chunk-resident memos keyed on the
-  generation (`ClassOperandSite`, the bareword type-object memo) miss once per such task. A fork
-  could instead start at its parent's generation, moving to a fresh epoch on its first write.
+- ~~A fork could start at its parent's generation, moving to a fresh epoch on its first
+  write.~~ Decided as D4.
 - The fork itself (`spawn_clone`, ~0.1 ms on the spawning thread for ParaSeq's batcher) remains
   per task.

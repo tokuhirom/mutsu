@@ -71,6 +71,25 @@ pub(super) struct SiteLaneAnswer {
     pub(super) pure: bool,
 }
 
+impl SiteLaneAnswer {
+    /// The answer of an interpreter row (it has effects, so it is not re-run
+    /// by the debug cross-check).
+    // Cost: O(1).
+    #[cfg_attr(debug_assertions, allow(dead_code))]
+    pub(super) fn interpreter_row(
+        result: Result<Value, RuntimeError>,
+        row: RowId,
+        arity: usize,
+    ) -> Self {
+        SiteLaneAnswer {
+            result,
+            row,
+            arity,
+            pure: false,
+        }
+    }
+}
+
 impl Interpreter {
     /// The answer the method table gives the `CallMethodMut` at `code.ops[ip]`,
     /// or `None` to run the full path. Leaves the stack untouched.
@@ -409,19 +428,19 @@ const MISS_ROW_BITS: u16 = u16::MAX;
 
 /// The memo payload: the row (or a miss) for a `receiver` called with `arity`
 /// arguments.
-fn pack(receiver: Receiver, arity: usize, row: Option<RowId>) -> u32 {
+pub(super) fn pack(receiver: Receiver, arity: usize, row: Option<RowId>) -> u32 {
     let row = row.map_or(MISS_ROW_BITS, RowId::to_bits);
     // `arity` is at most `MAX_LANE_ARITY`.
     (u32::from(arity as u8) << 24) | (u32::from(receiver.to_bits()) << 16) | u32::from(row)
 }
 
 /// Whether a memo payload was filled for `receiver` and `arity`.
-fn payload_matches(payload: u32, receiver: Receiver, arity: usize) -> bool {
+pub(super) fn payload_matches(payload: u32, receiver: Receiver, arity: usize) -> bool {
     payload >> 16 == (u32::from(arity as u8) << 8) | u32::from(receiver.to_bits())
 }
 
 /// The row a memo payload remembers, `None` for a remembered miss.
-fn payload_row(payload: u32) -> Option<RowId> {
+pub(super) fn payload_row(payload: u32) -> Option<RowId> {
     let bits = payload as u16;
     (bits != MISS_ROW_BITS).then(|| RowId::from_bits(bits))
 }
