@@ -61,10 +61,14 @@ impl Interpreter {
             push_multi_dispatch_frame_with_winner_sym(name, name_sym, args, Some(def))
         );
         self.push_samewith_context(name, None, None);
+        // The winner's own nested-sub table, as `compile_and_call_function_def`
+        // uses: a module routine called from the importing script resolves its
+        // `my sub` keys there, not in the caller's table.
+        let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
         let result = self.call_compiled_function_positional_light(
             &cf,
             args,
-            compiled_fns,
+            fns,
             name,
             name_sym,
             Some(code),
