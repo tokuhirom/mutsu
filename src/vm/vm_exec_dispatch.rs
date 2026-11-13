@@ -7247,17 +7247,8 @@ impl Interpreter {
             // -- CHECK Phaser scope --
             // Cost: O(1).
             OpCode::CheckPhaserStart {
-                is_begin,
-                scope,
-                end_ip,
+                is_begin, scope, ..
             } => {
-                // A unit restarted from the tree its CHECK phase rewrote has
-                // run its CHECK phasers already (#17501): they do not run a
-                // second time over the tree they rewrote.
-                if !*is_begin && crate::unit_source_text::active_unit_is_rewritten() {
-                    *ip = *end_ip as usize;
-                    return Ok(());
-                }
                 self.sync_source_line(code, *ip);
                 self.control.check_phaser_depth += 1;
                 self.control

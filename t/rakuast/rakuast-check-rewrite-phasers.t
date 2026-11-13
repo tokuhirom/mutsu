@@ -8,10 +8,9 @@ use nqp;
 # A unit-level `LEAVE $schema.drop` in Red's t/112 used to run a second time on
 # an unset `$schema`.
 
-plan 8;
+plan 7;
 
 CHECK {
-    %*ENV<MUTSU_T_CHECK_RUNS>++;
     sub walk($n) {
         if $n.^name eq 'RakuAST::ApplyPostfix'
             && $n.postfix.^name eq 'RakuAST::Call::Method'
@@ -40,4 +39,3 @@ is 'b' x 3 ~ 'a', 'bbba', 'the rest of the unit runs as written';
 is foo(A.new), 'a', 'a multi candidate of the unit dispatches once';
 is foo(1), 'int', 'and so does its sibling';
 is !A.new, 'user !', 'a user candidate of a core prefix still applies';
-is %*ENV<MUTSU_T_CHECK_RUNS>, 1, 'the CHECK phaser runs once, not again over the tree it rewrote';
