@@ -19,8 +19,11 @@ impl Compiler {
     // pass to treat `andthen`/`orelse` as curryable operators.
     // Cost: O(g), g = nesting depth of the parentheses around the RHS.
     pub(super) fn andthen_rhs_is_block_literal(rhs: &Expr) -> bool {
+        let mut rhs = rhs;
+        while let Expr::Grouped(inner) = rhs {
+            rhs = inner;
+        }
         match rhs {
-            Expr::Grouped(inner) => Self::andthen_rhs_is_block_literal(inner),
             Expr::AnonSub { is_block, .. } => *is_block,
             Expr::Lambda { .. } => true,
             Expr::AnonSubParams {
