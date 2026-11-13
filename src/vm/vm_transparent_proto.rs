@@ -52,11 +52,10 @@ impl Interpreter {
     fn proto_is_transparent(proto: &crate::ast::FunctionDef) -> bool {
         use crate::ast::{Expr, Stmt};
         let mut significant = proto.body.iter().filter(|s| !s.is_marker());
-        let trivial_body = match (significant.next(), significant.next()) {
-            (None, _) => true,
-            (Some(Stmt::Expr(Expr::Whatever)), None) => true,
-            _ => false,
-        };
+        let trivial_body = matches!(
+            (significant.next(), significant.next()),
+            (None, _) | (Some(Stmt::Expr(Expr::Whatever)), None)
+        );
         trivial_body
             && Self::is_bare_capture_signature(&proto.param_defs)
             && !proto.is_cached
