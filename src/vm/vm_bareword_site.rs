@@ -49,7 +49,15 @@ impl Interpreter {
         if let Some(value) = code.bareword_sites.cached(sites, idx, generation) {
             let name_sym = code.const_sym(name_idx);
             let env_ok = match value.view() {
-                ValueView::Package(sym) => self.env_leaves_type_name_as(name_sym, sym),
+                ValueView::Package(sym) => {
+                    self.env_leaves_type_name_as(name_sym, sym)
+                        && self.lexical_memo_still_in_scope(code, name_sym, sym)
+                }
+                ValueView::Enum { .. } if !crate::qualified::is_qualified(name_sym) => {
+                    (chunk_declares_no_types(code)
+                        || self.env_binds_name_to_value(name_sym, &value))
+                        && self.env_answers_memo(name_sym, &value)
+                }
                 _ => self.env_answers_memo(name_sym, &value),
             };
             if env_ok && self.bare_name_visible_here(name_sym) {
@@ -88,14 +96,22 @@ impl Interpreter {
         // name: a module's `my class` read from the module's own subs
         // (ParaSeq's `ParaStats`, `BufferIterator`, ...) resolved through the
         // whole chain on every execution because only the first form was
-        // remembered (#17337). Only the unit-level one: the memo is shared by
-        // every site of the chunk spelling the name, and a block-scoped
-        // lexical type is not the answer outside its block.
+        // remembered (#17337). The memo is shared by every site of the chunk
+        // spelling the name, and a block-scoped lexical type is not the answer
+        // outside its block, so a non-unit lexical type is remembered only
+        // while `env` binds the name to that very type (the binding its
+        // declaration installs, which leaves with its block), and every hit
+        // re-checks that binding (`lexical_memo_still_in_scope`). That is the
+        // shape of a role or class body's `my class` read from its methods
+        // (AttrX::Mooish's `AttrProxy`, `NO-VALUE-YET`).
         let memoizable = match self.stack.last().map(Value::view) {
             Some(ValueView::Package(sym)) => {
                 (sym == name
                     || (is_lexical_storage_of(sym, name)
-                        && (unit_lexical || self.is_unit_lexical_type_of(code, name_sym, sym))))
+                        && (unit_lexical
+                            || self.env_binds_name_to(name_sym, sym)
+                            || chunk_declares_no_types(code)
+                            || self.is_unit_lexical_type_of(code, name_sym, sym))))
                     && bareword_memoizable(name)
                     && self.env_leaves_type_name_as(name_sym, sym)
             }
@@ -115,8 +131,23 @@ impl Interpreter {
             // A package-qualified enum key (`Order::Less`) names one
             // immutable value of a declared enum: the registry decides it.
             Some(ValueView::Enum { enum_type, key, .. }) => {
-                crate::qualified::is_qualified(name_sym)
-                    && crate::qualified::split_qualified(name_sym) == Some((enum_type, key))
+                let qualified_key = crate::qualified::is_qualified(name_sym)
+                    && crate::qualified::split_qualified(name_sym) == Some((enum_type, key));
+                // A bare key (`pvmAuto`) of an enum is remembered only while
+                // `env` binds it to that very value: the binding its enum's
+                // declaration installs, which a `my enum` scopes to its block
+                // (AttrX::Mooish's role-body `PvtMode`). Every hit re-checks it.
+                // The same holds in a chunk that declares no type of its own
+                // (`chunk_declares_no_types`): every site of it resolves the
+                // bare key alike.
+                let bound_bare_key = !crate::qualified::is_qualified(name_sym)
+                    && key == name_sym
+                    && (chunk_declares_no_types(code)
+                        || self
+                            .stack
+                            .last()
+                            .is_some_and(|v| self.env_binds_name_to_value(name_sym, v)));
+                (qualified_key || bound_bare_key)
                     && self
                         .stack
                         .last()
@@ -262,6 +293,40 @@ impl Interpreter {
                 .is_none()
     }
 
+    /// Whether `env` binds `name` to exactly the type object `sym`.
+    // Cost: O(1), one `env` probe.
+    fn env_binds_name_to(&self, name: Symbol, sym: Symbol) -> bool {
+        matches!(
+            self.env().get_sym(name).map(Value::view),
+            Some(ValueView::Package(p)) if p == sym
+        )
+    }
+
+    /// Whether `env` binds `name` to the very memoizable answer `value` (the
+    /// same type object, or the same enum value by type and key).
+    // Cost: O(1), one `env` probe.
+    fn env_binds_name_to_value(&self, name: Symbol, value: &Value) -> bool {
+        self.env()
+            .get_sym(name)
+            .is_some_and(|bound| same_memo_value(bound, value))
+    }
+
+    /// A memoized bareword answer that is a lexical (`my`) type, under its
+    /// ADR-0047 storage name, still answers here only while it is in scope:
+    /// `env` binds the name to it (the declaration's binding), or it is the
+    /// unit-level lexical type of the name, which every site of the unit's
+    /// chunks sees. Any other memo value passes.
+    // Cost: O(1) for a non-lexical answer or a bound one; else one unit
+    // lexical-type probe.
+    fn lexical_memo_still_in_scope(&self, code: &CompiledCode, name: Symbol, sym: Symbol) -> bool {
+        if sym == name || !is_lexical_storage_of(sym, name.as_str()) {
+            return true;
+        }
+        self.env_binds_name_to(name, sym)
+            || chunk_declares_no_types(code)
+            || self.is_unit_lexical_type_of(code, name, sym)
+    }
+
     /// Whether `env` binds the bareword `name` to the type object a type
     /// declaration of that spelling installed: the type itself, or a lexical
     /// (`my`) type registered under its ADR-0047 storage name
@@ -327,6 +392,35 @@ fn is_lexical_storage_of(sym: Symbol, name: &str) -> bool {
         short
             .split_once('\u{0}')
             .is_some_and(|(head, _)| head == name)
+    })
+}
+
+/// Whether `code` declares no type of its own: no class, role, enum, subset
+/// or package declaration among its ops.
+///
+/// Then a lexical type its barewords resolve to was declared in an enclosing
+/// scope, and that scope's block cannot begin or end inside this chunk (it
+/// would contain the declaration). So every site of the chunk spelling the
+/// name sits on the same side of the declaring block, inside it, and the
+/// per-chunk memo answers each of them alike, as rakudo's compile-time
+/// resolution of the name does. A role or class body's `my class` read from
+/// its methods is this shape (AttrX::Mooish's `AttrProxy`, `NO-VALUE-YET`).
+// Cost: O(1) after the first call per chunk (memoized); the first is O(o),
+// o = the chunk's ops.
+fn chunk_declares_no_types(code: &CompiledCode) -> bool {
+    code.bareword_sites.declares_no_types(|| {
+        code.class_decl_plans.is_empty()
+            && code.role_decl_plans.is_empty()
+            && !code.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::RegisterEnum(..)
+                        | OpCode::RegisterSubset { .. }
+                        | OpCode::RegisterPackage { .. }
+                        | OpCode::RegisterPackageMy { .. }
+                        | OpCode::RegisterPackageStub { .. }
+                )
+            })
     })
 }
 
