@@ -19,3 +19,7 @@ in Rakudo, not `.Stringy`; a `.Str` that dies, or answers an object with no
 string payload (Red's symbolic columns), dies the smartmatch instead of
 answering `False`. Red's traditional path relies on that to fall back to its
 in-memory grep for `.name ~~ 'foo'` (t/109).
+
+A user candidate of `~` keeps `~` a call of the operator, so an `is rw`
+candidate binds a variable operand's container (Red binds `$_ ~ $suffix` as a
+query parameter, t/089).
