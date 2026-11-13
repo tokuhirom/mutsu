@@ -8415,6 +8415,22 @@ impl Interpreter {
                         ValueView::ContainerRef(_) | ValueView::Array(..) | ValueView::Proxy { .. }
                     ) || (matches!(bound.view(), ValueView::Hash(..)) && !bound.is_immutable_map())
                 });
+                // A lean bound term's declaration does not clear its marker
+                // (`env_free_decl_slot`): a container bound now must not keep
+                // the readonly mark a value bound by an earlier run left.
+                if writable
+                    && crate::env::sigilless_readonly_keys_possible()
+                    && code
+                        .local_slots_of(name_sym)
+                        .last()
+                        .is_some_and(|&idx| code.lean_bound_term_slot(idx as usize))
+                {
+                    let name = name_sym.resolve();
+                    let key = crate::runtime::sigilless_readonly_key(&name);
+                    if self.env().get_sym(key).is_some() {
+                        self.env_mut().insert_sym_noting(key, Value::FALSE);
+                    }
+                }
                 if !writable {
                     let name = name_sym.resolve();
                     self.env_mut().insert_sym_noting(

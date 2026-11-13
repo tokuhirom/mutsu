@@ -36,12 +36,16 @@ impl Interpreter {
         local_slot: Option<u32>,
     ) -> Option<usize> {
         let idx = local_slot? as usize;
-        if dynamic || bind_declaration || idx >= self.locals.len() {
+        // A sigilless term bound to a subscript's or a call's result is a
+        // bind declaration; its slot is as much its only home as a readonly
+        // term's (ADR-17376, "bound terms").
+        let lean_bound = code.lean_bound_term_slot(idx);
+        if dynamic || (bind_declaration && !lean_bound) || idx >= self.locals.len() {
             return None;
         }
         // A `$` scalar with a plain name (no `@`/`%`/`&`, no attribute twigil),
-        // or a readonly sigilless term whose state is its slot's (ADR-17376).
-        let lean_term = code.lean_readonly_term_slot(idx);
+        // or a sigilless term whose slot is its only home (ADR-17376).
+        let lean_term = code.lean_readonly_term_slot(idx) || lean_bound;
         if !lean_term {
             code.simple_scalar_local_desc(idx)?;
         }
@@ -82,7 +86,11 @@ impl Interpreter {
         // full cascade for every declaration in it (~1.2K instructions each);
         // the per-name "ever an env key" bit answers the question this lane
         // actually has (#15981).
+        // A lean bound term's own marker is settled by its `MarkSigillessBind`
+        // on every declaration (written for a value, cleared for a container),
+        // so the declaration has nothing of it to clear.
         if (crate::env::sigilless_readonly_keys_possible()
+            && !lean_bound
             && code
                 .readonly_sym(idx)
                 .is_none_or(crate::symbol::maybe_env_key))
@@ -118,6 +126,9 @@ impl Interpreter {
         let idx = idx as usize;
         if code.lean_readonly_term_slot(idx) {
             return self.exec_set_local_term_decl_fast(code, idx);
+        }
+        if code.lean_bound_term_slot(idx) {
+            return self.exec_set_local_bound_term_decl_fast(code, idx);
         }
         if !self.mark_ctx.only_declaration_marks() {
             return false;
@@ -155,6 +166,70 @@ impl Interpreter {
             && let Some(sym) = code.locals_sym.get(idx).copied()
         {
             self.unmark_readonly_sym(sym);
+        }
+        if !self.lexicals.constant_var_names_seen.is_empty()
+            && self
+                .lexicals
+                .constant_var_names_seen
+                .contains(name.as_str())
+        {
+            self.clear_constant_marker(name);
+        }
+        self.locals[idx] = v;
+        true
+    }
+
+    /// The `SetLocalDecl` store of a lean bound sigilless term
+    /// ([`CompiledCode::lean_bound_term_slot`]: `my \h = $cache{k}`,
+    /// `my \m = f(...)`) whose bind source `MarkSigillessBindSource` judged a
+    /// plain value: the term is bound to that value, so the store writes the
+    /// slot and nothing else. The term's readonly marker is still written by
+    /// the `MarkSigillessBind` that follows (ADR-17376, "bound terms").
+    ///
+    /// The bind source is the value itself or the `WrapVarRef` the subscript
+    /// compile puts over its synthetic bind temp (`__mutsu_bind_index_ref_N`),
+    /// whose wrapped element reference IS the source. Anything else -- a
+    /// container to alias, a `VarRef` over a real variable, a non-inert
+    /// payload -- declines (`false`, nothing consumed) to the general bind.
+    // Cost: O(1).
+    fn exec_set_local_bound_term_decl_fast(&mut self, code: &CompiledCode, idx: usize) -> bool {
+        if !self.mark_ctx.only_bound_term_declaration_marks() {
+            return false;
+        }
+        let Some(term_sym) = code.locals_sym.get(idx).copied() else {
+            return false;
+        };
+        if self.sigilless_bind_source != Some((term_sym, false)) {
+            return false;
+        }
+        let Some(name) = code.locals.get(idx) else {
+            return false;
+        };
+        if self
+            .env_free_decl_slot(code, name, false, true, Some(idx as u32))
+            .is_none()
+        {
+            return false;
+        }
+        let Some(top) = self.stack.last() else {
+            return false;
+        };
+        let source = match top.as_varref() {
+            Some((name, inner, _)) if name.with_str(|s| s.starts_with("__mutsu_")) => inner,
+            Some(_) => return false,
+            None => top,
+        };
+        if !source.is_inert_scalar_store_payload() || !self.locals[idx].is_plain_scalar_store_slot()
+        {
+            return false;
+        }
+        // -- committed: from here the store cannot fall back --
+        let v = source.clone();
+        self.stack.pop();
+        self.mark_ctx.consume_for_store();
+        self.clear_var_default(name);
+        if !self.no_readonly_vars() {
+            self.unmark_readonly_sym(term_sym);
         }
         if !self.lexicals.constant_var_names_seen.is_empty()
             && self

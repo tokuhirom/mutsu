@@ -38,6 +38,8 @@ impl BindingFlags {
     const READONLY_TERM: u8 = 0b100;
     /// See [`BindingFlags::readonly_term`].
     const OTHER_TERM_DECL: u8 = 0b1000;
+    /// See [`BindingFlags::bound_expr_term`].
+    const BOUND_EXPR_TERM: u8 = 0b1_0000;
 
     #[inline]
     pub(crate) fn new(plain_local: bool, simple_scalar_local: bool) -> Self {
@@ -67,7 +69,28 @@ impl BindingFlags {
     /// clears it.
     #[inline]
     pub(crate) fn readonly_term(self) -> bool {
-        self.0 & (Self::READONLY_TERM | Self::OTHER_TERM_DECL) == Self::READONLY_TERM
+        self.0 & (Self::READONLY_TERM | Self::OTHER_TERM_DECL | Self::BOUND_EXPR_TERM)
+            == Self::READONLY_TERM
+    }
+
+    /// True if every declaration of the slot is a sigilless term bound to the
+    /// result of a subscript or a call (`my \h = $cache{k}`, `my \m =
+    /// f(...)`, `my \e = self.x`) and at least one exists. Such a term is
+    /// bound to whatever the expression handed back: an element or accessor
+    /// container (writable) or a plain value (readonly). It is never aliased
+    /// to a caller variable by name, so its slot alone tells which
+    /// (ADR-17376, "bound terms").
+    #[inline]
+    pub(crate) fn bound_expr_term(self) -> bool {
+        self.0 & (Self::READONLY_TERM | Self::OTHER_TERM_DECL | Self::BOUND_EXPR_TERM)
+            == Self::BOUND_EXPR_TERM
+    }
+
+    /// Record a sigilless term declaration of the slot bound to a subscript's
+    /// or a call's result.
+    #[inline]
+    pub(crate) fn note_bound_expr_term_decl(&mut self) {
+        self.0 |= Self::BOUND_EXPR_TERM;
     }
 
     /// Record a readonly sigilless term declaration of the slot.

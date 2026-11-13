@@ -130,7 +130,14 @@ impl Interpreter {
                 }
                 // A sigilless term (`my \\c = 5`) IS the value, so
                 // rakudo names the value in the error: "Cannot modify
-                // an immutable Int (5)".
+                // an immutable Int (5)". A slot-only term (a lean bound
+                // term, ADR-17376) has no env mirror to read it from.
+                if let [slot] = code.local_slots_of(code.const_sym(name_idx))
+                    && let Some(value) = self.locals.get(*slot as usize)
+                    && !value.is_nil()
+                {
+                    return Err(RuntimeError::assignment_ro_value(value.deref_container()));
+                }
                 return Err(self.immutable_value_error(name));
             }
         }

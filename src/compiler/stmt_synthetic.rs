@@ -44,16 +44,34 @@ impl Compiler {
 
     /// [`Compiler::begin_term_decl`] for `stmt` when it declares a sigilless
     /// term; the name and mark to hand to [`Compiler::end_term_decl`] after it.
-    pub(super) fn begin_term_decl_of<'a>(&mut self, stmt: &'a Stmt) -> Option<(&'a str, TermMark)> {
+    pub(super) fn begin_term_decl_of<'a>(
+        &mut self,
+        stmt: &'a Stmt,
+    ) -> Option<(&'a str, TermMark, bool)> {
         if let Stmt::VarDecl {
             name, marks, expr, ..
         } = stmt
             && marks.term != TermMark::No
         {
             self.begin_term_decl(name, marks.term, Self::term_rhs_is_value(expr));
-            return Some((name, marks.term));
+            return Some((name, marks.term, Self::term_rhs_is_expr_result(expr)));
         }
         None
+    }
+
+    /// Whether a bound sigilless term's initializer is a subscript or a call:
+    /// it binds whatever container or value that expression hands back, never
+    /// a variable by name (ADR-17376, "bound terms").
+    // Cost: O(1).
+    fn term_rhs_is_expr_result(expr: &crate::ast::Expr) -> bool {
+        use crate::ast::Expr;
+        matches!(
+            expr,
+            Expr::Index { .. }
+                | Expr::MethodCall { .. }
+                | Expr::Call { .. }
+                | Expr::UserRoutineCall { .. }
+        )
     }
 
     /// What a sigilless term declaration needs before its store: the name
@@ -111,7 +129,7 @@ impl Compiler {
     /// declaration itself emits; the op emitted here writes the readonly
     /// marker, and has to run AFTER the store because a declaration clears
     /// that marker.
-    pub(super) fn end_term_decl(&mut self, name: &str, kind: TermMark) {
+    pub(super) fn end_term_decl(&mut self, name: &str, kind: TermMark, bound_expr: bool) {
         let slot = self
             .local_map
             .get(&crate::runtime::term_names::term_key(name))
@@ -142,7 +160,14 @@ impl Compiler {
                 self.emit_term_readonly_mark(name, slot);
             }
             TermMark::Bound => {
-                self.note_other_term_binding(slot);
+                if bound_expr
+                    && let Some(slot) = slot
+                    && let Some(desc) = self.code.binding_descs.get_mut(slot as usize)
+                {
+                    desc.flags.note_bound_expr_term_decl();
+                } else {
+                    self.note_other_term_binding(slot);
+                }
                 let name_idx = self
                     .code
                     .add_constant(Value::str(crate::runtime::term_names::term_key(name)));
