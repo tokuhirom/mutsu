@@ -172,7 +172,7 @@ impl Interpreter {
         keys: impl IntoIterator<Item = &'a String>,
     ) {
         for key in keys {
-            let Some((bare, after)) = key.split_once('\u{0}') else {
+            let Some((bare, _)) = key.split_once('\u{0}') else {
                 continue;
             };
             if bare.is_empty() || crate::qualified::is_qualified_str(bare) {
@@ -181,11 +181,11 @@ impl Interpreter {
             // The head's own storage name: a type nested in a lexical package
             // or class (`Enums\0<id>::Status`) records `Enums\0<id>`, the
             // binding `Enums` had in the module's scope.
-            let storage = &key[..bare.len() + 1 + after.find("::").unwrap_or(after.len())];
+            let storage = crate::qualified::segments(Symbol::intern(key))[0];
             let table = crate::runtime::cow_table_mut(
                 &mut self.module.module_visibility.unit_lexical_types,
             );
-            table.insert((unit, Symbol::intern(bare)), Symbol::intern(storage));
+            table.insert((unit, Symbol::intern(bare)), storage);
         }
     }
 

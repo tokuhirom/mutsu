@@ -242,15 +242,18 @@ impl Interpreter {
     // hash probe plus the member lookup.
     fn unit_lexical_qualified_member(&self, code: &CompiledCode, name: Symbol) -> Option<Value> {
         let unit = code.source_file?;
-        let (head, rest) = name.with_str(|text| {
-            text.split_once("::")
-                .map(|(head, rest)| (Symbol::intern(head), rest.to_string()))
-        })?;
+        if !crate::qualified::is_qualified(name) {
+            return None;
+        }
+        let segments = crate::qualified::segments(name);
+        let (&head, rest) = segments.split_first()?;
         if rest.is_empty() || self.type_name_binding(head.as_str()).is_some() {
             return None;
         }
         let storage = self.unit_lexical_type(unit, head)?;
-        let real = crate::qualified::qualified(storage, Symbol::intern(&rest));
+        let real = rest
+            .iter()
+            .fold(storage, |pkg, &segment| crate::qualified::qualified(pkg, segment));
         self.lexical_package_member(real.as_str())
     }
 
