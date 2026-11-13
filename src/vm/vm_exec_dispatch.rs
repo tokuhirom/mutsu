@@ -7818,40 +7818,32 @@ impl Interpreter {
                 ));
             }
             // Cost: O(1).
+            // When `$*CU` was read during the BEGIN prologue: O(n * d) to build it again with the prologue's imports, n = nodes of its tree, d = scope depth.
             OpCode::EndBeginPrologue => {
                 self.control.begin_prologue_pending = false;
-                *ip += 1;
-            }
-            // Cost: O(c) calls plus the closures' own cost, c = closures `add-check-code` queued; O(1) when none. With queued closures: O(n) to fingerprint `$*CU`, n = nodes of its tree, and a tree they changed is lowered and run in place of the program.
-            OpCode::RunCheckCode => {
                 // The tree `$*CU` handed out earlier (a `sub EXPORT` of a `-M`
                 // module reads it before the unit's own `use` lines have run)
-                // resolved no imported routine: say which ones resolve now.
-                let queued = crate::unit_source_text::take_check_code();
+                // resolved no imported routine: build it again now that they
+                // have, before the CHECK phase reads (and may rewrite) it.
                 crate::unit_source_text::refresh_cu_resolution(
                     &|routine| self.unit_routine_imported(routine),
                     &|name| self.has_class(name) || self.slang_minted_type(name),
                 );
+                *ip += 1;
+            }
+            // Cost: O(c) calls plus the closures' own cost, c = closures `add-check-code` queued; O(1) when `$*CU` was never built. Otherwise O(n) to fingerprint `$*CU`, n = nodes of its tree, and a tree the CHECK phase changed is lowered and run in place of the program.
+            OpCode::RunCheckCode => {
+                let queued = crate::unit_source_text::take_check_code();
                 crate::unit_source_text::publish_late_imports(
                     queued.iter().map(|(_, cu)| cu),
                     &|routine| self.unit_routine_imported(routine),
                 );
-                // The tree before the closures: one that rewrote it makes the
-                // unit continue from the rewritten tree (#17244).
-                let before = crate::unit_source_text::built_cu()
-                    .map(|cu| crate::unit_source_text::tree_fingerprint(&cu));
-                let ran_closures = !queued.is_empty();
                 for (closure, _cu) in queued {
                     self.vm_call_on_value(closure, Vec::new(), None)?;
                 }
-                let rewritten = if ran_closures
-                    && let Some(cu) = crate::unit_source_text::built_cu()
-                    && before.is_some_and(|b| b != crate::unit_source_text::tree_fingerprint(&cu))
-                {
-                    Some(cu)
-                } else {
-                    None
-                };
+                // A tree the CHECK phasers or the closures rewrote makes the
+                // unit continue from the rewritten tree (#17244, #17501).
+                let rewritten = crate::unit_source_text::rewritten_cu();
                 // The unit's compile phase ends after its CHECK phasers and
                 // queued check code: `$*CU` is a Failure from here on.
                 crate::unit_source_text::end_compile_phase();

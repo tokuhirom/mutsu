@@ -194,6 +194,7 @@ mod regex_variable_alias;
 mod regex_view;
 mod render;
 mod resolve;
+pub(crate) use resolve::{resolve_lexical, resolve_node_in};
 mod role;
 mod role_header;
 mod role_implicit;

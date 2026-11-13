@@ -32,6 +32,9 @@
 
 use std::collections::HashMap;
 
+mod scope;
+pub(crate) use scope::{resolve_lexical, resolve_node_in};
+
 use super::lower::{call_name_str, leaf_str, positional_leaf};
 use super::{RakuAstClass as C, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::{Value, ValueView};
