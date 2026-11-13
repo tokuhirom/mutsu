@@ -440,6 +440,7 @@ impl Interpreter {
         return_new: bool,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        self.fetch_proxy_subscript_on_top()?;
         if let Some(result) =
             self.try_fast_hash_element_incdec(code, name_idx, slot, increment, return_new)
         {

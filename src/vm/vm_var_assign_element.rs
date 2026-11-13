@@ -632,6 +632,9 @@ impl Interpreter {
         target_slot: Option<u32>,
         element_share: bool,
     ) -> Result<(), RuntimeError> {
+        // The subscript is a value: a `Proxy` key (`%h{$p} = v`) addresses
+        // the element its FETCH answers, as the read side already does.
+        self.fetch_proxy_subscript_on_top()?;
         // A user `postcircumfix` candidate decides which element is addressed.
         self.remap_index_through_user_postcircumfix(code, name_idx, is_positional, target_slot)?;
         // A user object key of a `Str`-keyed hash is stored under its `.Str`
