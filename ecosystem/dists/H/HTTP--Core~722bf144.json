@@ -18,11 +18,11 @@
       "cmp": "no_baseline",
       "path": "t/01-parse.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.85,
+        "secs": 10.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -32,11 +32,11 @@
       "cmp": "no_baseline",
       "path": "t/02-server.rakutest",
       "raku": {
-        "first_failure": "the server never answered http://127.0.0.1:39769/hello",
+        "first_failure": "the server never answered http://127.0.0.1:33803/hello",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 36.29,
+        "secs": 29.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -46,11 +46,11 @@
       "cmp": "no_baseline",
       "path": "t/03-threads.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.02,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -60,11 +60,11 @@
       "cmp": "no_baseline",
       "path": "t/04-serialization.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.34,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,11 +74,11 @@
       "cmp": "no_baseline",
       "path": "t/05-routing-diff.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.41,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -88,11 +88,11 @@
       "cmp": "no_baseline",
       "path": "t/06-codec.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 1.6,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,11 +102,11 @@
       "cmp": "no_baseline",
       "path": "t/07-live-client.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.51,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -116,11 +116,11 @@
       "cmp": "no_baseline",
       "path": "t/08-wire-oracle.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 3.02,
+        "secs": 2.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -130,11 +130,11 @@
       "cmp": "no_baseline",
       "path": "t/09-responses.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resource",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resource",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.96,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -144,11 +144,11 @@
       "cmp": "no_baseline",
       "path": "t/10-client-m3.rakutest",
       "raku": {
-        "first_failure": "HTTP::Core protocol error: GET http://api.test/hello: cannot encode request: Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_wire.",
+        "first_failure": "HTTP::Core protocol error: GET http://api.test/hello: cannot encode request: Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_wire.",
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 2.66,
+        "secs": 2.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.21,
+        "secs": 3.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -174,7 +174,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.86,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,7 +184,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.95,
+        "secs": 2.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -198,7 +198,7 @@
         "nok": 5,
         "ok": 2,
         "plan": 7,
-        "secs": 3.01,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -212,7 +212,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 5.12,
+        "secs": 3.91,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -222,11 +222,11 @@
       "cmp": "no_baseline",
       "path": "t/15-stale-retry.rakutest",
       "raku": {
-        "first_failure": "HTTP::Core protocol error: GET http://127.0.0.1:44611/one: cannot encode request: Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6q4xjwlt/dist/resources/libraries/http_",
+        "first_failure": "HTTP::Core protocol error: GET http://127.0.0.1:33661/one: cannot encode request: Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-5kdwhe17/dist/resources/libraries/http_",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 2.87,
+        "secs": 2.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -238,7 +238,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.34,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -248,7 +248,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.07,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -262,7 +262,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 1.25,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -298,7 +298,7 @@
     "date": "2026-11-12",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "56d7e510",
+    "mutsu_commit": "b7189a78",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

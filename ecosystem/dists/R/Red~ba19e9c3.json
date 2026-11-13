@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.07,
+        "secs": 4.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 18.73,
+        "secs": 22.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 163,
         "plan": 163,
-        "secs": 6.8,
+        "secs": 9.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 163,
         "plan": 163,
-        "secs": 60.46,
+        "secs": 105.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.68,
+        "secs": 6.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.92,
+        "secs": 2.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 8.5,
+        "secs": 10.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 3.07,
+        "secs": 3.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 8.2,
+        "secs": 10.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +128,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 2.51,
+        "secs": 3.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.54,
+        "secs": 7.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,7 +150,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.15,
+        "secs": 2.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 4.44,
+        "secs": 6.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -172,7 +172,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 2.17,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,7 +184,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 8.02,
+        "secs": 10.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -194,7 +194,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 2.58,
+        "secs": 3.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -206,7 +206,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 5.98,
+        "secs": 9.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -216,7 +216,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.23,
+        "secs": 3.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -228,7 +228,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.59,
+        "secs": 8.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,7 +238,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 7.9,
+        "secs": 13.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -250,7 +250,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 7.78,
+        "secs": 12.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -260,7 +260,667 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.58,
+        "secs": 4.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 8.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/011-types.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 8.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/012-roles.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 8.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/013-result-seq-update.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 14.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/014-union.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 3.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 8.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/015-result-seq-bool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 11.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/016-create-related-pars.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 4.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 11.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/017-pp.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 9.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 9.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/018-phasers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 34,
+        "plan": 34,
+        "secs": 4.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 25.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/019-in-sql.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 26,
+        "plan": 26,
+        "secs": 8.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 5.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/020-new-with-id.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 12.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/021-red-do.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 13.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 9.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/022-edit-id.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 3.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
+        "secs": 14.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/023-metamodel-model.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
+        "secs": 5.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 11.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/024-grep-no-AND-OR.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 8.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/025-is-rw.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 22.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/026-classify.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 7.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 12.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/027-LPW-2019.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 9.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/028-events.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 29,
+        "plan": 29,
+        "secs": 4.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 11.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/029-result-seq-pick.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 18.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/030-update.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 5.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 10.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/031-join.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 13.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/032-join.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 10.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/033-join.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 11.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/034-ast-generic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 6.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 18.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/035-create.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 5.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 9.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/036-default-deflate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 3.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 9.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/037-json.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 105.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/038-equal.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 23.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 9.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/039-xmas.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 10.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 8.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/040-relationship-multiple-columns.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -277,672 +937,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/011-types.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 5.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/012-roles.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 5.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/013-result-seq-update.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 2.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 9.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/014-union.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 2.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 5.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/015-result-seq-bool.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 6.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/016-create-related-pars.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 2.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 8.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/017-pp.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 7.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 34,
-        "plan": 34,
-        "secs": 6.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/018-phasers.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 34,
-        "plan": 34,
-        "secs": 3.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 26,
-        "plan": 26,
-        "secs": 19.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/019-in-sql.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 26,
-        "plan": 26,
-        "secs": 6.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.66,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/020-new-with-id.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.02,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 8.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/021-red-do.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 10.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 5.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/022-edit-id.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 2.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 66,
-        "plan": 66,
-        "secs": 9.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/023-metamodel-model.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 66,
-        "plan": 66,
-        "secs": 4.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 9.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/024-grep-no-AND-OR.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 6.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/025-is-rw.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 2.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 16.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/026-classify.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 6.05,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 9.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/027-LPW-2019.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 4.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 29,
-        "plan": 29,
-        "secs": 6.87,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/028-events.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 29,
-        "plan": 29,
-        "secs": 3.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 8.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/029-result-seq-pick.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 2.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 13.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/030-update.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 4.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 9.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/031-join.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 10.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/032-join.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 6.66,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/033-join.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 2.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 6.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/034-ast-generic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 4.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 13.05,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/035-create.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 3.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 7.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/036-default-deflate.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 7.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/037-json.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 97.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/038-equal.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 21.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 8.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/039-xmas.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 12.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 7.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/040-relationship-multiple-columns.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 4.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/041-fallback.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.72,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -954,7 +954,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.28,
+        "secs": 4.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -964,7 +964,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.06,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -976,7 +976,7 @@
         "nok": 0,
         "ok": 101,
         "plan": 101,
-        "secs": 23.72,
+        "secs": 29.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -986,7 +986,7 @@
         "nok": 0,
         "ok": 101,
         "plan": 101,
-        "secs": 3.28,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -998,7 +998,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.27,
+        "secs": 4.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1008,7 +1008,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.35,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1020,7 +1020,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 6.82,
+        "secs": 8.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1030,7 +1030,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.82,
+        "secs": 2.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1042,7 +1042,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 3.99,
+        "secs": 5.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1052,7 +1052,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.36,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1064,7 +1064,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 8.83,
+        "secs": 10.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1074,7 +1074,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 5.48,
+        "secs": 6.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1086,7 +1086,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.72,
+        "secs": 7.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1096,7 +1096,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.75,
+        "secs": 2.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1108,7 +1108,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 3.2,
+        "secs": 4.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1118,7 +1118,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.14,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1130,7 +1130,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.19,
+        "secs": 4.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1140,7 +1140,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.06,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1152,7 +1152,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 7.56,
+        "secs": 9.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1162,7 +1162,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.9,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1174,7 +1174,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 3.78,
+        "secs": 5.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1184,820 +1184,6 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 2.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 2.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/053-unique.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 4.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/054-hand-made-many-to-many.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 0,
-        "plan": 0,
-        "secs": 0.06,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/055-no-optimization.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 0,
-        "plan": 0,
-        "secs": 0.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 3.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/056-refreshable.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 1.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/057-experimental.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 5.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/058-nm-relationship.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/059-tomgraceys-schema.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/060-runtime-role.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 5.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/061-model-as-type.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 1.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/062-date-coercion.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 3.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/063-inflate-deflate.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/064-create-on-defined-obj.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/065-patrickb.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 7.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/066-join-model.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 2.93,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 3.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/067-enums.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 3.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/068-red-config.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 4.87,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 3.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/069-array-columns.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 4.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/070-submodel.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 1.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/071-conflicting-column-attribute.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 32,
-        "plan": 32,
-        "secs": 9.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/072-agg-methods.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 32,
-        "plan": 32,
-        "secs": 2.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 4.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/073-red-defaults-from-module.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 4.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/074-enum-reassign.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/075-patrick-operators.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 2.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/076-view.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 4.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/077-red-type.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 4.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/078-datetime-function.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 1.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 3.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/079-group-sort.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 56,
-        "plan": 56,
-        "secs": 5.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/080-date-operator.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 56,
-        "plan": 56,
-        "secs": 1.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/081-resultset-skip-locked.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 4.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/082-emakei.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 5.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/083-polymorphic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 3.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 5.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/084-polymorphic2.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 4.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/085-string-funcs.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 2.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 5.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/086-prefetch.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 24.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/087-json-operations.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 5.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 21.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/088-projection-chains.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 6.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 11.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/089-sql-tail.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
         "secs": 3.45,
         "skip": 0,
         "todo": 0,
@@ -2008,88 +1194,195 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 18.77,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/090-cross-product.rakutest",
+      "path": "t/053-unique.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 5.99,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'signature-constraint' for invocant of type",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.49,
+        "ok": 4,
+        "plan": 4,
+        "secs": 5.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
-      "path": "t/091-rakuast-compiler.rakutest",
+      "path": "t/054-hand-made-many-to-many.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 4.17,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'push-scope' for invocant of type",
         "nok": 0,
         "ok": 0,
-        "plan": null,
+        "plan": 0,
+        "secs": 0.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/055-no-optimization.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 5.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/056-refreshable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
         "secs": 2.01,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       },
-      "path": "t/092-rakuast-scope.rakutest",
+      "path": "t/057-experimental.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.35,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'push-scope' for invocant of type",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.1,
+        "ok": 3,
+        "plan": 3,
+        "secs": 7.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
-      "path": "t/093-template-reuse.rakutest",
+      "path": "t/058-nm-relationship.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.42,
+        "secs": 2.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/059-tomgraceys-schema.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/060-runtime-role.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 7.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/061-model-as-type.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2106,12 +1399,719 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/062-date-coercion.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 4.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/063-inflate-deflate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/064-create-on-defined-obj.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/065-patrickb.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 8.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/066-join-model.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 5.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/067-enums.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/068-red-config.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 6.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/069-array-columns.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 5.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/070-submodel.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 2.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/071-conflicting-column-attribute.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 12.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/072-agg-methods.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 32,
+        "plan": 32,
+        "secs": 2.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 6.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/073-red-defaults-from-module.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 6.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/074-enum-reassign.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/075-patrick-operators.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/076-view.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 6.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/077-red-type.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 5.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/078-datetime-function.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/079-group-sort.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 7.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/080-date-operator.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 56,
+        "plan": 56,
+        "secs": 2.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 4.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/081-resultset-skip-locked.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 6.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/082-emakei.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 7.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/083-polymorphic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 6.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/084-polymorphic2.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 5.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/085-string-funcs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 3.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 6.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/086-prefetch.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 4.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 31.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/087-json-operations.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 7.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 25.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/088-projection-chains.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 8.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 14.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/089-sql-tail.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 4.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 22.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/090-cross-product.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 7.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'signature-constraint' for invocant of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/091-rakuast-compiler.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 5.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'push-scope' for invocant of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/092-rakuast-scope.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'push-scope' for invocant of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/093-template-reuse.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 6.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/094-direct-ast-factories.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.77,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2123,7 +2123,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 6.65,
+        "secs": 8.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2133,7 +2133,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 4.85,
+        "secs": 6.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2145,7 +2145,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 6.96,
+        "secs": 9.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2155,7 +2155,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.02,
+        "secs": 2.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2168,7 +2168,7 @@
         "nok": 0,
         "ok": 12,
         "plan": null,
-        "secs": 7.36,
+        "secs": 9.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2178,7 +2178,7 @@
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 3.95,
+        "secs": 5.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2190,7 +2190,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 25.65,
+        "secs": 30.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2200,7 +2200,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.5,
+        "secs": 8.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2212,7 +2212,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 15.9,
+        "secs": 20.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2222,7 +2222,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 4.5,
+        "secs": 6.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2234,7 +2234,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.55,
+        "secs": 7.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2244,7 +2244,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.16,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2254,11 +2254,11 @@
       "cmp": "no_baseline",
       "path": "t/101-query-plans.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-plan-precomp-2-763543' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-plan-precomp-2-108269' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 14,
         "plan": null,
-        "secs": 2.82,
+        "secs": 3.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2270,7 +2270,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.92,
+        "secs": 5.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2280,7 +2280,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.58,
+        "secs": 2.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2292,7 +2292,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.11,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2302,7 +2302,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.46,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2315,7 +2315,7 @@
         "nok": 1,
         "ok": 4,
         "plan": null,
-        "secs": 4.49,
+        "secs": 6.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2325,7 +2325,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.92,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2339,7 +2339,7 @@
         "nok": 1,
         "ok": 3,
         "plan": 4,
-        "secs": 13.01,
+        "secs": 19.87,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -2352,7 +2352,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.91,
+        "secs": 5.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2362,7 +2362,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.94,
+        "secs": 2.65,
         "skip": 16,
         "todo": 0,
         "verdict": "pass"
@@ -2374,7 +2374,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 8.92,
+        "secs": 12.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2384,7 +2384,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 2.09,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2396,7 +2396,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.23,
+        "secs": 4.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2406,7 +2406,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.1,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2419,7 +2419,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.11,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2429,7 +2429,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 18.92,
+        "secs": 23.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2442,7 +2442,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.47,
+        "secs": 3.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2452,7 +2452,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.51,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2464,7 +2464,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 31.28,
+        "secs": 63.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2474,7 +2474,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 9.73,
+        "secs": 13.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2487,7 +2487,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.11,
+        "secs": 3.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2497,7 +2497,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 2.88,
+        "secs": 4.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2510,7 +2510,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.16,
+        "secs": 3.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2520,122 +2520,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 3.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'push-scope' for invocant of type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/114-regex-assertion-captures.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 2.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'push-scope' for invocant of type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/115-regex-repeated-scopes.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 2.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'get-implicit-lookups' for invocant of type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/116-regex-capture-reads.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 2.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at Red-0.2.10/t/117-regex-capture-presence.rakutest:66]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/117-regex-capture-presence.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 2.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'signature-constraint' for invocant of type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.83,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/118-regex-whole-text.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 2.32,
+        "secs": 4.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2653,12 +2538,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/119-regex-logical-captures.rakutest",
+      "path": "t/114-regex-assertion-captures.rakutest",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 2.33,
+        "secs": 3.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2671,7 +2556,122 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.36,
+        "secs": 3.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/115-regex-repeated-scopes.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 3.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'get-implicit-lookups' for invocant of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/116-regex-capture-reads.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 4.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. Two terms in a row [at Red-0.2.10/t/117-regex-capture-presence.rakutest:66]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/117-regex-capture-presence.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 3.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'signature-constraint' for invocant of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/118-regex-whole-text.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 3.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'push-scope' for invocant of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/119-regex-logical-captures.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 3.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'push-scope' for invocant of type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2681,7 +2681,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.69,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2694,7 +2694,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.03,
+        "secs": 3.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2704,7 +2704,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.62,
+        "secs": 3.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2717,7 +2717,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.58,
+        "secs": 3.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2727,7 +2727,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.87,
+        "secs": 2.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2740,7 +2740,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.64,
+        "secs": 3.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2750,7 +2750,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.05,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2764,7 +2764,7 @@
         "nok": 1,
         "ok": 75,
         "plan": 76,
-        "secs": 13.21,
+        "secs": 17.76,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -2778,7 +2778,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.39,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2792,7 +2792,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.72,
+        "secs": 5.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2806,7 +2806,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 20.02,
+        "secs": 26.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2816,11 +2816,11 @@
       "cmp": "no_baseline",
       "path": "t/128-migration-incremental.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-incremental-2-14524' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-incremental-2-82191' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.3,
+        "secs": 1.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2830,11 +2830,11 @@
       "cmp": "no_baseline",
       "path": "t/129-migration-cli.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-migration-cli-2-11528' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-migration-cli-2-27' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.06,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2844,11 +2844,11 @@
       "cmp": "no_baseline",
       "path": "t/130-migration-failures.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-failure-2-25399' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-failure-2-27899' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.22,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2858,11 +2858,11 @@
       "cmp": "no_baseline",
       "path": "t/131-migration-planner.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/.red-planner-2-57722.migration.lock: Read-only file system",
+        "first_failure": "Failed to open file /tmp/.red-planner-2-82937.migration.lock: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.38,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2872,11 +2872,11 @@
       "cmp": "no_baseline",
       "path": "t/132-migration-locks.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-locks-2-5796' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-locks-2-29010' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.06,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2888,7 +2888,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.85,
+        "secs": 3.96,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -2898,7 +2898,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.18,
+        "secs": 1.61,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -2908,11 +2908,11 @@
       "cmp": "no_baseline",
       "path": "t/134-migration-preparation.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-prepare-2-44276' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-prepare-2-22463' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.09,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2922,11 +2922,11 @@
       "cmp": "no_baseline",
       "path": "t/135-migration-directories.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/.red-files-2-14466.migration.lock: Read-only file system",
+        "first_failure": "Failed to open file /tmp/.red-files-2-88371.migration.lock: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.25,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2936,11 +2936,11 @@
       "cmp": "no_baseline",
       "path": "t/136-migration-test-environment.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/.red-environment-2-24282.migration.lock: Read-only file system",
+        "first_failure": "Failed to open file /tmp/.red-environment-2-14058.migration.lock: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.15,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2950,11 +2950,11 @@
       "cmp": "no_baseline",
       "path": "t/137-migration-serialize.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-serialize-2-86238' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-serialize-2-8843' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.19,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2966,7 +2966,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.84,
+        "secs": 3.96,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -2976,7 +2976,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.2,
+        "secs": 1.64,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -2986,11 +2986,11 @@
       "cmp": "no_baseline",
       "path": "t/139-migration-serialization-conflicts.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-conflict-2-88859' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-conflict-2-95774' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.22,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3000,11 +3000,11 @@
       "cmp": "no_baseline",
       "path": "t/140-migration-workflow.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-workflow-2-96079' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-workflow-2-39611' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.21,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3014,11 +3014,11 @@
       "cmp": "no_baseline",
       "path": "t/141-migration-ancestry.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-ancestry-2-70876' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-ancestry-2-96837' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.24,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3032,7 +3032,7 @@
         "nok": 0,
         "ok": 12,
         "plan": null,
-        "secs": 1.17,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3042,11 +3042,11 @@
       "cmp": "no_baseline",
       "path": "t/143-database-client.rakutest",
       "raku": {
-        "first_failure": "Failed to get the directory contents of '/tmp/red-connect-2-574': Failed to open dir: no such file or directory",
+        "first_failure": "Failed to get the directory contents of '/tmp/red-connect-2-84770': Failed to open dir: no such file or directory",
         "nok": 0,
         "ok": 5,
         "plan": null,
-        "secs": 2.09,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3060,7 +3060,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.96,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3072,7 +3072,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.01,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -3082,7 +3082,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.91,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -3094,7 +3094,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 5.74,
+        "secs": 8.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -3104,7 +3104,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.55,
+        "secs": 3.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -3114,11 +3114,11 @@
       "cmp": "no_baseline",
       "path": "t/147-synchronous-migrations.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red_migration_test_2197a0b86ad04a6fbe54f9b67e90542e' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red_migration_test_7150f811256041c0b8aad23e4ee91c9a' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.27,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3128,11 +3128,11 @@
       "cmp": "no_baseline",
       "path": "t/148-migration-bundle.rakutest",
       "raku": {
-        "first_failure": "Failed to get the directory contents of '/tmp/red-bundle-2-1794501793': Failed to open dir: no such file or directory",
+        "first_failure": "Failed to get the directory contents of '/tmp/red-bundle-2-1794532109': Failed to open dir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.56,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3142,11 +3142,11 @@
       "cmp": "no_baseline",
       "path": "t/148-synchronous-history.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-sync-history-2-63361' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-sync-history-2-19156' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.21,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3156,11 +3156,11 @@
       "cmp": "no_baseline",
       "path": "t/149-migration-import.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/.red-import-2-8103.migration.lock: Read-only file system",
+        "first_failure": "Failed to open file /tmp/.red-import-2-44904.migration.lock: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.17,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3170,11 +3170,11 @@
       "cmp": "no_baseline",
       "path": "t/149-synchronous-explicit-sql.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red_migration_test_9c4d937e22444d6fa8285faf69f7bbd9' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red_migration_test_a6f8900d46ba44a5b34b232958645091' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.2,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3184,11 +3184,11 @@
       "cmp": "no_baseline",
       "path": "t/150-migration-discovery.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-discovery-2-29292' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-discovery-2-36963' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.59,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3198,11 +3198,11 @@
       "cmp": "no_baseline",
       "path": "t/150-synchronous-cli.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-sync-cli-2-79735' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-sync-cli-2-67062' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.01,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3212,11 +3212,11 @@
       "cmp": "no_baseline",
       "path": "t/151-migration-import-history.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-import-history-2-71555' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-import-history-2-4762' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.27,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3226,11 +3226,11 @@
       "cmp": "no_baseline",
       "path": "t/151-runtime-configuration.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-runtime-config-2-1794501815' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-runtime-config-2-1794532140' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 19,
         "plan": null,
-        "secs": 1.47,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3240,11 +3240,11 @@
       "cmp": "no_baseline",
       "path": "t/152-migration-complete-bundle.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-complete-bundle-2-28776' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-complete-bundle-2-11835' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.46,
+        "secs": 2.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3254,11 +3254,11 @@
       "cmp": "no_baseline",
       "path": "t/153-migration-bundle-safety.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-bundle-safety-2-82533' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-bundle-safety-2-43142' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.17,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3268,11 +3268,11 @@
       "cmp": "no_baseline",
       "path": "t/154-migration-five-levels.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-five-levels-2-40523' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-five-levels-2-22176' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.5,
+        "secs": 2.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3282,11 +3282,11 @@
       "cmp": "no_baseline",
       "path": "t/155-migration-publication-recovery.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-publication-recovery-2-22857' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-publication-recovery-2-55909' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.62,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3296,11 +3296,11 @@
       "cmp": "no_baseline",
       "path": "t/156-migration-resolve.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-resolve-2-3729' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-resolve-2-43477' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.61,
+        "secs": 2.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3310,11 +3310,11 @@
       "cmp": "no_baseline",
       "path": "t/157-migration-diamond.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-diamond-2-36016' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-diamond-2-33693' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.59,
+        "secs": 2.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3324,11 +3324,11 @@
       "cmp": "no_baseline",
       "path": "t/158-migration-adoption-serialize.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-adopt-serialize-2-76873' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-adopt-serialize-2-17698' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.37,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3342,7 +3342,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.54,
+        "secs": 4.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3356,7 +3356,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.12,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3366,11 +3366,11 @@
       "cmp": "no_baseline",
       "path": "t/161-migration-reset.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red_migration_test_0fbd9fa4f27c45208bc17ecce42c0c8c' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red_migration_test_b1ef614cea8b45febe6e3b3b76e7a462' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.42,
+        "secs": 2.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3380,11 +3380,11 @@
       "cmp": "no_baseline",
       "path": "t/162-migration-reset-cli.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/red-reset-cli-2-20875' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/red-reset-cli-2-29825' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.03,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -3562,10 +3562,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-12",
+    "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "56d7e510",
+    "mutsu_commit": "b7189a78",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
