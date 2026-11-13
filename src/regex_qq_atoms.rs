@@ -170,7 +170,25 @@ pub(crate) fn body_wants_thunk(body: &str) -> bool {
         let starts_variable = |next: Option<&char>| {
             next.is_some_and(|n| {
                 n.is_alphabetic()
-                    || matches!(n, '_' | '(' | '{' | '[' | '*' | '!' | '?' | '^' | '.' | ':' | '$' | '@' | '%' | '&' | '/' | '<' | '\u{00A2}')
+                    || matches!(
+                        n,
+                        '_' | '('
+                            | '{'
+                            | '['
+                            | '*'
+                            | '!'
+                            | '?'
+                            | '^'
+                            | '.'
+                            | ':'
+                            | '$'
+                            | '@'
+                            | '%'
+                            | '&'
+                            | '/'
+                            | '<'
+                            | '\u{00A2}'
+                    )
                     || n.is_ascii_digit()
             })
         };
