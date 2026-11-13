@@ -735,8 +735,15 @@ impl Interpreter {
                 // (`call_method_mut_with_values`) skips the proto, so intercept it
                 // here — mirroring the non-mut `forward_resolved_delegation` path,
                 // which forwards through `call_method_with_values` (proto-aware).
+                // The proto is looked up on the object the attribute holds: a
+                // delegate attribute can hold its value in a container cell (a
+                // `temp $!logger.level = ...` in the delegator's method makes
+                // one), which names no class, so the proto body was skipped and
+                // `{*}`'s multi ran unguarded (Template::Mustache's `has
+                // $.logger handles <log>` logged every Debug line).
+                let proto_invocant = delegate.clone().deref_container();
                 let result = if let Some(proto_result) =
-                    self.try_proto_method_body(&delegate, target_method, &args)
+                    self.try_proto_method_body(&proto_invocant, target_method, &args)
                 {
                     proto_result?
                 } else {

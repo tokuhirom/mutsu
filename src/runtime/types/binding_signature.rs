@@ -670,9 +670,7 @@ impl Interpreter {
         let positional_typed = pd
             .type_constraint
             .as_deref()
-            .is_some_and(|tc| super::strip_type_smiley(tc) == ("Positional", None)
-                || super::strip_type_smiley(tc) == ("Positional", Some(":D"))
-                || super::strip_type_smiley(tc) == ("Positional", Some(":_")));
+            .is_some_and(super::binds_through_positional_failover);
         if (pd.name.starts_with('@') || positional_typed)
             && !seq_list_array_context
             && (is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value))

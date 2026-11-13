@@ -127,6 +127,19 @@ pub(crate) fn strip_type_smiley(constraint: &str) -> (&str, Option<&str>) {
     (constraint, None)
 }
 
+/// Whether a parameter typed `constraint` binds a `PositionalBindFailover`
+/// value (a Seq) through `.cache` instead of rejecting it (rakudo#4864):
+/// `Positional`, `Positional:D` and `Positional:_` do; `Positional:U` (no
+/// defined value fits it) and a parameterized `Positional[T]` do not, as on
+/// rakudo. The one rule the sub binder and the VM's method fast-bind share.
+// Cost: O(1).
+pub(crate) fn binds_through_positional_failover(constraint: &str) -> bool {
+    matches!(
+        strip_type_smiley(constraint),
+        ("Positional", None | Some(":D") | Some(":_"))
+    )
+}
+
 /// Split an object-hash constraint of the form `ValueType{KeyType}` into its
 /// value-type and optional key-type parts. A plain constraint (no `{...}`)
 /// returns `(constraint, None)`. The value type governs element type checks; the

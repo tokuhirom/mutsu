@@ -57,6 +57,31 @@ impl Interpreter {
             name = Self::optional_type_object_name(&refinee);
             changed = true;
         }
+        // A lexical class or role (`my class TOC::Calc`) is registered under
+        // its mangled storage name (`TOC::Calc\0<decl-id>`, ADR-0047), which
+        // the scope's env binds the source name to. The omitted value is that
+        // type object, as when the source names the type: a type object built
+        // from the bare name names no registered type, so `$toc.new` on it
+        // could not find the class (Pod::To::HTML's `TOC::Calculator :$toc`).
+        // A routine of a module binds its parameters in an env that does not
+        // hold the module's lexical aliases (the call comes from another
+        // unit), so the spelling is then resolved against the registry -- but
+        // only when exactly one lexical type carries it, as the type check
+        // does (`type_matches_value`): which of several same-named ones was
+        // meant is not recoverable here.
+        // TODO: resolve a parameter's type in its declaring scope when the
+        // routine is registered, so same-named lexical types in different
+        // scopes each give their own routine's omitted value.
+        if !self.has_type_direct(&name) {
+            if let Some(lexical) = self.resolve_type_object(&name)
+                && matches!(lexical.view(), ValueView::Package(p) if p.resolve() != name)
+            {
+                return lexical;
+            }
+            if let Some(key) = self.unique_lexical_type_key(&name) {
+                return Value::package(Symbol::intern(&key));
+            }
+        }
         // A package-relative type (`Column::List` written inside `unit class
         // SQ`, declared as `SQ::Column::List`) binds the declared type's
         // object, so the omitted value passes a typed attribute's check.
