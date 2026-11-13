@@ -251,9 +251,9 @@ impl Interpreter {
             return None;
         }
         let storage = self.unit_lexical_type(unit, head)?;
-        let real = rest
-            .iter()
-            .fold(storage, |pkg, &segment| crate::qualified::qualified(pkg, segment));
+        let real = rest.iter().fold(storage, |pkg, &segment| {
+            crate::qualified::qualified(pkg, segment)
+        });
         self.lexical_package_member(real.as_str())
     }
 
