@@ -85,7 +85,7 @@ else {
     # Leave the process almost no address space beyond what it already uses,
     # so no thread stack fits: every refusal must be a catchable X::AdHoc.
     # The child lowers its own `RLIMIT_AS` to its current size plus a slack
-    # below the smallest stack (4 MiB in a release build, ADR-17392).
+    # below the smallest stack (2 MiB in a release build, ADR-17392).
     # Measuring in-process makes the slack exact: a separate calibration run
     # varied by a whole 64 MiB malloc arena under load, enough for a 4 MiB
     # stack to fit and the refusal to go missing.

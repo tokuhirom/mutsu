@@ -1,7 +1,7 @@
 use Test;
 
 # ADR-17392 (#17392): under a stack budget every worker starts on the smallest
-# guardable stack -- 4 MiB in a release build, 32 MiB in a debug one -- so
+# guardable stack -- 2 MiB in a release build, 16 MiB in a debug one -- so
 # hundreds of `start` blocks parked in `await` fit a limited address space
 # (Log::Dispatch's t/040-threaded parks 500 under the ecosystem sandbox's
 # `ulimit -v 6000000`). A worker grows in stack segments only while the

@@ -72,9 +72,16 @@ unchanged.
 
 - **no address-space limit** (the normal case): 256 MiB, as before. No segment is ever needed,
   so nothing changes.
-- **under a limit**: `MIN_GUARDABLE_STACK_BYTES` (4 MiB in a release build, 32 MiB in a debug
-  build, ADR-0123 §6's measured floors). This applies to every user-code thread, whether it was
-  created by optional growth or because it had to exist. The thread grows by D1.
+- **under a limit**: `MIN_GUARDABLE_STACK_BYTES` (2 MiB in a release build, 16 MiB in a debug
+  build). This applies to every user-code thread, whether it was created by optional growth or
+  because it had to exist. The thread grows by D1.
+
+The smallest guardable stack is twice the smallest reserve. ADR-0123 §6 measured that reserve
+as what covers one check interval's worst-case overshoot plus the unwind: 1 MiB in a release
+build, 8 MiB in a debug one. A stack's reserve is therefore `min(16 MiB, stack / 4)` but never
+less than that minimum. On the initial stack, the half above the reserve is only the headroom
+before the first segment: depth comes from D1, so the initial stack sets only what a parked
+worker costs.
 
 The fixed tiers (`STACK_TIERS`) are gone. A parked worker costs the small stack, whichever
 worker it is, and every worker may recurse equally deep.
@@ -83,19 +90,21 @@ The main thread keeps its 256 MiB stack and no segments.
 
 ## 3. Consequences
 
-- In a release build under 6 GB, the number of parked `start` blocks is bounded by
-  `limit / 4 MiB` rather than by a dozen 256 MiB workers plus a tail of small ones. The PR that
-  lands this records the measured counts.
+- Under the ecosystem sandbox's 6 GB limit, a release build parks 2000 `start` blocks in 0.6 s.
+  ADR-0123 §6 managed about 700. A debug build parks 300, where it managed about 150. Past that,
+  the thread that must exist is still created over the budget until the OS refuses it
+  (ADR-0123 D3/D4). The cliff is now about `limit / 2 MiB`.
 - **A task's depth no longer depends on which worker runs it.** Under a limit, deep recursion on
   a worker reaches the main thread's depth (budget permitting), where a stepped-down worker used
   to stop after ~400 levels.
 - **Native recursion that no growable site sees is bounded by the current segment's reserve.**
-  This covers a deep regex match and the drop of a deeply nested value. On a worker's 4 MiB
-  initial stack under a limit, the reserve is 1 MiB. That is ADR-0123 §6's floor, already
-  accepted for stepped-down workers; it now applies to every worker under a limit. Without a
-  limit nothing changes.
-- **A debug build under a limit still fits only ~100 parked workers.** Its 32 MiB floor is set
-  by its frame size (ADR-0123 §6). The ecosystem sweep and `make test` run release builds.
+  This covers a deep regex match and the drop of a deeply nested value. On a worker's initial
+  stack under a limit, the reserve is 1 MiB in a release build. That is ADR-0123 §6's floor,
+  already accepted for stepped-down workers; it now applies to every worker under a limit.
+  Without a limit nothing changes.
+- **A debug build fits an eighth as many parked workers as a release build.** Its 16 MiB floor
+  is set by its frame size (ADR-0123 §6). The ecosystem sweep and `make test` run release
+  builds.
 - One more dependency (`stacker`, with `psm`: a build script and a little assembly per target).
   It is native-only; a build without segments (wasm32, no `native`) keeps the 256 MiB start.
 - The parked thread still exists. This removes the address-space cliff, not the thread. At tens

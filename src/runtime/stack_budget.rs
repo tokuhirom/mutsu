@@ -34,8 +34,8 @@ const MIB: usize = 1024 * 1024;
 /// With no budget (an unlimited address space, the normal case) it is the
 /// whole logical stack, `native_stack::LOGICAL_STACK_BYTES`, as before stacks
 /// grew. Under a budget it is the smallest guardable stack
-/// (`native_stack::MIN_GUARDABLE_STACK_BYTES`: 4 MiB in a release build,
-/// 32 MiB in a debug one), and the thread maps further segments only as deep
+/// (`native_stack::MIN_GUARDABLE_STACK_BYTES`: 2 MiB in a release build,
+/// 16 MiB in a debug one), and the thread maps further segments only as deep
 /// as it actually recurses, each against the budget. A worker parked in
 /// `await` then costs that small stack, whichever worker it is, where every
 /// optional-growth worker used to reserve the full 256 MiB and the rest
