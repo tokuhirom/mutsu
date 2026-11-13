@@ -1178,3 +1178,29 @@ Measured on a debug build. Each of the four single-thread shapes and the two 4-t
 (a mutating and a read-only callee racing `push`, expecting 1010) failed 6 of 6 before this
 change and pass 5 of 5 after it (`t/concurrency/concurrent-celled-push-is-not-lost.t`). The
 array, hash and container-mutation harnesses pass 3 of 3.
+
+## 22. A pure `.pick`/`.roll` reads the live receiver under the stripe (2026-11-13)
+
+§20's snapshot default made every `.pick`/`.roll` on a shared Array a whole-node copy:
+once any thread existed, `@words.pick` on an 18278-element array cost ~400 µs instead of
+~1 µs (callgrind: 56% of the time in `ArrayData::clone`, 43% in dropping the copy).
+Method::Protected's test, which picks one word per hash update on three threads, ran 92 s
+against rakudo's 7 s.
+
+The snapshot exists so user code never runs while a stripe is held. A method-table row
+with no interpreter (`Handler::Pure`/`Narrow`/`Named`) cannot run user code. `.pick` and
+`.roll` hand out copies of a few elements, never a view of the node. So in
+`method_table::dispatch::call`, such a row of `.pick`/`.roll` is a leaf read: it takes the
+receiver's stripe and runs on the live node (`container_read::is_element_sample_read`). The
+Callable-count rows (`.pick(&count)`, `Handler::Interp`) run user code, so they still take
+the snapshot. Elsewhere the name-based policy is unchanged, because those funnels do not
+know which implementation will answer.
+
+The rule is per name and per handler, not "every pure row is a leaf read". A pure row may
+answer a value that shares the receiver's node (`.List`, a lazy view). Run on the live node,
+that value would be an unguarded reader of a shared `ArrayData` (§20.1).
+
+Measured, release: `@a.pick`/`.roll` after a `start` went from 62 µs (20000 elements) to
+1-4 µs. Method::Protected t/01 went from 92 s to 26 s; the remainder is the wrapped method's
+call floor (#12875). `t/concurrency/concurrent-shared-array-pick-roll.t` pins `.pick` during
+a concurrent push and the Callable-count form.

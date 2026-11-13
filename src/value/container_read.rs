@@ -81,6 +81,17 @@ pub(crate) fn is_leaf_structure_read(method: &str) -> bool {
     )
 }
 
+/// Whether `method` reads a few elements of its receiver by position and
+/// hands out copies of them, never a view of the node: `.pick`/`.roll`. Such a
+/// read is a leaf read when its implementation cannot run user code (a method
+/// table row with no interpreter), so it holds the stripe and runs on the
+/// live receiver. A snapshot would copy the whole node to read one slot. A
+/// form that can run user code (a Callable count) still takes the snapshot.
+// Cost: O(1).
+pub(crate) fn is_element_sample_read(method: &str) -> bool {
+    matches!(method, "pick" | "roll")
+}
+
 /// Whether `method` on a shared `Array`/`Hash` runs on the LIVE receiver
 /// rather than on a [`shared_snapshot`] of it (ADR-0068 §20). Everything not
 /// named here is a read that runs on the snapshot.

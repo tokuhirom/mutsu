@@ -35,8 +35,13 @@ fn call(
     // which a concurrent structural write on another thread reallocates (#11701).
     // A no-op (one relaxed load) until a second VM mutator thread exists, and
     // for a receiver that is no `Hash`/`Array`.
-    let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live()
-        && crate::value::container_read::is_leaf_structure_read(row.name)
+    // A `.pick`/`.roll` row with no interpreter cannot run user code, so it
+    // is a leaf read too: it reads the live receiver under the stripe instead
+    // of a whole-node snapshot (ADR-0068 §22).
+    let sample_leaf = crate::value::container_read::is_element_sample_read(row.name)
+        && !matches!(row.handler, Handler::Interp(_));
+    let leaf_read = sample_leaf || crate::value::container_read::is_leaf_structure_read(row.name);
+    let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live() && leaf_read
     {
         crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
     } else {
@@ -48,7 +53,11 @@ fn call(
     let iterated = iterated_receiver(row, target);
     let target = iterated.as_ref().unwrap_or(target);
     // #12456: user code runs over the elements, so run on a snapshot instead.
-    let snapshot = crate::value::container_read::snapshot_read_receiver(row.name, target);
+    let snapshot = if sample_leaf {
+        None
+    } else {
+        crate::value::container_read::snapshot_read_receiver(row.name, target)
+    };
     let target = snapshot.as_ref().unwrap_or(target);
     let answer = match row.handler {
         Handler::Pure(f) => Some((f(target, positional), rerunnable)),
