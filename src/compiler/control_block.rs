@@ -215,6 +215,8 @@ impl Compiler {
                 end_ip: 0,
                 is_begin: false,
                 scope: 0,
+                // A value-position DoBlock leaves its value on the stack.
+                skip_on_restart: false,
             });
             self.compile_block_construct(stmts, &None, position);
             self.code.emit(OpCode::CheckPhaserEnd);

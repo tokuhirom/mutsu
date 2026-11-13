@@ -523,10 +523,57 @@ impl Interpreter {
         });
     }
 
+    /// Drop the top-level `my` declarations (without an initializer) of a
+    /// rewritten restart, so their uses resolve to the first compile's bindings
+    /// instead of fresh, reset ones (#17676/#17681). Only a plain, un-typed
+    /// `my` is dropped: `our`/`state`/`constant`/`:=`-bound/dynamic/typed
+    /// declarations keep their own handling, and a declaration with an explicit
+    /// initializer runs its initializer (run-time code), writing through to the
+    /// adopted binding.
+    // Cost: O(n), n = top-level statements.
+    fn adopt_rewritten_restart_toplevel_decls(stmts: &mut Vec<Stmt>) {
+        stmts.retain(|stmt| {
+            let Stmt::VarDecl {
+                name,
+                is_our,
+                is_state,
+                is_dynamic,
+                has_initializer,
+                constant,
+                bind,
+                type_constraint,
+                ..
+            } = stmt
+            else {
+                return true;
+            };
+            let plain_adoptable = !*is_our
+                && !*is_state
+                && !*is_dynamic
+                && !*has_initializer
+                && constant.is_none()
+                && bind.is_none()
+                && type_constraint.is_none()
+                && !name.starts_with('*');
+            // Keep everything that is not a plain, initializer-less `my`.
+            !plain_adoptable
+        });
+    }
+
     fn run_eval_unit_stmts_body(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
         // When EVAL is called inside a class body, MethodDecl statements
         // should be added to the enclosing class rather than lowered to subs.
         let mut stmts = self.inject_eval_methods_into_class(stmts);
+        // The restart of a unit whose CHECK phase rewrote `$*CU` keeps the
+        // first compile's compile-time state (#17676/#17681): a top-level `my`
+        // declaration without an initializer adopts the first compile's binding
+        // of the same name (whatever its BEGIN/CHECK phasers wrote into it),
+        // instead of resetting it, so dropping the declaration lets its uses
+        // resolve to that binding in the restart's enclosing frame. BEGIN and
+        // CHECK phasers are skipped separately (`CheckPhaserStart`).
+        if crate::unit_source_text::active_unit_is_rewritten() {
+            Self::adopt_rewritten_restart_toplevel_decls(&mut stmts);
+        }
         Self::inject_deparse_prelude_for_unit(&mut stmts);
         // The unit has no source text of its own (it may be a tree): the
         // preludes it needs are asked of the names its tree uses (#16203).

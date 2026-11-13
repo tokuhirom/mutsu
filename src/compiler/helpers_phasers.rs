@@ -36,6 +36,10 @@ impl Compiler {
             end_ip: 0,
             is_begin,
             scope,
+            // Statement-form BEGIN/CHECK: its body leaves no value on the
+            // stack, so a rewritten restart can jump over it (it already ran
+            // in the first compile — #17676/#17681).
+            skip_on_restart: true,
         });
         // A `CATCH` in the phaser body handles that body's exceptions, including
         // ones thrown from a call inside it. Compiled inline into the enclosing
