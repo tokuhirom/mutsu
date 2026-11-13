@@ -141,6 +141,7 @@ impl Interpreter {
             Arc::as_ptr(&cf.code) as usize,
             cf.code.outer_is_unit,
         );
+        let routine_frame_index = self.routine_stack_len() - 1;
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
             // Memoized per (package, name) symbol pair: the key is fixed for
@@ -444,8 +445,11 @@ impl Interpreter {
                 Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
                     // Non-local return: if the signal targets a specific callable,
                     // only catch it if this routine is the target.
-                    if let Some(target_id) = e.return_target_callable_id()
-                        && callable_id != Some(target_id)
+                    if e.catch_return_passes_frame(routine_frame_index)
+                        .unwrap_or_else(|| {
+                            e.return_target_callable_id().is_some()
+                                && e.return_target_callable_id() != callable_id
+                        })
                     {
                         loan_env!(self, restore_let_saves(let_mark));
                         result = Err(e);

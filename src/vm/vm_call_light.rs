@@ -1021,6 +1021,7 @@ impl Interpreter {
             Arc::as_ptr(&cf.code) as usize,
             cf.code.outer_is_unit,
         );
+        let routine_frame_index = self.routine_stack_len() - 1;
 
         // A routine (sub/method) body is its own topicalizer for a bare
         // `when`/`default`: a matching `when` sets the global `when_matched`
@@ -1116,7 +1117,15 @@ impl Interpreter {
                         // escaping toward an enclosing routine past this one) was
                         // swallowed here unconditionally instead of propagating
                         // to its actual target.
-                        if let Some(target_id) = e.return_target_callable_id() {
+                        let catch_verdict = e.catch_return_passes_frame(routine_frame_index);
+                        if catch_verdict == Some(true) {
+                            loan_env!(self, restore_let_saves(let_mark));
+                            result = Err(e);
+                            break;
+                        }
+                        if catch_verdict.is_none()
+                            && let Some(target_id) = e.return_target_callable_id()
+                        {
                             let my_id = self.registration_clone_id(&cf.package, func_name);
                             if my_id != Some(target_id) {
                                 loan_env!(self, restore_let_saves(let_mark));

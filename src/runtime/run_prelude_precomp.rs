@@ -10,7 +10,9 @@ use crate::runtime::source_code_text::CodeText;
 /// source as its own compunit (an `EVAL`) and hands back a
 /// `CompUnit::Handle` whose `.unit` exposes the unit's pad entries
 /// (`$=pod`, `$?PACKAGE`). That is what Pod::Load relies on to read the Pod of
-/// a file. Nothing is written to the store's prefix.
+/// a file. No unit is written to the store; its prefix directory is created
+/// when a unit is loaded, as rakudo's store creates it on first use (rakudoc's
+/// cache checks that the directory appears).
 pub(super) const PRECOMP_API_PRELUDE: &str = r#"
 class GLOBAL::CompUnit::PrecompilationId {
     has Str $.id;
@@ -84,6 +86,8 @@ class GLOBAL::CompUnit::PrecompilationRepository::Default {
             %unit<$?PACKAGE> = GLOBAL;
             %units{$key} = %unit;
         }
+        # The store's directory appears on first use, as rakudo's does.
+        .mkdir with $!store && $!store.can('prefix') ?? $!store.prefix !! Nil;
         my %cached = %units{$key};
         CompUnit::Handle.new(:unit(%cached))
     }

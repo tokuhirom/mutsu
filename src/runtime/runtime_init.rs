@@ -957,6 +957,10 @@ impl Interpreter {
                     "eof",
                     "encoding",
                     "opened",
+                    "t",
+                    "lock",
+                    "unlock",
+                    "spurt",
                     "slurp",
                     // Deprecated Rakudo alias for `.slurp` from the current
                     // position (META6's `multi method new(IO::Handle :$file!)`).
