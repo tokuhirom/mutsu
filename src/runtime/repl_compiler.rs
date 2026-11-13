@@ -38,6 +38,9 @@ use crate::runtime::repl_compiler_prelude::{REPL_CLASS_PRELUDE, REPL_COMPILER_PR
 /// Class name of the Raku-visible handle on an [`EvalContext`] (rakudo's
 /// `nqp::ctx` answers a `BOOTContext` too).
 const CONTEXT_CLASS: &str = "BOOTContext";
+/// The file the `Perl6::Compiler` and `REPL` classes' code reports, and the
+/// compilation unit it belongs to: rakudo's own, where those classes live.
+const REPL_SETTING_FILE: &str = "SETTING::src/core.c/REPL.rakumod";
 /// Attribute carrying the side-table index. Hidden by the `__mutsu_` prefix.
 const CONTEXT_ID_ATTR: &str = "__mutsu_ctx_id";
 
@@ -54,12 +57,17 @@ pub(crate) struct EvalContext {
     top: bool,
     routines: Vec<(Symbol, Arc<FunctionDef>)>,
     infix_ops: Vec<(String, HashSet<Symbol>)>,
+    /// The compilation unit the frame belongs to: a unit compiled in this
+    /// context is compiled inside it, and sees what it declared and merged.
+    unit: Option<Symbol>,
 }
 
 /// What one compilation unit left behind, recorded by the EVAL pipeline when
 /// [`ReplCompilerState::capture_request`] is armed.
 pub(crate) struct UnitCapture {
     pub(crate) env: Env,
+    /// The unit's own name (`EVAL_<n>`).
+    pub(crate) unit: Symbol,
     pub(crate) routines: Vec<(Symbol, Arc<FunctionDef>)>,
     pub(crate) infix_ops: Vec<(String, HashSet<Symbol>)>,
 }
@@ -132,15 +140,41 @@ impl Interpreter {
         } else {
             &[REPL_COMPILER_PRELUDE, REPL_CLASS_PRELUDE]
         };
+        // The classes are the setting's, as rakudo's `REPL.rakumod` is: their
+        // methods belong to a unit of their own, not to whichever unit first
+        // asked for a compiler. A unit `Perl6::Compiler.eval` runs is compiled
+        // from inside `eval`, so what that unit declared or merged would
+        // otherwise be in scope for every REPL line (#17087).
+        let saved_file = self.env.get("?FILE").cloned();
+        self.env
+            .insert("?FILE".to_string(), Value::str_from(REPL_SETTING_FILE));
+        let saved_source_file =
+            crate::parser::set_parser_source_file(Some(REPL_SETTING_FILE.to_string()));
+        let mut result = Ok(());
         for source in sources {
-            let (stmts, _) = crate::runtime::prelude_source::parse_prelude_source(source)?;
-            let saved_package = self.current_package();
-            self.set_current_package("GLOBAL".to_string());
-            let result = self.eval_block_value(&stmts);
-            self.set_current_package(saved_package);
-            result.map(|_| ())?;
+            result = crate::runtime::prelude_source::parse_prelude_source(source).and_then(
+                |(stmts, _)| {
+                    let saved_package = self.current_package();
+                    self.set_current_package("GLOBAL".to_string());
+                    let result = self.eval_block_value(&stmts);
+                    self.set_current_package(saved_package);
+                    result.map(|_| ())
+                },
+            );
+            if result.is_err() {
+                break;
+            }
         }
-        Ok(())
+        crate::parser::set_parser_source_file(saved_source_file);
+        match saved_file {
+            Some(file) => {
+                self.env.insert("?FILE".to_string(), file);
+            }
+            None => {
+                self.env.remove("?FILE");
+            }
+        }
+        result
     }
 
     /// `nqp::bindcomp($name, $compiler)`: register `$compiler` as the
@@ -216,6 +250,7 @@ impl Interpreter {
             let id = self.repl_compiler.contexts.len();
             self.repl_compiler.contexts.push(EvalContext {
                 env,
+                unit: Some(self.current_unit),
                 ..EvalContext::default()
             });
             Some(id)
@@ -226,6 +261,7 @@ impl Interpreter {
             env,
             caller,
             outers,
+            unit: Some(self.current_unit),
             ..EvalContext::default()
         })
     }
@@ -249,6 +285,7 @@ impl Interpreter {
             Some((first, rest)) => EvalContext {
                 env: first.to_env(),
                 outers: rest.to_vec(),
+                unit: ctx.unit,
                 ..EvalContext::default()
             },
             None => EvalContext {
@@ -266,6 +303,7 @@ impl Interpreter {
     pub(crate) fn nqp_ctx_of_env(&mut self, env: &Env) -> Value {
         self.new_eval_context(EvalContext {
             env: env.flattened(),
+            unit: Some(self.current_unit),
             ..EvalContext::default()
         })
     }
@@ -354,7 +392,10 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if name == "__mutsu_comp_lang" {
             // `$?LANG`: see `parser::primary::var::scalar`.
-            return Some(Ok(crate::runtime::slang_activation::comp_lang_instance()));
+            // The arguments are the slangs active where it was written.
+            return Some(Ok(
+                crate::runtime::slang_activation::comp_lang_instance_with(args),
+            ));
         }
         if name != "__mutsu_compiler_eval" {
             return None;
@@ -365,7 +406,12 @@ impl Interpreter {
             .unwrap_or_default();
         let outer = args.get(1).and_then(Self::eval_context_id);
         let saver = args.get(2).cloned().unwrap_or(Value::NIL);
-        Some(self.compiler_eval(&code, outer, saver))
+        // The compiler's `parsegrammar`: the language the unit is parsed in.
+        let slangs = args
+            .get(3)
+            .map(crate::runtime::slang_activation::grammar_handle_activations)
+            .unwrap_or_default();
+        Some(self.compiler_eval(&code, outer, saver, slangs))
     }
 
     // Cost: O(v + r), v = variables and r = routines in the outer context (seeded into the unit, then captured from it), plus the unit's own compile and run.
@@ -374,6 +420,7 @@ impl Interpreter {
         code: &str,
         outer: Option<usize>,
         saver: Value,
+        slangs: Vec<crate::parser::SlangUseSpec>,
     ) -> Result<Value, RuntimeError> {
         let outer_ctx = outer.and_then(|id| self.repl_compiler.contexts.get(id).cloned());
         // Without an outer context the unit sees the setting only, as in
@@ -426,7 +473,14 @@ impl Interpreter {
         let saved_routine = self
             .pending_eval_context_routine
             .replace(EvalContextRoutineState::Mainline);
-        let result = self.builtin_eval(&[Value::str(code.to_string())]);
+        // The unit is compiled inside the outer context's unit, or, with no
+        // outer context, inside nothing the calling program declared.
+        let parent = outer_ctx.as_ref().and_then(|ctx| ctx.unit);
+        // A grammar set with `parsegrammar` from an earlier unit's `$?LANG`
+        // makes the unit start in that unit's slangs.
+        crate::parser::set_slang_preseed(slangs);
+        let result = self.builtin_eval_repl_unit(code, parent);
+        crate::parser::set_slang_preseed(Vec::new());
         self.pending_eval_context_routine = saved_routine;
         self.repl_compiler.capture_request = false;
         self.repl_compiler.capture_base = saved_base;
@@ -462,6 +516,7 @@ impl Interpreter {
             caller: None,
             routines,
             infix_ops,
+            unit: Some(captured.unit),
             ..EvalContext::default()
         });
 
@@ -557,6 +612,7 @@ impl Interpreter {
         });
         self.repl_compiler.captured = Some(UnitCapture {
             env,
+            unit: self.current_unit,
             routines,
             infix_ops,
         });

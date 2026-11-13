@@ -21,8 +21,10 @@ class GLOBAL::Perl6::Compiler {
     # HLL::Compiler's `parsegrammar`/`parseactions` accessors: with an argument
     # they replace the grammar/actions the compiler parses with, without one
     # they answer the current value. mutsu's own parser is not a replaceable
-    # grammar object, so the value is only recorded (a slang's rules reach the
-    # parser through `define_slang`, ADR-0026), not consulted by `.eval`.
+    # grammar object (a slang's rules reach the parser through `define_slang`,
+    # ADR-0026); what `.eval` reads from a grammar set here is the list of
+    # slangs the `$?LANG` it came from had active, which the unit is parsed
+    # with (`parser::stmt::simple::slang_lang`).
     has Mu $!parsegrammar;
     has Mu $!parseactions;
     multi method parsegrammar() { $!parsegrammar }
@@ -35,7 +37,7 @@ class GLOBAL::Perl6::Compiler {
     # setting. `:interactive` and every other adverb are accepted and ignored.
     method eval(Mu $code, Mu :$outer_ctx, *%adverbs) {
         my Mu $saver := $*CTXSAVE // Mu;
-        __mutsu_compiler_eval(~$code, $outer_ctx, $saver)
+        __mutsu_compiler_eval(~$code, $outer_ctx, $saver, $!parsegrammar)
     }
     method version_string(:$shorten-versions, :$no-unicode) {
         my $raku = $no-unicode ?? 'Raku(R)' !! "Raku\x[AE]";

@@ -135,11 +135,65 @@ pub(crate) fn comp_lang_instance() -> Value {
     )
 }
 
+/// The attribute of a language object (and of the grammar handles it gives
+/// out) that lists the slang activations in force where `$?LANG` was written,
+/// in `parser::encode_slang_activations`'s flat form.
+pub(crate) const LANG_ACTIVATIONS_ATTR: &str = "activations";
+
+/// `$?LANG` at a point where slangs are active: the language object carrying
+/// them, so a later unit can be parsed in it (`Perl6::Compiler.parsegrammar`).
+// Cost: O(a), a = encoded activation values.
+pub(crate) fn comp_lang_instance_with(activations: &[Value]) -> Value {
+    if activations.is_empty() {
+        return comp_lang_instance();
+    }
+    let mut attrs = HashMap::new();
+    attrs.insert(
+        LANG_ACTIVATIONS_ATTR.to_string(),
+        Value::array(activations.to_vec()),
+    );
+    Value::make_instance(crate::symbol::Symbol::intern(COMP_LANG_CLASS), attrs)
+}
+
+/// The slang activations a grammar handle (`$?LANG.slang_grammar('MAIN')`)
+/// carries, if `value` is one that carries any.
+// Cost: O(a), a = encoded activation values.
+pub(crate) fn grammar_handle_activations(value: &Value) -> Vec<crate::parser::SlangUseSpec> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = value.view()
+    else {
+        return Vec::new();
+    };
+    if class_name != GRAMMAR_HANDLE_CLASS {
+        return Vec::new();
+    }
+    match attributes.as_map().get(LANG_ACTIVATIONS_ATTR).map(Value::view) {
+        Some(ValueView::Array(items, ..)) => crate::parser::decode_slang_activations(&items),
+        _ => Vec::new(),
+    }
+}
+
 fn handle_instance(class: &str, kind: &str, roles: Vec<Value>) -> Value {
     let mut attrs = HashMap::new();
     attrs.insert("kind".to_string(), Value::str(kind.to_string()));
     attrs.insert("roles".to_string(), Value::array(roles));
     Value::make_instance(crate::symbol::Symbol::intern(class), attrs)
+}
+
+/// A language object's grammar or actions handle, carrying the language's
+/// slang activations on.
+fn lang_handle_instance(class: &str, kind: &str, activations: Option<&Value>) -> Value {
+    let handle = handle_instance(class, kind, Vec::new());
+    match (activations, handle.view()) {
+        (Some(list), ValueView::Instance { attributes, .. }) => {
+            attributes.insert(LANG_ACTIVATIONS_ATTR.to_string(), list.clone());
+            handle
+        }
+        _ => handle,
+    }
 }
 
 /// A literal `use` argument (`use L10N::BG 'no-slangification'`) carried to the
@@ -344,6 +398,7 @@ impl Interpreter {
         class_name: &str,
         method: &str,
         args: &[Value],
+        activations: Option<&Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match (class_name, method) {
             (COMP_LANG_CLASS, "slang_grammar") => {
@@ -351,14 +406,22 @@ impl Interpreter {
                     .first()
                     .map(Value::to_string_value)
                     .unwrap_or_else(|| "MAIN".to_string());
-                Some(Ok(handle_instance(GRAMMAR_HANDLE_CLASS, &kind, Vec::new())))
+                Some(Ok(lang_handle_instance(
+                    GRAMMAR_HANDLE_CLASS,
+                    &kind,
+                    activations,
+                )))
             }
             (COMP_LANG_CLASS, "slang_actions") => {
                 let kind = args
                     .first()
                     .map(Value::to_string_value)
                     .unwrap_or_else(|| "MAIN".to_string());
-                Some(Ok(handle_instance(ACTIONS_HANDLE_CLASS, &kind, Vec::new())))
+                Some(Ok(lang_handle_instance(
+                    ACTIONS_HANDLE_CLASS,
+                    &kind,
+                    activations,
+                )))
             }
             (COMP_LANG_CLASS, "define_slang") => Some(self.slang_define_slang(args)),
             // `$*LANG.refine_slang($name, $grammar-role, $actions-role?)`: the

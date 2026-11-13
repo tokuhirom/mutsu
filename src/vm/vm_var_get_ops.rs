@@ -171,6 +171,40 @@ impl Interpreter {
         }
         None
     }
+    /// A bare term naming a routine: the nullary call of it.
+    // Cost: one routine resolution and call.
+    fn call_bare_routine_term(
+        &mut self,
+        name: &str,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        let name_sym = crate::symbol::Symbol::intern(name);
+        if let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &[]) {
+            let pkg_sym = self.current_package_sym();
+            // Slice 6.3 step 2: precise env_dirty from the named-call merge.
+            self.call_compiled_function_named(cf, Vec::new(), compiled_fns, pkg_sym, name_sym)
+        } else if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
+            .ok()
+            .flatten()
+        {
+            // A user routine imported under a name that also has a native
+            // nullary form must win in term position. This matters for
+            // modules such as Time::localtime: `localtime` is a term in
+            // the module's public API, while mutsu also provides a
+            // compatibility builtin with the same spelling.
+            self.call_routine_def(&def, Vec::new())
+        } else if let Some(native_result) =
+            self.try_native_function(crate::symbol::Symbol::intern(name), &mut Vec::new())
+        {
+            native_result
+        } else {
+            // Route the cold 0-arg term fallback through the Interpreter's unified
+            // compiled-first function dispatch (ledger §2): this adds OTF
+            // compilation of simple user subs; the interpreter remains only as
+            // the terminal fallback inside call_function_compiled_first.
+            self.call_function_compiled_first(name, Vec::new(), compiled_fns)
+        }
+    }
 
     pub(crate) fn push_bare_word_value_in(
         &mut self,
@@ -283,9 +317,30 @@ impl Interpreter {
         // resolves only where that module's GLOBAL is merged: in the scope that
         // ran its `need`/`use`, or in the module itself (ADR-11136).
         if self.module_name_hidden_here(name) {
-            return Err(RuntimeError::undeclared_symbols(format!(
-                "Undeclared name:\n    {name} used at line 1"
-            )));
+            // The type is hidden, not the name: a routine of that spelling in
+            // scope here is what the term means (a REPL session's `sub Out`,
+            // run from a module that declares `class Out`, #17087).
+            let lexical = self
+                .env()
+                .get(&format!("&{name}"))
+                .filter(|callable| {
+                    matches!(
+                        callable.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    )
+                })
+                .cloned();
+            let value = if let Some(callable) = lexical {
+                self.vm_call_on_value(callable, Vec::new(), Some(compiled_fns))?
+            } else if self.has_function(name) || self.has_multi_function(name) {
+                self.call_bare_routine_term(name, compiled_fns)?
+            } else {
+                return Err(RuntimeError::undeclared_symbols(format!(
+                    "Undeclared name:\n    {name} used at line 1"
+                )));
+            };
+            self.stack.push(value);
+            return Ok(());
         }
         // Rakudo's core `REPL` and `Perl6::Compiler` classes are registered
         // on first use (runtime::repl_compiler), like `nqp::getcomp` does.
@@ -966,32 +1021,7 @@ impl Interpreter {
             || Interpreter::is_implicit_zero_arg_builtin(name)
             || self.has_multi_function(name)
         {
-            let name_sym = crate::symbol::Symbol::intern(name);
-            if let Some(cf) = self.find_compiled_function(compiled_fns, name, name_sym, &[]) {
-                let pkg_sym = self.current_package_sym();
-                // Slice 6.3 step 2: precise env_dirty from the named-call merge.
-                self.call_compiled_function_named(cf, Vec::new(), compiled_fns, pkg_sym, name_sym)?
-            } else if let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
-                .ok()
-                .flatten()
-            {
-                // A user routine imported under a name that also has a native
-                // nullary form must win in term position. This matters for
-                // modules such as Time::localtime: `localtime` is a term in
-                // the module's public API, while mutsu also provides a
-                // compatibility builtin with the same spelling.
-                self.call_routine_def(&def, Vec::new())?
-            } else if let Some(native_result) =
-                self.try_native_function(crate::symbol::Symbol::intern(name), &mut Vec::new())
-            {
-                native_result?
-            } else {
-                // Route the cold 0-arg term fallback through the Interpreter's unified
-                // compiled-first function dispatch (ledger §2): this adds OTF
-                // compilation of simple user subs; the interpreter remains only as
-                // the terminal fallback inside call_function_compiled_first.
-                self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
-            }
+            self.call_bare_routine_term(name, compiled_fns)?
         } else if name == "callsame"
             || name == "nextsame"
             || name == "callwith"

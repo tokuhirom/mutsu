@@ -312,6 +312,7 @@ pub(crate) fn name_colonpair_exprs(source: &str) -> Option<Vec<crate::ast::Expr>
 /// parser modes.
 #[cfg(test)]
 pub(crate) use stmt::simple::RECOGNIZED_PRODUCTION_OVERRIDES;
+pub(crate) use stmt::simple::{SlangUseSpec, decode_slang_activations, set_slang_preseed};
 pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
 
 pub(crate) use stmt::simple::{
@@ -1283,6 +1284,8 @@ pub(crate) fn parse_program_spelled(
     // Split off =finish content before parsing
     let (source, finish_content) = split_finish_section(input);
     let _doc_unit = decl_doc::begin_unit(source);
+    // A REPL line parsed in the language an earlier line left (`$?LANG`).
+    stmt::simple::apply_slang_preseed().map_err(RuntimeError::new)?;
     let result = match stmt::program(source) {
         Ok((rest, mut stmts)) => {
             // ADR-0033 Phase 2: classify every `*` leaf as a value

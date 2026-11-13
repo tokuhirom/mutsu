@@ -1,6 +1,13 @@
 use super::*;
 use crate::value::ValueView;
 
+/// Where a REPL session's unit is compiled ([`Interpreter::builtin_eval_repl_unit`]).
+#[derive(Clone, Copy)]
+struct ReplUnit {
+    /// The unit the session's previous line ran as, if any.
+    parent: Option<Symbol>,
+}
+
 impl Interpreter {
     // Cost: O(a), a = arguments.
     pub(crate) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -358,6 +365,31 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        self.builtin_eval_in(args, None)
+    }
+
+    /// `EVAL` of a source string as a REPL session's unit
+    /// (`Perl6::Compiler.eval`, `runtime::repl_compiler`): not compiled inside
+    /// the calling unit but inside the session's previous unit, `parent`
+    /// (none for the session's first unit), in package `GLOBAL`. Rakudo gives
+    /// such a unit the outer context's lexical chain only, and a session
+    /// started without one a fresh `GLOBAL`, so what the program that runs
+    /// the session declared or merged is not visible from it.
+    // Cost: as `builtin_eval`.
+    pub(crate) fn builtin_eval_repl_unit(
+        &mut self,
+        code: &str,
+        parent: Option<Symbol>,
+    ) -> Result<Value, RuntimeError> {
+        self.builtin_eval_in(&[Value::str(code.to_string())], Some(ReplUnit { parent }))
+    }
+
+    // Cost: as `builtin_eval`.
+    fn builtin_eval_in(
+        &mut self,
+        args: &[Value],
+        repl_unit: Option<ReplUnit>,
+    ) -> Result<Value, RuntimeError> {
         // EVAL of a RakuAST node (ADR-0011 Phase 5): lower it to the internal AST
         // and run it through the existing evaluator — no new execution engine.
         if let Some(first_arg) = Self::positional_value(args, 0)
@@ -488,6 +520,7 @@ impl Interpreter {
         let saved_package = context_arg
             .as_ref()
             .and_then(Self::eval_context_package)
+            .or_else(|| repl_unit.map(|_| "GLOBAL".to_string()))
             .map(|pkg| {
                 let saved = self.current_package();
                 self.set_current_package(pkg);
@@ -526,11 +559,18 @@ impl Interpreter {
         // called EVAL (#7837). Without this the vendored `Test.rakumod`'s
         // string `throws-like` compiles the snippet inside `Test`'s own
         // compunit, where nothing the *test file* imported is visible.
-        let parent_unit = context_arg
-            .as_ref()
-            .and_then(Self::eval_context_unit)
-            .unwrap_or(self.current_unit);
-        crate::runtime::note_eval_unit_parent(unit_sym, parent_unit);
+        let parent_unit = match repl_unit {
+            Some(ReplUnit { parent }) => parent,
+            None => Some(
+                context_arg
+                    .as_ref()
+                    .and_then(Self::eval_context_unit)
+                    .unwrap_or(self.current_unit),
+            ),
+        };
+        if let Some(parent_unit) = parent_unit {
+            crate::runtime::note_eval_unit_parent(unit_sym, parent_unit);
+        }
         let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));
