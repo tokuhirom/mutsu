@@ -140,7 +140,7 @@ pub(in crate::parser) use slang_hooks::{
 pub(crate) use slang_hooks::{
     parse_pointy_starters, parse_slang_arglist, parse_slang_for_expr, parse_slang_pointy_block,
     parse_slang_shim_production, parse_slang_signature, parse_slang_statementlist,
-    parse_slang_trait, parse_slang_variable, pointy_starter, run_slang_action,
+    parse_slang_trait, parse_slang_variable, pointy_starter, run_slang_action, run_slang_action_at,
     slang_action_activator, slang_action_rule, slang_hook_rule, slang_host_wrapped_rule,
     slang_overrides_action, slang_wrapper_rule, statement_action_keyword,
 };

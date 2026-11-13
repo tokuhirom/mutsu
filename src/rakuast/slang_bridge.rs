@@ -481,13 +481,44 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
     struct Pass {
         activator: String,
         enabled: bool,
+        /// The slang overrides the `statement` action.
+        statement: bool,
         failed: Option<RuntimeError>,
+    }
+    impl Pass {
+        /// Visit the statements of one list, offering each to a `statement`
+        /// override after its own contents were, with the span its `SetLine`
+        /// marker records.
+        fn visit_list(&mut self, body: &mut [Stmt]) {
+            let mut span = None;
+            for stmt in body.iter_mut() {
+                if let Stmt::SetLine(_, at) = stmt {
+                    span = Some(*at);
+                }
+                crate::ast_visit::VisitMut::visit_stmt_mut(self, stmt);
+                if !self.statement
+                    || !self.enabled
+                    || self.failed.is_some()
+                    || matches!(stmt, Stmt::SetLine(..) | Stmt::Use { .. })
+                {
+                    continue;
+                }
+                let Some(at) = span.take() else {
+                    continue;
+                };
+                match super::slang_statement_action::apply(stmt, at) {
+                    Ok(Some(lowered)) => *stmt = lowered,
+                    Ok(None) => {}
+                    Err(e) => self.failed = Some(e),
+                }
+            }
+        }
     }
     impl crate::ast_visit::VisitMut for Pass {
         // The refinement a `use` makes ends with the block that holds it.
         fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
             let enclosing = self.enabled;
-            crate::ast_visit::walk_stmts_mut(self, body);
+            self.visit_list(body);
             self.enabled = enclosing;
         }
         fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
@@ -546,11 +577,10 @@ pub(crate) fn apply_action_overrides(stmts: &mut [Stmt]) -> Result<(), RuntimeEr
     let mut pass = Pass {
         activator,
         enabled: false,
+        statement: crate::parser::slang_overrides_action("statement"),
         failed: None,
     };
-    for stmt in stmts.iter_mut() {
-        crate::ast_visit::VisitMut::visit_stmt_mut(&mut pass, stmt);
-    }
+    pass.visit_list(stmts);
     pass.failed.map_or(Ok(()), Err)
 }
 

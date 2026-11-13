@@ -21,8 +21,9 @@ use super::*;
 impl Interpreter {
     /// The compunit of the package-less module file the running routine was
     /// declared in, when its file-scope lexicals have a bucket. An inlined
-    /// bare block belongs to the routine that encloses it, so the walk passes
-    /// over those frames.
+    /// bare block, and a block frame with no declaring file of its own (a
+    /// `try` body), belong to the routine that encloses them, so the walk
+    /// passes over those frames (#17732).
     // Cost: O(1) when no package-less module file was loaded; otherwise O(b),
     // b = inlined block frames on top of the running routine's.
     pub(crate) fn running_compunit_lexical_unit(&self) -> Option<Symbol> {
@@ -44,7 +45,7 @@ impl Interpreter {
             .routine_stack()
             .iter()
             .rev()
-            .find(|f| !f.is_inlined_block)?
+            .find(|f| !f.is_inlined_block && !(f.is_block && f.def_file.is_none()))?
             .def_file?;
         let unit = self.unit_of_source_sym(Some(def_file));
         self.lexicals

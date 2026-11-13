@@ -185,7 +185,7 @@ pub(crate) fn pointy_starter(input: &str) -> Option<(bool, usize)> {
 pub(crate) fn slang_action_rule(name: &str) -> bool {
     matches!(
         name,
-        "INFIX-EXPR" | "PREFIX-EXPR" | "POSTFIX-EXPR" | "numish"
+        "INFIX-EXPR" | "PREFIX-EXPR" | "POSTFIX-EXPR" | "numish" | "statement"
     ) || statement_action_keyword(name).is_some()
 }
 
@@ -247,6 +247,22 @@ pub(crate) fn run_slang_action(rule: &str, node: Value, source: &str) -> Result<
         .with(|h| h.borrow().host.clone())
         .ok_or_else(|| "no slang host is running".to_string())?;
     host.run_action(rule, node, source)
+}
+
+/// [`run_slang_action`] for a production at character offsets `start..` of its
+/// unit's text `source`, as `span` places it (a `statement` override).
+// Cost: the slang's own action, plus O(n) to send `source`.
+pub(crate) fn run_slang_action_at(
+    rule: &str,
+    node: Value,
+    source: &str,
+    start: usize,
+    span: crate::slang_link::ActionSpan,
+) -> Result<Value, String> {
+    let host = HOOKS
+        .with(|h| h.borrow().host.clone())
+        .ok_or_else(|| "no slang host is running".to_string())?;
+    host.run_action_at(rule, node, source, start, Some(span))
 }
 
 /// The literal a token body starts with: `'twice' ...` or `"twice" ...`.
