@@ -1,14 +1,9 @@
-# IterationBuffer methods edit in place; `is raw` routines take the light call path
+# `is raw` routines take the light call path; cheaper ParaSeq cues
 
-Found while profiling ParaSeq's `squish(:with)` (#17337), whose consumer appends every batch to one
-`IterationBuffer` and whose `:as` default is `sub identity(\value) is raw { value }`.
+Found while profiling ParaSeq's `squish(:with)` (#17337), whose `:as` default is
+`sub identity(\value) is raw { value }`. The test also pins the in-place `IterationBuffer` methods
+(`cde1c4d1`, which landed in parallel) against rakudo, including a `.List` view seeing later edits.
 
-- **`IterationBuffer`'s `push`, `append`, `unshift`, `prepend`, `BIND-POS`, `clear`, `elems` and
-  `AT-POS` no longer copy the whole buffer.** Each of them copied the element vector out, edited
-  the copy and stored a new array back, so `$buffer.append($batch)` in a loop was quadratic, and
-  `elems`/`AT-POS` were O(n). They now edit the buffer's storage in place, as `nqp::push` does.
-  `append`, `push`, `elems` and `AT-POS` are O(1) amortized, as on Rakudo. A `.List` taken from
-  the buffer earlier now sees later edits, because on Rakudo the buffer is that `List`'s storage.
 - **An `is raw` routine takes the positional-light call path.** Its raw return is already
   compiled into the body, and the call site decides the Proxy FETCH for both paths, so the
   general binder had nothing to add. A sigilless parameter already binds the caller's container
