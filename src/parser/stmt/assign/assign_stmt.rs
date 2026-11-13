@@ -370,9 +370,9 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     quoted: true,
                 },
             };
-            let (r_final, method_expr) =
-                crate::parser::expr::postfix_expr_continue(r_final, method_expr)?;
-            let stmt = dot_assign_stmt(name, method_expr);
+            let (r_final, method_expr) = super::absorb_dotty_call_adverbs(r_final, method_expr)?;
+            let (r_final, stmt) =
+                dot_assign_with_postfix(r_final, dot_assign_stmt(name, method_expr))?;
             let (r_final, stmt) =
                 crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
                     r_final,
@@ -444,14 +444,16 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             sugar: false,
         };
         // The statement-level shortcut parses `.=method` directly so the
-        // lvalue writeback stays visible to the compiler. Continue the method
-        // call before wrapping it, though: `$x .= Numeric.Rat` is one mutating
-        // call chain, not `$x .= Numeric` followed by a topic method call.
-        let (r, expr) = crate::parser::expr::postfix_expr_continue(r, expr)?;
+        // lvalue writeback stays visible to the compiler. Only that first
+        // method is the mutator: a further postfix applies to the
+        // assignment's result, as in rakudo (`$x .= uc.flip` stores `$x.uc`;
+        // `$c .= new.add(2)` stores the new object, then calls `.add` on it).
         // `$_ .= meth`: the topic metaop is an `Expr::TopicDotAssign`
         // so it can reassign a read-only whole-container topic while a plain
         // `$_ = ...` still throws X::Assignment::RO.
-        let stmt = dot_assign_stmt(name, expr);
+        let (r, expr) = super::absorb_dotty_call_adverbs(r, expr)?;
+        let stmt = dot_assign_with_postfix(r, dot_assign_stmt(name, expr))?;
+        let (r, stmt) = stmt;
         // `$x .= new: ... andthen ...` is `($x .= new(...)) andthen ...`.
         let (r, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
             r,
@@ -640,6 +642,17 @@ fn assignment_statement(rest: &str, target: Expr, source: Expr) -> PResult<'_, S
 /// The statement `NAME .= meth`: the topic form for `$_`, otherwise the same
 /// marked `.=` expansion the expression form builds, so the RakuAST conversion
 /// sees one shape whichever way the parser reached it.
+/// Continue the postfix chain after a statement-level `.=` over the
+/// assignment's result (`$x .= meth.more` is `($x .= meth).more`).
+// Cost: O(n), n = length of the postfix chain parsed.
+fn dot_assign_with_postfix(input: &str, stmt: Stmt) -> PResult<'_, Stmt> {
+    let Stmt::Expr(assign) = stmt else {
+        return Ok((input, stmt));
+    };
+    let (rest, expr) = crate::parser::expr::postfix_expr_continue(input, assign)?;
+    Ok((rest, Stmt::Expr(expr)))
+}
+
 fn dot_assign_stmt(name: String, method_call: Expr) -> Stmt {
     Stmt::Expr(super::written_dotty_assignment(
         crate::rakuast::dotty_assign::dot_assign_target(&name),
