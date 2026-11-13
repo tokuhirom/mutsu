@@ -6,7 +6,7 @@ use Test;
 # re-binds it each iteration, and when it is handed on to another routine
 # (#17376: mutsu declares such a slot-only term through its env-free lane).
 
-plan 18;
+plan 19;
 
 my $map = Map.new((a => 1, b => [1, 2]));
 sub rw-it(\c) { c = 99 }
@@ -149,3 +149,16 @@ sub type-object() {
     (t =:= Int, u =:= Int)
 }
 is-deeply type-object(), (False, True), 'a Hash element is its container, a .WHAT result its type object';
+
+# A routine with a sigilless parameter of the same name as a later term must
+# not push that term's declaration off the env-free lane, and a term bound to
+# a role-mixin value is stored as is (#17331).
+role Marker { }
+sub consume(Str \key) { key }
+sub cached() {
+    my %c = k => (class {}).new but Marker;
+    my \key = 'k';
+    my \hit = %c{key};
+    (hit ~~ Marker, key)
+}
+is-deeply cached(), (True, 'k'), 'a mixin value binds, beside a same-named parameter elsewhere';
