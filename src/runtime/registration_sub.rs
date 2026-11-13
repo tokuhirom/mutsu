@@ -1066,7 +1066,13 @@ impl Interpreter {
         // resolution caches intact. The `contains_key` guard keeps this correct
         // across block-scope restoration (a `my sub` removed when its scope exits
         // misses here and takes the full path).
+        // A unit restarted from its CHECK-rewritten tree (#17644) declares its
+        // routines again: each is a new routine over the restarted mainline's
+        // scope, not the first compile's, which closed over a mainline that
+        // never ran.
+        let restarting_unit = self.dispatch.rewritten_unit_candidates.is_some();
         if let Some(site_fp) = site_fingerprint
+            && !restarting_unit
             && !multi
             && !is_method_value_decl
             && !custom_traits.iter().any(|(t, _)| !t.starts_with("__"))
@@ -1120,6 +1126,7 @@ impl Interpreter {
         // left the shadowed multi visible again from the second call on
         // (issue #9080).
         if let Some(site_fp) = site_fingerprint
+            && !restarting_unit
             && !multi
             && !is_method_value_decl
             && !is_our_scoped
@@ -1602,8 +1609,13 @@ impl Interpreter {
         let existing = self.registry().functions.get(&single_key_sym).cloned();
         let mut redeclares_hoisted_twin = false;
         if let Some(existing) = existing {
+            // The same declaration is one compilation unit's: an identical
+            // `sub` in an `EVAL` or in the tree a CHECK phaser rewrote
+            // (#17644) is a new routine over that unit's own scope.
             let same_decl = existing.package == new_def.package
                 && existing.name == new_def.name
+                && existing.source_file == new_def.source_file
+                && !restarting_unit
                 && registration_identity(&existing) == registration_identity(&new_def);
             // The hoist pass installed this same declaration before the
             // `constant`/`use` binding a type alias in its signature had run;
