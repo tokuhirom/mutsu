@@ -286,6 +286,17 @@ impl Interpreter {
                     };
                     let mut parts = Vec::with_capacity(items.len());
                     for item in items {
+                        if crate::builtins::is_fmt_nested_list(&item)
+                            || crate::builtins::fmt_item_iterates(&fmt, &item)
+                        {
+                            // Same one-argument form as this call, so the
+                            // nested call cannot decline.
+                            let nested = self
+                                .dispatch_fmt_with_user_coercion(&item, args)
+                                .unwrap_or_else(|| Err(RuntimeError::new("fmt declined")))?;
+                            parts.push(nested.to_string_value());
+                            continue;
+                        }
                         let rendered = match crate::builtins::list_item_pair_split(&fmt, &item)? {
                             Some((k, v)) => format_pair(self, k, v)?,
                             None => format_one(self, item)?,

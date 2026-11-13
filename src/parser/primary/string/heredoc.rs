@@ -77,6 +77,15 @@ pub(crate) fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
     Ok((rest, delimiter))
 }
 
+/// The delimiter of a heredoc whose `:to`/`:heredoc` adverb ends right before
+/// `input` (`<ERR>` → `ERR`), as [`parse_to_heredoc_delimiter`] reads it.
+// Cost: O(n), n = bytes up to the closing delimiter.
+pub(crate) fn heredoc_delimiter_after(input: &str) -> Option<String> {
+    parse_to_heredoc_delimiter(input)
+        .ok()
+        .map(|(_, delimiter)| delimiter.to_string())
+}
+
 /// Parse heredoc with flags (supports :c, :w adverbs on heredoc).
 pub(crate) fn parse_to_heredoc_with_flags<'a>(
     input: &'a str,

@@ -116,9 +116,10 @@ pub(crate) use functions::{deitemize_flat_operand, flat_val, thread_junctions_in
 pub(crate) use method_table::strip_undeclared_nameds;
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{
-    buf_get_int_items, fmt_joinable_target, fmt_native, is_buf_like, list_item_pair_split,
-    native_base_with_options, native_method_1arg, native_method_1arg_without_table, pair_key_value,
-    read_f32_endian, read_f64_endian, read_int_value, resolve_buf_index, validate_one_fmt_argument,
+    buf_get_int_items, fmt_item_iterates, fmt_joinable_target, fmt_native, is_buf_like,
+    is_fmt_nested_list, list_item_pair_split, native_base_with_options, native_method_1arg,
+    native_method_1arg_without_table, pair_key_value, read_f32_endian, read_f64_endian,
+    read_int_value, resolve_buf_index, validate_one_fmt_argument,
 };
 pub(crate) use unicode::{samecase_string, samemark_string};
 

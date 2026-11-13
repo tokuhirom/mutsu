@@ -18,6 +18,7 @@ mod role_decl;
 pub(crate) mod rule_ws;
 mod rule_ws_quantified;
 pub(crate) mod token_body;
+pub(crate) mod token_heredoc;
 
 // Shared attribute / body validation helpers used across submodules.
 pub(crate) use attr_checks::{
