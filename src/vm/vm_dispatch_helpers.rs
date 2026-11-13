@@ -120,6 +120,12 @@ impl Interpreter {
                 _ => unreachable!(),
             };
         }
+        // `Pair.new` decontainerizes its key: a Proxy key (`@proxies Z=> @v`)
+        // is FETCHed to the value it answers, as the plain `=>` infix does.
+        if normalized_op == "=>" {
+            let key = self.pair_key_fetching_proxy(left.clone())?;
+            return Ok(Value::value_pair(key, right.clone()));
+        }
         // Range operators are legal metaop bases (`(1,2) Z.. (5,6)`,
         // `(1,2) X..^ (5,6)`) but are not reductions — they build a Range
         // value rather than fold two operands, so they cannot live in the

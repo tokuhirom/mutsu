@@ -185,9 +185,46 @@ impl Interpreter {
                 }
             }
         };
+        let result = self.decont_user_infix_result(&name, &left_val, &right_vals, result)?;
         self.apply_pending_rw_writeback(code);
         self.stack.push(result);
         Ok(())
+    }
+
+    /// The value a user `infix:<op>` call yields: like any routine call, a
+    /// routine that is neither `is rw` nor `is raw` returns its result
+    /// decontainerized, so a `Proxy` it hands back (`sub infix:<snd>(Mu \a,
+    /// Mu \b) { b }` with a Proxy operand) is FETCHed, as the named-call paths
+    /// already do.
+    // An operator no user routine answers keeps its result as-is.
+    // Cost: O(1) unless the result is a Proxy; then one candidate resolution
+    // (O(c), c = candidates of the operator) plus its FETCH chain, bounded by
+    // `auto_fetch_proxy`.
+    pub(crate) fn decont_user_infix_result(
+        &mut self,
+        name: &str,
+        left: &Value,
+        right: &[Value],
+        result: Value,
+    ) -> Result<Value, RuntimeError> {
+        if !result.is_proxy_value() {
+            return Ok(result);
+        }
+        let infix_name = format!("infix:<{name}>");
+        let mut args = Vec::with_capacity(right.len() + 1);
+        args.push(Self::unwrap_var_ref_value(left.clone()));
+        args.extend(right.iter().cloned().map(Self::unwrap_var_ref_value));
+        let returns_container = loan_env!(self, resolve_function_with_types(&infix_name, &args))
+            .ok()
+            .flatten()
+            .is_none_or(|def| def.is_rw || def.is_raw);
+        if returns_container {
+            return Ok(result);
+        }
+        if self.in_lvalue_assignment {
+            return Ok(result);
+        }
+        self.auto_fetch_proxy(&result)
     }
 
     /// Whether the user candidate `infix:<op>` resolves for `left`/`right`

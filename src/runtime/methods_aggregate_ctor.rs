@@ -413,6 +413,10 @@ impl Interpreter {
         let total = flat.len();
         let mut iter = flat.into_iter();
         while let Some(item) = iter.next() {
+            // An itemized Pair (`my $p = a => 1; Hash.new(($p,))`) or a Pair held
+            // in an element cell is still a Pair to rakudo's `Map.STORE`; read it
+            // the way every other hash initializer does.
+            let item = crate::builtins::map_hash_coerce::unwrap_contained_pair(&item);
             match item.view() {
                 ValueView::Pair(k, v) => {
                     map.insert(k.clone(), v.clone());

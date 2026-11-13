@@ -40,7 +40,13 @@ impl Interpreter {
         right: &Value,
     ) -> Result<Value, RuntimeError> {
         let Some((layer, inner)) = op.split_first() else {
-            return self.eval_infix_leaf(op, left, right);
+            let result = self.eval_infix_leaf(op, left, right)?;
+            return self.decont_user_infix_result(
+                op.canonical(),
+                left,
+                std::slice::from_ref(right),
+                result,
+            );
         };
         match layer {
             // `R op`: apply the inner operator with the operands swapped.

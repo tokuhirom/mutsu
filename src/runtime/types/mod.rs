@@ -1437,6 +1437,17 @@ impl Interpreter {
         value: Value,
     ) -> Result<Value, RuntimeError> {
         let value = self.materialize_default_parametric_role(value)?;
+        // A Seq default binds an `@` parameter through `.cache`, exactly as a
+        // supplied Seq does (`sub f(:@of is raw = @a.Seq)` sees a List that
+        // may be iterated any number of times, not a one-shot Seq).
+        let value = match value.view() {
+            ValueView::Seq(body) if pd.name.starts_with('@') && !pd.slurpy => {
+                let body = std::sync::Arc::clone(&body);
+                body.mark_cache_requested();
+                Value::seq_list_view(&body)
+            }
+            _ => value,
+        };
         // A default is coerced like a supplied argument: `Str() $b = $a` binds
         // `$a.Str` when the caller passed nothing (IdClass's `t/06-role`).
         let value = if pd
