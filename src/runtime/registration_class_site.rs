@@ -112,15 +112,36 @@ impl Interpreter {
         parents: &[String],
         hidden_parents: &[String],
     ) -> Option<ClassSiteStamp> {
-        plan.reentry_is_static().then(|| ClassSiteStamp {
+        if !plan.reentry_is_static() {
+            return None;
+        }
+        // A role is composed into the class when it registers. A lexical role
+        // is itself re-declared on every entry (roles are never kept), and a
+        // punned role parent (`is SomeRole`) installs pun state the role's own
+        // re-declaration resets, so a class built from either is rebuilt with
+        // them.
+        let registry = self.registry();
+        let names_role = |name: &str| {
+            let base = name.split_once('[').map_or(name, |(base, _)| base);
+            registry.roles.contains_key(base)
+        };
+        if parents.iter().chain(hidden_parents).any(|p| names_role(p)) {
+            return None;
+        }
+        drop(registry);
+        let roles: Vec<String> = plan
+            .does_parents
+            .iter()
+            .map(|role| self.lexical_env_remap_name(role))
+            .collect();
+        if roles.iter().any(|role| role.contains('\u{0}')) {
+            return None;
+        }
+        Some(ClassSiteStamp {
             decl_id: plan.decl_id,
             parents: parents.to_vec(),
             hidden_parents: hidden_parents.to_vec(),
-            roles: plan
-                .does_parents
-                .iter()
-                .map(|role| self.lexical_env_remap_name(role))
-                .collect(),
+            roles,
         })
     }
 
