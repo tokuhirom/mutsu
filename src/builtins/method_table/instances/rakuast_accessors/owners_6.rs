@@ -3,6 +3,36 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Regex::BackReference::Named",
+        &[
+            "RakuAST::Regex::BackReference::Named",
+            "RakuAST::Regex::BackReference",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::BackReference::Positional",
+        &[
+            "RakuAST::Regex::BackReference::Positional",
+            "RakuAST::Regex::BackReference",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::Backtrack::Frugal",
+        &[
+            "RakuAST::Regex::Backtrack::Frugal",
+            "RakuAST::Regex::Backtrack",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Regex::Backtrack::Greedy",
         &[
             "RakuAST::Regex::Backtrack::Greedy",
@@ -186,38 +216,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::CharClass::VerticalSpace",
-        &[
-            "RakuAST::Regex::CharClass::VerticalSpace",
-            "RakuAST::Regex::CharClass::Negatable",
-            "RakuAST::Regex::CharClass",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::CharClass::Word",
-        &[
-            "RakuAST::Regex::CharClass::Word",
-            "RakuAST::Regex::CharClass::Negatable",
-            "RakuAST::Regex::CharClass",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::CharClassElement::Enumeration",
-        &[
-            "RakuAST::Regex::CharClassElement::Enumeration",
-            "RakuAST::Regex::CharClassElement",
             "RakuAST::Node",
         ],
     ),

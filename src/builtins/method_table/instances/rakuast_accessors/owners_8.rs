@@ -3,6 +3,30 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Regex::Quantifier::BlockRange",
+        &[
+            "RakuAST::Regex::Quantifier::BlockRange",
+            "RakuAST::Regex::Quantifier",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::Quantifier::OneOrMore",
+        &[
+            "RakuAST::Regex::Quantifier::OneOrMore",
+            "RakuAST::Regex::Quantifier",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::Quantifier::Range",
+        &[
+            "RakuAST::Regex::Quantifier::Range",
+            "RakuAST::Regex::Quantifier",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Regex::Quantifier::ZeroOrMore",
         &[
             "RakuAST::Regex::Quantifier::ZeroOrMore",
@@ -160,31 +184,5 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     (
         "RakuAST::Statement",
         &["RakuAST::Statement", "RakuAST::Node"],
-    ),
-    (
-        "RakuAST::Statement::Also",
-        &[
-            "RakuAST::Statement::Also",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Statement::Catch",
-        &[
-            "RakuAST::Statement::Catch",
-            "RakuAST::Statement::ExceptionHandler",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Statement::Control",
-        &[
-            "RakuAST::Statement::Control",
-            "RakuAST::Statement::ExceptionHandler",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
     ),
 ];

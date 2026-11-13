@@ -3,6 +3,53 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Type::Definedness",
+        &[
+            "RakuAST::Type::Definedness",
+            "RakuAST::Type::Derived",
+            "RakuAST::Type",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Type::Enum",
+        &[
+            "RakuAST::Type::Enum",
+            "RakuAST::Type",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Type::Parameterized",
+        &[
+            "RakuAST::Type::Parameterized",
+            "RakuAST::Type::Derived",
+            "RakuAST::Type",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Type::Setting",
+        &[
+            "RakuAST::Type::Setting",
+            "RakuAST::Type::Simple",
+            "RakuAST::Type",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Type::Simple",
         &[
             "RakuAST::Type::Simple",
@@ -173,54 +220,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::Var::PositionalCapture",
             "RakuAST::Var",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::VarDeclaration::Anonymous",
-        &[
-            "RakuAST::VarDeclaration::Anonymous",
-            "RakuAST::VarDeclaration::Simple",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::VarDeclaration::Constant",
-        &[
-            "RakuAST::VarDeclaration::Constant",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::VarDeclaration::Implicit::Constant",
-        &[
-            "RakuAST::VarDeclaration::Implicit::Constant",
-            "RakuAST::VarDeclaration::Implicit",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::VarDeclaration::Implicit::Self",
-        &[
-            "RakuAST::VarDeclaration::Implicit::Self",
-            "RakuAST::VarDeclaration::Implicit",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::VarDeclaration::Placeholder::Named",
-        &[
-            "RakuAST::VarDeclaration::Placeholder::Named",
-            "RakuAST::VarDeclaration::Placeholder",
             "RakuAST::Term",
             "RakuAST::Termish",
             "RakuAST::Expression",

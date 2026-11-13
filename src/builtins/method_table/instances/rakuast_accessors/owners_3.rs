@@ -3,6 +3,33 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::MetaInfix::Hyper",
+        &[
+            "RakuAST::MetaInfix::Hyper",
+            "RakuAST::MetaInfix",
+            "RakuAST::Infixish",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::MetaInfix::Negate",
+        &[
+            "RakuAST::MetaInfix::Negate",
+            "RakuAST::MetaInfix",
+            "RakuAST::Infixish",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::MetaInfix::Reverse",
+        &[
+            "RakuAST::MetaInfix::Reverse",
+            "RakuAST::MetaInfix",
+            "RakuAST::Infixish",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::MetaInfix::Zip",
         &[
             "RakuAST::MetaInfix::Zip",
@@ -124,27 +151,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::Termish",
             "RakuAST::Expression",
             "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Package",
-        &[
-            "RakuAST::Package",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Parameter",
-        &["RakuAST::Parameter", "RakuAST::Node"],
-    ),
-    (
-        "RakuAST::Parameter::Slurpy::Capture",
-        &[
-            "RakuAST::Parameter::Slurpy::Capture",
-            "RakuAST::Parameter::Slurpy",
         ],
     ),
 ];

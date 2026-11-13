@@ -155,6 +155,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Parameter", "names"),
     row!("RakuAST::Parameter", "optional"),
     row!("RakuAST::Parameter", "outer-type"),
+    row!("RakuAST::Parameter", "signature-constraint"),
     row!("RakuAST::Parameter", "slurpy"),
     row!("RakuAST::Parameter", "sub-signature"),
     row!("RakuAST::Parameter", "target"),
@@ -201,5 +202,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::QuotedString", "processors"),
     row!("RakuAST::QuotedString", "segments"),
     row!("RakuAST::Regex::Assertion::Alias", "assertion"),
-    row!("RakuAST::Regex::Assertion::Alias", "name"),
 ];

@@ -257,6 +257,7 @@ RakuAST::Parameter	meta-object	RakuAST::Parameter
 RakuAST::Parameter	names	RakuAST::Parameter
 RakuAST::Parameter	optional	RakuAST::Parameter
 RakuAST::Parameter	outer-type	RakuAST::Parameter
+RakuAST::Parameter	signature-constraint	RakuAST::Parameter
 RakuAST::Parameter	slurpy	RakuAST::Parameter
 RakuAST::Parameter	sub-signature	RakuAST::Parameter
 RakuAST::Parameter	target	RakuAST::Parameter
@@ -326,9 +327,11 @@ RakuAST::Regex::Assertion::InterpolatedVar	var	RakuAST::Regex::Assertion::Interp
 RakuAST::Regex::Assertion::Lookahead	assertion	RakuAST::Regex::Assertion::Lookahead
 RakuAST::Regex::Assertion::Lookahead	negated	RakuAST::Regex::Assertion::Lookahead
 RakuAST::Regex::Assertion::Named	capturing	RakuAST::Regex::Assertion::Named
+RakuAST::Regex::Assertion::Named	get-implicit-lookups	RakuAST::Regex::Assertion::Named
 RakuAST::Regex::Assertion::Named	name	RakuAST::Regex::Assertion::Named
 RakuAST::Regex::Assertion::Named::Args	args	RakuAST::Regex::Assertion::Named::Args
 RakuAST::Regex::Assertion::Named::Args	capturing	RakuAST::Regex::Assertion::Named
+RakuAST::Regex::Assertion::Named::Args	get-implicit-lookups	RakuAST::Regex::Assertion::Named
 RakuAST::Regex::Assertion::Named::Args	name	RakuAST::Regex::Assertion::Named
 RakuAST::Regex::Assertion::Named::RegexArg	name	RakuAST::Regex::Assertion::Named
 RakuAST::Regex::Assertion::Named::RegexArg	regex-arg	RakuAST::Regex::Assertion::Named::RegexArg

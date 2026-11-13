@@ -868,6 +868,9 @@ impl Interpreter {
         // routine it registers at its top level keeps its clone id off the
         // frame env too (ADR-0084 §2 group 1, #7817).
         let body_result = self.run_program_mainline(|interp| interp.run_top(&code, &compiled_fns));
+        // The unit ran its CHECK-rewritten tree in place of this program
+        // (#17501), whose own LEAVE phasers ran there.
+        let superseded = std::mem::take(&mut self.control.mainline_superseded);
         // A worker's `exit` interrupted the mainline (ADR-11617): the program
         // ends as if the mainline had called `exit` there. Whatever the
         // interrupted op left behind (an `await` that gave up on its promise)
@@ -931,7 +934,7 @@ impl Interpreter {
                 matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
             });
         let success_queue = Self::should_run_success_queue_vm(&body_result, self.env.get("_"));
-        let queue_result = if defer_exit_phasers {
+        let queue_result = if defer_exit_phasers || superseded {
             Ok(())
         } else if success_queue {
             self.run_block_raw(&success_ph)

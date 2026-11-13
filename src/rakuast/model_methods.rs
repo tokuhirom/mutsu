@@ -143,6 +143,15 @@ pub(super) fn accessor_method_names(class: RakuAstClass) -> Vec<&'static str> {
     if class.is_simple_variable() {
         names.push("sigil");
     }
+    if matches!(
+        class,
+        RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs
+    ) {
+        names.push("get-implicit-lookups");
+    }
+    if class == RakuAstClass::Parameter {
+        names.push("signature-constraint");
+    }
     names.sort_unstable();
     names.dedup();
     names

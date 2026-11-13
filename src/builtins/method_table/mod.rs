@@ -119,13 +119,13 @@ pub(crate) use table::mixin_role_owners_of;
 
 pub(crate) use collections::accepts_open::accepts_by_smartmatch;
 pub(crate) use ctors_mop::{ENUM_HOW_OWNERS, MOP_OWNERS, mop_declares};
+#[cfg(test)]
+pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, cool_text_for_shapeless, invoke, invoke_base,
     invoke_in, invoke_mro, invoke_mro_late, invoke_mut, invoke_owner, invoke_owner_raw,
-    try_dispatch_in,
+    shapeless_row, try_dispatch_in,
 };
-#[cfg(test)]
-pub(crate) use dispatch::{shapeless_row, try_dispatch};
 pub(crate) use implicit_named::strip_undeclared_nameds;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use mutating::type_object_owners as mut_type_object_owners;

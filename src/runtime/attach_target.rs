@@ -112,6 +112,30 @@ fn unit_export_package() -> Value {
     ))
 }
 
+/// The attribute of a resolver holding the scope nodes `push-scope` pushed,
+/// outermost first.
+const RESOLVER_SCOPES_ATTR: &str = "scopes";
+
+/// The scope nodes `resolver` has pushed (`push-scope`), outermost first;
+/// empty for anything that is not a resolver.
+// Cost: O(s), s = pushed scopes.
+pub(crate) fn resolver_scopes(resolver: &Value) -> Vec<Value> {
+    let ValueView::Instance { attributes, .. } = resolver.view() else {
+        return Vec::new();
+    };
+    match attributes.as_map().get(RESOLVER_SCOPES_ATTR).map(Value::view) {
+        Some(ValueView::Array(items, _)) => items.as_slice().to_vec(),
+        _ => Vec::new(),
+    }
+}
+
+// Cost: O(1).
+fn set_resolver_scopes(resolver: &Value, scopes: Vec<Value>) {
+    if let ValueView::Instance { attributes, .. } = resolver.view() {
+        attributes.insert(RESOLVER_SCOPES_ATTR, Value::vm_array(scopes));
+    }
+}
+
 /// The resolver object `$*CU.resolver` and `$!resolver` answer: the same
 /// opaque handle `$*R` is, standing for the unit's own scope.
 // Cost: O(1).
@@ -266,6 +290,39 @@ impl Interpreter {
                 let scope = begin_block_scope_node();
                 attributes.insert(BLOCK_SCOPE_ATTR, scope.clone());
                 Some(Ok(scope))
+            }
+            // The scope stack a CHECK-time pass pushes the unit's scope nodes
+            // onto (#17501). Each push or pop answers a fresh list, so a
+            // `.clone` of the resolver keeps its own stack.
+            // Cost: O(s), s = pushed scopes.
+            (RESOLVER_CLASS, "push-scope") => {
+                let scope = args.first().cloned().unwrap_or(Value::NIL);
+                let mut scopes = resolver_scopes(target);
+                scopes.push(scope);
+                set_resolver_scopes(target, scopes);
+                Some(Ok(Value::NIL))
+            }
+            // Cost: O(s), s = pushed scopes.
+            (RESOLVER_CLASS, "pop-scope") => {
+                let mut scopes = resolver_scopes(target);
+                let popped = scopes.pop().unwrap_or(Value::NIL);
+                set_resolver_scopes(target, scopes);
+                Some(Ok(popped))
+            }
+            // Cost: O(s * k), s = pushed scopes, k = size of a scope's own statements.
+            (RESOLVER_CLASS, "resolve-lexical") if !resolver_scopes(target).is_empty() => {
+                let name = args.first().map(Value::to_string_value).unwrap_or_default();
+                let scopes = resolver_scopes(target);
+                let imported = |routine: &str| self.unit_routine_imported(routine);
+                let imported_type =
+                    |name: &str| self.has_class(name) || self.slang_minted_type(name);
+                Some(Ok(crate::rakuast::resolve_lexical(
+                    &scopes,
+                    &name,
+                    &imported,
+                    &imported_type,
+                )
+                .unwrap_or(Value::NIL)))
             }
             (RESOLVER_CLASS, _) => self.dispatch_begin_scope_method(method, args),
             _ => None,

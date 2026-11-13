@@ -3,6 +3,32 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Statement::Also",
+        &[
+            "RakuAST::Statement::Also",
+            "RakuAST::Statement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Statement::Catch",
+        &[
+            "RakuAST::Statement::Catch",
+            "RakuAST::Statement::ExceptionHandler",
+            "RakuAST::Statement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Statement::Control",
+        &[
+            "RakuAST::Statement::Control",
+            "RakuAST::Statement::ExceptionHandler",
+            "RakuAST::Statement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Statement::Default",
         &[
             "RakuAST::Statement::Default",
@@ -131,30 +157,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Statement::Require",
         &[
             "RakuAST::Statement::Require",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Statement::Trusts",
-        &[
-            "RakuAST::Statement::Trusts",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Statement::Unless",
-        &[
-            "RakuAST::Statement::Unless",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Statement::Use",
-        &[
-            "RakuAST::Statement::Use",
             "RakuAST::Statement",
             "RakuAST::Node",
         ],

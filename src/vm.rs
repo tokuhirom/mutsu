@@ -179,6 +179,7 @@ mod vm_bareword_site;
 mod vm_call_nqp_list;
 mod vm_iterator_site_lane;
 mod vm_method_site_lane;
+mod vm_shapeless_site_lane;
 pub(crate) use vm_attr_type_constraint::AttrTypeConstraintCache;
 mod vm_accessor_lane;
 mod vm_block_alias_sync;

@@ -315,7 +315,7 @@ fn atom_span_and_candidates(atom: &RegexAtom, depth: u32) -> Option<(Span, Vec<C
         | RegexAtom::EndOfString
         | RegexAtom::StartOfString
         | RegexAtom::SameAssertion { .. }
-        | RegexAtom::AtPosition(_)
+        | RegexAtom::AtPosition(..)
         | RegexAtom::Lookaround { .. } => Span::ZERO,
         RegexAtom::Group(p)
         | RegexAtom::CaptureGroup(p)

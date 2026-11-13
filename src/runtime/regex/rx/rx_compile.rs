@@ -178,7 +178,7 @@ fn is_assertion(atom: &RegexAtom) -> bool {
             | RegexAtom::EndOfString
             | RegexAtom::StartOfString
             | RegexAtom::SameAssertion { .. }
-            | RegexAtom::AtPosition(_)
+            | RegexAtom::AtPosition(..)
     )
 }
 

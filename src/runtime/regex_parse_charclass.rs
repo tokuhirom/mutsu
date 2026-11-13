@@ -961,7 +961,7 @@ impl Interpreter {
             | RegexAtom::UnicodeProp { .. }
             | RegexAtom::UnicodePropAssert { .. }
             | RegexAtom::SameAssertion { .. }
-            | RegexAtom::AtPosition(_)
+            | RegexAtom::AtPosition(..)
             | RegexAtom::CharClass(_) => true,
             // A CompositeClass item may itself reference a user grammar token
             // (match-time resolution) — only builtin names are closed.
