@@ -48,11 +48,11 @@ impl Interpreter {
                 // number of ticks so far, so the stream is 0, 1, 2, ... exactly
                 // as a timer-driven interval produces.
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    let (emitted, done, _) = supplier_snapshot(supplier_id);
+                    let (emitted_count, done, _) = supplier_status(supplier_id);
                     if done {
                         return Ok(Value::NIL);
                     }
-                    let value = Value::int(emitted.len() as i64);
+                    let value = Value::int(emitted_count as i64);
                     let actions = supplier_emit_collect(supplier_id, &value);
                     let _ = self.drive_supplier_emit_actions(supplier_id, actions);
                 }
@@ -127,17 +127,6 @@ impl Interpreter {
                 self.supply_emit_collect(supplier_id_from_attrs(&attrs), &value)?;
                 if let Some(buf) = self.async_state.supply_emit_timed_buffer.last_mut() {
                     buf.push((value.clone(), crate::thread_compat::Instant::now()));
-                }
-                let pushed = attrs.get_mut("emitted").and_then(|emitted| {
-                    emitted.with_array_mut(|items, _kind| {
-                        crate::gc::Gc::make_mut(items).push(value.clone());
-                    })
-                });
-                if pushed.is_none() {
-                    attrs.insert(
-                        "emitted".to_string(),
-                        Value::array(vec![args.first().cloned().unwrap_or(Value::NIL)]),
-                    );
                 }
                 if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
                 {
@@ -254,7 +243,6 @@ impl Interpreter {
                 }
                 if !preserving {
                     attrs.insert("done".to_string(), Value::FALSE);
-                    attrs.remove("emitted");
                 }
                 Ok((Value::NIL, attrs))
             }
@@ -297,7 +285,6 @@ impl Interpreter {
                     Self::reset_supplier_after_quit(sid, attrs.contains_key("preserving"));
                 }
                 attrs.insert("done".to_string(), Value::FALSE);
-                attrs.remove("emitted");
                 if !attrs.contains_key("preserving") {
                     attrs.remove("quit_reason");
                 }

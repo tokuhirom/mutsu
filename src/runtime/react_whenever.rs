@@ -565,7 +565,7 @@ impl Interpreter {
                         let ran = thread_interp.call_supply_tap(callback, vec![result]);
                         let quit_fired = emitter_supplier_id
                             .map(|sid| {
-                                crate::runtime::native_methods::supplier_snapshot(sid)
+                                crate::runtime::native_methods::supplier_status(sid)
                                     .2
                                     .is_some()
                             })

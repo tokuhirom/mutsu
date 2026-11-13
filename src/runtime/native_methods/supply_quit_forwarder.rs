@@ -28,7 +28,7 @@
 //! including the channel-backed act loop, which invokes a tap's quit callback
 //! directly rather than through `Interpreter::call_supply_quit_handler`.
 
-use super::state::supplier_snapshot;
+use super::state::supplier_status;
 use crate::runtime::native_supply_methods::QuitOutcome;
 use crate::runtime::*;
 use crate::symbol::Symbol;
@@ -90,13 +90,12 @@ impl Interpreter {
         // tears the block down; `Supplier."quit"`'s own callback drain already
         // gives run-once for the downstream handler, but the `done` branch
         // below has no such drain of its own.
-        let (_, already_done, already_quit) = supplier_snapshot(sid as u64);
+        let (_, already_done, already_quit) = supplier_status(sid as u64);
         if already_done || already_quit.is_some() {
             return Ok(());
         }
         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
             let mut a = HashMap::new();
-            a.insert("emitted".to_string(), Value::array(Vec::new()));
             a.insert("done".to_string(), Value::FALSE);
             a.insert("supplier_id".to_string(), Value::int(sid));
             a

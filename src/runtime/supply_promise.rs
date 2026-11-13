@@ -241,7 +241,6 @@ impl Interpreter {
     ) {
         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
             let mut a = HashMap::new();
-            a.insert("emitted".to_string(), Value::array(Vec::new()));
             a.insert("done".to_string(), Value::FALSE);
             if let Some(sid) = emitter_supplier_id {
                 a.insert("supplier_id".to_string(), Value::int(sid as i64));
@@ -356,7 +355,6 @@ impl Interpreter {
                 let supplier_id = next_supplier_id();
                 let supplier = Value::make_instance(Symbol::intern("Supplier"), {
                     let mut a = HashMap::new();
-                    a.insert("emitted".to_string(), Value::array(Vec::new()));
                     a.insert("done".to_string(), Value::FALSE);
                     a.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
                     a
