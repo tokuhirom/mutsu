@@ -132,6 +132,16 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
+        self.resolve_proto_function_shared(name)
+            .map(|def| (*def).clone())
+    }
+
+    /// [`Self::resolve_proto_function`] without the copy: the registry's own
+    /// shared definition. A caller that only inspects the proto (its body's
+    /// triviality, its signature) takes this one; cloning a `FunctionDef` per
+    /// call was a third of a trivial proto's dispatch.
+    // Cost: O(p), p = packages on the bare-name search path.
+    pub(crate) fn resolve_proto_function_shared(&self, name: &str) -> Option<Arc<FunctionDef>> {
         if crate::qualified::is_qualified_str(name) {
             // A `my`-scoped (non-`our`) proto/multi in a module is exported
             // and callable under its short name, but is never in the package
@@ -147,14 +157,14 @@ impl Interpreter {
                 .registry()
                 .proto_functions
                 .get(&Symbol::intern(name))
-                .map(|def| (**def).clone());
+                .cloned();
         }
         for pkg in self.bare_name_packages_syms().iter() {
             if let Some(def) = dispatch_key::qualified_lookup(pkg.as_str(), name)
                 .and_then(|key| self.registry().proto_functions.get(&key).cloned())
                 .and_then(|def| self.visible_operator_def(name, def))
             {
-                return Some((*def).clone());
+                return Some(def);
             }
         }
         None
