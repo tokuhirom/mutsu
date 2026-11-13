@@ -272,7 +272,7 @@ impl Interpreter {
         // value: step the container at the end of the chain, or the step would
         // replace the binding with a bare value (#10826).
         let arc = &Self::value_cell_of(arc);
-        if self.atomic_container_incdec(arc, name, k.increment, !k.prefix)? {
+        if self.atomic_container_incdec(arc, name, name_sym, k.increment, !k.prefix)? {
             return Ok(());
         }
         let inner = arc.load().deref_container();

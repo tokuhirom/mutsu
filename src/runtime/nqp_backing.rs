@@ -3,7 +3,7 @@
 
 use super::nqp_ops_list::iteration_buffer_items_key;
 use crate::runtime::{Interpreter, RuntimeError};
-use crate::value::{ArrayKind, NqpElemKind, Value, ValueView};
+use crate::value::{ArrayData, ArrayKind, NqpElemKind, Value, ValueView};
 
 /// The array a list-ish nqp value is backed by, as a `Value` that shares the
 /// target's `Gc` node — so an in-place write through it is visible to every
@@ -115,6 +115,42 @@ pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, R
     }
     Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
     Ok(val)
+}
+
+/// `nqp::setelems` on a list's element storage `items` (`target` is the list
+/// value that owns it): resize to `n`, the growth slots following the list's
+/// own element type (#9235). An `nqp::list_i`/`_n`/`_s` grows with its native
+/// zero, a native `array[T]` with 0 (CBOR::Simple presizes `array[num32].new`
+/// this way), an `IterationBuffer` with a null object (`Mu`), and an object
+/// `nqp::list` with null. ParaSeq's `nqp::setelems($output, 0)` empties an
+/// `IterationBuffer` this way. The one implementation of the op for a list;
+/// the general op and the `IterationBuffer` lane both call it.
+// Cost: O(|n - e|) amortized, e = the current element count.
+pub(crate) fn setelems_items(target: &Value, items: &crate::value::GcRef<'_, ArrayData>, n: usize) {
+    let fill = typed_list_fill(items.nqp_elem).unwrap_or_else(|| {
+        let native = items.has_native_backing()
+            || items
+                .declared_type
+                .as_deref()
+                .is_some_and(|t| t.starts_with("array["));
+        if native {
+            Value::int(0)
+        } else if matches!(
+            target.view(),
+            ValueView::Instance { class_name, .. } if class_name == "IterationBuffer"
+        ) {
+            // A grown `IterationBuffer` slot is a null object, which reads
+            // back as `Mu`.
+            Value::package(crate::symbol::Symbol::intern("Mu"))
+        } else {
+            Value::NIL
+        }
+    });
+    // SAFETY: audited aliased in-place container write (see
+    // value::aliased_mut); a resize never re-enters the interpreter, so no
+    // borrow into the node is live across it.
+    let data = unsafe { crate::value::gc_contents_mut(items) };
+    data.items_mut().resize(n, fill);
 }
 
 /// MoarVM's VMArray index rule, the one every positional `nqp::` op uses: a

@@ -999,18 +999,28 @@ impl Interpreter {
         &mut self,
         arc: &crate::gc::Gc<crate::value::ContainerCell>,
         name: &str,
+        name_sym: Symbol,
         increment: bool,
         post: bool,
     ) -> Result<bool, RuntimeError> {
-        // The variable's declared type is looked up BEFORE the cell lock is
-        // taken, because the lookup walks the env and compares bindings through
+        // The cell's own `of`-type answers for it when it has one; the
+        // variable's declared type (by name) is consulted only for a cell that
+        // carries none, so the common typed capture (a `my uint $n` a closure
+        // steps) pays one cell-metadata read, not an env walk as well.
+        let cell_constraint = crate::value::lookup_container_constraint(arc);
+        // The declared type is looked up BEFORE the cell lock is taken,
+        // because the lookup walks the env and compares bindings through
         // their cells, which would lock this same non-reentrant cell again:
         // `$pos++` on an `is rw` parameter whose cell the env also holds
         // deadlocked on itself (#15397). The constraint does not depend on the
         // cell's value, so the read-modify-write below stays one critical
         // section.
-        let env_constraint = loan_env!(self, var_type_constraint_for(name, None))
-            .or_else(|| self.scalar_attr_type_constraint(name));
+        let env_constraint = if cell_constraint.is_none() {
+            loan_env!(self, var_type_constraint_for(name, Some(name_sym)))
+                .or_else(|| self.scalar_attr_type_constraint(name))
+        } else {
+            None
+        };
         let mut guard = arc.lock().unwrap();
         if matches!(
             guard.view(),
@@ -1030,19 +1040,24 @@ impl Interpreter {
         } else {
             Self::decrement_value(&old)
         };
-        let new_val = if let Some(constraint) = crate::value::lookup_container_constraint(arc) {
-            Self::wrap_native_int_arithmetic_for_constraint(&constraint, new_val)
-        } else if let Some(constraint) = &env_constraint {
-            Self::wrap_native_int_arithmetic_for_constraint(constraint, new_val)
-        } else {
-            new_val
+        let new_val = match cell_constraint.as_ref().or(env_constraint.as_ref()) {
+            Some(constraint) => {
+                Self::wrap_native_int_arithmetic_for_constraint(constraint, new_val)
+            }
+            None => new_val,
         };
-        if let Some(constraint) = crate::value::lookup_container_constraint(arc)
+        // A native integer type accepts every `Int` the wrap above leaves
+        // (it is in the type's range by construction), as `Int` itself does:
+        // the general type check has nothing to add for them.
+        if let Some(constraint) = &cell_constraint
             && !matches!(constraint.as_str(), "Any" | "Mu")
             && !new_val.is_nil()
-            && !self.type_matches_value(&constraint, &new_val)
+            && !(matches!(new_val.view(), ValueView::Int(_))
+                && (constraint == "Int"
+                    || crate::runtime::native_types::is_native_int_type(constraint)))
+            && !self.type_matches_value(constraint, &new_val)
         {
-            return Err(self.typecheck_assignment_failure(&constraint, &new_val, None));
+            return Err(self.typecheck_assignment_failure(constraint, &new_val, None));
         }
         *guard = new_val.clone();
         drop(guard);

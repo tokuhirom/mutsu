@@ -1,7 +1,7 @@
 //! The list `nqp::` ops on an `IterationBuffer`, answered without the op-table
 //! walk (#17337).
 //!
-//! `nqp::atpos`, `nqp::elems`, `nqp::push` and `nqp::shift` on an
+//! `nqp::atpos`, `nqp::elems`, `nqp::push`, `nqp::shift` and `nqp::setelems` on an
 //! `IterationBuffer` are the inner loop of nqp-style Raku code (ParaSeq's batch
 //! processors run several per element). Through [`Interpreter::exec_nqp_op`]
 //! each paid ~2,500 instructions in front of a few hundred of work: the operand
@@ -22,23 +22,25 @@ enum ListOp {
     Elems,
     Push,
     Shift,
+    SetElems,
 }
 
 /// The op `id` names, when it is one of [`ListOp`]'s with that many operands.
 // Cost: O(1) after the first call (four ids resolved once).
 fn list_op(id: u16, arity: usize) -> Option<ListOp> {
-    static IDS: std::sync::OnceLock<[Option<u16>; 4]> = std::sync::OnceLock::new();
+    static IDS: std::sync::OnceLock<[Option<u16>; 5]> = std::sync::OnceLock::new();
     let ids = IDS.get_or_init(|| {
-        ["atpos", "elems", "push", "shift"].map(crate::runtime::nqp_op_ids::nqp_op_id)
+        ["atpos", "elems", "push", "shift", "setelems"].map(crate::runtime::nqp_op_ids::nqp_op_id)
     });
     let op = match ids.iter().position(|&known| known == Some(id))? {
         0 => ListOp::AtPos,
         1 => ListOp::Elems,
         2 => ListOp::Push,
-        _ => ListOp::Shift,
+        3 => ListOp::Shift,
+        _ => ListOp::SetElems,
     };
     let operands = match op {
-        ListOp::AtPos | ListOp::Push => 2,
+        ListOp::AtPos | ListOp::Push | ListOp::SetElems => 2,
         ListOp::Elems | ListOp::Shift => 1,
     };
     (arity == operands).then_some(op)
@@ -50,6 +52,29 @@ fn is_plain_iteration_buffer(v: &Value) -> bool {
     static CLASS: std::sync::OnceLock<crate::symbol::Symbol> = std::sync::OnceLock::new();
     let class = *CLASS.get_or_init(|| crate::symbol::Symbol::intern("IterationBuffer"));
     matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == class)
+}
+
+/// The element storage of a plain `IterationBuffer`, handed to `f` while the
+/// instance's attribute map is read-locked. `None` when the buffer has not
+/// vivified its storage yet (the general path does that). The `f`s below are
+/// pure element reads and edits that never re-enter the interpreter, so
+/// nothing can wait on the read lock while it is held.
+// Cost: O(1) plus f.
+fn with_buffer_items<R>(
+    buffer: &Value,
+    f: impl FnOnce(&crate::value::GcRef<'_, crate::value::ArrayData>) -> R,
+) -> Option<R> {
+    let ValueView::Instance { attributes, .. } = buffer.view() else {
+        return None;
+    };
+    let map = attributes.as_map();
+    match map
+        .get(crate::runtime::nqp_ops_list::iteration_buffer_items_key())?
+        .view()
+    {
+        ValueView::Array(items, _) => Some(f(&items)),
+        _ => None,
+    }
 }
 
 impl Interpreter {
@@ -83,20 +108,56 @@ impl Interpreter {
         if !is_plain_iteration_buffer(&buffer) {
             return false;
         }
+        // `atpos`, `push` and `setelems` reach the buffer's storage directly
+        // (the same element read, `Vec` push and resize their general forms
+        // end in), without the high-level-Array refusal, the Buf probe and
+        // the storage-handle clone those forms need for other operands.
+        let view = buffer.is_iteration_buffer_view();
         let result = match op {
             ListOp::AtPos => {
                 let ValueView::Int(idx) = operands[1].deref_container().view() else {
                     return false;
                 };
-                crate::runtime::nqp_backing::elem_at(&buffer, idx).map(|e| e.unwrap_or(Value::NIL))
+                match with_buffer_items(&buffer, |items| {
+                    crate::runtime::nqp_backing::resolve_index(idx, items.len())
+                        .map(|i| Self::array_elem_at(items, i, view).unwrap_or(Value::NIL))
+                }) {
+                    Some(r) => r,
+                    None => crate::runtime::nqp_backing::elem_at(&buffer, idx)
+                        .map(|e| e.unwrap_or(Value::NIL)),
+                }
             }
             ListOp::Elems => Ok(Value::int(
                 Self::nqp_elems_len_of(&buffer).unwrap_or(0) as i64
             )),
             ListOp::Push => {
-                crate::runtime::nqp_backing::push_elem("push", &buffer, operands[1].clone())
+                let value = operands[1].clone();
+                let pushed = with_buffer_items(&buffer, |items| {
+                    // SAFETY: audited aliased in-place container write (see
+                    // `Interpreter::nqp_with_elems_mut`): a pure element push
+                    // that never re-enters the interpreter.
+                    let data = unsafe { crate::value::gc_contents_mut(items) };
+                    data.items_mut().push(value.clone());
+                });
+                match pushed {
+                    Some(()) => Ok(value),
+                    None => crate::runtime::nqp_backing::push_elem("push", &buffer, value),
+                }
             }
             ListOp::Shift => Self::nqp_shift("shift", &buffer),
+            ListOp::SetElems => {
+                let ValueView::Int(n) = operands[1].deref_container().view() else {
+                    return false;
+                };
+                if with_buffer_items(&buffer, |items| {
+                    crate::runtime::nqp_backing::setelems_items(&buffer, items, n.max(0) as usize)
+                })
+                .is_none()
+                {
+                    return false;
+                }
+                Ok(buffer.clone())
+            }
         };
         let Ok(result) = result else {
             // An error (`atpos` before the start) is raised by the general

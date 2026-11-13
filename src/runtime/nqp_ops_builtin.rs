@@ -542,31 +542,7 @@ impl Interpreter {
                 // (ParaSeq's `nqp::setelems($output, 0)` empties one).
                 let backing = crate::runtime::nqp_backing::nqp_backing_array(&target);
                 if let Some(ValueView::Array(items, _)) = backing.as_ref().map(Value::view) {
-                    let fill = crate::runtime::nqp_backing::typed_list_fill(items.nqp_elem)
-                        .unwrap_or_else(|| {
-                            let native = items.has_native_backing()
-                                || items
-                                    .declared_type
-                                    .as_deref()
-                                    .is_some_and(|t| t.starts_with("array["));
-                            if native {
-                                Value::int(0)
-                            } else if matches!(
-                                target.view(),
-                                ValueView::Instance { class_name, .. }
-                                    if class_name == "IterationBuffer"
-                            ) {
-                                // A grown `IterationBuffer` slot is a null
-                                // object, which reads back as `Mu`.
-                                Value::package(Symbol::intern("Mu"))
-                            } else {
-                                Value::NIL
-                            }
-                        });
-                    // SAFETY: audited aliased in-place container write (see
-                    // value::aliased_mut); no borrow into the node is live.
-                    let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.items_mut().resize(n, fill);
+                    crate::runtime::nqp_backing::setelems_items(&target, &items, n);
                     return Some(Ok(target.clone()));
                 }
                 Ok(target)
