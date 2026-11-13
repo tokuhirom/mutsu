@@ -1060,6 +1060,9 @@ impl Interpreter {
     /// carry one and is answered directly, which is what keeps a block written
     /// in the caller's file attributed there even while a module invokes it.
     pub(crate) fn executing_source_file(&self) -> Option<String> {
+        if let Some(file) = self.unframed_callback_file() {
+            return Some(file.resolve());
+        }
         for frame in self.routine_stack.iter().rev() {
             match frame.def_file {
                 Some(file) => return Some(file.resolve()),
@@ -1068,6 +1071,17 @@ impl Interpreter {
             }
         }
         self.current_source_file()
+    }
+
+    /// The module file of code running with no frame of its own over the
+    /// consuming frame: a lazy `.map`/`.grep` callback pulled by another
+    /// unit's routine, or a multi candidate's signature being matched
+    /// (`LexicalState::candidate_scope_unit`). A closure that code mints is in
+    /// that file, not the consumer's.
+    // Cost: O(1).
+    fn unframed_callback_file(&self) -> Option<Symbol> {
+        let (unit, depth) = self.lexicals.candidate_scope_unit?;
+        (depth == self.routine_stack.len() && unit != crate::runtime::main_unit()).then_some(unit)
     }
 
     /// `Symbol` form of [`Self::executing_source_file`] — allocation-free,
@@ -1084,6 +1098,9 @@ impl Interpreter {
     /// another — filing the callee's call site under the script instead of the
     /// module that actually made the call ([#8743](https://github.com/tokuhirom/mutsu/issues/8743)).
     pub(crate) fn executing_source_file_sym(&self) -> Option<Symbol> {
+        if let Some(file) = self.unframed_callback_file() {
+            return Some(file);
+        }
         for frame in self.routine_stack.iter().rev() {
             match frame.def_file {
                 Some(file) => return Some(file),

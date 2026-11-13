@@ -414,10 +414,20 @@ impl Interpreter {
         // pulled by another unit's routine (`subtest { (1,).map: { is f() } }`
         // returns the lazy Seq to Test's `subtest`) would resolve the block's
         // imports against that routine's unit (#12161).
+        // The inline loop pushes no frame for the callback either, so its
+        // declaring compunit's file-scope lexicals (`my constant %keys` of a
+        // module whose routine returned the lazy `.map`, Text::T9) are found
+        // through the same not-yet-framed marker a multi candidate's `where`
+        // uses (`candidate_scope_unit`), not through the consuming frame.
         let saved_unit = match func.as_ref().map(Value::view) {
-            Some(ValueView::Sub(data)) => {
+            // A callback minted while another inline-loop callback ran (a
+            // nested `.map` in a lazy `.map`'s block) may record no file of
+            // its own; it is in the enclosing callback's unit.
+            Some(ValueView::Sub(data)) if data.source_file_sym().is_some() => {
                 let unit = self.unit_of_source_sym(data.source_file_sym());
-                Some(std::mem::replace(&mut self.current_unit, unit))
+                let depth = self.routine_stack().len();
+                let saved_scope = self.lexicals.candidate_scope_unit.replace((unit, depth));
+                Some((std::mem::replace(&mut self.current_unit, unit), saved_scope))
             }
             _ => None,
         };
@@ -497,8 +507,9 @@ impl Interpreter {
             },
         };
         self.module.fatal_mode = saved_fatal;
-        if let Some(unit) = saved_unit {
+        if let Some((unit, saved_scope)) = saved_unit {
             self.current_unit = unit;
+            self.lexicals.candidate_scope_unit = saved_scope;
         }
         self.reconcile_caller_after_lazy_force(caller_code);
         // A lazy list the callback slipped that cannot be seen to end waits in
