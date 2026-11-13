@@ -164,6 +164,18 @@ impl Interpreter {
                 }
             }
         }
+        // The env walk below looks for the handles the child must be handed a
+        // clone of (`IoState::fork_for_thread` clones exactly the open handles
+        // whose ids are collected). When every open handle is already
+        // collected -- the usual case: only `$*IN`/`$*OUT`/`$*ERR` are open,
+        // and they came from the dynamics tier above -- the walk can add
+        // nothing, and it costs a three-object-deep descent of every env
+        // value on every spawn (~80k instructions per cued batch in ParaSeq).
+        let handle_walk_needed = self
+            .io_handles()
+            .map
+            .iter()
+            .any(|(id, handle)| !handle.closed && !referenced_handle_ids.contains(id));
         {
             // Slice 5 step A instrumentation: how many env entries this walk
             // visits vs. how many actually land in the store. Accumulated
@@ -172,7 +184,9 @@ impl Interpreter {
             let mut seed_inserts: u64 = 0;
             for (key, val) in &self.env {
                 seed_keys_walked += 1;
-                Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
+                if handle_walk_needed {
+                    Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
+                }
                 // Skip internal variables and topic variables.
                 // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
                 // are thread-local; mutations inside `start` blocks must not

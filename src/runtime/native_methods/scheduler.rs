@@ -391,7 +391,12 @@ impl Interpreter {
                     // path, which preserves their historical run-once handling.
                     self.cue_every_timer(params, cancellation_id)?;
                 } else {
-                    let mut thread_interp = self.clone_for_thread_for_block(&params.callback);
+                    // Boxed at once: the fork is moved into two closures and
+                    // the pool's task box on its way to a worker, and an
+                    // `Interpreter` by value is a large struct each move
+                    // copies (~18k instructions per move per cue).
+                    let mut thread_interp =
+                        Box::new(self.clone_for_thread_for_block(&params.callback));
                     // Track the spawned task so `$*SCHEDULER.loads` reflects it
                     // until the callback finishes (mark started before spawn so a
                     // racing `.loads` never undercounts).
