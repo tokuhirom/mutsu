@@ -40,9 +40,10 @@ use crate::symbol::Symbol;
 use rustc_hash::FxHashSet;
 
 /// Add every identifier run of `s` to `out`: maximal runs of name characters
-/// (letters, digits, `_`, `-`, `'`, `:` and `?`), plus each `::`-separated
-/// segment of a run, so `Array[T]` yields `Array` and `T`, and `G::A` yields
-/// `G::A`, `G` and `A`. Over-collecting only keeps an install.
+/// (letters, digits, `_`, `-`, `'`, `:` and `?`), plus each `:`-separated
+/// segment and qualified suffix of a run, so `Array[T]` yields `Array` and
+/// `T`, and `R::G::A` yields `R::G::A`, `G::A`, `R`, `G` and `A`.
+/// Over-collecting only keeps an install.
 // Cost: O(n), n = the length of `s`.
 fn add_name_tokens(s: &str, out: &mut FxHashSet<Symbol>) {
     let is_name_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':' | '?');
@@ -51,9 +52,18 @@ fn add_name_tokens(s: &str, out: &mut FxHashSet<Symbol>) {
             continue;
         }
         out.insert(Symbol::intern(run));
-        if run.contains("::") {
-            for seg in run.split("::").filter(|seg| !seg.is_empty()) {
-                out.insert(Symbol::intern(seg));
+        // Each `:`-separated part of a package-qualified run (a whole-chunk
+        // token scan done once, not a per-execution name split).
+        for seg in run.split([':', '?']).filter(|seg| !seg.is_empty() && seg.len() != run.len()) {
+            out.insert(Symbol::intern(seg));
+        }
+        // ...and every qualified suffix (`R::G::A` also names `G::A`).
+        for (i, c) in run.char_indices() {
+            if c == ':' {
+                let suffix = run[i..].trim_start_matches([':', '?']);
+                if !suffix.is_empty() {
+                    out.insert(Symbol::intern(suffix));
+                }
             }
         }
         // A twigil-led or `?`-led run (`?T`, `::?ROLE`) also names its bare part.
