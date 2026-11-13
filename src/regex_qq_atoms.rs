@@ -161,7 +161,20 @@ pub(crate) fn body_wants_thunk(body: &str) -> bool {
             i += 2;
             continue;
         }
-        if matches!(c, '$' | '@' | '%' | '&' | '{') {
+        // A sigil interpolates only when something that can start a
+        // variable follows it: a name, a twigil, or a `$(...)` / `@(...)` /
+        // `${...}` contextualizer. A bare sigil (`"@"`, `"$"`, `"%"`, `"&"`)
+        // is literal text, and treating it as interpolation kept every
+        // pattern containing one (Cro::Uri's `authority` token: `"@"`) out of
+        // the parse cache, so its LTM automaton was rebuilt on every match.
+        let starts_variable = |next: Option<&char>| {
+            next.is_some_and(|n| {
+                n.is_alphabetic()
+                    || matches!(n, '_' | '(' | '{' | '[' | '*' | '!' | '?' | '^' | '.' | ':' | '$' | '@' | '%' | '&' | '/' | '<' | '\u{00A2}')
+                    || n.is_ascii_digit()
+            })
+        };
+        if c == '{' || (matches!(c, '$' | '@' | '%' | '&') && starts_variable(chars.get(i + 1))) {
             interpolates = true;
         }
         if matches!(c, '$' | '@' | '%') {
