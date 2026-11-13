@@ -17,7 +17,9 @@
 //!
 //! - the site has no argument, no `.^`/`.!` modifier and is not quoted, and
 //!   the receiver is not an `@!`/`%!` attribute;
-//! - no accessor-ref marker or writeback is pending, no user `find_method`
+//! - no accessor-ref marker or rw writeback is pending (the retain-on-miss
+//!   caller-var writebacks are drained after the answer, as the full path
+//!   drains them), no user `find_method`
 //!   exists, no method is wrapped and no deferral bypass is active;
 //! - the receiver is a built-in iterator instance (its `DispatchShape` is
 //!   `Iterator` or `PredictiveIterator`), and one of that shape's owners has an
@@ -80,7 +82,6 @@ impl Interpreter {
         };
         if self.accessor_ref_pending
             || !self.pending_rw_writeback_sources.is_empty()
-            || !self.pending_caller_var_writeback.is_empty()
             || !self.pending_local_updates.is_empty()
             || self.dispatch.native_base_bypass.is_some()
             || crate::runtime::find_method_intercept::any_user_find_method()
