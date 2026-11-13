@@ -20,9 +20,11 @@ use std::sync::{Mutex, OnceLock};
 /// One site's memo: the generation it was resolved under, and the value.
 type Word = Mutex<Option<(u64, Value)>>;
 
-/// One memo per string constant of a chunk.
+/// One memo per string constant of a chunk, plus one fact about the chunk
+/// the reader asks on every hit of a lexical-type memo: whether the chunk
+/// declares no type of its own (see `Interpreter::exec_get_bare_word_op`).
 #[derive(Debug, Default)]
-pub(crate) struct BarewordSiteCaches(OnceLock<Box<[Word]>>);
+pub(crate) struct BarewordSiteCaches(OnceLock<Box<[Word]>>, OnceLock<bool>);
 
 impl Clone for BarewordSiteCaches {
     /// A cloned chunk starts cold: the memo is an optimization, not state.
@@ -38,6 +40,15 @@ impl BarewordSiteCaches {
     fn words(&self, sites: usize) -> &[Word] {
         self.0
             .get_or_init(|| (0..sites).map(|_| Mutex::new(None)).collect())
+    }
+
+    /// Whether the chunk declares no type (class, role, enum, subset,
+    /// package) of its own: `compute` decides it the first time, from the
+    /// chunk's ops, which never change. The answer is a property of the
+    /// chunk's text, so it is computed once rather than on every hit.
+    // Cost: O(1) once computed; the first call is `compute`'s.
+    pub(crate) fn declares_no_types(&self, compute: impl FnOnce() -> bool) -> bool {
+        *self.1.get_or_init(compute)
     }
 
     /// The value constant `idx` resolved to under `generation`, if the site
