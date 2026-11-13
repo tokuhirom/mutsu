@@ -2,7 +2,6 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
-    row!("RakuAST::Regex::Assertion::Alias", "assertion"),
     row!("RakuAST::Regex::Assertion::Alias", "name"),
     row!("RakuAST::Regex::Assertion::Callable", "args"),
     row!("RakuAST::Regex::Assertion::Callable", "callee"),
@@ -205,4 +204,5 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Trait::Will", "phase"),
     row!("RakuAST::Trait::WillBuild", "IMPL-TRAIT-NAME"),
     row!("RakuAST::Transliteration", "destructive"),
+    row!("RakuAST::Transliteration", "left"),
 ];
