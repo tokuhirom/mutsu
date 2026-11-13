@@ -45,6 +45,41 @@ impl Interpreter {
         }
     }
 
+    /// The doc-table key and the storage name of a lexical (`my`) class,
+    /// package or subset declared in `package`: the storage name is the one
+    /// its registration uses (`Compiler::declared_class_storage_name`, the
+    /// `my package` arm of the statement compiler, `register_subset_decl`).
+    /// `None` for a declaration stored under its plain name: one with no
+    /// stable site, a qualified one, or an `EXPORT`/`EXPORTHOW` stash.
+    // Cost: O(n), n = the length of the qualified name.
+    fn lexical_type_storage(
+        stmt: &Stmt,
+        package: &str,
+        name: crate::symbol::Symbol,
+        decl_id: u64,
+    ) -> Option<(String, String)> {
+        let bare = name.resolve();
+        if decl_id == 0 || crate::qualified::is_qualified_str(&bare) {
+            return None;
+        }
+        let is_subset = matches!(stmt, Stmt::SubsetDecl { .. });
+        if matches!(stmt, Stmt::Package { .. }) && matches!(bare.as_str(), "EXPORT" | "EXPORTHOW") {
+            return None;
+        }
+        let qualified = if crate::qualified::is_global_name(package) || (is_subset && package == "Main")
+        {
+            bare.clone()
+        } else {
+            crate::qualified::qualified(crate::symbol::Symbol::intern(package), name)
+                .as_str()
+                .to_string()
+        };
+        let storage = format!("{qualified}\u{0}{decl_id}");
+        // A subset's doc entry is keyed by its bare name, a container's by
+        // its package-qualified one (`parser::decl_doc::resolve`).
+        Some((if is_subset { bare } else { qualified }, storage))
+    }
+
     /// File a declarant under its plain key, and -- for a `multi` candidate --
     /// under the `<key>/multi.<n>` form the parser's doc table
     /// (`parser::decl_doc`) uses to keep one candidate's `#|` comment from
@@ -296,6 +331,34 @@ impl Interpreter {
                         .to_string(),
                     super::attribute_identity::attribute_meta_object(identity, attrs),
                 );
+            }
+            // A lexical type is registered under its declaration's storage
+            // name (`Name\0<decl_id>`, ADR-0047 P1), so its declarator block's
+            // `WHEREFORE` must be that type, not a package of the bare
+            // spelling: Pod::To::Man asks `.HOW` of it and compares it with
+            // `===` to the type.
+            Stmt::ClassDecl {
+                name,
+                is_lexical: true,
+                decl_id,
+                ..
+            }
+            | Stmt::Package {
+                name,
+                is_my: true,
+                decl_id,
+                ..
+            }
+            | Stmt::SubsetDecl {
+                name,
+                is_my: true,
+                decl_id,
+                ..
+            } => {
+                if let Some((key, storage)) = Self::lexical_type_storage(stmt, package, *name, *decl_id)
+                {
+                    out.insert(key, Value::package(crate::symbol::Symbol::intern(&storage)));
+                }
             }
             _ => {}
         }

@@ -52,29 +52,6 @@ pub(crate) fn embedded_container_type_name(target: &Value) -> Option<String> {
 }
 
 impl Interpreter {
-    /// The storage key (`Name\u{0}<decl-id>`, ADR-0047) of the one lexical
-    /// `package`/`module`/`grammar` declared under the bare spelling `bare`,
-    /// if exactly one exists. Asked only for a bare-named type object the
-    /// registry does not know (the `WHEREFORE` of a lexical package's
-    /// declarator pod), so the scan of the package kinds is off every hot path.
-    // Cost: O(k), k = declared package kinds.
-    fn unique_lexical_package_key(&self, bare: &str) -> Option<String> {
-        let registry = self.registry();
-        let mut found: Option<&String> = None;
-        for key in registry.package_kinds.keys() {
-            if key
-                .split_once('\u{0}')
-                .is_some_and(|(head, _)| head == bare)
-            {
-                if found.is_some_and(|prev| prev != key) {
-                    return None;
-                }
-                found = Some(key);
-            }
-        }
-        found.cloned()
-    }
-
     /// Dispatch .WHAT method
     pub(crate) fn dispatch_what(
         &mut self,
@@ -628,24 +605,6 @@ impl Interpreter {
         if let Some(how_val) = self.registry().class_how_values.get(&how_cache_key) {
             return Ok(how_val.clone());
         }
-        // A type object named by the bare spelling of a lexical package (`my
-        // module M`, `my package P`), which lives under its storage name
-        // (`M\u{0}<decl-id>`, ADR-0047): the `WHEREFORE` of the package's
-        // declarator pod is built before the declaration registers, so it can
-        // only name it. Its package kind is the storage name's.
-        let type_name = match target.view() {
-            ValueView::Package(_)
-                if !self.registry().package_kinds.contains_key(&type_name)
-                    && !self.registry().classes.contains_key(&type_name)
-                    && !self.registry().roles.contains_key(&type_name)
-                    && !self.registry().enum_types.contains_key(&type_name)
-                    && !self.registry().subsets.contains_key(&type_name)
-                    && !crate::runtime::Interpreter::is_builtin_type(&type_name) =>
-            {
-                self.unique_lexical_package_key(&type_name).unwrap_or(type_name)
-            }
-            _ => type_name,
-        };
         // A role name only reports a role metaclass for the *type object*. An
         // INSTANCE of a role is an instance of the class the role was punned
         // into (`R.new` builds an anonymous class that does `R`), and an
@@ -907,7 +866,15 @@ impl Interpreter {
         }
         // Return declarator doc comment attached to this type/package/sub
         let keys: Vec<String> = match target.view() {
-            ValueView::Package(name) => vec![name.resolve()],
+            // A lexical type's storage name (`TC\0<decl_id>`) is documented
+            // under the name it was declared with.
+            ValueView::Package(name) => {
+                let storage = name.resolve();
+                match storage.split_once('\u{0}') {
+                    Some((declared, _)) => vec![storage.clone(), declared.to_string()],
+                    None => vec![storage],
+                }
+            }
             ValueView::Instance {
                 class_name,
                 attributes,
