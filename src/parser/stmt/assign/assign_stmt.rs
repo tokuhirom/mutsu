@@ -370,7 +370,8 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     quoted: true,
                 },
             };
-            let (r_final, stmt) = dot_assign_with_postfix(r_final, dot_assign_stmt(name, method_expr))?;
+            let (r_final, stmt) =
+                dot_assign_with_postfix(r_final, dot_assign_stmt(name, method_expr))?;
             let (r_final, stmt) =
                 crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
                     r_final,
