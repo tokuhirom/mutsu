@@ -178,10 +178,14 @@ impl Interpreter {
             if bare.is_empty() || crate::qualified::is_qualified_str(bare) {
                 continue;
             }
+            // The head's own storage name: a type nested in a lexical package
+            // or class (`Enums\0<id>::Status`) records `Enums\0<id>`, the
+            // binding `Enums` had in the module's scope.
+            let storage = crate::qualified::segments(Symbol::intern(key))[0];
             let table = crate::runtime::cow_table_mut(
                 &mut self.module.module_visibility.unit_lexical_types,
             );
-            table.insert((unit, Symbol::intern(bare)), Symbol::intern(key));
+            table.insert((unit, Symbol::intern(bare)), storage);
         }
     }
 

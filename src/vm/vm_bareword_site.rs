@@ -87,6 +87,10 @@ impl Interpreter {
         if self.main_type_hidden_in_code(code, code.const_sym(name_idx)) {
             return self.push_hidden_type_name(name, compiled_fns);
         }
+        if let Some(member) = self.unit_lexical_qualified_member(code, code.const_sym(name_idx)) {
+            self.stack.push(member);
+            return Ok(());
+        }
         let foreign_unit = self.code_is_loaded_module_code(code);
         self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, false, foreign_unit)?;
         let unit_lexical = self.resolve_unit_lexical_type(code, name_idx);
@@ -225,6 +229,32 @@ impl Interpreter {
     fn is_unit_lexical_type_of(&self, code: &CompiledCode, name: Symbol, storage: Symbol) -> bool {
         code.source_file
             .is_some_and(|unit| self.unit_lexical_type(unit, name) == Some(storage))
+    }
+
+    /// `Enums::Status` in a module routine where `Enums` is the module's own
+    /// lexical package (`my package Enums { our enum Status ... }`), run from
+    /// another compunit: the routine's `env` no longer binds `Enums`, so the
+    /// head resolves through the lexical types `code`'s own unit declared, as
+    /// rakudo resolves it in the routine's lexical scope at compile time. Only
+    /// code of a loaded module has unit lexical types, so a program naming a
+    /// module's lexical package still fails, as in rakudo (KeyNub::LicDongle).
+    // Cost: O(1) for an unqualified name or an env-bound head; otherwise one
+    // hash probe plus the member lookup.
+    fn unit_lexical_qualified_member(&self, code: &CompiledCode, name: Symbol) -> Option<Value> {
+        let unit = code.source_file?;
+        if !crate::qualified::is_qualified(name) {
+            return None;
+        }
+        let segments = crate::qualified::segments(name);
+        let (&head, rest) = segments.split_first()?;
+        if rest.is_empty() || self.type_name_binding(head.as_str()).is_some() {
+            return None;
+        }
+        let storage = self.unit_lexical_type(unit, head)?;
+        let real = rest.iter().fold(storage, |pkg, &segment| {
+            crate::qualified::qualified(pkg, segment)
+        });
+        self.lexical_package_member(real.as_str())
     }
 
     fn resolve_unit_lexical_type(&mut self, code: &CompiledCode, name_idx: u32) -> bool {

@@ -156,7 +156,7 @@ impl Interpreter {
     /// `real`, a qualified name under a lexical package's storage name
     /// (`Pk\0<id>::E`, #17477): the type, package or enum value it names.
     // Cost: O(1) expected, a few registry and env probes.
-    fn lexical_package_member(&self, real: &str) -> Option<Value> {
+    pub(super) fn lexical_package_member(&self, real: &str) -> Option<Value> {
         let base = crate::runtime::types::strip_type_smiley(real).0;
         if self.has_type(base) || self.is_known_package(base) {
             return Some(Value::package(Symbol::intern(real)));

@@ -972,6 +972,16 @@ impl Interpreter {
             self.registry().classes.keys().cloned().collect(),
             self.registry().roles.keys().cloned().collect(),
         );
+        // Lexical (`Name\0<decl-id>`) enum keys present before the load: an
+        // enum in a module's `my package` is reached from the module's own
+        // routines through its unit's lexical types (`record_unit_lexical_types`).
+        let before_lexical_enums: std::collections::HashSet<String> = self
+            .registry()
+            .enum_types
+            .keys()
+            .filter(|k| k.contains('\u{0}'))
+            .cloned()
+            .collect();
         if let Some(dist) = &module_dist {
             self.module.current_distribution = Some(dist.clone());
             // Everything this module's own mainline runs from here on sits at or
@@ -1561,6 +1571,14 @@ impl Interpreter {
                 .cloned()
                 .collect();
             self.record_unit_lexical_types(module_unit_for_loading_stack, registered_here.iter());
+            let lexical_enums_here: Vec<String> = self
+                .registry()
+                .enum_types
+                .keys()
+                .filter(|k| k.contains('\u{0}') && !before_lexical_enums.contains(*k))
+                .cloned()
+                .collect();
+            self.record_unit_lexical_types(module_unit_for_loading_stack, lexical_enums_here.iter());
             let exported_type_names: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
             // A type a `package EXPORT::<tag>` block declared is imported under
             // its short name: bind it where the importer reads it (#16332).
