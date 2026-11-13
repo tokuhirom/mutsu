@@ -52,6 +52,15 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
     {
         *bind = Some(BindKind::Code);
     }
+    // `my $node := @a.AT-POS($i)` is the subscript `@a[$i]` spelled as a
+    // method: it binds the element's container, autovivified on its first
+    // assignment (BinaryHeap's `!insert`), so it takes the subscript's route.
+    if let Stmt::VarDecl { name, expr, .. } = &mut decl
+        && is_scalar_bind_name(name)
+        && let Some(index) = array_at_pos_as_index(expr)
+    {
+        *expr = index;
+    }
     let Stmt::VarDecl { name, expr, .. } = &decl else {
         return decl;
     };
@@ -101,6 +110,35 @@ pub(crate) fn expand(mut decl: Stmt) -> Stmt {
         return Stmt::SyntheticBlock(vec![super::var_marks::with_bound_mark(decl)]);
     }
     decl
+}
+
+/// `@var.AT-POS(EXPR)` -- a plain one-argument call on an `@` variable, never
+/// a scalar that may hold a class with its own `AT-POS` -- as the subscript
+/// `@var[EXPR]` it spells; `None` for any other expression.
+// Cost: O(1) plus a clone of the index expression.
+fn array_at_pos_as_index(expr: &Expr) -> Option<Expr> {
+    let Expr::MethodCall {
+        target,
+        name,
+        args,
+        modifier: None,
+        quoted: false,
+        ..
+    } = expr
+    else {
+        return None;
+    };
+    let [index] = args.as_slice() else {
+        return None;
+    };
+    (matches!(**target, Expr::ArrayVar(_)) && name.with_str(|n| n == "AT-POS")).then(|| {
+        Expr::Index {
+            target: target.clone(),
+            index: Box::new(index.clone()),
+            is_positional: true,
+            spelling: Default::default(),
+        }
+    })
 }
 
 /// Whether binding to `expr` aliases an existing container: a variable, an
