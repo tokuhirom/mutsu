@@ -2031,6 +2031,16 @@ impl Interpreter {
                 }
                 return Ok(self.nextcallee_with_chain(candidate, &receiver_class, rest));
             }
+            // Inside a candidate a `nextcallee` continuation runs, the rest of
+            // its chain is continuations already (`nextcallee_chain`): the
+            // next one is the callee.
+            if let Some(frame) = self.dispatch.method_dispatch_stack.last_mut()
+                && !frame.in_wrapper
+                && let Some(DeferralEntry::Wrapper(next)) = frame.remaining.first().cloned()
+            {
+                frame.remaining.remove(0);
+                return Ok(next);
+            }
             // The end of a multi DISPATCHER wrap chain: hand back a callable
             // that re-dispatches the multi on the invocant and args it is
             // given (#11701), as `callsame` does with the frame's own.

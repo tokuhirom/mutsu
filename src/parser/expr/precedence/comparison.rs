@@ -25,8 +25,36 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
 }
 
 /// The comparison operators (if any) that follow an already-parsed `left`
-/// operand.
-fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Expr> {
+/// operand. A single comparison whose operator a user candidate exactly
+/// shadows (`multi infix:<==>`) keeps the comparison's precedence and is the
+/// call of that operator, as the declared operator's own path builds it, so
+/// the candidate's `is rw` parameters bind the operands' containers.
+// Cost: as the comparison it parses, plus one user-operator probe.
+fn comparison_tail(rest: &str, left: Expr, mode: ExprMode) -> PResult<'_, Expr> {
+    let shadowed = ws(rest).ok().and_then(|(r, _)| {
+        let (_, ulen) = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)?;
+        let (op, len) = parse_comparison_op(r)?;
+        (len == ulen).then(|| (op.token_kind(), r[..len].to_string()))
+    });
+    let (r, expr) = comparison_tail_ops(rest, left, mode)?;
+    if let Some((kind, name)) = shadowed
+        && matches!(&expr, Expr::Binary { op, .. } if *op == kind)
+        && let Expr::Binary { left, right, .. } = expr
+    {
+        return Ok((
+            r,
+            Expr::InfixFunc {
+                name,
+                left,
+                right: vec![*right],
+                modifier: None,
+            },
+        ));
+    }
+    Ok((r, expr))
+}
+
+fn comparison_tail_ops(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Expr> {
     fn regex_rhs_needs_more_parsing(rest: &str) -> bool {
         let Ok((rest, _)) = ws(rest) else {
             return false;
