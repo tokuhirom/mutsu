@@ -789,7 +789,17 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_get_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
+    /// `%*ENV<KEY>` read by value. An element bound to a `Proxy` (`%*ENV<PATH>
+    /// := Proxy.new(...)`, the shape the Env distribution exports) is FETCHed,
+    /// as the general `Index` op does, so `my $copy = %*ENV<PATH>` keeps the
+    /// value it read rather than the live Proxy.
+    // Cost: O(1) avg (hash probe of %*ENV, falling back to the process env),
+    // plus the FETCH body's own work when the element is a Proxy.
+    pub(super) fn exec_get_env_index_op(
+        &mut self,
+        code: &CompiledCode,
+        key_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let key = Self::const_str(code, key_idx);
         let val = if let Some(ValueView::Hash(env_hash)) =
             self.process_env_hash().as_ref().map(Value::view)
@@ -807,7 +817,19 @@ impl Interpreter {
         } else {
             Value::NIL
         };
+        // A `:=`-bound element may sit in a container cell around the Proxy.
+        let bound = if val.is_container_ref() {
+            val.deref_container()
+        } else {
+            val.clone()
+        };
+        let val = if bound.is_proxy_value() {
+            self.fetch_proxy_operand(bound)?
+        } else {
+            val
+        };
         self.stack.push(val);
+        Ok(())
     }
 
     pub(super) fn exec_exists_env_index_op(&mut self, code: &CompiledCode, key_idx: u32) {
