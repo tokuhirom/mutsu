@@ -101,3 +101,27 @@ the slot's value through the calling-frame flush as for any slot-only local.
 - Bound terms (`my \hit = $cache{key}`, `TermMark::Bound`) cost ~19k Ir more than
   `my $hit = ...`. Their verdict is a run-time one (`MarkSigillessBindSource`); moving it to the
   slot needs the alternative above (the slot holding the container itself) first.
+
+## Amendment (2026-11-13): bound terms over a subscript or a call declare through the lane
+
+A sigilless term bound to a subscript's or a call's result (`my \h = $cache{k}`,
+`my \m = f(...)`, `my \e = self.x`) is never aliased to a caller variable by name: it binds
+whatever container or value the expression hands back. The compiler records such a slot
+(`BindingFlags::bound_expr_term`: every declaration of the slot is of this shape), and
+`CompiledCode::lean_bound_term_slot` applies the same `!needs_env_sync` / no-reflection test as
+D2. When `MarkSigillessBindSource` judged the bind source a plain value, the declaration takes
+the env-free lane (`exec_set_local_bound_term_decl_fast`): `SetVarDynamic` and `SetLocalDecl`
+write the slot only, instead of the general bind store's env mirrors, package probes and alias
+resolution. A container source keeps the general bind.
+
+The verdict itself still lives in the env marker that `MarkSigillessBind` writes (D3 is not
+extended to bound terms): deciding it from the slot alone broke `=:=` between two
+`$it.pull-one` results, which mutsu still answers through the by-name `VarRef`s of readonly
+terms because its `pull-one` returns values where rakudo returns element containers. Because
+the lane skips the declaration's clearing of the marker, `MarkSigillessBind` clears a stale
+marker itself when a later run binds a container. A slot-only term's readonly error reads the
+value from the slot (it has no env mirror).
+
+Measured (callgrind slope, profiling build): `sub f(Mu \m) { my \k = m{'a'}; 1 }` in a script
+33.5k -> 18.5k Ir; a module helper of Monad's shape (`my \key = ...; my \hit = $cache{key}`)
+63.2k -> 60.2k.
