@@ -58,6 +58,14 @@ pub(super) fn body_references_topic(input: &str) -> bool {
             continue;
         }
         match c {
+            // A line comment is not code: the `.token` in
+            // `{ a => 1, # read .token\n b => 2 }` is no topic call.
+            b'#' if bytes.get(i + 1) != Some(&b'`') => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
             b'"' => in_d = true,
             b'{' => depth += 1,
             b'}' => {
