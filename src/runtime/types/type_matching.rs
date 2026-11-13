@@ -679,6 +679,13 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // `Mu` admits every value -- an instance, a type object, `Nil`, a
+        // Junction -- so the answer needs neither the instance memo (whose key
+        // costs a scope lookup of the name) nor the full check. Only a class
+        // the program itself names `Mu` shadows it.
+        if constraint == "Mu" && !self.types.user_declared_classes.contains("Mu") {
+            return true;
+        }
         // An instance of a user class against a nominal user type: answered
         // per (class, type) while the registry is unchanged (#17331).
         if let Some(key) = self.type_matches_memo_key(value, constraint) {
