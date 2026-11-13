@@ -88,6 +88,20 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!("symlink", 0, symlink_row, RowFlags::NONE, &["absolute"]),
     row!("symlink", 1, symlink_row, RowFlags::ANY_ARGS, &["absolute"]),
+    row!(
+        "readlink",
+        0,
+        readlink_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &[]
+    ),
+    row!(
+        "readlink",
+        1,
+        readlink_row,
+        RowFlags::ANY_ARGS.or(RowFlags::DEFINITE),
+        &[]
+    ),
     row!("link", 0, link_row, RowFlags::NONE, &[]),
     row!("link", 1, link_row, RowFlags::ANY_ARGS, &[]),
 ];
@@ -226,4 +240,16 @@ fn link_row(
 ) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
     Some(interp.io_path_link(&ctx.attributes, args))
+}
+
+/// `IO::Path.readlink($CWD?)`.
+// Cost: O(p + t) plus one lstat(2) and one readlink(2), p, t = path lengths.
+fn readlink_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ctx = PathCtx::of(target)?;
+    Some(interp.io_path_readlink(&ctx.attributes, args))
 }

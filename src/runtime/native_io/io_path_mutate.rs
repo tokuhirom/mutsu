@@ -259,6 +259,46 @@ impl Interpreter {
         }
     }
 
+    /// `IO::Path.readlink($CWD?)`: a symlink's target, as rakudo answers it --
+    /// the target made absolute against `$*CWD`, with the link's directory (or
+    /// `$CWD`) as its `CWD`. A path that is not a symlink answers itself,
+    /// absolute; a missing one is the `X::IO::DoesNotExist` Failure of `.l`.
+    // Cost: O(p + t) plus one lstat(2) and one readlink(2), p, t = path lengths.
+    pub(crate) fn io_path_readlink(
+        &self,
+        attributes: &AttrMap,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (_, path_buf) = self.io_path_resolved(attributes);
+        let abs = Self::stringify_path(&path_buf);
+        let Ok(meta) = fs::symlink_metadata(&path_buf) else {
+            return Ok(super::helpers::io_path_missing_failure(&abs, "l"));
+        };
+        if !meta.file_type().is_symlink() {
+            return Ok(self.make_io_path_instance(&abs));
+        }
+        let target = fs::read_link(&path_buf).map_err(|e| {
+            RuntimeError::new(format!("Failed to readlink file: {e}"))
+        })?;
+        let target = Self::stringify_path(&self.resolve_path(&Self::stringify_path(&target)));
+        let cwd = match args.first() {
+            Some(cwd) => cwd.to_string_value(),
+            None => path_buf
+                .parent()
+                .map(Self::stringify_path)
+                .unwrap_or_else(|| "/".to_string()),
+        };
+        let path = self.make_io_path_instance(&target);
+        Ok(match path.view() {
+            ValueView::Instance { attributes, .. } => {
+                let mut attrs = attributes.as_map().clone();
+                attrs.insert("cwd".to_string(), Value::str(cwd));
+                Value::make_instance(Symbol::intern("IO::Path"), attrs)
+            }
+            _ => path,
+        })
+    }
+
     /// `IO::Path.link($name)`: create a hard link named `$name` pointing to
     /// the receiver (the target). Fails with `X::IO::Link`.
     // Cost: O(p + n) plus one link(2), p, n = path lengths.
