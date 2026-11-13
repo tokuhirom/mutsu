@@ -497,6 +497,19 @@ impl Interpreter {
         let attr_slot_is_container = code
             .local_attr_key(idx)
             .is_some_and(|(_, _, sigil)| matches!(sigil, '@' | '%'));
+        // A `:=`-bound scalar attribute keeps its binding in the slot, but a
+        // nested frame may have REBOUND the attribute since this frame seeded
+        // it (`method n($v) { $!c := $v }` called from here): every bind
+        // writes the instance at once, so the instance's word is the current
+        // binding, and the slot's cell is a stale one when the two differ.
+        if !attr_slot_is_container
+            && let ValueView::ContainerRef(slot_cell) = self.locals[idx].view()
+            && let Some(raw) = self.read_self_attr_raw_slot(code, idx)
+            && !matches!(raw.view(), ValueView::ContainerRef(cell)
+                if crate::gc::Gc::ptr_eq(&cell, &slot_cell))
+        {
+            self.locals[idx] = raw;
+        }
         if (!self.locals[idx].is_container_ref() || attr_slot_is_container)
             // Slot form: the attribute `Symbol` is pre-resolved per chunk, so
             // this read parses no twigil and interns no string (ADR-0006 §2.4).

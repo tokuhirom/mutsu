@@ -599,6 +599,19 @@ impl Interpreter {
         self.read_class_level_attr_cell(bare, is_private)
     }
 
+    /// The raw word `self`'s scalar attribute at local slot `idx` holds -- the
+    /// bound container itself, not its contents -- or `None` when the slot is
+    /// not an instance attribute of the current `self`.
+    // Cost: O(m), m = mixin layers of `self` (one keyed slot probe each).
+    pub(super) fn read_self_attr_raw_slot(&self, code: &CompiledCode, idx: usize) -> Option<Value> {
+        let (bare, is_private, sigil) = code.local_attr_key(idx)?;
+        let self_val = self.attr_access_self(code)?;
+        self.with_self_attr(&self_val, Some((code, idx)), bare, is_private, sigil, |_, map, key| {
+            map.get_vivify(key).cloned()
+        })
+        .flatten()
+    }
+
     /// Fall back to a class-level attribute (`my $.x` / `our $.x`) when the
     /// instance-cell lookup above found nothing — either because `self` is a
     /// type object (`Foo.imm`, no instance at all) or because the bare name is
