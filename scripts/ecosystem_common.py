@@ -50,6 +50,27 @@ CORE_PROVIDED = {
     "experimental", "lib", "Pod::To::Text", "CORE", "v6",
 }
 
+
+def _rakudo_core_library() -> set[str]:
+    """The modules of rakudo's own core library, as vendored verbatim in
+    `modules/Rakudo-Core` (its META6 `provides`). rakudo resolves each with no
+    installed distribution (`raku -e 'use RakuAST::Deparse::Highlight'`), so a
+    dependency on one is compiler-provided, never an ecosystem distribution to
+    resolve. Without this, Rakuast::RakuDoc::Render, Elucid8::Build and
+    Air-Plugin-RakuDoc were `blocked_dep` on RakuAST::Deparse::Highlight."""
+    meta = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "modules", "Rakudo-Core", "META6.json",
+    )
+    try:
+        with open(meta, encoding="utf-8") as fh:
+            return set(json.load(fh).get("provides") or {})
+    except (OSError, ValueError):
+        return set()
+
+
+CORE_PROVIDED |= _rakudo_core_library()
+
 _DEP_NAME = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*(?:::[A-Za-z0-9_-]+)*)")
 # A dependency string is a name followed by zero or more `:key<value>`
 # adverbs, mirroring zef's own `Zef::Identity` grammar
