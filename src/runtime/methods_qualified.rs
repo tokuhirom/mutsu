@@ -1433,7 +1433,7 @@ impl Interpreter {
                 && !mixins.contains_key(MetaNs::Role.str_key_for_str(qualifier))
                 && !mixins.contains_key(qualifier)
             {
-                let inner = Value::clone(&inner);
+                let inner = Value::clone(inner);
                 return Some(self.call_method_with_values(inner, actual_method, args));
             }
             return Some(self.call_method_with_values(target.clone(), actual_method, args));
