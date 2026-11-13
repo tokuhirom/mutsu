@@ -87,7 +87,10 @@ fn items(target: &Value) -> Option<Vec<Value>> {
 /// edit, as in Rakudo, where that `List`'s `$!reified` is the buffer itself.
 /// `None` for a receiver that is no instance.
 // Cost: O(1) plus f.
-fn edit<R>(target: &Value, f: impl FnOnce(&mut Vec<Value>) -> R) -> Option<Result<R, RuntimeError>> {
+fn edit<R>(
+    target: &Value,
+    f: impl FnOnce(&mut Vec<Value>) -> R,
+) -> Option<Result<R, RuntimeError>> {
     if !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
@@ -133,14 +136,14 @@ fn at_pos(target: &Value, args: &[Value]) -> Answer {
         return None;
     }
     let len = Interpreter::nqp_elems_len_of(target).unwrap_or(0);
-    let index = match crate::runtime::nqp_backing::resolve_index(
-        crate::runtime::to_int(&args[0]),
-        len,
-    ) {
-        Ok(index) => index,
-        Err(e) => return Some(Err(e)),
-    };
-    Some(Ok(Interpreter::nqp_elem_at(target, index).unwrap_or_else(mu)))
+    let index =
+        match crate::runtime::nqp_backing::resolve_index(crate::runtime::to_int(&args[0]), len) {
+            Ok(index) => index,
+            Err(e) => return Some(Err(e)),
+        };
+    Some(Ok(
+        Interpreter::nqp_elem_at(target, index).unwrap_or_else(mu)
+    ))
 }
 
 /// `IterationBuffer.BIND-POS($i, $value)`: binds the element, growing the
