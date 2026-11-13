@@ -2061,6 +2061,19 @@ impl Interpreter {
                     raw_val
                 } else if name.starts_with('%')
                     && (is_bind_ctx || is_rebind)
+                    && matches!(
+                        raw_val.deref_container().view(),
+                        ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Hash(..))
+                    )
+                {
+                    // `%!cache := $hash-with-a-role` (Memoize's `my %h does
+                    // Flush`): the bind aliases the mixed-in Hash itself, so
+                    // the role's methods stay; coercing it took a plain copy.
+                    let raw_val = raw_val.into_deref();
+                    self.check_associative_bind_value(&name, &raw_val)?;
+                    raw_val
+                } else if name.starts_with('%')
+                    && (is_bind_ctx || is_rebind)
                     && matches!(raw_val.view(), ValueView::Instance { .. })
                 {
                     // `%!attr := Subclass-of-Map.new(...)`: a bind aliases the

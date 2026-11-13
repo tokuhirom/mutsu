@@ -492,6 +492,13 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Proxy))
     }
 
+    /// Whether this word is a `Sub` — a pure tag probe (same motivation as
+    /// [`Self::is_junction`]).
+    #[inline]
+    pub(in crate::value) fn is_sub(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Sub))
+    }
+
     /// Whether this word is a string-keyed `Pair` — a pure tag probe (the
     /// named-argument scans in dispatch use it; same motivation as
     /// [`Self::is_junction`]).

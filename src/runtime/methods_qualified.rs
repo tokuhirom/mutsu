@@ -1424,6 +1424,18 @@ impl Interpreter {
             || chain.iter().any(|t| t.as_str() == qualifier)
             || self.qualifier_in_composed_roles(chain.iter().map(|c| c.as_str()), qualifier);
         if type_matches {
+            // `self.Hash::EXISTS-KEY(key)` from a role mixed into a Hash
+            // (Memoize's thread-safe `Multi`): the qualifier names the value's
+            // own type, so the call goes past the mixin's overriding method to
+            // the inner value's -- re-dispatching on the mixin re-entered the
+            // role's method forever.
+            if let ValueView::Mixin(inner, mixins) = target.view()
+                && !mixins.contains_key(MetaNs::Role.str_key_for_str(qualifier))
+                && !mixins.contains_key(qualifier)
+            {
+                let inner = Value::clone(&inner);
+                return Some(self.call_method_with_values(inner, actual_method, args));
+            }
             return Some(self.call_method_with_values(target.clone(), actual_method, args));
         }
         Some(Err(RuntimeError::invalid_qualifier(
