@@ -155,6 +155,15 @@ impl Interpreter {
         if typed.is_none() && !Self::env_type_constraint_seen_for(sym) {
             return;
         }
-        self.bind_param_type_constraint_sym(name, sym, typed.as_deref());
+        // Registered without tagging: the bound container already carries this
+        // constraint (it was read off it above), and the parameter is not in
+        // the env yet, so tagging "the value named `name`" would tag whatever
+        // a caller's frame binds under that name -- an instance's tag lives in
+        // a process-wide side table, so `for @x -> @a { @a.push(...) }` in the
+        // caller then checked its pushes against this argument's element type.
+        match typed {
+            Some(constraint) => self.set_var_type_constraint_decl(name, sym, &constraint),
+            None => self.set_var_type_constraint_for(name, Some(sym), None),
+        }
     }
 }
