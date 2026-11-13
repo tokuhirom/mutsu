@@ -190,6 +190,9 @@ impl Interpreter {
                     }
                     if signal.is_return() {
                         signal.set_raised_by_catch(Some(token));
+                        if !same_frame && signal.catch_return_depth().is_none() {
+                            signal.set_catch_return_depth(Some(routine_depth));
+                        }
                     }
                     return Err(signal);
                 }

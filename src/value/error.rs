@@ -193,6 +193,12 @@ pub struct RuntimeErrorCold {
     /// runs outside the protected body's scope (rakudo: a `return` in a CATCH
     /// is not offered to the same routine's CONTROL).
     pub raised_by_catch: Option<u64>,
+    /// For a `return` raised by an inline `CATCH`: the `routine_stack` depth
+    /// of the routine that installed the handler. A routine frame at or
+    /// above that depth sits between the handler's routine and the throw, so
+    /// it must pass the signal on even when its callable id is the same (a
+    /// proto and the candidate its `{*}` runs share one by name).
+    pub catch_return_depth: Option<usize>,
     /// See [`CatchInlinePayload`]; only ever set alongside `catch_inline_verdict`.
     pub catch_inline_payload: Option<Box<CatchInlinePayload>>,
     /// The subscript and element constraint of a single-element store the type
@@ -494,6 +500,21 @@ impl RuntimeError {
     }
     pub(crate) fn set_raised_by_catch(&mut self, v: Option<u64>) {
         self.cold_mut().raised_by_catch = v;
+    }
+    /// See `RuntimeErrorCold::catch_return_depth`.
+    pub(crate) fn catch_return_depth(&self) -> Option<usize> {
+        self.cold.as_ref().and_then(|c| c.catch_return_depth)
+    }
+    pub(crate) fn set_catch_return_depth(&mut self, v: Option<usize>) {
+        self.cold_mut().catch_return_depth = v;
+    }
+    /// Whether a routine frame at index `frame_index` of the routine stack
+    /// lies above the routine a `CATCH`-raised `return` belongs to, so it
+    /// must let the signal pass.
+    // Cost: O(1).
+    pub(crate) fn return_passes_routine_frame(&self, frame_index: usize) -> bool {
+        self.catch_return_depth()
+            .is_some_and(|depth| frame_index >= depth)
     }
     pub(crate) fn set_catch_inline_verdict(&mut self, v: Option<(u64, CatchInlineVerdict)>) {
         self.cold_mut().catch_inline_verdict = v;
