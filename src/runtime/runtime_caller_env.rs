@@ -361,12 +361,23 @@ impl Interpreter {
         };
         let merged = env.filtered_flat(&|_, _| true);
         let mut entries = ValueMap::default();
+        let mut block_subs = Vec::new();
         for (key, value) in merged.iter() {
             let key = key.resolve();
+            // A block-scoped `sub` lives in the frame's slot; the env holds
+            // its escape-hatch copy under the block-sub prefix. The caller's
+            // pad names it `&name`, as `MY::` does in that frame.
+            if let Some(name) = key.strip_prefix(crate::env::BLOCK_LEXICAL_SUB_PREFIX) {
+                block_subs.push((format!("&{name}"), value.clone()));
+                continue;
+            }
             if self.should_hide_from_my_global_stash(&key) {
                 continue;
             }
             entries.insert(Self::add_sigil_prefix(&key), value.clone());
+        }
+        for (key, value) in block_subs {
+            entries.entry(key).or_insert(value);
         }
         entries
     }

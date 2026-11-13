@@ -679,6 +679,19 @@ impl Interpreter {
         )
     }
 
+    /// A routine receiver some other reference composed a role into (`&code
+    /// does R` in a callee, ADR-11827) is called as its current composition,
+    /// so the role's methods and accessors win over the built-in ones
+    /// (`&a.cache` after Memoize's `memoize(&a)`).
+    // Cost: O(1): a tag probe, then one atomic load for a `Sub`.
+    pub(super) fn current_routine_receiver(&mut self, receiver_idx: usize) {
+        if self.stack[receiver_idx].is_sub_value()
+            && let Some(current) = Self::routine_current_view(&self.stack[receiver_idx])
+        {
+            self.stack[receiver_idx] = current;
+        }
+    }
+
     /// The `CallMethod` body for a method name that is already resolved:
     /// a constant for `CallMethod` itself, the run-time spelling for
     /// `CallMethodDynamic` (which owns only the name resolution, #9454).
@@ -697,6 +710,7 @@ impl Interpreter {
             && let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1)
         {
             self.pun_memoized_parametric_receiver(receiver_idx, name.sym);
+            self.current_routine_receiver(receiver_idx);
         }
         // ADR-0067's subscript-receiver producer: when the receiver on the stack
         // is already a container (`IndexInvocantRef` put it there), arm slice

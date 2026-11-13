@@ -740,6 +740,12 @@ impl Value {
         self.0.is_junction()
     }
 
+    /// Whether this is a `Sub`. A pure tag probe (see [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_sub_value(&self) -> bool {
+        self.0.is_sub()
+    }
+
     /// Whether this is a `Proxy`. A pure tag probe (see [`Self::is_junction_value`]).
     #[inline]
     pub(crate) fn is_proxy_value(&self) -> bool {

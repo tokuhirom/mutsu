@@ -231,6 +231,7 @@ impl Interpreter {
             && let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1)
         {
             self.pun_memoized_parametric_receiver(receiver_idx, name.sym);
+            self.current_routine_receiver(receiver_idx);
         }
         // A raw `VMArray`/`VMHash` receiver has no methods (ADR-12666).
         if let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1)

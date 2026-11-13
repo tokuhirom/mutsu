@@ -664,6 +664,9 @@ impl Interpreter {
 
     /// Extract wrap handle ID from a WrapHandle instance.
     pub(super) fn extract_wrap_handle_id(&self, handle: &Value) -> Option<u64> {
+        // A handle kept in a `:=`-bound attribute (`$!unwrap-handle :=
+        // $handle`, Memoize's `Memoized` role) arrives in its container.
+        let handle = handle.deref_container();
         match handle.view() {
             ValueView::Instance { attributes, .. } => {
                 if let Some(ValueView::Int(id)) =
