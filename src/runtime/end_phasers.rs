@@ -197,6 +197,24 @@ impl Interpreter {
         self.control.main_end_slots.insert(end_index, slot);
     }
 
+    /// Drop the END phasers `preregister_main_end_phasers` installed for the
+    /// main compunit: a CHECK-time rewrite of `$*CU` made the unit run its
+    /// rewritten tree, which installs its own (#17501).
+    // Cost: O(e), e = registered END phasers.
+    pub(crate) fn drop_main_end_phasers(&mut self) {
+        let slots: std::collections::HashSet<usize> =
+            self.control.main_end_slots.drain().map(|(_, slot)| slot).collect();
+        if slots.is_empty() {
+            return;
+        }
+        let mut index = 0;
+        self.control.end_phasers.retain(|_| {
+            let keep = !slots.contains(&index);
+            index += 1;
+            keep
+        });
+    }
+
     /// The value an unassigned lexical container of this sigil reads as: `Any`
     /// for a `$` (and for a routine parameter that was never bound), an empty
     /// `Array` for an `@`, an empty `Hash` for a `%`.

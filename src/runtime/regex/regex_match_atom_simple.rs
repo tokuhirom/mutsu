@@ -396,9 +396,13 @@ impl Interpreter {
                 let pass = if *negated { !same } else { same };
                 return if pass { Some(pos) } else { None };
             }
-            RegexAtom::AtPosition(target) => {
+            RegexAtom::AtPosition(target, negated) => {
                 // <at(N)> succeeds when current position == N
-                return if pos == *target { Some(pos) } else { None };
+                return if (pos == *target) != *negated {
+                    Some(pos)
+                } else {
+                    None
+                };
             }
             RegexAtom::RecurseSelf(source) => {
                 return self.regex_match_recurse_self(source, chars, pos, pkg);
@@ -839,7 +843,7 @@ impl Interpreter {
             | RegexAtom::WsRule
             | RegexAtom::SameAssertion { .. }
             | RegexAtom::RecurseSelf(_)
-            | RegexAtom::AtPosition(_) => unreachable!(),
+            | RegexAtom::AtPosition(..) => unreachable!(),
         };
         if matched {
             match atom {

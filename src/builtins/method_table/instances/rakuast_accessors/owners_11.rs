@@ -3,6 +3,42 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::StatementPrefix::Hyper",
+        &[
+            "RakuAST::StatementPrefix::Hyper",
+            "RakuAST::StatementPrefix::CallMethod",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::StatementPrefix::Lazy",
+        &[
+            "RakuAST::StatementPrefix::Lazy",
+            "RakuAST::StatementPrefix::CallMethod",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::StatementPrefix::Once",
+        &[
+            "RakuAST::StatementPrefix::Once",
+            "RakuAST::StatementPrefix::Blorst",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::StatementPrefix::Phaser::Begin",
         &[
             "RakuAST::StatementPrefix::Phaser::Begin",
@@ -218,43 +254,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::StatementPrefix::Race",
             "RakuAST::StatementPrefix::CallMethod",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::React",
-        &[
-            "RakuAST::StatementPrefix::React",
-            "RakuAST::StatementPrefix::Wheneverable",
-            "RakuAST::StatementPrefix::Blorst",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Sink",
-        &[
-            "RakuAST::StatementPrefix::Sink",
-            "RakuAST::StatementPrefix::CallMethod",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Start",
-        &[
-            "RakuAST::StatementPrefix::Start",
-            "RakuAST::StatementPrefix::Blorst",
             "RakuAST::StatementPrefix",
             "RakuAST::Term",
             "RakuAST::Termish",

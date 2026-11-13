@@ -400,7 +400,12 @@ pub(super) fn sub_value(
             return Some(interp.eval_rakuast_node(&statement));
         }
         // A quoted regex is the `Regex` it denotes (`/.../` evaluates to it).
-        K::QuotedRegex => return Some(interp.eval_rakuast_node(target)),
+        // The `my regex` its `<name>` assertions resolved to is declared
+        // ahead of it, as the lexical rule the assertion calls.
+        K::QuotedRegex | K::QuotedRegexRx => {
+            let tree = crate::rakuast::regex_with_declarations(target);
+            return Some(interp.eval_rakuast_node(tree.as_ref().unwrap_or(target)));
+        }
         // `::T` is the generic type `T`: the same object a signature's
         // `--> T` returns, until a call binds it.
         K::TypeCapture => {

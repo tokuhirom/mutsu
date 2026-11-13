@@ -3,6 +3,27 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Package",
+        &[
+            "RakuAST::Package",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Parameter",
+        &["RakuAST::Parameter", "RakuAST::Node"],
+    ),
+    (
+        "RakuAST::Parameter::Slurpy::Capture",
+        &[
+            "RakuAST::Parameter::Slurpy::Capture",
+            "RakuAST::Parameter::Slurpy",
+        ],
+    ),
+    (
         "RakuAST::Parameter::Slurpy::Flattened",
         &[
             "RakuAST::Parameter::Slurpy::Flattened",
@@ -133,37 +154,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::Term",
             "RakuAST::Termish",
             "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Alternation",
-        &[
-            "RakuAST::Regex::Alternation",
-            "RakuAST::Regex::Branching",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Anchor::BeginningOfLine",
-        &[
-            "RakuAST::Regex::Anchor::BeginningOfLine",
-            "RakuAST::Regex::Anchor",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Anchor::BeginningOfString",
-        &[
-            "RakuAST::Regex::Anchor::BeginningOfString",
-            "RakuAST::Regex::Anchor",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
             "RakuAST::Node",
         ],
     ),

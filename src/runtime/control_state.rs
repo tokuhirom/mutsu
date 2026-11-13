@@ -65,6 +65,11 @@ pub(crate) struct ControlState {
     /// never-entered block (or a never-called sub) run at exit, as it does in
     /// rakudo.
     pub(crate) main_end_slots: HashMap<u32, usize>,
+    /// Raised once a CHECK-time rewrite of `$*CU` made the unit run its
+    /// rewritten tree in place of its compiled program (#17501), until that
+    /// program's mainline returns: the program's own LEAVE phasers do not run
+    /// (the rewritten tree ran its own).
+    pub(crate) mainline_superseded: bool,
     /// Monotonic counter stamped into `EndPhaser::capture_seq` each time a
     /// phaser captures its declaring scope's env. See that field.
     pub(crate) end_phaser_capture_seq: u64,

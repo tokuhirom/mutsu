@@ -1,12 +1,8 @@
 //! The compile-time state a CHECK-phase rewrite reaches through `$*CU`:
-//! `resolver`, `context`, and the `IMPL-BEGIN` / `IMPL-CHECK` phase hooks a
-//! rewrite runs on a node it just built (Qwiratry's `attach-compile-time`).
-//!
-//! mutsu lowers the unit's finished tree once, after its CHECK phase, and
-//! resolves every lookup then, so a node built or edited during CHECK has
-//! nothing to settle early: the two hooks accept the resolver and context
-//! and leave the node as it is. The handles are opaque objects of rakudo's
-//! class names.
+//! `resolver` and `context`, which a rewrite hands to the `IMPL-BEGIN` /
+//! `IMPL-CHECK` phase hooks of a node it just built (Qwiratry's
+//! `attach-compile-time`; the hooks are in `rakuast_phases`). The handles are
+//! opaque objects of rakudo's class names.
 
 use super::super::{Handler, MethodRow, RowFlags};
 use super::rakuast_visit::native_node;
@@ -26,11 +22,6 @@ fn context(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
         crate::symbol::Symbol::intern(CONTEXT_CLASS),
         std::collections::HashMap::new(),
     ))
-}
-
-// Cost: O(1).
-fn phase_hook(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(Value::NIL)
 }
 
 // Cost: O(f), f = fields of the node.
@@ -154,20 +145,6 @@ const fn unit_row(
     }
 }
 
-const fn node_row(
-    name: &'static str,
-    f: fn(&Value, &[Value]) -> Result<Value, RuntimeError>,
-) -> MethodRow {
-    MethodRow {
-        owner: "RakuAST::Node",
-        name,
-        arity: 2,
-        handler: Handler::Pure(f),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    }
-}
-
 pub(super) static ROWS: &[MethodRow] = &[
     unit_row("resolver", 0, resolver),
     unit_row("context", 0, context),
@@ -215,6 +192,4 @@ pub(super) static ROWS: &[MethodRow] = &[
     implicit_constant_row("name", implicit_constant_name),
     implicit_constant_row("scope", implicit_constant_scope),
     implicit_constant_row("value", implicit_constant_value),
-    node_row("IMPL-BEGIN", phase_hook),
-    node_row("IMPL-CHECK", phase_hook),
 ];

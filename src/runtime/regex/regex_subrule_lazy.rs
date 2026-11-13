@@ -96,7 +96,7 @@ fn atom_is_rule_call_free(atom: &RegexAtom) -> bool {
         | RegexAtom::VarInterpMarkless(_)
         | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
-        | RegexAtom::AtPosition(_)
+        | RegexAtom::AtPosition(..)
         | RegexAtom::TildeMarker => true,
         RegexAtom::Group(p)
         | RegexAtom::CaptureGroup(p)

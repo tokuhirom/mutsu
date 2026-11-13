@@ -3,6 +3,38 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Regex::CharClass::VerticalSpace",
+        &[
+            "RakuAST::Regex::CharClass::VerticalSpace",
+            "RakuAST::Regex::CharClass::Negatable",
+            "RakuAST::Regex::CharClass",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::CharClass::Word",
+        &[
+            "RakuAST::Regex::CharClass::Word",
+            "RakuAST::Regex::CharClass::Negatable",
+            "RakuAST::Regex::CharClass",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::CharClassElement::Enumeration",
+        &[
+            "RakuAST::Regex::CharClassElement::Enumeration",
+            "RakuAST::Regex::CharClassElement",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Regex::CharClassElement::Property",
         &[
             "RakuAST::Regex::CharClassElement::Property",
@@ -161,30 +193,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::Regex::QuantifiedAtom",
             "RakuAST::Regex::Term",
             "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Quantifier::BlockRange",
-        &[
-            "RakuAST::Regex::Quantifier::BlockRange",
-            "RakuAST::Regex::Quantifier",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Quantifier::OneOrMore",
-        &[
-            "RakuAST::Regex::Quantifier::OneOrMore",
-            "RakuAST::Regex::Quantifier",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::Quantifier::Range",
-        &[
-            "RakuAST::Regex::Quantifier::Range",
-            "RakuAST::Regex::Quantifier",
             "RakuAST::Node",
         ],
     ),

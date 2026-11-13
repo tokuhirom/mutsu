@@ -2,6 +2,7 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Regex::Assertion::Alias", "name"),
     row!("RakuAST::Regex::Assertion::Callable", "args"),
     row!("RakuAST::Regex::Assertion::Callable", "callee"),
     row!("RakuAST::Regex::Assertion::CharClass", "elements"),
@@ -12,6 +13,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Regex::Assertion::Lookahead", "assertion"),
     row!("RakuAST::Regex::Assertion::Lookahead", "negated"),
     row!("RakuAST::Regex::Assertion::Named", "capturing"),
+    row!("RakuAST::Regex::Assertion::Named", "get-implicit-lookups"),
     row!("RakuAST::Regex::Assertion::Named", "name"),
     row!("RakuAST::Regex::Assertion::Named::Args", "args"),
     row!("RakuAST::Regex::Assertion::Named::RegexArg", "regex-arg"),
@@ -203,10 +205,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Trait::WillBuild", "IMPL-TRAIT-NAME"),
     row!("RakuAST::Transliteration", "destructive"),
     row!("RakuAST::Transliteration", "left"),
-    row!("RakuAST::Transliteration", "right"),
-    interp_row!(
-        "RakuAST::Type::Capture",
-        "compile-time-value",
-        compiled_value
-    ),
 ];

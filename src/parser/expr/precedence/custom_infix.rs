@@ -256,6 +256,15 @@ const CORE_PARSED_INFIX_WORDS: &[&str] = &[
     "max",
     "x",
     "xx",
+    // The core symbol operators looser than the additive level: taken at the
+    // trait-less additive level they would bind tighter than the core
+    // operator does (`"b" x 3 ~ "a"` read as `"b" x (3 ~ "a")` once a module
+    // declared a `multi infix:<~>`, Red).
+    "~",
+    "&&",
+    "||",
+    "^^",
+    "//",
     "...",
     "...^",
     "^...",

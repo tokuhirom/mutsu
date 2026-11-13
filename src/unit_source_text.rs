@@ -41,6 +41,11 @@ pub(crate) struct Unit {
     /// closures already ran: its own (second) `use` lines queue the same
     /// closures again, which must not rewrite the tree twice.
     rewritten: bool,
+    /// The fingerprint of `$*CU` as the unit's CHECK phase found it: taken
+    /// when its BEGIN prologue ends, or when the tree is built after that. A
+    /// tree that differs from it at the end of the CHECK phase was rewritten
+    /// by a CHECK phaser or check closure (#17501).
+    check_baseline: Option<u64>,
 }
 
 thread_local! {
@@ -69,6 +74,7 @@ impl UnitSourceTextGuard {
                 in_export: false,
                 late_imports: std::collections::HashSet::new(),
                 rewritten: false,
+                check_baseline: None,
             });
         });
         Self
@@ -276,10 +282,12 @@ pub(crate) fn compile_time_cu(
         Step::Built(cu) => Some(cu),
         Step::BuildTree(tree) => {
             let cu = crate::rakuast::compunit_of_tree(&tree, imported, imported_type);
+            let fingerprint = tree_fingerprint(&cu);
             UNITS.with(|units| {
                 let mut units = units.borrow_mut();
                 if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
                     unit.cu = Some(cu.clone());
+                    unit.check_baseline = Some(fingerprint);
                 }
             });
             Some(cu)
@@ -292,10 +300,12 @@ pub(crate) fn compile_time_cu(
                 imported_type,
             )
             .ok()?;
+            let fingerprint = tree_fingerprint(&cu);
             UNITS.with(|units| {
                 let mut units = units.borrow_mut();
                 if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
                     unit.cu = Some(cu.clone());
+                    unit.check_baseline = Some(fingerprint);
                 }
             });
             Some(cu)
@@ -344,10 +354,12 @@ pub(crate) fn refresh_cu_resolution(
         .ok(),
     };
     if let Some(cu) = cu {
+        let fingerprint = tree_fingerprint(&cu);
         UNITS.with(|units| {
             let mut units = units.borrow_mut();
             if let Some(unit) = active_index(&units).and_then(|i| units.get_mut(i)) {
                 unit.cu = Some(cu);
+                unit.check_baseline = Some(fingerprint);
             }
         });
     }
@@ -395,21 +407,63 @@ pub(crate) fn mark_next_tree_rewritten() {
     NEXT_TREE_REWRITTEN.with(|flag| flag.set(true));
 }
 
-/// The `$*CU` tree of the innermost unit, when it was built.
-// Cost: O(1).
-pub(crate) fn built_cu() -> Option<Value> {
-    UNITS.with(|units| units.borrow().last().and_then(|unit| unit.cu.clone()))
+/// The `$*CU` tree of the innermost unit when its CHECK phase changed it
+/// (`check_baseline`): the tree the rest of the unit is to run from.
+// Cost: O(n), n = nodes of the tree; O(1) when `$*CU` was never built.
+pub(crate) fn rewritten_cu() -> Option<Value> {
+    let (cu, baseline) = UNITS.with(|units| {
+        let units = units.borrow();
+        let unit = units.last()?;
+        if unit.rewritten {
+            return None;
+        }
+        Some((unit.cu.clone()?, unit.check_baseline?))
+    })?;
+    (tree_fingerprint(&cu) != baseline).then_some(cu)
 }
 
 /// A fingerprint of a `$*CU` tree, to tell whether the unit's check closures
-/// changed it.
-// Cost: O(n), n = nodes of the tree.
+/// changed it: its node classes, field names and leaf literals. A node's
+/// metadata (its origin and resolution) takes no part, so a resolution whose
+/// `compile-time-value` holds a closure is never rendered (#17501: rendering
+/// one with `Debug` walked the closure's whole environment).
+// Cost: O(n), n = nodes and leaves of the tree.
 pub(crate) fn tree_fingerprint(cu: &Value) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let ValueView::RakuAst(node) = cu.view() else {
-        return 0;
-    };
+    use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    format!("{node:?}").hash(&mut hasher);
+    fingerprint_value(cu, &mut hasher);
     hasher.finish()
+}
+
+// Cost: O(n), n = nodes and leaves under `value`.
+fn fingerprint_value(value: &Value, hasher: &mut impl std::hash::Hasher) {
+    use crate::rakuast::RakuAstFieldValue;
+    use std::hash::Hash;
+    match value.view() {
+        ValueView::RakuAst(node) => {
+            std::mem::discriminant(&node.class).hash(hasher);
+            node.fields.len().hash(hasher);
+            for field in &node.fields {
+                field.name.hash(hasher);
+                match &field.value {
+                    RakuAstFieldValue::Node(child) => fingerprint_value(child, hasher),
+                    RakuAstFieldValue::List(items) => {
+                        items.len().hash(hasher);
+                        for item in items {
+                            fingerprint_value(item, hasher);
+                        }
+                    }
+                    RakuAstFieldValue::Adverb(name) => name.hash(hasher),
+                }
+            }
+        }
+        ValueView::Mixin(inner, _) => fingerprint_value(inner, hasher),
+        ValueView::Int(i) => i.hash(hasher),
+        ValueView::Num(n) => n.to_bits().hash(hasher),
+        ValueView::Bool(b) => b.hash(hasher),
+        ValueView::Str(s) => s.as_str().hash(hasher),
+        // Any other leaf (a compile-time value a rewrite embedded) counts by
+        // its kind: the nodes around it say where it changed.
+        other => std::mem::discriminant(&other).hash(hasher),
+    }
 }

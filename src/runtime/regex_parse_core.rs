@@ -3789,6 +3789,9 @@ impl Interpreter {
                                         if negated_name.is_empty() {
                                             // <!> — always-fail (handled as Named("!") downstream)
                                             RegexAtom::Named(name.into())
+                                        } else if let Some(pos) = at_position(negated_name) {
+                                            // <!at(N)> — not at position N
+                                            RegexAtom::AtPosition(pos, true)
                                         } else if negated_name == "same" || negated_name == ".same"
                                         {
                                             // <!same> — zero-width assertion: next two chars are different
@@ -4490,14 +4493,10 @@ impl Interpreter {
                                         // grapheme) boundary, which every match
                                         // position is (Badger's `<.qualified-name> <|b>`).
                                         RegexAtom::ZeroWidth
-                                    } else if trimmed.starts_with("at(") && trimmed.ends_with(')') {
-                                        // <at(N)> — zero-width assertion: match at position N
-                                        let inner = &trimmed[3..trimmed.len() - 1];
-                                        if let Ok(pos) = inner.trim().parse::<usize>() {
-                                            RegexAtom::AtPosition(pos)
-                                        } else {
-                                            RegexAtom::Named(name.into())
-                                        }
+                                    } else if let Some(pos) = at_position(trimmed) {
+                                        // <at(N)> / <.at(N)> / <?at(N)> — zero-width
+                                        // assertion: match at position N
+                                        RegexAtom::AtPosition(pos, false)
                                     } else if let Some(sub) = trimmed
                                         .strip_prefix('?')
                                         .filter(|s| is_subrule_lookahead_name(s))
@@ -5490,4 +5489,17 @@ impl Interpreter {
             derived: Default::default(),
         })
     }
+}
+
+/// The position of a literal `<at(N)>` assertion body (`at(N)`, `.at(N)`,
+/// `?at(N)`, `?.at(N)`), or `None` for any other assertion.
+// Cost: O(n), n = length of the assertion body.
+fn at_position(body: &str) -> Option<usize> {
+    let body = body.strip_prefix('?').unwrap_or(body);
+    let body = body.strip_prefix('.').unwrap_or(body);
+    body.strip_prefix("at(")?
+        .strip_suffix(')')?
+        .trim()
+        .parse::<usize>()
+        .ok()
 }

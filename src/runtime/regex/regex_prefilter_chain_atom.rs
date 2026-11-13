@@ -38,7 +38,7 @@ pub(super) fn is_zero_width_atom(atom: &RegexAtom) -> bool {
             | RegexAtom::EndOfString
             | RegexAtom::StartOfString
             | RegexAtom::SameAssertion { .. }
-            | RegexAtom::AtPosition(_)
+            | RegexAtom::AtPosition(..)
     )
 }
 
@@ -142,7 +142,7 @@ pub(super) fn chain_atom_once(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> 
         | RegexAtom::EndOfString
         | RegexAtom::StartOfString
         | RegexAtom::SameAssertion { .. }
-        | RegexAtom::AtPosition(_) => Some(Piece::empty_exact()),
+        | RegexAtom::AtPosition(..) => Some(Piece::empty_exact()),
         RegexAtom::Lookaround { pattern, .. } => {
             if pattern_runs_code(pattern, deeper.depth) {
                 None

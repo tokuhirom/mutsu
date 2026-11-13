@@ -3,6 +3,43 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::StatementPrefix::React",
+        &[
+            "RakuAST::StatementPrefix::React",
+            "RakuAST::StatementPrefix::Wheneverable",
+            "RakuAST::StatementPrefix::Blorst",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::StatementPrefix::Sink",
+        &[
+            "RakuAST::StatementPrefix::Sink",
+            "RakuAST::StatementPrefix::CallMethod",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::StatementPrefix::Start",
+        &[
+            "RakuAST::StatementPrefix::Start",
+            "RakuAST::StatementPrefix::Blorst",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::StatementPrefix::Supply",
         &[
             "RakuAST::StatementPrefix::Supply",
@@ -178,46 +215,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Term::Named",
         &[
             "RakuAST::Term::Named",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Term::Rand",
-        &[
-            "RakuAST::Term::Rand",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Term::Reduce",
-        &[
-            "RakuAST::Term::Reduce",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Term::Self",
-        &[
-            "RakuAST::Term::Self",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Term::TopicCall",
-        &[
-            "RakuAST::Term::TopicCall",
             "RakuAST::Term",
             "RakuAST::Termish",
             "RakuAST::Expression",
