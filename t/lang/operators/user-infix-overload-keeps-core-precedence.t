@@ -7,7 +7,7 @@ use Test;
 # after which `'b' x 3 ~ 'a'` read as `'b' x (3 ~ 'a')`; it exports
 # `multi infix:«<»` too, after which `3 < 1 + 3` was `(3 < 1) + 3`).
 
-plan 15;
+plan 17;
 
 class P { }
 multi infix:<~>(P $a, P $b) { 'user ~' }
@@ -33,3 +33,13 @@ is 5 - 1 != 4, False, '!= stays looser than -';
 is P.new == P.new, 'user ==', 'the == candidate is called';
 is P.new < P.new, 'user <', 'the < candidate is called';
 is (1 < 2 < 3), True, '< still chains';
+
+# The operator stays a call of the user candidate, so an `is rw` candidate
+# binds a variable operand's container (Red binds `$_ ~ $suffix` as a query
+# parameter, t/089).
+class Q { }
+multi infix:<~>(Q $a, Str() $b is rw) { 'rw' }
+multi infix:<~>(Q $a, Str() $b is readonly) { 'ro' }
+my $suffix = 'x';
+is Q.new ~ $suffix, 'rw', 'a variable operand binds its container';
+is Q.new ~ 'lit', 'ro', 'a literal does not';
