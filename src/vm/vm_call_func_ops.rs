@@ -2687,6 +2687,23 @@ impl Interpreter {
                     // candidate still work because compile_and_call_function_def pushes
                     // the same multi-dispatch + samewith frames the interpreter would.
                     let returns_container = Self::routine_is_rw_capable(&def);
+                    // The winner binds as a multi winner does (the arm above):
+                    // through the positional light bind when its signature and
+                    // these arguments qualify. The call site's own code is at
+                    // hand here, which a sigilless parameter's promotion of a
+                    // caller variable needs; `compile_and_call_function_def`
+                    // has none and so declined every such winner (#15786).
+                    if !call_has_named
+                        && let Some(result) = self.try_trivial_proto_winner_light(
+                            code,
+                            &def,
+                            name_sym,
+                            &args,
+                            compiled_fns,
+                        )
+                    {
+                        return result;
+                    }
                     // The binder names a raw / `is rw` parameter's caller
                     // variable from these, as on the single-sub arm below.
                     self.set_pending_call_arg_sources(arg_sources.clone());
