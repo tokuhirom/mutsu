@@ -124,8 +124,7 @@ impl Compiler {
         // not). They are read by name, so the frame's current match/error
         // shows, `Nil` until something sets it (#17674).
         let root_index = self.enclosing_scopes.len() + self.unit_root_scope;
-        let declares_specials =
-            self.is_routine || !self.in_lexical_scope;
+        let declares_specials = self.is_routine || !self.in_lexical_scope;
         if declares_specials && (outermost..=target_index).contains(&root_index) {
             let root_depth = depth + (target_index - root_index);
             for (display, name) in [("$!", "!"), ("$/", "/"), ("$¢", "¢")] {
