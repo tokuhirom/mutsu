@@ -360,6 +360,7 @@ mod vm_pair_ops;
 mod vm_param_values;
 pub(crate) mod vm_poll;
 mod vm_positional_index_key;
+mod vm_proxy_subscript;
 mod vm_pseudo_stash_ops;
 mod vm_quanthash_autoviv;
 mod vm_rakudo_internals;
