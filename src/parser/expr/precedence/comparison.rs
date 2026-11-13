@@ -189,12 +189,12 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
             .map(|(_, l)| l)
             .or_else(|| parse_negated_meta_comparison_op(r).map(|(_, l)| l))
             .unwrap_or(0);
-        // `>=`, not `>`: a user symbol infix that EXACTLY shadows the built-in
-        // comparison (`multi sub infix:<==>`) must also route to the list-infix
-        // layer, which dispatches through the user candidate (falling back to the
-        // built-in for non-matching argument types). A built-in comparison with no
-        // user candidate returns `None` above and is unaffected.
-        if cmp_len > 0 && ulen >= cmp_len {
+        // Only a LONGER user symbol leaves the comparison: one that exactly
+        // shadows it (`multi sub infix:<==>`, `multi infix:«<»` as Red exports)
+        // adds a candidate to the core operator, which keeps the comparison's
+        // precedence (`3 < 1 + 3`) and dispatches to the user candidate when it
+        // runs (`user_infix_override`).
+        if cmp_len > 0 && ulen > cmp_len {
             return Ok((rest, left));
         }
     }

@@ -261,6 +261,12 @@ const CORE_PARSED_INFIX_WORDS: &[&str] = &[
     // operator does (`"b" x 3 ~ "a"` read as `"b" x (3 ~ "a")` once a module
     // declared a `multi infix:<~>`, Red).
     "~",
+    "==",
+    "!=",
+    "<",
+    ">",
+    "<=",
+    ">=",
     "&&",
     "||",
     "^^",
