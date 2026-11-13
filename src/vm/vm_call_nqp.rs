@@ -107,6 +107,9 @@ impl Interpreter {
         if self.exec_nqp_pure_op(id, arity) {
             return Ok(());
         }
+        if self.exec_nqp_identity_op(id, arity) {
+            return Ok(());
+        }
         let mut args = std::mem::take(&mut self.nqp_arg_scratch);
         args.clear();
         let start = self.stack.len() - arity;
@@ -172,6 +175,45 @@ impl Interpreter {
         };
         loan_env!(self, set_pending_callsite_line(None));
         crate::vm::vm_stats::record_function_dispatch();
+        self.stack.truncate(start);
+        self.stack.push(result);
+        true
+    }
+
+    /// `nqp::null` and `nqp::eqaddr` on operands that need no normalization
+    /// (no `VarRef`, no `Proxy`): what their table arms answer, without the
+    /// argument vector and the table walk. A `while` loop's `nqp::null` body
+    /// and its `nqp::eqaddr($cmp, Order::Less)` test run once per step of a
+    /// binary search. Like [`Self::exec_nqp_pure_op`], the one-shot
+    /// callsite-line clear and the dispatch tally are kept.
+    // Cost: O(1).
+    fn exec_nqp_identity_op(&mut self, id: u16, arity: usize) -> bool {
+        static IDS: std::sync::OnceLock<(Option<u16>, Option<u16>)> = std::sync::OnceLock::new();
+        let (null_id, eqaddr_id) = *IDS.get_or_init(|| {
+            (
+                crate::runtime::nqp_op_ids::nqp_op_id("null"),
+                crate::runtime::nqp_op_ids::nqp_op_id("eqaddr"),
+            )
+        });
+        let result = if Some(id) == null_id && arity == 0 {
+            Value::NIL
+        } else if Some(id) == eqaddr_id && arity == 2 {
+            let n = self.stack.len();
+            let (a, b) = (&self.stack[n - 2], &self.stack[n - 1]);
+            if a.as_varref().is_some()
+                || b.as_varref().is_some()
+                || a.is_proxy_value()
+                || b.is_proxy_value()
+            {
+                return false;
+            }
+            Value::int(i64::from(crate::runtime::utils::values_same_object(a, b)))
+        } else {
+            return false;
+        };
+        loan_env!(self, set_pending_callsite_line(None));
+        crate::vm::vm_stats::record_function_dispatch();
+        let start = self.stack.len() - arity;
         self.stack.truncate(start);
         self.stack.push(result);
         true

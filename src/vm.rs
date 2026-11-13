@@ -380,6 +380,7 @@ pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;
 mod vm_assign_expr_lane;
 mod vm_attribute_meta_lane;
 mod vm_attribute_meta_row;
+mod vm_code_var_infix_lane;
 mod vm_decl_lane;
 mod vm_hash_key_user_str;
 mod vm_incdec_mixin_subscript;
