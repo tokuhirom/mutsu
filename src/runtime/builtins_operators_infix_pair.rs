@@ -74,7 +74,7 @@ impl Interpreter {
         }
         let name_str = name.as_str();
         let op = name_str.strip_prefix("infix:<")?.strip_suffix('>')?;
-        plain_infix(op)?;
+        let plain = plain_infix(op)?;
         if args
             .iter()
             .any(|v| matches!(v.view(), ValueView::Junction { .. }))
@@ -88,7 +88,14 @@ impl Interpreter {
         // the value (a closure the value never saw; raku's `&[cmp]` taken
         // outside it still answers `Less`) nor the user candidates, which the
         // two probes above have just ruled out, may answer for it.
-        Some(self.call_core_infix_routine(op, args))
+        // `call_core_infix_routine` would take a plain operator's two operands
+        // straight to `infix_pair` as well, past string tests of `op` that
+        // only other operators need -- unless the left one is the parser's
+        // `method` marker.
+        if matches!(args[0].view(), ValueView::Str(s) if s.as_str() == "method") {
+            return Some(self.call_core_infix_routine(op, args));
+        }
+        Some(self.infix_pair(op, Some(plain), args[0].clone(), &args[1], true))
     }
 
     /// `acc op rhs` for the built-in operator `op`: a user candidate, a
@@ -172,6 +179,19 @@ impl Interpreter {
                 "call_infix_routine fallback reduce/eval: {}",
                 infix_name
             );
+            // `cmp` has structural Range/list/Inf handling in the operator
+            // implementation. Once user-defined candidates decline, the
+            // routine form must use that same native candidate instead of
+            // reducing through the generic numeric bridge. This is the path
+            // used by `cmp-ok`, by an explicitly called `&infix:<cmp>` and by
+            // a `:&cmp = &[cmp]` parameter called in a binary search, so it is
+            // tested first.
+            if op == "cmp" {
+                let lhs = acc.unwrap_varref().deref_container().deitemize_element();
+                let rhs = rhs.unwrap_varref().deref_container().deitemize_element();
+                acc = self.cmp_value(lhs, rhs)?;
+                break 'pair;
+            }
             // Smart match needs the full interpreter for regex dispatch
             if op == "~~" {
                 acc = Value::truth(self.smart_match(&acc, rhs));
@@ -226,17 +246,6 @@ impl Interpreter {
                 && let Some(result) = self.comparison_family_values(op, &acc, rhs, core_only)
             {
                 acc = result?;
-                break 'pair;
-            }
-            // `cmp` has structural Range/list/Inf handling in the operator
-            // implementation. Once user-defined candidates decline, the
-            // routine form must use that same native candidate instead of
-            // reducing through the generic numeric bridge. This is the path
-            // used by `cmp-ok` and by an explicitly called `&infix:<cmp>`.
-            if op == "cmp" {
-                let lhs = acc.unwrap_varref().deref_container().deitemize_element();
-                let rhs = rhs.unwrap_varref().deref_container().deitemize_element();
-                acc = self.cmp_value(lhs, rhs)?;
                 break 'pair;
             }
             let mut lhs = acc.clone();

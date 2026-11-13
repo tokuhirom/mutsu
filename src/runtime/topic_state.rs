@@ -83,7 +83,9 @@ pub(crate) struct TopicState {
     /// locals (Text::CSV t/90_csv.t 507-508: `method CSV`'s `@in` tag, slot 28
     /// in the method frame, made the caller's untagged `for in () -> $in` loop
     /// write its items over the mainline's slot 28).
-    pub(crate) container_ref_var: Option<(String, Option<u32>, usize)>,
+    /// The name is the interned constant the tag op carries, so setting the
+    /// tag (once per `($x = ...)` expression) allocates nothing.
+    pub(crate) container_ref_var: Option<(crate::symbol::Symbol, Option<u32>, usize)>,
     pub(crate) container_ref_reversed: bool,
     pub(crate) topic_source_var: Option<String>,
     /// The `@`/`%` source variable when `$_` is a whole-container topic

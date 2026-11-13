@@ -2315,12 +2315,17 @@ impl Interpreter {
             self.reify_map_grep_seq_args(&args)?;
             return self.dispatch_interpreter_terminal(code, name, args, arg_sources);
         }
+        // Shared from here on: every arm below hands the names to the binder
+        // (`set_pending_call_arg_sources_shared`), which used to copy the
+        // vector and every name in it once per call.
+        let arg_sources: Option<std::sync::Arc<Vec<Option<String>>>> =
+            arg_sources.map(std::sync::Arc::new);
         if let Some(callable) = call_me_override {
             let result = self.try_compiled_method_or_interpret(callable, "CALL-ME", args);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, true))
         } else {
-            self.set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources_shared(arg_sources.clone());
             // The multi winner this resolves on the way, so the multi branch
             // below does not resolve the identical call a second time (#7573).
             let mut multi_def_memo: Option<Arc<crate::ast::FunctionDef>> = None;
@@ -2352,7 +2357,7 @@ impl Interpreter {
                 let result = self.call_lexical_callable_with_sources(
                     callable,
                     args,
-                    &arg_sources,
+                    &arg_sources.as_deref().cloned(),
                     Some(compiled_fns),
                 );
                 self.set_pending_call_arg_sources(None);
@@ -2469,7 +2474,7 @@ impl Interpreter {
                     && !Self::call_shares_container_into_named_scalar_param(
                         cf,
                         &args,
-                        arg_sources.as_deref(),
+                        arg_sources.as_deref().map(Vec::as_slice),
                     )
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
@@ -2560,7 +2565,7 @@ impl Interpreter {
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
-                self.set_pending_call_arg_sources(arg_sources);
+                self.set_pending_call_arg_sources_shared(arg_sources);
                 // Hand over the winner this call already resolved (via
                 // `find_compiled_function_memo` above) instead of letting the
                 // frame resolve the identical call a second time. For a
@@ -2706,7 +2711,7 @@ impl Interpreter {
                     }
                     // The binder names a raw / `is rw` parameter's caller
                     // variable from these, as on the single-sub arm below.
-                    self.set_pending_call_arg_sources(arg_sources.clone());
+                    self.set_pending_call_arg_sources_shared(arg_sources.clone());
                     let result = self.compile_and_call_function_def_named(
                         &def,
                         args,
@@ -2772,7 +2777,7 @@ impl Interpreter {
                         && Self::def_is_otf_compilable_multi_candidate(&def)
                     {
                         let returns_container = Self::routine_is_rw_capable(&def);
-                        self.set_pending_call_arg_sources(arg_sources.clone());
+                        self.set_pending_call_arg_sources_shared(arg_sources.clone());
                         let result = self.compile_and_call_function_def_named(
                             &def,
                             args,
@@ -2785,7 +2790,7 @@ impl Interpreter {
                         loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
-                        self.set_pending_call_arg_sources(arg_sources);
+                        self.set_pending_call_arg_sources_shared(arg_sources);
                         let result = self.vm_call_function_fallback(name, &args);
                         self.set_pending_call_arg_sources(None);
                         let result = result?;
@@ -2849,7 +2854,7 @@ impl Interpreter {
                             let returns_container = Self::routine_is_rw_capable(&def);
                             // The binder names an `is rw` parameter's caller
                             // variable from these (mutsu#10520).
-                            self.set_pending_call_arg_sources(arg_sources.clone());
+                            self.set_pending_call_arg_sources_shared(arg_sources.clone());
                             let result = self.compile_and_call_function_def_named(
                                 &def,
                                 args,
@@ -2866,7 +2871,7 @@ impl Interpreter {
                         }
                     }
                     crate::vm::vm_stats::record_function_fallback(name);
-                    self.set_pending_call_arg_sources(arg_sources);
+                    self.set_pending_call_arg_sources_shared(arg_sources);
                     let result = self.vm_call_function_fallback(name, &args);
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
@@ -2882,7 +2887,7 @@ impl Interpreter {
                     // raises the X::TypeCheck::Binding::Parameter / arity error
                     // the declared signature calls for.
                     crate::vm::vm_stats::record_function_fallback(name);
-                    self.set_pending_call_arg_sources(arg_sources);
+                    self.set_pending_call_arg_sources_shared(arg_sources);
                     let result = self.vm_call_function_fallback(name, &args);
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
@@ -2895,11 +2900,11 @@ impl Interpreter {
                     // for its :SUPPORTED tag). That alias still shadows a
                     // same-named CORE routine, so resolve it before native
                     // dispatch just as a normal imported sub does.
-                    self.set_pending_call_arg_sources(arg_sources.clone());
+                    self.set_pending_call_arg_sources_shared(arg_sources.clone());
                     let result = self.call_lexical_callable_with_sources(
                         callable,
                         args,
-                        &arg_sources,
+                        &arg_sources.as_deref().cloned(),
                         Some(compiled_fns),
                     );
                     self.set_pending_call_arg_sources(None);
@@ -2919,7 +2924,7 @@ impl Interpreter {
                     // with no compiled entry in the caller's table; its `is rw`
                     // parameter still needs the caller variable's name
                     // (mutsu#10520).
-                    self.set_pending_call_arg_sources(arg_sources);
+                    self.set_pending_call_arg_sources_shared(arg_sources);
                     let result = self.compile_and_call_function_def_named(
                         &def,
                         args,
@@ -2965,7 +2970,7 @@ impl Interpreter {
                     self.call_lexical_callable_with_sources(
                         callable,
                         args,
-                        &arg_sources,
+                        &arg_sources.as_deref().cloned(),
                         Some(compiled_fns),
                     )
                 } else if let Some(result) = self.try_native_io_function(name, &args) {
@@ -3002,13 +3007,18 @@ impl Interpreter {
                     // `call_infix_routine` on the same `self`), with the same
                     // arg-sources + rw-proxy handling => byte-identical. §D state
                     // ownership: the operator handlers are native Rust on VM state.
-                    self.set_pending_call_arg_sources(arg_sources);
+                    self.set_pending_call_arg_sources_shared(arg_sources);
                     let result = self.call_infix_routine(Self::normalize_unicode_infix(op), &args);
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else {
-                    self.dispatch_interpreter_terminal(code, name, args, arg_sources)
+                    self.dispatch_interpreter_terminal(
+                        code,
+                        name,
+                        args,
+                        arg_sources.map(std::sync::Arc::unwrap_or_clone),
+                    )
                 }
             }
         }

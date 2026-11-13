@@ -219,10 +219,16 @@ impl Interpreter {
             // names the call site): adopt it here, as the full path does.
             self.sync_source_line(code, ip);
             // An interpreter row may call back into the VM, which owns the
-            // stack the receiver and arguments sit on: it gets copies.
+            // stack the receiver and arguments sit on: it gets copies, in a
+            // fixed buffer (at most `MAX_LANE_ARITY` of them) rather than a
+            // heap vector per call.
             let target = self.stack[base].clone();
-            let args = self.stack[base + 1..].to_vec();
-            self.in_method_call(|vm| method_table::invoke_in(row, vm, &target, &args))?
+            let mut buf = [Value::NIL; MAX_LANE_ARITY];
+            for (slot, arg) in buf.iter_mut().zip(&self.stack[base + 1..]) {
+                *slot = arg.clone();
+            }
+            let args = &buf[..arity];
+            self.in_method_call(|vm| method_table::invoke_in(row, vm, &target, args))?
         };
         Some(SiteLaneAnswer {
             result,
@@ -400,7 +406,9 @@ impl Interpreter {
     }
 }
 
-/// The most arguments a row takes, and so a lane call carries.
+/// The most arguments a row takes, and so a lane call carries (the
+/// interpreter-row branch of `try_method_site_lane` copies them into a buffer
+/// this long).
 const MAX_LANE_ARITY: usize = 2;
 
 /// Whether a call site's argument-source descriptor (see

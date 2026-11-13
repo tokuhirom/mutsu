@@ -576,6 +576,48 @@ impl SymbolMemo {
     }
 }
 
+/// [`SymbolMemo`] for a pure function from a symbol's string to another
+/// symbol (a name reduced to its base, say): lock-free and process-global,
+/// one 32-bit load on a hit. Ids are global and append-only and the function
+/// is pure, so a racing writer stores the same id.
+pub(crate) struct SymbolSymMemo {
+    chunks: [OnceLock<Box<[AtomicU32; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS],
+}
+
+impl SymbolSymMemo {
+    /// No symbol has id `u32::MAX` (ids are a `Vec`'s length), so it marks an
+    /// entry not computed yet.
+    const EMPTY: u32 = u32::MAX;
+
+    pub(crate) const fn new() -> Self {
+        Self {
+            chunks: [const { OnceLock::new() }; FLAG_CHUNKS],
+        }
+    }
+
+    /// `compute(sym.as_str())`, computed once per symbol. An id past the
+    /// table's reach recomputes every time (correct, unmemoized).
+    // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get(&self, sym: Symbol, compute: fn(&str) -> Symbol) -> Symbol {
+        let idx = sym.0 as usize;
+        let Some(cell) = self.chunks.get(idx >> FLAG_CHUNK_BITS) else {
+            return compute(sym.as_str());
+        };
+        if let Some(chunk) = cell.get() {
+            let v = chunk[idx & (FLAG_CHUNK_LEN - 1)].load(Ordering::Relaxed);
+            if v != Self::EMPTY {
+                return Symbol(v);
+            }
+        }
+        let v = compute(sym.as_str());
+        let chunk =
+            cell.get_or_init(|| Box::new([const { AtomicU32::new(Self::EMPTY) }; FLAG_CHUNK_LEN]));
+        chunk[idx & (FLAG_CHUNK_LEN - 1)].store(v.0, Ordering::Relaxed);
+        v
+    }
+}
+
 /// The already-allocated flag slot for `idx`, if any. `None` means "not
 /// memoized yet" (or an id beyond the table), never "no such symbol".
 #[inline]

@@ -33,6 +33,15 @@ impl Interpreter {
             .map(|shared| std::sync::Arc::try_unwrap(shared).unwrap_or_else(|shared| (*shared).clone()))
     }
 
+    /// [`Self::take_pending_call_arg_sources`] for a reader that only borrows
+    /// the names: the shared list is handed over as it is, never copied.
+    // Cost: O(1).
+    pub(crate) fn take_pending_call_arg_sources_shared(
+        &mut self,
+    ) -> Option<std::sync::Arc<Vec<Option<String>>>> {
+        self.pending_call_arg_sources.take()
+    }
+
     /// Non-consuming peek at the pending call arg-source names, used by the
     /// method dispatch gate to decide whether a container argument shares the
     /// caller's container with a plain scalar `$` param (Slice 2d).

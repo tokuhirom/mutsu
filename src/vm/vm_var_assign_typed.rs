@@ -161,20 +161,31 @@ impl Interpreter {
     /// the chain is the source. Resolving through it made `my $n := $q` see a
     /// source that is no local of this frame, skip the shared-cell promotion
     /// and detach both names from the array slot (#10530).
+    // Cost: O(h^2) for a chain of h alias hops (h is almost always 0 or 1),
+    // plus one env lookup per hop; one allocation, for the answer.
     pub(crate) fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {
-        let mut resolved = source_name.to_string();
-        let mut seen = std::collections::HashSet::new();
-        while seen.insert(resolved.clone()) {
-            let key = crate::runtime::sigilless_alias_key(&resolved);
-            let Some(ValueView::Str(next)) = self.env().get_sym(key).map(Value::view) else {
+        // The hops borrow the alias entries' strings from `env`, which `&self`
+        // keeps alive, so nothing is copied until the answer: the chain used
+        // to clone every name into a SipHash `HashSet<String>` on each call,
+        // which a binder pays per sigilless parameter (#15786).
+        let env = self.env();
+        let mut resolved: &str = source_name;
+        let mut seen: Vec<&str> = Vec::new();
+        loop {
+            if seen.contains(&resolved) {
+                break;
+            }
+            let key = crate::runtime::sigilless_alias_key(resolved);
+            let Some(next) = env.get_sym(key).and_then(Value::as_str) else {
                 break;
             };
             if next.starts_with("__mutsu_bind_index_ref_") {
                 break;
             }
-            resolved = next.to_string();
+            seen.push(resolved);
+            resolved = next;
         }
-        resolved
+        resolved.to_string()
     }
 
     /// Try to reconstruct a typed value from a stringified hash key.
