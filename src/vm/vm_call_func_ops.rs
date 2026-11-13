@@ -3127,7 +3127,7 @@ impl Interpreter {
     /// Whether a signature is exactly one bare capture parameter (`(|)`, no
     /// name, type, `where` or sub-signature), which binds any argument list.
     // Cost: O(1).
-    fn is_bare_capture_signature(params: &[crate::ast::ParamDef]) -> bool {
+    pub(super) fn is_bare_capture_signature(params: &[crate::ast::ParamDef]) -> bool {
         matches!(params, [pd] if pd.name == "_capture"
             && pd.slurpy
             && pd.sigilless
