@@ -225,11 +225,20 @@ impl Interpreter {
             }
             return self.finish_method_site_lane(code, ip, answer);
         }
+        // The Iterator protocol on a built-in iterator (`vm_iterator_site_lane`).
+        if let Some(row) = self.try_iterator_site_lane(code, ip) {
+            #[cfg(debug_assertions)]
+            return self.check_iterator_site_lane(code, ip, row);
+            #[cfg(not(debug_assertions))]
+            if let Some(done) = self.run_iterator_site_lane(code, ip, row) {
+                return done;
+            }
+        }
         // A method call, for `resolve_onlystar` (#10746).
         self.in_method_call(|vm| vm.exec_call_method_mut_site_inner(code, ip))
     }
 
-    fn exec_call_method_mut_site_inner(
+    pub(super) fn exec_call_method_mut_site_inner(
         &mut self,
         code: &CompiledCode,
         ip: usize,
