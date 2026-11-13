@@ -54,7 +54,10 @@ fn add_name_tokens(s: &str, out: &mut FxHashSet<Symbol>) {
         out.insert(Symbol::intern(run));
         // Each `:`-separated part of a package-qualified run (a whole-chunk
         // token scan done once, not a per-execution name split).
-        for seg in run.split([':', '?']).filter(|seg| !seg.is_empty() && seg.len() != run.len()) {
+        for seg in run
+            .split([':', '?'])
+            .filter(|seg| !seg.is_empty() && seg.len() != run.len())
+        {
             out.insert(Symbol::intern(seg));
         }
         // ...and every qualified suffix (`R::G::A` also names `G::A`).
