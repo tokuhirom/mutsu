@@ -12,3 +12,8 @@ The declarants built for `$=pod` now carry the lexical type's storage name
 (computed from the declaration's site id the same way registration does), and
 `.WHY` on a lexical type also looks under its declared name. Pod::To::Man's
 test suite now matches raku.
+
+This also retires the `.HOW` fallback that guessed a lexical package's
+storage name from the bare spelling by scanning every declared package kind
+(and gave up when two lexical packages shared a name): the `WHEREFORE` now is
+the package itself.
