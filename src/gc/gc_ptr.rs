@@ -121,6 +121,28 @@ pub(crate) trait Trace: Send + Sync {
     fn finalize_clones_edges(&self) -> bool {
         false
     }
+
+    /// Whether this node has no outgoing `Gc` edge *right now*, so that it
+    /// cannot be on any cycle at this moment. `Gc::drop` does not buffer such
+    /// a node as a cycle-root candidate (Bacon-Rajan's "green", acyclic
+    /// nodes, decided per drop rather than per type).
+    ///
+    /// Why skipping is sound: a cycle becomes garbage only when the last
+    /// reference into it from outside is dropped, and that drop leaves the
+    /// dropped member's count above zero (the cycle still holds it), so it is
+    /// a survivor-drop of a node that, being on the cycle, has an outgoing
+    /// edge at that moment -- a drop this method answers `false` for. A node
+    /// that gains an edge after an earlier skipped drop is decided again at
+    /// its next drop. An answer that races a concurrent store (unsynchronized
+    /// code writing a container another thread drops) can at worst defer a
+    /// collection, never free a live node.
+    ///
+    /// Must be cheap and must not block: it runs inside `Gc::drop`, possibly
+    /// while the caller holds this node's own lock. The default `false`
+    /// (always buffer) is right for every node that does not override it.
+    fn currently_acyclic(&self) -> bool {
+        false
+    }
 }
 
 /// Bacon-Rajan node header stored alongside the value inside a [`GcBox`].
@@ -688,7 +710,7 @@ impl<T: Trace + 'static> Drop for Gc<T> {
                 // paying the round-trip.
                 if self.inner.header.buffered.load(Ordering::Relaxed) {
                     record_gc_candidate_dedup_hit();
-                } else {
+                } else if !self.inner.val().currently_acyclic() {
                     buffer_candidate(self.inner.clone());
                 }
             } else {

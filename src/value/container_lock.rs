@@ -92,10 +92,20 @@ pub(crate) fn multi_mutator_threads_live() -> bool {
 /// Number of striped mutexes. A power of two so the index is a mask.
 const STRIPES: usize = 64;
 
-static STRIPE_LOCKS: [Mutex<()>; STRIPES] = [const { Mutex::new(()) }; STRIPES];
+/// One stripe on a cache line of its own. A bare `Mutex<()>` is four bytes,
+/// so the 64 stripes packed into four cache lines: every cell read on every
+/// thread took one of them with an atomic read-modify-write, and threads
+/// working on unrelated cells bounced the same four lines between cores
+/// (false sharing). Measured on ParaSeq's degree-3 `.max(:p)` loop, the
+/// three workers' combined CPU time was ~2x a single worker's for the same
+/// instruction count (#17337).
+#[repr(align(128))]
+struct Stripe(Mutex<()>);
+
+static STRIPE_LOCKS: [Stripe; STRIPES] = [const { Stripe(Mutex::new(())) }; STRIPES];
 
 fn stripe_for(addr: usize) -> &'static Mutex<()> {
-    &STRIPE_LOCKS[stripe_index(addr)]
+    &STRIPE_LOCKS[stripe_index(addr)].0
 }
 
 fn stripe_index(addr: usize) -> usize {
@@ -227,6 +237,7 @@ impl ContainerStructGuard {
         HOLDS_STRUCT_LOCK.with(|held| held.set(true));
         let lock = |i: usize| {
             STRIPE_LOCKS[i]
+                .0
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
         };

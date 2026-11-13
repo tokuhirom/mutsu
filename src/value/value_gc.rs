@@ -531,6 +531,29 @@ impl Trace for super::ContainerCell {
         }
     }
 
+    /// A cell holding an immediate (a small Int, a Num, a Bool, `Nil`, a
+    /// type object) with no `is default` value and no QuantHash weight has no
+    /// `Gc` edge. Such cells die by the million in a loop that rebinds a
+    /// scalar (`$limit := @a[$i]` makes a fresh readonly binding cell per
+    /// iteration, and the old one is dropped while the env still holds it);
+    /// buffering each as a candidate filled the buffer every few thousand
+    /// iterations and triggered a stop-the-world collect that reclaimed
+    /// nothing (#17337). `try_lock`: a drop can run while this cell's own
+    /// lock is held (a store replacing a value that references the cell), and
+    /// a cell that is busy simply takes the conservative answer.
+    // Cost: O(1).
+    fn currently_acyclic(&self) -> bool {
+        let Ok(inner) = self.value.try_lock() else {
+            return false;
+        };
+        if !super::nanbox::word_is_refcount_free(inner.nanbox_bits()) {
+            return false;
+        }
+        drop(inner);
+        matches!(self.quanthash_weight.try_lock(), Ok(w) if w.is_none())
+            && matches!(self.default.try_lock(), Ok(d) if d.is_none())
+    }
+
     fn drop_gc_edges(&mut self) {
         // Break the cell's single edge (reclaim). `&mut self` => no lock needed.
         if let Ok(inner) = self.get_mut() {
@@ -830,6 +853,33 @@ mod tests {
         let mut visitor = CountingVisitor { count: 0 };
         cell.visit_gc_children(&mut visitor);
         assert_eq!(visitor.count, 1);
+    }
+
+    #[test]
+    fn currently_acyclic_is_true_only_for_an_edgeless_cell() {
+        use crate::gc::Trace;
+        // An immediate value with no default and no weight: no Gc edge.
+        let plain = crate::value::ContainerCell::new(Value::Int(7));
+        assert!(plain.currently_acyclic());
+        // A cell whose value is itself a Gc-bearing node has an edge, so it
+        // may be on a cycle and must be buffered.
+        let holds_node = crate::value::ContainerCell::new(Value::Array(
+            crate::gc::Gc::new(ArrayData::default()),
+            crate::value::ArrayKind::Array,
+        ));
+        assert!(!holds_node.currently_acyclic());
+        // A `ContainerRef` value (a binding chain) is a node edge too.
+        let holds_ref = crate::value::ContainerCell::new(Value::ContainerRef(crate::gc::Gc::new(
+            crate::value::ContainerCell::new(Value::Int(1)),
+        )));
+        assert!(!holds_ref.currently_acyclic());
+        // A default value is an extra edge even over an immediate.
+        let with_default = crate::value::ContainerCell::new(Value::Int(7));
+        with_default.set_default(Value::Array(
+            crate::gc::Gc::new(ArrayData::default()),
+            crate::value::ArrayKind::Array,
+        ));
+        assert!(!with_default.currently_acyclic());
     }
 
     #[test]

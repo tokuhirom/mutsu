@@ -45,33 +45,42 @@ pub(crate) const BASE_TIER_DYNAMICS: &[&str] = &[
     "%*COMPILING",
 ];
 
+/// [`BASE_TIER_DYNAMICS`] interned once per process. `hoist_builtin_dynamics`
+/// runs on every thread clone, and interning the ~21 keys each time was its
+/// own measurable cost (#17337).
+// Cost: O(1) after the first call (one `OnceLock` read).
+fn base_tier_dynamic_syms() -> &'static [Symbol] {
+    static SYMS: std::sync::OnceLock<Vec<Symbol>> = std::sync::OnceLock::new();
+    SYMS.get_or_init(|| BASE_TIER_DYNAMICS.iter().map(|k| Symbol::intern(k)).collect())
+}
+
 impl Interpreter {
     /// Rebuild the per-interpreter IO/dynamic-var environment. Called from
     /// `Interpreter::new()`; every `clone_for_thread` spawn uses the
     /// [`Self::init_io_environment_for_thread_clone`] variant, which inherits
     /// already-present dynamic IO handle vars instead of clobbering them.
     ///
-    /// `$*CWD` is deliberately rebuilt via a real `current_dir()` syscall on
-    /// EVERY call, including thread-clone spawns, even though `cloned.env`
-    /// already carries the parent's current `$*CWD` value verbatim (from the
-    /// struct-construction-time env clone in `clone_for_thread_excluding`) and
-    /// a skip-and-reuse optimization looks safe at first glance. It is NOT
-    /// safe: a `start` block that both READS and WRITES a dynamic var inside
-    /// itself (e.g. `start indir $dir, { $*CWD.basename; $*CWD = ...; }`) can
-    /// have that var boxed into a captured `ContainerRef` cell at
-    /// closure-creation time (`box_captured_lexicals`), snapshotting whatever
-    /// value is CURRENTLY in `env` at that point — and a later `indir`/dynamic
-    /// rebind that only does `self.env.insert(...)` does not reach a cell the
-    /// closure already captured. Before this rebuild ran unconditionally, that
-    /// snapshot was always a fresh `IO::Path` Instance (built moments earlier
-    /// by this very function); skipping the rebuild let the snapshot instead be
-    /// whatever non-Path value an outer `my $*CWD = ...` lexical override had
-    /// left in env, breaking `t/start-dynamic-var-indir.t`. Rebuilding
-    /// unconditionally keeps that pre-closure-creation snapshot correct. See
-    /// docs/per-task-clone-slimming.md slice 3 for the caching this function
-    /// does apply (the other dynamic vars, which no closure boxing issue
-    /// touches because their identity is process-constant, not reassigned by
-    /// ordinary programs).
+    /// `$*CWD` is rebuilt from a real `current_dir()` syscall here, for the
+    /// process's own interpreter. A thread clone instead INHERITS the value
+    /// its spawner had, like every other dynamic variable: rakudo prints
+    /// `/tmp` for `indir "/tmp", { await start { say $*CWD } }`, where a
+    /// rebuild printed the process directory (#17337).
+    ///
+    /// The historical reason for rebuilding on a clone too was a `start`
+    /// block that both READS and WRITES a dynamic var inside itself (e.g.
+    /// `start indir $dir, { $*CWD.basename; $*CWD = ...; }`): such a var
+    /// could be boxed into a captured `ContainerRef` cell at closure-creation
+    /// time (`box_captured_lexicals`), snapshotting whatever was in `env`
+    /// then, and a later `indir` rebind that only does `self.env.insert(...)`
+    /// does not reach an already-captured cell. The rebuild made that
+    /// snapshot a fresh `IO::Path` rather than an outer `my $*CWD = ...`
+    /// override's value. That is no longer what keeps the read correct —
+    /// a dynamic variable is excluded from the spawn's name lane and read
+    /// through the live dynamic frame (`t/vm/start-dynamic-var-indir.t`
+    /// covers both shapes and passes with the inheritance).
+    ///
+    /// See docs/per-task-clone-slimming.md slice 3 for the caching this
+    /// function does apply (the process-constant dynamic vars).
     pub(super) fn init_io_environment(&mut self) {
         self.init_io_environment_impl(false)
     }
@@ -106,28 +115,33 @@ impl Interpreter {
         if !crate::env::global_base_installed() {
             return;
         }
+        // Take the entries out of the overlay FIRST, before cloning the base.
+        // A thread clone inherits every one of these dynamics, so its overlay
+        // usually holds none of them; cloning the base map (the bulk of this
+        // function) only to find nothing moved and drop the clone was ~8% of
+        // the per-task spawn (#17337). The symbols are interned once per
+        // process rather than on every call.
+        let mut moved: Vec<(Symbol, Value)> = Vec::new();
+        for &sym in base_tier_dynamic_syms() {
+            // `remove_overlay_sym`, not `remove_sym`: the entry is being moved
+            // one tier DOWN, not deleted, so it must not leave a tombstone.
+            if let Some(v) = self.env.remove_overlay_sym(sym) {
+                moved.push((sym, v));
+            }
+        }
+        // Nothing to move and a base is already installed: re-installing would
+        // hand out a fresh `Arc` that no already-captured env shares. A hoist
+        // that only overwrites an existing base entry still has `moved`
+        // non-empty, so it installs as before.
+        if moved.is_empty() && self.env.dyn_base().is_some() {
+            return;
+        }
         let mut base: crate::env::SymMap = match self.env.dyn_base() {
             Some(existing) => (**existing).clone(),
             None => crate::env::SymMap::default(),
         };
-        let mut moved = false;
-        for key in BASE_TIER_DYNAMICS {
-            let sym = Symbol::intern(key);
-            // `remove_overlay_sym`, not `remove_sym`: the entry is being moved
-            // one tier DOWN, not deleted, so it must not leave a tombstone.
-            if let Some(v) = self.env.remove_overlay_sym(sym) {
-                base.insert(sym, v);
-                moved = true;
-            }
-        }
-        // Count what was *taken out of the env*, not the base's size: a hoist
-        // that overwrites an existing base entry (every thread clone, which
-        // rebuilds its own `$*CWD`/`$*TMPDIR` over the inherited copy) leaves
-        // the length unchanged while carrying a value that must be installed.
-        if !moved && self.env.dyn_base().is_some() {
-            // Nothing moved and a base is already installed: re-installing
-            // would hand out a fresh `Arc` that no already-captured env shares.
-            return;
+        for (sym, v) in moved {
+            base.insert(sym, v);
         }
         self.env.set_dyn_base(base);
     }
@@ -137,9 +151,13 @@ impl Interpreter {
     /// (`$*OUT`/`$*ERR`/`$*IN`/`$*ARGFILES`) the cloned env already carries are
     /// INHERITED instead of clobbered with fresh default handles — in Raku a
     /// `start` block sees the spawning scope's `my $*OUT = ...` redirection
-    /// (pin: `t/start-inherits-dynamic-out.t`). The non-handle dynamic vars
-    /// below the handle block are still rebuilt exactly as before (see the
-    /// `$*CWD` comment above for why that rebuild must stay unconditional).
+    /// (pin: `t/start-inherits-dynamic-out.t`). The path-valued dynamics
+    /// (`$*SPEC`/`$*CWD`/`$*TMPDIR`/`$*HOME`/`$*EXECUTABLE`/
+    /// `$*EXECUTABLE-NAME`) are inherited for the same reason: they are
+    /// ordinary dynamic variables, so a thread sees the spawning scope's
+    /// value -- rakudo prints `/tmp` for `indir "/tmp", { await start { say
+    /// $*CWD } }`, where rebuilding from the process `getcwd` printed the
+    /// process directory (#17337).
     pub(super) fn init_io_environment_for_thread_clone(&mut self) {
         self.init_io_environment_impl(true)
     }
@@ -197,44 +215,59 @@ impl Interpreter {
             self.env.insert("$*ARGFILES".to_string(), argfiles.clone());
             self.env.insert("*ARGFILES".to_string(), argfiles);
         }
-        let spec = self.make_io_spec_instance();
-        self.env.insert("$*SPEC".to_string(), spec.clone());
-        self.env.insert("*SPEC".to_string(), spec);
-        #[cfg(not(target_arch = "wasm32"))]
-        let cwd_str = env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .to_string_lossy()
-            .to_string();
-        #[cfg(target_arch = "wasm32")]
-        let cwd_str = "/".to_string();
-        let cwd_val = self.make_io_path_instance(&cwd_str);
-        self.env.insert("$*CWD".to_string(), cwd_val.clone());
-        self.env.insert("*CWD".to_string(), cwd_val);
-        let tmpdir_val = self.make_io_path_instance(Self::cached_tmpdir_string());
-        self.env.insert("$*TMPDIR".to_string(), tmpdir_val.clone());
-        self.env.insert("*TMPDIR".to_string(), tmpdir_val);
-        let home_val = match Self::cached_home_string() {
-            Some(home) => self.make_io_path_instance(home),
-            None => Value::NIL,
-        };
-        self.env.insert("$*HOME".to_string(), home_val.clone());
-        self.env.insert("*HOME".to_string(), home_val);
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*SPEC", "*SPEC")) {
+            let spec = self.make_io_spec_instance();
+            self.env.insert("$*SPEC".to_string(), spec.clone());
+            self.env.insert("*SPEC".to_string(), spec);
+        }
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*CWD", "*CWD")) {
+            #[cfg(not(target_arch = "wasm32"))]
+            let cwd_str = env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .to_string_lossy()
+                .to_string();
+            #[cfg(target_arch = "wasm32")]
+            let cwd_str = "/".to_string();
+            let cwd_val = self.make_io_path_instance(&cwd_str);
+            self.env.insert("$*CWD".to_string(), cwd_val.clone());
+            self.env.insert("*CWD".to_string(), cwd_val);
+        }
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*TMPDIR", "*TMPDIR")) {
+            let tmpdir_val = self.make_io_path_instance(Self::cached_tmpdir_string());
+            self.env.insert("$*TMPDIR".to_string(), tmpdir_val.clone());
+            self.env.insert("*TMPDIR".to_string(), tmpdir_val);
+        }
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*HOME", "*HOME")) {
+            let home_val = match Self::cached_home_string() {
+                Some(home) => self.make_io_path_instance(home),
+                None => Value::NIL,
+            };
+            self.env.insert("$*HOME".to_string(), home_val.clone());
+            self.env.insert("*HOME".to_string(), home_val);
+        }
         // $*EXECUTABLE - path to the interpreter binary
-        let exe_path = Self::cached_executable_path_string();
-        let exe_io = self.make_io_path_instance(exe_path);
-        self.env.insert("$*EXECUTABLE".to_string(), exe_io.clone());
-        self.env.insert("*EXECUTABLE".to_string(), exe_io);
-        self.env.insert(
-            "$*EXECUTABLE-NAME".to_string(),
-            Value::str(
-                std::path::Path::new(exe_path)
-                    .file_name()
-                    .map(|f| f.to_string_lossy().to_string())
-                    .unwrap_or_else(|| exe_path.to_string()),
-            ),
-        );
-        let exec_name = self.env.get("$*EXECUTABLE-NAME").cloned().unwrap();
-        self.env.insert("*EXECUTABLE-NAME".to_string(), exec_name);
+        if !(for_thread_clone && self.inherited_io_entry_usable("$*EXECUTABLE", "*EXECUTABLE")) {
+            let exe_path = Self::cached_executable_path_string();
+            let exe_io = self.make_io_path_instance(exe_path);
+            self.env.insert("$*EXECUTABLE".to_string(), exe_io.clone());
+            self.env.insert("*EXECUTABLE".to_string(), exe_io);
+        }
+        if !(for_thread_clone
+            && self.inherited_io_entry_usable("$*EXECUTABLE-NAME", "*EXECUTABLE-NAME"))
+        {
+            let exe_path = Self::cached_executable_path_string();
+            self.env.insert(
+                "$*EXECUTABLE-NAME".to_string(),
+                Value::str(
+                    std::path::Path::new(exe_path)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().to_string())
+                        .unwrap_or_else(|| exe_path.to_string()),
+                ),
+            );
+            let exec_name = self.env.get("$*EXECUTABLE-NAME").cloned().unwrap();
+            self.env.insert("*EXECUTABLE-NAME".to_string(), exec_name);
+        }
         // $*DISTRO/$*PERL/$*RAKU/$*VM/$*KERNEL are intentionally NOT built or
         // inserted here (todo/tickets/magic-vars-should-be-built-lazily.md
         // Slice 2). They materialize on first read via
