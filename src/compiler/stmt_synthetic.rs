@@ -67,7 +67,10 @@ impl Compiler {
         use crate::ast::Expr;
         matches!(
             expr,
-            Expr::Index { .. } | Expr::MethodCall { .. } | Expr::Call { .. } | Expr::UserRoutineCall { .. }
+            Expr::Index { .. }
+                | Expr::MethodCall { .. }
+                | Expr::Call { .. }
+                | Expr::UserRoutineCall { .. }
         )
     }
 
