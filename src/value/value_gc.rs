@@ -546,7 +546,7 @@ impl Trace for super::ContainerCell {
         let Ok(inner) = self.value.try_lock() else {
             return false;
         };
-        if !crate::value::jit_words::is_refcount_free(inner.nanbox_bits()) {
+        if !super::nanbox::word_is_refcount_free(inner.nanbox_bits()) {
             return false;
         }
         drop(inner);

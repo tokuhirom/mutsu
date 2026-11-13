@@ -600,13 +600,23 @@ pub(crate) mod jit_words {
     /// `LoadConst` emitter inlines the push of such a constant as a raw
     /// immediate store.
     pub(crate) fn is_refcount_free(bits: u64) -> bool {
-        match classify(bits) {
-            Classified::Int(_) | Classified::Num(_) => true,
-            Classified::Kind(k) => matches!(
-                k,
-                Kind::Nil | Kind::Whatever | Kind::HyperWhatever | Kind::Bool | Kind::Package
-            ),
-        }
+        super::word_is_refcount_free(bits)
+    }
+}
+
+/// True when duplicating/discarding the word `bits` needs no refcount or GC
+/// bookkeeping: small Int, Num, or a payload-free inline kind. Such a word has
+/// no `Gc` edge. Shared by the JIT's Tier B emitter (`jit_words`) and the
+/// cycle collector's acyclic-cell test (`ContainerCell::currently_acyclic`),
+/// so it is not gated on the `jit` feature.
+// Cost: O(1).
+pub(in crate::value) fn word_is_refcount_free(bits: u64) -> bool {
+    match classify(bits) {
+        Classified::Int(_) | Classified::Num(_) => true,
+        Classified::Kind(k) => matches!(
+            k,
+            Kind::Nil | Kind::Whatever | Kind::HyperWhatever | Kind::Bool | Kind::Package
+        ),
     }
 }
 
