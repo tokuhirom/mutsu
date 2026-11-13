@@ -218,6 +218,10 @@ pub(crate) struct ResolutionCaches {
     /// `Vec<String>` + two `format!`s per candidate package.
     pub(crate) has_proto_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
     pub(crate) has_proto_cache_gen: u64,
+    /// Memo for [`Interpreter::has_opaque_proto_cached_sym`], same key and
+    /// the same `proto_generation` guard as `has_proto_cache`.
+    pub(crate) opaque_proto_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
+    pub(crate) opaque_proto_cache_gen: u64,
     /// Memo for [`Interpreter::has_declared_function`], same key shape as
     /// `has_proto_cache`; guarded by `fn_resolve_gen` like
     /// `multi_candidates_cache` (the `functions` map is what it reads).

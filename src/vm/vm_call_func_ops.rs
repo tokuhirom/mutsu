@@ -2358,7 +2358,11 @@ impl Interpreter {
                 self.set_pending_call_arg_sources(None);
                 return result;
             }
-            let compiled = if !self.has_proto_cached_sym(name, name_sym) && !lexical_rw_callable {
+            // A transparent proto (`proto f(|) {*}`, `vm_transparent_proto.rs`)
+            // dispatches as the implicit one does: through the candidates.
+            let compiled = if !self.has_opaque_proto_cached_sym(name, name_sym)
+                && !lexical_rw_callable
+            {
                 self.find_compiled_function_memo(
                     compiled_fns,
                     name,

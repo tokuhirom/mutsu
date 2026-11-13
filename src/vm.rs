@@ -383,6 +383,7 @@ mod vm_assign_expr_lane;
 mod vm_attribute_meta_lane;
 mod vm_attribute_meta_row;
 mod vm_code_var_infix_lane;
+mod vm_transparent_proto;
 mod vm_decl_lane;
 mod vm_hash_key_user_str;
 mod vm_incdec_mixin_subscript;
