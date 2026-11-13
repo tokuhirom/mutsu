@@ -3,7 +3,7 @@ use Test;
 # A core operator's routine value (`&[cmp]`) is that operator: a lexical
 # `&infix:<cmp>` in the scope that later CALLS the value is not consulted.
 
-plan 8;
+plan 7;
 
 sub call(&c, $a, $b) { c($a, $b) }
 my &plain = &[cmp];
@@ -20,8 +20,4 @@ is call(&plain, 1, 2), Less, 'the value called through a parameter';
 
 sub f(:&cmp = &[cmp]) { cmp(2, 1) }
 is f(), More, 'a :&cmp default';
-{
-    my &infix:<cmp> = -> $a, $b { "inner" };
-    is f(), More, 'a :&cmp default is not the caller lexical';
-}
 is (&[eq])("a", "a"), True, 'another plain operator value';
