@@ -62,7 +62,11 @@ impl Interpreter {
     /// Leaves the stack untouched.
     // Cost: O(1) on a memo hit (one lock and a few compares); a miss adds an
     // owner-row lookup and the user-shadow probes.
-    pub(super) fn try_iterator_site_lane(&mut self, code: &CompiledCode, ip: usize) -> Option<RowId> {
+    pub(super) fn try_iterator_site_lane(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+    ) -> Option<RowId> {
         let OpCode::CallMethodMut {
             name_idx,
             arity: 0,
@@ -176,10 +180,13 @@ impl Interpreter {
             "the Iterator lane would answer .{} with row {} at ip {ip}, but the full \
              CallMethodMut path did not reach try_native_iterator -- a probe the lane \
              skips now claims this call",
-            Self::const_str(code, match code.ops[ip] {
-                OpCode::CallMethodMut { name_idx, .. } => name_idx,
-                _ => 0,
-            }),
+            Self::const_str(
+                code,
+                match code.ops[ip] {
+                    OpCode::CallMethodMut { name_idx, .. } => name_idx,
+                    _ => 0,
+                }
+            ),
             method_table::row(row).owner,
         );
         full

@@ -545,6 +545,9 @@ impl Interpreter {
                 DeclaredConstraint::NativeInt => {
                     return Self::wrap_native_int_arithmetic_for_constraint("int64", value);
                 }
+                DeclaredConstraint::NativeUint => {
+                    return Self::wrap_native_int_arithmetic_for_constraint("uint64", value);
+                }
                 DeclaredConstraint::NativeStr | DeclaredConstraint::NativeNum => return value,
                 // No constraint: no native width to wrap to.
                 DeclaredConstraint::Untyped => return value,

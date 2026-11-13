@@ -220,9 +220,10 @@ impl Interpreter {
             return None;
         }
         let owners = crate::builtins::method_table::opaque_owners_of(target)?;
-        let answer = crate::builtins::method_table::invoke_owner(self, owners, method, args, || {
-            target.clone()
-        });
+        let answer =
+            crate::builtins::method_table::invoke_owner(self, owners, method, args, || {
+                target.clone()
+            });
         #[cfg(debug_assertions)]
         if answer.is_some() {
             super::vm_iterator_site_lane::note_native_iterator_answer();

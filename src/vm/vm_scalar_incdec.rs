@@ -118,11 +118,14 @@ impl Interpreter {
         // of `native_typed_store_is_identity`: a `subset` cannot redirect the
         // native name `int`, and any subset at all (JSON::Fast has some) would
         // otherwise send every `++$i` of a `my int $i` down the full path.
+        // `my uint $i` likewise keeps a non-negative `Int` (a step below zero
+        // wraps, so it takes the full path).
         if Self::slot_type_constraint_possible(code, slot)
-            && !matches!(
-                code.declared_constraint(slot),
-                crate::binding_desc::DeclaredConstraint::NativeInt
-            )
+            && !match code.declared_constraint(slot) {
+                crate::binding_desc::DeclaredConstraint::NativeInt => true,
+                crate::binding_desc::DeclaredConstraint::NativeUint => new >= 0,
+                _ => false,
+            }
             && !self.native_typed_store_is_identity(code, slot, &Value::int(new))
         {
             return Ok(false);

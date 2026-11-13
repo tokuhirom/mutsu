@@ -1245,6 +1245,15 @@ impl Interpreter {
                         || constraint == "int"
                         || crate::runtime::native_types::is_native_int_type(constraint)
                 }
+                // A value of an `Int`-based enum (`Order::More`, what `cmp`
+                // returns) is an `Int`, so a native int constraint admits it
+                // as it admits the number (`my int $c = $a cmp $b`); the
+                // general checker reaches that only through its role-key and
+                // MRO walk (~7k instructions per assignment).
+                ValueView::Enum {
+                    value: crate::value::EnumValue::Int(_),
+                    ..
+                } => constraint == "int" || crate::runtime::native_types::is_native_int_type(constraint),
                 ValueView::BigInt(_) => constraint == "Int",
                 ValueView::Num(_) => constraint == "Num" || constraint == "num",
                 // A `Rat $r` parameter otherwise walked the whole gauntlet

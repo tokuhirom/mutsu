@@ -609,6 +609,10 @@ impl Interpreter {
         }
         match code.declared_constraint(idx) {
             DeclaredConstraint::NativeInt => return matches!(value.view(), ValueView::Int(_)),
+            // A non-negative `Int` is stored as it is; a negative one wraps.
+            DeclaredConstraint::NativeUint => {
+                return matches!(value.view(), ValueView::Int(n) if n >= 0);
+            }
             DeclaredConstraint::NativeStr => return matches!(value.view(), ValueView::Str(_)),
             DeclaredConstraint::NativeNum => return matches!(value.view(), ValueView::Num(_)),
             // A narrow width wraps and a class constraint type-checks, so the
