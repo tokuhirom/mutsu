@@ -151,7 +151,8 @@ pub(crate) fn interpreter_version() -> String {
     // 61: `ParamTarget::Literal` (ADR-15761).
     // 62: `CompiledFunction` gained `inner_subs_are_closures` (#17497).
     // 63: `OpCode::CallOnCodeVar` gained `local_slot`.
-    const CACHE_FORMAT_VERSION: u32 = 63;
+    // 64: `CompiledDeclExpr` gained `reads_attributes`.
+    const CACHE_FORMAT_VERSION: u32 = 64;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
