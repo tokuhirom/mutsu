@@ -320,6 +320,11 @@ impl EntryTerminal {
 /// declared value type object (`my Int %h`), exactly as a plain `%h<k>` read
 /// answers. The twin of [`array_hole`].
 fn hash_hole(data: &HashData) -> Value {
+    // An immutable `Map` answers a missing key with `Nil` (`Map.AT-KEY`), not
+    // with a container's default.
+    if data.declared_type.as_deref() == Some("Map") {
+        return Value::NIL;
+    }
     data.default
         .as_ref()
         .map(|d| (**d).clone())
@@ -335,6 +340,21 @@ fn array_hole(data: &ArrayData) -> Value {
 }
 
 impl Value {
+    /// Whether this deferred vivification token denotes a writable element
+    /// container: a missing element of a mutable `Hash`/`Array` does (rakudo
+    /// hands back the auto-vivifying container), a missing key of an
+    /// immutable `Map` does not (the lookup is a plain value there).
+    // Cost: O(1).
+    pub(crate) fn hash_entry_ref_denotes_container(&self) -> bool {
+        match self.view() {
+            ValueView::HashEntryRef { root, .. } => match root {
+                EntryRoot::Hash(h) => h.declared_type.as_deref() != Some("Map"),
+                EntryRoot::Array(_) | EntryRoot::Cell(_) => true,
+            },
+            _ => false,
+        }
+    }
+
     /// Walk-CREATE the intermediate levels of a deferred token's `path` and
     /// return the terminal slot so the caller can insert.
     ///
