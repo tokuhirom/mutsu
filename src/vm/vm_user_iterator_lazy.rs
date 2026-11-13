@@ -119,4 +119,55 @@ impl Interpreter {
             crate::value::ArrayKind::List,
         )))
     }
+
+    /// Reify a whole `Seq.new($iterator)` the way rakudo's
+    /// `List.from-iterator` does when the iterator's class writes its own
+    /// `push-all`: one `push-all` into a fresh `IterationBuffer`, whose
+    /// elements are the Seq's. ParaSeq's `BufferIterator.push-all` splices its
+    /// buffer and hands the rest to its source's `push-all`, where pulling one
+    /// element at a time cost a user method call per element (#17337).
+    ///
+    /// `false` (nothing pulled) when the iterator is a built-in one, or its
+    /// `push-all` is the `Iterator` role's default: that one pulls one at a
+    /// time, which is what the caller's own loop then does.
+    // Cost: O(1) plus the user `push-all` and O(n) to read back its n elements.
+    pub(crate) fn push_all_user_iterator_into(
+        &mut self,
+        iterator: &Value,
+        out: &mut crate::value::PullOut,
+    ) -> Result<bool, RuntimeError> {
+        let class_name = match iterator.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => return Ok(false),
+        };
+        if matches!(
+            class_name.as_str(),
+            "Iterator" | "FromLoopIterator" | "HeadIterator"
+        ) || !self.class_has_user_method(&class_name, "push-all")
+        {
+            return Ok(false);
+        }
+        let target = self.nqp_create(Value::package(Symbol::intern("IterationBuffer")))?;
+        let Some((_, def)) =
+            self.resolve_method_with_owner(&class_name, "push-all", std::slice::from_ref(&target))
+        else {
+            return Ok(false);
+        };
+        let from_role_default = [def.original_role.as_deref(), def.role_origin.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|role| {
+                matches!(
+                    role.strip_prefix("GLOBAL::").unwrap_or(role),
+                    "Iterator" | "PredictiveIterator"
+                )
+            });
+        if from_role_default {
+            return Ok(false);
+        }
+        self.try_compiled_method_or_interpret(iterator.clone(), "push-all", vec![target.clone()])?;
+        out.produced
+            .extend(Self::nqp_elems_of(&target).unwrap_or_default());
+        Ok(true)
+    }
 }

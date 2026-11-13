@@ -134,6 +134,45 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Push what a `GetLocal` of a slot holding a `ContainerRef` cell reads:
+    /// the cell's value (the `ContainerRef` axis of the decont family), a
+    /// deferred hash entry's current value, or -- in container mode -- an
+    /// empty cell itself.
+    // Cost: O(1).
+    fn push_container_ref_read(&mut self, val: Value, keep_deferred_entry: bool) {
+        // A deferred array entry carried by a bound slice lives inside a
+        // temporary cell until its first write. In value context unwrap it
+        // one more step so callers see the array hole, while lvalue context
+        // keeps the cell for `store_through_cell` to materialize.
+        if !keep_deferred_entry {
+            // Tag-probe without cloning first: the common case (the cell
+            // does not hold a deferred HashEntryRef token) needs no clone
+            // here at all — `into_deref()` below does the one clone this
+            // read actually needs. Only the rare HashEntryRef case pays
+            // for a second `with_deref` to materialize the clone it needs.
+            let is_hash_entry_ref =
+                val.with_deref(|inner| matches!(inner.view(), ValueView::HashEntryRef { .. }));
+            if is_hash_entry_ref {
+                let inner = val.with_deref(|inner| inner.clone());
+                self.stack.push(inner.hash_entry_read());
+                return;
+            }
+        }
+        // In container mode, an EMPTY cell is a live link of the lvalue
+        // chain, not a value: `my @a; my $x := @a[0]; my $y := $x<k>`
+        // promoted the array hole to a cell holding `Any`, and dereferencing
+        // it here hands the subscript a bare `Any` with no way back to the
+        // storage — the eventual write went nowhere. Hand the cell itself to
+        // the subscript so it can anchor a deferred path (`EntryRoot::Cell`).
+        // A cell holding a real container still derefs: the container shares
+        // its `Gc`, so the chain continues through it unchanged.
+        if keep_deferred_entry && !crate::runtime::types::value_is_defined(&val) {
+            self.stack.push(val);
+            return;
+        }
+        self.stack.push(val.into_deref());
+    }
+
     pub(super) fn exec_get_local_op(
         &mut self,
         code: &CompiledCode,
@@ -200,7 +239,9 @@ impl Interpreter {
         // 3. `is_plain_local_read` — the slot's own word is none of the kinds
         //    the arm's TAIL still inspects after cloning (`ContainerRef`,
         //    `Proxy`, `HashEntryRef`, `LazyThunk`, `Nil`). A pure tag probe, so
-        //    it cannot force a lazy `Match`.
+        //    it cannot force a lazy `Match`. A `ContainerRef` slot (a bound or
+        //    captured scalar) is also taken, and read by the tail's own
+        //    `push_container_ref_read`: no probe in between looks at it.
         //
         // `keep_deferred_entry` needs no part in this: it only ever changes
         // what happens to a `HashEntryRef` or an empty `ContainerRef`, both of
@@ -224,7 +265,7 @@ impl Interpreter {
         if (unspoiled || crate::vm::vm_jit::local_read_unspoiled_by_any_name())
             && code.local_read_plain(idx)
             && let Some(val) = self.locals.get(idx)
-            && val.is_plain_local_read()
+            && (val.is_plain_local_read() || val.is_container_ref())
             && (unspoiled
                 || code
                     .locals
@@ -264,6 +305,14 @@ impl Interpreter {
                 code.locals.get(idx)
             );
             let val = val.clone();
+            // A bound or captured scalar's cell: every probe between here and
+            // the tail is decided against by the same three conditions (none
+            // looks at a plain-named local's cell), so read it the way the
+            // tail does.
+            if val.is_container_ref() {
+                self.push_container_ref_read(val, keep_deferred_entry);
+                return Ok(());
+            }
             self.stack.push(val);
             return Ok(());
         }
@@ -531,37 +580,7 @@ impl Interpreter {
         // early return AND keep the non-container hot path move-only (into_deref is
         // never reached for non-ContainerRef values).
         if val.is_container_ref() {
-            // A deferred array entry carried by a bound slice lives inside a
-            // temporary cell until its first write. In value context unwrap it
-            // one more step so callers see the array hole, while lvalue context
-            // keeps the cell for `store_through_cell` to materialize.
-            if !keep_deferred_entry {
-                // Tag-probe without cloning first: the common case (the cell
-                // does not hold a deferred HashEntryRef token) needs no clone
-                // here at all — `into_deref()` below does the one clone this
-                // read actually needs. Only the rare HashEntryRef case pays
-                // for a second `with_deref` to materialize the clone it needs.
-                let is_hash_entry_ref =
-                    val.with_deref(|inner| matches!(inner.view(), ValueView::HashEntryRef { .. }));
-                if is_hash_entry_ref {
-                    let inner = val.with_deref(|inner| inner.clone());
-                    self.stack.push(inner.hash_entry_read());
-                    return Ok(());
-                }
-            }
-            // In container mode, an EMPTY cell is a live link of the lvalue
-            // chain, not a value: `my @a; my $x := @a[0]; my $y := $x<k>`
-            // promoted the array hole to a cell holding `Any`, and dereferencing
-            // it here hands the subscript a bare `Any` with no way back to the
-            // storage — the eventual write went nowhere. Hand the cell itself to
-            // the subscript so it can anchor a deferred path (`EntryRoot::Cell`).
-            // A cell holding a real container still derefs: the container shares
-            // its `Gc`, so the chain continues through it unchanged.
-            if keep_deferred_entry && !crate::runtime::types::value_is_defined(&val) {
-                self.stack.push(val);
-                return Ok(());
-            }
-            self.stack.push(val.into_deref());
+            self.push_container_ref_read(val, keep_deferred_entry);
             return Ok(());
         }
         // Fast path: non-Nil values are always valid — skip env lookup

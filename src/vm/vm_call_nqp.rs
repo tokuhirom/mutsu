@@ -110,6 +110,9 @@ impl Interpreter {
         if self.exec_nqp_identity_op(id, arity) {
             return Ok(());
         }
+        if self.exec_nqp_list_op(id, arity) {
+            return Ok(());
+        }
         let mut args = std::mem::take(&mut self.nqp_arg_scratch);
         args.clear();
         let start = self.stack.len() - arity;

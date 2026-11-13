@@ -73,12 +73,16 @@ fn need_of_id(id: u16) -> Need {
 /// `positional`.
 // Cost: O(1).
 fn refused_type(v: &Value, positional: bool) -> Option<&'static str> {
-    let name = crate::value::type_name::value_type_name(v);
+    // The name is only needed for a refusal; computing it up front cost every
+    // accepted operand a type-name lookup.
+    let name = || crate::value::type_name::value_type_name(v);
     match v.view() {
-        ValueView::Array(..) => (!crate::runtime::boot_collection::repr_is_vm_array(v)).then_some(name),
+        ValueView::Array(..) => {
+            (!crate::runtime::boot_collection::repr_is_vm_array(v)).then(name)
+        }
         // A lexical pad (`BOOTContext`) is iterable and keyed by name.
         ValueView::Hash(h) if h.declared_type.as_deref() == Some("BOOTContext") => None,
-        ValueView::Hash(_) => (positional && !v.is_vm_hash()).then_some(name),
+        ValueView::Hash(_) => (positional && !v.is_vm_hash()).then(name),
         ValueView::Str(_)
         | ValueView::Int(_)
         | ValueView::BigInt(_)
@@ -92,7 +96,7 @@ fn refused_type(v: &Value, positional: bool) -> Option<&'static str> {
         | ValueView::RangeExclStart(..)
         | ValueView::RangeExclBoth(..)
         | ValueView::GenericRange { .. }
-        | ValueView::Capture { .. } => Some(name),
+        | ValueView::Capture { .. } => Some(name()),
         _ => None,
     }
 }
