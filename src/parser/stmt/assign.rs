@@ -112,9 +112,7 @@ pub(super) fn absorb_dotty_call_adverbs(input: &str, mut call: Expr) -> PResult<
             break;
         };
         match &mut call {
-            Expr::MethodCall { args, .. } | Expr::DynamicMethodCall { args, .. } => {
-                args.push(pair)
-            }
+            Expr::MethodCall { args, .. } | Expr::DynamicMethodCall { args, .. } => args.push(pair),
             _ => break,
         }
         r = r_next;
