@@ -907,7 +907,15 @@ impl Interpreter {
         }
         // Return declarator doc comment attached to this type/package/sub
         let keys: Vec<String> = match target.view() {
-            ValueView::Package(name) => vec![name.resolve()],
+            // A lexical type's storage name (`TC\0<decl_id>`) is documented
+            // under the name it was declared with.
+            ValueView::Package(name) => {
+                let storage = name.resolve();
+                match storage.split_once('\u{0}') {
+                    Some((declared, _)) => vec![storage.clone(), declared.to_string()],
+                    None => vec![storage],
+                }
+            }
             ValueView::Instance {
                 class_name,
                 attributes,
