@@ -616,6 +616,40 @@ impl Interpreter {
             // and that hook runs when the class composes, below.
             let how_hook_before = self.class_how_compose_hook(&storage_name);
             let attr_type_aliases = self.attr_type_aliases_of(code, attr_decls);
+            // A `my class` names itself inside its own body (traits, BEGIN
+            // blocks, attribute defaults): rakudo installs the lexical at the
+            // start of the declaration. The parents above were resolved
+            // first, so `my class C is C` still reaches the outer `C`
+            // (#17547: without it a body's bare name fell through to the
+            // package lookup, which an `EVAL` run from a method does not
+            // anchor to the method's class).
+            if *is_lexical && storage_name.contains('\u{0}') {
+                self.bind_lexical_type_keys(
+                    &storage_name,
+                    &[qualified_name.as_str(), resolved_name.as_str()],
+                );
+                // The bare spelling's env alias, which the registration below
+                // writes again: a body read resolves `{package}::Name` through
+                // it, and one left by an earlier run of the same `EVAL`
+                // would otherwise answer with that run's type.
+                // Only a binding to another lexical declaration of this same
+                // qualified name is replaced; an outer type of the same
+                // spelling stays visible outside the body.
+                let stale_prefix = format!("{qualified_name}\u{0}");
+                let stale_alias = !resolved_is_qualified
+                    && resolved_name != qualified_name
+                    && self.env().get(&resolved_name).is_some_and(|v| {
+                        matches!(v.view(), ValueView::Package(p)
+                            if p.as_str().starts_with(&stale_prefix) && p.as_str() != storage_name)
+                    });
+                if stale_alias {
+                    self.save_lexical_type_binding_for_scope_exit(&resolved_name);
+                    self.env_mut().insert(
+                        resolved_name.clone(),
+                        Value::package(Symbol::intern(&storage_name)),
+                    );
+                }
+            }
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(

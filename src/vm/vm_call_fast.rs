@@ -147,6 +147,10 @@ impl Interpreter {
         // callee's routine-level `my $x` must not register in the caller's active
         // `BlockScope` frame and be reverted at the caller's block exit.
         let saved_block_declared_vars = self.lexicals.block_declared_vars.push_frame();
+        // `:=` / sigilless bind pairs are per-frame slot indices: a callee's
+        // pairs must neither see the caller's nor outlive the call (they
+        // accumulated once per call and made every later store scan them).
+        let mut saved_local_bind_pairs = std::mem::take(&mut self.local_bind_pairs);
 
         // Raku: routines get their own $_ initialized to (Any). A body that
         // reads it (or holds a block that does) runs under a root that answers
@@ -367,6 +371,7 @@ impl Interpreter {
         self.lexicals
             .block_declared_vars
             .pop_frame(saved_block_declared_vars);
+        self.local_bind_pairs = std::mem::take(&mut saved_local_bind_pairs);
 
         // Restore env: if env was mutated, merge non-local changes back.
         // When has_locals is false, saved_env is None and no restore is needed

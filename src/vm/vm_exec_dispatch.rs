@@ -5721,6 +5721,7 @@ impl Interpreter {
                 arg_sources_idx,
                 bare_args,
                 upvalue,
+                local_slot,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above.
@@ -5734,10 +5735,13 @@ impl Interpreter {
                     *arity,
                     *arg_sources_idx,
                     *bare_args,
-                    upvalue.map_or(
-                        super::vm_call_func_ops::CodeVarBinding::ByName,
-                        super::vm_call_func_ops::CodeVarBinding::Upvalue,
-                    ),
+                    match (upvalue, local_slot) {
+                        (Some(index), _) => {
+                            super::vm_call_func_ops::CodeVarBinding::Upvalue(*index)
+                        }
+                        (None, Some(slot)) => super::vm_call_func_ops::CodeVarBinding::Local(*slot),
+                        (None, None) => super::vm_call_func_ops::CodeVarBinding::ByName,
+                    },
                     compiled_fns,
                 ) {
                     Ok(()) => {}

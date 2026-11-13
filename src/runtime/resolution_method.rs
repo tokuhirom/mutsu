@@ -346,6 +346,12 @@ impl Interpreter {
         // not O(MRO depth) with a registry probe per level.
         let levels = self.method_candidate_levels(class_name, method_name);
         let augment_cutoff = self.registry().augment_cutoff(mro, method_name);
+        // A more-derived level declared `multi` candidates: its implicit proto
+        // dispatches over multis only, so an ancestor's `only` method is
+        // skipped rather than a further candidate, while an ancestor's multis
+        // stay candidates (rakudo derives the proto from the nearest ancestor
+        // dispatcher and never from an `only`, #17572).
+        let mut multi_level_seen = false;
         for &level in levels.iter() {
             let level = level as usize;
             if level >= mro.len() {
@@ -373,6 +379,10 @@ impl Interpreter {
             };
             if let Some(overloads) = overloads {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
+                if !any_multi && multi_level_seen {
+                    continue;
+                }
+                multi_level_seen |= any_multi;
                 if !any_multi && unverified.contains(&true) {
                     self.verify_lazy_where_matches(
                     &super::resolution_lazy_where::CallShape {

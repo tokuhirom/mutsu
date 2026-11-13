@@ -643,7 +643,7 @@ impl Interpreter {
         )
     }
 
-    fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
+    pub(super) fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
         let idx = idx as usize;
         // The slot's name, the pending store flavours, and every metadata lane
         // the full path would consult — see
@@ -2927,7 +2927,10 @@ impl Interpreter {
             if is_vardecl
                 && let Some(source_idx) = code.locals.iter().position(|n| n == &resolved_source)
                 && source_idx != idx
+                && !self.local_bind_pairs.contains(&(source_idx, idx))
             {
+                // A declaration in a loop body re-runs per iteration; one pair
+                // per (source, target) is enough.
                 self.local_bind_pairs.push((source_idx, idx));
             }
             // Only use ContainerRef for same-scope rebind when the value is a

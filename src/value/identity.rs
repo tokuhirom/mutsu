@@ -134,6 +134,11 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         // A type made by `Metamodel::Primitives.create_type` is one object per
         // `id`, however many times the value was copied around.
         (ValueView::CustomType(a), ValueView::CustomType(b)) => a.id == b.id,
+        // Two enum values: what the `eqv` fallback below decides for them
+        // (its `Enum`/`Enum` arm is the value equality), without building its
+        // cycle-tracking context per comparison -- `nqp::eqaddr($cmp,
+        // Order::Less)` in a search loop asks this on every step.
+        (ValueView::Enum { .. }, ValueView::Enum { .. }) => left == right,
         (ValueView::Package(name), ValueView::Int(0))
         | (ValueView::Int(0), ValueView::Package(name))
             if name.resolve() == "int" =>

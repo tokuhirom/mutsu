@@ -428,6 +428,10 @@ impl Interpreter {
         // The visible multi candidates that did not bind, for the tiers of
         // `pick_method_winner`.
         let mut rivals: Vec<(Symbol, Rival)> = Vec::new();
+        // A more-derived level declaring `multi` candidates shadows an
+        // ancestor's `only` method (#17572), as in
+        // `resolve_method_with_owner_impl`.
+        let mut multi_level_seen = false;
         let mut idx = 0;
         while idx < candidates.len() {
             let ResolvedCandidate::User { level, .. } = &candidates[idx] else {
@@ -445,6 +449,10 @@ impl Interpreter {
             let any_multi = group
                 .iter()
                 .any(|c| matches!(c, ResolvedCandidate::User { def, .. } if def.is_multi));
+            if !any_multi && multi_level_seen {
+                continue;
+            }
+            multi_level_seen |= any_multi;
             if !any_multi && unverified.contains(&true) {
                 self.verify_lazy_where_matches(
                     &super::resolution_lazy_where::CallShape {

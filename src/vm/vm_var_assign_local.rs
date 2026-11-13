@@ -9,6 +9,16 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // The hot expression-form `($x = <scalar>)` store — `nqp::stmts(($i =
+        // nqp::sub_i($i, 1)), ...)` in a loop body — takes the statement-form
+        // `SetLocal` scalar lane, which decides from the slot's compile-time
+        // descriptor and the program's latches that none of the cascade below
+        // applies. The one check this form owns and `SetLocal` gets from a
+        // separate `CheckReadOnly` op is asked first: a readonly name declines
+        // the lane, and the cascade raises the error at its usual point.
+        if self.assign_expr_local_scalar_fast(code, idx) {
+            return Ok(());
+        }
         // ADR-0058: assigning a Seq to an `@`/`%` target reifies it (raku list
         // semantics) — the same rule `exec_set_local_op_inner` applies to the
         // `my @a = SEQ` declaration form. This is the plain reassignment form

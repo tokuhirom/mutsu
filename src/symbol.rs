@@ -858,6 +858,12 @@ pub(crate) mod wk {
         /// env keys a lexical override of them binds under
         /// (`vm_call_dispatcher_builtin`).
         callsame => "callsame";
+        /// The `Order` enum and its members, built by every `cmp`/`<=>`/`leg`
+        /// result (`runtime::utils::make_order`).
+        order => "Order";
+        order_less => "Less";
+        order_same => "Same";
+        order_more => "More";
         /// The builtin a subscript's value adverbs (`:k`/`:v`/`:kv`/`:p`) lower to
         /// (`ast::SUBSCRIPT_ADVERB_FN`).
         subscript_adverb => "__mutsu_subscript_adverb";

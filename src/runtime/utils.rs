@@ -341,26 +341,13 @@ pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
     Value::str(str_key.to_string())
 }
 pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
-    match ord {
-        std::cmp::Ordering::Less => Value::enum_parts(
-            Symbol::intern("Order"),
-            Symbol::intern("Less"),
-            EnumValue::Int(-1),
-            0,
-        ),
-        std::cmp::Ordering::Equal => Value::enum_parts(
-            Symbol::intern("Order"),
-            Symbol::intern("Same"),
-            EnumValue::Int(0),
-            1,
-        ),
-        std::cmp::Ordering::Greater => Value::enum_parts(
-            Symbol::intern("Order"),
-            Symbol::intern("More"),
-            EnumValue::Int(1),
-            2,
-        ),
-    }
+    use crate::symbol::wk;
+    let (member, value, index) = match ord {
+        std::cmp::Ordering::Less => (wk::order_less(), -1, 0),
+        std::cmp::Ordering::Equal => (wk::order_same(), 0, 1),
+        std::cmp::Ordering::Greater => (wk::order_more(), 1, 2),
+    };
+    Value::enum_parts(wk::order(), member, EnumValue::Int(value), index)
 }
 
 /// The three parts of an `IO::Path::Parts`, in the fixed order used by
