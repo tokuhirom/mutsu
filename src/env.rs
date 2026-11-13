@@ -949,6 +949,37 @@ impl Env {
         cur.dyn_base.as_ref()
     }
 
+    /// The answer a lookup of `key` can give when no env tier anywhere in the
+    /// process has ever held `key` ([`crate::symbol::ever_tier_key`] is
+    /// clear): `Some(v)` with `v` the chain's base-tier entry, without walking
+    /// the tiers. The walk itself could still answer `None` instead of `v` --
+    /// a static link hides some base names from the running code -- so this is
+    /// for a caller that accepts either, such as a memo re-check that holds for
+    /// a missing binding as well as for the base one. `None` when a tier may
+    /// hold `key` and only the walk can tell.
+    // Cost: O(t), t = tiers of the chain (pointer steps only, no probes).
+    #[inline]
+    pub(crate) fn base_only_get(&self, key: Symbol) -> Option<Option<&Value>> {
+        if crate::symbol::ever_tier_key(key) {
+            return None;
+        }
+        if !crate::symbol::maybe_env_key(key) {
+            return Some(None);
+        }
+        let mut cur = self;
+        while let Some(parent) = &cur.parent {
+            cur = parent;
+        }
+        let base = cur.base_get(key);
+        debug_assert!(
+            self.get_sym(key).is_none() || base.is_some(),
+            "`{}` answers from a tier although nothing latched it as a tier key: a \
+             tier-writing path has escaped `symbol::mark_tier_key`",
+            key.as_str()
+        );
+        Some(base)
+    }
+
     /// This env's own base-tier entry for `key`: the per-interpreter tier when
     /// it has one (a superset of the process-wide tier — see
     /// [`Self::set_dyn_base`]), else [`GLOBAL_BASE`]. Consults THIS env only,
@@ -3160,6 +3191,10 @@ impl Env {
             let parent_val = self.get_sym(key).cloned();
             if parent_val.is_some() {
                 let visible = from_overlay.or(parent_val);
+                // A tombstone hides the key's lower binding -- possibly a
+                // base-tier one -- so it counts as a tier key
+                // (`symbol::ever_tier_key`).
+                crate::symbol::mark_tier_key(key);
                 self.tombstones
                     .get_or_insert_with(Default::default)
                     .insert(key);

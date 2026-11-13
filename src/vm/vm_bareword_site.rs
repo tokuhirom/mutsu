@@ -136,7 +136,13 @@ impl Interpreter {
     /// binds its type and its `Type::Key` values so). Any other binding may
     /// be what the resolution chain answers, and it changes without a
     /// registry write.
-    // Cost: O(1), two `env` probes.
+    ///
+    /// A name no env tier has ever held (the core `Order::Same`, bound only in
+    /// the base tier) is answered from the base tier without walking the
+    /// chain: the walk can only answer that entry or nothing, and the check
+    /// holds for nothing, so holding for the entry is the stronger test.
+    // Cost: O(1), two `env` probes (a base-only name: O(t) pointer steps, t =
+    // env tiers, instead of a probe per tier).
     fn env_answers_memo(&self, name: Symbol, value: &Value) -> bool {
         let holds = |bound: Option<&Value>| match bound {
             None => true,
@@ -145,11 +151,17 @@ impl Interpreter {
                     || same_memo_value(bound, value)
             }
         };
-        holds(self.env().get_sym(name))
-            && holds(
-                self.env()
-                    .get_sym(crate::runtime::term_names::term_key_sym(name)),
-            )
+        let env = self.env();
+        let bound = match env.base_only_get(name) {
+            Some(base) => base,
+            None => env.get_sym(name),
+        };
+        let term = crate::runtime::term_names::term_key_sym(name);
+        let term_bound = match env.base_only_get(term) {
+            Some(base) => base,
+            None => env.get_sym(term),
+        };
+        holds(bound) && holds(term_bound)
     }
 
     /// `OpCode::GetTypeCapture`: push the live binding of the type capture

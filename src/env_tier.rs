@@ -590,7 +590,7 @@ impl Tier {
         self.invalidate_all();
         let out = f(&mut self.map);
         for (key, value) in &self.map {
-            crate::symbol::mark_env_key(*key);
+            crate::symbol::mark_tier_key(*key);
             note_alias_entry(*key, value);
         }
         out
