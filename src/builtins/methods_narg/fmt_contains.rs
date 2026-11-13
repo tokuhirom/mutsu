@@ -28,6 +28,66 @@ pub(crate) fn fmt_joinable_target(target: &Value) -> bool {
     )
 }
 
+/// Whether `item`, met as an element of a `List.fmt`, is itself `.fmt`-ed
+/// (Rakudo recurses into every `List` element, itemized or not — an `Array`
+/// and a `Slip` too — but formats a `Seq` or a `Range` as one value).
+// Cost: O(1).
+pub(crate) fn is_fmt_nested_list(item: &Value) -> bool {
+    matches!(item.view(), ValueView::Array(..) | ValueView::Slip(..))
+}
+
+/// Whether `item`, a non-`List` `Iterable` (a `Seq`, a `Range` or an
+/// associative), met as an element of a `List.fmt`, is itself `.fmt`-ed with
+/// the format (and its own default separator) instead of being one `sprintf`
+/// argument. Rakudo does so under any one-directive format but a bare `%s`
+/// (no width or precision), which reads the item's `.Str`:
+/// `((1,2).Seq,).fmt("<%x>")` is `"<1> <2>"`, `.fmt("<%s>")` is `"<1 2>"`.
+// Cost: O(f), f = chars of the format.
+pub(crate) fn fmt_item_iterates(fmt: &str, item: &Value) -> bool {
+    let iterable = matches!(
+        item.view(),
+        ValueView::Seq(..)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
+            | ValueView::Hash(..)
+            | ValueView::Bag(..)
+            | ValueView::Set(..)
+            | ValueView::Mix(..)
+    );
+    iterable && runtime::sprintf_directive_count(fmt) == 1 && !single_directive_is_bare_str(fmt)
+}
+
+/// Whether the one directive of `fmt` is `%s` with neither width nor
+/// precision (flags alone, as in `%-s`, still read `.Str` whole).
+// Cost: O(f), f = chars of the format.
+fn single_directive_is_bare_str(fmt: &str) -> bool {
+    let mut chars = fmt.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            continue;
+        }
+        if chars.peek() == Some(&'%') {
+            chars.next();
+            continue;
+        }
+        let mut spec = String::new();
+        for d in chars.by_ref() {
+            if d.is_ascii_alphabetic() {
+                return d == 's'
+                    && !spec
+                        .chars()
+                        .any(|x| x.is_ascii_digit() || x == '.' || x == '*');
+            }
+            spec.push(d);
+        }
+        return false;
+    }
+    false
+}
+
 /// Extract key and value from a Pair or ValuePair.
 pub(crate) fn pair_key_value(val: &Value) -> Option<(Value, Value)> {
     match val.view() {
@@ -234,14 +294,32 @@ pub(crate) fn fmt_native(target: &Value, args: &[Value]) -> Option<Result<Value,
             {
                 return None;
             }
-            match items
-                .iter()
-                .map(|item| fmt_list_item(&fmt, item))
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(parts) => join(parts, " "),
-                Err(e) => Some(Err(e)),
+            let mut parts = Vec::with_capacity(items.len());
+            for item in &items {
+                // A `List` item is itself `.fmt`-ed with the same format and
+                // separator, as Rakudo's `List.fmt` does; another `Iterable`
+                // under a non-bare-`%s` format with its own default separator.
+                let nested = if is_fmt_nested_list(item) {
+                    Some(args)
+                } else if fmt_item_iterates(&fmt, item) {
+                    Some(&args[..1])
+                } else {
+                    None
+                };
+                let rendered = if let Some(nested_args) = nested {
+                    match fmt_native(item, nested_args)? {
+                        Ok(v) => v.to_string_value(),
+                        Err(e) => return Some(Err(e)),
+                    }
+                } else {
+                    match fmt_list_item(&fmt, item) {
+                        Ok(s) => s,
+                        Err(e) => return Some(Err(e)),
+                    }
+                };
+                parts.push(rendered);
             }
+            join(parts, " ")
         }
         _ if sep.is_none() => {
             if has_directives && fmt_value_needs_coercion(target) {

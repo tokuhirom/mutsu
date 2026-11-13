@@ -410,6 +410,8 @@ fn emit_rule_separator(
 }
 
 pub(crate) fn normalize_token_pattern(pattern: &str) -> String {
+    let folded = super::token_heredoc::fold_code_block_heredocs(pattern);
+    let pattern = folded.as_ref();
     let trimmed = pattern.trim();
     if trimmed.len() >= 2 && trimmed.starts_with('/') && trimmed.ends_with('/') {
         trimmed[1..trimmed.len() - 1].to_string()

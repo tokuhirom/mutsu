@@ -106,7 +106,8 @@ impl Interpreter {
     }
 
     /// [`Self::user_shadows_builtin`] for an instance of `class`.
-    // Cost: O(1) amortized, see `user_shadows_builtin`.
+    // Cost: O(1) amortized, see `user_shadows_builtin`; a `Cool`-only name on a
+    // class with `handles *`/`FALLBACK` adds an O(m) MRO walk, m = its classes.
     fn instance_class_shadows_builtin(
         &mut self,
         class: Symbol,
@@ -124,8 +125,12 @@ impl Interpreter {
             // A `Cool`-only name (`.uc`, `.flip`, ...) is not resolvable on a
             // plain `Any`-derived instance, so `handles *` / `FALLBACK` gets
             // it; name-gated first so the MRO walk runs only for those names.
+            // A class that IS `Cool` (a grammar, whose matches are `Match`
+            // objects, or `class C is Cool`) has those methods itself, so
+            // they never reach its `FALLBACK` (Grammar::ABNF's `$/[0].comb`).
             || (Self::cool_only_builtin_method(name)
-                && self.class_has_wildcard_handles_or_fallback(cn))
+                && self.class_has_wildcard_handles_or_fallback(cn)
+                && !self.class_mro(cn).iter().any(|c| c.as_str() == "Cool"))
     }
 
     /// [`Self::user_shadows_builtin`] for the type object `class`. A type
