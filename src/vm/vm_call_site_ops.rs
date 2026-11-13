@@ -212,6 +212,21 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
+        // `.VAR` of a readonly sigilless term bound to a value is that value
+        // (`my \s = 5; s.VAR.^name` is `Int`); the term keeps no env marker
+        // for the by-name `.VAR` path to find (ADR-17376).
+        if let OpCode::CallMethodMut {
+            name_idx,
+            arity: 0,
+            target_slot: Some(slot),
+            modifier_idx: None,
+            ..
+        } = code.ops[ip]
+            && Self::const_str(code, name_idx) == "VAR"
+            && self.readonly_term_holds_value(code, slot)
+        {
+            return Ok(());
+        }
         // A built-in method with a row in the method table, on a plain
         // receiver: answered by the row, past the full path's probes
         // (`vm_method_site_lane`).

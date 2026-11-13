@@ -45,10 +45,12 @@ impl Compiler {
     /// [`Compiler::begin_term_decl`] for `stmt` when it declares a sigilless
     /// term; the name and mark to hand to [`Compiler::end_term_decl`] after it.
     pub(super) fn begin_term_decl_of<'a>(&mut self, stmt: &'a Stmt) -> Option<(&'a str, TermMark)> {
-        if let Stmt::VarDecl { name, marks, .. } = stmt
+        if let Stmt::VarDecl {
+            name, marks, expr, ..
+        } = stmt
             && marks.term != TermMark::No
         {
-            self.begin_term_decl(name, marks.term);
+            self.begin_term_decl(name, marks.term, Self::term_rhs_is_value(expr));
             return Some((name, marks.term));
         }
         None
@@ -59,7 +61,31 @@ impl Compiler {
     /// iteration's readonly mark is cleared so a re-declaration in a loop
     /// succeeds. A raw `\x = ...` binds the value itself, with no Scalar
     /// container, so the name is registered BEFORE the declaration compiles.
-    pub(super) fn begin_term_decl(&mut self, name: &str, kind: TermMark) {
+    /// Whether a sigilless term's initializer certainly produces a fresh
+    /// value rather than handing back a container: a literal, an
+    /// interpolated string, or a string/arithmetic infix. A call or a method
+    /// may return a container (`{$_}` returns its argument's), which the term
+    /// then binds, so only these make its slot a readonly term (ADR-17376).
+    // Cost: O(1).
+    fn term_rhs_is_value(expr: &crate::ast::Expr) -> bool {
+        use crate::ast::Expr;
+        use crate::token_kind::TokenKind;
+        match expr {
+            Expr::Literal(_) | Expr::StringInterpolation(..) => true,
+            Expr::Binary { op, .. } => matches!(
+                op,
+                TokenKind::Tilde
+                    | TokenKind::Plus
+                    | TokenKind::Minus
+                    | TokenKind::Star
+                    | TokenKind::Slash
+                    | TokenKind::Percent
+            ),
+            _ => false,
+        }
+    }
+
+    pub(super) fn begin_term_decl(&mut self, name: &str, kind: TermMark, value_rhs: bool) {
         self.sigilless_locals.insert(name.to_string());
         // A term declared after a `use` of the same name is the nearer binding.
         self.use_declared_names.remove(name);
@@ -74,7 +100,7 @@ impl Compiler {
                 on: false,
                 slot: u32::MAX,
             });
-            self.pending_term_mark_clears.push(ip);
+            self.pending_term_mark_clears.push((ip, value_rhs));
         }
     }
 
@@ -97,12 +123,18 @@ impl Compiler {
                 // ADR-17376: a readonly term is a fact of its slot; the
                 // markers stay for a slot something outside this chunk's ops
                 // can name, and the run time skips them otherwise.
+                let pending = self.pending_term_mark_clears.pop();
+                let value_rhs = pending.is_some_and(|(_, value_rhs)| value_rhs);
                 if let Some(slot) = slot
                     && let Some(desc) = self.code.binding_descs.get_mut(slot as usize)
                 {
-                    desc.flags.note_readonly_term_decl();
+                    if value_rhs {
+                        desc.flags.note_readonly_term_decl();
+                    } else {
+                        desc.flags.note_other_term_decl();
+                    }
                 }
-                if let Some(ip) = self.pending_term_mark_clears.pop()
+                if let Some((ip, _)) = pending
                     && let OpCode::SetTermMark { slot: s, .. } = &mut self.code.ops[ip]
                 {
                     *s = slot.unwrap_or(u32::MAX);

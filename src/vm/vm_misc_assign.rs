@@ -1078,8 +1078,9 @@ impl Interpreter {
     pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32, slot: u32) {
         // A readonly sigilless term has no container to hand on: its value is
         // what a callee or a bind receives, and it is readonly there by
-        // construction (ADR-17376).
-        if code.readonly_term_slot(slot as usize) {
+        // construction (ADR-17376). A term bound to a call result that handed
+        // back a container (`my \t = &f($x)`) keeps that container.
+        if self.readonly_term_holds_value(code, slot) {
             return;
         }
         let mut value = self.stack.pop().unwrap_or(Value::NIL);

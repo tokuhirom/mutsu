@@ -149,6 +149,19 @@ impl Interpreter {
         matches!(code.local_slots_of(name), [slot] if code.readonly_term_slot(*slot as usize))
     }
 
+    /// Whether local `slot` is a readonly sigilless term holding a plain value
+    /// (not a container a call result handed back): the term IS that value, so
+    /// it passes the value where a variable would pass its container, and its
+    /// `.VAR` is the value (ADR-17376).
+    // Cost: O(1).
+    #[inline]
+    pub(super) fn readonly_term_holds_value(&self, code: &CompiledCode, slot: u32) -> bool {
+        code.readonly_term_slot(slot as usize)
+            && self.locals.get(slot as usize).is_some_and(|v| {
+                !v.is_container_ref() && !v.is_proxy_value() && !v.is_varref()
+            })
+    }
+
     /// An assignment to a lean readonly term: what the env-marker branch of
     /// [`Self::exec_check_read_only_op`] decides for a marked term. A term
     /// bound to a mutable aggregate or to an object with a user `STORE`
