@@ -12,6 +12,24 @@ impl Interpreter {
     ///
     /// The elements go into `out` as they are produced, so a non-consuming
     /// read that fails part way keeps them (#12401).
+    /// [`Self::pull_seq_source`] for a read that makes the Seq a list
+    /// (`reify`/`take`: `.list`, `.elems`, `.reverse`, ...): an iterator whose
+    /// class writes its own `push-all` is drained by one call of it, as
+    /// rakudo's `List.from-iterator` does (`push_all_user_iterator_into`).
+    // Cost: as `pull_seq_source`.
+    pub(crate) fn pull_seq_source_listing(
+        &mut self,
+        source: &SeqSource,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
+        if let SeqSource::Iterator(iterator) = source
+            && self.push_all_user_iterator_into(iterator, out)?
+        {
+            return Ok(());
+        }
+        self.pull_seq_source(source, out)
+    }
+
     pub(crate) fn pull_seq_source(
         &mut self,
         source: &SeqSource,
@@ -339,7 +357,7 @@ impl Interpreter {
         body: &Arc<SeqBody>,
     ) -> Result<Vec<Value>, RuntimeError> {
         Ok(body
-            .reify(|source, out| self.pull_seq_source(source, out))?
+            .reify(|source, out| self.pull_seq_source_listing(source, out))?
             .to_vec())
     }
 
@@ -349,7 +367,7 @@ impl Interpreter {
         &mut self,
         body: &Arc<SeqBody>,
     ) -> Result<(Vec<Value>, SeqTaken), RuntimeError> {
-        body.take(|source, out| self.pull_seq_source(source, out))
+        body.take(|source, out| self.pull_seq_source_listing(source, out))
     }
 
     /// [`crate::opcode::OpCode::ConsumeReifiedSeq`]: the invocant of an explicit

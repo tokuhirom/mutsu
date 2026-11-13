@@ -874,9 +874,11 @@ impl NanBox {
 
     /// Whether this word is certainly not, and cannot stand for, an `Array` or
     /// `Hash`: an `Int`/`Num`/`Str`/`Bool`, another numeric kind, a type object,
-    /// a pair or a range. Such a value never takes the `$s = $src`
-    /// array-share lane, which only fires when the stored value derefs to an
-    /// `Array`/`Hash`.
+    /// a pair, a range or an object instance (an `IterationBuffer`, a user
+    /// object: the share lane tests the value's own kind, and an instance is
+    /// never an `Array`/`Hash` one, whatever it does or wraps). Such a value
+    /// never takes the `$s = $src` array-share lane, which only fires when the
+    /// stored value derefs to an `Array`/`Hash`.
     ///
     /// An allowlist on purpose. A wrapper (`ContainerRef`, `Proxy`,
     /// `HashEntryRef`, `Scalar`, a thunk, ...) can resolve to an aggregate,
@@ -889,7 +891,11 @@ impl NanBox {
             || matches!(
                 classify(self.0.get()),
                 Classified::Kind(
-                    Kind::Range | Kind::RangeExcl | Kind::RangeExclStart | Kind::RangeExclBoth
+                    Kind::Range
+                        | Kind::RangeExcl
+                        | Kind::RangeExclStart
+                        | Kind::RangeExclBoth
+                        | Kind::Instance
                 )
             )
     }

@@ -164,6 +164,20 @@ fn reject_high_level_array(target: &Value) -> Result<(), RuntimeError> {
 // Cost: O(1).
 pub(crate) fn elem_at(target: &Value, idx: i64) -> Result<Option<Value>, RuntimeError> {
     reject_high_level_array(target)?;
+    // A list-backed value answers its length and the element from one
+    // lookup of its storage (an `IterationBuffer` reads its items attribute
+    // once, not once for the length and again for the element).
+    let view = target.is_iteration_buffer_view();
+    if let Some(answer) = with_nqp_backing_array(target, |array| match array.view() {
+        ValueView::Array(items, _) => Some(
+            resolve_index(idx, items.len()).map(|i| Interpreter::array_elem_at(&items, i, view)),
+        ),
+        _ => None,
+    })
+    .flatten()
+    {
+        return answer;
+    }
     let Some(len) = Interpreter::nqp_elems_len_of(target) else {
         return Ok(None);
     };

@@ -214,10 +214,7 @@ impl Interpreter {
         // null there (#12786).
         let view = target.is_iteration_buffer_view();
         if let Some(elem) = with_nqp_backing_array(target, |array| match array.view() {
-            ValueView::Array(items, _) if view && idx < items.len() && items.hole_at(idx) => {
-                Some(Value::NIL)
-            }
-            ValueView::Array(items, _) => items.get(idx).cloned(),
+            ValueView::Array(items, _) => Self::array_elem_at(&items, idx, view),
             _ => None,
         }) {
             return elem;
@@ -226,6 +223,21 @@ impl Interpreter {
             return crate::value::value_buf::buf_elem_at(&attributes, idx);
         }
         crate::runtime::CArrayView::of(target).and_then(|view| view.elem_at(idx))
+    }
+
+    /// Element `idx` of a list's storage: `None` past the end, and null
+    /// (`Value::NIL`) for a never-assigned slot of an Array's `$!reified`
+    /// view (`view`; #12786).
+    // Cost: O(1).
+    pub(crate) fn array_elem_at(
+        items: &crate::value::ArrayData,
+        idx: usize,
+        view: bool,
+    ) -> Option<Value> {
+        if view && idx < items.len() && items.hole_at(idx) {
+            return Some(Value::NIL);
+        }
+        items.get(idx).cloned()
     }
 
     /// The elements of a list-ish nqp value, read-only.
