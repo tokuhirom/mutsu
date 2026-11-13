@@ -62,6 +62,9 @@ enum Prop {
     Script,
     EastAsianWidth,
     Block,
+    /// A General_Category aggregate (`L`, `P`, ...), a binary property over
+    /// the categories it groups.
+    GcAggregate(&'static [&'static str]),
     /// A binary property, by its canonical name.
     Binary(&'static str),
 }
@@ -72,6 +75,9 @@ fn prop_of(code: i64) -> Option<Prop> {
         PROP_SCRIPT => Some(Prop::Script),
         PROP_EAST_ASIAN_WIDTH => Some(Prop::EastAsianWidth),
         PROP_BLOCK => Some(Prop::Block),
+        _ if let Some(&(_, _, members)) = GC_AGGREGATES.iter().find(|(c, ..)| *c == code) => {
+            Some(Prop::GcAggregate(members))
+        }
         _ => BINARY_PROPERTIES
             .binary_search_by_key(&code, |&(c, _)| c)
             .ok()
@@ -86,9 +92,56 @@ fn unsupported_prop(op: &str, code: i64) -> RuntimeError {
     ))
 }
 
-/// The property code `nqp::unipropcode($name)` answers.
-// Cost: O(P * m), P = properties known (~60), m = chars of `name`.
+/// MoarVM's General_Category aggregates: the property code, its names and the
+/// categories it groups. Each is a binary property (measured: `C` leaves out
+/// `Cn`, `LC` is `Lu`/`Ll`/`Lt`).
+const GC_AGGREGATES: [(i64, &[&str], &[&str]); 8] = [
+    (74, &["L", "Letter"], &["Lu", "Ll", "Lt", "Lm", "Lo"]),
+    (75, &["LC", "Cased_Letter"], &["Lu", "Ll", "Lt"]),
+    (78, &["M", "Mark", "Combining_Mark"], &["Mn", "Mc", "Me"]),
+    (82, &["N", "Number"], &["Nd", "Nl", "No"]),
+    (97, &["P", "Punctuation", "punct"], &["Pc", "Pd", "Ps", "Pe", "Pi", "Pf", "Po"]),
+    (104, &["S", "Symbol"], &["Sm", "Sc", "Sk", "So"]),
+    (114, &["Z", "Separator"], &["Zs", "Zl", "Zp"]),
+    (38, &["C", "Other"], &["Cc", "Cf", "Cs", "Co"]),
+];
+
+/// The property code `nqp::unipropcode($name)` answers: a property's own
+/// name, or -- as MoarVM's one name table has it -- the name of a value of
+/// General_Category, Script or Block, which stands for its property
+/// (measured: `Lu` is 20, `Greek` 9, `ASCII` 6).
+// Cost: O(P * m), P = properties and values known (~900), m = chars of `name`.
 fn prop_code(name: &str) -> Option<i64> {
+    prop_name_code(name).or_else(|| value_name_code(name))
+}
+
+// Cost: O(V * m), V = General_Category, Script and Block values (~550).
+fn value_name_code(name: &str) -> Option<i64> {
+    if let Some(&(code, ..)) = GC_AGGREGATES
+        .iter()
+        .find(|(_, names, _)| names.iter().any(|n| name_matches(name, n)))
+    {
+        return Some(code);
+    }
+    if GENERAL_CATEGORY_VALUES
+        .iter()
+        .any(|&(abbrev, long)| name_matches(name, abbrev) || name_matches(name, long))
+    {
+        return Some(PROP_GENERAL_CATEGORY);
+    }
+    if SCRIPT_VALUES.iter().any(|&(long, aliases)| {
+        name_matches(name, long) || aliases.iter().any(|a| name_matches(name, a))
+    }) {
+        return Some(PROP_SCRIPT);
+    }
+    crate::builtins::unicode_blocks::BLOCK_VALUE_NAMES
+        .iter()
+        .any(|names| names.iter().any(|n| name_matches(name, n)))
+        .then_some(PROP_BLOCK)
+}
+
+// Cost: O(P * m), P = properties known (~60), m = chars of `name`.
+fn prop_name_code(name: &str) -> Option<i64> {
     if name_matches(name, "General_Category") || name_matches(name, "gc") {
         return Some(PROP_GENERAL_CATEGORY);
     }
@@ -159,6 +212,7 @@ fn prop_value_code(op: &str, cp: i64, code: i64) -> Result<i64, RuntimeError> {
                 }
                 _ => 0,
             },
+            Prop::GcAggregate(members) => i64::from(members.contains(&gc_abbrev(cp))),
             Prop::Binary(name) => char_of(cp)
                 .and_then(|ch| crate::builtins::uniprop::try_binary_property(ch, name))
                 .map_or(0, i64::from),
@@ -167,8 +221,8 @@ fn prop_value_code(op: &str, cp: i64, code: i64) -> Result<i64, RuntimeError> {
 }
 
 /// `nqp::unipvalcode($prop, $name)`: the value code a property value name
-/// stands for, 0 for a name the property does not have. A binary property
-/// has no value names in MoarVM (`True`, `Y`, `1` all answer 0 -- measured).
+/// stands for, 0 for a name the property does not have. A binary property's
+/// only value name is its own name (`True`, `Y`, `1` all answer 0 -- measured).
 // Cost: O(V * m), V = values of the property, m = chars of `name`.
 fn value_code(op: &str, code: i64, name: &str) -> Result<i64, RuntimeError> {
     Ok(
@@ -198,7 +252,19 @@ fn value_code(op: &str, code: i64, name: &str) -> Result<i64, RuntimeError> {
                 .iter()
                 .position(|names| names.iter().any(|n| name_matches(name, n)))
                 .map_or(0, |i| i as i64 + 1),
-            Prop::Binary(_) => 0,
+            // A binary property's only value name is its own name (or an
+            // alias of it), which is the value 1 (measured: `unipvalcode` of
+            // `P` on `P` is 1, of `True` 0).
+            Prop::GcAggregate(_) => GC_AGGREGATES
+                .iter()
+                .find(|(c, ..)| *c == code)
+                .is_some_and(|(_, names, _)| names.iter().any(|n| name_matches(name, n)))
+                .into(),
+            Prop::Binary(_) => BINARY_PROPERTIES
+                .iter()
+                .find(|(c, _)| *c == code)
+                .is_some_and(|(_, names)| names.iter().any(|n| name_matches(name, n)))
+                .into(),
         },
     )
 }

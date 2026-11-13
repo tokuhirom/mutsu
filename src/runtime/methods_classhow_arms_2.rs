@@ -7,11 +7,15 @@ impl Interpreter {
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_refinee(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             let name = self.mop_receiver_owner(&args[0]);
+            // A user subset's base, or a builtin subset's (`UInt` refines `Int`).
             let Some(base) = self
                 .registry()
                 .subsets
                 .get(&name)
                 .map(|subset| subset.base.clone())
+                .or_else(|| {
+                    crate::value::signature::builtin_subset_base(&name).map(str::to_string)
+                })
             else {
                 let how = self.dispatch_how(&args[0], &[])?;
                 let how_name = match how.view() {
