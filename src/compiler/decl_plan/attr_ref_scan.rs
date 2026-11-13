@@ -36,10 +36,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for AttrRefScan {
             return;
         }
         match expr {
-            Expr::Var(name)
-            | Expr::ArrayVar(name)
-            | Expr::HashVar(name)
-            | Expr::CodeVar(name) => {
+            Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) | Expr::CodeVar(name) => {
                 if name.starts_with(['!', '.']) {
                     self.may_read = true;
                 }
@@ -88,18 +85,30 @@ mod tests {
 
     #[test]
     fn plain_defaults_read_no_attribute() {
-        assert!(!may_read_attributes(&default_of("class A { has $.l = Lock.new }")));
-        assert!(!may_read_attributes(&default_of("class A { has @.a = [1, 2] }")));
-        assert!(!may_read_attributes(&default_of("class A { has $.n = now }")));
+        assert!(!may_read_attributes(&default_of(
+            "class A { has $.l = Lock.new }"
+        )));
+        assert!(!may_read_attributes(&default_of(
+            "class A { has @.a = [1, 2] }"
+        )));
+        assert!(!may_read_attributes(&default_of(
+            "class A { has $.n = now }"
+        )));
     }
 
     #[test]
     fn attribute_references_and_opaque_shapes_may_read() {
-        assert!(may_read_attributes(&default_of("class A { has $.x = 1; has $.y = $!x + 1 }")));
-        assert!(may_read_attributes(&default_of("class A { has $.x = 1; has &.c = { $!x } }")));
+        assert!(may_read_attributes(&default_of(
+            "class A { has $.x = 1; has $.y = $!x + 1 }"
+        )));
+        assert!(may_read_attributes(&default_of(
+            "class A { has $.x = 1; has &.c = { $!x } }"
+        )));
         assert!(may_read_attributes(&default_of(
             "class A { has $.x = 1; has $.s = \"v$!x\" }"
         )));
-        assert!(may_read_attributes(&default_of("class A { has $.e = EVAL('1') }")));
+        assert!(may_read_attributes(&default_of(
+            "class A { has $.e = EVAL('1') }"
+        )));
     }
 }
