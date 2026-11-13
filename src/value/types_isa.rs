@@ -415,10 +415,12 @@ impl Value {
             "Positional" => {
                 matches!(
                     self.view(),
+                    // `HyperSeq`/`RaceSeq` are not here: like `Seq` they do
+                    // `PositionalBindFailover`, not `Positional` (rakudo:
+                    // `(1,2).hyper ~~ Positional` is False), so binding one
+                    // to an `@`/`Positional` parameter caches it to a List.
                     ValueView::Array(..)
                         | ValueView::LazyList(_)
-                        | ValueView::HyperSeq(_)
-                        | ValueView::RaceSeq(_)
                         | ValueView::Range(_, _)
                         | ValueView::RangeExcl(_, _)
                         | ValueView::RangeExclStart(_, _)
