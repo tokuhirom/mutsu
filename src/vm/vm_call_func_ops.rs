@@ -1951,6 +1951,15 @@ impl Interpreter {
             );
         }
         crate::vm::vm_stats::record_function_dispatch();
+        if let CodeVarBinding::Local(slot) = binding
+            && arity == 2
+            && arg_sources_idx.is_none()
+            && let Some(done) = self.code_var_local_plain_infix(slot)
+        {
+            done?;
+            self.apply_pending_rw_writeback(code);
+            return Ok(());
+        }
         // `&!f(...)`: the private code attribute of `self`, read from its own
         // storage slot so a same-named `$!f` cannot answer for it (#17272).
         let binding = match binding {

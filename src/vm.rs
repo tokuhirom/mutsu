@@ -376,6 +376,7 @@ pub(crate) mod vm_unit_lexical_meta_lanes;
 mod vm_zen_slice;
 pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;
 mod vm_assign_expr_lane;
+mod vm_code_var_infix_lane;
 mod vm_attribute_meta_lane;
 mod vm_attribute_meta_row;
 mod vm_decl_lane;
