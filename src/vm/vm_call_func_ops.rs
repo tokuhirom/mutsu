@@ -3138,6 +3138,20 @@ impl Interpreter {
     ///   raises the proper `X::Multi::NoMatch` / `X::Multi::Ambiguous`);
     /// - the winning candidate is not OTF-compilable, or declares `state` (whose
     ///   shared-cell identity the OTF body-fingerprint cache cannot preserve).
+    /// Whether a signature is exactly one bare capture parameter (`(|)`, no
+    /// name, type, `where` or sub-signature), which binds any argument list.
+    // Cost: O(1).
+    fn is_bare_capture_signature(params: &[crate::ast::ParamDef]) -> bool {
+        matches!(params, [pd] if pd.name == "_capture"
+            && pd.slurpy
+            && pd.sigilless
+            && !pd.named
+            && pd.type_constraint.is_none()
+            && pd.where_constraint.is_none()
+            && pd.sub_signature.is_none()
+            && pd.outer_sub_signature.is_none())
+    }
+
     pub(super) fn vm_resolve_trivial_proto_candidate(
         &mut self,
         name: &str,
@@ -3147,7 +3161,7 @@ impl Interpreter {
         if self.is_interpreter_handled_function(name) {
             return None;
         }
-        let proto = self.resolve_proto_function(name)?;
+        let proto = self.resolve_proto_function_shared(name)?;
         // A trivial proto body is empty (bodyless proto) or exactly `{*}` — only
         // then is bypassing the body safe. `{*}` parses to `Stmt::Expr(Whatever)`.
         // The compiler prepends line-tracking `SetLine` markers (no runtime
@@ -3166,8 +3180,10 @@ impl Interpreter {
         // before resolving the candidate so the VM-native path preserves both
         // forms; a non-matching ordinary proto falls through to the interpreter
         // path, which raises X::TypeCheck::Argument.
-        let proto_matches =
-            proto.param_defs.is_empty() || self.method_args_match(args, &proto.param_defs);
+        // A bare `(|)` capture takes every argument list, so it gates nothing.
+        let proto_matches = proto.param_defs.is_empty()
+            || Self::is_bare_capture_signature(&proto.param_defs)
+            || self.method_args_match(args, &proto.param_defs);
         let proto_constraints: Vec<&str> = proto
             .param_defs
             .iter()
@@ -3225,7 +3241,7 @@ impl Interpreter {
         if self.is_interpreter_handled_function(name) {
             return None;
         }
-        let proto = self.resolve_proto_function(name)?;
+        let proto = self.resolve_proto_function_shared(name)?;
         // Only handle *non-trivial* bodies here; the trivial (bodyless / `{*}`-only)
         // case is the trivial resolver's job. A bodyless proto (`def.body.empty`)
         // dispatches implicitly and must not be compiled here.
