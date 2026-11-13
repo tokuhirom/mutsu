@@ -906,11 +906,16 @@ impl Interpreter {
             return None;
         }
         let real_array = kind != ArrayKind::List;
-        // An element type, an `is default(...)`, or ADR-0030 native backing all
-        // change what a read answers (or where it reads from).
-        if items.has_type_meta() || items.default.is_some() || items.has_native_backing() {
+        // ADR-0030 native backing changes where a read comes from. An element
+        // type or an `is default(...)` only changes what a MISS answers -- a
+        // hole, an index past the end, a stored `Nil` -- so such an array still
+        // answers a present ordinary element here (`TYPE @!keys` of a
+        // parameterized role, read in a binary search); every miss shape is
+        // left to the general path below.
+        if items.has_native_backing() {
             return None;
         }
+        let plain_misses = !items.has_type_meta() && items.default.is_none();
         // Another thread's `push`/`shift` can be restructuring the node; read
         // under its stripe (ADR-0068, #13016). One relaxed load until a second
         // mutator thread exists.
@@ -920,14 +925,14 @@ impl Interpreter {
             // Past the end of an untyped real Array the read is its element
             // default, `Any` (`typed_container_default`); a List's is `Nil`,
             // which the general path answers.
-            return real_array.then(|| Value::package(crate::symbol::wk::any()));
+            return (real_array && plain_misses).then(|| Value::package(crate::symbol::wk::any()));
         };
         match elem.view() {
             // In an untyped real Array a hole is the `Any` gap marker, and
             // `resolve_array_entry` answers it with the element default --
             // `Any` again -- while a type object stored there is read back as
             // itself. A List's `Mu` hole reads as `Nil` instead.
-            ValueView::Package(..) if real_array => Some(elem.clone()),
+            ValueView::Package(..) if real_array && plain_misses => Some(elem.clone()),
             // A `:=`-bound element cell decontainerizes on read
             // (`resolve_array_entry`), unless it holds something the general
             // path still has to fetch or resolve.
