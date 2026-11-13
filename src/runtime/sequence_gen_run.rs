@@ -30,7 +30,7 @@ impl Interpreter {
                     let genfn = g.generator.as_ref().unwrap();
                     match self.sequence_closure_step(
                         genfn,
-                        &result,
+                        result,
                         g.generator_shape,
                         suppress_generator_error,
                     ) {
@@ -309,7 +309,7 @@ impl Interpreter {
                             if self.sequence_endpoint_matches(
                                 closure_val,
                                 g.endpoint_count,
-                                &result,
+                                result,
                                 &item,
                             )? {
                                 if !g.exclusive {
