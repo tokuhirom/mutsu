@@ -235,7 +235,6 @@ impl Interpreter {
         let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
             let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                 let mut a = HashMap::new();
-                a.insert("emitted".to_string(), Value::array(Vec::new()));
                 a.insert("done".to_string(), Value::FALSE);
                 a
             });

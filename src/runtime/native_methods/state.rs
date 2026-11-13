@@ -688,6 +688,20 @@ pub(crate) fn collect_supplier_values(
     Ok(items)
 }
 
+/// A supplier's emit count, done flag and quit reason, without copying the
+/// values it emitted (which [`supplier_snapshot`] clones).
+// Cost: O(1) plus the registry lock.
+pub(crate) fn supplier_status(supplier_id: u64) -> (usize, bool, Option<Value>) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        (state.emitted.len(), state.done, state.quit_reason.clone())
+    } else {
+        (0, false, None)
+    }
+}
+
+/// A supplier's emitted values, done flag and quit reason.
+// Cost: O(n), n = values emitted so far (copied).
 pub(crate) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<Value>) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();

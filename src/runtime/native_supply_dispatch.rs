@@ -66,7 +66,7 @@ impl Interpreter {
                         downstream_id,
                     );
                     let (_, done, quit_reason) =
-                        crate::runtime::native_methods::supplier_snapshot(source_id);
+                        crate::runtime::native_methods::supplier_status(source_id);
                     let mut shared_attrs = HashMap::new();
                     shared_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     shared_attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -1752,7 +1752,7 @@ impl Interpreter {
                     ch.send(v);
                 }
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    let (_, done, quit_reason) = supplier_snapshot(supplier_id);
+                    let (_, done, quit_reason) = supplier_status(supplier_id);
                     if let Some(reason) = quit_reason {
                         ch.fail(reason);
                     } else if done {

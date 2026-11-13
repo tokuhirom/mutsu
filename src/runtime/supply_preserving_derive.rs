@@ -12,7 +12,7 @@
 
 use super::*;
 use crate::runtime::native_methods::{
-    TransformMode, register_supplier_transform_tap_if_drained, supplier_done, supplier_snapshot,
+    TransformMode, register_supplier_transform_tap_if_drained, supplier_done, supplier_status,
     supplier_take_preserved_backlog, supplier_take_preserved_terminal,
 };
 
@@ -49,7 +49,7 @@ impl Interpreter {
                 break;
             }
         }
-        let (_, source_done, _) = supplier_snapshot(source_sid);
+        let (_, source_done, _) = supplier_status(source_sid);
         if source_done && supplier_take_preserved_terminal(source_sid) {
             supplier_done(downstream_sid);
         }

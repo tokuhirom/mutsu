@@ -11,7 +11,7 @@ use crate::runtime::native_methods::{
     close_all_supplier_taps, close_supplier_channel_taps,
     flush_supplier_line_taps, flush_supplier_words_taps,
     get_direct_transform_output_supplier_ids, supplier_reset,
-    supplier_snapshot, supplier_quit, take_supplier_done_callbacks,
+    supplier_status, supplier_quit, take_supplier_done_callbacks,
     take_supplier_quit_callbacks_via_group, take_supplier_tail_results,
     take_supplier_whenever_quit_callbacks,
 };
@@ -47,7 +47,7 @@ impl Interpreter {
         if !already_marked {
             supplier_quit(supplier_id, reason.clone());
         }
-        let (_, done, quit_reason) = supplier_snapshot(supplier_id);
+        let (_, done, quit_reason) = supplier_status(supplier_id);
         let Some(reason) = quit_reason else {
             return Ok(());
         };

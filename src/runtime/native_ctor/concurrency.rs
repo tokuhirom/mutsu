@@ -67,9 +67,6 @@ impl Interpreter {
     /// attribute it declares under the same name.
     // Cost: O(1).
     pub(crate) fn seed_supplier_state(attrs: &mut AttrMap, preserving: bool) {
-        if !attrs.contains_key("emitted") {
-            attrs.insert("emitted", Value::array(Vec::new()));
-        }
         if !attrs.contains_key("done") {
             attrs.insert("done", Value::FALSE);
         }

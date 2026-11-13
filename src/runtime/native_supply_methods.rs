@@ -500,7 +500,7 @@ impl Interpreter {
     pub(super) fn supply_is_terminated(attributes: &AttrMap) -> bool {
         supplier_id_from_attrs(attributes)
             .map(|supplier_id| {
-                let (_, done, quit_reason) = supplier_snapshot(supplier_id);
+                let (_, done, quit_reason) = supplier_status(supplier_id);
                 done || quit_reason.is_some()
             })
             .unwrap_or_else(|| {
