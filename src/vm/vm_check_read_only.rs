@@ -178,7 +178,26 @@ impl Interpreter {
             self.pending_sigilless_store = Some(name.to_string());
             return Ok(());
         }
-        Err(self.immutable_value_error(name))
+        Err(self.readonly_term_error(code, code.const_sym(name_idx), name))
+    }
+
+    /// "Cannot modify an immutable Int (5)" for the readonly term `name`,
+    /// worded from the value its slot holds: a lean term has no env entry for
+    /// [`Self::immutable_value_error`] to read it from.
+    // Cost: O(1).
+    pub(super) fn readonly_term_error(
+        &self,
+        code: &CompiledCode,
+        name_sym: crate::symbol::Symbol,
+        name: &str,
+    ) -> RuntimeError {
+        match code.local_slots_of(name_sym) {
+            [slot] => match self.locals.get(*slot as usize) {
+                Some(value) => RuntimeError::assignment_ro_value(value.deref_container()),
+                None => self.immutable_value_error(name),
+            },
+            _ => self.immutable_value_error(name),
+        }
     }
 
     /// The `X::Multi::NoMatch` for `op` stepping the readonly variable `name`,
@@ -257,7 +276,7 @@ impl Interpreter {
         name_sym: crate::symbol::Symbol,
     ) -> Result<(), RuntimeError> {
         if Self::lean_readonly_term_named(code, name_sym) {
-            return Err(self.immutable_value_error(name));
+            return Err(self.readonly_term_error(code, name_sym, name));
         }
         if self
             .check_named_incdec_readonly(code, name, name_sym, "postfix:<++>")
