@@ -528,7 +528,21 @@ impl Interpreter {
         // A package variable of a lexical class (`my class X { our $v }`) is
         // keyed by the class's mangled storage name; `$X::v` spells the
         // user-facing one, so the same container is stored there too (#16620).
-        if key.contains('\u{0}') {
+        //
+        // But a type `new_type` minted under a name another type already held
+        // (`Foo\u{0}<id>`, `is_minted_type_name`) is a DIFFERENT type that
+        // merely shares a display name: mirroring its members under the
+        // de-mangled facing name would clobber the declared package's own
+        // (Red's `defer-resultseq` binds `Model.new_type(:name('LPR')).WHO
+        // <ResultSeq>`, which must not overwrite the declared `LPR`'s
+        // `ResultSeq` — #17481, Red t/104). A minted-type segment anywhere in
+        // the key suppresses the facing mirror; a lexical class's mangle keeps
+        // it.
+        if key.contains('\u{0}')
+            && !crate::qualified::segments(key_sym)
+                .iter()
+                .any(|seg| crate::runtime::metamodel_new_type::is_minted_type_name(seg.as_str()))
+        {
             let facing = crate::value::user_facing_type_name(&key);
             if facing.as_ref() != key.as_str() {
                 self.lexicals
