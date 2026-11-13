@@ -192,6 +192,7 @@ mod vm_call_named_inner;
 mod vm_call_nqp;
 mod vm_call_resolve;
 pub(crate) mod vm_call_state_guard;
+mod vm_caret_can_lane;
 mod vm_catch_dispatch;
 mod vm_clone_lane;
 mod vm_closure_dispatch;

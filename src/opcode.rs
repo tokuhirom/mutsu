@@ -1389,6 +1389,14 @@ pub(crate) enum OpCode {
     /// set. With no such binding live (a role method run on the bare role
     /// type object) it resolves as [`Self::GetBareWord`] does.
     GetTypeCapture(u32),
+    /// Whether the scalar named by the constant has a container that can be
+    /// assigned through: `false` for a read-only parameter or binding, `true`
+    /// otherwise. Stack: `[] → [Bool]`.
+    ///
+    /// The `//=` / `||=` / `&&=` short-circuit desugar branches on it to return
+    /// the LHS container or its bare value when it keeps the current value
+    /// (`Interpreter::var_is_writable`).
+    VarIsWritable(u32),
     /// [`Self::GetBareWord`] for a bare word that spells a `$`-scalar of the
     /// SAME scope (`my $bar = 3; say bar`). Stack: `[] → [value]`.
     ///

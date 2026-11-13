@@ -413,6 +413,7 @@ impl Interpreter {
                 // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
                 // block on it directly instead of wrapping it in a sub-VM.
                 let mut thread_interp = thread_interp;
+                let forked_with = thread_interp.adopt_worker_warm_caches();
                 promise.set_thread_id(crate::runtime::current_mutsu_thread_id());
                 // Worker bodies run via `call_value` without the main thread's
                 // `run_top` panic boundary, so guard them here: a Rust panic in
@@ -421,6 +422,7 @@ impl Interpreter {
                 // aborting the process.
                 let result =
                     crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
+                thread_interp.leave_worker_warm_caches(forked_with);
                 // Transfer any handles opened by this thread back to the awaiter.
                 let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
                 let new_ids: Vec<usize> = thread_interp

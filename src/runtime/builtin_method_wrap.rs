@@ -51,12 +51,18 @@ impl Interpreter {
     /// The class and `.wrap` chain [`Self::try_builtin_value_method_wrap`]
     /// would run for `target.method`, without running it.
     ///
-    // Cost: O(1) once `has_any_wrap_chains()` holds; the caller checks it.
+    // Cost: O(1) while no method of this name is wrapped; otherwise the
+    // MRO probe of `builtin_method_wrap_chain`.
     pub(crate) fn builtin_value_wrap_chain(
         &mut self,
         target: &Value,
         method_sym: Symbol,
     ) -> Option<(String, Vec<(u64, Value)>)> {
+        // No method of this name was ever wrapped: nothing to find, and no
+        // class name to render for the probe.
+        if !self.registry().method_name_ever_wrapped(method_sym.as_str()) {
+            return None;
+        }
         let class_name: String = match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             // A class method called on the type object (`DateTime.now`,

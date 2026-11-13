@@ -907,19 +907,26 @@ impl Interpreter {
         let Some(name) = args.first().map(Value::to_string_value) else {
             return Ok(Value::TRUE);
         };
-        if self.readonly_kind(&name).is_some() {
-            return Ok(Value::FALSE);
+        Ok(Value::truth(self.var_is_writable(&name)))
+    }
+
+    /// The one implementation behind `__mutsu_var_is_writable` and the
+    /// `VarIsWritable` opcode the compiler emits for it.
+    // Cost: O(d), d = env tiers walked by the two read-only probes.
+    pub(crate) fn var_is_writable(&self, name: &str) -> bool {
+        if self.readonly_kind(name).is_some() {
+            return false;
         }
         if crate::env::sigilless_readonly_keys_possible() {
-            let key = crate::runtime::sigilless_readonly_key(&name);
+            let key = crate::runtime::sigilless_readonly_key(name);
             if matches!(
                 self.env.get_sym(key).map(Value::view),
                 Some(ValueView::Bool(true))
             ) {
-                return Ok(Value::FALSE);
+                return false;
             }
         }
-        Ok(Value::TRUE)
+        true
     }
 
     pub(super) fn builtin_assignment_ro(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -208,7 +208,7 @@ impl Interpreter {
         if self.caches.plain_method_lane.is_empty()
             || Self::early_lane_method_excluded(method)
             || crate::runtime::find_method_intercept::any_user_find_method()
-            || self.has_any_wrap_chains()
+            || self.registry().method_name_ever_wrapped(method)
         {
             return None;
         }

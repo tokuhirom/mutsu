@@ -41,9 +41,53 @@ pub(super) struct FrameLexicalCallSite {
     pub(super) call_has_named: bool,
 }
 
+/// Frame-lexical derivations shared by every interpreter of the process.
+///
+/// A derivation is a function of its [`FrameLexicalRef`] -- the routine's
+/// name, the package its body was compiled under and the body's fingerprint,
+/// all compile-time facts -- so one interpreter's result serves every other.
+/// Without this table each spawned interpreter re-derived the routine on its
+/// first declaration: the whole registration path, a registry snapshot and
+/// rollback (which deep-copies the copy-on-write registry the task shares
+/// with its parent), and a copy of the per-interpreter table. A `my sub`
+/// declared inside a method that a `$*SCHEDULER.cue`d task calls paid that
+/// once per task (ParaSeq's `BlockMapper.run`, #17337).
+///
+/// The per-interpreter `LexicalState::frame_lexical_routines` stays the
+/// first level, so a declaration that already ran in this interpreter never
+/// touches the lock; this table is read only on that table's miss.
+type SharedDerivations = rustc_hash::FxHashMap<FrameLexicalRef, FrameLexicalTarget>;
+
+fn shared_derivations() -> &'static std::sync::RwLock<SharedDerivations> {
+    static TABLE: std::sync::OnceLock<std::sync::RwLock<SharedDerivations>> =
+        std::sync::OnceLock::new();
+    TABLE.get_or_init(Default::default)
+}
+
+/// The derivation another interpreter published for `r`.
+// Cost: O(1) expected, one read-lock acquisition and a hash probe.
+fn shared_derivation(r: FrameLexicalRef) -> Option<FrameLexicalTarget> {
+    shared_derivations()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(&r)
+        .cloned()
+}
+
+/// Publish this interpreter's derivation for `r`. The first one wins: two
+/// interpreters that race on the same key derived the same definition.
+// Cost: O(1) expected, one write-lock acquisition and a hash insert.
+fn publish_derivation(r: FrameLexicalRef, target: &FrameLexicalTarget) {
+    shared_derivations()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(r)
+        .or_insert_with(|| target.clone());
+}
+
 impl Interpreter {
     /// `RegisterDecl` of a frame-lexical sub plan: derive the definition once
-    /// per interpreter, register nothing.
+    /// per process, register nothing.
     pub(super) fn exec_declare_frame_lexical_routine(
         &mut self,
         code: &CompiledCode,
@@ -58,6 +102,19 @@ impl Interpreter {
         if let Some(target) = self.lexicals.frame_lexical_routines.get(&r) {
             if plan_value {
                 let package = target.package;
+                self.mint_frame_lexical_callable_id(package, r.name);
+            }
+            return Ok(());
+        }
+        // Another interpreter of this process derived it already (a sibling
+        // task, or the parent after this thread was forked): adopt that
+        // derivation, exactly as if the parent had derived it before the
+        // fork.
+        if let Some(target) = shared_derivation(r) {
+            let package = target.package;
+            crate::runtime::cow_table_mut(&mut self.lexicals.frame_lexical_routines)
+                .insert(r, target);
+            if plan_value {
                 self.mint_frame_lexical_callable_id(package, r.name);
             }
             return Ok(());
@@ -91,15 +148,19 @@ impl Interpreter {
         let package = def
             .as_ref()
             .map_or_else(|| self.current_package_sym(), |def| def.package);
-        crate::runtime::cow_table_mut(&mut self.lexicals.frame_lexical_routines).insert(
-            r,
-            FrameLexicalTarget {
-                cf,
-                package,
-                name: r.name,
-                def,
-            },
-        );
+        let target = FrameLexicalTarget {
+            cf,
+            package,
+            name: r.name,
+            def,
+        };
+        // Only a derivation whose package came from the definition itself is
+        // a function of the key alone; the fallback reads this interpreter's
+        // current package.
+        if target.def.is_some() {
+            publish_derivation(r, &target);
+        }
+        crate::runtime::cow_table_mut(&mut self.lexicals.frame_lexical_routines).insert(r, target);
         if plan_value {
             self.mint_frame_lexical_callable_id(package, r.name);
         }
