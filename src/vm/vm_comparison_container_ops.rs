@@ -225,7 +225,12 @@ impl Interpreter {
     /// `name` is the binding's term key (`\x`, ADR-12441).
     // Cost: O(l), l = local slots of the chunk (the by-name slot probe).
     fn sigilless_denotes_scalar_container(&self, code: &CompiledCode, name: &str) -> bool {
-        let is_cell = |v: &Value| matches!(v.view(), ValueView::ContainerRef(_));
+        // A deferred element vivification token (`my \x = %h<missing>`) denotes
+        // the element's container just as a promoted cell does: rakudo binds
+        // the auto-vivifying container, so `x =:= Any` is False (#17656).
+        let is_cell = |v: &Value| {
+            matches!(v.view(), ValueView::ContainerRef(_)) || v.hash_entry_ref_denotes_container()
+        };
         let own_cell = match self.find_local_slot(code, name) {
             Some(slot) => self.locals.get(slot).is_some_and(is_cell),
             None => self.env().get(name).is_some_and(is_cell),

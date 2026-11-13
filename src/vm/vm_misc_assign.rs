@@ -1118,6 +1118,18 @@ impl Interpreter {
             && captured.is_container_ref()
         {
             value = captured.clone();
+        } else if crate::runtime::term_names::term_spelling(sym.as_str()).is_some()
+            && let Some(token) = self
+                .locals
+                .get(slot as usize)
+                .filter(|raw| raw.hash_entry_ref_denotes_container())
+        {
+            // A sigilless term bound to a not-yet-existing element
+            // (`my \y = %h<z>`) holds the deferred vivification token, which
+            // `GetLocal` read through: the term denotes that element's
+            // container, so a raw callee parameter must receive the token, not
+            // the `Any` it reads as (#17656).
+            value = token.clone();
         }
         // Propagate the compile-time slot resolution verbatim, INCLUDING the
         // `u32::MAX` "known not a local of this frame" sentinel: the cell
