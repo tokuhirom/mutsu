@@ -934,8 +934,8 @@ impl Compiler {
         if init_aggregate {
             self.decl_initializer_aggregates.pop();
         }
-        if let Some((name, kind)) = term {
-            self.end_term_decl(name, kind);
+        if let Some((name, kind, bound_expr)) = term {
+            self.end_term_decl(name, kind, bound_expr);
         }
         self.expr_depth = saved;
         self.share_outer_written_decl(stmt);

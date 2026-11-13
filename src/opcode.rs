@@ -9527,6 +9527,23 @@ impl CompiledCode {
             && !self.needs_reflective_capture
     }
 
+    /// Whether slot `idx` is a sigilless term bound to a subscript's or a
+    /// call's result ([`BindingFlags::bound_expr_term`](crate::binding_desc::BindingFlags::bound_expr_term))
+    /// that only this chunk's own ops can name, by the same test as
+    /// [`Self::lean_readonly_term_slot`]. Its readonly state is read off the
+    /// slot: a plain value is readonly, a container is written through; no
+    /// `__mutsu_sigilless_readonly::` marker is written for it (ADR-17376).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn lean_bound_term_slot(&self, idx: usize) -> bool {
+        self.binding_descs
+            .get(idx)
+            .is_some_and(|d| d.flags.bound_expr_term())
+            && !self.dup_named_locals.get(idx).copied().unwrap_or(true)
+            && !self.needs_env_sync.get(idx).copied().unwrap_or(true)
+            && !self.needs_reflective_capture
+    }
+
     /// Whether every `stmt_pool` body is a closure literal whose compiled body
     /// is what runs (`MakeAnonSub` with a compiled code): such a body reads this
     /// chunk's locals through its upvalues, which `free_var_syms` accounts
