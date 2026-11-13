@@ -6890,7 +6890,7 @@ impl Interpreter {
             // -- Environment variable access --
             // Cost: O(1) avg (hash probe of %*ENV, falling back to the process env).
             OpCode::GetEnvIndex(key_idx) => {
-                self.exec_get_env_index_op(code, *key_idx);
+                self.exec_get_env_index_op(code, *key_idx)?;
                 *ip += 1;
             }
             // Cost: O(1) avg.
