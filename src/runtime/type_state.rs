@@ -367,7 +367,13 @@ impl TypeState {
             // `RegistryWriteGuard::deref_mut`). In spawn-heavy loops where neither
             // side writes the registry, the deep clone (and its drop) never happens.
             registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
-            registry_write_gen: Interpreter::fresh_registry_write_gen(),
+            // The snapshot is the parent's registry content, so the child
+            // starts at the parent's generation: the memos the parent filled
+            // in shared chunks are current for it (`registry_gen`).
+            registry_write_gen: std::sync::atomic::AtomicU64::new(
+                self.registry_write_gen
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
             attr_type_constraint_cache: Default::default(),
             class_does_role_memo: Default::default(),
             package_stash_hidden: self.package_stash_hidden.clone(),

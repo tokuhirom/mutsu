@@ -666,11 +666,13 @@ impl Interpreter {
     /// as [`Self::registry`].
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::registry::RegistryWriteGuard<'_> {
-        // Any write access may mutate the registry, so bump the generation
-        // several resolution caches consult (cheap relaxed increment).
-        self.types
-            .registry_write_gen
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Any write access may mutate the registry, so move to a generation
+        // value no interpreter has had (`registry_gen`): the content after
+        // this write is this interpreter's alone.
+        self.types.registry_write_gen.store(
+            crate::runtime::registry_gen::next_generation(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         crate::runtime::registry::RegistryWriteGuard::new(&self.types.registry, "registry")
     }
 

@@ -519,9 +519,10 @@ pub(crate) struct ModuleState {
     /// Bumped whenever `lexical_import_sets` is written
     /// (`Interpreter::finish_lexical_import_capture`); the per-site memo of a
     /// `LexImportCall` (`LexImportSiteCaches`) is valid for one value of it.
-    /// Starts in a range of its own per interpreter
-    /// (`Interpreter::fresh_registry_write_gen`), so a memo one thread wrote
-    /// into a shared chunk never reads as current to another interpreter.
+    /// Its values come from the process-wide generation sequence
+    /// (`registry_gen`), so a value names one content of the sets: a memo one
+    /// thread wrote into a shared chunk reads as current to another only when
+    /// both hold those very sets (a fork that has not imported since).
     pub(crate) lexical_import_gen: u64,
     /// The multi candidates each lexical import set binds per family, merged
     /// with those of the earlier `use`s of its scope: a later `use` of the
@@ -962,8 +963,9 @@ impl ModuleState {
             unit_sets_hidden: false,
             builtin_op_fallback_depth: 0,
             lexical_import_sets: self.lexical_import_sets.clone(),
-            lexical_import_gen: crate::runtime::Interpreter::fresh_registry_write_gen()
-                .into_inner(),
+            // The child copies the sets, so it shares their generation
+            // (`registry_gen`).
+            lexical_import_gen: self.lexical_import_gen,
             lexical_set_families: self.lexical_set_families.clone(),
             lexical_import_hook_values: self.lexical_import_hook_values.clone(),
             lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
