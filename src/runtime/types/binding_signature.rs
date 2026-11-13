@@ -478,6 +478,13 @@ impl Interpreter {
     /// `Seq`/`HyperSeq`/`RaceSeq` builtins always have a genuine native
     /// `.iterator` and keep using it.
     pub(crate) fn coerce_positional_bind_failover(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        // A hyper or race sequence binds through `.cache`, as rakudo's binder
+        // does: its body is reified from birth, so the cached List is read
+        // without claiming the sequence's one-shot iterator, and the same
+        // HyperSeq binds again later (roast S06-signature/passing-arrays.t).
+        if let Some(list) = Self::hyper_seq_as_list(&value) {
+            return Ok(list);
+        }
         let has_own_iterator = match value.view() {
             ValueView::Seq(..) | ValueView::HyperSeq(..) | ValueView::RaceSeq(..) => true,
             ValueView::Instance { class_name, .. } => {

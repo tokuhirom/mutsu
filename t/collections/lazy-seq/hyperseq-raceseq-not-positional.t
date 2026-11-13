@@ -4,7 +4,7 @@ use Test;
 # Positional; binding one to an `@` or `Positional` parameter caches it into a
 # List.
 
-plan 10;
+plan 12;
 
 nok (1, 2).hyper ~~ Positional, 'a HyperSeq is not Positional';
 nok (1, 2).race ~~ Positional, 'a RaceSeq is not Positional';
@@ -19,3 +19,12 @@ is at((1, 2).hyper.map(* + 1)), 'List', 'HyperSeq bound to @x becomes a List';
 is pd((1, 2).race.map(* + 1)), 'List', 'RaceSeq bound to Positional:D becomes a List';
 is-deeply (sub (@x) { @x })((1, 2, 3).hyper.map(* * 2)), (2, 4, 6), 'the List keeps the values';
 is (sub (@x) { @x.elems })((1, 2, 3).race.grep(* > 1)), 2, 'RaceSeq from grep binds too';
+
+# Binding caches the sequence without claiming its one-shot iterator, so the
+# same HyperSeq/RaceSeq binds again (roast S06-signature/passing-arrays.t).
+my $h = (1..4).hyper;
+sub pa(@a) { @a.List }
+sub pp(Positional $p) { $p.List }
+is-deeply (pa($h), pp($h)), ((1, 2, 3, 4), (1, 2, 3, 4)), 'a HyperSeq binds to @ and Positional twice';
+my $r = (1..3).race;
+is-deeply (pa($r), pp($r), $r.List), ((1, 2, 3), (1, 2, 3), (1, 2, 3)), 'a RaceSeq binds twice and still lists';
