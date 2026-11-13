@@ -161,25 +161,24 @@ pub(crate) fn concat_expr(input: &str) -> PResult<'_, Expr> {
             // A user candidate of `~` (`multi infix:<~>`, as Red exports) makes
             // the application a call of the operator, so an `is rw` candidate
             // binds the operands' containers; it keeps this level.
-            left = if crate::parser::stmt::simple::match_user_declared_infix_symbol_op(
-                &rest_before_op,
-            )
-            .is_some_and(|(_, user_len)| user_len == len)
-            {
-                Expr::InfixFunc {
-                    name: "~".to_string(),
-                    left: Box::new(left),
-                    right: vec![right],
-                    modifier: None,
-                }
-            } else {
-                Expr::Binary {
-                    left: Box::new(left),
-                    op: op.token_kind(),
-                    right: Box::new(right),
-                    form: Default::default(),
-                }
-            };
+            left =
+                if crate::parser::stmt::simple::match_user_declared_infix_symbol_op(rest_before_op)
+                    .is_some_and(|(_, user_len)| user_len == len)
+                {
+                    Expr::InfixFunc {
+                        name: "~".to_string(),
+                        left: Box::new(left),
+                        right: vec![right],
+                        modifier: None,
+                    }
+                } else {
+                    Expr::Binary {
+                        left: Box::new(left),
+                        op: op.token_kind(),
+                        right: Box::new(right),
+                        form: Default::default(),
+                    }
+                };
             rest = r;
             continue;
         }
