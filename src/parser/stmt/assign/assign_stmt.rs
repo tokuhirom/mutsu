@@ -370,6 +370,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     quoted: true,
                 },
             };
+            let (r_final, method_expr) = super::absorb_dotty_call_adverbs(r_final, method_expr)?;
             let (r_final, stmt) =
                 dot_assign_with_postfix(r_final, dot_assign_stmt(name, method_expr))?;
             let (r_final, stmt) =
@@ -450,6 +451,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // `$_ .= meth`: the topic metaop is an `Expr::TopicDotAssign`
         // so it can reassign a read-only whole-container topic while a plain
         // `$_ = ...` still throws X::Assignment::RO.
+        let (r, expr) = super::absorb_dotty_call_adverbs(r, expr)?;
         let stmt = dot_assign_with_postfix(r, dot_assign_stmt(name, expr))?;
         let (r, stmt) = stmt;
         // `$x .= new: ... andthen ...` is `($x .= new(...)) andthen ...`.

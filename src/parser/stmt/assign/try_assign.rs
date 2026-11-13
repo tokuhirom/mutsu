@@ -486,6 +486,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // postfix loop sees it here, it treats the first method result as the
         // next lvalue (`($x.uc) .= flip`) instead of threading the original
         // variable through the chained dot-assign operations.
+        let (rest, method_expr) = super::absorb_dotty_call_adverbs(rest, method_expr)?;
         let assign = super::written_dotty_assignment(
             crate::rakuast::dotty_assign::dot_assign_target(&name),
             method_expr,

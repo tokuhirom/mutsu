@@ -95,6 +95,33 @@ pub(crate) use crate::rakuast::compound::op::CompoundAssignOp;
 
 mod assign_stmt;
 
+/// Colonpair adverbs written after a `.=` method call (`$s .= subst('a',
+/// 'b'):g:x(1)`) are named arguments of that call, as after `$s.subst(...)`.
+/// The `.=` shortcut takes only the call itself (its further postfixes apply
+/// to the assignment's result), so it absorbs the adverbs first.
+// Cost: O(n), n = length of the adverb run.
+pub(super) fn absorb_dotty_call_adverbs(input: &str, mut call: Expr) -> PResult<'_, Expr> {
+    use crate::parser::primary::container::looks_like_colonpair_start;
+    let mut r = input;
+    loop {
+        let (r_ws, _) = ws(r)?;
+        if r_ws.starts_with("::") || !looks_like_colonpair_start(r_ws) {
+            break;
+        }
+        let Ok((r_next, pair)) = crate::parser::primary::misc::colonpair_expr(r_ws) else {
+            break;
+        };
+        match &mut call {
+            Expr::MethodCall { args, .. } | Expr::DynamicMethodCall { args, .. } => {
+                args.push(pair)
+            }
+            _ => break,
+        }
+        r = r_next;
+    }
+    Ok((r, call))
+}
+
 /// `TARGET = SOURCE` in expression position: kept in its RakuAST shape
 /// for the conversion (ADR-10723 Stage 2, #14948).
 // Cost: O(n), n = size of the target and source (lowering only).
