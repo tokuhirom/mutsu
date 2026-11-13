@@ -32,6 +32,7 @@ mod module_exports;
 mod pragma_preseed;
 mod registry;
 mod slang_hooks;
+mod slang_lang;
 mod slang_modes;
 mod slang_multiness;
 mod slang_use;
@@ -131,9 +132,10 @@ pub(in crate::parser) use registry::{
     restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_hooks::{
-    hooks_snapshot, numish_hook, register_action, register_hook, register_pointy_starters,
-    register_wrapper, restore_hooks, set_activator, set_host as set_slang_host,
-    statement_control_hook, statementlist_wrapper, take_wrapper_back_call, term_hook,
+    hooks_snapshot, note_slang_activation, numish_hook, register_action, register_hook,
+    register_pointy_starters, register_wrapper, restore_hooks, set_activator,
+    set_host as set_slang_host, statement_control_hook, statementlist_wrapper,
+    take_wrapper_back_call, term_hook,
 };
 pub(crate) use slang_hooks::{
     parse_pointy_starters, parse_slang_arglist, parse_slang_for_expr, parse_slang_pointy_block,
@@ -142,6 +144,11 @@ pub(crate) use slang_hooks::{
     slang_action_activator, slang_action_rule, slang_hook_rule, slang_host_wrapped_rule,
     slang_overrides_action, slang_wrapper_rule, statement_action_keyword,
 };
+pub(crate) use slang_lang::{
+    COMP_LANG_CLASS, LANG_ACTIVATIONS_ATTR, SlangUseSpec, decode_slang_activations,
+    set_slang_preseed,
+};
+pub(in crate::parser) use slang_lang::{apply_slang_preseed, comp_lang_value};
 pub(crate) use slang_modes::{is_symbol_other, slang_sigilless_name_len};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(in crate::parser) use slang_multiness::multi_declarator_hook;

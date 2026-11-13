@@ -40,6 +40,9 @@ pub(in crate::parser) struct SlangHooks {
     /// Core productions a slang's grammar role wraps with a method of the same
     /// name (`statementlist`, ADR-16888).
     wrappers: Vec<String>,
+    /// Every slang `use` in force, in activation order: what `$?LANG` names
+    /// (`slang_lang`).
+    activations: Vec<super::slang_lang::SlangUseSpec>,
 }
 
 /// What one hook attempt at a position answered: the length of the text left
@@ -297,6 +300,21 @@ pub(in crate::parser) fn register_hook(name: &str, body: Option<&str>) {
 pub(in crate::parser) fn set_host(host: SlangHost) {
     clear_hook_memo();
     HOOKS.with(|h| h.borrow_mut().host = Some(Rc::new(host)));
+}
+
+/// Record that `module`'s slang is active from here on.
+// Cost: O(1) amortized.
+pub(in crate::parser) fn note_slang_activation(
+    module: &str,
+    args: Option<Vec<super::slang_use::SlangUseArg>>,
+) {
+    HOOKS.with(|h| h.borrow_mut().activations.push((module.to_string(), args)));
+}
+
+/// The slang activations in force where the parser is.
+// Cost: O(a), a = activations (cloned).
+pub(in crate::parser) fn slang_activations() -> Vec<super::slang_lang::SlangUseSpec> {
+    HOOKS.with(|h| h.borrow().activations.clone())
 }
 
 pub(in crate::parser) fn reset_hooks() {

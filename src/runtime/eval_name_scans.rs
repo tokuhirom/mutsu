@@ -259,8 +259,13 @@ impl UndeclaredName<'_> {
         }
         // A module's own declaration resolves only where that module is
         // merged (ADR-11136); the snippet may merge it itself (`use M; C`).
+        // A routine of that spelling in scope is still known: the module's
+        // type is hidden, not the name (#17087).
         if interp.module_name_hidden_here(name) {
-            return self.declared.contains(name);
+            return self.declared.contains(name)
+                || interp.has_function(name)
+                || interp.has_multi_function_unindexed(name)
+                || interp.env().contains_key(&format!("&{name}"));
         }
         is_core_term(name)
             // Package-qualified names are looked up elsewhere.

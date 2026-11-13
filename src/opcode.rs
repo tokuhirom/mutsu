@@ -3770,8 +3770,11 @@ pub(crate) enum OpCode {
     /// general string-keyed `SetGlobal` store (`set_env_with_main_alias` and its
     /// package/alias probes), which cost ~24k instructions per declaration
     /// (#17376).
+    /// `slot` is the term's local slot (`u32::MAX` if it has none): a
+    /// [`CompiledCode::lean_readonly_term_slot`] keeps its readonly state in
+    /// the slot's compile-time flags instead, and the op writes nothing.
     // Cost: O(1).
-    SetTermMark { key_idx: u32, on: bool },
+    SetTermMark { key_idx: u32, on: bool, slot: u32 },
     /// Mark a variable as readonly (for `:=` binding / `constant`). The
     /// [`ReadonlyKind`] records *why*, which decides the exception an
     /// assignment through the name throws.
@@ -9486,6 +9489,62 @@ impl CompiledCode {
             })
     }
 
+    /// Whether slot `idx` is this chunk's readonly sigilless term: every
+    /// declaration of it is `my \k = EXPR` with a non-variable `EXPR`
+    /// (`BindingFlags::readonly_term`), so it is bound to a value and readonly
+    /// for its whole life (ADR-17376). Readers of the slot answer from this
+    /// whether or not an env marker was written.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn readonly_term_slot(&self, idx: usize) -> bool {
+        self.binding_descs
+            .get(idx)
+            .is_some_and(|d| d.flags.readonly_term())
+            && !self.dup_named_locals.get(idx).copied().unwrap_or(true)
+    }
+
+    /// Whether slot `idx` is a [`Self::readonly_term_slot`] that only this
+    /// chunk's own ops can name: no closure, by-name or reflective read
+    /// reaches it (`needs_env_sync`, `needs_reflective_capture`, a by-name
+    /// `stmt_pool` body -- folded into the flags by `compute_needs_env_sync`).
+    /// Such a term keeps no `__mutsu_sigilless_readonly::` marker and no env
+    /// mirror: `SetTermMark` skips it and its declaration only writes the slot
+    /// (ADR-17376).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn lean_readonly_term_slot(&self, idx: usize) -> bool {
+        // Not the program-wide `NON_EVAL_REFLECTIVE_SEEN` latch: a symbolic
+        // lookup (`::('Name')`) anywhere in the program would otherwise turn
+        // this off everywhere, and the lookups that can name this slot are this
+        // chunk's own or a nested closure's (`needs_reflective_capture`). A
+        // `CALLER::` reader reaches the slot's value through the calling-frame
+        // flush, as for any slot-only local.
+        self.readonly_term_slot(idx)
+            && !self.needs_env_sync.get(idx).copied().unwrap_or(true)
+            && !self.needs_reflective_capture
+    }
+
+    /// Whether every `stmt_pool` body is a closure literal whose compiled body
+    /// is what runs (`MakeAnonSub` with a compiled code): such a body reads this
+    /// chunk's locals through its upvalues, which `free_var_syms` accounts
+    /// for, never by name. Any other stashed body (a `gather`, an enum or
+    /// subset declaration, a phaser) runs by name against the live env.
+    // Cost: O(o + p), o = ops, p = `stmt_pool` slots.
+    fn stmt_pool_only_compiled_closures(&self) -> bool {
+        if self.stmt_pool.is_empty() {
+            return true;
+        }
+        let mut compiled = vec![false; self.stmt_pool.len()];
+        for op in &self.ops {
+            if let OpCode::MakeAnonSub(idx, Some(_), _) = op
+                && let Some(seen) = compiled.get_mut(*idx as usize)
+            {
+                *seen = true;
+            }
+        }
+        compiled.into_iter().all(|seen| seen)
+    }
+
     /// Whether this chunk declares slot `idx`'s variable itself — see
     /// [`crate::binding_desc::BindingDesc::declared_here`]. `false` for a slot
     /// with no descriptor (a hand-built chunk).
@@ -9810,6 +9869,15 @@ impl CompiledCode {
         // unaffected and still skips the per-call flush for its slot-only params.
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
+        // ADR-17376: a stashed body that runs by name can name a readonly
+        // term, so the term keeps its env marker and mirror.
+        if !self.stmt_pool_only_compiled_closures() {
+            for desc in &mut self.binding_descs {
+                if desc.flags.readonly_term() {
+                    desc.flags.note_other_term_decl();
+                }
+            }
+        }
         // A dynamic `&*name` parameter is read by name from callees' frames, so
         // its slot is always mirrored into the env (a `$*name` has no slot).
         for (slot, name) in self.locals.iter().enumerate() {

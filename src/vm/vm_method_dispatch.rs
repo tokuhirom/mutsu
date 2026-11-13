@@ -84,11 +84,26 @@ impl Interpreter {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        // Ahead of the flag taken below, so a call continued on a fresh stack
+        // segment (ADR-17392) finds it still set.
+        crate::guard_native_stack!(
+            self,
+            self.call_compiled_method_in_unit(
+                receiver_class_name,
+                owner_sym,
+                method_sym,
+                method_def,
+                cc,
+                attributes,
+                args,
+                invocant,
+                compiled_fns,
+            )
+        );
         // Taken at entry so it describes only THIS method's own parameter
         // bind below, never a nested call made before it (#10986; see
         // `pending_skip_constraint_recheck`).
         let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
-        self.guard_native_stack()?;
         crate::alloc_scope!("call-compiled-method");
         // Slice F: the rw-writeback source list is drained by the CallMethod /
         // CallMethodMut op right after this dispatch returns, so it must hold
@@ -2097,14 +2112,29 @@ impl Interpreter {
         // #10986: a multi winner's subset predicates already ran in dispatch
         // (`pending_skip_constraint_recheck`); taken at entry so it describes
         // only this method's own parameter checks below.
+        // ADR-0100: refuse the call while there is still stack left to raise
+        // with, so deep recursion becomes a catchable exception instead of a
+        // guard-page abort. Same boundary as this path's `Call` GC safepoint.
+        // Ahead of the flag taken below, so a call continued on a fresh stack
+        // segment (ADR-17392) finds it still set.
+        crate::guard_native_stack!(
+            self,
+            self.call_compiled_method_fast_in_unit(
+                receiver_class_name,
+                owner_sym,
+                method_sym,
+                method_def,
+                cc,
+                args,
+                base,
+                compiled_fns,
+                can_skip_merge,
+            )
+        );
         let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
         // See `call_compiled_method`: interned by the caller (#10961).
         let owner_class: &str = owner_sym.as_str();
         let method_name: &str = method_sym.as_str();
-        // ADR-0100: refuse the call while there is still stack left to raise
-        // with, so deep recursion becomes a catchable exception instead of a
-        // guard-page abort. Same boundary as this path's `Call` GC safepoint.
-        self.guard_native_stack()?;
         crate::alloc_scope!("mfast");
         crate::alloc_scope_named!(_sc_pro, "mfast:prologue");
         // The owner's role-ness is asked here once per call and handed to the

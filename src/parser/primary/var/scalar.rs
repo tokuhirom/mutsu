@@ -424,6 +424,15 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
             compiler_var(Expr::Literal(Value::int(line)), "$?LINE"),
         ));
     }
+    // `$?LANG` is the language of this point of the unit: the slangs in force
+    // here travel with it (`slang_lang`). A plain literal, not a spelled
+    // compiler variable: the RakuAST round trip lowers a `$?LANG` lookup to
+    // the runtime variable, which is the stock language.
+    if full_name == "?LANG"
+        && let Some(lang) = crate::parser::stmt::simple::comp_lang_value()
+    {
+        return Ok((rest, Expr::Literal(lang)));
+    }
     // $?TABSTOP is a compile-time constant: hardcoded to 8
     if full_name == "?TABSTOP" {
         return Ok((

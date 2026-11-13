@@ -1599,7 +1599,31 @@ impl Interpreter {
                         self.module.eval_import_unit.replace(phaser.unit),
                     )
                 });
+                // A closure built in the body records `?FILE` as its compunit
+                // (`vm_closure_build`), and at exit `?FILE` is the main
+                // script's: `-> uint $t { private-sub }` in a module's END
+                // then lost that module's `my sub`s. Scope it to the
+                // declaring module, as its mainline load did. An `EVAL` unit
+                // (`import_chain`) is not a file, so it keeps the exit one.
+                let saved_file = (phaser.import_chain.is_none()
+                    && phaser.unit != crate::runtime::main_unit())
+                .then(|| {
+                    let prev = self.env.get("?FILE").cloned();
+                    self.env
+                        .insert("?FILE".to_string(), Value::str(phaser.unit.resolve()));
+                    prev
+                });
                 let body_result = self.run_block(body);
+                if let Some(prev) = saved_file {
+                    match prev {
+                        Some(f) => {
+                            self.env.insert("?FILE".to_string(), f);
+                        }
+                        None => {
+                            self.env.remove("?FILE");
+                        }
+                    }
+                }
                 if let Some((chain, unit)) = saved_import_chain {
                     self.module.eval_import_chain = chain;
                     self.module.eval_import_unit = unit;

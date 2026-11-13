@@ -460,6 +460,12 @@ pub(crate) struct Registry {
     /// error for an unrelated `EVAL q[class Foo {}]` (verified against real
     /// `raku`, which allows it — see `t/eval-class-redeclaration-cross-boundary.t`).
     pub(crate) lexical_classes: HashSet<String>,
+    /// Lexical classes registered in full from a static declaration, keyed by
+    /// storage name, with what that registration depended on. A later entry
+    /// of the same declaration with an equal stamp keeps the class instead of
+    /// rebuilding it (`registration_class_site`, #16978).
+    pub(crate) class_site_stamps:
+        HashMap<String, super::registration_class_site::ClassSiteStamp>,
     /// Qualified names of lexical types declared under an already-namespaced
     /// spelling (`my class AST::Param {}` at file scope), as opposed to a
     /// `my class Param {}` written inside `module AST { }`. The former keeps

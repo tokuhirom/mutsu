@@ -64,21 +64,36 @@ pub(crate) fn check_now() -> Result<(), crate::value::RuntimeError> {
 }
 
 impl crate::interpreter::Interpreter {
-    /// The ADR-0100 call-boundary guard: raise rather than let deep recursion
-    /// walk this thread off the end of its native stack. One decrement on the
-    /// hot path; the actual stack read happens once per
-    /// [`STACK_CHECK_INTERVAL`] calls.
+    /// Whether this call is the one in every [`STACK_CHECK_INTERVAL`] that
+    /// reads the stack pointer. One decrement on the hot path.
     #[inline]
-    pub(crate) fn guard_native_stack(&mut self) -> Result<(), crate::value::RuntimeError> {
+    pub(crate) fn stack_check_due(&mut self) -> bool {
         match self.stack_check_countdown.checked_sub(1) {
             Some(left) => {
                 self.stack_check_countdown = left;
-                Ok(())
+                false
             }
             None => {
                 self.stack_check_countdown = STACK_CHECK_INTERVAL;
-                check_now()
+                true
             }
         }
     }
+}
+
+/// The ADR-0100 call-boundary guard, at the top of a call entry point: on the
+/// checking call, a thread below its floor first continues on a fresh stack
+/// segment when it may grow (ADR-17392) -- `$reenter` is the entry point
+/// called again with its own arguments, whose result is returned -- and
+/// otherwise raises the catchable "Too deep recursion" rather than let deep
+/// recursion walk the thread off the end of its native stack.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! guard_native_stack {
+    ($this:expr, $reenter:expr) => {
+        if $this.stack_check_due() {
+            $crate::grow_and_reenter!($reenter);
+            $crate::vm::vm_stack_guard::check_now()?;
+        }
+    };
 }

@@ -80,6 +80,12 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SetVarTypeScoped { .. }
             | OpCode::SetVarTypeHoisted { .. }
             | OpCode::AssignExpr(..)
+            // `($local = expr)`: the slot form of `AssignExpr`, whose arm
+            // stores, publishes a `state` slot and steps -- the same work
+            // `helpers::set_local` does for the statement-form `SetLocal`.
+            // Unlisted, every routine with an expression assignment (each
+            // `nqp::while` counter update) stayed on the interpreter.
+            | OpCode::AssignExprLocal(_)
             | OpCode::TopicDotAssign(_)
             | OpCode::AtomicCompoundVar { .. }
             | OpCode::IndexAssignExprNamed { .. }
@@ -180,6 +186,9 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SinkPopKeepProxy(_, _)
             // Topic / context markers
             | OpCode::MarkBindContext
+            // `my $x := ...`'s scalar-bind marker, the sibling of
+            // `MarkBindContext`: sets one flag and steps.
+            | OpCode::MarkScalarBindContext
             | OpCode::MarkVarDeclContext
             | OpCode::MarkExplicitInitializerContext
             | OpCode::MarkShapedDeclContext

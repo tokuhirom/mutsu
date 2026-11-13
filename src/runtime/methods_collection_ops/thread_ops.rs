@@ -119,7 +119,7 @@ impl Interpreter {
         // worker threads): `Thread.start` runs arbitrary user code, and the
         // default ~2-8 MiB thread stack overflows on deep VM nesting (e.g. an
         // async server whose react loop constructs objects whose BUILD re-enters
-        // the VM -- HTTP::Server::Tiny). See `stack_budget::STACK_TIERS`.
+        // the VM -- HTTP::Server::Tiny). See `stack_budget::initial_stack_bytes`.
         // Deliberately NOT pooled (ADR-0020 §3.6): a `Thread.start` thread has
         // user-visible identity (`$*THREAD.id`) stable for its whole lifetime.
         use crate::runtime::builtins_system::{StackPolicy, try_spawn_user_thread};

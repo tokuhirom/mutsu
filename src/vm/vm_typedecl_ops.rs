@@ -650,47 +650,62 @@ impl Interpreter {
                     );
                 }
             }
-            let deferred_traits = loan_env!(
-                self,
-                register_class_decl(
-                    &storage_name,
-                    &mapped_parents,
-                    crate::runtime::ClassDeclModifiers {
-                        class_is_rw: *class_is_rw,
-                        is_hidden: *is_hidden,
-                        is_lexical: *is_lexical,
-                        hidden_parents: &mapped_hidden_parents,
-                        does_parents,
-                        body_parents: &mapped_body_parents,
-                        language_version,
-                        is_stub: *is_stub,
-                        trusts,
-                        own_attribute_names,
-                        attr_decls,
-                        attr_type_aliases: &attr_type_aliases,
-                        method_name_chunks,
-                        method_decls,
-                        declared_static_names,
-                        nested_decl_names,
-                        parent_pre_args: &parent_pre_args,
-                        compiled_fns,
-                        body_plan,
-                        is_hoisted_shell: hoisted_shell,
-                        traits_ran_in_shell,
-                    },
+            // A static declaration this same site already registered keeps
+            // its class: only the frame-dependent method captures below are
+            // per entry (#16978, `runtime::registration_class_site`).
+            let site_stamp = self.class_site_stamp(
+                &code.class_decl_plans[idx as usize],
+                &mapped_parents,
+                &mapped_hidden_parents,
+            );
+            let reuse_site = site_stamp
+                .as_ref()
+                .is_some_and(|stamp| self.class_site_is_registered(&storage_name, stamp));
+            let deferred_traits = if reuse_site {
+                Vec::new()
+            } else {
+                loan_env!(
+                    self,
+                    register_class_decl(
+                        &storage_name,
+                        &mapped_parents,
+                        crate::runtime::ClassDeclModifiers {
+                            class_is_rw: *class_is_rw,
+                            is_hidden: *is_hidden,
+                            is_lexical: *is_lexical,
+                            hidden_parents: &mapped_hidden_parents,
+                            does_parents,
+                            body_parents: &mapped_body_parents,
+                            language_version,
+                            is_stub: *is_stub,
+                            trusts,
+                            own_attribute_names,
+                            attr_decls,
+                            attr_type_aliases: &attr_type_aliases,
+                            method_name_chunks,
+                            method_decls,
+                            declared_static_names,
+                            nested_decl_names,
+                            parent_pre_args: &parent_pre_args,
+                            compiled_fns,
+                            body_plan,
+                            is_hoisted_shell: hoisted_shell,
+                            traits_ran_in_shell,
+                        },
+                    )
                 )
-            )
-            .map_err(|err| {
-                if declare_how_installed {
-                    self.registry_mut().class_how_values.remove(&storage_name);
-                }
-                err
-            })?;
+                .map_err(|err| {
+                    if declare_how_installed {
+                        self.registry_mut().class_how_values.remove(&storage_name);
+                    }
+                    err
+                })?
+            };
             // The real declaration composes the class here, in source order. An
             // `augment` that ran earlier only saw its hoisted shell and froze the
             // shell's dispatchers, but a class declared AFTER the augment sees the
             // augmented candidates (#16314).
-            if !is_hoisted_shell {
+            if !is_hoisted_shell && !reuse_site {
                 let class_sym = crate::symbol::Symbol::intern(&storage_name);
                 let mut reg = self.registry_mut();
                 if !reg.frozen_dispatchers.is_empty() {
@@ -710,7 +725,7 @@ impl Interpreter {
             // `record_class_reg_gen_shadow_check`'s doc comment). Shadow-only
             // -- does not affect the eager `invalidate_method_dispatch_caches()`
             // call above.
-            {
+            if !reuse_site {
                 let f5_gen_after = self.registry().method_generation;
                 crate::vm::vm_stats::record_class_reg_gen_shadow_check(
                     f5_gen_after != f5_gen_before,
@@ -738,7 +753,9 @@ impl Interpreter {
             // before the real declaration runs, `populate_uncompiled_method`
             // compiles that one body on demand.
             if !is_hoisted_shell {
-                self.compile_class_methods(&storage_name);
+                if !reuse_site {
+                    self.compile_class_methods(&storage_name);
+                }
                 // The class body's statements (`BEGIN { $x = 5 }`, `$x = 11`)
                 // ran as separate chunks that wrote the outer lexical into env
                 // by name and queued it for a caller-var writeback. Claim that
@@ -747,7 +764,22 @@ impl Interpreter {
                 // the stale pre-body value is never reached by the later drain
                 // (#10751).
                 self.apply_pending_caller_var_writeback(code);
-                self.capture_declared_method_envs(code, &storage_name, method_outer_lexical_slots);
+                let recaptured = self.capture_declared_method_envs(
+                    code,
+                    &storage_name,
+                    method_outer_lexical_slots,
+                );
+                if reuse_site {
+                    // A kept class's methods now close over this entry's frame;
+                    // a cached resolution still holds the previous entry's
+                    // capture, which a full registration would have dropped
+                    // with its generation bump.
+                    if recaptured {
+                        self.registry_mut().bump_method_generation();
+                    }
+                } else if let Some(stamp) = site_stamp {
+                    self.stamp_class_site(&storage_name, stamp);
+                }
             }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
@@ -963,154 +995,160 @@ impl Interpreter {
                 }
             }
 
-            // `is ctype` / `is nativesize` / `is unsigned` are core traits
-            // that set NativeHOW metadata; they never reach a user
-            // `trait_mod:<is>` (see `runtime::native_decl`).
-            self.apply_native_type_traits(
-                &storage_name,
-                repr.as_deref(),
-                *is_native,
-                custom_traits,
-            )?;
-            // `is array_type(T)` is core too (`runtime::array_type_trait`).
-            self.apply_class_array_type_trait(&storage_name, custom_traits)?;
-            // Dispatch custom `is` traits via trait_mod:<is> if defined.
-            // Merge explicitly parsed custom_traits with deferred_traits
-            // (unknown lowercase parents deferred from register_class_decl).
-            //
-            // A nested declaration's shell (`HoistedShell::Nested`) already ran
-            // them at compile time, once (#12708); the in-place registration,
-            // repeated on every entry of the enclosing code, must not.
-            let has_trait_mod = !traits_ran_in_shell
-                && (self.has_proto("trait_mod:<is>")
-                    || self.has_multi_candidates("trait_mod:<is>")
-                    || self.has_any_trait_mod_is());
-            if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
-                let type_obj = Value::package(Symbol::intern(&storage_name));
-                // Dispatch explicitly parsed custom traits (with args)
-                for (trait_name, trait_arg) in custom_traits {
-                    // Internal markers (hoisted, ...)
-                    // are not user traits; never dispatch them to trait_mod:<is>.
-                    if trait_name.starts_with("__")
-                        || crate::runtime::native_decl::is_native_type_trait(trait_name)
-                        || crate::runtime::array_type_trait::is_array_type_trait(trait_name)
-                    {
-                        continue;
-                    }
-                    let trait_value = match trait_arg {
-                        Some(arg) => self.eval_decl_trait_arg(arg)?,
-                        None => Value::TRUE,
-                    };
-                    let named_arg = Value::pair(trait_name.clone(), trait_value);
-                    // As in rakudo, an `is foo(...)` no candidate accepts is
-                    // an unknown parent, whichever candidates exist.
-                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
-                        Ok(_) => {}
-                        Err(err) if Self::is_trait_mod_no_candidate(&err) => {
-                            self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
-                            return Err(self.unknown_parent_error(&storage_name, trait_name));
+            // A kept class already ran its traits and composed when it was
+            // registered; the type object, and what they did to it, persists
+            // (#16978).
+            if !reuse_site {
+                // `is ctype` / `is nativesize` / `is unsigned` are core traits
+                // that set NativeHOW metadata; they never reach a user
+                // `trait_mod:<is>` (see `runtime::native_decl`).
+                self.apply_native_type_traits(
+                    &storage_name,
+                    repr.as_deref(),
+                    *is_native,
+                    custom_traits,
+                )?;
+                // `is array_type(T)` is core too (`runtime::array_type_trait`).
+                self.apply_class_array_type_trait(&storage_name, custom_traits)?;
+                // Dispatch custom `is` traits via trait_mod:<is> if defined.
+                // Merge explicitly parsed custom_traits with deferred_traits
+                // (unknown lowercase parents deferred from register_class_decl).
+                //
+                // A nested declaration's shell (`HoistedShell::Nested`) already ran
+                // them at compile time, once (#12708); the in-place registration,
+                // repeated on every entry of the enclosing code, must not.
+                let has_trait_mod = !traits_ran_in_shell
+                    && (self.has_proto("trait_mod:<is>")
+                        || self.has_multi_candidates("trait_mod:<is>")
+                        || self.has_any_trait_mod_is());
+                if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
+                    let type_obj = Value::package(Symbol::intern(&storage_name));
+                    // Dispatch explicitly parsed custom traits (with args)
+                    for (trait_name, trait_arg) in custom_traits {
+                        // Internal markers (hoisted, ...)
+                        // are not user traits; never dispatch them to trait_mod:<is>.
+                        if trait_name.starts_with("__")
+                            || crate::runtime::native_decl::is_native_type_trait(trait_name)
+                            || crate::runtime::array_type_trait::is_array_type_trait(trait_name)
+                        {
+                            continue;
                         }
-                        Err(err) => return Err(err),
-                    }
-                }
-                // Dispatch deferred unknown parents as custom traits (no
-                // args). `validate_class_parents` optimistically deferred
-                // these lowercase names on seeing *any* `trait_mod:<is>`
-                // proto/multi at all -- if none of its candidates actually
-                // match this shape, that guess was wrong and it really was
-                // an unknown parent all along (mirrors the sibling
-                // variable-/attribute-trait no-candidate fallback).
-                // A hoisted shell carries the header's parents but not its
-                // traits; the real declaration dispatches them, once.
-                let deferred_traits: &[String] =
-                    if hoisted_shell == crate::runtime::HoistedShell::Forward {
-                        &[]
-                    } else {
-                        &deferred_traits
-                    };
-                for trait_name in deferred_traits {
-                    let spelling =
-                        parent_spelling(parent_spellings, trait_name).unwrap_or(trait_name);
-                    let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
-                    match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
-                        Ok(_) => {}
-                        Err(err) if Self::is_trait_mod_no_candidate(&err) => {
-                            self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
-                            return Err(self.unknown_parent_error(&storage_name, trait_name));
+                        let trait_value = match trait_arg {
+                            Some(arg) => self.eval_decl_trait_arg(arg)?,
+                            None => Value::TRUE,
+                        };
+                        let named_arg = Value::pair(trait_name.clone(), trait_value);
+                        // As in rakudo, an `is foo(...)` no candidate accepts is
+                        // an unknown parent, whichever candidates exist.
+                        match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
+                            Ok(_) => {}
+                            Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                                self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
+                                return Err(self.unknown_parent_error(&storage_name, trait_name));
+                            }
+                            Err(err) => return Err(err),
                         }
-                        Err(err) => return Err(err),
+                    }
+                    // Dispatch deferred unknown parents as custom traits (no
+                    // args). `validate_class_parents` optimistically deferred
+                    // these lowercase names on seeing *any* `trait_mod:<is>`
+                    // proto/multi at all -- if none of its candidates actually
+                    // match this shape, that guess was wrong and it really was
+                    // an unknown parent all along (mirrors the sibling
+                    // variable-/attribute-trait no-candidate fallback).
+                    // A hoisted shell carries the header's parents but not its
+                    // traits; the real declaration dispatches them, once.
+                    let deferred_traits: &[String] =
+                        if hoisted_shell == crate::runtime::HoistedShell::Forward {
+                            &[]
+                        } else {
+                            &deferred_traits
+                        };
+                    for trait_name in deferred_traits {
+                        let spelling =
+                            parent_spelling(parent_spellings, trait_name).unwrap_or(trait_name);
+                        let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
+                        match self.vm_call_trait_mod_is(vec![type_obj.clone(), named_arg]) {
+                            Ok(_) => {}
+                            Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                                self.rollback_deferred_trait_class_decl(deferred_trait_rollback);
+                                return Err(self.unknown_parent_error(&storage_name, trait_name));
+                            }
+                            Err(err) => return Err(err),
+                        }
                     }
                 }
-            }
-            // Raku desugars `is Parent` to `trait_mod:<is>($type, Parent)`; when a
-            // KNOWN-class parent matches a *typed* user candidate
-            // (`multi trait_mod:<is>(Mu:U, SomeType:U)`, more specific than the
-            // default add-parent), also dispatch it so the trait runs — e.g. the
-            // AOP module's `add_aspect` on `class Example is LoggingAspect` where
-            // `LoggingAspect` does `MethodBoundaryAspect` (`advent2011-day14`).
-            // Plain inheritance already happened in `register_class_decl`; this
-            // only ADDS the trait's side effect. Runs OUTSIDE the block above (a
-            // class with only known-class parents has empty custom/deferred trait
-            // lists). Gated on a matching typed candidate, so a parent with no
-            // such candidate (ordinary inheritance) is untouched.
-            if has_trait_mod {
-                let type_obj = Value::package(Symbol::intern(&storage_name));
-                for parent in &mapped_parents {
-                    let parent_obj = Value::package(Symbol::intern(parent));
-                    let call_args = vec![type_obj.clone(), parent_obj];
-                    if self.typed_is_trait_candidate_matches(&call_args) {
-                        self.vm_call_function("trait_mod:<is>", call_args)?;
+                // Raku desugars `is Parent` to `trait_mod:<is>($type, Parent)`; when a
+                // KNOWN-class parent matches a *typed* user candidate
+                // (`multi trait_mod:<is>(Mu:U, SomeType:U)`, more specific than the
+                // default add-parent), also dispatch it so the trait runs — e.g. the
+                // AOP module's `add_aspect` on `class Example is LoggingAspect` where
+                // `LoggingAspect` does `MethodBoundaryAspect` (`advent2011-day14`).
+                // Plain inheritance already happened in `register_class_decl`; this
+                // only ADDS the trait's side effect. Runs OUTSIDE the block above (a
+                // class with only known-class parents has empty custom/deferred trait
+                // lists). Gated on a matching typed candidate, so a parent with no
+                // such candidate (ordinary inheritance) is untouched.
+                if has_trait_mod {
+                    let type_obj = Value::package(Symbol::intern(&storage_name));
+                    for parent in &mapped_parents {
+                        let parent_obj = Value::package(Symbol::intern(parent));
+                        let call_args = vec![type_obj.clone(), parent_obj];
+                        if self.typed_is_trait_candidate_matches(&call_args) {
+                            self.vm_call_function("trait_mod:<is>", call_args)?;
+                        }
                     }
                 }
-            }
 
-            if hoisted_shell == crate::runtime::HoistedShell::Nested && *decl_id != 0 {
-                self.registry_mut()
-                    .nested_shell_traits_applied
-                    .insert(*decl_id);
-            }
-
-            // A class trait that mixed a role with a `compose` method into the
-            // class's HOW (`$class.HOW does MetamodelX::StaticHOW`, Staticish)
-            // gets that hook run when the class composes, as in Rakudo -- once,
-            // at the real declaration, not for a throwaway hoisted shell.
-            if !is_hoisted_shell {
-                self.drive_role_how_specialize(&storage_name)?;
-                self.queue_trait_how_compose(&storage_name, how_hook_before);
-            }
-
-            // A class installed under a custom EXPORTHOW `class` metaclass whose
-            // HOW defines `compose`: run it NOW — after the custom `is` traits
-            // above (which populate the HOW's state, e.g. `@!aspects`) — so the
-            // user `compose` sees that state and wraps the class's methods
-            // (`advent2011-day14` AOP). `compose` receives the class type object.
-            let pending: Vec<String> =
-                std::mem::take(&mut self.registry_mut().pending_class_compose);
-            for cname in pending {
-                let how_val = self.registry().class_how_values.get(&cname).cloned();
-                if let Some(how_val) = how_val {
-                    let type_obj = Value::package(Symbol::intern(&cname));
-                    // While this hook runs, `cname`'s own auto-generated
-                    // accessors are not yet in `.^method_table` — see
-                    // `classes_composing_accessors`'s doc comment (#8836).
-                    self.types.classes_composing_accessors.insert(cname.clone());
-                    let result = self.call_method_with_values(how_val, "compose", vec![type_obj]);
-                    self.types.classes_composing_accessors.remove(&cname);
-                    result?;
+                if hoisted_shell == crate::runtime::HoistedShell::Nested && *decl_id != 0 {
+                    self.registry_mut()
+                        .nested_shell_traits_applied
+                        .insert(*decl_id);
                 }
+
+                // A class trait that mixed a role with a `compose` method into the
+                // class's HOW (`$class.HOW does MetamodelX::StaticHOW`, Staticish)
+                // gets that hook run when the class composes, as in Rakudo -- once,
+                // at the real declaration, not for a throwaway hoisted shell.
+                if !is_hoisted_shell {
+                    self.drive_role_how_specialize(&storage_name)?;
+                    self.queue_trait_how_compose(&storage_name, how_hook_before);
+                }
+
+                // A class installed under a custom EXPORTHOW `class` metaclass whose
+                // HOW defines `compose`: run it NOW — after the custom `is` traits
+                // above (which populate the HOW's state, e.g. `@!aspects`) — so the
+                // user `compose` sees that state and wraps the class's methods
+                // (`advent2011-day14` AOP). `compose` receives the class type object.
+                let pending: Vec<String> =
+                    std::mem::take(&mut self.registry_mut().pending_class_compose);
+                for cname in pending {
+                    let how_val = self.registry().class_how_values.get(&cname).cloned();
+                    if let Some(how_val) = how_val {
+                        let type_obj = Value::package(Symbol::intern(&cname));
+                        // While this hook runs, `cname`'s own auto-generated
+                        // accessors are not yet in `.^method_table` — see
+                        // `classes_composing_accessors`'s doc comment (#8836).
+                        self.types.classes_composing_accessors.insert(cname.clone());
+                        let result =
+                            self.call_method_with_values(how_val, "compose", vec![type_obj]);
+                        self.types.classes_composing_accessors.remove(&cname);
+                        result?;
+                    }
+                }
+                // Ordinary classes also cross the native compose boundary. A
+                // custom HOW's `callsame` reaches this same handler; when no hook
+                // exists, drive the native step here so subsequent class-body
+                // runtime statements observe the composed MOP view.
+                if !self.class_how_compose_hook(&storage_name)
+                    && !self.registry().composed_classes.contains(&storage_name)
+                {
+                    self.mop_compose(vec![Value::package(Symbol::intern(&storage_name))])?;
+                }
+                // A HOW mixin overriding `create_BUILDPLAN` / `publish_method_cache`
+                // (AttrX::Mooish) has them called as the class composes (ADR-14162).
+                self.run_how_compose_overrides(&storage_name)?;
             }
-            // Ordinary classes also cross the native compose boundary. A
-            // custom HOW's `callsame` reaches this same handler; when no hook
-            // exists, drive the native step here so subsequent class-body
-            // runtime statements observe the composed MOP view.
-            if !self.class_how_compose_hook(&storage_name)
-                && !self.registry().composed_classes.contains(&storage_name)
-            {
-                self.mop_compose(vec![Value::package(Symbol::intern(&storage_name))])?;
-            }
-            // A HOW mixin overriding `create_BUILDPLAN` / `publish_method_cache`
-            // (AttrX::Mooish) has them called as the class composes (ADR-14162).
-            self.run_how_compose_overrides(&storage_name)?;
 
             // Slice F: write the deferred body's outer-lexical mutations through
             // to this caller frame's local slots (`register_class_decl` ran the

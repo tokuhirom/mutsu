@@ -49,13 +49,15 @@ impl Interpreter {
     pub(crate) fn dispatch_say(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let gist = self.render_gist_value(target)?;
         self.write_to_named_handle("$*OUT", &gist, true)?;
-        Ok(Value::TRUE)
+        // `Mu.say` is `say(self)`: its value is what `$*OUT`'s own `print`
+        // answered (a sandbox's `$*OUT` returns a marker it later tests for).
+        Ok(self.take_output_handle_result().unwrap_or(Value::TRUE))
     }
 
     pub(crate) fn dispatch_print(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let content = self.render_str_value(target);
         self.write_to_named_handle("$*OUT", &content, false)?;
-        Ok(Value::TRUE)
+        Ok(self.take_output_handle_result().unwrap_or(Value::TRUE))
     }
 
     pub(super) fn dispatch_printf(&mut self, target: &Value) -> Result<Value, RuntimeError> {
@@ -97,7 +99,7 @@ impl Interpreter {
         // (e.g. `$*RAKU.put` printed `Perl()` instead of `Raku`).
         let content = self.render_str_value(target);
         self.write_to_named_handle("$*OUT", &content, true)?;
-        Ok(Value::TRUE)
+        Ok(self.take_output_handle_result().unwrap_or(Value::TRUE))
     }
 
     pub(crate) fn dispatch_note(&mut self, target: &Value) -> Result<Value, RuntimeError> {

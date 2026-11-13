@@ -1915,6 +1915,11 @@ pub(crate) struct Compiler {
     /// or as a sigilless parameter).  BareWord resolution only uses GetLocal
     /// for names in this set; `$`-sigiled variables must not shadow type names.
     sigilless_locals: std::collections::HashSet<String>,
+    /// The `SetTermMark { on: false }` ops of the readonly sigilless term
+    /// declarations being compiled, innermost last, each with whether its
+    /// initializer certainly produces a value; `end_term_decl` gives each the
+    /// slot its declaration allocated (ADR-17376).
+    pending_term_mark_clears: Vec<(usize, bool)>,
     /// Scalar parameters of the routine being compiled that rakudo binds
     /// straight to the (decontainerized) argument: a nominally typed, readonly
     /// one (`Int $x`, `Int :$x`, `Int $x?`). They own no `Scalar`, so `$x =:= Int`
@@ -2301,6 +2306,7 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             enclosing_term_constants: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
+            pending_term_mark_clears: Vec::new(),
             direct_bound_params: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
             type_capture_locals: std::collections::HashSet::new(),

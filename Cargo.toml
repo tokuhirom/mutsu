@@ -36,7 +36,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["native", "jit"]
-native = ["rustyline", "libc", "libloading", "libffi"]
+native = ["rustyline", "libc", "libloading", "libffi", "stacker"]
 wasm = ["wasm-bindgen", "console_error_panic_hook"]
 # NativeCall (C FFI) support — gated under `native`; wasm builds cannot do FFI.
 libloading = ["dep:libloading"]
@@ -97,6 +97,11 @@ rustyline = { version = "18", optional = true }
 # KEEP (b): POSIX calls: signals, processes, file locks, localtime, user/group
 # lookup, uname (native only).
 libc = { version = "0.2", optional = true }
+# KEEP (b): runs a call on a freshly mapped stack segment, so a user thread
+# starts on a small stack and grows only as deep as it recurses (ADR-17392).
+# rust-lang's own crate (rustc uses it); pulls in `psm` (a build script and a
+# little assembly per target) and `cfg-if` (native only).
+stacker = { version = "0.1", optional = true }
 # KEEP (a): WHATWG legacy encodings for `encode`/`decode` (the tables are the
 # bulk of it).
 encoding_rs = "0.8"

@@ -864,7 +864,14 @@ impl Interpreter {
             // slang_grammar/slang_actions/define_slang on Raku::Slang::CompLang.
             if crate::runtime::slang_activation::is_slang_handle_class(class_name.as_str())
                 && let Some(result) =
-                    self.dispatch_slang_comp_lang_method(&class_name.resolve(), method, &args)
+                    self.dispatch_slang_comp_lang_method(
+                        &class_name.resolve(),
+                        method,
+                        &args,
+                        attributes
+                            .as_map()
+                            .get(crate::runtime::slang_activation::LANG_ACTIVATIONS_ATTR),
+                    )
             {
                 return result;
             }

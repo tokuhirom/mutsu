@@ -56,9 +56,9 @@ fn report_uncaught(
 }
 
 /// Stack for the `mutsu-main` thread the interpreter actually runs on. Matches
-/// `stack_budget::STACK_TIERS[0]`, the stack a `start`/Promise
-/// worker normally gets, so the ADR-0100 recursion guard fires at a comparable depth
-/// wherever user code runs.
+/// the logical stack a `start`/Promise worker may recurse through
+/// (`native_stack::LOGICAL_STACK_BYTES`, ADR-17392), so the ADR-0100 recursion
+/// guard fires at a comparable depth wherever user code runs.
 const MAIN_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 fn main() {

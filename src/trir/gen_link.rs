@@ -179,7 +179,10 @@ impl Interpreter {
         {
             return Ok(GenOutcome::NotLinked);
         }
-        self.guard_native_stack()?;
+        crate::guard_native_stack!(
+            self,
+            self.try_trir_gen_link(chunk, site, call, frame, compiled_fns)
+        );
         let n_values = call
             .args
             .iter()

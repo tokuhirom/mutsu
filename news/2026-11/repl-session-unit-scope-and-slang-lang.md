@@ -1,0 +1,7 @@
+# A REPL session unit is its own compunit and keeps its slang
+
+Jupyter::Kernel's `t/02-sandbox.rakutest` now matches rakudo on all 54 tests (#17087). Three fixes got it there:
+
+- **A session unit no longer sees the classes of the module that runs it.** Each unit is a compilation unit of its own. `Perl6::Compiler.eval` compiles it inside the session's previous unit, or inside nothing when the session has no outer context, and runs it in package `GLOBAL`. The `Perl6::Compiler`/`REPL` prelude classes now belong to their own `SETTING::src/core.c/REPL.rakumod` unit. Before, they belonged to whichever unit first asked for a compiler, so that unit's module merges were in scope for every REPL line. With this, the sandbox's `class Out` no longer hides the session's `sub Out`, so `Out[1]` works. When a module's type is hidden, a routine with the same name still answers the bare name. A class a session declares is no longer named `Perl6::Compiler::Zork`.
+- **`$?LANG` carries the slangs in force where it is written.** `$compiler.parsegrammar($?LANG.slang_grammar('MAIN'))` hands the language on, and the next `Perl6::Compiler.eval` activates the same slangs before parsing its first statement. A slang `use`d in one notebook cell now works in the next.
+- **`.say`, `.print` and `.put` called as methods return what `$*OUT.print` returned**, as the routines already did. The sandbox's `Std` handle returns a marker it uses to hide a cell's echo.

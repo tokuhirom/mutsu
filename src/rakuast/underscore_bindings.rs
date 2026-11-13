@@ -187,6 +187,7 @@ pub(super) fn lower_block_value(node: &RakuAstNode, body: Vec<Stmt>) -> Result<E
 
 // Cost: O(n), n = nodes before nested placeholder-scope boundaries; depth bounded by the stack (128 unguarded).
 fn declarations(node: &RakuAstNode, depth: usize) -> Result<u8, RuntimeError> {
+    crate::grow_and_reenter!(declarations(node, depth));
     if super::nesting::exceeded(depth, 128) {
         return Err(RuntimeError::new(
             "RakuAST: placeholder declaration nesting limit exceeded".to_string(),

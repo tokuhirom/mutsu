@@ -29,17 +29,29 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MIB: usize = 1024 * 1024;
 
-/// Stack sizes a user-code thread may get, largest (the normal one) first.
-/// The smallest must stay guardable by `vm_stack_guard`
-/// (`native_stack::MIN_GUARDABLE_STACK_BYTES`), which depends on the build
-/// profile: a debug frame is ~10x a release one, so a debug build stops at
-/// 32 MiB while a release build steps down to 8 MiB (ADR-0123 §6). The
-/// smaller tiers are only ever taken by a thread that has to exist once the
-/// budget is spent -- hundreds of `start` blocks parked in `await` (#17392).
-#[cfg(debug_assertions)]
-pub(crate) const STACK_TIERS: &[usize] = &[256 * MIB, 64 * MIB, 32 * MIB];
-#[cfg(not(debug_assertions))]
-pub(crate) const STACK_TIERS: &[usize] = &[256 * MIB, 64 * MIB, 32 * MIB, 16 * MIB, 8 * MIB, 4 * MIB];
+/// The stack a user-code thread starts on (ADR-17392).
+///
+/// With no budget (an unlimited address space, the normal case) it is the
+/// whole logical stack, `native_stack::LOGICAL_STACK_BYTES`, as before stacks
+/// grew. Under a budget it is the smallest guardable stack
+/// (`native_stack::MIN_GUARDABLE_STACK_BYTES`: 2 MiB in a release build,
+/// 16 MiB in a debug one), and the thread maps further segments only as deep
+/// as it actually recurses, each against the budget. A worker parked in
+/// `await` then costs that small stack, whichever worker it is, where every
+/// optional-growth worker used to reserve the full 256 MiB and the rest
+/// stepped down through ever smaller fixed tiers (ADR-0123 D2, §6).
+///
+/// A build without stack segments (no `native` feature, or wasm32) keeps the
+/// whole logical stack: a small one could not grow.
+// Cost: O(1).
+pub(crate) fn initial_stack_bytes() -> usize {
+    let growable = cfg!(all(feature = "native", not(target_arch = "wasm32")));
+    if growable && budget().is_some() {
+        crate::native_stack::MIN_GUARDABLE_STACK_BYTES
+    } else {
+        crate::native_stack::LOGICAL_STACK_BYTES
+    }
+}
 
 /// Bytes of stack currently reserved by live user-code threads (not counting
 /// the main thread, whose stack exists before the budget is consulted).
@@ -165,11 +177,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tiers_descend_and_stay_guardable() {
-        assert!(STACK_TIERS.windows(2).all(|w| w[0] > w[1]));
-        assert_eq!(
-            *STACK_TIERS.last().unwrap(),
-            crate::native_stack::MIN_GUARDABLE_STACK_BYTES
-        );
+    fn the_initial_stack_is_guardable() {
+        assert!(initial_stack_bytes() >= crate::native_stack::MIN_GUARDABLE_STACK_BYTES);
     }
 }
