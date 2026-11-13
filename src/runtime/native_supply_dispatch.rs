@@ -1724,7 +1724,11 @@ impl Interpreter {
                 // as one step against a racing `emit` (#12831).
                 let supplier_backed = attributes.contains_key("preserving")
                     || supplier_id_from_attrs(attributes).is_some();
+                // A `Proc::Async` output stream fetched before `.start` is tapped
+                // too: `start` serves a tap registered by then live, chunk by
+                // chunk (Rakuish's `$proc.stdout.Channel` drained in a `start`).
                 if attributes.contains_key("on_demand_callback")
+                    || attributes.contains_key("proc_output")
                     || (!supplier_backed && Self::supply_lists_lazily(attributes))
                 {
                     let supply_val =
