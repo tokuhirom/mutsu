@@ -198,8 +198,8 @@ impl Interpreter {
     /// already do.
     // An operator no user routine answers keeps its result as-is.
     // Cost: O(1) unless the result is a Proxy; then one candidate resolution
-    // (O(c), c = candidates of the operator) plus one FETCH call per Proxy in
-    // the chain.
+    // (O(c), c = candidates of the operator) plus its FETCH chain, bounded by
+    // `auto_fetch_proxy`.
     pub(crate) fn decont_user_infix_result(
         &mut self,
         name: &str,
@@ -221,7 +221,10 @@ impl Interpreter {
         if returns_container {
             return Ok(result);
         }
-        self.decont_proxy_chain(result)
+        if self.in_lvalue_assignment {
+            return Ok(result);
+        }
+        self.auto_fetch_proxy(&result)
     }
 
     /// Whether the user candidate `infix:<op>` resolves for `left`/`right`
