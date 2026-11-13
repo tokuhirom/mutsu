@@ -203,37 +203,37 @@ pub(crate) mod flags {
     /// never copy back into the caller, and which a lookup does not look for
     /// past the frame root of the routine that owns them. Mirrors
     /// `is_routine_scoped_implicit_var`.
-    pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
+    pub(crate) const ROUTINE_SCOPED_IMPLICIT: u32 = 1 << 0;
     /// A name a routine owns and a by-name lookup does not look for past the
     /// frame root of the routine that owns it (ADR-12529 phase 3,
     /// `env::routine_owned`): every [`ROUTINE_SCOPED_IMPLICIT`] name, and the
     /// topic `_`. The topic is kept out of that flag because its other
     /// consumers (the return merges, `CompiledCode::uses_routine_state`)
     /// treat it on their own terms.
-    pub(crate) const ROUTINE_OWNED: u16 = 1 << 1;
+    pub(crate) const ROUTINE_OWNED: u32 = 1 << 1;
     /// A *shadow metadata* key: `__mutsu_type::<name>` (a typed lexical's
     /// constraint) or `__mutsu_hash_key_type::<name>` (an object hash's key
     /// type). Nothing can observe one except
     /// through `<name>` itself, so every consumer decides it by that subject
     /// ([`super::Symbol::shadow_meta_subject`]).
-    pub(crate) const SHADOW_META: u16 = 1 << 2;
+    pub(crate) const SHADOW_META: u32 = 1 << 2;
     /// An `nqp::<op>` routine name: a compiler-known primitive in a reserved
     /// namespace no user routine can be declared in, so a call op carrying
     /// this name dispatches straight to the op table
     /// (`Interpreter::exec_nqp_call_op`).
-    pub(crate) const NQP_OP: u16 = 1 << 3;
+    pub(crate) const NQP_OP: u32 = 1 << 3;
     /// A native atomic helper (`__mutsu_atomic_*` / `__mutsu_cas_*`, the names in
     /// [`super::NATIVE_ATOMIC_HELPER_NAMES`]): a compiler-emitted primitive in a
     /// reserved namespace no user routine is declared in, so a call op carrying
     /// this name dispatches straight to it (`Interpreter::exec_atomic_helper_call_op`).
-    pub(crate) const NATIVE_ATOMIC_HELPER: u16 = 1 << 12;
+    pub(crate) const NATIVE_ATOMIC_HELPER: u32 = 1 << 12;
     /// An atomic helper whose FIRST argument is the target binding, tagged with
     /// the frame slot the call site reaches (`is_atomic_var_helper_name`): the
     /// only argument of a call that keeps its `VarRef` wrapper.
-    pub(crate) const ATOMIC_TARGET_HELPER: u16 = 1 << 13;
+    pub(crate) const ATOMIC_TARGET_HELPER: u32 = 1 << 13;
     /// A *plain user lexical* env key. Mirrors
     /// `crate::env::is_plain_user_lexical`.
-    pub(crate) const PLAIN_USER_LEXICAL: u16 = 1 << 4;
+    pub(crate) const PLAIN_USER_LEXICAL: u32 = 1 << 4;
     /// An attribute-twigil env key (`!x`, `@!x`, `%.x`). Mirrors
     /// `crate::env::is_attr_twigil_env_key`.
     ///
@@ -242,7 +242,7 @@ pub(crate) mod flags {
     /// the symbol to a `&str` and re-scanning the bytes twice per key. Fusing
     /// them into the memoized byte makes the filter one thread-local lookup
     /// instead of two plus two string scans.
-    pub(crate) const ATTR_TWIGIL_ENV_KEY: u16 = 1 << 5;
+    pub(crate) const ATTR_TWIGIL_ENV_KEY: u32 = 1 << 5;
     /// A *dynamic* variable's env key (`*x`, `$*OUT`, `@*ARGS`, `%*ENV`).
     /// Mirrors `crate::env::is_dynamic_var_env_key`.
     ///
@@ -253,7 +253,7 @@ pub(crate) mod flags {
     /// reflective latch has widened to a whole-env snapshot, walks hundreds of
     /// keys here per closure call, which put this one scan at ~11% of the whole
     /// program (#7565).
-    pub(crate) const DYNAMIC_VAR_ENV_KEY: u16 = 1 << 6;
+    pub(crate) const DYNAMIC_VAR_ENV_KEY: u32 = 1 << 6;
     /// A `__mutsu_callable_id::<package>::<name>` routine-registration marker.
     ///
     /// One such key is installed per *named routine visible in the scope*, so a
@@ -264,7 +264,7 @@ pub(crate) mod flags {
     /// probe), so the closure capture does not need to carry it; the one place
     /// that does — an escaping closure whose `use`-inside-`EVAL` scope has
     /// already been popped — is served precisely by `capture_bare_callees`.
-    pub(crate) const CALLABLE_ID_META: u16 = 1 << 8;
+    pub(crate) const CALLABLE_ID_META: u32 = 1 << 8;
     /// A *code env entry*: a `&`-sigil routine binding (`&foo`, `&?BLOCK`) or
     /// the `__mutsu_callable_id::` marker installed beside it. Together these
     /// are exactly the env keys a block scope has to save and restore, so that
@@ -275,11 +275,11 @@ pub(crate) mod flags {
     /// predicate asks the two questions together, and fusing them into one bit
     /// makes it a single memoized lookup instead of two `as_str()` round trips
     /// plus two `starts_with` scans per key.
-    pub(crate) const CODE_ENV_ENTRY: u16 = 1 << 9;
+    pub(crate) const CODE_ENV_ENTRY: u32 = 1 << 9;
     /// A `__mutsu_sigilless_alias::<var>` alias entry. The env tier asks this
     /// about every string-valued insert, to keep
     /// [`crate::sigilless_alias_index`] a superset of the live alias entries.
-    pub(crate) const SIGILLESS_ALIAS_KEY: u16 = 1 << 10;
+    pub(crate) const SIGILLESS_ALIAS_KEY: u32 = 1 << 10;
     /// A system name whose VALUE is rewritten in the ordinary course of
     /// execution: the topic family (`_`, `@_`, `%_`) and the per-routine
     /// implicits ([`ROUTINE_SCOPED_IMPLICIT`]: `$!`, `$/` and its capture
@@ -289,7 +289,7 @@ pub(crate) mod flags {
     /// capture reads the live value by name. Every other system name (types,
     /// constants, dynamics, `__mutsu_*` metadata) is written once and read by
     /// every capture.
-    pub(crate) const CAPTURE_VOLATILE: u16 = 1 << 11;
+    pub(crate) const CAPTURE_VOLATILE: u32 = 1 << 11;
     /// This symbol has been used as an env key **somewhere in this process**.
     ///
     /// Unlike every other bit here this is NOT a property of the symbol's
@@ -299,7 +299,7 @@ pub(crate) mod flags {
     /// metadata probe asks — "can this name be in any env at all?" — without
     /// walking a chain, and a clear bit is a *proof* of absence, so the walk can
     /// be skipped entirely. See [`crate::symbol::maybe_env_key`].
-    pub(crate) const EVER_ENV_KEY: u16 = 1 << 7;
+    pub(crate) const EVER_ENV_KEY: u32 = 1 << 7;
     /// Set once the flag word has been computed (so a symbol with no flags is
     /// not recomputed on every lookup).
     /// An env key spelled as an identifier that starts with an uppercase
@@ -308,8 +308,16 @@ pub(crate) mod flags {
     /// key `GLOBAL::n`) or an uppercase-named scalar (`my $F` is the key
     /// `F`). The return merges never copy one back to the caller
     /// (ADR-12529 §3, slice 38).
-    pub(crate) const UPPER_IDENT_KEY: u16 = 1 << 14;
-    pub(crate) const COMPUTED: u16 = 1 << 15;
+    pub(crate) const UPPER_IDENT_KEY: u32 = 1 << 14;
+    pub(crate) const COMPUTED: u32 = 1 << 15;
+    /// This symbol has been a key of an env **tier** (an overlay, a capture
+    /// layer) or a tombstone somewhere in this process -- not merely of one of
+    /// the two base tiers. Like [`EVER_ENV_KEY`] a monotonic runtime latch
+    /// ([`crate::symbol::mark_tier_key`]), not a string property. A clear bit
+    /// proves that every env lookup of the symbol answers exactly what its
+    /// chain's base tier holds, or nothing: no tier can shadow, hide or supply
+    /// it. See [`crate::symbol::ever_tier_key`].
+    pub(crate) const EVER_TIER_KEY: u32 = 1 << 16;
 }
 
 /// The `__mutsu_type::` prefix `flags::SHADOW_META` marks. Kept next to the flag
@@ -428,7 +436,7 @@ pub(crate) fn is_routine_scoped_implicit_var(name: &str) -> bool {
     }
 }
 
-fn compute_flags(s: &str) -> u16 {
+fn compute_flags(s: &str) -> u32 {
     let mut f = flags::COMPUTED;
     if is_routine_scoped_implicit_var(s) {
         f |= flags::ROUTINE_SCOPED_IMPLICIT | flags::ROUTINE_OWNED | flags::CAPTURE_VOLATILE;
@@ -512,7 +520,7 @@ const FLAG_CHUNKS: usize = 512;
 /// slot per chunk, and a chunk is allocated the first time an id lands in it.
 /// Ids past the table's reach fall back to recomputing, which is correct, just
 /// unmemoized.
-static FLAG_TABLE: [OnceLock<Box<[AtomicU16; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
+static FLAG_TABLE: [OnceLock<Box<[AtomicU32; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
     [const { OnceLock::new() }; FLAG_CHUNKS];
 
 /// A lock-free, process-global memo of a pure function of a symbol's string,
@@ -568,10 +576,52 @@ impl SymbolMemo {
     }
 }
 
+/// [`SymbolMemo`] for a pure function from a symbol's string to another
+/// symbol (a name reduced to its base, say): lock-free and process-global,
+/// one 32-bit load on a hit. Ids are global and append-only and the function
+/// is pure, so a racing writer stores the same id.
+pub(crate) struct SymbolSymMemo {
+    chunks: [OnceLock<Box<[AtomicU32; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS],
+}
+
+impl SymbolSymMemo {
+    /// No symbol has id `u32::MAX` (ids are a `Vec`'s length), so it marks an
+    /// entry not computed yet.
+    const EMPTY: u32 = u32::MAX;
+
+    pub(crate) const fn new() -> Self {
+        Self {
+            chunks: [const { OnceLock::new() }; FLAG_CHUNKS],
+        }
+    }
+
+    /// `compute(sym.as_str())`, computed once per symbol. An id past the
+    /// table's reach recomputes every time (correct, unmemoized).
+    // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get(&self, sym: Symbol, compute: fn(&str) -> Symbol) -> Symbol {
+        let idx = sym.0 as usize;
+        let Some(cell) = self.chunks.get(idx >> FLAG_CHUNK_BITS) else {
+            return compute(sym.as_str());
+        };
+        if let Some(chunk) = cell.get() {
+            let v = chunk[idx & (FLAG_CHUNK_LEN - 1)].load(Ordering::Relaxed);
+            if v != Self::EMPTY {
+                return Symbol(v);
+            }
+        }
+        let v = compute(sym.as_str());
+        let chunk =
+            cell.get_or_init(|| Box::new([const { AtomicU32::new(Self::EMPTY) }; FLAG_CHUNK_LEN]));
+        chunk[idx & (FLAG_CHUNK_LEN - 1)].store(v.0, Ordering::Relaxed);
+        v
+    }
+}
+
 /// The already-allocated flag slot for `idx`, if any. `None` means "not
 /// memoized yet" (or an id beyond the table), never "no such symbol".
 #[inline]
-fn flag_slot(idx: usize) -> Option<&'static AtomicU16> {
+fn flag_slot(idx: usize) -> Option<&'static AtomicU32> {
     let chunk = FLAG_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
     Some(&chunk[idx & (FLAG_CHUNK_LEN - 1)])
 }
@@ -580,11 +630,11 @@ fn flag_slot(idx: usize) -> Option<&'static AtomicU16> {
 /// this is the first id to land in it. Idempotent: every writer for a given id
 /// computes the same value from the same (immutable) string, so a lost race
 /// stores the identical word.
-fn store_flags(idx: usize, f: u16) {
+fn store_flags(idx: usize, f: u32) {
     let Some(cell) = FLAG_TABLE.get(idx >> FLAG_CHUNK_BITS) else {
         return;
     };
-    let chunk = cell.get_or_init(|| Box::new([const { AtomicU16::new(0) }; FLAG_CHUNK_LEN]));
+    let chunk = cell.get_or_init(|| Box::new([const { AtomicU32::new(0) }; FLAG_CHUNK_LEN]));
     chunk[idx & (FLAG_CHUNK_LEN - 1)].store(f, Ordering::Relaxed);
 }
 
@@ -671,8 +721,31 @@ static DYNAMIC_TIER_KEY_SEEN: std::sync::atomic::AtomicBool =
 #[inline]
 pub(crate) fn mark_tier_key(sym: Symbol) {
     mark_env_key(sym);
-    if sym.flags() & flags::DYNAMIC_VAR_ENV_KEY != 0 {
+    let f = sym.flags();
+    if f & flags::DYNAMIC_VAR_ENV_KEY != 0 {
         DYNAMIC_TIER_KEY_SEEN.store(true, Ordering::Relaxed);
+    }
+    // `flags()` above already stored the computed word, so this bit cannot be
+    // clobbered by a later recompute (see `mark_env_key`).
+    if f & flags::EVER_TIER_KEY == 0
+        && let Some(slot) = flag_slot(sym.0 as usize)
+    {
+        slot.fetch_or(flags::EVER_TIER_KEY, Ordering::Relaxed);
+    }
+}
+
+/// Whether `sym` may be held by an env tier or a tombstone anywhere in the
+/// process. `false` proves that an env lookup of `sym` answers what the
+/// chain's base tier holds (or nothing, where a static link hides the base
+/// name from the running code), so a caller that only needs to compare that
+/// answer with a known base value can skip the chain walk. `true` for an id
+/// beyond [`FLAG_TABLE`]'s reach.
+// Cost: O(1), one atomic load.
+#[inline]
+pub(crate) fn ever_tier_key(sym: Symbol) -> bool {
+    match flag_slot(sym.0 as usize) {
+        Some(slot) => slot.load(Ordering::Relaxed) & flags::EVER_TIER_KEY != 0,
+        None => true,
     }
 }
 
@@ -1221,7 +1294,7 @@ impl Symbol {
         self.0
     }
 
-    pub(crate) fn flags(self) -> u16 {
+    pub(crate) fn flags(self) -> u32 {
         let idx = self.0 as usize;
         if let Some(slot) = flag_slot(idx) {
             let f = slot.load(Ordering::Relaxed);
@@ -1238,7 +1311,7 @@ impl Symbol {
     /// that asks about it before the store lands.
     #[cold]
     #[inline(never)]
-    fn compute_and_store_flags(self, idx: usize) -> u16 {
+    fn compute_and_store_flags(self, idx: usize) -> u32 {
         let f = compute_flags(self.as_str());
         store_flags(idx, f);
         f
@@ -1741,12 +1814,13 @@ mod tests {
             "<flags_probe_named>",
         ] {
             let sym = Symbol::intern(name);
-            // `EVER_ENV_KEY` is the one bit in the word that is NOT a property
-            // of the string -- it is a runtime latch (`mark_env_key`) -- so it
-            // is masked out here rather than expected from `compute_flags`.
+            // `EVER_ENV_KEY` and `EVER_TIER_KEY` are the bits in the word that
+            // are NOT a property of the string -- they are runtime latches
+            // (`mark_env_key`, `mark_tier_key`) -- so they are masked out here
+            // rather than expected from `compute_flags`.
             // A name this test uses may well have been stored in an env by an
             // earlier test in the same process.
-            let derived = |f: u16| f & !flags::EVER_ENV_KEY;
+            let derived = |f: u32| f & !(flags::EVER_ENV_KEY | flags::EVER_TIER_KEY);
             assert_eq!(
                 derived(sym.flags()),
                 compute_flags(name),
@@ -1773,7 +1847,7 @@ mod tests {
         assert!(maybe_env_key(sym));
         // Every string-derived bit still answers what a fresh scan would.
         assert_eq!(
-            sym.flags() & !flags::EVER_ENV_KEY,
+            sym.flags() & !(flags::EVER_ENV_KEY | flags::EVER_TIER_KEY),
             compute_flags("$env_key_latch_survives_flags")
         );
         assert!(maybe_env_key(sym), "asking for flags must not clear it");

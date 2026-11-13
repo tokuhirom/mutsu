@@ -500,7 +500,7 @@ impl Interpreter {
         code: &CompiledCode,
     ) -> Option<(String, Option<u32>)> {
         let (name, slot, fp) = self.topic_state.container_ref_var.take()?;
-        (fp == Self::resume_code_fp(code)).then_some((name, slot))
+        (fp == Self::resume_code_fp(code)).then(|| (name.as_str().to_string(), slot))
     }
 
     pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {

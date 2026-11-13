@@ -340,14 +340,30 @@ pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
     }
     Value::str(str_key.to_string())
 }
+/// The `Order` value for `ord` (`Less`/`Same`/`More`). The three values are
+/// immutable, so they are built once per process and handed out as handle
+/// clones: every `cmp`/`<=>`/`leg` answer allocated a fresh enum box before,
+/// one allocation and one free per comparison (#15786).
+// Cost: O(1), one handle clone.
 pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
     use crate::symbol::wk;
-    let (member, value, index) = match ord {
-        std::cmp::Ordering::Less => (wk::order_less(), -1, 0),
-        std::cmp::Ordering::Equal => (wk::order_same(), 0, 1),
-        std::cmp::Ordering::Greater => (wk::order_more(), 1, 2),
-    };
-    Value::enum_parts(wk::order(), member, EnumValue::Int(value), index)
+    static ORDERS: std::sync::OnceLock<[Value; 3]> = std::sync::OnceLock::new();
+    let orders = ORDERS.get_or_init(|| {
+        [
+            (wk::order_less(), -1, 0),
+            (wk::order_same(), 0, 1),
+            (wk::order_more(), 1, 2),
+        ]
+        .map(|(member, value, index)| {
+            Value::enum_parts(wk::order(), member, EnumValue::Int(value), index)
+        })
+    });
+    orders[match ord {
+        std::cmp::Ordering::Less => 0,
+        std::cmp::Ordering::Equal => 1,
+        std::cmp::Ordering::Greater => 2,
+    }]
+    .clone()
 }
 
 /// The three parts of an `IO::Path::Parts`, in the fixed order used by

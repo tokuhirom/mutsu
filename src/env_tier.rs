@@ -229,10 +229,10 @@ pub(crate) fn capture_never_keeps(key: Symbol) -> bool {
 /// two askers from drifting apart; drift here would mean a tier skipping a key
 /// the filter would have kept, i.e. a silently incomplete closure capture.
 #[inline]
-pub(crate) fn capture_never_keeps_resolved(key: Symbol, flags: u16) -> bool {
+pub(crate) fn capture_never_keeps_resolved(key: Symbol, flags: u32) -> bool {
     // A dynamic variable (`$*x`) belongs to the call stack: a closure that
     // outlives the frame holding `my $*x` must not keep seeing it.
-    const DROP: u16 =
+    const DROP: u32 =
         flags::ATTR_TWIGIL_ENV_KEY | flags::CALLABLE_ID_META | flags::DYNAMIC_VAR_ENV_KEY;
     flags & DROP != 0 || key == crate::symbol::well_known::callable_type()
 }
@@ -590,7 +590,7 @@ impl Tier {
         self.invalidate_all();
         let out = f(&mut self.map);
         for (key, value) in &self.map {
-            crate::symbol::mark_env_key(*key);
+            crate::symbol::mark_tier_key(*key);
             note_alias_entry(*key, value);
         }
         out

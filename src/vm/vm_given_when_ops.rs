@@ -441,7 +441,7 @@ impl Interpreter {
                 // keep it only where it names the same variable here.
                 self.topic_state.container_ref_var = e.take_container_ref().map(|(n, slot)| {
                     let slot = slot.filter(|&s| code.locals.get(s as usize) == Some(&n));
-                    (n, slot, Self::resume_code_fp(code))
+                    (Symbol::intern(&n), slot, Self::resume_code_fp(code))
                 });
                 if let Some(v) = e.return_value {
                     last = v;

@@ -6067,17 +6067,17 @@ impl Interpreter {
             OpCode::SupplyBodyDone => {
                 return Err(RuntimeError::supply_body_done_signal());
             }
-            // Cost: O(m), m = bytes of the variable name (copied).
+            // Cost: O(1).
             OpCode::TagContainerRef(name_idx, slot) => {
-                let name = Self::const_str(code, *name_idx).to_string();
+                let name = code.const_sym(*name_idx);
                 self.topic_state.container_ref_var =
                     Some((name, *slot, Self::resume_code_fp(code)));
                 self.topic_state.container_ref_reversed = false;
                 *ip += 1;
             }
-            // Cost: O(m), m = bytes of the variable name (copied).
+            // Cost: O(1).
             OpCode::TagContainerRefReversed(name_idx, slot) => {
-                let name = Self::const_str(code, *name_idx).to_string();
+                let name = code.const_sym(*name_idx);
                 self.topic_state.container_ref_var =
                     Some((name, *slot, Self::resume_code_fp(code)));
                 self.topic_state.container_ref_reversed = true;

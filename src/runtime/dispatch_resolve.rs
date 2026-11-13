@@ -181,18 +181,25 @@ impl Interpreter {
     /// `name`, so the caller's symbol is usable exactly when the base *is* the
     /// whole name — the ordinary unqualified case. A qualified name
     /// (`Pkg::f`, `f/2:Int`) still interns its shorter base, which is what the
-    /// `&str` entry point above does for everyone (#7766 unit 2).
+    /// `&str` entry point above does for everyone (#7766 unit 2); the
+    /// reduction to the base is memoized per name symbol.
+    // Cost: O(1), one memo load and one hash probe (a first ask also reduces
+    // and interns the base, O(|name|)).
     pub(crate) fn fn_keys_for_base_sym(
         &mut self,
         name: &str,
         name_sym: Symbol,
     ) -> std::sync::Arc<[Symbol]> {
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
-        let base = function_key_base_name(name);
-        let base_sym = if base.len() == name.len() {
-            name_sym
+        // The base name is a pure function of the name, memoized per symbol:
+        // reducing it was ~190 Ir of every routine-value operator call's
+        // override probe (`try_plain_infix_routine_value`, #15786).
+        static BASE: crate::symbol::SymbolSymMemo = crate::symbol::SymbolSymMemo::new();
+        let base_sym = BASE.get(name_sym, |s| Symbol::intern(function_key_base_name(s)));
+        let base = if base_sym == name_sym {
+            name
         } else {
-            Symbol::intern(base)
+            base_sym.as_str()
         };
         self.fn_keys_for_base_inner(base, base_sym)
     }

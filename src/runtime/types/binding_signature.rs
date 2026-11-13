@@ -1310,7 +1310,7 @@ impl Interpreter {
         // before calling `reduce`, and only clears it once `reduce` --
         // including every one of its nested block calls -- has returned).
         let arg_sources = self
-            .take_pending_call_arg_sources()
+            .take_pending_call_arg_sources_shared()
             .filter(|sources| sources.len() == raw_args_len);
         // §1.4/§1.5: snapshot the compiler-baked arg-source slots NOW (before any
         // default-expression evaluation makes a nested call that would clobber the
@@ -1320,7 +1320,7 @@ impl Interpreter {
         // by an unrelated later writeback of the same name in this frame.
         let arg_source_slots = std::mem::take(&mut self.pending_call_arg_source_slots);
         let mut rw_bindings = Vec::new();
-        self.fill_call_capture(call_args, arg_sources.as_deref(), &mut rw_bindings);
+        self.fill_call_capture(call_args, arg_sources.as_deref().map(Vec::as_slice), &mut rw_bindings);
         // `@`/`%` params whose argument came from a named caller container but
         // which take no `rw_bindings` entry (supplied *named* container params
         // don't register an exit writeback) — recorded solely so the
