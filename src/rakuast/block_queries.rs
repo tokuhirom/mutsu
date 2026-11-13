@@ -40,6 +40,126 @@ pub(crate) fn has_placeholder_parameters(node: &RakuAstNode) -> Value {
     Value::truth(declares_placeholder(node))
 }
 
+/// The placeholder declarations of the block's own body, in source order.
+// Cost: O(n), n = size of the block's own body.
+fn collect_placeholders<'a>(node: &'a RakuAstNode, out: &mut Vec<&'a RakuAstNode>) {
+    for field in &node.fields {
+        let values: &[Value] = match &field.value {
+            RakuAstFieldValue::Node(v) => std::slice::from_ref(v),
+            RakuAstFieldValue::List(items) => items,
+            RakuAstFieldValue::Adverb(_) => &[],
+        };
+        for value in values {
+            let ValueView::RakuAst(child) = value.view() else {
+                continue;
+            };
+            match child.class {
+                RakuAstClass::VarDeclarationPlaceholderPositional
+                | RakuAstClass::VarDeclarationPlaceholderNamed
+                | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
+                | RakuAstClass::VarDeclarationPlaceholderSlurpyHash => out.push(child),
+                RakuAstClass::Block
+                | RakuAstClass::PointyBlock
+                | RakuAstClass::Sub
+                | RakuAstClass::Method
+                | RakuAstClass::Submethod => {}
+                _ => collect_placeholders(child, out),
+            }
+        }
+    }
+}
+
+/// `placeholder-signature`: the `Signature` the block's placeholders make, as
+/// rakudo builds it -- the positional ones sorted by name, then the named
+/// ones, then `@_` and `%_` as flattening slurpies; `Any` when the block has
+/// none.
+// Cost: O(n + p log p), n = size of the block's own body, p = placeholders.
+pub(crate) fn placeholder_signature(node: &RakuAstNode) -> Value {
+    let mut found = Vec::new();
+    collect_placeholders(node, &mut found);
+    if found.is_empty() {
+        return Value::package(crate::symbol::Symbol::intern("Any"));
+    }
+    let mut positional: Vec<(char, String)> = Vec::new();
+    let mut named: Vec<(char, String)> = Vec::new();
+    let (mut array, mut hash) = (false, false);
+    for decl in found {
+        match decl.class {
+            RakuAstClass::VarDeclarationPlaceholderSlurpyArray => array = true,
+            RakuAstClass::VarDeclarationPlaceholderSlurpyHash => hash = true,
+            class => {
+                let Ok(spelled) = super::placeholder::spelling(decl) else {
+                    continue;
+                };
+                let list = if class == RakuAstClass::VarDeclarationPlaceholderNamed {
+                    &mut named
+                } else {
+                    &mut positional
+                };
+                if !list.contains(&spelled) {
+                    list.push(spelled);
+                }
+            }
+        }
+    }
+    positional.sort_by(|a, b| a.1.cmp(&b.1));
+    let field = |name: &'static str, value: RakuAstFieldValue| super::RakuAstField {
+        name: Some(name),
+        value,
+    };
+    let target = |spelled: String| {
+        let var = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::ParameterTargetVar,
+            fields: vec![field("name", RakuAstFieldValue::Node(Value::str(spelled)))],
+        };
+        field(
+            "target",
+            RakuAstFieldValue::Node(Value::rakuast(Box::new(var))),
+        )
+    };
+    let parameter = |fields: Vec<super::RakuAstField>| {
+        Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::Parameter,
+            fields,
+        }))
+    };
+    let not_optional = || field("optional", RakuAstFieldValue::Node(Value::truth(false)));
+    let mut parameters = Vec::new();
+    for (sigil, name) in positional {
+        parameters.push(parameter(vec![
+            target(format!("{sigil}{name}")),
+            not_optional(),
+        ]));
+    }
+    for (sigil, name) in named {
+        let names = field(
+            "names",
+            RakuAstFieldValue::List(vec![Value::str(name.clone())]),
+        );
+        parameters.push(parameter(vec![
+            names,
+            target(format!("{sigil}{name}")),
+            not_optional(),
+        ]));
+    }
+    for (present, spelled) in [(array, "@_"), (hash, "%_")] {
+        if present {
+            let slurpy = super::slurpy_marker_value(RakuAstClass::ParameterSlurpyFlattened);
+            parameters.push(parameter(vec![
+                target(spelled.to_string()),
+                field("slurpy", RakuAstFieldValue::Node(slurpy)),
+            ]));
+        }
+    }
+    Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::Signature,
+        fields: vec![field("parameters", RakuAstFieldValue::List(parameters))],
+    }))
+}
+
 /// Whether `class` is one rakudo's `Block.replace-body` is inherited by: the
 /// block, the pointy block and every routine.
 fn takes_a_body(class: RakuAstClass) -> bool {

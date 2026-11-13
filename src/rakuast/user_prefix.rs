@@ -2,7 +2,7 @@
 //! `sub prefix:<⥷>`) is `ApplyPrefix(prefix => Prefix, operand)` in raku. The
 //! parser keeps it as the call of the operator routine, `prefix:<⥷>(<name>)`.
 
-use super::view::{leaf_field, node_field, view_expr};
+use super::view::{arg_list, leaf_field, name_from_identifier, node_field, unsupported, view_expr};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
@@ -121,4 +121,46 @@ const USER_PREFIX_MARK: &str = "user-prefix";
 // Cost: O(1).
 pub(super) fn is_user_override(prefix: &RakuAstNode) -> bool {
     prefix.origin.3.as_deref() == Some(USER_PREFIX_MARK)
+}
+
+/// The tree of a `Spelling::UserPrefixOperator`: the operator application a
+/// user candidate of a core prefix keeps.
+// Cost: as `view_core_override`.
+pub(super) fn view_spelled_core(
+    names: &NameScope,
+    call: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    view_core_override(names, call).unwrap_or_else(|| {
+        Err(unsupported(
+            "user prefix operator spelling without its call",
+        ))
+    })
+}
+
+/// The tree of a `Spelling::PrefixCall`: `not`/`so` written as a call
+/// (`not($x)`), which is a `Call::Name`.
+// Cost: O(1) plus viewing the operand.
+pub(super) fn view_prefix_call(
+    names: &NameScope,
+    expr: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::Unary { op, expr, .. } = expr else {
+        return Err(unsupported("prefix call spelling without its prefix"));
+    };
+    let name = match op {
+        crate::token_kind::TokenKind::Bang => "not",
+        crate::token_kind::TokenKind::Question => "so",
+        _ => return Err(unsupported("prefix call spelling of an unknown prefix")),
+    };
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::CallName,
+        fields: vec![
+            node_field(Some("name"), name_from_identifier(name)),
+            node_field(
+                Some("args"),
+                arg_list(names, std::slice::from_ref(&**expr))?,
+            ),
+        ],
+    })
 }

@@ -1,4 +1,4 @@
-//! `Routine`'s `wrap`, `unwrap`, `add_dispatchee`, `candidates`,
+//! `Routine`'s `wrap`, `unwrap`, `is-wrapped`, `add_dispatchee`, `candidates`,
 //! `dispatchees`, `rw` and `yada`, and `Code`'s `assuming`, `cando`, `prec`,
 //! `precedence`, `associative` and `is-implementation-detail` (ADR-11276
 //! §9.166).
@@ -74,6 +74,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         "unwrap",
         0,
         ARGS.or(RowFlags::SLURPY),
+        routine_handle_wrap,
+        sub_wrap
+    ),
+    row!(
+        "Routine",
+        "is-wrapped",
+        0,
+        NULLARY,
         routine_handle_wrap,
         sub_wrap
     ),

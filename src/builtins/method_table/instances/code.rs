@@ -1,5 +1,5 @@
 //! `Code`'s `of`, `returns`, `arity`, `count` and `signature`, `line`, `file` and `name` (ADR-12523, slices 1-4), the
-//! pure `Capture` and `clone` (slice 5), and `Str` (slice 6).
+//! pure `Capture`, `clone` and `static_id` (slice 5), and `Str` (slice 6).
 //!
 //! A code object is a `Sub` (a routine, closure or block, with or without a
 //! body of its own), a `&name` handle on a routine reached through the
@@ -68,6 +68,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "clone",
         arity: 0,
         handler: Handler::Narrow(clone),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Code",
+        name: "static_id",
+        arity: 0,
+        handler: Handler::Narrow(static_id),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
@@ -348,4 +356,40 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
         }
         _ => Some(Ok(target.clone())),
     }
+}
+
+/// `Code.static_id`: the identity of the code the object runs, shared by every
+/// closure clone of one block and every handle on one routine (rakudo answers
+/// its static code object's id). It is a hash of what the code is -- its
+/// signature and body, and where and under which name it is declared -- not
+/// of a compiled object's address: a unit whose CHECK phase rewrote `$*CU`
+/// runs again from the rewritten tree, and the routines it compiles anew must
+/// keep the identity the CHECK phase saw (Red's compiled-callable guard).
+// Cost: O(p) for a routine, p = parameters; O(b) for a closure, b = size of
+// its body AST.
+fn static_id(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Sub(data) = target.view() else {
+        return crate::builtins::method_table::identity_where(target, &[]);
+    };
+    // A routine is one declaration of its name: the place it is declared and
+    // its signature tell it apart (from the other candidates of a multi). Its
+    // body is not hashed -- the CHECK phase's copy and the restarted unit's
+    // carry it in different shapes (an AST, compiled bytecode).
+    //
+    // A closure is told apart by its signature and body and its line, not its
+    // file or package: the closure a block node's `compile-time-value` makes in the CHECK
+    // phase is compiled where the phaser's code runs (Red's module).
+    let routine = data.compiled_routine.is_some() || data.body.is_empty();
+    let content = if routine {
+        crate::ast::stable_hash::stable_hash(&*data.params)
+    } else {
+        crate::ast::function_body_fingerprint(&data.params, &data.param_defs, &data.body)
+    };
+    let id = crate::ast::stable_hash::stable_hash(&(
+        content,
+        routine.then(|| (data.package.resolve(), data.name.resolve())),
+        routine.then_some(data.source_file.as_deref()),
+        data.source_line,
+    ));
+    Some(Ok(Value::int(id as i64)))
 }

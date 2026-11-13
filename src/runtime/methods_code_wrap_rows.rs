@@ -20,7 +20,14 @@ impl Interpreter {
         is_regex: bool,
     ) -> Option<Result<Value, RuntimeError>> {
         let _ = (target, name, package, &args, is_regex);
-        if matches!(method, "wrap" | "unwrap") {
+        if matches!(method, "wrap" | "unwrap" | "is-wrapped") {
+            if is_regex && method == "is-wrapped" {
+                let wrapped = self
+                    .registry()
+                    .method_wrap_chain(package, name, 0)
+                    .is_some_and(|chain| !chain.is_empty());
+                return Some(Ok(Value::truth(wrapped)));
+            }
             if is_regex {
                 let (name, package) = (name.to_string(), package.to_string());
                 if method == "wrap" {
@@ -85,7 +92,25 @@ impl Interpreter {
         None
     }
 
-    /// `wrap`/`unwrap` of a `Sub`: its chain (keyed by name once wrapped), or
+    /// The id a `Sub`'s wrap chain is keyed by: the routine's, found by name
+    /// once it was wrapped (`&foo` creates a fresh `Sub` each time), else its
+    /// own.
+    // Cost: O(r), r = wrapped routines.
+    fn wrapped_sub_id(&self, data: &crate::value::SubData) -> u64 {
+        let func_name = data
+            .env
+            .get("__mutsu_wrap_name")
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| data.name.resolve());
+        self.dispatch
+            .wrap_sub_names
+            .iter()
+            .find(|(id, n)| **n == func_name && self.wrap_id_is_in_package(**id, data.package))
+            .map(|(id, _)| *id)
+            .unwrap_or(data.id)
+    }
+
+    /// `wrap`/`unwrap`/`is-wrapped` of a `Sub`: its chain (keyed by name once wrapped), or
     /// a method candidate's chain in the registry.
     // Cost: O(w), w = wrappers in the chain.
     pub(crate) fn sub_wrap(
@@ -96,6 +121,24 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         let _ = (target, data, &args);
+        if method == "is-wrapped" {
+            let wrapped = if let Some(ValueView::Str(cls)) =
+                data.env.get("__mutsu_lookup_class").map(Value::view)
+                && let Some(ValueView::Str(meth)) =
+                    data.env.get("__mutsu_lookup_method").map(Value::view)
+                && let Some(idx) = Self::method_sub_wrap_slot(data)
+            {
+                self.registry()
+                    .method_wrap_chain(&cls, &meth, idx)
+                    .is_some_and(|chain| !chain.is_empty())
+            } else {
+                self.dispatch
+                    .wrap_chains
+                    .get(&self.wrapped_sub_id(data))
+                    .is_some_and(|chain| !chain.is_empty())
+            };
+            return Some(Ok(Value::truth(wrapped)));
+        }
         if method == "wrap" {
             // .wrap(&wrapper) — add a wrapper to this sub's wrap chain
             let wrapper = if let Some(w) = args.first() {
@@ -180,19 +223,7 @@ impl Interpreter {
                     },
                 );
             }
-            // Look up original sub_id by name, since &foo creates a fresh Sub each time
-            let func_name = data
-                .env
-                .get("__mutsu_wrap_name")
-                .map(Value::to_string_value)
-                .unwrap_or_else(|| data.name.resolve());
-            let sub_id = self
-                .dispatch
-                .wrap_sub_names
-                .iter()
-                .find(|(id, n)| **n == func_name && self.wrap_id_is_in_package(**id, data.package))
-                .map(|(id, _)| *id)
-                .unwrap_or(data.id);
+            let sub_id = self.wrapped_sub_id(data);
             if args.is_empty() {
                 // unwrap with no args on a never-wrapped sub should error
                 if !self.dispatch.wrap_chains.contains_key(&sub_id)

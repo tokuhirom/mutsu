@@ -26,3 +26,8 @@ unit's tree, so Red's compiler can inline a helper sub (t/124).
 
 `nqp::unipropcode('Block')` and the Block value codes and names work, with the
 block table brought to Unicode 17 as MoarVM has it (Red t/121).
+
+`Block.placeholder-signature`, `Code.static_id` and `Routine.is-wrapped` are
+implemented; `static_id` is the same for the code a CHECK phase saw and the
+code the restarted unit runs, so Red's compiled-callable guard accepts it
+(t/124).
