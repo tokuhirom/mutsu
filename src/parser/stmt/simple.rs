@@ -144,8 +144,11 @@ pub(crate) use slang_hooks::{
     slang_action_activator, slang_action_rule, slang_hook_rule, slang_host_wrapped_rule,
     slang_overrides_action, slang_wrapper_rule, statement_action_keyword,
 };
-pub(crate) use slang_lang::{SlangUseSpec, decode_slang_activations, set_slang_preseed};
-pub(in crate::parser) use slang_lang::{apply_slang_preseed, comp_lang_expr};
+pub(crate) use slang_lang::{
+    COMP_LANG_CLASS, LANG_ACTIVATIONS_ATTR, SlangUseSpec, decode_slang_activations,
+    set_slang_preseed,
+};
+pub(in crate::parser) use slang_lang::{apply_slang_preseed, comp_lang_value};
 pub(crate) use slang_modes::{is_symbol_other, slang_sigilless_name_len};
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(in crate::parser) use slang_multiness::multi_declarator_hook;

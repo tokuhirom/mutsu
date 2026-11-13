@@ -312,7 +312,10 @@ pub(crate) fn name_colonpair_exprs(source: &str) -> Option<Vec<crate::ast::Expr>
 /// parser modes.
 #[cfg(test)]
 pub(crate) use stmt::simple::RECOGNIZED_PRODUCTION_OVERRIDES;
-pub(crate) use stmt::simple::{SlangUseSpec, decode_slang_activations, set_slang_preseed};
+pub(crate) use stmt::simple::{
+    COMP_LANG_CLASS, LANG_ACTIVATIONS_ATTR, SlangUseSpec, decode_slang_activations,
+    set_slang_preseed,
+};
 pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
 
 pub(crate) use stmt::simple::{

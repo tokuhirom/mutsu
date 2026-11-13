@@ -13,18 +13,24 @@
 //! productions its `use` installed (ADR-0026). What the language of a point in
 //! the unit *is*, then, is the list of slang activations in force there: the
 //! `use`d module and its literal arguments, in order. `$?LANG` carries that
-//! list (as literal arguments of `__mutsu_comp_lang`, so it is a constant of
-//! the place it is written, like `$?LINE`), the grammar handle
+//! list (it is folded to the language object of the place it is written, as
+//! `$?LINE` is folded to its line), the grammar handle
 //! `slang_grammar` answers carries it on, and `Perl6::Compiler.eval` seeds
 //! the next unit's parse with it, which activates each slang again before the
 //! unit's first statement. Re-activating a slang installs its grammar; it
 //! imports nothing, as setting `parsegrammar` imports nothing in rakudo.
 
 use super::slang_use::SlangUseArg;
-use crate::ast::Expr;
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 use std::cell::RefCell;
+
+/// The class of the language object `$?LANG` / `$*LANG` is.
+pub(crate) const COMP_LANG_CLASS: &str = "Raku::Slang::CompLang";
+/// The attribute of a language object (and of the grammar handles it gives
+/// out) that lists the slang activations in force where `$?LANG` was written,
+/// in [`encode_slang_activations`]'s flat form.
+pub(crate) const LANG_ACTIVATIONS_ATTR: &str = "activations";
 
 /// One slang activation: the `use`d module and the `use` statement's literal
 /// arguments (`None` when it had none).
@@ -52,23 +58,21 @@ pub(in crate::parser) fn apply_slang_preseed() -> Result<(), String> {
     Ok(())
 }
 
-/// `$?LANG` where the parser is, when a slang is active there: the call that
-/// builds the language object with that slang list. `None` is the stock
-/// language, which the compiler builds from the plain variable.
+/// `$?LANG` where the parser is, when a slang is active there: the language
+/// object carrying that slang list. `None` is the stock language, which the
+/// compiler builds from the plain variable.
 // Cost: O(a), a = slang activations in force.
-pub(in crate::parser) fn comp_lang_expr() -> Option<Expr> {
+pub(in crate::parser) fn comp_lang_value() -> Option<Value> {
     let activations = super::slang_hooks::slang_activations();
     if activations.is_empty() {
         return None;
     }
-    Some(Expr::Call {
-        name: Symbol::intern("__mutsu_comp_lang"),
-        args: encode_slang_activations(&activations)
-            .into_iter()
-            .map(Expr::Literal)
-            .collect(),
-        listop: false,
-    })
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        LANG_ACTIVATIONS_ATTR.to_string(),
+        Value::array(encode_slang_activations(&activations)),
+    );
+    Some(Value::make_instance(Symbol::intern(COMP_LANG_CLASS), attrs))
 }
 
 /// The flat literal form of an activation list: per activation the module

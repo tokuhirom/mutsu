@@ -392,10 +392,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if name == "__mutsu_comp_lang" {
             // `$?LANG`: see `parser::primary::var::scalar`.
-            // The arguments are the slangs active where it was written.
-            return Some(Ok(
-                crate::runtime::slang_activation::comp_lang_instance_with(args),
-            ));
+            return Some(Ok(crate::runtime::slang_activation::comp_lang_instance()));
         }
         if name != "__mutsu_compiler_eval" {
             return None;
