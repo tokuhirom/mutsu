@@ -2516,8 +2516,9 @@ impl Interpreter {
                     // binder does: `method m(Positional $p)` given `.map(..)`,
                     // and with a `:D`/`:_` smiley too (Pod::To::HTML's
                     // `multi method node2html(Positional:D $node)`).
-                    if crate::runtime::types::binds_through_positional_failover(&resolved_constraint)
-                        && !self.type_matches_value("Positional", &val)
+                    if crate::runtime::types::binds_through_positional_failover(
+                        &resolved_constraint,
+                    ) && !self.type_matches_value("Positional", &val)
                         && self.type_matches_value("PositionalBindFailover", &val)
                     {
                         match self.coerce_positional_bind_failover(val.clone()) {
