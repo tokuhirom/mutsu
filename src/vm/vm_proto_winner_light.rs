@@ -20,23 +20,22 @@ use super::*;
 impl Interpreter {
     /// Run `def`, the resolved winner of a trivial proto, through the positional
     /// light bind, or `None` (nothing done) when this call or the winner needs
-    /// the general binder.
+    /// the general binder. The caller has already declined a call with a
+    /// named argument.
     // Cost: O(a + p), a = arguments, p = the winner's parameters (the light
     // bind's admissions), plus the call.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn try_trivial_proto_winner_light(
         &mut self,
         code: &CompiledCode,
         def: &crate::ast::FunctionDef,
-        name: &str,
         name_sym: Symbol,
         args: &[Value],
-        call_has_named: bool,
         compiled_fns: &CompiledFns,
     ) -> Option<Result<Value, RuntimeError>> {
+        let name = name_sym.as_str();
         // The general entry runs a dispatchee and the deprecation report; a
         // winner with either keeps it.
-        if call_has_named || def.dispatchee.is_some() || def.deprecated_message.is_some() {
+        if def.dispatchee.is_some() || def.deprecated_message.is_some() {
             return None;
         }
         let cf = def.compiled_fn()?.clone();

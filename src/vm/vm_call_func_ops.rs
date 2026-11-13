@@ -2693,15 +2693,15 @@ impl Interpreter {
                     // hand here, which a sigilless parameter's promotion of a
                     // caller variable needs; `compile_and_call_function_def`
                     // has none and so declined every such winner (#15786).
-                    if let Some(result) = self.try_trivial_proto_winner_light(
-                        code,
-                        &def,
-                        name,
-                        name_sym,
-                        &args,
-                        call_has_named,
-                        compiled_fns,
-                    ) {
+                    if !call_has_named
+                        && let Some(result) = self.try_trivial_proto_winner_light(
+                            code,
+                            &def,
+                            name_sym,
+                            &args,
+                            compiled_fns,
+                        )
+                    {
                         return result;
                     }
                     // The binder names a raw / `is rw` parameter's caller
