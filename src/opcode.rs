@@ -10078,18 +10078,6 @@ impl CompiledCode {
             .enumerate()
             .map(|(i, name)| (name.as_str(), i))
             .collect();
-        let consumes_container_tags = self.ops.iter().any(|op| {
-            matches!(
-                op,
-                OpCode::ForLoop(_)
-                    | OpCode::Given { .. }
-                    | OpCode::When { .. }
-                    | OpCode::Default { .. }
-                    | OpCode::Succeed
-                    | OpCode::SucceedBarrier { .. }
-                    | OpCode::Proceed
-            )
-        });
         // Single-store Slice E Part 2: a nested closure no longer reads its free
         // variables from this frame's flushed env — `capture_closure_env` reads
         // this frame's own locals straight from the slot store (the live upvalue).
@@ -10126,16 +10114,7 @@ impl CompiledCode {
                 // write-back resolves it by name.
                 OpCode::TagElementSource { container_idx, .. }
                 | OpCode::TagElementSourcePath { container_idx, .. } => Some(*container_idx),
-                // A container tag is read only by a topicalizer of this same
-                // chunk (`take_container_ref_for` matches the chunk's
-                // fingerprint): a `for`, `given`, `when` or `default`, which
-                // writes the tagged variable back by name. A chunk with none of
-                // them can never consume its tags, so they do not force their
-                // variable's every store into env -- `($i = nqp::sub_i($i, 1))`
-                // in a binary-search loop paid an env write per step (#15786).
-                OpCode::TagContainerRef(idx, _) | OpCode::TagContainerRefReversed(idx, _)
-                    if consumes_container_tags =>
-                {
+                OpCode::TagContainerRef(idx, _) | OpCode::TagContainerRefReversed(idx, _) => {
                     Some(*idx)
                 }
                 // An aggregate (or sigilless alias) argument: the callee may bind its
