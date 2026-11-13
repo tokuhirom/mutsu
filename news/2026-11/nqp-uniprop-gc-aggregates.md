@@ -10,3 +10,6 @@ t/109 died on `<graph>` before.
 A bracket character class that unites after a subtraction is evaluated left
 to right, as in Raku: `<[a] - [a] + [a]>` is `[a]`, where it used to match
 nothing (the later subtraction was applied to the whole class).
+
+`UInt.^refinee` is `Int`, so a loop that walks a subset chain down to its
+nominal type ends there instead of dying on the builtin subset.

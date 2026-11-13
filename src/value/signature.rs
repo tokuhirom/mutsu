@@ -997,7 +997,8 @@ pub(crate) fn make_parameter_value_for_owner(
 /// The base nominal type of a builtin subset, or `None` for any other type
 /// name. `UInt` (`subset UInt of Int where * >= 0`) is the only builtin subset
 /// with a distinct base.
-fn builtin_subset_base(name: &str) -> Option<&'static str> {
+// Cost: O(1).
+pub(crate) fn builtin_subset_base(name: &str) -> Option<&'static str> {
     match name {
         "UInt" => Some("Int"),
         _ => None,
