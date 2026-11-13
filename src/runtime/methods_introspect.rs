@@ -637,7 +637,10 @@ impl Interpreter {
             ValueView::Package(_)
                 if !self.registry().package_kinds.contains_key(&type_name)
                     && !self.registry().classes.contains_key(&type_name)
-                    && !self.registry().roles.contains_key(&type_name) =>
+                    && !self.registry().roles.contains_key(&type_name)
+                    && !self.registry().enum_types.contains_key(&type_name)
+                    && !self.registry().subsets.contains_key(&type_name)
+                    && !crate::runtime::Interpreter::is_builtin_type(&type_name) =>
             {
                 self.unique_lexical_package_key(&type_name).unwrap_or(type_name)
             }
