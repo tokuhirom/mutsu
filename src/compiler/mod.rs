@@ -1098,6 +1098,7 @@ mod decl_plan;
 mod decl_reset;
 mod enter_phaser_exprs;
 mod expr;
+mod expr_andthen;
 mod expr_binary;
 mod expr_block;
 mod expr_block_decl_helpers;

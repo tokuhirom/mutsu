@@ -504,6 +504,7 @@ impl Compiler {
                 return;
             }
             TokenKind::OrElse => {
+                let calls_rhs = Self::andthen_rhs_is_block_literal(right);
                 self.compile_expr(left);
                 self.code.emit(OpCode::SaveTopic);
                 self.code.emit(OpCode::Dup);
@@ -512,42 +513,19 @@ impl Compiler {
                 self.code.emit(OpCode::RestoreTopic);
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_undef);
-                self.code.emit(OpCode::Dup);
-                self.code.emit(OpCode::SetTopic);
-                self.compile_expr(right);
-                let finalize_name_idx = self
-                    .code
-                    .add_constant(Value::str_from("__mutsu_andthen_finalize"));
-                self.code.emit(OpCode::CallFunc {
-                    name_idx: finalize_name_idx,
-                    arity: 2,
-                    arg_sources_idx: None,
-                    literal_native_args: 0,
-                    static_arg_types: false,
-                });
+                self.compile_andthen_rhs(right, calls_rhs);
                 self.code.emit(OpCode::RestoreTopic);
                 self.code.patch_jump(jump_end);
                 return;
             }
             TokenKind::AndThen => {
+                let calls_rhs = Self::andthen_rhs_is_block_literal(right);
                 self.compile_expr(left);
                 self.code.emit(OpCode::SaveTopic);
                 self.code.emit(OpCode::Dup);
                 self.code.emit(OpCode::CallDefined);
                 let jump_undef = self.code.emit(OpCode::JumpIfFalse(0));
-                self.code.emit(OpCode::Dup);
-                self.code.emit(OpCode::SetTopic);
-                self.compile_expr(right);
-                let finalize_name_idx = self
-                    .code
-                    .add_constant(Value::str_from("__mutsu_andthen_finalize"));
-                self.code.emit(OpCode::CallFunc {
-                    name_idx: finalize_name_idx,
-                    arity: 2,
-                    arg_sources_idx: None,
-                    literal_native_args: 0,
-                    static_arg_types: false,
-                });
+                self.compile_andthen_rhs(right, calls_rhs);
                 self.code.emit(OpCode::RestoreTopic);
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_undef);

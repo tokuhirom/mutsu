@@ -2513,9 +2513,12 @@ impl Interpreter {
                     let mut native_err = None;
                     // A `Positional`-typed parameter binds a Seq through
                     // `PositionalBindFailover` (rakudo#4864), as the sub
-                    // binder does: `method m(Positional $p)` given `.map(..)`.
-                    if resolved_constraint == "Positional"
-                        && !self.type_matches_value("Positional", &val)
+                    // binder does: `method m(Positional $p)` given `.map(..)`,
+                    // and with a `:D`/`:_` smiley too (Pod::To::HTML's
+                    // `multi method node2html(Positional:D $node)`).
+                    if crate::runtime::types::binds_through_positional_failover(
+                        &resolved_constraint,
+                    ) && !self.type_matches_value("Positional", &val)
                         && self.type_matches_value("PositionalBindFailover", &val)
                     {
                         match self.coerce_positional_bind_failover(val.clone()) {
