@@ -225,6 +225,13 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = self.perl_as_raku_name(name, modifier_idx, arity);
         let quoted = name.quoted;
+        // A parameterized role receiver whose call was re-dispatched to its
+        // pun before goes to the pun directly (`parametric_role_pun_memo`).
+        if modifier_idx.is_none()
+            && let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1)
+        {
+            self.pun_memoized_parametric_receiver(receiver_idx, name.sym);
+        }
         // A raw `VMArray`/`VMHash` receiver has no methods (ADR-12666).
         if let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1)
             && crate::runtime::boot_collection::is_boot_collection_invocant(&self.stack[target_idx])

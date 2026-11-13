@@ -693,6 +693,11 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = self.perl_as_raku_name(name, modifier_idx, arity);
         let quoted = name.quoted;
+        if modifier_idx.is_none()
+            && let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1)
+        {
+            self.pun_memoized_parametric_receiver(receiver_idx, name.sym);
+        }
         // ADR-0067's subscript-receiver producer: when the receiver on the stack
         // is already a container (`IndexInvocantRef` put it there), arm slice
         // 3b's arrival channel around this dispatch so a callee that binds its
