@@ -321,6 +321,7 @@ pub(crate) mod vm_method_dispatch;
 mod vm_method_finalize;
 mod vm_method_return_spec;
 mod vm_method_role_bindings;
+mod vm_role_binding_observers;
 mod vm_method_straight;
 pub(crate) mod vm_misc_assign;
 pub(crate) mod vm_misc_block;

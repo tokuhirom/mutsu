@@ -108,6 +108,44 @@ impl Interpreter {
         memo.names
     }
 
+    /// [`Self::install_method_role_bindings`] for a compiled body `cc`, or
+    /// `None` -- installing nothing -- when the call can observe none of the
+    /// bindings (`vm_role_binding_observers`). `BUILD`/`TWEAK` always install:
+    /// their bindings come from the receiver class and coerce constructor
+    /// arguments.
+    // Cost: O(b), b = the class's and the method's bindings.
+    pub(super) fn install_observed_method_role_bindings(
+        &mut self,
+        receiver_class_name: &str,
+        owner_class: &str,
+        method_name: &str,
+        method_def: &crate::runtime::MethodDef,
+        cc: &CompiledCode,
+    ) -> Option<std::sync::Arc<[String]>> {
+        if !matches!(method_name, "BUILD" | "TWEAK") {
+            let memo = self.method_role_bindings(owner_class, receiver_class_name);
+            let own = method_def.role_binding_syms();
+            if (own.is_some() || method_def.role_param_bindings.is_none())
+                && Self::role_bindings_unobservable(
+                    method_def,
+                    cc,
+                    memo.pairs
+                        .iter()
+                        .map(|(sym, _)| sym)
+                        .chain(own.unwrap_or(&[]).iter()),
+                )
+            {
+                return None;
+            }
+        }
+        Some(self.install_method_role_bindings(
+            receiver_class_name,
+            owner_class,
+            method_name,
+            method_def,
+        ))
+    }
+
     /// The class-level bindings an ordinary (not `BUILD`/`TWEAK`) role method
     /// call installs: the owner's `class_role_param_bindings` entry, or the
     /// receiver's when the owner has none. A pure function of that table, so

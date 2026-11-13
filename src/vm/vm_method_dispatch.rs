@@ -2205,15 +2205,25 @@ impl Interpreter {
         // before the parameters bind (a `T`-typed parameter resolves `T`
         // through them), exactly as the full binder does. Their names are this
         // frame's own and are kept out of the exit merge below.
-        let has_role_bindings =
+        // A role method whose body and signature name none of its bindings
+        // skips the install (`vm_role_binding_observers`); `has_role_bindings`
+        // then also skips the re-applications below.
+        let mut has_role_bindings =
             self.method_has_role_bindings(method_def, owner_class, receiver_class_name);
         let role_binding_names: std::sync::Arc<[String]> = if has_role_bindings {
-            self.install_method_role_bindings(
+            match self.install_observed_method_role_bindings(
                 receiver_class_name,
                 owner_class,
                 method_name,
                 method_def,
-            )
+                cc,
+            ) {
+                Some(names) => names,
+                None => {
+                    has_role_bindings = false;
+                    std::sync::Arc::from([])
+                }
+            }
         } else {
             std::sync::Arc::from([])
         };
