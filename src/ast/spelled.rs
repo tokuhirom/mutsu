@@ -50,6 +50,15 @@ pub(crate) enum Spelling {
     /// `not(EXPR)` / `so(EXPR)`: the tight call form, which the parser folds
     /// into the prefix `!` / `?` but RakuAST keeps as a `Call::Name` of the sub.
     PrefixCall,
+    /// `!$x` with a user `multi prefix:<!>` in scope: the parser calls the
+    /// operator routine (`prefix:<!>($x)`), but RakuAST keeps the operator
+    /// application `ApplyPrefix(Prefix("!"))` of a core prefix symbol.
+    UserPrefixOperator,
+    /// `$<x>:exists` / `$0:delete`: subscript adverbs on capture-variable
+    /// sugar. The parser evaluates the subscript of `$/` it stands for; RakuAST
+    /// keeps the `Var::NamedCapture` / `Var::PositionalCapture` with its
+    /// `colonpairs`.
+    CaptureAdverbs,
     /// `a !< b` / `a !eq b`: the parser evaluates this as `!(a < b)` but
     /// RakuAST keeps the `MetaInfix::Negate` at the infix application.
     NegatedInfix,

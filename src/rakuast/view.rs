@@ -2510,6 +2510,12 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 class: RakuAstClass::StatementEmpty,
                 fields: Vec::new(),
             }),
+            Spelling::CaptureAdverbs => super::match_vars::view_with_adverbs(names, &spelled.expr),
+            Spelling::UserPrefixOperator => {
+                super::user_prefix::view_core_override(names, &spelled.expr).unwrap_or_else(|| {
+                    Err(unsupported("user prefix operator spelling without its call"))
+                })
+            }
             Spelling::PrefixCall => {
                 let Expr::Unary { op, expr, .. } = &spelled.expr else {
                     return Err(unsupported("prefix call spelling without its prefix"));

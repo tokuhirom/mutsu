@@ -48,6 +48,12 @@ pub(crate) struct DispatchState {
     /// `infix:<~>` (`exec_string_concat_op`, #15932): an interpolation inside
     /// that candidate's own body stringifies plainly instead of re-entering it.
     pub(crate) string_concat_user_fold: bool,
+    /// While a unit runs its CHECK-rewritten tree in place of its compiled
+    /// program (#17501): the multi candidate keys the tree has (re)declared so
+    /// far. The tree declares the program's own candidates again, each of which
+    /// replaces the program's copy instead of joining it as a second, identical
+    /// overload. `None` outside such a run.
+    pub(crate) rewritten_unit_candidates: Option<HashSet<Symbol>>,
     /// Ids of the captured multi dispatchers currently being dispatched by
     /// name because their family only grew since the capture (#15925): a
     /// second entry for the same dispatcher (its by-name call resolving back

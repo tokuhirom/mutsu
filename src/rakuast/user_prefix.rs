@@ -65,3 +65,57 @@ pub(super) fn lower(symbol: &str, operand: Expr) -> Expr {
         listop: false,
     }
 }
+
+/// Whether the routine `name` is a user candidate of a core prefix operator
+/// (`prefix:<!>`), whose operator-syntax application the parser spells
+/// [`crate::ast::spelled::Spelling::UserPrefixOperator`].
+// Cost: O(k), k = name length.
+pub(crate) fn user_prefix_overrides_core(name: &str) -> bool {
+    name.strip_prefix("prefix:<")
+        .and_then(|s| s.strip_suffix('>'))
+        .is_some_and(|symbol| !symbol.is_empty() && is_core_prefix(symbol))
+}
+
+/// The `ApplyPrefix` the call of a user candidate of a core prefix operator,
+/// written as the operator (`!$x`), stands for: its `Prefix` remembers that
+/// the operator routine is a user one, so [`lower`] calls it again.
+// Cost: O(n), n = size of the operand.
+pub(super) fn view_core_override(
+    names: &NameScope,
+    call: &Expr,
+) -> Option<Result<RakuAstNode, RuntimeError>> {
+    let Expr::Call { name, args, .. } = call else {
+        return None;
+    };
+    let symbol = name
+        .as_str()
+        .strip_prefix("prefix:<")?
+        .strip_suffix('>')?
+        .to_string();
+    let [operand] = args.as_slice() else {
+        return None;
+    };
+    Some(view_expr(names, operand).map(|operand| {
+        let mut prefix = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::Prefix,
+            fields: vec![leaf_field(None, Value::str(symbol))],
+        };
+        prefix.origin.3 = Some(USER_PREFIX_MARK.into());
+        RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::ApplyPrefix,
+            fields: vec![node_field(Some("prefix"), prefix), node_field(Some("operand"), operand)],
+        }
+    }))
+}
+
+/// The origin mark of a `Prefix` node whose operator is a user routine.
+const USER_PREFIX_MARK: &str = "user-prefix";
+
+/// Whether the `Prefix` node `prefix` stands for a user operator routine
+/// ([`view_core_override`]).
+// Cost: O(1).
+pub(super) fn is_user_override(prefix: &RakuAstNode) -> bool {
+    prefix.origin.3.as_deref() == Some(USER_PREFIX_MARK)
+}

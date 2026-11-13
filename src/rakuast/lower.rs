@@ -4541,8 +4541,8 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         | RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration => lower_anon_regex_declaration(names, node),
         // `$<name>` / `@<name>`.
-        RakuAstClass::VarNamedCapture => super::match_vars::lower(node),
-        RakuAstClass::VarPositionalCapture => super::match_vars::lower_positional(node),
+        RakuAstClass::VarNamedCapture => super::match_vars::lower(names, node),
+        RakuAstClass::VarPositionalCapture => super::match_vars::lower_positional(names, node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(names, node),
         // `(temp $x)` / `(let $x = 1)`: the parser's save, wrapped in a `DoStmt`.
         RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
@@ -5506,9 +5506,11 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     word: true,
                 });
             }
-            // A prefix the core does not define is a user-declared operator.
+            // A prefix the core does not define is a user-declared operator,
+            // and so is a core one the parser saw a user candidate of.
             if let ValueView::Str(symbol) = positional_leaf(prefix)?.view()
-                && !super::user_prefix::is_core_prefix(&symbol)
+                && (!super::user_prefix::is_core_prefix(&symbol)
+                    || super::user_prefix::is_user_override(prefix))
             {
                 return Ok(super::user_prefix::lower(&symbol, operand));
             }

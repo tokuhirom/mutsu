@@ -129,6 +129,11 @@ impl Interpreter {
             ValueView::Mixin(inner, _) => Value::clone(inner),
             _ => obj.clone(),
         };
+        // A RakuAST node keeps its attributes as the node's fields (Red reads a
+        // capture's `$!colonpairs` this way).
+        if let ValueView::RakuAst(node) = obj.view() {
+            return Ok(crate::rakuast::attribute_value(&node, &attr_name));
+        }
         if let ValueView::Instance {
             attributes: obj_attrs,
             ..

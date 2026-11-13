@@ -320,6 +320,13 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![arg],
                 listop: false,
             };
+            // A user candidate of a core prefix (`multi prefix:<!>`) is still
+            // the operator application in RakuAST (Red's `!$/.defined`).
+            if crate::rakuast::user_prefix_overrides_core(&name) {
+                result = Expr::spelled(result, || {
+                    crate::ast::spelled::Spelling::UserPrefixOperator
+                });
+            }
             // Apply loose postfix operators (declared `is looser(&prefix:<...>)`)
             loop {
                 if let Some((post_name, post_len)) =
@@ -1043,7 +1050,9 @@ fn postfix_expr_loop_from<'a>(
                 spelling: Default::default(),
             };
             if let Some((r, pairs)) = scan_subscript_adverbs(rest) {
-                expr = subscript_adverbs_expr(target, pairs);
+                expr = Expr::spelled(subscript_adverbs_expr(target, pairs), || {
+                    crate::ast::spelled::Spelling::CaptureAdverbs
+                });
                 rest = r;
                 continue;
             }
@@ -1063,7 +1072,9 @@ fn postfix_expr_loop_from<'a>(
                 spelling: Default::default(),
             };
             if let Some((r, pairs)) = scan_subscript_adverbs(rest) {
-                expr = subscript_adverbs_expr(target, pairs);
+                expr = Expr::spelled(subscript_adverbs_expr(target, pairs), || {
+                    crate::ast::spelled::Spelling::CaptureAdverbs
+                });
                 rest = r;
                 continue;
             }

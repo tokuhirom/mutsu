@@ -8,7 +8,7 @@ use nqp;
 # A unit-level `LEAVE $schema.drop` in Red's t/112 used to run a second time on
 # an unset `$schema`.
 
-plan 4;
+plan 7;
 
 CHECK {
     sub walk($n) {
@@ -22,9 +22,20 @@ CHECK {
     walk($*CU);
 }
 
+class A { }
+multi foo(A $a) { 'a' }
+multi foo(Int $a) { 'int' }
+multi prefix:<!>(A $a) { 'user !' }
+
 my $set = 'set';
 LEAVE is $set, 'set', 'the LEAVE phaser runs once, with the mainline value';
 END pass 'the END phaser runs once';
 
 is 'abc'.flip, 'zyx', 'the rewritten operand runs';
 is 'b' x 3 ~ 'a', 'bbba', 'the rest of the unit runs as written';
+
+# The tree declares the unit's multi candidates again: each replaces its
+# first copy instead of making every call ambiguous.
+is foo(A.new), 'a', 'a multi candidate of the unit dispatches once';
+is foo(1), 'int', 'and so does its sibling';
+is !A.new, 'user !', 'a user candidate of a core prefix still applies';
