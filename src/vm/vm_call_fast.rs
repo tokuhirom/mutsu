@@ -282,8 +282,7 @@ impl Interpreter {
                     // targeted return (`vm_call_light.rs`). Only that kind:
                     // this path binds no callable id, so an ordinary `return`
                     // of the routine's own carries the caller's stamp.
-                    if e
-                        .catch_return_passes_frame(routine_frame_index)
+                    if e.catch_return_passes_frame(routine_frame_index)
                         .unwrap_or_else(|| {
                             e.raised_by_catch().is_some()
                                 && e.return_target_callable_id().is_some_and(|target_id| {
