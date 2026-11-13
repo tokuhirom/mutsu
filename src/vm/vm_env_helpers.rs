@@ -2911,7 +2911,17 @@ impl Interpreter {
                     // S12-construction/BUILD.t). Move it to the retain-on-miss
                     // caller-var list so the owning frame's drain refreshes its slot
                     // instead of leaving it stale.
-                    self.pending_caller_var_writeback.insert(source);
+                    //
+                    // Except a compiler bind temp (`__mutsu_bind_index_ref_N`, the
+                    // per-site wrapper around a subscript's element reference): it
+                    // is an env name of the frame that made it, never a local of any
+                    // frame, so no drain up the stack can claim it, and a same-named
+                    // temp of another chunk (`N` is per chunk) is a different
+                    // binding. Retained, it stayed in the list for the life of the
+                    // frame chain and every later call drained it again (#17331).
+                    if !source.starts_with("__mutsu_bind_index_ref_") {
+                        self.pending_caller_var_writeback.insert(source);
+                    }
                 }
             }
         }
