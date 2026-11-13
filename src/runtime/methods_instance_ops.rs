@@ -131,7 +131,7 @@ impl Interpreter {
     /// itself when a method runs on one (`T.all` whose lazy `gather { self!all }`
     /// is pulled later, outside the method; Trie).
     // Cost: O(1).
-    pub(crate) fn lexical_self_class(&self) -> Option<Symbol> {
+    fn lexical_self_class(&self) -> Option<Symbol> {
         let self_value = self.frame_invocant();
         match self_value.as_ref().map(Value::view) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name),

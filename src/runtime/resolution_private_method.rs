@@ -378,28 +378,11 @@ impl Interpreter {
         real
     }
 
-    /// Whether a `self!name(...)` call may take the compiled private-method
-    /// path: its caller is the method's own class. The running method's class
-    /// answers first; a block that runs outside any method frame of its class
-    /// (a closure cued to the scheduler runs in a fork whose method stack is
-    /// empty, #17337) is asked the way the general private dispatch asks it:
-    /// by the class of the `self` it closes over (the general path's
-    /// `lexical_self_is_private_owner`), then by its lexical package
-    /// (`private_calling_package`).
-    // Cost: O(1) on the method-stack and lexical-`self` answers; the lexical
-    // package adds one registry probe and a package-name copy.
     pub(crate) fn can_fast_dispatch_private_method_vm(&self, owner_class: &str) -> bool {
-        if self
-            .types
+        self.types
             .method_class_stack
             .last()
             .is_some_and(|caller| caller.name == owner_class)
-        {
-            return true;
-        }
-        self.lexical_self_class()
-            .is_some_and(|class| class.as_str() == owner_class)
-            || self.private_calling_package().as_deref() == Some(owner_class)
     }
 
     /// Resolve the MRO for `class_name`. Tries the read-only resolution first
