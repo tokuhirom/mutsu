@@ -871,10 +871,18 @@ impl Interpreter {
         }
         // `%h{...}` obeys different rules (no index numification, key
         // encoding), so it has its own twin below.
-        if !is_positional {
-            return Self::hash_fast_path_element(&self.stack[n - 2], &self.stack[n - 1]);
+        let elem = if is_positional {
+            Self::plain_positional_element(&self.stack[n - 2], &self.stack[n - 1])
+        } else {
+            Self::hash_fast_path_element(&self.stack[n - 2], &self.stack[n - 1])
+        }?;
+        // A user `postcircumfix:<[ ]>`/`<{ }>` candidate (`Int @a, Int $p`)
+        // outranks the CORE subscript for the arrays and hashes it accepts:
+        // leave the read to the general path, which resolves it.
+        if self.user_subscript_routine_may_answer(is_positional) {
+            return None;
         }
-        Self::plain_positional_element(&self.stack[n - 2], &self.stack[n - 1])
+        Some(elem)
     }
 
     /// The positional half of [`Self::index_fast_path_element`] on an explicit
