@@ -157,9 +157,10 @@ impl Interpreter {
     #[inline]
     pub(super) fn readonly_term_holds_value(&self, code: &CompiledCode, slot: u32) -> bool {
         code.readonly_term_slot(slot as usize)
-            && self.locals.get(slot as usize).is_some_and(|v| {
-                !v.is_container_ref() && !v.is_proxy_value() && !v.is_varref()
-            })
+            && self
+                .locals
+                .get(slot as usize)
+                .is_some_and(|v| !v.is_container_ref() && !v.is_proxy_value() && !v.is_varref())
     }
 
     /// An assignment to a lean readonly term: what the env-marker branch of
