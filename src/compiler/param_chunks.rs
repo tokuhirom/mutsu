@@ -213,6 +213,7 @@ impl Compiler {
         crate::opcode::CompiledDeclExpr {
             code: std::sync::Arc::new(code),
             fns: std::sync::Arc::new(fns),
+            reads_attributes: true,
         }
     }
 }

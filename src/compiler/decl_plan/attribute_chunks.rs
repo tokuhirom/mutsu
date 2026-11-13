@@ -20,11 +20,15 @@ impl Compiler {
         AttrDeclChunks {
             is_default: is_default.as_ref().map(|e| self.compile_decl_trait_arg(e)),
             default: default.as_ref().map(|expr| {
-                if *is_built == Some(crate::ast::BuiltTrait::Bind) {
+                let mut arg = if *is_built == Some(crate::ast::BuiltTrait::Bind) {
                     self.compile_bound_attribute_default(expr)
                 } else {
                     self.compile_decl_trait_arg(expr)
+                };
+                if let crate::opcode::DeclTraitArg::Compiled(chunk) = &mut arg {
+                    chunk.reads_attributes = super::attr_ref_scan::may_read_attributes(expr);
                 }
+                arg
             }),
             where_constraint: where_constraint
                 .as_deref()

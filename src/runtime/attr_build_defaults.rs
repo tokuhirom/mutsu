@@ -422,8 +422,16 @@ impl Interpreter {
         // its default resolves bare names through THAT package's import
         // aliases and file-scope lexicals (#8842).
         let decl_package = declaring_package.unwrap_or(class_key);
-        let mut saved_attr_env: Vec<(Symbol, Option<Value>)> = Vec::with_capacity(attrs.len() * 2);
-        for (a_name, a_val) in attrs {
+        // A default that names no attribute (`Lock.new`, `now`, `[]`) runs
+        // without the `!x`/`.x` bindings: setting them up and restoring them
+        // is O(attributes) per default (`attr_ref_scan`).
+        let binds_attributes = match arg {
+            DeclTraitArg::Compiled(chunk) => chunk.reads_attributes,
+            _ => true,
+        };
+        let mut saved_attr_env: Vec<(Symbol, Option<Value>)> =
+            Vec::with_capacity(if binds_attributes { attrs.len() * 2 } else { 0 });
+        for (a_name, a_val) in attrs.iter().filter(|_| binds_attributes) {
             let (bang, dot) = super::attr_env_keys::attr_env_keys(*a_name);
             saved_attr_env.push((bang, self.env.get_sym(bang).cloned()));
             saved_attr_env.push((dot, self.env.get_sym(dot).cloned()));

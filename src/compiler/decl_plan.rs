@@ -5,6 +5,7 @@
 //! trait (`is native(LIB)`). They are compiled here, once, into child chunks the
 //! VM runs through its normal re-entrant bytecode entry at registration time.
 use super::*;
+mod attr_ref_scan;
 mod attribute_chunks;
 
 impl Compiler {
@@ -83,6 +84,7 @@ impl Compiler {
         crate::opcode::CompiledDeclExpr {
             code: std::sync::Arc::new(code),
             fns: std::sync::Arc::new(fns),
+            reads_attributes: true,
         }
     }
 
@@ -167,6 +169,7 @@ impl Compiler {
         crate::opcode::CompiledDeclExpr {
             code: std::sync::Arc::new(code),
             fns: std::sync::Arc::new(fns),
+            reads_attributes: true,
         }
     }
 

@@ -5300,6 +5300,10 @@ pub(crate) struct EnvConsumerSlots {
 pub(crate) struct CompiledDeclExpr {
     pub(crate) code: Arc<CompiledCode>,
     pub(crate) fns: Arc<CompiledFns>,
+    /// An attribute default that may read the object's attributes through
+    /// `$!x`/`$.x` (`compiler::decl_plan::attr_ref_scan`); `false` lets the
+    /// default run without binding them. `true` for every other chunk.
+    pub(crate) reads_attributes: bool,
 }
 
 /// The argument of a declaration trait.
