@@ -149,6 +149,8 @@ impl Interpreter {
     /// [`Self::try_iterator_site_lane`] chose. `None` when the row's handler
     /// declines the receiver; the stack is then untouched.
     // Cost: O(1) plus the row's handler.
+    // Debug builds run the full path instead (see the module docs).
+    #[cfg_attr(debug_assertions, allow(dead_code))]
     pub(super) fn run_iterator_site_lane(
         &mut self,
         code: &CompiledCode,

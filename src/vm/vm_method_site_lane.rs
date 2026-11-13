@@ -75,6 +75,7 @@ impl SiteLaneAnswer {
     /// The answer of an interpreter row (it has effects, so it is not re-run
     /// by the debug cross-check).
     // Cost: O(1).
+    #[cfg_attr(debug_assertions, allow(dead_code))]
     pub(super) fn interpreter_row(
         result: Result<Value, RuntimeError>,
         row: RowId,
