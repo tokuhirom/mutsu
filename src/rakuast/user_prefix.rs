@@ -124,17 +124,14 @@ pub(super) fn is_user_override(prefix: &RakuAstNode) -> bool {
 }
 
 /// The tree of a `Spelling::UserPrefixOperator`: the operator application a
-/// user candidate of a core prefix keeps.
+/// user candidate of a core prefix keeps, or the call itself when it carries
+/// more than the operand (`!$x :adv`), which lowers back to that call.
 // Cost: as `view_core_override`.
 pub(super) fn view_spelled_core(
     names: &NameScope,
     call: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
-    view_core_override(names, call).unwrap_or_else(|| {
-        Err(unsupported(
-            "user prefix operator spelling without its call",
-        ))
-    })
+    view_core_override(names, call).unwrap_or_else(|| view_expr(names, call))
 }
 
 /// The tree of a `Spelling::PrefixCall`: `not`/`so` written as a call
