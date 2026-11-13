@@ -287,6 +287,15 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(Value::str(s));
     }
+    // A resolution's copy of a routine reads its body from the declaration.
+    if method == "body"
+        && super::routine_stub::is_stub(node)
+        && let Some(body) = crate::unit_source_text::with_active_cu(|cu| {
+            super::routine_stub::declaration_field(cu, node, "body")
+        })
+    {
+        return Some(body);
+    }
     // A field the class DECLARES but this node does not carry still answers:
     // rakudo models every field as an attribute, so an absent optional clause
     // reads as an undefined type object (or `()` / `False` / `0`) rather than

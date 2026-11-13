@@ -25,8 +25,43 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
 }
 
 /// The comparison operators (if any) that follow an already-parsed `left`
-/// operand.
-fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Expr> {
+/// operand. A single comparison whose operator a user candidate exactly
+/// shadows (`multi infix:<==>`) keeps the comparison's precedence and is the
+/// call of that operator, as the declared operator's own path builds it, so
+/// the candidate's `is rw` parameters bind the operands' containers.
+// Cost: as the comparison it parses, plus one user-operator probe.
+fn comparison_tail(rest: &str, left: Expr, mode: ExprMode) -> PResult<'_, Expr> {
+    let shadowed = ws(rest).ok().and_then(|(r, _)| {
+        let (_, ulen) = crate::parser::stmt::simple::match_user_declared_infix_symbol_op(r)?;
+        let (op, len) = parse_comparison_op(r)?;
+        (len == ulen).then(|| (op.token_kind(), r[..len].to_string()))
+    });
+    let (r, expr) = comparison_tail_ops(rest, left, mode)?;
+    Ok((r, shadowed_comparison_call(expr, shadowed)))
+}
+
+/// `expr` as the call of the user operator that exactly shadows its
+/// comparison (`shadowed`: the operator's token and spelling), when it is that
+/// one comparison; else `expr` unchanged.
+// Cost: O(1).
+fn shadowed_comparison_call(expr: Expr, shadowed: Option<(TokenKind, String)>) -> Expr {
+    match (expr, shadowed) {
+        (
+            Expr::Binary {
+                left, op, right, ..
+            },
+            Some((kind, name)),
+        ) if op == kind => Expr::InfixFunc {
+            name,
+            left,
+            right: vec![*right],
+            modifier: None,
+        },
+        (expr, _) => expr,
+    }
+}
+
+fn comparison_tail_ops(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Expr> {
     fn regex_rhs_needs_more_parsing(rest: &str) -> bool {
         let Ok((rest, _)) = ws(rest) else {
             return false;
@@ -189,12 +224,12 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
             .map(|(_, l)| l)
             .or_else(|| parse_negated_meta_comparison_op(r).map(|(_, l)| l))
             .unwrap_or(0);
-        // `>=`, not `>`: a user symbol infix that EXACTLY shadows the built-in
-        // comparison (`multi sub infix:<==>`) must also route to the list-infix
-        // layer, which dispatches through the user candidate (falling back to the
-        // built-in for non-matching argument types). A built-in comparison with no
-        // user candidate returns `None` above and is unaffected.
-        if cmp_len > 0 && ulen >= cmp_len {
+        // Only a LONGER user symbol leaves the comparison: one that exactly
+        // shadows it (`multi sub infix:<==>`, `multi infix:«<»` as Red exports)
+        // adds a candidate to the core operator, which keeps the comparison's
+        // precedence (`3 < 1 + 3`) and dispatches to the user candidate when it
+        // runs (`user_infix_override`).
+        if cmp_len > 0 && ulen > cmp_len {
             return Ok((rest, left));
         }
     }

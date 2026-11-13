@@ -1301,6 +1301,14 @@ impl Interpreter {
         args: &[Value],
         skip_native: bool,
     ) -> Result<(Value, Value), RuntimeError> {
+        // The descent follows the structure, so a list that contains itself
+        // recurses without end: refuse with a catchable exception before the
+        // native stack runs out (docs/security.md).
+        if crate::native_stack::headroom_exhausted() {
+            return Err(RuntimeError::new(
+                crate::native_stack::DEEP_RECURSION_MESSAGE,
+            ));
+        }
         // An element that is an array slot's cell (`($x[0], $x[1])`, an
         // element read off a `Match`'s capture array) is dispatched on what it
         // holds, as the top-level loop does: handing the cell itself to the

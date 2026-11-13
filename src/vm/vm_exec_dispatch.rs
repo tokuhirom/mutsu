@@ -7870,7 +7870,14 @@ impl Interpreter {
                         &mut self.module.suppress_cross_eval_class_redeclaration_check,
                         true,
                     );
+                    // The tree declares the program's multi candidates again:
+                    // each replaces the program's copy (`insert_multi_overload`).
+                    let outer_candidates = self
+                        .dispatch
+                        .rewritten_unit_candidates
+                        .replace(Default::default());
                     let result = self.eval_rakuast_node(&cu);
+                    self.dispatch.rewritten_unit_candidates = outer_candidates;
                     self.module.suppress_cross_eval_class_redeclaration_check = outer;
                     // Its LEAVE phasers too (`run_unit` reads the flag).
                     self.control.mainline_superseded |= main_unit;

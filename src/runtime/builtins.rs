@@ -628,6 +628,7 @@ impl Interpreter {
                 };
                 self.redispatch_after_dispatcher_wrap(invocant, &name.to_string_value(), it.collect())
             }
+            "__mutsu_nextcallee_continue" => self.builtin_nextcallee_continue(args),
             // Multi dispatch control flow
             "callsame" => self.builtin_callsame(),
             "nextsame" => self.builtin_nextsame(),

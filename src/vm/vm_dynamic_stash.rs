@@ -70,11 +70,16 @@ impl Interpreter {
         let slots = self.locals.all_slots();
         let mut region_end = self.locals.base();
         for frame in self.call_frames.iter().rev() {
-            let Some(base) = frame.saved_locals_base.as_ref().map(|b| b.base()) else {
-                continue;
+            // A frame that saved no slot region (a call that kept the
+            // caller's slots) still names its caller's code and env.
+            let region = match frame.saved_locals_base.as_ref().map(|b| b.base()) {
+                Some(base) => {
+                    let region = slots.get(base..region_end).unwrap_or(&[]);
+                    region_end = base;
+                    region
+                }
+                None => &[],
             };
-            let region = slots.get(base..region_end).unwrap_or(&[]);
-            region_end = base;
             if frame.caller_code != 0 {
                 // SAFETY: `caller_code` is the address of the `CompiledCode`
                 // the caller was running when it pushed this frame; that
@@ -99,6 +104,16 @@ impl Interpreter {
             if let Some(value) = frame.saved_env.get_sym_in_frame(sym) {
                 return Some(value.clone());
             }
+        }
+        // A nested run (the closure `map` calls) starts a `call_frames` of
+        // its own; the frames it hides are still on the caller env stack.
+        // A light call pushes no frame: its env chains over the caller's.
+        if dynamic {
+            return self
+                .env()
+                .get_sym_in_tiers(sym)
+                .or_else(|| self.caller_frame_binding(sym))
+                .cloned();
         }
         None
     }

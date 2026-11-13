@@ -17,6 +17,17 @@ fn has_placeholder_parameters(target: &Value, _args: &[Value]) -> Result<Value, 
     Ok(answer.unwrap_or(Value::NIL))
 }
 
+// Cost: O(n + p log p), n = size of the block's own body, p = placeholders.
+fn placeholder_signature(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let answer = native_node(target).and_then(|base| match base.view() {
+        ValueView::RakuAst(node) => {
+            Some(crate::rakuast::block_queries::placeholder_signature(node))
+        }
+        _ => None,
+    });
+    Ok(answer.unwrap_or(Value::NIL))
+}
+
 // Cost: O(s), s = top-level statements of the block's body.
 fn has_any_phasers(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     let answer = native_node(target).and_then(|base| match base.view() {
@@ -166,6 +177,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "has-placeholder-parameters",
         arity: 0,
         handler: Handler::Pure(has_placeholder_parameters),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "RakuAST::PlaceholderParameterOwner",
+        name: "placeholder-signature",
+        arity: 0,
+        handler: Handler::Pure(placeholder_signature),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },

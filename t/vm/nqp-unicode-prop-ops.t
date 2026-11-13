@@ -18,7 +18,7 @@ subtest 'unipropcode', {
     is $al, 33, 'Alphabetic';
     is nqp::unipropcode('alphabetic'), 33, 'the lowercased spelling';
     is nqp::unipropcode('space'), 111, 'an alias (White_Space)';
-    throws-like { nqp::unipropcode('Block') }, Exception, message => /unsupported/,
+    throws-like { nqp::unipropcode('Line_Break') }, Exception, message => /unsupported/,
         'a property mutsu cannot answer dies rather than inventing a handle';
 }
 

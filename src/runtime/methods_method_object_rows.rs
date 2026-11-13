@@ -193,6 +193,30 @@ impl Interpreter {
                         )));
                     }
                 }
+                // `.is-wrapped` on a Method candidate `Instance`: whether the
+                // `.wrap` block above registered a wrapper still in place.
+                if method == "is-wrapped"
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = target.view()
+                    && self.is_method_object_class(&class_name.resolve())
+                {
+                    let am = attributes.as_map();
+                    let wrapped = match (
+                        am.get("__mutsu_lookup_class").map(Value::view),
+                        am.get("__mutsu_lookup_method").map(Value::view),
+                        super::dispatcher_wrap::method_object_wrap_slot(&am),
+                    ) {
+                        (Some(ValueView::Str(cls)), Some(ValueView::Str(meth)), Some(idx)) => self
+                            .registry()
+                            .method_wrap_chain(&cls, &meth, idx)
+                            .is_some_and(|chain| !chain.is_empty()),
+                        _ => false,
+                    };
+                    return Some(Ok(Value::truth(wrapped)));
+                }
                 // `.unwrap` on a Method candidate `Instance`, mirroring the
                 // `.wrap` block above and `dispatch_sub_method`'s equivalent
                 // for the older Sub-shaped candidate (ADR-0019 E10; the same

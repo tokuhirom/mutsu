@@ -3792,11 +3792,15 @@ impl Interpreter {
                                         } else if let Some(pos) = at_position(negated_name) {
                                             // <!at(N)> — not at position N
                                             RegexAtom::AtPosition(pos, true)
-                                        } else if negated_name == "same" || negated_name == ".same"
+                                        } else if (negated_name == "same" || negated_name == ".same")
+                                            && !self.regex_name_is_grammar_token("same")
                                         {
                                             // <!same> — zero-width assertion: next two chars are different
                                             RegexAtom::SameAssertion { negated: true }
-                                        } else if matches!(negated_name, "wb" | ".wb" | "|w") {
+                                        } else if negated_name == "|w"
+                                            || (matches!(negated_name, "wb" | ".wb")
+                                                && !self.regex_name_is_grammar_token("wb"))
+                                        {
                                             // <!wb> / <!|w> — zero-width assertion: NOT at a word
                                             // boundary
                                             RegexAtom::WordBoundary { negated: true }
@@ -3804,7 +3808,9 @@ impl Interpreter {
                                             // Every position is such a boundary, so the
                                             // negation never holds: the `<!>` always-fail.
                                             RegexAtom::Named("!".into())
-                                        } else if negated_name == "ww" || negated_name == ".ww" {
+                                        } else if (negated_name == "ww" || negated_name == ".ww")
+                                            && !self.regex_name_is_grammar_token("ww")
+                                        {
                                             // <!ww> — zero-width assertion: NOT within a word
                                             RegexAtom::WithinWord { negated: true }
                                         } else if negated_name.starts_with('+')
@@ -4436,13 +4442,19 @@ impl Interpreter {
                                             negated: false,
                                             is_behind: false,
                                         }
-                                    } else if trimmed == "?same" || trimmed == "?.same" {
+                                    } else if (trimmed == "?same" || trimmed == "?.same")
+                                        && !self.regex_name_is_grammar_token("same")
+                                    {
                                         // <?same> — zero-width assertion: next two chars are the same
                                         RegexAtom::SameAssertion { negated: false }
-                                    } else if trimmed == "?wb" || trimmed == "?.wb" {
+                                    } else if (trimmed == "?wb" || trimmed == "?.wb")
+                                        && !self.regex_name_is_grammar_token("wb")
+                                    {
                                         // <?wb> — zero-width assertion: at a word boundary
                                         RegexAtom::WordBoundary { negated: false }
-                                    } else if trimmed == "?ww" || trimmed == "?.ww" {
+                                    } else if (trimmed == "?ww" || trimmed == "?.ww")
+                                        && !self.regex_name_is_grammar_token("ww")
+                                    {
                                         // <?ww> — zero-width assertion: within a word
                                         RegexAtom::WithinWord { negated: false }
                                     } else if matches!(

@@ -94,5 +94,6 @@ mod metamodel_new_type;
 mod metamodel_role_how;
 mod method_dispatch_frame;
 mod method_dispatch_lazy;
+mod nextcallee_chain;
 pub(crate) mod method_dispatch_lazy_tail;
 mod method_object_bound;

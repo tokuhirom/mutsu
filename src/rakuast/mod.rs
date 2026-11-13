@@ -9,6 +9,7 @@ mod accessors;
 mod adverb_origins;
 mod model_methods;
 mod positional_fields;
+mod routine_stub;
 pub use accessors::node_accessor;
 pub(crate) use doc_source::{origin_pod_source, pod_source};
 #[cfg(test)]
@@ -236,6 +237,7 @@ mod unspell;
 mod use_origins;
 mod use_stmt;
 mod user_prefix;
+pub(crate) use user_prefix::user_prefix_overrides_core;
 mod var_decl_constructor;
 mod var_does;
 mod var_will;
@@ -274,7 +276,9 @@ pub struct NodeOrigin(
     /// What `RakuAST::Lookup.resolution` answers (see [`resolve`]).
     pub Option<Value>,
     /// The package a `Method`'s implicit invocant parameter is typed by
-    /// (`implicit_signature`); `None` outside a package.
+    /// (`implicit_signature`); `None` outside a package. On a `Prefix` node,
+    /// the mark that its operator is a user routine (`user_prefix`); on a
+    /// parsed `Var::PositionalCapture`, its written sigil (`match_vars`).
     pub Option<Box<str>>,
     /// The routine `meta-object` built for a routine node not declared yet
     /// (a slang action at parse time), so every call answers the same object,
@@ -4067,7 +4071,32 @@ pub fn local_attribute_names(class_name: &str) -> Option<Vec<&'static str>> {
     if let Some(names) = inherited_fields::local_names(class_name) {
         return Some(names);
     }
-    class_from_name(class_name).map(accessor_names)
+    class_from_name(class_name).map(|class| {
+        let mut names = accessor_names(class);
+        // A positional capture keeps its subscript adverbs (`$0:exists`) in
+        // `$!colonpairs` too, with no public accessor (rakudo 2026.09).
+        if class == RakuAstClass::VarPositionalCapture && !names.contains(&"colonpairs") {
+            names.push("colonpairs");
+        }
+        names
+    })
+}
+
+/// What `Attribute.get_value($node)` reads from a RakuAST node: the field the
+/// attribute `$!name` stores, an empty list for an absent `colonpairs`, and
+/// otherwise whatever the accessor of that name answers.
+// Cost: O(f), f = fields of the node.
+pub(crate) fn attribute_value(node: &RakuAstNode, attribute: &str) -> Value {
+    let bare = attribute
+        .trim_start_matches(['$', '@', '%', '&'])
+        .trim_start_matches(['!', '.']);
+    if let Some(field) = node.fields.iter().find(|f| f.name == Some(bare)) {
+        return field_to_value(&field.value);
+    }
+    if bare == "colonpairs" {
+        return Value::array(Vec::new());
+    }
+    node_accessor(node, bare).unwrap_or(Value::NIL)
 }
 
 fn class_from_name(class_name: &str) -> Option<RakuAstClass> {

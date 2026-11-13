@@ -2510,27 +2510,11 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 class: RakuAstClass::StatementEmpty,
                 fields: Vec::new(),
             }),
-            Spelling::PrefixCall => {
-                let Expr::Unary { op, expr, .. } = &spelled.expr else {
-                    return Err(unsupported("prefix call spelling without its prefix"));
-                };
-                let name = match op {
-                    crate::token_kind::TokenKind::Bang => "not",
-                    crate::token_kind::TokenKind::Question => "so",
-                    _ => return Err(unsupported("prefix call spelling of an unknown prefix")),
-                };
-                Ok(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::CallName,
-                    fields: vec![
-                        node_field(Some("name"), name_from_identifier(name)),
-                        node_field(
-                            Some("args"),
-                            arg_list(names, std::slice::from_ref(&**expr))?,
-                        ),
-                    ],
-                })
+            Spelling::CaptureAdverbs => super::match_vars::view_with_adverbs(names, &spelled.expr),
+            Spelling::UserPrefixOperator => {
+                super::user_prefix::view_spelled_core(names, &spelled.expr)
             }
+            Spelling::PrefixCall => super::user_prefix::view_prefix_call(names, &spelled.expr),
             Spelling::NegatedInfix => {
                 let Expr::Unary {
                     op: crate::token_kind::TokenKind::Bang,

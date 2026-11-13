@@ -346,6 +346,7 @@ impl Interpreter {
         def: FunctionDef,
     ) -> Option<Symbol> {
         let def = std::sync::Arc::new(def);
+        let mut redeclared = self.dispatch.rewritten_unit_candidates.take();
         let installed = {
             let mut registry = self.registry_mut();
             let funcs = registry.functions_mut();
@@ -355,7 +356,10 @@ impl Interpreter {
                 match funcs.entry(key) {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(def);
-                        break key;
+                        if let Some(keys) = redeclared.as_mut() {
+                            keys.insert(key);
+                        }
+                        break Some(key);
                     }
                     // A parametric role body re-runs once per composition, so
                     // the same `multi sub` declaration arrives again under the
@@ -365,7 +369,17 @@ impl Interpreter {
                         if existing.get().package == def.package
                             && existing.get().body_fingerprint() == def.body_fingerprint() =>
                     {
-                        return None;
+                        break None;
+                    }
+                    // The rewritten tree's declaration of a candidate the
+                    // replaced program declared: it takes that candidate's
+                    // place (the n-th same-shaped candidate replaces the n-th).
+                    std::collections::hash_map::Entry::Occupied(mut existing)
+                        if existing.get().package == def.package
+                            && redeclared.as_mut().is_some_and(|keys| keys.insert(key)) =>
+                    {
+                        existing.insert(def);
+                        break Some(key);
                     }
                     std::collections::hash_map::Entry::Occupied(_) => {}
                 }
@@ -390,6 +404,8 @@ impl Interpreter {
         // The key written is `base_key` or `base_key__m{N}`; the `__m{N}`
         // tiebreak sits inside the arity suffix, so both spell the same base
         // name and one eviction covers whichever was taken (#8314).
+        self.dispatch.rewritten_unit_candidates = redeclared;
+        let installed = installed?;
         self.invalidate_fn_resolution_for_keys([Symbol::intern(base_key)]);
         Some(installed)
     }
@@ -1839,12 +1855,27 @@ impl Interpreter {
                     installed_multi_keys.extend(self.insert_multi_overload(&fq, def.clone()));
                 } else {
                     let fq_sym = Symbol::intern(&fq);
-                    if let std::collections::hash_map::Entry::Vacant(entry) =
-                        self.registry_mut().functions_mut().entry(fq_sym)
-                    {
-                        entry.insert(std::sync::Arc::new(def.clone()));
-                        installed_multi_keys.push(fq_sym);
+                    let mut redeclared = self.dispatch.rewritten_unit_candidates.take();
+                    match self.registry_mut().functions_mut().entry(fq_sym) {
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            entry.insert(std::sync::Arc::new(def.clone()));
+                            installed_multi_keys.push(fq_sym);
+                            if let Some(keys) = redeclared.as_mut() {
+                                keys.insert(fq_sym);
+                            }
+                        }
+                        // The CHECK-rewritten tree's copy replaces the
+                        // program's (`insert_multi_overload`).
+                        std::collections::hash_map::Entry::Occupied(mut existing)
+                            if existing.get().package == def.package
+                                && redeclared.as_mut().is_some_and(|keys| keys.insert(fq_sym)) =>
+                        {
+                            existing.insert(std::sync::Arc::new(def.clone()));
+                            installed_multi_keys.push(fq_sym);
+                        }
+                        std::collections::hash_map::Entry::Occupied(_) => {}
                     }
+                    self.dispatch.rewritten_unit_candidates = redeclared;
                     // Same missed invalidation as `insert_multi_overload`: this
                     // arm also adds a key (#8300) — a single one, named here so
                     // the base-name index keeps the rest (#8314).

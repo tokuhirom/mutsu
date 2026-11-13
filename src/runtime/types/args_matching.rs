@@ -372,7 +372,14 @@ impl Interpreter {
         pd: &ParamDef,
         package: Option<Symbol>,
     ) -> Result<Value, RuntimeError> {
-        self.with_candidate_package(package, |this| this.eval_param_where_value(pd, false))
+        // A call the predicate makes (`where .returns ~~ Numeric`) must not
+        // consume the caller's argument sources, which the winning
+        // candidate's `is rw` parameters bind through.
+        let sources = self.pending_call_arg_sources.clone();
+        let result =
+            self.with_candidate_package(package, |this| this.eval_param_where_value(pd, false));
+        self.pending_call_arg_sources = sources;
+        result
     }
 
     fn eval_param_default_in_candidate_package(
