@@ -115,13 +115,18 @@ impl Interpreter {
     // Cost: O(v), v = values of the enumeration.
     pub(crate) fn dispatch_enums(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
         let variants = self.enumeration_variants(target)?;
-        // Built as `Map.new(|pairs)` is, so a list value (`:A4(210, 297)`) is
-        // the list itself rather than an itemized hash value.
-        let pairs: Vec<Value> = variants
-            .into_iter()
-            .map(|(k, v)| Value::pair(k, v.to_value()))
-            .collect();
-        let map = self.call_method_with_values(Value::package(Symbol::intern("Map")), "new", pairs);
-        Some(map)
+        // The Map `Map.new(|pairs)` would build, built directly: an immutable
+        // Map with bare values, so a list value (`:A4(210, 297)`) is the list
+        // itself rather than an itemized hash value. Going through `Map.new`
+        // dispatched a method call (an MRO walk of `Map`) on every `.enums`
+        // (#16978).
+        let mut map = crate::value::ValueMap::default();
+        for (name, value) in variants {
+            map.insert(name, value.to_value());
+        }
+        let mut data = crate::value::HashData::new(map);
+        data.declared_type = Some("Map".to_string());
+        data.bare_values = true;
+        Some(Ok(Value::hash_with_data(crate::gc::Gc::new(data))))
     }
 }

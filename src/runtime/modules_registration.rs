@@ -18,6 +18,7 @@ pub(crate) mod registration_class_compose_record;
 mod registration_class_decl;
 mod registration_class_deferred_parents;
 mod registration_class_parents;
+pub(crate) mod registration_class_site;
 pub(crate) mod registration_class_validate;
 mod registration_method_traits;
 mod registration_private_access;

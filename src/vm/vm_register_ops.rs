@@ -537,13 +537,14 @@ impl Interpreter {
     /// declaration site.  Class registration stores a `MethodDef`, rather than
     /// a `SubData`, so it does not otherwise go through `capture_closure_env`.
     /// In particular, a `my` declared in a routine body can exist only in that
-    /// frame's local-slot store when the class is registered.
+    /// frame's local-slot store when the class is registered. Returns whether
+    /// any method's capture was replaced.
     pub(crate) fn capture_declared_method_envs(
         &mut self,
         code: &CompiledCode,
         class: &str,
         outer_lexical_slots: &[(Symbol, u32)],
-    ) {
+    ) -> bool {
         let method_codes: Vec<(std::sync::Arc<CompiledCode>, Vec<Symbol>)> = {
             let registry = self.registry();
             registry
@@ -571,7 +572,7 @@ impl Interpreter {
         let captures =
             self.declared_method_capture_envs(code, class, method_codes, outer_lexical_slots);
         if captures.is_empty() {
-            return;
+            return false;
         }
         self.registry_mut().map_user_methods_in_place(
             crate::symbol::Symbol::intern(class),
@@ -583,12 +584,13 @@ impl Interpreter {
                 // (`^add_multi_method`, `^add_method`) already carries the
                 // environment of the closure itself; the class declaration
                 // frame's capture is not its scope (it lacks the `$attr` /
-                // `$name` the closure read from its creator).
-                if def
-                    .captured_env
-                    .as_ref()
-                    .is_some_and(|env| env.contains_key("__mutsu_declared_method_capture"))
-                {
+                // `$name` the closure read from its creator). A capture this
+                // pass made itself (marker 1) is replaced: a kept lexical class
+                // re-captures on every entry of its declaring routine (#16978).
+                if def.captured_env.as_ref().is_some_and(|env| {
+                    env.get("__mutsu_declared_method_capture")
+                        .is_some_and(|marker| marker.as_int() != Some(1))
+                }) {
                     return;
                 }
                 let key = std::sync::Arc::as_ptr(method_code) as usize;
@@ -597,6 +599,7 @@ impl Interpreter {
                 }
             },
         );
+        true
     }
 
     /// The role analogue of [`Self::capture_declared_method_envs`]. A role
