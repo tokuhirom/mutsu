@@ -221,8 +221,8 @@ fn prop_value_code(op: &str, cp: i64, code: i64) -> Result<i64, RuntimeError> {
 }
 
 /// `nqp::unipvalcode($prop, $name)`: the value code a property value name
-/// stands for, 0 for a name the property does not have. A binary property
-/// has no value names in MoarVM (`True`, `Y`, `1` all answer 0 -- measured).
+/// stands for, 0 for a name the property does not have. A binary property's
+/// only value name is its own name (`True`, `Y`, `1` all answer 0 -- measured).
 // Cost: O(V * m), V = values of the property, m = chars of `name`.
 fn value_code(op: &str, code: i64, name: &str) -> Result<i64, RuntimeError> {
     Ok(
@@ -252,7 +252,19 @@ fn value_code(op: &str, code: i64, name: &str) -> Result<i64, RuntimeError> {
                 .iter()
                 .position(|names| names.iter().any(|n| name_matches(name, n)))
                 .map_or(0, |i| i as i64 + 1),
-            Prop::GcAggregate(_) | Prop::Binary(_) => 0,
+            // A binary property's only value name is its own name (or an
+            // alias of it), which is the value 1 (measured: `unipvalcode` of
+            // `P` on `P` is 1, of `True` 0).
+            Prop::GcAggregate(_) => GC_AGGREGATES
+                .iter()
+                .find(|(c, ..)| *c == code)
+                .is_some_and(|(_, names, _)| names.iter().any(|n| name_matches(name, n)))
+                .into(),
+            Prop::Binary(_) => BINARY_PROPERTIES
+                .iter()
+                .find(|(c, _)| *c == code)
+                .is_some_and(|(_, names)| names.iter().any(|n| name_matches(name, n)))
+                .into(),
         },
     )
 }
