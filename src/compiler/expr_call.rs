@@ -1522,6 +1522,39 @@ impl Compiler {
                 });
             }
         }
+        // `map BLOCK, $a, $b` (two or more list arguments) is `($a, $b).map(BLOCK)`:
+        // rakudo's `map(&code, +values)` keeps each argument's container, so the
+        // callback's topic aliases `$a` and `$b` (`map { h($_) }, $*OUT, $*ERR`
+        // with an `is rw` `h` replaces the handles). The method form already
+        // binds a list literal's elements as containers; one implementation
+        // serves both forms.
+        else if matches!(name.resolve().as_str(), "map" | "grep")
+            && args.len() >= 3
+            && !suppress_listop_rewrite
+            && !args.iter().any(|arg| {
+                Self::is_slip_interpolation_arg(arg)
+                    || matches!(
+                        arg,
+                        Expr::Binary {
+                            op: TokenKind::FatArrow,
+                            left,
+                            ..
+                        } if matches!(left.as_ref(), Expr::Literal(lit) if lit.as_str().is_some())
+                    )
+            })
+        {
+            let method_call = Expr::MethodCall {
+                target: Box::new(Expr::Grouped(Box::new(Expr::ArrayLiteral(
+                    args[1..].to_vec(),
+                )))),
+                name: *name,
+                args: vec![args[0].clone()],
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            };
+            self.compile_expr(&method_call);
+        }
         // Rewrite shift(@arr)/pop(@arr) -> @arr.shift()/@arr.pop() for mutability
         else if matches!(name.resolve().as_str(), "shift" | "pop")
             && args.len() == 1

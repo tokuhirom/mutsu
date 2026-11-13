@@ -643,6 +643,16 @@ impl Interpreter {
             // element). Without a cell the write-through alias is unavailable for
             // a captured variable anyway, so itemize the value to preserve the
             // non-flatten semantics (mirrors the old compiler `Itemize` path).
+            // A dynamic variable (`($*OUT, $*ERR)`) declared in a caller frame
+            // is visible here through the env: its container is that entry,
+            // promoted to a shared cell, so a write through the list element
+            // reaches the declaring frame (rakudoc's
+            // `map { IO::MiddleMan.hijack: $_ }, $*OUT, $*ERR`).
+            if name.starts_with('*')
+                && let Some(cell) = self.capture_outer_scalar_cell(name)
+            {
+                return (cell, true);
+            }
             if box_type_objects {
                 return (Self::itemize_value(inner), false);
             }

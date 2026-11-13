@@ -396,13 +396,16 @@ impl Interpreter {
         Ok(Value::truth(at_end))
     }
 
-    // Cost: TODO
+    // Cost: O(1).
     pub(crate) fn io_handle_t(
         &mut self,
         target_val: &Value,
         _args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let is_tty = self.with_handle_mut(target_val, |state| Ok(state.is_tty()))?;
+        // A handle that was never opened is no terminal (rakudo: `False`).
+        let is_tty = self
+            .with_handle_mut_opt(target_val, |state| Ok(state.is_tty()))?
+            .unwrap_or(false);
         Ok(Value::truth(is_tty))
     }
 
