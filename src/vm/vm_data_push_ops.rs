@@ -242,7 +242,7 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
-            let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
+            let result = self.push_to_non_array(target, val)?;
             self.stack.push(result);
             return Ok(());
         }
@@ -414,7 +414,7 @@ impl Interpreter {
                 self.stack.push(result);
                 return Ok(());
             }
-            let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
+            let result = self.push_to_non_array(target, val)?;
             self.stack.push(result);
             return Ok(());
         }
@@ -567,5 +567,23 @@ impl Interpreter {
             .into_iter()
             .map(|v| Self::wrap_native_int_by_constraint(&constraint, v.clone()).unwrap_or(v))
             .collect()
+    }
+
+    /// `.push` on a receiver that is not a plain Array. An object (a class
+    /// that `does Positional`, a container trait's instance) has its `push`
+    /// called as an ordinary method call -- the compiled method dispatch the
+    /// `CallMethod` opcode uses, not the by-name `call_method_with_values`
+    /// cascade; anything else keeps that cascade.
+    // Cost: one method dispatch plus the method's body.
+    fn push_to_non_array(&mut self, target: Value, val: Value) -> Result<Value, RuntimeError> {
+        if matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::CustomTypeInstance(..)
+        ) {
+            return self.try_compiled_method_or_interpret_sym(target, crate::symbol::wk::push(), vec![val]);
+        }
+        // TODO: compile to bytecode -- the remaining non-Array receivers
+        // (a Hash, a Mixin, a bare cell) still take the by-name cascade.
+        loan_env!(self, call_method_with_values(target, "push", vec![val]))
     }
 }

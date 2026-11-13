@@ -845,6 +845,9 @@ pub(crate) mod wk {
         /// The `Order` enum and its members, built by every `cmp`/`<=>`/`leg`
         /// result (`runtime::utils::make_order`).
         order => "Order";
+        /// The `push` method a `@`-variable's `ArrayPush` calls on an object
+        /// receiver (`vm_data_push_ops`).
+        push => "push";
         order_less => "Less";
         order_same => "Same";
         order_more => "More";
