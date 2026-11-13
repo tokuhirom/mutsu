@@ -319,7 +319,7 @@ pub(crate) use stmt::simple::{
 pub(crate) use stmt::simple::{apply_slang_overrides, set_l10n_preseed, slang_modes};
 
 pub(crate) use stmt::simple::{
-    run_slang_action, slang_action_activator, slang_action_rule, slang_hook_rule,
+    run_slang_action, run_slang_action_at, slang_action_activator, slang_action_rule, slang_hook_rule,
     slang_host_wrapped_rule, slang_overrides_action, slang_wrapper_rule,
 };
 

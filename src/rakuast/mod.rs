@@ -211,6 +211,7 @@ mod signature_decl_origins;
 mod signature_literal;
 pub(crate) mod slang_block_scope;
 pub(crate) mod slang_bridge;
+mod slang_statement_action;
 mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;

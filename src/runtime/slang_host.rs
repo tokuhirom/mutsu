@@ -147,6 +147,9 @@ class Mutsu::Slang::Host::Actions {
     method PREFIX-EXPR(Mu $/) { $/.ast }
     method POSTFIX-EXPR(Mu $/) { $/.ast }
     method numish(Mu $/) { $/.ast }
+    # A statement, which a slang may override to wrap or rewrite (Dawa's
+    # debugger stop points).
+    method statement(Mu $/) { $/.ast }
     # The block statements a slang's actions may override.
     method statement-control:sym<given>(Mu $/) { $/.ast }
     # A `for` a slang's own token matched (its header is the shims' nodes) has
@@ -170,7 +173,9 @@ our $Mutsu::Slang::Host::G;
 our $Mutsu::Slang::Host::Built;
 our $Mutsu::Slang::Host::A;
 our $Mutsu::Slang::Host::Roles;
-sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block, Int :$pos = 0, :$compose-only) {
+# `$*ORIGIN-SOURCE` of a statement override: the unit the statement is in.
+class Mutsu::Slang::Host::OriginSource { has $.original-file }
+sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$block, Int :$pos = 0, Int :$to, :$file, :$compose-only) {
     # The composed grammar is a type object, which is never `.defined`: key the
     # cache on the roles it was composed from, so it is built once per slang
     # registration rather than once per production.
@@ -204,8 +209,11 @@ sub mutsu-slang-host-run(Str $rule, Str $source, @groles, @aroles, :$node, :$blo
                 !! Nil;
             %hash{$key} = $part if $key;
         }
-        my $core = Match.new(:orig($source), :from(0), :to($source.chars), :hash(%hash));
+        # A statement's `$/` is the statement within its unit's text (`.from`,
+        # `.to` and `.orig` place it); other overrides see their own text.
+        my $core = Match.new(:orig($source), :from($pos), :to($to // $source.chars), :hash(%hash));
         $core.make($node);
+        my $*ORIGIN-SOURCE = Mutsu::Slang::Host::OriginSource.new(:original-file($file // ''));
         $Mutsu::Slang::Host::A."$rule"($core);
         return ($core.to, $core.ast);
     }
@@ -304,11 +312,12 @@ impl Interpreter {
                 start,
                 node,
                 block,
+                span,
             }) = message
             else {
                 return;
             };
-            if !self.answer_hook(&rule, &source, start, node, block) {
+            if !self.answer_hook(&rule, &source, start, node, block, span) {
                 return;
             }
         }
@@ -324,6 +333,7 @@ impl Interpreter {
         start: usize,
         node: Option<Value>,
         block: Option<Value>,
+        span: Option<crate::slang_link::ActionSpan>,
     ) -> bool {
         let depth = HOOK_DEPTH.with(std::cell::Cell::get);
         let answer = if depth >= MAX_HOOK_DEPTH {
@@ -339,7 +349,7 @@ impl Interpreter {
             let composed = self.compose_slang_host();
             super::slang_class_replay::begin_class_log();
             let answer =
-                composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block));
+                composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block, span));
             super::slang_class_replay::end_class_log();
             HOOK_DEPTH.with(|d| d.set(depth));
             answer
@@ -391,6 +401,7 @@ impl Interpreter {
         start: usize,
         node: Option<Value>,
         block: Option<Value>,
+        span: Option<crate::slang_link::ActionSpan>,
     ) -> HostAnswer {
         let run = self.slang_host_entry()?;
         let grammar_roles = Value::array(self.regex_state.slang_grammar_roles.clone());
@@ -417,6 +428,18 @@ impl Interpreter {
                     }
                     if let Some(block) = block {
                         args.push(Value::pair("block".to_string(), block));
+                    }
+                    if let Some(span) = span {
+                        args.push(Value::pair(
+                            "to".to_string(),
+                            Value::int(
+                                crate::value::match_helpers::cp_to_grapheme_index(source, span.end)
+                                    as i64,
+                            ),
+                        ));
+                        if let Some(file) = span.file {
+                            args.push(Value::pair("file".to_string(), Value::str(file)));
+                        }
                     }
                     args
                 },
@@ -552,8 +575,9 @@ impl Interpreter {
                     start,
                     node,
                     block,
+                    span,
                 } => {
-                    if !self.answer_hook(&rule, &source, start, node, block) {
+                    if !self.answer_hook(&rule, &source, start, node, block, span) {
                         return Err(lost());
                     }
                 }

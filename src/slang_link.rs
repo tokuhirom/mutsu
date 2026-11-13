@@ -21,9 +21,20 @@ pub(crate) enum ToHost {
         /// For a `statementlist` wrapper: the routine whose body the list is,
         /// bound to `$*BLOCK` while the slang's method runs (ADR-16888 §2.6).
         block: Option<Value>,
+        /// For a `statement` action override: where the statement sits in
+        /// `source` (the `Match` spans `start..end`) and the unit's file.
+        span: Option<ActionSpan>,
     },
     /// The answer to a [`FromHost::BackCall`].
     BackReply(HostAnswer),
+}
+
+/// Where the statement an action override is offered sits: its end (a
+/// character offset of the hook's source; `start` is the hook's own) and the
+/// file of its unit (`$*ORIGIN-SOURCE.original-file`).
+pub(crate) struct ActionSpan {
+    pub(crate) end: usize,
+    pub(crate) file: Option<String>,
 }
 
 /// A host-to-parser message.
@@ -107,6 +118,7 @@ impl SlangHost {
                 start,
                 node: None,
                 block,
+                span: None,
             })
             .map_err(|_| "the slang host is gone".to_string())?;
         let shift = |answer: HostAnswer| {
@@ -151,13 +163,29 @@ impl SlangHost {
         node: Value,
         source: &str,
     ) -> Result<Value, String> {
+        self.run_action_at(rule, node, source, 0, None)
+    }
+
+    /// [`Self::run_action`] for a production that occupies `start..` of
+    /// `source` (character offsets), as `span` says: a `statement` override's
+    /// `Match` is the statement within its unit's text.
+    // Cost: the slang's own action, plus O(n) to send `source`.
+    pub(crate) fn run_action_at(
+        &self,
+        rule: &str,
+        node: Value,
+        source: &str,
+        start: usize,
+        span: Option<ActionSpan>,
+    ) -> Result<Value, String> {
         self.to_host
             .send(ToHost::Hook {
                 rule: rule.to_string(),
                 source: source.to_string(),
-                start: 0,
+                start,
                 node: Some(node),
                 block: None,
+                span,
             })
             .map_err(|_| "the slang host is gone".to_string())?;
         let message = crate::gc::block_quiescent(|| self.from_host.recv())

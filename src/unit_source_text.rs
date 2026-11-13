@@ -105,6 +105,12 @@ impl Drop for UnitSourceTextGuard {
     }
 }
 
+/// The source text of the innermost unit being compiled.
+// Cost: O(1).
+pub(crate) fn innermost_source() -> Option<Rc<str>> {
+    UNITS.with(|units| units.borrow().last().map(|unit| unit.source.clone()))
+}
+
 /// The unit `$*CU` names: the innermost one not running a `sub EXPORT` of its
 /// own (that one runs on behalf of the unit importing it).
 pub(crate) fn active_index(units: &[Unit]) -> Option<usize> {
