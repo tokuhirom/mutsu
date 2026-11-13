@@ -43,27 +43,38 @@ pub(crate) fn operand(v: &Value) -> Value {
 /// The channel of a `ConcBlockingQueue` instance.
 // Cost: O(1).
 fn queue_of(v: &Value) -> Option<(Symbol, SharedChannel)> {
-    // A plain instance is its own operand: every list op on an
-    // `IterationBuffer` asks this first, so the unwrapping clone is paid only
-    // by a wrapped or containerized argument.
-    let unwrapped;
-    let v = if matches!(v.view(), ValueView::Instance { .. }) {
-        v
-    } else {
-        unwrapped = operand(v);
-        &unwrapped
+    // Every list op on an `IterationBuffer` asks this first, and most of them
+    // answer "not a queue", so the operand is inspected in place: an argument
+    // wrapper and a scalar container are looked through by reference instead
+    // of cloning the operand (`operand`), which cost a clone and a drop of the
+    // buffer handle on every `nqp::push`.
+    fn of_instance(v: &Value) -> Option<(Symbol, SharedChannel)> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = v.view()
+        else {
+            return None;
+        };
+        let map = attributes.as_map();
+        match map.get(crate::symbol::wk::nqp_queue())?.view() {
+            ValueView::Channel(c) => Some((class_name, (*c).clone())),
+            _ => None,
+        }
+    }
+    let v = match v.as_varref() {
+        Some((_, inner, _)) => inner,
+        None => v,
     };
-    let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = v.view()
-    else {
-        return None;
-    };
-    let channel = attributes.as_map().get(crate::symbol::wk::nqp_queue()).cloned()?;
-    match channel.view() {
-        ValueView::Channel(c) => Some((class_name, (*c).clone())),
+    match v.view() {
+        ValueView::Instance { .. } => of_instance(v),
+        ValueView::ContainerRef(_) => v.with_deref(|inner| match inner.view() {
+            // A hash-entry reference reads through the hash.
+            ValueView::HashEntryRef { .. } => of_instance(&inner.hash_entry_read()),
+            _ => of_instance(inner),
+        }),
+        ValueView::HashEntryRef { .. } => of_instance(&v.hash_entry_read()),
         _ => None,
     }
 }

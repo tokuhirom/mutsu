@@ -658,6 +658,21 @@ impl Interpreter {
         if !self.set_local_scalar_fast_metadata_clear_except_type(code, idx) {
             return false;
         }
+        // A native `int` slot stores an Int-valued enum (`Order::More` from a
+        // `cmp`, a `Bool`) as its integer, which is the first thing the typed
+        // store (`wrap_native_int_by_constraint`) does too; unboxing it here
+        // lets `my int $cmp; $cmp = by($a, $b)` take this lane. A value the
+        // lane then declines reaches the typed store already unboxed, which
+        // the store would have produced anyway.
+        if matches!(
+            code.declared_constraint(idx),
+            crate::binding_desc::DeclaredConstraint::NativeInt
+        ) && let Some(top) = self.stack.last_mut()
+            && matches!(top.view(), ValueView::Bool(_) | ValueView::Enum { .. })
+        {
+            let v = std::mem::replace(top, Value::NIL);
+            *top = crate::native_types::unbox_enum_to_native_int(v);
+        }
         // The incoming value is an ordinary scalar — nothing to unwrap, reify,
         // decontainerize or record — and the slot holds one too, so the store
         // replaces it rather than writing *through* a cell, Proxy or phantom

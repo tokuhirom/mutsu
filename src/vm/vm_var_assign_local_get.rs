@@ -145,18 +145,18 @@ impl Interpreter {
         // one more step so callers see the array hole, while lvalue context
         // keeps the cell for `store_through_cell` to materialize.
         if !keep_deferred_entry {
-            // Tag-probe without cloning first: the common case (the cell
-            // does not hold a deferred HashEntryRef token) needs no clone
-            // here at all — `into_deref()` below does the one clone this
-            // read actually needs. Only the rare HashEntryRef case pays
-            // for a second `with_deref` to materialize the clone it needs.
-            let is_hash_entry_ref =
-                val.with_deref(|inner| matches!(inner.view(), ValueView::HashEntryRef { .. }));
-            if is_hash_entry_ref {
-                let inner = val.with_deref(|inner| inner.clone());
+            // One read of the cell: the clone this read needs anyway, then a
+            // tag probe of it. A deferred HashEntryRef token (rare) is read
+            // through after the cell lock is released. Probing first and
+            // cloning second took the cell (and, once threads exist, its
+            // stripe lock) twice on every read of a captured variable.
+            let inner = val.into_deref();
+            if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
                 self.stack.push(inner.hash_entry_read());
-                return;
+            } else {
+                self.stack.push(inner);
             }
+            return;
         }
         // In container mode, an EMPTY cell is a live link of the lvalue
         // chain, not a value: `my @a; my $x := @a[0]; my $y := $x<k>`
