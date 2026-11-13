@@ -1725,6 +1725,9 @@ impl Compiler {
                         end_ip: 0,
                         is_begin: false,
                         scope: 0,
+                        // The constant initializer's value is left for the
+                        // store below, so this region must not be skipped.
+                        skip_on_restart: false,
                     }))
                 } else {
                     None

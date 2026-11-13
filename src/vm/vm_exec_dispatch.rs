@@ -7247,8 +7247,21 @@ impl Interpreter {
             // -- CHECK Phaser scope --
             // Cost: O(1).
             OpCode::CheckPhaserStart {
-                is_begin, scope, ..
+                is_begin,
+                scope,
+                end_ip,
+                skip_on_restart,
             } => {
+                // A unit restarted from the tree its CHECK phase rewrote has
+                // already run its BEGIN and CHECK phasers in the first compile
+                // (#17676/#17681): a statement-form phaser body does not run a
+                // second time over the tree it rewrote. The phaser's lexical
+                // effects survive through the first compile's bindings, which
+                // the restart's top-level declarations adopt.
+                if *skip_on_restart && crate::unit_source_text::active_unit_is_rewritten() {
+                    *ip = *end_ip as usize;
+                    return Ok(());
+                }
                 self.sync_source_line(code, *ip);
                 self.control.check_phaser_depth += 1;
                 self.control
@@ -7854,10 +7867,16 @@ impl Interpreter {
                     // In rakudo the rewritten tree is what gets compiled, and no
                     // mainline statement has run yet: run the tree in place of
                     // the compiled program, which ends here.
-                    // TODO: the BEGIN prologue and `use` lines of the first
-                    // compile run again with the tree; skipping what already ran
-                    // needs the tree to remember which statements are the prologue.
                     crate::unit_source_text::mark_next_tree_rewritten();
+                    // The restart does not re-run the BEGIN prologue or the
+                    // CHECK phasers (#17676/#17681); its top-level `my`
+                    // declarations without an initializer adopt the first
+                    // compile's bindings instead. A top-level scalar lexical
+                    // lives in this frame's local slots, which the restart's
+                    // separate code object cannot reach by name, so publish the
+                    // frame's locals into `env` first, where the restart's
+                    // free-variable reads resolve them.
+                    self.sync_env_from_locals(code);
                     // The main program that ends here leaves its END phasers
                     // to the tree, which declares them again (a module or
                     // `EVAL` unit runs inside a compunit frame of its own).

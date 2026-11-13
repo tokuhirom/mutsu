@@ -4214,6 +4214,12 @@ pub(crate) enum OpCode {
         /// which a BEGIN-time `$*R.current-scope` answers (#17515); 0 for the
         /// unit's own scope.
         scope: u32,
+        /// A statement-form BEGIN/CHECK phaser body, which leaves no value on
+        /// the stack and so can be jumped over when the unit is the restart of
+        /// one whose CHECK phase rewrote `$*CU` (#17676/#17681): the phaser
+        /// already ran in the first compile. `false` for a constant
+        /// initializer's region, whose value the following store needs.
+        skip_on_restart: bool,
     },
     /// Marks the end of a CHECK phaser body.
     CheckPhaserEnd,

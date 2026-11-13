@@ -243,6 +243,20 @@ pub(crate) fn take_check_code() -> Vec<(Value, Value)> {
     })
 }
 
+/// Whether the unit compiling now is the restart of one whose CHECK phase
+/// rewrote `$*CU`: its BEGIN and CHECK phasers ran in the first compile, so a
+/// statement-form phaser body is skipped and its top-level `my` declarations
+/// adopt the first compile's bindings (#17676/#17681).
+// Cost: O(1).
+pub(crate) fn active_unit_is_rewritten() -> bool {
+    UNITS.with(|units| {
+        let units = units.borrow();
+        active_index(&units)
+            .and_then(|i| units.get(i))
+            .is_some_and(|unit| unit.rewritten && !unit.compiled)
+    })
+}
+
 /// The innermost unit's compile phase is over: `$*CU` is a Failure from here on.
 // Cost: O(1).
 pub(crate) fn end_compile_phase() {
