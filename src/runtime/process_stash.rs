@@ -144,6 +144,31 @@ impl ProcessStash {
         self.0.populated.store(true, Ordering::Relaxed);
     }
 
+    /// Store `value` into the container `key` is bound to (`PROCESS::<$x> :=
+    /// $var`), leaving the binding itself in place. `false` when `key` holds
+    /// a plain value (or is unpublished), which the caller then replaces.
+    // Cost: O(|key|), one hash probe under the read lock plus the cell's lock.
+    pub(crate) fn assign_through_bound_container(&self, key: &str, value: &Value) -> bool {
+        if !self.is_populated() {
+            return false;
+        }
+        let entries = self.read();
+        let Some(entry) = entries.get(key) else {
+            return false;
+        };
+        let crate::value::ValueView::ContainerRef(cell) = entry.value.view() else {
+            return false;
+        };
+        if let crate::value::ValueView::ContainerRef(new_cell) = value.view()
+            && crate::gc::Gc::ptr_eq(&cell, &new_cell)
+        {
+            return true;
+        }
+        let mut slot = cell.lock().unwrap_or_else(|e| e.into_inner());
+        *slot = value.clone().into_deref();
+        true
+    }
+
     /// Every published `(key, value)` pair.
     // Cost: O(n), n = published keys.
     pub(crate) fn entries(&self) -> Vec<(String, Value)> {
@@ -386,7 +411,12 @@ impl Interpreter {
         let Some(key) = stash_key(name) else {
             return;
         };
-        if self.binding_is_process_level(name, key) {
+        if self.binding_is_process_level(name, key)
+            && !self
+                .lexicals
+                .process_dynamics
+                .assign_through_bound_container(key, value)
+        {
             self.lexicals
                 .process_dynamics
                 .set(key, value.clone(), || self.process_dynamic_seed(key));

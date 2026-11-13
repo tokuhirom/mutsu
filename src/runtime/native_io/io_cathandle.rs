@@ -104,6 +104,21 @@ impl Interpreter {
     /// and old handles. The number of arguments forwarded follows the callable's
     /// `.count` (rakudo: `>=2` -> `($new, $old)`, `1` -> `($new)`, else `()`).
     fn cat_fire_on_switch(&mut self, on_switch: &Value, new: Value, old: Value) {
+        // The attribute may hold a `Proxy` (IO::CatHandle::AutoLines binds one
+        // with `nqp::bindattr` so later `.on-switch = ...` stores are wrapped):
+        // reading `&!on-switch` FETCHes it, as rakudo's attribute read does.
+        let fetched;
+        let on_switch = if matches!(on_switch.view(), ValueView::Proxy { .. }) {
+            match self.auto_fetch_proxy(on_switch) {
+                Ok(v) => {
+                    fetched = v;
+                    &fetched
+                }
+                Err(_) => return,
+            }
+        } else {
+            on_switch
+        };
         if !matches!(
             on_switch.view(),
             ValueView::Sub(_) | ValueView::Routine { .. } | ValueView::WeakSub(_)

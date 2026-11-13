@@ -3540,10 +3540,48 @@ impl Interpreter {
     /// DBIish's `$*DBI-DEFS`). Returns the (coerced) stored value for the
     /// expression result. Shared by the literal-key (`PROCESS::<$x>`) and
     /// runtime-key (`PROCESS::{$k}`) assignment paths.
+    /// The container `PROCESS::<$x> := SOURCE` aliases: the source's own cell
+    /// when it already arrives as one (an attribute, `AttrContainerRef`, or a
+    /// variable already shared), else the plain scalar variable `SOURCE`
+    /// promoted to a shared cell -- the same promotion an element bind
+    /// (`%h<k> := $x`) makes. `None` when the source is a value, not a
+    /// container (`PROCESS::<$x> := 42`), which binds read-only.
+    // Cost: O(1) (one env probe, plus a local-slot lookup when a source
+    // variable is promoted).
+    fn process_bind_alias(
+        &mut self,
+        val: &Value,
+        sources: &[Option<String>],
+        code: Option<&CompiledCode>,
+    ) -> Option<Value> {
+        if matches!(val.view(), ValueView::ContainerRef(_)) {
+            return Some(val.clone());
+        }
+        let name = sources.first()?.as_deref()?;
+        if name.contains('\0')
+            || name.starts_with(['@', '%', '&'])
+            || self.name_is_readonly_binding(name)
+        {
+            return None;
+        }
+        if let Some(existing) = self.env().get(name)
+            && matches!(existing.view(), ValueView::ContainerRef(_))
+        {
+            return Some(existing.clone());
+        }
+        let bound = Value::container_ref(self.promote_bind_source_cell(name, val.clone()));
+        self.set_env_with_main_alias(name, bound.clone());
+        if let Some(code) = code {
+            self.update_local_if_exists(code, name, &bound);
+        }
+        Some(bound)
+    }
+
     pub(super) fn store_process_dynamic(
         &mut self,
         raw_key: &str,
         val: Value,
+        code: Option<&CompiledCode>,
     ) -> Result<Value, RuntimeError> {
         // A routine symbol has its own assignment rules (`process_routines`).
         if let Some(name) = raw_key.strip_prefix('&') {
@@ -3559,15 +3597,26 @@ impl Interpreter {
         };
         // `PROCESS::<$REPO> := $repo` arrives as a bind marker; unwrap it
         // so the bound value (not the marker Pair) becomes the dynamic.
-        let (val, is_bind) = match Self::split_bind_index_marker(val) {
-            Ok((bound, _sources)) => (bound, true),
-            Err(plain) => (plain, false),
+        let (val, bind_sources, is_bind) = match Self::split_bind_index_marker(val) {
+            Ok((bound, sources)) => (bound, sources, true),
+            Err(plain) => (plain, Vec::new(), false),
         };
         if !is_bind && env_key.starts_with('*') {
             // An assignment (re)creates the container a bind removed.
             self.unmark_readonly(&env_key);
         }
-        let val = if is_bind && env_key.starts_with('*') {
+        let alias = if is_bind && env_key.starts_with('*') {
+            self.process_bind_alias(&val, &bind_sources, code)
+        } else {
+            None
+        };
+        let val = if let Some(alias) = alias {
+            // `PROCESS::<$LN> := $!ln` / `:= $x`: the dynamic IS the source's
+            // container, so a later write to either side is seen through the
+            // other (IO::CatHandle::AutoLines's `$*LN`).
+            self.unmark_readonly(&env_key);
+            alias
+        } else if is_bind && env_key.starts_with('*') {
             // `:=` binds the value itself: the stash entry is not a container,
             // so `$*X.VAR` is the value's own type and `my @a = $*X` flattens.
             // The readonly mark is what reflection reads as "no container".
@@ -3646,7 +3695,7 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
-        let stored = self.store_process_dynamic(&raw_key, val)?;
+        let stored = self.store_process_dynamic(&raw_key, val, None)?;
         self.stack.push(stored);
         Ok(())
     }
@@ -3665,7 +3714,7 @@ impl Interpreter {
         if stash_name == "PROCESS::" {
             let raw_key = Self::const_str(code, key_name_idx).to_string();
             let val = self.stack.pop().unwrap_or(Value::NIL);
-            let stored = self.store_process_dynamic(&raw_key, val)?;
+            let stored = self.store_process_dynamic(&raw_key, val, Some(code))?;
             // An assignment is an expression: leave the assigned value on the
             // stack so `Rakudo::Internals.REGISTER-DYNAMIC`'s block (whose body is
             // `PROCESS::<$x> = ...`) returns it.

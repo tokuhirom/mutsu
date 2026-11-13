@@ -863,7 +863,15 @@ impl Compiler {
             && let Expr::Literal(lit) = index
             && let Some(key_name) = lit.as_str()
         {
-            self.compile_expr(value);
+            // `PROCESS::<$x> := $!attr` / `:= $var` binds the source's own
+            // container, like an element bind (`%h<k> := $!attr`): compile the
+            // source the same way, so an attribute arrives as the instance's
+            // slot cell rather than a method-local copy.
+            if stash_name == "PROCESS::" {
+                self.compile_bind_index_value(value);
+            } else {
+                self.compile_expr(value);
+            }
             let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
             let key_name_idx = self.code.add_constant(Value::str(key_name.to_string()));
             self.code.emit(OpCode::IndexAssignPseudoStashNamed {
