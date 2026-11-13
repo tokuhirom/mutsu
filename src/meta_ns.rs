@@ -254,6 +254,10 @@ pub(crate) enum MetaNs {
     /// (`use MONKEY-SEE-NO-EVAL` stores `True`, `no MONKEY-SEE-NO-EVAL`
     /// `False`); block scoping of the env is what makes it lexical.
     Pragma,
+    /// `__mutsu_nextcallee_chain::chain` — in the env of the callable a
+    /// method's `nextcallee` returns: the deferral chain it continues
+    /// (`runtime::nextcallee_chain`).
+    NextcalleeChain,
 }
 
 impl MetaNs {
@@ -308,6 +312,7 @@ impl MetaNs {
         MetaNs::TypeCaptureBound,
         MetaNs::RegexQq,
         MetaNs::Pragma,
+        MetaNs::NextcalleeChain,
     ];
 
     /// The literal key prefix, including whatever separator the namespace puts
@@ -364,6 +369,7 @@ impl MetaNs {
             MetaNs::TypeCaptureBound => "__mutsu_type_capture_bound__",
             MetaNs::RegexQq => "__mutsu_regex_qq::",
             MetaNs::Pragma => "__mutsu_pragma::",
+            MetaNs::NextcalleeChain => "__mutsu_nextcallee_chain::",
         }
     }
 
@@ -620,6 +626,7 @@ mod tests {
             (MetaNs::TypeCaptureBound, "__mutsu_type_capture_bound__@a"),
             (MetaNs::RegexQq, "__mutsu_regex_qq::@a"),
             (MetaNs::Pragma, "__mutsu_pragma::@a"),
+            (MetaNs::NextcalleeChain, "__mutsu_nextcallee_chain::@a"),
         ];
         for (ns, expected) in spellings {
             assert_eq!(ns.key(n).as_str(), expected, "{ns:?} key spelling");

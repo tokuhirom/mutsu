@@ -9,6 +9,7 @@ mod accessors;
 mod adverb_origins;
 mod model_methods;
 mod positional_fields;
+mod routine_stub;
 pub use accessors::node_accessor;
 pub(crate) use doc_source::{origin_pod_source, pod_source};
 #[cfg(test)]

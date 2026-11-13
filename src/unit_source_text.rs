@@ -313,6 +313,16 @@ pub(crate) fn compile_time_cu(
     }
 }
 
+/// `f` applied to the active unit's `$*CU`, when it was built; never builds it.
+// Cost: O(1) plus `f`.
+pub(crate) fn with_active_cu<T>(f: impl FnOnce(&Value) -> Option<T>) -> Option<T> {
+    UNITS.with(|units| {
+        let units = units.borrow();
+        let unit = active_index(&units).and_then(|i| units.get(i))?;
+        f(unit.cu.as_ref()?)
+    })
+}
+
 /// Before the unit's check code runs: build `$*CU` again when a module read it
 /// before the unit's own `use` lines and slang productions had run, so the
 /// types they brought (a class Qwiratry's `aggsub` minted) resolve in the tree

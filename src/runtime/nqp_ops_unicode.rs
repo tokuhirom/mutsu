@@ -19,6 +19,8 @@ use crate::value::{RuntimeError, Value};
 const PROP_GENERAL_CATEGORY: i64 = 20;
 /// MoarVM's property code for `Script`.
 const PROP_SCRIPT: i64 = 9;
+/// MoarVM's property code for `Block`.
+const PROP_BLOCK: i64 = 6;
 /// MoarVM's property code for `East_Asian_Width`.
 const PROP_EAST_ASIAN_WIDTH: i64 = 7;
 /// MoarVM's East_Asian_Width value codes: the index is the value
@@ -59,6 +61,7 @@ enum Prop {
     GeneralCategory,
     Script,
     EastAsianWidth,
+    Block,
     /// A binary property, by its canonical name.
     Binary(&'static str),
 }
@@ -68,6 +71,7 @@ fn prop_of(code: i64) -> Option<Prop> {
         PROP_GENERAL_CATEGORY => Some(Prop::GeneralCategory),
         PROP_SCRIPT => Some(Prop::Script),
         PROP_EAST_ASIAN_WIDTH => Some(Prop::EastAsianWidth),
+        PROP_BLOCK => Some(Prop::Block),
         _ => BINARY_PROPERTIES
             .binary_search_by_key(&code, |&(c, _)| c)
             .ok()
@@ -78,7 +82,7 @@ fn prop_of(code: i64) -> Option<Prop> {
 fn unsupported_prop(op: &str, code: i64) -> RuntimeError {
     RuntimeError::new(format!(
         "nqp::{op}: unsupported property code {code} \
-         (mutsu answers General_Category, Script, East_Asian_Width and the binary properties)"
+         (mutsu answers General_Category, Script, East_Asian_Width, Block and the binary properties)"
     ))
 }
 
@@ -93,6 +97,9 @@ fn prop_code(name: &str) -> Option<i64> {
     }
     if name_matches(name, "East_Asian_Width") || name_matches(name, "ea") {
         return Some(PROP_EAST_ASIAN_WIDTH);
+    }
+    if name_matches(name, "Block") || name_matches(name, "blk") {
+        return Some(PROP_BLOCK);
     }
     BINARY_PROPERTIES
         .iter()
@@ -119,7 +126,8 @@ fn char_of(cp: i64) -> Option<char> {
 
 /// `nqp::getuniprop_int($cp, $prop)`: the property VALUE code of a codepoint.
 // Cost: O(1) for General_Category and the binary properties (table lookups);
-// O(S) for Script, S = scripts (~175), to turn the name into its code.
+// O(S) for Script, S = scripts (~175), to turn the name into its code; O(log b)
+// for Block, b = blocks (~350).
 fn prop_value_code(op: &str, cp: i64, code: i64) -> Result<i64, RuntimeError> {
     Ok(
         match prop_of(code).ok_or_else(|| unsupported_prop(op, code))? {
@@ -142,6 +150,15 @@ fn prop_value_code(op: &str, cp: i64, code: i64) -> Result<i64, RuntimeError> {
                         .position(|&(short, _)| short == abbrev)
                 })
                 .unwrap_or(0) as i64,
+            // An unassigned codepoint answers 0 (No_Block) although its
+            // range is a block's, as MoarVM's tables have it (measured:
+            // U+0378 in Greek and Coptic is 0).
+            Prop::Block => match u32::try_from(cp) {
+                Ok(c) if gc_abbrev(cp) != "Cn" => {
+                    crate::builtins::unicode_blocks::block_index(c).map_or(0, |i| i as i64 + 1)
+                }
+                _ => 0,
+            },
             Prop::Binary(name) => char_of(cp)
                 .and_then(|ch| crate::builtins::uniprop::try_binary_property(ch, name))
                 .map_or(0, i64::from),
@@ -177,6 +194,10 @@ fn value_code(op: &str, code: i64, name: &str) -> Result<i64, RuntimeError> {
                 .iter()
                 .position(|&(short, long)| name_matches(name, short) || name_matches(name, long))
                 .map_or(0, |i| i as i64),
+            Prop::Block => crate::builtins::unicode_blocks::BLOCK_VALUE_NAMES
+                .iter()
+                .position(|names| names.iter().any(|n| name_matches(name, n)))
+                .map_or(0, |i| i as i64 + 1),
             Prop::Binary(_) => 0,
         },
     )
@@ -206,7 +227,7 @@ pub(super) fn call_nqp_unicode_op(op: &str, args: &[Value]) -> Option<Result<Val
             prop_code(&name).map(Value::int).ok_or_else(|| {
                 RuntimeError::new(format!(
                     "nqp::unipropcode: unsupported property '{name}' \
-                     (mutsu answers General_Category, Script, East_Asian_Width and the binary properties)"
+                     (mutsu answers General_Category, Script, East_Asian_Width, Block and the binary properties)"
                 ))
             })
         }
@@ -231,6 +252,12 @@ pub(super) fn call_nqp_unicode_op(op: &str, args: &[Value]) -> Option<Result<Val
                     Some(Prop::GeneralCategory) => GENERAL_CATEGORY_VALUES[value as usize].0,
                     Some(Prop::Script) => SCRIPT_VALUES[value as usize].0,
                     Some(Prop::EastAsianWidth) => EAST_ASIAN_WIDTH_VALUES[value as usize].0,
+                    // The block whose range holds the codepoint, assigned or
+                    // not (measured: U+10FFFF answers its block's name).
+                    Some(Prop::Block) => u32::try_from(cp)
+                        .ok()
+                        .and_then(crate::builtins::unicode_blocks::block_index)
+                        .map_or("No_Block", |i| crate::builtins::unicode_blocks::BLOCKS[i].2),
                     _ => "",
                 })
             })

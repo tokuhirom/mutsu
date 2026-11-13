@@ -638,6 +638,9 @@ pub(crate) struct ResolutionCaches {
     /// method name (`dispatcher_redispatch_callee`). Bounded by the number of
     /// wrapped proto method names in the program.
     pub(crate) dispatcher_redispatch_callees: HashMap<String, Value>,
+    /// The compiled callable a method `nextcallee` hands out, before its
+    /// deferral chain is attached (`nextcallee_chain`). Built once.
+    pub(crate) nextcallee_chain_template: Option<Value>,
     /// The default-parameterization pun a method call on a role type object
     /// re-dispatches to, per `(role, method)`, with the registry write
     /// generation it was recorded under (`vm_role_default_pun.rs`).

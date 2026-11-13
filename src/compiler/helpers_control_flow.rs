@@ -1383,17 +1383,18 @@ impl Compiler {
         if !main_leaves_value {
             self.code.emit(OpCode::LoadNil);
         }
-        // A trailing unhandled Failure *value* on the stack is thrown into this
-        // block/routine's CATCH (or `try`) handler — `ThrowIfFailure` peeks and
-        // keeps the value so a normal trailing value is still the result. This
-        // matches Raku for both blocks (`try { @a.elems; CATCH {...} }`) and
-        // routines (`sub { s2(); CATCH {...} }` where `s2` returns a Failure).
-        // A direct `fail` raises a control signal (not a stack value) handled by
-        // the routine boundary, so it is unaffected and still returned. Skipped
-        // entirely for a bare-container-read tail (see above) — there is
-        // nothing to force, so omitting the check is exactly equivalent to
-        // emitting it with the check disabled.
-        if !tail_is_bare_container_read {
+        // A `try` throws a trailing unhandled Failure *value* into its handler
+        // (`try { CATCH {...}; Failure.new }` runs the CATCH) —
+        // `ThrowIfFailure` peeks and keeps the value so a normal trailing
+        // value is still the result. A routine or block that merely holds a
+        // CATCH returns its tail Failure as a value
+        // (`sub { CATCH {...}; Failure.new }` is that Failure; Red's
+        // `automatic-transaction` returns one). A tail the CATCH follows is
+        // sunk in place above, which throws it. Skipped entirely for a
+        // bare-container-read tail (see above) — there is nothing to force,
+        // so omitting the check is exactly equivalent to emitting it with the
+        // check disabled.
+        if traps && !tail_is_bare_container_read {
             self.code.emit(OpCode::ThrowIfFailure);
         }
         // Jump over catch/control on success.

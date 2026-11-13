@@ -152,6 +152,16 @@ impl Interpreter {
         self.caller_env_stack.len()
     }
 
+    /// `key`'s binding in the innermost caller frame that binds it in its
+    /// own tiers, or `None`.
+    // Cost: O(c * d), c = caller env entries, d = each frame's tiers.
+    pub(crate) fn caller_frame_binding(&self, key: Symbol) -> Option<&Value> {
+        self.caller_env_stack
+            .iter()
+            .rev()
+            .find_map(|env| env.get_sym_in_frame(key))
+    }
+
     /// Truncate `caller_env_stack`/`callframe_stack` back to `depth` (see
     /// [`Self::caller_env_stack_depth`]). The two are always pushed/popped
     /// together in lockstep (`push_caller_env_with_code`,

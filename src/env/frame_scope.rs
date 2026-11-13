@@ -86,6 +86,21 @@ impl Env {
         }
     }
 
+    /// `key`'s binding in any tier of this env's chain, callers included,
+    /// never the base tier (the process-level dynamics) or a capture: where a
+    /// call frame that pushed no record of its caller (a light call) still
+    /// reaches the caller's bindings.
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn get_sym_in_tiers(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        loop {
+            if let Some(v) = cur.inner.get(&key) {
+                return Some(v);
+            }
+            cur = cur.parent.as_deref()?;
+        }
+    }
+
     /// `key` as the CALLER sees it: skip the running call frame's tiers (down
     /// to and including its frame root), then look the name up from the
     /// caller's env, through the caller's own frame and its static link (the

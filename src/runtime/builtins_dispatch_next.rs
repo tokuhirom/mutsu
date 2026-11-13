@@ -1943,6 +1943,30 @@ impl Interpreter {
         Err(Self::no_dispatcher_error(func_name))
     }
 
+    /// The method candidate `def` of `owner` as a routine taking the invocant
+    /// first, as `nextcallee` hands it out.
+    // Cost: O(1) after the candidate's first use (its signature is shared).
+    fn nextcallee_method_callable(
+        &mut self,
+        owner: Symbol,
+        def: &MethodDef,
+        method_name: &str,
+    ) -> Value {
+        // Shared per candidate, so the value call compiles the body once
+        // rather than on every `nextcallee` (#12875).
+        let (params, callable_param_defs) = self.nextcallee_method_signature(owner, def);
+        Value::make_sub_for_routine(
+            owner,
+            Symbol::intern(method_name),
+            params,
+            callable_param_defs,
+            def.body.clone(),
+            def.is_rw,
+            self.env.clone(),
+            None,
+        )
+    }
+
     pub(super) fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
         // ADR-0019 E9b-0: resolve to the innermost live dispatch context, same
         // as dispatch_next_candidate/builtin_lastcall.
@@ -1984,19 +2008,28 @@ impl Interpreter {
                     frame.remaining.first().cloned()
             {
                 frame.remaining.remove(0);
-                // Shared per candidate, so the value call compiles the body
-                // once rather than on every `nextcallee` (#12875).
-                let (params, callable_param_defs) = self.nextcallee_method_signature(owner, &def);
-                return Ok(Value::make_sub_for_routine(
-                    owner,
-                    Symbol::intern(&method_name),
-                    params,
-                    callable_param_defs,
-                    def.body.clone(),
-                    def.is_rw,
-                    self.env.clone(),
-                    None,
-                ));
+                let receiver_class = frame.receiver_class.clone();
+                let rest = frame.remaining.clone();
+                let candidate = self.nextcallee_method_callable(owner, &def, &method_name);
+                // The callee continues with the candidates after this one,
+                // wherever it is called from (`nextcallee_chain`).
+                let mut chain = Vec::with_capacity(rest.len());
+                for entry in rest {
+                    match entry {
+                        DeferralEntry::Candidate { owner, def, .. } => {
+                            chain.push(self.nextcallee_method_callable(owner, &def, &method_name));
+                        }
+                        DeferralEntry::Wrapper(callable) => chain.push(callable),
+                        _ => break,
+                    }
+                }
+                // Each later candidate is itself a continuation of the ones
+                // after it, built from the end of the chain.
+                let mut rest: Vec<Value> = Vec::new();
+                for later in chain.into_iter().rev() {
+                    rest = vec![self.nextcallee_with_chain(later, &receiver_class, rest)];
+                }
+                return Ok(self.nextcallee_with_chain(candidate, &receiver_class, rest));
             }
             // The end of a multi DISPATCHER wrap chain: hand back a callable
             // that re-dispatches the multi on the invocant and args it is

@@ -45,6 +45,7 @@ pub(crate) mod string_pos;
 pub(crate) mod substr;
 pub(crate) mod transliterate;
 pub(crate) mod unicode;
+pub(crate) mod unicode_blocks;
 // The general-category table and NFC live in `crate::ucd`, below the parser
 // (issue #10779); these keep the old paths.
 pub(crate) use crate::ucd::gc as unicode_gc;
