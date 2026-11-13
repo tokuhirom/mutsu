@@ -462,14 +462,18 @@ impl Interpreter {
         cached_len: Option<usize>,
     ) -> Result<(), RuntimeError> {
         if let Some(native) = state.native.clone() {
+            // The history length at which the cache holds `needed` elements.
+            let target = match cached_len {
+                Some(c) => needed.saturating_sub(c).saturating_add(generated_from),
+                None => needed,
+            };
             return self.run_native_sequence(
                 &native,
                 state,
                 cache,
                 history,
-                needed,
+                target,
                 generated_from,
-                cached_len,
             );
         }
         let generator = state.generator.clone();

@@ -12,29 +12,23 @@ use crate::value::seq_gen::SeqGen;
 const NATIVE_SEQ_CHUNK: usize = 4096;
 
 impl Interpreter {
-    /// Extend `history` (the sequence's own terms) until the cache holds
-    /// `needed` elements or the sequence ends, publishing the new terms to
-    /// `cache`. On the end, the values after a list endpoint follow.
-    // Cost: O(k) term computations, k = the new terms (at most `needed`
-    // minus what the cache holds, plus one chunk's overshoot at the end).
-    #[allow(clippy::too_many_arguments)]
+    /// Extend `history` (the sequence's own terms) until it holds `target`
+    /// terms or the sequence ends, publishing the terms past `generated_from`
+    /// to `cache`. On the end, the values after a list endpoint follow.
+    // Cost: O(k) term computations, k = `target` minus the history's length
+    // (plus one chunk's overshoot at the end).
     pub(super) fn run_native_sequence(
         &mut self,
         g: &SeqGen,
         state: &mut crate::value::ClosureSeqState,
         cache: &std::sync::Mutex<Option<Vec<Value>>>,
         history: &mut Vec<Value>,
-        needed: usize,
+        target: usize,
         generated_from: usize,
-        cached_len: Option<usize>,
     ) -> Result<(), RuntimeError> {
         let mut published = generated_from;
-        let have = |history: &Vec<Value>| match cached_len {
-            Some(c) => c + (history.len() - generated_from),
-            None => history.len(),
-        };
-        while have(history) < needed && !state.finished {
-            let budget = (needed - have(history)).min(NATIVE_SEQ_CHUNK);
+        while history.len() < target && !state.finished {
+            let budget = (target - history.len()).min(NATIVE_SEQ_CHUNK);
             let before = history.len();
             let outcome = self.run_seq_gen(g, history, budget)?;
             if outcome.ended || history.len() == before {
