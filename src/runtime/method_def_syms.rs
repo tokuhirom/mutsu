@@ -28,6 +28,8 @@ pub(crate) struct MethodDefSyms {
     /// defs (whose `syms` came along), so a reader checks it still holds the
     /// same `Arc` before trusting the symbols.
     role_binding_syms: OnceLock<RoleBindingSyms>,
+    /// Memo of `MethodDef::signature_name_tokens` (`vm_role_binding_observers`).
+    pub(crate) signature_name_tokens: OnceLock<Option<Box<rustc_hash::FxHashSet<Symbol>>>>,
 }
 
 type RoleBindingSyms = (

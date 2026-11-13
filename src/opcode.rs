@@ -8151,6 +8151,8 @@ pub(crate) struct CompiledCode {
     /// instead of finding them by walking a tier -- see
     /// [`Self::capture_probe_keys`].
     pub(crate) capture_probe_keys: std::sync::OnceLock<Box<[Symbol]>>,
+    /// Memo of [`Self::body_name_tokens`] (`vm_role_binding_observers`).
+    pub(crate) body_name_tokens: std::sync::OnceLock<Option<Box<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built enum-bare env keys (`enum_bare_key`) of
     /// [`free_var_syms`](Self::free_var_syms) -- see [`Self::free_enum_bare_keys`].
     pub(crate) free_enum_bare_keys: std::sync::OnceLock<Box<[Symbol]>>,
@@ -8810,6 +8812,7 @@ impl CompiledCode {
             light_closure_shape: std::sync::OnceLock::new(),
             capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
+            body_name_tokens: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             op_scan_index: std::sync::OnceLock::new(),
