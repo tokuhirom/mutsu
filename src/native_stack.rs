@@ -48,7 +48,9 @@ pub(crate) const MIN_GUARDABLE_STACK_BYTES: usize = 2 * MIN_RESERVE_BYTES;
 /// for the overshoot it covers). So the smallest guardable stack keeps half of
 /// itself, 1 MiB in a release build; a 64 MiB segment keeps 16 MiB.
 fn reserve_for(stack_size: usize) -> usize {
-    STACK_RESERVE_BYTES.min(stack_size / 4).max(MIN_RESERVE_BYTES)
+    STACK_RESERVE_BYTES
+        .min(stack_size / 4)
+        .max(MIN_RESERVE_BYTES)
 }
 
 thread_local! {
@@ -305,7 +307,8 @@ mod tests {
                 // Usable headroom is the stack minus the reserve, give or take
                 // the few bytes between `top` and the arming call's own frame.
                 let usable = top - floor;
-                let expected = MIN_GUARDABLE_STACK_BYTES * 2 - reserve_for(MIN_GUARDABLE_STACK_BYTES * 2);
+                let expected =
+                    MIN_GUARDABLE_STACK_BYTES * 2 - reserve_for(MIN_GUARDABLE_STACK_BYTES * 2);
                 assert!(
                     usable.abs_diff(expected) < 64 * 1024,
                     "usable {usable} vs expected {expected}"

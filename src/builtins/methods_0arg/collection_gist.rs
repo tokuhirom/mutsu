@@ -194,9 +194,7 @@ fn gist_route(v: &Value) -> GistRoute {
 /// One element's gist inside a list, `Seq` or `Slip`.
 // Cost: O(d), d = rendered size of the element (nested aggregates render in full).
 fn gist_item(v: &Value) -> String {
-    if let Some(rendered) =
-        crate::value::render_guard::render_on_fresh_segment(|| gist_item(v))
-    {
+    if let Some(rendered) = crate::value::render_guard::render_on_fresh_segment(|| gist_item(v)) {
         return rendered;
     }
     match v.view() {
