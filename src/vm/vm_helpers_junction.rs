@@ -461,6 +461,17 @@ impl Interpreter {
         generated_from: usize,
         cached_len: Option<usize>,
     ) -> Result<(), RuntimeError> {
+        if let Some(native) = state.native.clone() {
+            return self.run_native_sequence(
+                &native,
+                state,
+                cache,
+                history,
+                needed,
+                generated_from,
+                cached_len,
+            );
+        }
         let generator = state.generator.clone();
         let mut published = generated_from;
 
@@ -609,7 +620,7 @@ impl Interpreter {
 /// its own list -- sees them. Positions the cache already had may hold a user
 /// override and are not touched (see `fill_sequence_cache`).
 // Cost: O(k), k = the newly generated elements.
-fn publish_generated(
+pub(super) fn publish_generated(
     cache: &std::sync::Mutex<Option<Vec<Value>>>,
     history: &[Value],
     published: &mut usize,

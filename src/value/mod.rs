@@ -596,6 +596,7 @@ pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) use dispatch_shape::iterator_kind::native_iterator_is_lazy;
 pub(crate) mod render_guard;
+pub(crate) mod seq_gen;
 mod varref_declared;
 pub(crate) use dispatch_shape::iterator_kind::{
     MAP_GREP_STREAM_ATTR, MONOTONIC_ITERATOR_ATTR, NONDETERMINISTIC_ITERATOR_ATTR,
@@ -4020,6 +4021,9 @@ pub(crate) struct ClosureSeqState {
     pub(crate) post_endpoint: Vec<Value>,
     /// Set once the generator signals termination (`last`/error) so we stop pulling.
     pub(crate) finished: bool,
+    /// A built-in (non-closure) term generator resumed past the eager prefix
+    /// of a finite sequence (`1 ... 20000`); `generator` is unused then.
+    pub(crate) native: Option<Box<seq_gen::SeqGen>>,
 }
 
 /// Saved VM state for a suspended gather coroutine.

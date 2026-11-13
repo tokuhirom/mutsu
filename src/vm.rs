@@ -259,6 +259,7 @@ mod vm_hash_key_bind_assign;
 mod vm_hash_subclass_delegate;
 mod vm_helpers;
 mod vm_helpers_junction;
+mod vm_native_seq;
 mod vm_helpers_lazy;
 mod vm_helpers_lazy_adaptor;
 mod vm_helpers_lazy_adaptor_build;
