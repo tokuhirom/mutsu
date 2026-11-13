@@ -39,16 +39,23 @@ impl Interpreter {
         if dynamic || bind_declaration || idx >= self.locals.len() {
             return None;
         }
-        // A `$` scalar with a plain name (no `@`/`%`/`&`, no attribute twigil).
-        code.simple_scalar_local_desc(idx)?;
+        // A `$` scalar with a plain name (no `@`/`%`/`&`, no attribute twigil),
+        // or a readonly sigilless term whose state is its slot's (ADR-17376).
+        let lean_term = code.lean_readonly_term_slot(idx);
+        if !lean_term {
+            code.simple_scalar_local_desc(idx)?;
+        }
         // Nothing reads the slot by name, and no sibling slot shares the name.
         if code.needs_env_sync.get(idx).copied().unwrap_or(true)
             || code.dup_named_locals.get(idx).copied().unwrap_or(true)
         {
             return None;
         }
-        if code.mirrors_all_params()
-            || self.threads.shared_vars_active
+        // A lean term has no env presence at all, so no thread-shared cell
+        // can name it either, and its own predicate already refused every
+        // by-name reader `mirrors_all_params` stands for.
+        if (code.mirrors_all_params() && !lean_term)
+            || (self.threads.shared_vars_active && !lean_term)
             || !self.lexicals.hoist_pending_cells.is_empty()
             || !code.our_locals.is_empty()
             || !code.state_locals.is_empty()
@@ -109,6 +116,9 @@ impl Interpreter {
     // Cost: O(1).
     pub(super) fn exec_set_local_decl_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
         let idx = idx as usize;
+        if code.lean_readonly_term_slot(idx) {
+            return self.exec_set_local_term_decl_fast(code, idx);
+        }
         if !self.mark_ctx.only_declaration_marks() {
             return false;
         }
@@ -140,6 +150,57 @@ impl Interpreter {
         let v = self.stack.pop().unwrap_or(Value::NIL);
         self.mark_ctx.consume_for_store();
         // The declaration steps the generic store runs unconditionally.
+        self.clear_var_default(name);
+        if !self.no_readonly_vars()
+            && let Some(sym) = code.locals_sym.get(idx).copied()
+        {
+            self.unmark_readonly_sym(sym);
+        }
+        if !self.lexicals.constant_var_names_seen.is_empty()
+            && self
+                .lexicals
+                .constant_var_names_seen
+                .contains(name.as_str())
+        {
+            self.clear_constant_marker(name);
+        }
+        self.locals[idx] = v;
+        true
+    }
+
+    /// The `SetLocalDecl` store of a lean readonly sigilless term
+    /// (`my \k = EXPR`, [`CompiledCode::lean_readonly_term_slot`]): the slot
+    /// is the term's only home and its readonly state is the slot's own
+    /// compile-time fact (ADR-17376), so an inert value is just written.
+    ///
+    /// The declaration's marks are the plain ones plus `constant` (a term is
+    /// declared in constant context); the value is a tag-probed inert payload
+    /// (no container to bind, no Proxy, Seq or aggregate); the slot holds no
+    /// write-through cell; and [`Self::env_free_decl_slot`]'s latches are
+    /// clear. Declines (`false`, nothing consumed) otherwise.
+    // Cost: O(1).
+    fn exec_set_local_term_decl_fast(&mut self, code: &CompiledCode, idx: usize) -> bool {
+        if !self.mark_ctx.only_term_declaration_marks() {
+            return false;
+        }
+        let Some(name) = code.locals.get(idx) else {
+            return false;
+        };
+        if self
+            .env_free_decl_slot(code, name, false, false, Some(idx as u32))
+            .is_none()
+        {
+            return false;
+        }
+        let Some(v) = self.stack.last() else {
+            return false;
+        };
+        if !v.is_inert_scalar_store_payload() || !self.locals[idx].is_plain_scalar_store_slot() {
+            return false;
+        }
+        // -- committed: from here the store cannot fall back --
+        let v = self.stack.pop().unwrap_or(Value::NIL);
+        self.mark_ctx.consume_for_store();
         self.clear_var_default(name);
         if !self.no_readonly_vars()
             && let Some(sym) = code.locals_sym.get(idx).copied()

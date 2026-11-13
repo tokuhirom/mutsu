@@ -67,7 +67,14 @@ impl Compiler {
             let key =
                 crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(name));
             let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
-            self.code.emit(OpCode::SetTermMark { key_idx, on: false });
+            // The slot is allocated by the declaration itself; `end_term_decl`
+            // fills it in once it exists.
+            let ip = self.code.emit(OpCode::SetTermMark {
+                key_idx,
+                on: false,
+                slot: u32::MAX,
+            });
+            self.pending_term_mark_clears.push(ip);
         }
     }
 
@@ -79,10 +86,31 @@ impl Compiler {
     /// marker, and has to run AFTER the store because a declaration clears
     /// that marker.
     pub(super) fn end_term_decl(&mut self, name: &str, kind: TermMark) {
+        let slot = self
+            .local_map
+            .get(&crate::runtime::term_names::term_key(name))
+            .copied();
         match kind {
-            TermMark::No | TermMark::Slot => {}
-            TermMark::Readonly => self.emit_sigilless_readonly(name),
+            TermMark::No => {}
+            TermMark::Slot => self.note_other_term_binding(slot),
+            TermMark::Readonly => {
+                // ADR-17376: a readonly term is a fact of its slot; the
+                // markers stay for a slot something outside this chunk's ops
+                // can name, and the run time skips them otherwise.
+                if let Some(slot) = slot
+                    && let Some(desc) = self.code.binding_descs.get_mut(slot as usize)
+                {
+                    desc.flags.note_readonly_term_decl();
+                }
+                if let Some(ip) = self.pending_term_mark_clears.pop()
+                    && let OpCode::SetTermMark { slot: s, .. } = &mut self.code.ops[ip]
+                {
+                    *s = slot.unwrap_or(u32::MAX);
+                }
+                self.emit_term_readonly_mark(name, slot);
+            }
             TermMark::Bound => {
+                self.note_other_term_binding(slot);
                 let name_idx = self
                     .code
                     .add_constant(Value::str(crate::runtime::term_names::term_key(name)));
@@ -95,10 +123,36 @@ impl Compiler {
     /// resolves its local slot, and `__mutsu_sigilless_readonly::\NAME` is set
     /// in `env`.
     pub(super) fn emit_sigilless_readonly(&mut self, name: &str) {
+        // A parameter (or any binding other than a readonly declaration)
+        // sharing the slot keeps the env marker (ADR-17376).
+        let slot = self
+            .local_map
+            .get(&crate::runtime::term_names::term_key(name))
+            .copied();
+        self.note_other_term_binding(slot);
+        self.emit_term_readonly_mark(name, slot);
+    }
+
+    /// The `SetTermMark { on: true }` of the sigilless term `name`.
+    fn emit_term_readonly_mark(&mut self, name: &str, slot: Option<u32>) {
         self.sigilless_locals.insert(name.to_string());
         let key =
             crate::runtime::sigilless_readonly_key(&crate::runtime::term_names::term_key(name));
         let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
-        self.code.emit(OpCode::SetTermMark { key_idx, on: true });
+        self.code.emit(OpCode::SetTermMark {
+            key_idx,
+            on: true,
+            slot: slot.unwrap_or(u32::MAX),
+        });
+    }
+
+    /// Record that `slot` is bound other than by a readonly term
+    /// declaration, so it keeps the env marker (ADR-17376).
+    pub(super) fn note_other_term_binding(&mut self, slot: Option<u32>) {
+        if let Some(slot) = slot
+            && let Some(desc) = self.code.binding_descs.get_mut(slot as usize)
+        {
+            desc.flags.note_other_term_decl();
+        }
     }
 }

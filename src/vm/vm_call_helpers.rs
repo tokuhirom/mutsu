@@ -381,12 +381,19 @@ impl Interpreter {
             let names: Vec<Option<String>> = items
                 .iter()
                 .map(|item| {
-                    Self::decode_arg_source_entry(item).map(|(name, slot)| {
-                        if let Some(slot) = slot {
-                            slots.push((crate::symbol::Symbol::intern(&name), slot));
-                        }
-                        name
-                    })
+                    Self::decode_arg_source_entry(item)
+                        // A readonly sigilless term is a value, not a variable
+                        // a callee may alias or write back to (ADR-17376); its
+                        // `WrapVarRef` passes the value for the same reason.
+                        .filter(|(_, slot)| {
+                            slot.is_none_or(|slot| !code.readonly_term_slot(slot as usize))
+                        })
+                        .map(|(name, slot)| {
+                            if let Some(slot) = slot {
+                                slots.push((crate::symbol::Symbol::intern(&name), slot));
+                            }
+                            name
+                        })
                 })
                 .collect();
             Some(crate::opcode::ArgSourceDecode {

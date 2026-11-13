@@ -8422,9 +8422,11 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1).
-            OpCode::SetTermMark { key_idx, on } => {
-                self.env_mut()
-                    .insert_sym_noting(code.const_sym(*key_idx), Value::truth(*on));
+            OpCode::SetTermMark { key_idx, on, slot } => {
+                if !code.lean_readonly_term_slot(*slot as usize) {
+                    self.env_mut()
+                        .insert_sym_noting(code.const_sym(*key_idx), Value::truth(*on));
+                }
                 *ip += 1;
             }
             // Cost: O(1).

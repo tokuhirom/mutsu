@@ -51,6 +51,11 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // A readonly sigilless term (ADR-17376): the slot decides, exactly as
+        // the marker branch below would.
+        if Self::lean_readonly_term_named(code, code.const_sym(name_idx)) {
+            return self.lean_readonly_term_assign(code, name_idx);
+        }
         // A free variable (not a local of this code) resolves to a binding in
         // another frame. When that binding is a readonly binding cell, the
         // cell's kind is the answer: the registry below is keyed by name and
@@ -132,6 +137,36 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether `name` is this chunk's own readonly sigilless term, readonly by
+    /// its slot's compile-time flags whether or not an env marker was written
+    /// (ADR-17376, [`CompiledCode::readonly_term_slot`]).
+    // Cost: O(1) (one probe of the chunk's slot index).
+    #[inline]
+    pub(super) fn lean_readonly_term_named(
+        code: &CompiledCode,
+        name: crate::symbol::Symbol,
+    ) -> bool {
+        matches!(code.local_slots_of(name), [slot] if code.readonly_term_slot(*slot as usize))
+    }
+
+    /// An assignment to a lean readonly term: what the env-marker branch of
+    /// [`Self::exec_check_read_only_op`] decides for a marked term. A term
+    /// bound to a mutable aggregate or to an object with a user `STORE`
+    /// assigns through it; anything else is an immutable value.
+    // Cost: O(1).
+    fn lean_readonly_term_assign(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx);
+        if self.sigilless_value_has_store(code, name) {
+            self.pending_sigilless_store = Some(name.to_string());
+            return Ok(());
+        }
+        Err(self.immutable_value_error(name))
+    }
+
     /// The `X::Multi::NoMatch` for `op` stepping the readonly variable `name`,
     /// naming its current value's type.
     // Cost: O(1) env lookup plus the message build.
@@ -164,6 +199,9 @@ impl Interpreter {
         name_sym: crate::symbol::Symbol,
         op: &str,
     ) -> Result<(), RuntimeError> {
+        if Self::lean_readonly_term_named(code, name_sym) {
+            return Err(self.incdec_readonly_error(code, op, name));
+        }
         let decision = if crate::value::readonly_binding_cells_possible() {
             self.free_var_binding_decision(code, name, name_sym)
                 .or_else(|| self.own_slot_rebind_decision(code, name_sym))
@@ -204,6 +242,9 @@ impl Interpreter {
         name: &str,
         name_sym: crate::symbol::Symbol,
     ) -> Result<(), RuntimeError> {
+        if Self::lean_readonly_term_named(code, name_sym) {
+            return Err(self.immutable_value_error(name));
+        }
         if self
             .check_named_incdec_readonly(code, name, name_sym, "postfix:<++>")
             .is_ok()
