@@ -176,6 +176,20 @@ impl Interpreter {
         ) {
             return None;
         }
+        // An attribute `:=`-bound to something that is not a Scalar has no
+        // Scalar to hand back: rakudo's raw read of `$!val` after `$!val :=
+        // @a` is the Array itself (`.VAR.^name` is `Array`), and after
+        // `$!val := 42` the Int. mutsu stores such a binding as a cell — a
+        // readonly binding cell for a value, or the aggregate's own share
+        // cell — so returning that cell made the caller see a `Scalar`
+        // (AttrX::Mooish's `unbind-proxy` binds the built Array this way,
+        // and its "attribute is de-mooified" check failed).
+        if let ValueView::ContainerRef(cell) = current.view()
+            && !current.container_ref_is_itemized()
+            && Self::cell_binds_a_non_scalar(&cell)
+        {
+            return None;
+        }
         // An attribute already promoted holds its cell, with the constraint
         // registered when it was promoted (or the one a `:=` bind brought).
         let already_cell = current.is_container_ref() && !current.container_ref_is_itemized();
@@ -190,6 +204,33 @@ impl Interpreter {
             crate::value::register_container_constraint(&cell, &tc);
         }
         Some(cell_val)
+    }
+
+    /// Whether the attribute cell `cell` holds a `:=` binding to something
+    /// that is not a Scalar container: a value bound straight in (a readonly
+    /// binding cell, `$!v := 42` / `$!v := Int`), or a non-itemized Array or
+    /// Hash, which is its own container (`$!v := @a`). An assignment stores an
+    /// itemized aggregate instead, and a bind to another scalar variable
+    /// shares that variable's writable cell; both keep their Scalar.
+    // Cost: O(1), one cell lock.
+    pub(crate) fn cell_binds_a_non_scalar(
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    ) -> bool {
+        if matches!(
+            cell.readonly_kind(),
+            Some(crate::ast::ReadonlyKind::Immutable | crate::ast::ReadonlyKind::TypeObject)
+        ) {
+            return true;
+        }
+        let inner = cell
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        match inner.view() {
+            ValueView::Array(_, kind) => !kind.is_itemized(),
+            ValueView::Hash(_) => !inner.hash_is_itemized(),
+            _ => false,
+        }
     }
 
     /// The declared type of attribute `attr` on `class_name`, searched up the
