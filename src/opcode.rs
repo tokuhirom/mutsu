@@ -10078,6 +10078,18 @@ impl CompiledCode {
             .enumerate()
             .map(|(i, name)| (name.as_str(), i))
             .collect();
+        let consumes_container_tags = self.ops.iter().any(|op| {
+            matches!(
+                op,
+                OpCode::ForLoop(_)
+                    | OpCode::Given { .. }
+                    | OpCode::When { .. }
+                    | OpCode::Default { .. }
+                    | OpCode::Succeed
+                    | OpCode::SucceedBarrier { .. }
+                    | OpCode::Proceed
+            )
+        });
         // Single-store Slice E Part 2: a nested closure no longer reads its free
         // variables from this frame's flushed env — `capture_closure_env` reads
         // this frame's own locals straight from the slot store (the live upvalue).
@@ -10114,7 +10126,16 @@ impl CompiledCode {
                 // write-back resolves it by name.
                 OpCode::TagElementSource { container_idx, .. }
                 | OpCode::TagElementSourcePath { container_idx, .. } => Some(*container_idx),
-                OpCode::TagContainerRef(idx, _) | OpCode::TagContainerRefReversed(idx, _) => {
+                // A container tag is read only by a topicalizer of this same
+                // chunk (`take_container_ref_for` matches the chunk's
+                // fingerprint): a `for`, `given`, `when` or `default`, which
+                // writes the tagged variable back by name. A chunk with none of
+                // them can never consume its tags, so they do not force their
+                // variable's every store into env -- `($i = nqp::sub_i($i, 1))`
+                // in a binary-search loop paid an env write per step (#15786).
+                OpCode::TagContainerRef(idx, _) | OpCode::TagContainerRefReversed(idx, _)
+                    if consumes_container_tags =>
+                {
                     Some(*idx)
                 }
                 // An aggregate (or sigilless alias) argument: the callee may bind its
@@ -10605,9 +10626,22 @@ impl CompiledCode {
                 {
                     false
                 }
+                // `OUTER::<$x>`, and an enclosing routine's `@_`/`%_` read
+                // from a block in its body, name a scope the compiler already
+                // resolved: one of the scopes this code is written in, as an
+                // `EVAL` names. So it is answered the way an `EVAL` is -- this
+                // chunk names lexicals (`static_name_lookup`), which every
+                // code and routine declaring it inherits -- and not by the
+                // process-global latch, which made every store of every
+                // routine in the program write `env` once one such read was
+                // compiled anywhere (Concurrent::PriorityQueue's
+                // `$!lock.protect: { for @_ { ... } }`, #15786).
+                OpCode::GetOuterVar { .. } => {
+                    is_eval = true;
+                    true
+                }
                 OpCode::GetCallerVar { .. }
                 | OpCode::GetCallersVar { .. }
-                | OpCode::GetOuterVar { .. }
                 | OpCode::GetCallerOuterVar { .. }
                 | OpCode::GetPseudoStash(_)
                 | OpCode::GetPseudoStashKeyed(_)

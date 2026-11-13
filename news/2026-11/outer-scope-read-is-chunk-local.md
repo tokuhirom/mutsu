@@ -1,0 +1,7 @@
+# A block reading its routine's `@_` no longer makes every store in the program write env
+
+A read of an enclosing scope that the compiler has already resolved -- `OUTER::<$x>`, or a block in a method body reading the method's `@_` -- compiles to `GetOuterVar`. It was classified with `CALLER::` and symbolic dereference as a read of *another frame's* lexical, which sets a process-global latch: from then on every routine of the program mirrored its parameters and every local store into env. Concurrent::PriorityQueue's `method STORE(*@_) { $!lock.protect: { for @_ { ... } } }` set it, so every `($i = nqp::sub_i($i, 1))` step of Array::Sorted::Util's binary search paid an env write.
+
+`GetOuterVar` names one of the scopes its code is written in, as an `EVAL` does, so it is now answered like one: the chunk that holds it, and every chunk declaring that chunk, keeps its lexicals visible by name (`static_name_lookup`), and nothing else changes. Separately, a container tag (`TagContainerRef`, emitted after every assignment expression) no longer forces its variable into env in a chunk that has no `for`/`given`/`when`/`default` to read the tag.
+
+Callgrind, release build: one Concurrent::PriorityQueue push (t/02's key distribution) went from 1.1725M to 1.1341M instructions (-3.3%), and the isolated 64-step scan from 437.0M to 426.2M for 600 scans. Found on the way: #17686 (`given ($x = ...)` binds a read-only topic). Refs #15786.
