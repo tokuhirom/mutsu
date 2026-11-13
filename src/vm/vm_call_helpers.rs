@@ -516,6 +516,26 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::unwrap_var_ref_value`] for one argument of a call that reaches
+    /// a built-in, reaching into a named argument too. A call site that may
+    /// resolve to an imported routine (`LexImportCall`, e.g. after
+    /// `use NativeCall`) passes `:test($re)` as a `Pair` whose value is
+    /// `$re`'s captured container cell (`MakeNamedArg`'s write-through
+    /// capture, for an `is rw` named parameter). A built-in binds no `is rw`
+    /// named parameter, so it gets the plain value -- `dir(:test($re))`
+    /// smart-matched each entry against the cell and rejected all of them
+    /// (the Readline distribution's library probe).
+    // Cost: O(1).
+    pub(super) fn unwrap_var_ref_arg(value: Value) -> Value {
+        if let ValueView::Pair(key, inner) = value.view()
+            && (inner.is_container_ref() || inner.as_varref().is_some())
+        {
+            let plain = Self::unwrap_var_ref_value(inner.clone()).deref_container();
+            return Value::pair(key.to_string(), plain);
+        }
+        Self::unwrap_var_ref_value(value)
+    }
+
     /// The atomic scalar helpers (`__mutsu_atomic_*_var`, `__mutsu_cas_var`,
     /// `__mutsu_cas_add_var`) take their target binding as the first argument.
     /// The compiler tags it with the frame slot the call site reaches
@@ -545,7 +565,7 @@ impl Interpreter {
         let plain_args: Vec<Value> = raw_args
             .iter()
             .cloned()
-            .map(Self::unwrap_var_ref_value)
+            .map(Self::unwrap_var_ref_arg)
             .collect();
         // `fn_base_name_registered` is the cheap negative gate (#5574): when no
         // registry key carries this base name, `has_declared_function` and
