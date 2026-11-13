@@ -402,7 +402,7 @@ pub(super) fn sub_value(
         // A quoted regex is the `Regex` it denotes (`/.../` evaluates to it).
         // The `my regex` its `<name>` assertions resolved to is declared
         // ahead of it, as the lexical rule the assertion calls.
-        K::QuotedRegex => {
+        K::QuotedRegex | K::QuotedRegexRx => {
             let tree = crate::rakuast::regex_with_declarations(target);
             return Some(interp.eval_rakuast_node(tree.as_ref().unwrap_or(target)));
         }
