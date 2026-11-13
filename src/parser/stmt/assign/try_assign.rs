@@ -486,21 +486,18 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // postfix loop sees it here, it treats the first method result as the
         // next lvalue (`($x.uc) .= flip`) instead of threading the original
         // variable through the chained dot-assign operations.
-        let (r, method_expr) = {
-            let (r_peek, _) = ws(rest)?;
-            if r_peek.starts_with(".=") {
-                (rest, method_expr)
-            } else {
-                crate::parser::expr::postfix_expr_continue(rest, method_expr)?
-            }
-        };
-        return Ok((
-            r,
-            super::written_dotty_assignment(
-                crate::rakuast::dotty_assign::dot_assign_target(&name),
-                method_expr,
-            ),
-        ));
+        let assign = super::written_dotty_assignment(
+            crate::rakuast::dotty_assign::dot_assign_target(&name),
+            method_expr,
+        );
+        // Only the first method is the mutator: a further postfix applies to
+        // the assignment's result (`$x .= uc.flip` stores `$x.uc`, then flips
+        // what the assignment returns; rakudo's `.=` takes one method call).
+        let (r_peek, _) = ws(rest)?;
+        if r_peek.starts_with(".=") {
+            return Ok((rest, assign));
+        }
+        return crate::parser::expr::postfix_expr_continue(rest, assign);
     }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;
