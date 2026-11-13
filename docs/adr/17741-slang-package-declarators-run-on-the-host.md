@@ -1,6 +1,6 @@
 # ADR-17741: A slang `package-declarator` production that parses its own body runs on the slang host, and its effects reach the unit by replay
 
-- **Status**: Proposed (2026-11-13; awaiting the maintainer's decision)
+- **Status**: Accepted (2026-11-13, approved by the maintainer)
 - **Date**: 2026-11-13
 - **Deciders**: Claude (ecosystem worker 38), for the maintainer's review
 - **Issue**: [#17741](https://github.com/tokuhirom/mutsu/issues/17741) (Grammar::BNF
