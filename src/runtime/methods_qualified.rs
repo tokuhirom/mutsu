@@ -149,12 +149,13 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let private_rest = method.strip_prefix('!')?;
         let ValueView::Proxy {
-            subclass: Some((class_sym, _)),
+            subclass: Some((class_sym, attrs_cell)),
             ..
         } = target.view()
         else {
             return None;
         };
+        let attrs_cell = Some(attrs_cell.clone());
         let class_name = class_sym.resolve();
         let caller_class = self.private_calling_package();
         let (pm_name, resolved) = match crate::qualified::split_qualified(
@@ -192,17 +193,37 @@ impl Interpreter {
             )));
         }
         let on_var_object = target.is_proxy_var_object();
-        let result = self
-            .run_resolved_method_compiled_or_treewalk(
-                &class_name,
-                &owner,
-                pm_name,
-                method_def,
-                AttrMap::new(),
-                args.to_vec(),
-                Some(target.clone()),
-            )
-            .map(|(result, _)| result);
+        // A compiled body runs against the cell the Proxy carries, exactly as
+        // a public method of the subclass does (`dispatch_compiled_method`'s
+        // Proxy arm): its `$!x := ...` binds land in that cell directly, with
+        // no entry snapshot to reconcile on exit.
+        let result = match (&method_def.compiled_code, &method_def.delegation, attrs_cell) {
+            (Some(cc), None, Some(attrs_cell)) => {
+                let cc = cc.clone();
+                let method_def = std::sync::Arc::new(method_def);
+                self.dispatch_compiled_method_with_attrs_cell(
+                    &class_name,
+                    &owner,
+                    pm_name,
+                    &method_def,
+                    &cc,
+                    target.clone(),
+                    &attrs_cell,
+                    args.to_vec(),
+                )
+            }
+            _ => self
+                .run_resolved_method_compiled_or_treewalk(
+                    &class_name,
+                    &owner,
+                    pm_name,
+                    method_def,
+                    AttrMap::new(),
+                    args.to_vec(),
+                    Some(target.clone()),
+                )
+                .map(|(result, _)| result),
+        };
         // `$proxy.VAR!meth` runs with the Proxy container itself as `self`, and
         // a method that hands `self` back hands back that container, which a
         // later `my $x = ...` FETCHes (AttrX::Mooish's `AttrProxy.new`).
