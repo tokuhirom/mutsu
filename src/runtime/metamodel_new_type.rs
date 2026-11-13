@@ -113,8 +113,14 @@ impl Interpreter {
         // A second type minted under a name an earlier `new_type` used is a
         // different type that merely shares the name (Red builds a fresh
         // `Model.new_type(:name($self.^name))` while `$self` is still in use).
+        // A type declared with a custom HOW (`model LPR { ... }`) registers its
+        // HOW under its name before it is composed, so it is not yet in
+        // `classes`/`composed_classes`; detect it through `class_how_values` too,
+        // or a later `new_type(:name('LPR'))` would keep the bare name and share
+        // the declared type's package-name stash (#17481, Red t/104).
         let already_composed = self.registry().composed_classes.contains(&name)
-            || self.registry().classes.contains_key(&name);
+            || self.registry().classes.contains_key(&name)
+            || self.registry().class_how_values.contains_key(&name);
         let name = if self.registry_mut().minted_type_names.insert(name.clone()) && !already_composed
         {
             name
