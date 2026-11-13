@@ -190,6 +190,17 @@ pub(in crate::parser) fn maybe_activate_slang_use(
     if !super::module_exports::module_activates_slang(module) {
         return Ok(());
     }
+    activate_slang_module(module, arg.and_then(literal_use_args))
+}
+
+/// Activate the slang of `module`, which is known to have one, with the
+/// `use` arguments already read: [`maybe_activate_slang_use`]'s work, and how
+/// a unit parse seeded with an earlier unit's language (`$?LANG`,
+/// `slang_lang`) activates that language's slangs again.
+pub(in crate::parser) fn activate_slang_module(
+    module: &str,
+    use_args: Option<Vec<SlangUseArg>>,
+) -> Result<(), String> {
     // Activation executes the module; a non-executing parse (`--dump-ast`,
     // the analysis API) stays in the ordinary grammar instead (#11212).
     if crate::parser::no_execute::no_execute() {
@@ -205,9 +216,13 @@ pub(in crate::parser) fn maybe_activate_slang_use(
     let activation = crate::runtime::slang_activation::run_slang_activation(
         module.to_string(),
         parser_lib_paths(),
-        arg.and_then(literal_use_args),
+        use_args.clone(),
     )
     .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?;
+    // The language from here on includes this slang (`$?LANG`, `slang_lang`);
+    // the activation ends with the enclosing block like its hooks do.
+    note_slang_activation_scope();
+    note_slang_activation(module, use_args);
     // Package declarators the slang added (ADR-0091): each keyword parses
     // like `class`/`role` for the rest of the enclosing block, with the declarator's
     // metaclass attached at registration time.
@@ -244,7 +259,7 @@ pub(in crate::parser) fn maybe_activate_slang_use(
 /// the activation thread carries them. `None` when any argument is not a plain
 /// string/number/boolean literal or a `&sub` of the unit: such a `use` activates with no arguments, as
 /// it did before arguments were passed at all.
-use crate::runtime::slang_activation::{SlangRuleOverride, SlangUseArg};
+pub(super) use crate::runtime::slang_activation::{SlangRuleOverride, SlangUseArg};
 
 fn literal_use_args(arg: &Expr) -> Option<Vec<SlangUseArg>> {
     let items: &[Expr] = match arg.peel_parens() {
