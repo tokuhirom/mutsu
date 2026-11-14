@@ -306,9 +306,10 @@ impl Interpreter {
                         Some(tc) => self.tag_container_metadata(
                             arr,
                             super::ContainerTypeInfo {
+                                declared_type:
+                                    crate::native_types::native_array_declared_type('@', &tc),
                                 value_type: tc,
                                 key_type: None,
-                                declared_type: None,
                             },
                         ),
                         None => arr,

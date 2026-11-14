@@ -551,10 +551,17 @@ impl Interpreter {
                     let tc = self.attribute_reported_constraint(&cn, method, &tc);
                     let (value_type, key_type) =
                         crate::runtime::types::split_object_hash_constraint(&tc);
+                    let sigil = if matches!(out.view(), ValueView::Hash(_)) {
+                        '%'
+                    } else {
+                        '@'
+                    };
                     let info = crate::runtime::ContainerTypeInfo {
                         value_type: value_type.to_string(),
                         key_type: key_type.map(str::to_string),
-                        declared_type: None,
+                        declared_type: crate::native_types::native_array_declared_type(
+                            sigil, value_type,
+                        ),
                     };
                     return Some(self.tag_container_metadata(out, info));
                 }

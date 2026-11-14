@@ -641,14 +641,14 @@ impl Interpreter {
             let info = ContainerTypeInfo {
                 value_type: elem_type.to_string(),
                 key_type: key_type.map(|k| k.to_string()),
-                declared_type: None,
+                declared_type: crate::native_types::native_array_declared_type(sigil, elem_type),
             };
             return Ok(self.tag_container_metadata(value, info));
         }
         let info = ContainerTypeInfo {
             value_type: elem_type.to_string(),
             key_type: key_type.map(|k| k.to_string()),
-            declared_type: None,
+            declared_type: crate::native_types::native_array_declared_type(sigil, elem_type),
         };
         Ok(self.tag_container_metadata(value, info))
     }
@@ -691,3 +691,4 @@ impl Interpreter {
         crate::runtime::utils::is_builtin_dynamic_var(bare)
     }
 }
+
