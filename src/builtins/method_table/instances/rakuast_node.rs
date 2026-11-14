@@ -437,6 +437,16 @@ pub(super) fn sub_value(
     {
         return Some(Ok(interp.sub_value_from_function_def(def)));
     }
+    // A `sub` declared inside a nested block is installed when its block runs:
+    // at CHECK time it is built from the node, with the declaration's identity.
+    if !matches!(routine.view(), ValueView::Sub(_))
+        && !interp.has_proto(&name)
+        && crate::rakuast::declared_multi_candidate(node).is_none()
+        && let Some(result) =
+            super::rakuast_check_time_routine::check_time_routine(interp, node, &name)
+    {
+        return Some(result);
+    }
     // A `multi sub` is its own candidate of the dispatcher, as in rakudo.
     if let Some(index) = crate::rakuast::declared_multi_candidate(node)
         && let Ok(candidates) =

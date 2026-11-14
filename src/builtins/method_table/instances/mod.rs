@@ -54,6 +54,7 @@ mod rakuast_apply_queries;
 mod rakuast_arg_list_queries;
 mod rakuast_block_queries;
 mod rakuast_capture_var_queries;
+mod rakuast_check_time_routine;
 mod rakuast_compile_state;
 mod rakuast_declaration_edits;
 mod rakuast_diagnostics;
