@@ -315,6 +315,7 @@ mod tests {
             tags: Vec::new(),
             condition: None,
             if_imports: Vec::new(),
+            imports: Vec::new(),
         }
     }
 
