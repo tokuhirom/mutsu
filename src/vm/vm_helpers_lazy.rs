@@ -559,8 +559,17 @@ impl Interpreter {
                     let v = v.deref_container();
                     self.reify_map_grep_seq(&v)?;
                     // A named argument's gather fills what it is bound to
-                    // (`C.new(c => gather {...})`, ADR-11678).
-                    self.reify_gather_seq(&v)?;
+                    // (`C.new(c => gather {...})`, ADR-11678). Its List view
+                    // (`(gather {...}).List`) is a List that keeps pulling as
+                    // it is read (§2.4): the callee pulls what it reads.
+                    let list_view = matches!(v.view(),
+                        ValueView::Seq(body) if matches!(
+                            body.view(),
+                            crate::value::SeqView::List | crate::value::SeqView::ItemList
+                        ));
+                    if !list_view {
+                        self.reify_gather_seq(&v)?;
+                    }
                     self.reify_closure_seq_endpoint(&v)?;
                 }
                 _ => {}
