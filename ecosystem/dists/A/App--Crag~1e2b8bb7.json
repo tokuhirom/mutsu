@@ -66,11 +66,11 @@
       "cmp": "no_baseline",
       "path": "t/01-sanity.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-e1bisi73/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-nfz5zim9/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.08,
+        "secs": 3.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,7 +85,7 @@
     "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8f508678",
+    "mutsu_commit": "10d7928f",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

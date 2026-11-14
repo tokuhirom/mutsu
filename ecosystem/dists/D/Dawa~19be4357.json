@@ -12,9 +12,120 @@
     "unresolved": []
   },
   "dist": "Dawa",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 7.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 16.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-compile.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-stop.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-commands.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 8.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-syntax.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Dawa": "Runtime error: slang activation for 'Dawa' failed: Slang activation NYI: grammar rule override 'statement' is not supported by this implementation (recognized: term:sym<identifier>, methodop, routine-",
+    "Dawa": "ok",
     "Dawa::Debugger": "ok",
     "Dawa::Debugger::Commands": "ok",
     "Dawa::Exception": "ok",
@@ -22,10 +133,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-13",
+    "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8f508678",
+    "mutsu_commit": "10d7928f",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -36,12 +147,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AW/DAWA/14c2a0ca3fe9d1ef9573fdb03c454598e7e7914e.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 14,
+    "baseline_files": 5,
+    "mutsu_assertions": 14,
+    "parity_files": 5,
     "regressed_files": 0
   },
   "version": "0.0.11"

@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.2,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.62,
+        "secs": 4.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.63,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.17,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.39,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.29,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.33,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +103,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.65,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -116,7 +116,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.7,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -129,29 +129,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.66,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "memory allocation of 40 bytes failed",
         "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 0.4,
+        "ok": 1,
+        "plan": null,
+        "secs": 68.87,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/requests.t",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.01,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -163,7 +164,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.32,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -173,29 +174,30 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.82,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "memory allocation of 1 bytes failed",
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.25,
+        "ok": 5,
+        "plan": null,
+        "secs": 55.77,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/url-parsing.t",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.78,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -210,7 +212,7 @@
     "date": "2026-11-13",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "8f508678",
+    "mutsu_commit": "10d7928f",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -221,13 +223,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/TT/HTTP_TINY/14fe10999d6aadb61aadd64c61a2b3dd3c90e2cb.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 58,
     "baseline_files": 7,
-    "mutsu_assertions": 58,
-    "parity_files": 7,
-    "regressed_files": 0
+    "mutsu_assertions": 40,
+    "parity_files": 5,
+    "regressed_files": 2
   },
   "version": "0.2.6"
 }

@@ -1,0 +1,199 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Wheel",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected known call arguments or first call argument or positional argument expression or reduction operator or expression statement or ... [at Wheel-0.0.1/t/02-alias.rakutest:8]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-alias.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expression statement or listop argument expression or '.' or digits or generic radix literal or ... [at Wheel-0.0.1/t/03-lexical.rakutest:41]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-lexical.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 28,
+        "plan": 28,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1219,
+        "plan": 1219,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-complete.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1219,
+        "plan": 1219,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3253,
+        "plan": 3253,
+        "secs": 5.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-rational-model.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3253,
+        "plan": 3253,
+        "secs": 2.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 613,
+        "plan": 613,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-interop.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 613,
+        "plan": 613,
+        "secs": 1.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expression statement or listop argument expression or '.' or digits or generic radix literal or ... [at Wheel-0.0.1/t/07-power.rakutest:49]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-power.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Wheel": "ok",
+    "Wheel::Kernel": "ok",
+    "⊙": "raku_also_fails"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-11-14",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "10d7928f",
+    "mutsu_version": "0.26.1",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/HE/WHEEL/d6f46c74efc43ac6225fd9efb916c1a9f75bc992.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 5162,
+    "baseline_files": 7,
+    "mutsu_assertions": 5093,
+    "parity_files": 4,
+    "regressed_files": 3
+  },
+  "version": "0.0.1"
+}
