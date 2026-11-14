@@ -130,9 +130,10 @@ impl Interpreter {
         // Collapse a scoped (multi-tier overlay) env to a flat one first: the
         // shared-var seeding and the child's env clone below iterate the env
         // overlay-only, which would miss parent-chain lexicals on a scoped env.
-        if self.env.is_scoped() {
-            self.env = self.env.flattened();
-        }
+        // The parent keeps its scoped env: flattening it in place merged a
+        // routine's `my $n` with a caller's same-named `$n`, and the routine
+        // read the caller's value back once its scope was restored (#17747).
+        let flat_env = self.env.is_scoped().then(|| self.env.flattened());
         // Copy user variables into shared_vars so both parent and child see mutations.
         // The compiler stores locals with bare names (no sigil), so we share everything
         // except internal/special variables that should remain thread-local.
@@ -182,7 +183,8 @@ impl Interpreter {
             // locally and recorded once per spawn (one atomic add per counter).
             let mut seed_keys_walked: u64 = 0;
             let mut seed_inserts: u64 = 0;
-            for (key, val) in &self.env {
+            let walked_env = flat_env.as_ref().unwrap_or(&self.env);
+            for (key, val) in walked_env {
                 seed_keys_walked += 1;
                 if handle_walk_needed {
                     Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
@@ -276,7 +278,7 @@ impl Interpreter {
             types: self.types.fork_for_thread(),
             literal_native_args: 0,
             static_call_args: false,
-            env: self.env.clone(),
+            env: flat_env.unwrap_or_else(|| self.env.clone()),
             io: self.io.fork_for_thread(&referenced_handle_ids),
             control: self.control.fork_for_thread(),
             main_hidden_from_usage: self.main_hidden_from_usage.clone(),
