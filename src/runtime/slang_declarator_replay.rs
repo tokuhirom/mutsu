@@ -87,8 +87,8 @@ fn remap_minted(value: &Value, renamed: &[(String, Value)], depth: usize) -> Opt
         }
         // A Match's named captures.
         ValueView::Hash(hash) => {
-            let keys: Vec<String> = hash.iter().map(|(k, _)| k.to_string()).collect();
-            let values = parts(&mut hash.iter().map(|(_, v)| v))?;
+            let keys: Vec<String> = hash.keys().map(|k| k.to_string()).collect();
+            let values = parts(&mut hash.values())?;
             let map: crate::value::ValueMap = keys.into_iter().zip(values).collect();
             Some(Value::hash(map))
         }

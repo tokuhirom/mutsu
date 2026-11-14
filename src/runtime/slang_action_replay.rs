@@ -83,7 +83,7 @@ impl Interpreter {
         {
             return Ok(Value::NIL);
         }
-        self.replay_action_events(roles, &events, None)
+        self.replay_action_events(roles, events, None)
     }
 
     /// Whether every role of `roles` is one this interpreter can compose (a
@@ -136,7 +136,6 @@ impl Interpreter {
         resolver: Option<Value>,
     ) -> Result<Value, RuntimeError> {
         let (entry, _) = self.slang_replay_entry()?;
-        let entry = Some(entry);
         // One actions class per set of roles, however many productions use it.
         let key = roles
             .as_list_items()
@@ -151,7 +150,7 @@ impl Interpreter {
                     s.get()
                 });
                 let built = self.call_sub_value(
-                    entry.unwrap_or(Value::NIL),
+                    entry,
                     vec![roles, Value::str(format!("Mutsu::Slang::Replay::Actions{serial}"))],
                 )?;
                 BUILT.with(|b| b.borrow_mut().push((key, built.clone())));
