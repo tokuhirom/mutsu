@@ -983,6 +983,11 @@ impl Interpreter {
             return Value::package(Symbol::intern(&own));
         }
 
+        // `M::Nested::In` through a package a stash binding placed under `M`.
+        if name_is_qualified && let Some(found) = self.stash_bound_member(name) {
+            return found;
+        }
+
         let mut parts = crate::qualified::segments(name_sym)
             .iter()
             .map(|part| part.as_str())

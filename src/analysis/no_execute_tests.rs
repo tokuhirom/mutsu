@@ -69,3 +69,47 @@ fn check_does_not_activate_a_slang() {
     check(&fixture.document);
     assert!(!fixture.marker.exists(), "check ran the slang module");
 }
+
+/// A `package-declarator` slang that parses its own body with a `FOREIGN-LANG`
+/// language (ADR-17741): its production runs on the slang host in a real run.
+const PACKAGE_DECLARATOR_SLANG: &str = "use experimental :rakuast;\n\
+     grammar PkgDeclAnalysis::Body { token TOP { \\s* \\w+ \\s* } }\n\
+     class PkgDeclAnalysis::Body-actions { method TOP($/) { make Int } }\n\
+     my role PkgDeclAnalysis::G {\n    \
+     rule package-declarator:sym<analysed> {\n        \
+     <.sym><.kok> <longname> \\{ <body=.FOREIGN-LANG('Analysed', 'TOP')> \\}\n    }\n}\n\
+     my role PkgDeclAnalysis::A {\n    \
+     method package-declarator:sym<analysed>(Mu $/) {\n        \
+     self.attach: $/, RakuAST::Term::Declaration.new(\n            \
+     RakuAST::Declaration::ResolvedConstant.new(:compile-time-value(Int)));\n    }\n}\n\
+     sub EXPORT(|) {\n    \
+     $*LANG.define_slang('MAIN', $*LANG.slang_grammar('MAIN').^mixin(PkgDeclAnalysis::G),\n        \
+     $*LANG.slang_actions('MAIN').^mixin(PkgDeclAnalysis::A));\n    \
+     $*LANG.define_slang('Analysed', PkgDeclAnalysis::Body, PkgDeclAnalysis::Body-actions);\n    \
+     BEGIN Map.new\n}\n";
+
+#[test]
+fn check_does_not_run_a_package_declarator_slang() {
+    let mut fixture = Fixture::new("check-pkgdecl", "PkgDeclAnalysis", PACKAGE_DECLARATOR_SLANG);
+    fixture.document.push_str("analysed Thing { word };\n");
+    check(&fixture.document);
+    assert!(
+        !fixture.marker.exists(),
+        "check ran the package-declarator slang"
+    );
+}
+
+#[test]
+fn symbols_does_not_run_a_package_declarator_slang() {
+    let mut fixture = Fixture::new(
+        "symbols-pkgdecl",
+        "PkgDeclAnalysisSymbols",
+        PACKAGE_DECLARATOR_SLANG,
+    );
+    fixture.document.push_str("analysed Thing { word };\n");
+    symbols(&fixture.document);
+    assert!(
+        !fixture.marker.exists(),
+        "symbols ran the package-declarator slang"
+    );
+}

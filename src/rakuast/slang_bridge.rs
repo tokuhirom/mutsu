@@ -276,6 +276,15 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
             });
         match (children.next(), children.next()) {
             (Some(only), None) => return lower_statement(only),
+            // A package declarator's replay and the lexicals it binds run in
+            // order: the lexicals read what the replay imported (ADR-17741).
+            (Some(first), Some(second)) if is_declarator_replay(first) => {
+                let mut stmts = vec![lower_statement(first)?, lower_statement(second)?];
+                for rest in children {
+                    stmts.push(lower_statement(rest)?);
+                }
+                return Ok(Stmt::SyntheticBlock(stmts));
+            }
             // A production that also re-runs its actions in the unit
             // (ADR-17243) stands for the replay call and its own node.
             (Some(first), Some(second)) => {
@@ -341,6 +350,26 @@ pub(crate) fn lower_statement(node: &Value) -> Result<Stmt, RuntimeError> {
             node: Value::rakuast(Box::new(kept)),
         },
     )))
+}
+
+/// Whether `node` is the statement that replays a package declarator in the
+/// unit (`__mutsu_slang_replay_declarator(...)`, ADR-17741 §2.4).
+// Cost: O(f), f = fields of the statement and its call.
+fn is_declarator_replay(node: &Value) -> bool {
+    let ValueView::RakuAst(n) = node.view() else {
+        return false;
+    };
+    if n.class != super::RakuAstClass::StatementExpression {
+        return false;
+    }
+    n.fields.iter().any(|f| match (&f.name, &f.value) {
+        (Some("expression"), RakuAstFieldValue::Node(call)) => {
+            matches!(call.view(), ValueView::RakuAst(c)
+                if c.class == super::RakuAstClass::CallName
+                    && super::lower::call_name_str(c).is_ok_and(|name| name == "__mutsu_slang_replay_declarator"))
+        }
+        _ => false,
+    })
 }
 
 /// Whether a production's node is a declaration (a routine, package or

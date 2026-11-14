@@ -103,7 +103,7 @@ fn read(target: &Value, name: &str, args: &[Value]) -> Option<Result<Value, Runt
     crate::rakuast::node_accessor(node, name).map(Ok)
 }
 
-// Cost: O(d) plus evaluating the node, d = payload wrappers.
+// Cost: O(d + f) plus evaluating the node, d = payload wrappers, f = fields of an `Import`.
 fn compiled_value(
     interp: &mut Interpreter,
     target: &Value,
@@ -111,6 +111,14 @@ fn compiled_value(
     named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     let target = native_node(target)?;
+    // The one `compile-time-value` row of a plain RakuAST node: a
+    // `Declaration::Import` a module built (`.new(:lexical-name,
+    // :compile-time-value)`, Grammar::BNF's `modern-install`) holds its value.
+    if let Some(value) =
+        super::rakuast_compile_state::built_import_field(&target, "compile-time-value")
+    {
+        return Some(Ok(value));
+    }
     sub_value(interp, &target, args, named)
 }
 

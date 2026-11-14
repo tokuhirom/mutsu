@@ -27,7 +27,7 @@
 //! only *records* the role composition.
 
 use super::*;
-use crate::runtime::slang_declarator::{SlangDeclarator, declarator_keyword};
+use crate::runtime::slang_declarator::{SlangDeclarator, declarator_keyword, delegates_to_package_def};
 use crate::value::ValueView;
 
 /// What one slang activation run learned: the grammar-rule overrides the
@@ -500,13 +500,18 @@ impl Interpreter {
         if self.module.module_load_stack.len() > 1 {
             for role in Self::slang_handle_roles(grammar) {
                 for over in self.slang_role_rule_names(&role, SlangRoleKind::Grammar)? {
-                    if let Some(keyword) = declarator_keyword(&over.name) {
+                    if let Some(keyword) = declarator_keyword(&over.name)
+                        && delegates_to_package_def(over.body.as_deref())
+                    {
                         let decl =
                             self.slang_declarator_from_candidate(keyword, over.body.as_deref());
                         self.record_slang_declarator(decl);
                     }
                 }
             }
+            return Ok(Value::NIL);
+        }
+        if self.record_slang_named_language(args) {
             return Ok(Value::NIL);
         }
         let mut rules: Vec<SlangRuleOverride> = Vec::new();
@@ -520,6 +525,9 @@ impl Interpreter {
             .iter()
             .map(|r| r.name.clone())
             .collect();
+        // The `package-declarator` candidates of the grammar half that run on
+        // the host, so the actions half's method of the same name goes with them.
+        let mut hooked_declarators: HashSet<String> = HashSet::new();
         let halves = [
             (Some(grammar), SlangRoleKind::Grammar),
             (args.get(2), SlangRoleKind::Actions),
@@ -562,8 +570,24 @@ impl Interpreter {
                     // registration would overwrite the grammar one with a
                     // bodyless record, losing its `$*PKGDECL`/`set_how`
                     // (a `role` declarator came back out as a class).
+                    //
+                    // A candidate that parses its own body instead of calling the
+                    // core `<package_def>` (Grammar::BNF's `bnf-grammar`) is a
+                    // production the slang host runs (ADR-17741 §2.1), like a
+                    // `statement-control` one; its actions-half method goes with it.
                     if let Some(keyword) = declarator_keyword(&over.name) {
-                        if kind == SlangRoleKind::Grammar {
+                        let hooked = match kind {
+                            SlangRoleKind::Grammar => {
+                                !delegates_to_package_def(over.body.as_deref())
+                            }
+                            SlangRoleKind::Actions => hooked_declarators.contains(&over.name),
+                        };
+                        if hooked {
+                            if kind == SlangRoleKind::Grammar {
+                                hooked_declarators.insert(over.name.clone());
+                            }
+                            rules.push(over);
+                        } else if kind == SlangRoleKind::Grammar {
                             declarators.push(
                                 self.slang_declarator_from_candidate(keyword, over.body.as_deref()),
                             );

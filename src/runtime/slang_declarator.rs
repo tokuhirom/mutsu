@@ -65,6 +65,24 @@ pub(crate) fn declarator_keyword(rule: &str) -> Option<&str> {
     (!inner.is_empty() && !inner.contains('<') && !inner.contains('>')).then_some(inner)
 }
 
+/// Whether a `package-declarator` candidate's body calls the core
+/// `<package_def>` (`<package-def>` in rakudo's RakuAST grammar), which makes
+/// the keyword an alias of `class` / `role` that ADR-0091 reads. A candidate
+/// that parses its own body instead runs on the slang host (ADR-17741 §2.1).
+/// A candidate with no body to read is taken to delegate, as before.
+// Cost: O(n), n = body length.
+pub(crate) fn delegates_to_package_def(body: Option<&str>) -> bool {
+    let Some(body) = body else { return true };
+    ["package_def", "package-def"].iter().any(|rule| {
+        body.match_indices(rule).any(|(at, _)| {
+            let before = body[..at].trim_end_matches('.');
+            let after = body[at + rule.len()..].chars().next();
+            (before.ends_with('<') || before.ends_with('='))
+                && after.is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '-'))
+        })
+    })
+}
+
 /// Lift the *declarative* prologue out of a proto-regex candidate's source:
 /// its `:my ...;` dynamic-variable declarations and its top-level `{ ... }`
 /// code blocks, in source order, as a Raku statement list.
@@ -361,5 +379,31 @@ mod keyword_tests {
         assert_eq!(declarator_keyword("package-declarator:sym<event>"), Some("event"));
         assert_eq!(declarator_keyword("package-declarator:sym<>"), None);
         assert_eq!(declarator_keyword("routine-declarator:sym<pattern>"), None);
+    }
+}
+
+#[cfg(test)]
+mod delegation_tests {
+    use super::delegates_to_package_def;
+
+    #[test]
+    fn a_candidate_calling_the_core_package_def_delegates() {
+        // ADR-0091's shape (Test::Async::Decl, `t/lib/SlangDeclarator.rakumod`).
+        assert!(delegates_to_package_def(Some(
+            ":my $*PKGDECL := 'role'; <sym><.kok> <package_def> <.set_braid_from(self)>"
+        )));
+        assert!(delegates_to_package_def(Some("<.sym><.kok> <package-def>")));
+        assert!(delegates_to_package_def(Some("<sym> <def=.package-def>")));
+        assert!(delegates_to_package_def(None));
+    }
+
+    #[test]
+    fn a_candidate_parsing_its_own_body_does_not() {
+        // Grammar::BNF's `bnf-grammar` (ADR-17741).
+        assert!(!delegates_to_package_def(Some(
+            "<.sym><.kok> :my $*name; <longname> \\{ <rules=.FOREIGN-LANG('Grammar::BNF', 'main_syntax')> \\}"
+        )));
+        // A rule whose name merely starts with the core one's is not it.
+        assert!(!delegates_to_package_def(Some("<.sym> <package-defs>")));
     }
 }

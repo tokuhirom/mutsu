@@ -612,6 +612,17 @@ impl Interpreter {
             if self.is_my_scoped_package_item(class_name) {
                 continue;
             }
+            // A type only a metaobject minted (`Metamodel::GrammarHOW.new_type(
+            // :name<A::B::G>)`) is installed nowhere until something binds it
+            // (`A::B.WHO.BIND-KEY('G', $g)`, which the stash then lists on its
+            // own): neither it nor the packages its name implies are members, so
+            // a fresh `A` stub's stash is empty (Grammar::BNF's `modern-install`).
+            if !self.types.user_declared_classes.contains(class_name)
+                && (self.registry().minted_type_names.contains(class_name)
+                    || super::metamodel_new_type::is_minted_type_name(class_name))
+            {
+                continue;
+            }
             let Some(rest) = Self::stash_member_tail(class_name, &package_name) else {
                 continue;
             };

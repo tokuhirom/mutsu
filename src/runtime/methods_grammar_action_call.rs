@@ -79,12 +79,22 @@ impl Interpreter {
         method: &str,
         match_obj: &Value,
     ) -> Result<Value, RuntimeError> {
-        self.record_slang_action(method, match_obj);
-        if let Some(result) =
-            self.try_dispatch_compiled_method_direct(actions, method, std::slice::from_ref(match_obj))
-        {
-            return result;
+        self.record_slang_action(actions, method, match_obj);
+        let own = super::slang_class_replay::own_action_scope(actions, method);
+        if own {
+            super::slang_class_replay::enter_own_action();
         }
-        self.call_method_with_values(actions.clone(), method, vec![match_obj.clone()])
+        let result = match self.try_dispatch_compiled_method_direct(
+            actions,
+            method,
+            std::slice::from_ref(match_obj),
+        ) {
+            Some(result) => result,
+            None => self.call_method_with_values(actions.clone(), method, vec![match_obj.clone()]),
+        };
+        if own {
+            super::slang_class_replay::leave_own_action();
+        }
+        result
     }
 }
