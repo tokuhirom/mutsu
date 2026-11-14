@@ -155,6 +155,14 @@ impl Interpreter {
             .unwrap_or(encoding_name)
             .to_lowercase();
 
+        // The exposed codepoints: a doubled marker is one literal U+10FFFD
+        // (ADR-17800); utf8-c8 reads the escape itself.
+        let exposed = if encoding == "utf8-c8" {
+            std::borrow::Cow::Borrowed(input)
+        } else {
+            super::utf8_c8::unescape_literal_marker(input)
+        };
+        let input: &str = &exposed;
         match encoding.as_str() {
             "utf8-c8" => Ok(super::utf8_c8::encode_utf8_c8(input)),
             "ascii" => {
