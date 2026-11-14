@@ -266,14 +266,22 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut result = instance;
         for (role_name, args) in Self::mixin_role_applications(mixins) {
-            let role = match args {
-                Some(args) => Value::parametric_role(Symbol::intern(&role_name), args),
-                None => Value::package(Symbol::intern(&role_name)),
-            };
             // The instance is the fresh `Base` this construction made, so the
             // role is composed into it (a rebless into the mixin class, which
-            // runs the mixin class's own BUILDPLAN), not into a copy.
-            result = self.eval_does_values_mutating(result, role)?;
+            // runs the mixin class's own BUILDPLAN), not into a copy. A
+            // parameterized role keeps the wrapper the type object itself is
+            // (`mixin_type_object_class` declines it too), so an instance
+            // shares that type object's identity and a `.^set_name` on it.
+            result = match args {
+                Some(args) => {
+                    let role = Value::parametric_role(Symbol::intern(&role_name), args);
+                    self.eval_does_values(result, role)?
+                }
+                None => {
+                    let role = Value::package(Symbol::intern(&role_name));
+                    self.eval_does_values_mutating(result, role)?
+                }
+            };
         }
         Ok(result)
     }

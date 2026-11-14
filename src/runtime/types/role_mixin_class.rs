@@ -460,7 +460,7 @@ impl Interpreter {
         // no constructor runs for them: give each declared attribute its default
         // (or the sigil-appropriate empty container) unless the object carries it
         // already.
-        self.seed_mixin_role_attributes(&attributes, &role_names, &reblessed)?;
+        self.seed_mixin_role_attributes(&attributes, &role_names, &reblessed, &mixin_class)?;
         for (attr, value) in initializers {
             attributes.insert(attr.as_str(), value);
         }
@@ -548,7 +548,11 @@ impl Interpreter {
         attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
         role_names: &[String],
         target: &Value,
+        mixin_class: &str,
     ) -> Result<(), RuntimeError> {
+        // A default may name the role's parameters (`role H[&f] { has &.g =
+        // &f }`): they are bound as the mixin type composed them.
+        let bindings = self.registry().get_role_param_bindings(mixin_class);
         // An attribute default may reference `self` (`has $.builder = "build_"
         // ~ self.base-name`, or simply another attribute's accessor). `target`
         // shares this same `attributes` cell, so an earlier attribute's value
@@ -562,11 +566,20 @@ impl Interpreter {
                 let Some(role) = self.registry().roles.get(role_name).cloned() else {
                     continue;
                 };
-                let saved_env = role.captured_env.as_ref().map(|captured| {
+                let saved_env = (role.captured_env.is_some()
+                    || bindings.as_ref().is_some_and(|b| !b.is_empty()))
+                .then(|| {
                     let saved = self.env.clone();
-                    for (k, v) in captured.iter() {
-                        if !self.env.contains_key_sym(*k) {
-                            self.env.insert_sym(*k, v.clone());
+                    if let Some(captured) = role.captured_env.as_ref() {
+                        for (k, v) in captured.iter() {
+                            if !self.env.contains_key_sym(*k) {
+                                self.env.insert_sym(*k, v.clone());
+                            }
+                        }
+                    }
+                    if let Some(bindings) = bindings.as_ref() {
+                        for (name, value) in bindings {
+                            self.env.insert(name.clone(), value.clone());
                         }
                     }
                     saved
