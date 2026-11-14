@@ -807,6 +807,16 @@ impl DispatchShape {
             // over them through the user-override check every row entry makes.
             crate::value::attribute_class::is_attribute_class(class)
                 .then_some(DispatchShape::Attribute)
+                // Likewise a cat handle reblessed in place (`$h does R`,
+                // `$*ARGFILES does R` names it `IO::ArgFiles+{R}`) keeps the
+                // cat's rows (#17754, #17755).
+                .or_else(|| {
+                    class.with_str(|name| {
+                        let base = name.split_once("+{")?.0;
+                        matches!(base, "IO::CatHandle" | "IO::ArgFiles")
+                            .then_some(DispatchShape::CatHandle)
+                    })
+                })
         });
         if shape.is_none() {
             instances::note_shapeless(class);

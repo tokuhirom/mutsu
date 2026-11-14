@@ -170,14 +170,17 @@ impl Interpreter {
             .get("path")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let spec = if class_name == "IO::Path" {
+        // A path with a role mixed in (`IO::Path+{R}`) is still an
+        // `IO::Path` carrying its `$.SPEC`; its type shows as `.^name` does.
+        let display = crate::value::user_facing_type_name(class_name);
+        let spec = if display == "IO::Path" || display.starts_with("IO::Path+{") {
             ":SPEC(IO::Spec::Unix), "
         } else {
             ""
         };
         format!(
             "{}.new(\"{}\", {}:CWD(\"{}\"))",
-            class_name,
+            display,
             escape(&p),
             spec,
             escape(&self.io_path_cwd_of(attributes))

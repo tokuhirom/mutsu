@@ -124,9 +124,6 @@ impl IoState {
                 stream_hit_eof: handle.stream_hit_eof,
                 utf16_bom_written: handle.utf16_bom_written,
                 utf16_detected_be: handle.utf16_detected_be,
-                argfiles_index: handle.argfiles_index,
-                argfiles_reader: None, // Cannot clone BufReader; will reopen if needed
-                argfiles_paths: handle.argfiles_paths.clone(),
                 pending_words: handle.pending_words.clone(),
                 close_on_exhaust: handle.close_on_exhaust,
                 seq_reader: handle.seq_reader.as_ref().and_then(|r| r.try_clone()),

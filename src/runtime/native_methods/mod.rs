@@ -571,7 +571,9 @@ impl Interpreter {
                 .find(|candidate| {
                     matches!(
                         candidate.as_str(),
-                        "IO::Path"
+                        // `IO::ArgFiles` is a cat handle.
+                        "IO::CatHandle"
+                            | "IO::Path"
                             | "IO::Handle"
                             | "IO::Special"
                             | "IO::Socket::INET"

@@ -40,35 +40,11 @@ impl Interpreter {
         ))
     }
 
-    /// `IO::ArgFiles.new(@files)`: an `$*ARGFILES`-like handle that reads from
-    /// an explicit file list rather than the global `@*ARGS`.
-    // Cost: O(f), f = files named.
+    /// `IO::ArgFiles.new(@files)`: a cat handle over an explicit file list,
+    /// `$*ARGFILES`'s class (#17754).
+    // Cost: O(f), f = files named, plus the first file's open.
     pub(crate) fn argfiles_new_late(&mut self, args: &[Value]) -> Value {
-        let paths: Vec<String> = args
-            .iter()
-            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-            .flat_map(|a| match a.view() {
-                ValueView::Array(items, ..) => items
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>(),
-                ValueView::Seq(items) => items
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>(),
-                _ => vec![a.to_string_value()],
-            })
-            .collect();
-        let handle = self.create_handle(
-            crate::runtime::IoHandleTarget::ArgFiles,
-            crate::runtime::IoHandleMode::Read,
-            None,
-        );
-        let _ = self.with_handle_mut_opt(&handle, |state| {
-            state.argfiles_paths = Some(paths);
-            Ok(())
-        });
-        handle
+        self.build_io_cathandle(crate::symbol::Symbol::intern("IO::ArgFiles"), args)
     }
 
     /// `Failure.handled`: read the handled state, or set it
@@ -290,14 +266,22 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut result = instance;
         for (role_name, args) in Self::mixin_role_applications(mixins) {
-            let role = match args {
-                Some(args) => Value::parametric_role(Symbol::intern(&role_name), args),
-                None => Value::package(Symbol::intern(&role_name)),
-            };
             // The instance is the fresh `Base` this construction made, so the
             // role is composed into it (a rebless into the mixin class, which
-            // runs the mixin class's own BUILDPLAN), not into a copy.
-            result = self.eval_does_values_mutating(result, role)?;
+            // runs the mixin class's own BUILDPLAN), not into a copy. A
+            // parameterized role keeps the wrapper the type object itself is
+            // (`mixin_type_object_class` declines it too), so an instance
+            // shares that type object's identity and a `.^set_name` on it.
+            result = match args {
+                Some(args) => {
+                    let role = Value::parametric_role(Symbol::intern(&role_name), args);
+                    self.eval_does_values(result, role)?
+                }
+                None => {
+                    let role = Value::package(Symbol::intern(&role_name));
+                    self.eval_does_values_mutating(result, role)?
+                }
+            };
         }
         Ok(result)
     }

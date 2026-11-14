@@ -92,15 +92,18 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !args.is_empty() {
+        // Only the default-handle forms: no positional argument (a named one,
+        // `lines(:!chomp)`, is passed on to the method).
+        if !args.iter().all(Value::is_string_pair_value) {
             return None;
         }
         let handle = self.default_input_handle()?;
+        // Anything but a plain `IO::Handle` answers by its own method: a role
+        // mixed into the handle, and `$*ARGFILES`'s `IO::ArgFiles` cat
+        // (#17754), whose per-file switching the builtin's line reader lacks.
         let mixed = match handle.view() {
             ValueView::Mixin(..) => true,
-            ValueView::Instance { class_name, .. } => {
-                class_name.as_str().starts_with("IO::Handle+{")
-            }
+            ValueView::Instance { class_name, .. } => class_name != "IO::Handle",
             _ => false,
         };
         if !mixed {
@@ -114,7 +117,7 @@ impl Interpreter {
         if IN_ARGFILES_MIXIN.with(|c| c.replace(true)) {
             return None;
         }
-        let result = self.call_method_with_values(handle, name, Vec::new());
+        let result = self.call_method_with_values(handle, name, args.to_vec());
         IN_ARGFILES_MIXIN.with(|c| c.set(false));
         Some(result)
     }
@@ -137,6 +140,9 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_getc(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.argfiles_mixin_method("getc", args) {
+            return result;
+        }
         let handle = args
             .first()
             .cloned()
@@ -277,6 +283,9 @@ impl Interpreter {
 
     pub(super) fn builtin_words(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(result) = self.try_io_path_content_sub(args, true) {
+            return result;
+        }
+        if let Some(result) = self.argfiles_mixin_method("words", args) {
             return result;
         }
         let handle = if args.is_empty() {

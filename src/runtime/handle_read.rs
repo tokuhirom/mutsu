@@ -1,9 +1,5 @@
 //! Interpreter-side handle reading: records, lines, words, and raw bytes.
 use super::*;
-use crate::value::ValueView;
-
-/// A handle's line separators and chomp setting.
-type LineSettings = (Vec<Vec<u8>>, bool);
 
 impl Interpreter {
     pub(crate) fn read_record_bytes<R: Read + ?Sized>(
@@ -116,48 +112,10 @@ impl Interpreter {
         })
     }
 
-    /// `@*ARGS` as strings, and `$*IN`'s line separators and chomp setting:
-    /// what an `ArgFiles` handle's line read falls back to.
-    fn argfiles_read_context(&self) -> (Vec<String>, Option<LineSettings>) {
-        let argfiles_list: Vec<String> = self
-            .env
-            .get("@*ARGS")
-            .and_then(|v| {
-                if let ValueView::Array(items, ..) = v.view() {
-                    Some(items.iter().map(|v| v.to_string_value()).collect())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-        let stdin_seps = self.get_dynamic_handle("$*IN").and_then(|in_handle| {
-            let id = Self::handle_id_from_value(&in_handle)?;
-            let table = self.io_handles();
-            let in_state = table.map.get(&id)?;
-            Some((in_state.line_separators.clone(), in_state.line_chomp))
-        });
-        (argfiles_list, stdin_seps)
-    }
-
     pub(crate) fn read_line_from_handle_value(
         &mut self,
         handle_value: &Value,
     ) -> Result<Option<String>, RuntimeError> {
-        // Pre-extract @*ARGS and $*IN's line separators before borrowing the
-        // handle state -- only an `ArgFiles` handle reads them, and a per-line
-        // env lookup is most of the cost of reading a short line elsewhere.
-        let is_argfiles = Self::handle_id_from_value(handle_value).is_some_and(|id| {
-            self.io_handles()
-                .map
-                .get(&id)
-                .is_some_and(|state| matches!(state.target, IoHandleTarget::ArgFiles))
-        });
-        let (argfiles_list, stdin_seps) = if is_argfiles {
-            self.argfiles_read_context()
-        } else {
-            (Vec::new(), None)
-        };
-
         // The File branch may need to decode the raw record via
         // `self.decode_with_encoding`, which re-enters `self`. Read the record
         // inside the confined handle borrow, then decode outside it.
@@ -194,70 +152,6 @@ impl Interpreter {
                         state.stream_hit_eof = true;
                     }
                     Ok(LineOutcome::Done(line))
-                }
-                IoHandleTarget::ArgFiles => {
-                    let seps = state.line_separators.clone();
-                    let chomp = state.line_chomp;
-                    // An `IO::ArgFiles.new(@files)` handle carries its own file
-                    // list; a plain `$*ARGFILES` handle falls back to `@*ARGS`.
-                    let effective_list = match &state.argfiles_paths {
-                        Some(paths) => paths.clone(),
-                        None => argfiles_list,
-                    };
-                    if effective_list.is_empty() {
-                        // No file args — read from stdin, using $*IN's nl-in.
-                        let (effective_seps, effective_chomp) = stdin_seps.unwrap_or((seps, chomp));
-                        let line = {
-                            let mut stdin = super::exit_aware_read::StdinReader::lock();
-                            Self::read_record_with_separators(
-                                &mut stdin,
-                                &effective_seps,
-                                effective_chomp,
-                            )?
-                        };
-                        if line.is_none() {
-                            state.stream_hit_eof = true;
-                        }
-                        return Ok(LineOutcome::Done(line));
-                    }
-                    // Read from files listed in the effective list sequentially
-                    loop {
-                        if state.argfiles_index >= effective_list.len() {
-                            return Ok(LineOutcome::Done(None));
-                        }
-                        // Open the next file if we don't have a reader
-                        if state.argfiles_reader.is_none() {
-                            let path = &effective_list[state.argfiles_index];
-                            if path == "-" {
-                                // `-` means read from stdin
-                                let line = {
-                                    let mut stdin = super::exit_aware_read::StdinReader::lock();
-                                    Self::read_record_with_separators(&mut stdin, &seps, chomp)?
-                                };
-                                match line {
-                                    Some(line) => return Ok(LineOutcome::Done(Some(line))),
-                                    None => {
-                                        state.stream_hit_eof = true;
-                                        state.argfiles_index += 1;
-                                        continue;
-                                    }
-                                }
-                            }
-                            let file = std::fs::File::open(path).map_err(|e| {
-                                RuntimeError::new(format!("Failed to open file '{}': {}", path, e))
-                            })?;
-                            state.argfiles_reader = Some(std::io::BufReader::new(file));
-                        }
-                        let reader = state.argfiles_reader.as_mut().unwrap();
-                        match Self::read_record_with_separators(reader, &seps, chomp)? {
-                            Some(line) => return Ok(LineOutcome::Done(Some(line))),
-                            None => {
-                                // Current file exhausted, move to next
-                                state.argfiles_reader = None;
-                                state.argfiles_index += 1;
-                            }
-                        }
-                    }
                 }
                 IoHandleTarget::File => {
                     // The private handle of `IO::Path.lines` / `.words` reads
@@ -370,86 +264,13 @@ impl Interpreter {
         handle_value: &Value,
         count: usize,
     ) -> Result<Vec<u8>, RuntimeError> {
-        // Validate, mark the handle read, and capture the target plus any
-        // handle-owned ArgFiles list inside a confined borrow. The ArgFiles
-        // fallback needs `@*ARGS` from `self.env`, so it runs between borrows.
-        let (target, own_paths) = self.with_handle_mut(handle_value, |state| {
+        self.with_handle_mut(handle_value, |state| {
             if state.closed {
                 return Err(RuntimeError::io_closed("handle operation"));
             }
             state.read_attempted = true;
-            Ok((state.target, state.argfiles_paths.clone()))
+            Ok(())
         })?;
-        if matches!(target, IoHandleTarget::ArgFiles) {
-            // Read bytes from files listed in @*ARGS sequentially, unless the
-            // handle carries its own explicit list (`IO::ArgFiles.new(@files)`).
-            let argfiles_list: Vec<String> = match own_paths {
-                Some(paths) => paths,
-                None => self
-                    .env
-                    .get("@*ARGS")
-                    .and_then(|v| {
-                        if let ValueView::Array(items, ..) = v.view() {
-                            Some(items.iter().map(|v| v.to_string_value()).collect())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default(),
-            };
-            if argfiles_list.is_empty() {
-                // No file args — read from stdin
-                use std::io::Read;
-                let mut buffer = vec![0u8; count];
-                let bytes_read = {
-                    let mut stdin = super::exit_aware_read::StdinReader::lock();
-                    stdin.read(&mut buffer).map_err(|err| {
-                        super::exit_aware_read::read_error(err, "Failed to read from stdin")
-                    })?
-                };
-                buffer.truncate(bytes_read);
-                if bytes_read == 0 && count > 0 {
-                    self.with_handle_mut(handle_value, |state| {
-                        state.stream_hit_eof = true;
-                        Ok(())
-                    })?;
-                }
-                return Ok(buffer);
-            }
-            return self.with_handle_mut(handle_value, |state| {
-                let mut result = Vec::new();
-                loop {
-                    if state.argfiles_index >= argfiles_list.len() {
-                        break;
-                    }
-                    if state.argfiles_reader.is_none() {
-                        let path = &argfiles_list[state.argfiles_index];
-                        let file = std::fs::File::open(path).map_err(|e| {
-                            RuntimeError::new(format!("Failed to open file '{}': {}", path, e))
-                        })?;
-                        state.argfiles_reader = Some(std::io::BufReader::new(file));
-                    }
-                    let reader = state.argfiles_reader.as_mut().unwrap();
-                    let mut buffer = vec![0u8; count.min(8192)];
-                    let bytes_read = reader
-                        .read(&mut buffer)
-                        .map_err(|err| super::exit_aware_read::read_error(err, "Failed to read"))?;
-                    if bytes_read == 0 {
-                        state.argfiles_reader = None;
-                        state.argfiles_index += 1;
-                        continue;
-                    }
-                    buffer.truncate(bytes_read);
-                    result.extend(buffer);
-                    if result.len() >= count {
-                        break;
-                    }
-                }
-                result.truncate(count);
-                Ok(result)
-            });
-        }
-        // Non-ArgFiles targets touch only the handle state.
         self.with_handle_mut(handle_value, |state| match state.target {
             IoHandleTarget::Stdout | IoHandleTarget::Stderr => {
                 Err(RuntimeError::new("Handle not readable"))
@@ -493,7 +314,6 @@ impl Interpreter {
                 buffer.truncate(bytes);
                 Ok(buffer)
             }
-            IoHandleTarget::ArgFiles => unreachable!("ArgFiles handled above"),
         })
     }
 }

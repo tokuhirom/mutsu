@@ -343,10 +343,12 @@ fn run_main() {
             (buf, "<stdin>".to_string(), Vec::new())
         };
 
+    // Each line is a fresh copy the code may change (`-pe '.=uc'`), as in
+    // rakudo: the lines `lines()` yields are immutable.
     let input = if auto_print {
-        format!("for lines() {{ {};\n.say;\n}}", input)
+        format!("for lines() -> $_ is copy {{ {};\n.say;\n}}", input)
     } else if auto_loop {
-        format!("for lines() {{ {};\n}}", input)
+        format!("for lines() -> $_ is copy {{ {};\n}}", input)
     } else {
         input
     };

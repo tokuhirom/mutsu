@@ -222,10 +222,14 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
 /// for a lexical class), a lexical type closing a parameter list
 /// (`Associative[Dest\u{0}<id>]` displays as `Associative[Dest]`) and a
 /// definiteness smiley (`Foo\u{0}<id>:D` displays as `Foo:D`).
+// Cost: O(n), n = the segment's length.
 fn strip_site_keys(segment: &str) -> String {
     let Some((short, rest)) = segment.split_once('\u{0}') else {
         return segment.to_string();
     };
+    // A role mixed in with named arguments only (`C+{R[]\u{0}<args>}`,
+    // `parameterized_mixin_role_key`) displays without brackets.
+    let short = short.strip_suffix("[]").unwrap_or(short);
     let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
     if rest.starts_with(['[', ']', '}', ',', '+']) {
         format!("{short}{}", strip_site_keys(rest))

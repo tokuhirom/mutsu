@@ -694,6 +694,16 @@ impl Interpreter {
         {
             return true;
         }
+        // A built-in instance reblessed by a role mixed in place (`$h does R`
+        // names it `IO::CatHandle+{R}`): a method the role declares takes the
+        // call from the built-in row, and its `callsame` reaches the row
+        // (#17754).
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && class_name.as_str().contains("+{")
+            && self.has_user_method_sym(class_name.as_str(), method_sym)
+        {
+            return true;
+        }
         // Both halves are functions of (type, method) and the registry alone,
         // so the cache holds the combined answer: the outranking half is an MRO
         // walk (~12k Ir) that a call on a type with a same-named user method

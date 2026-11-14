@@ -1273,6 +1273,18 @@ impl Interpreter {
             // (a `require` inside a method); `module_scope_lexicals` keeps it attached
             // to the module instead. Last resort, after every live-env route.
             module_val
+        } else if let code = loan_env!(self, resolve_code_var(name))
+            && matches!(
+                code.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            )
+        {
+            // A sub of the running routine's module, called as a bare term
+            // before its declaration (`END { done-testing }` above `sub
+            // done-testing`, Testo): the module's file-scope frame is gone
+            // when its `END` runs, so the term is its `&name`, resolved as a
+            // `&name` read there is.
+            self.vm_call_on_value(code, Vec::new(), Some(compiled_fns))?
         } else if self.is_name_suppressed(name) {
             // Nothing in scope resolved the name and it is the short name of a
             // type private to some class body — raku reports that as undeclared
