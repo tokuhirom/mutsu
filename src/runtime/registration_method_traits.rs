@@ -72,6 +72,7 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         body: &[crate::ast::Stmt],
         is_rw: bool,
+        is_raw: bool,
         is_proto: bool,
         return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
@@ -92,6 +93,7 @@ impl Interpreter {
             param_defs,
             body,
             is_rw,
+            is_raw,
             is_proto,
             return_type,
             traits,
@@ -172,6 +174,7 @@ impl Interpreter {
             &effective_param_defs,
             body,
             false,
+            false,
             true,
             return_type.as_deref(),
             trait_args,
@@ -189,6 +192,7 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         body: &[crate::ast::Stmt],
         is_rw: bool,
+        is_raw: bool,
         is_proto: bool,
         return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
@@ -267,6 +271,9 @@ impl Interpreter {
             ValueView::Sub(data) => {
                 let mut data = (**data).clone();
                 data.routine_cell = cell.clone();
+                // `is raw` reaches the handler too (`$m.rw`, which
+                // Method::Protected's `is protected` reads).
+                data.is_raw = is_raw;
                 Value::sub_value(crate::gc::Gc::new(data))
             }
             _ => sub_val,

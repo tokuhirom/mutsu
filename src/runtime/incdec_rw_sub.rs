@@ -145,9 +145,60 @@ impl Interpreter {
             ValueView::WeakSub(weak) => weak
                 .upgrade()
                 .is_some_and(|strong| Self::sub_is_rw_capable(&strong)),
+            // A `Method` object (`my &m = C.^lookup('m')`): its `rw` (set for
+            // `is rw` and `is raw`) says whether it hands back a container.
+            // `assign_callable_lvalue_with_values` writes through it with the
+            // invocant as the first argument.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.as_str(), "Method" | "Submethod") => attributes
+                .as_map()
+                .get("rw")
+                .is_some_and(Value::truthy),
             _ => false,
         };
         rw.then(|| callable.clone())
+    }
+
+    /// `__mutsu_incdec_nomatch(op_label, operand)`: `++`/`--` on an operand
+    /// with no named lvalue shape (`$obj.&m(...)++`, `(EXPR)++`). Raku's
+    /// operator takes the operand `is rw`, so what decides is whether the
+    /// operand evaluated to a container: step through it when it did (a
+    /// `Scalar` cell or a `Proxy`), raise the `X::Multi::NoMatch` otherwise.
+    // Cost: O(1) plus the `.succ`/`.pred` step.
+    pub(crate) fn builtin_incdec_operand(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let Some(operand) = args.get(1) else {
+            return self.builtin_incdec_nomatch(args);
+        };
+        let label = args
+            .first()
+            .map(Value::to_string_value)
+            .unwrap_or_default();
+        let is_inc = label.contains("++");
+        let is_prefix = label.starts_with("prefix");
+        let step = |this: &mut Self, current: &Value| {
+            if is_inc {
+                this.increment_value_smart(current)
+            } else {
+                this.decrement_value_smart(current)
+            }
+        };
+        if operand.is_proxy_value() {
+            let current = self.auto_fetch_proxy(operand)?;
+            let new = step(self, &current)?;
+            self.assign_proxy_lvalue(operand.clone(), new.clone())?;
+            return Ok(if is_prefix { new } else { current });
+        }
+        if let ValueView::ContainerRef(cell) = operand.view() {
+            let current = operand.clone().deref_container();
+            let new = step(self, &current)?;
+            let stored = self.coerce_container_cell_store(&cell, new.clone())?;
+            cell.store(stored);
+            return Ok(if is_prefix { new } else { current });
+        }
+        self.builtin_incdec_nomatch(args)
     }
 
     /// `__mutsu_incdec_named_sub_lvalue(name, [args], op_label)`
