@@ -49,6 +49,10 @@ impl Value {
                 return false;
             }
             Value::assign_element_slot(&mut items[idx], val);
+            // A store fills a hole: the slot is present from now on.
+            if let Some(tracked) = data.initialized.as_mut() {
+                tracked.insert(idx);
+            }
             true
         } else {
             false
@@ -138,6 +142,11 @@ impl Value {
                     return true;
                 }
                 let new_items = src_items.items().to_vec();
+                // The source's holes (slots an out-of-range store skipped) stay
+                // holes in the destination: `$obj.d[2] = 1` goes through a
+                // rebuilt array stored back here, and `$obj.d[1]:exists` must
+                // stay False, as for `@a[2] = 1` (#17778).
+                let new_initialized = src_items.initialized.clone();
                 // SAFETY: aliased in-place mutation of a shared container; see
                 // `gc_contents_mut`. No borrow into the items is live across
                 // the replacement.
@@ -146,6 +155,7 @@ impl Value {
                 // a stale native payload would decode back over the new elements.
                 data.clear_native_storage();
                 *data.items_mut() = new_items;
+                data.initialized = new_initialized;
                 true
             }
             (ValueView::Hash(dst_arc), ValueView::Hash(src_map)) => {
@@ -254,8 +264,15 @@ impl Value {
                 return;
             }
             let hole = data.hole_value();
+            let old_len = data.len();
             while data.len() <= idx {
                 data.push(hole.clone());
+            }
+            // The grown slots are holes (`:exists` False, `.List` reads `Nil`)
+            // until something is stored there (#17778): record the slots that
+            // were present before.
+            if data.initialized.is_none() {
+                data.initialized = Some((0..old_len).collect());
             }
         }
     }

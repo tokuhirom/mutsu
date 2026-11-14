@@ -1524,7 +1524,16 @@ impl Interpreter {
                                 "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
                                 | "uint16" | "uint32" | "uint64" => "a native integer",
                                 "num" | "num32" | "num64" => "a native number",
-                                _ => &type_constraint,
+                                // A boxed element type is an element type check,
+                                // as for `my Int @a = 1, Any`: "Type check failed
+                                // for an element of @!d; expected Int but got Any".
+                                _ => {
+                                    return Err(self.type_check_element_failure(
+                                        &format!("@!{method}"),
+                                        &type_constraint,
+                                        item,
+                                    ));
+                                }
                             };
                             return Err(RuntimeError::new(format!(
                                 "This type cannot unbox to {}: P6opaque, {}",
