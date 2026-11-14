@@ -68,6 +68,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut written: Vec<crate::ast::routine_trait::RoutineTrait> = Vec::new();
         let mut r = r;
         loop {
+            // A slang's own trait (`trait_mod:sym<for>`) is tried first (#13370).
+            if let Some(e) = crate::parser::stmt::simple::trait_mod_hook(r) {
+                return Err(e);
+            }
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = ws1(r2)?;
                 let (r2, parent) = if let Some(stripped) = r2.strip_prefix("::") {
@@ -311,6 +315,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut written: Vec<crate::ast::routine_trait::RoutineTrait> = Vec::new();
         let mut parent_args: Vec<(String, Vec<crate::ast::Expr>)> = Vec::new();
         loop {
+            // A slang's own trait (`trait_mod:sym<for>`) is tried first (#13370).
+            if let Some(e) = crate::parser::stmt::simple::trait_mod_hook(r) {
+                return Err(e);
+            }
             if let Some(r2) = keyword("does", r) {
                 let (r2, _) = ws1(r2)?;
                 let (r2, role_name) = qualified_ident(r2)?;
@@ -482,6 +490,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut written: Vec<crate::ast::routine_trait::RoutineTrait> = Vec::new();
         let parent_args: Vec<(String, Vec<crate::ast::Expr>)> = Vec::new();
         loop {
+            // A slang's own trait (`trait_mod:sym<for>`) is tried first (#13370).
+            if let Some(e) = crate::parser::stmt::simple::trait_mod_hook(r) {
+                return Err(e);
+            }
             if let Some(r2) = keyword("is", r) {
                 let (r2, _) = ws1(r2)?;
                 let (r2, parent) = if let Some(stripped) = r2.strip_prefix("::") {

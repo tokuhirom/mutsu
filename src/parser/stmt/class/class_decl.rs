@@ -578,6 +578,10 @@ pub(crate) fn class_decl_body_opt(
     let mut export_tags: Vec<String> = Vec::new();
     let mut r = rest;
     loop {
+        // A slang's own trait (`trait_mod:sym<for>`) is tried first (#13370).
+        if let Some(e) = crate::parser::stmt::simple::trait_mod_hook(r) {
+            return Err(e);
+        }
         if let Some(r2) = keyword("is", r) {
             let (r2, _) = ws1(r2)?;
             // Handle `is ::Foo` (indirect name lookup) — treat the
