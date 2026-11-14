@@ -874,6 +874,14 @@ impl Interpreter {
             if body.is_gather_source() && body.is_cached() {
                 return Ok(target);
             }
+            // A not-yet-run `.map`/`.grep` becomes a List view over the same
+            // pipeline (the handle `.cache` returns), reified as it is read:
+            // `@.sources.head` runs the callback up to the first result only,
+            // as rakudo's lazily reified List does (#17773).
+            if body.is_map_grep_source() && body.is_empty() {
+                body.mark_cache_requested();
+                return Ok(Value::seq_list_view(&body));
+            }
             if body.has_deferred_source() {
                 let (items, outcome) = self.take_seq_body(&body)?;
                 return Ok(if matches!(outcome, SeqTaken::Taken) {
@@ -1415,6 +1423,17 @@ impl Interpreter {
             None if body.is_gather_source() => {
                 let body = Arc::clone(&body);
                 self.reify_seq_body_prefix(&body, n)?;
+                body.iter().take(n).cloned().collect()
+            }
+            // A cached `.map`/`.grep` (`.cache`, `.List`, `@$s`, `@.meth`)
+            // is a re-readable List over the same pipeline: run the
+            // callback only up to the `n`-th result and keep the rest of
+            // the source for later reads, as rakudo's lazily reified List
+            // does (`@.sources.head` stops at the first match, #17773).
+            None if body.is_map_grep_source()
+                && (body.is_cached() || body.view() != crate::value::SeqView::Seq) =>
+            {
+                self.reify_map_grep_prefix(&inner, n)?;
                 body.iter().take(n).cloned().collect()
             }
             None => return Ok(None),
