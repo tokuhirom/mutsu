@@ -2867,6 +2867,22 @@ impl Compiler {
         compiled.enclosing_import_chain = self.lexical_import_chain.iter().rev().copied().collect();
         compiled.enclosing_import_regions =
             self.import_region_chain.iter().rev().copied().collect();
+        if !self.lexical_import_chain.is_empty() {
+            compiled.enclosing_routine_decls = self
+                .inherited_scope_routine_decls
+                .iter()
+                .chain(self.scope_routine_decls.iter())
+                .map(|&(_, decl)| decl)
+                .collect();
+            compiled.enclosing_set_decl_marks = self
+                .lexical_import_chain
+                .iter()
+                .filter_map(|id| {
+                    let mark = *self.lexical_set_decl_mark.get(id)?;
+                    Some((*id, u32::try_from(mark).ok()?))
+                })
+                .collect();
+        }
         compiled.free_var_parent_slots = compiled
             .free_var_syms
             .iter()

@@ -29,9 +29,15 @@ pub(super) fn check_time_routine(
     node: &RakuAstNode,
     name: &str,
 ) -> Option<Result<Value, RuntimeError>> {
-    // A `multi`/`proto` declaration answers its dispatcher's candidate
-    // (`declared_multi_candidate`), which this cannot build.
-    if node.class != RakuAstClass::Sub || node.fields.iter().any(|f| f.name == Some("multiness")) {
+    // A `proto` declares the dispatcher itself, which this cannot build; a
+    // `multi` candidate is built like a plain sub (`declared_candidate`).
+    if node.class != RakuAstClass::Sub
+        || node.fields.iter().any(|field| {
+            field.name == Some("multiness")
+                && matches!(&field.value, crate::rakuast::RakuAstFieldValue::Node(value)
+                    if value.to_string_value() == "proto")
+        })
+    {
         return None;
     }
     let origin = crate::rakuast::node_accessor(node, "origin");
@@ -39,15 +45,19 @@ pub(super) fn check_time_routine(
         ValueView::Instance { attributes, .. } => attributes.as_map().get(key).cloned(),
         _ => None,
     };
-    let line = origin_attr(crate::rakuast::unit_source::LINE_ATTR)
-        .map(|line| crate::value::numeric_coerce::to_int(&line))
-        .and_then(|line| u32::try_from(line).ok());
+    let line = declaration_line(node);
+    // The declaration is the unit's own code, already judged with it,
+    // whichever module's CHECK-time code asks (Red's `red-compile`).
+    let _recompile = crate::unit_source_file::UnitDeclarationRecompileGuard::enter();
     let closure = if node.fields.iter().any(|f| f.name == Some("body")) {
-        // The same declaration without its name is an anonymous sub, as an
-        // expression statement (a statement-level `Sub` is a declaration):
-        // evaluating it installs no `&name` in the scope that asks.
+        // The same declaration without its name (and multiness) is an
+        // anonymous sub, as an expression statement (a statement-level `Sub` is
+        // a declaration): evaluating it installs no `&name` in the scope that
+        // asks.
         let mut anonymous = node.clone();
-        anonymous.fields.retain(|field| field.name != Some("name"));
+        anonymous
+            .fields
+            .retain(|field| !matches!(field.name, Some("name" | "multiness")));
         let statement = crate::rakuast::as_statement(&Value::rakuast(Box::new(anonymous)));
         interp.eval_rakuast_node(&statement).ok()?
     } else {
@@ -73,9 +83,65 @@ pub(super) fn check_time_routine(
     Some(Ok(Value::sub_value(crate::gc::Gc::new(routine))))
 }
 
+/// The line of the unit a declaration node starts on, from its origin.
+// Cost: O(1).
+fn declaration_line(node: &RakuAstNode) -> Option<u32> {
+    let origin = crate::rakuast::node_accessor(node, "origin")?;
+    let ValueView::Instance { attributes, .. } = origin.view() else {
+        return None;
+    };
+    let line = attributes
+        .as_map()
+        .get(crate::rakuast::unit_source::LINE_ATTR)
+        .cloned()?;
+    u32::try_from(crate::value::numeric_coerce::to_int(&line)).ok()
+}
+
+/// The candidate a `multi sub` node declares, of the dispatcher `routine` its
+/// name has where the CHECK phase asks: the one compiled from this declaration
+/// (the unit's file, the declaration's line). A candidate of a block-nested
+/// `multi` is installed only when its block runs, and an operator's dispatcher
+/// also holds the setting's candidates, so the position among the unit's own
+/// `multi`s (`index`) picks it only when the dispatcher holds nothing else.
+/// When it is not installed yet, it is built from the node
+/// (`check_time_routine`), as rakudo's static code object of the candidate.
+// Cost: O(c + n), c = candidates of the dispatcher, n = size of the declaration.
+pub(super) fn declared_candidate(
+    interp: &mut Interpreter,
+    node: &RakuAstNode,
+    name: &str,
+    routine: &Value,
+    index: usize,
+) -> Option<Result<Value, RuntimeError>> {
+    let line = declaration_line(node);
+    let file = crate::unit_source_file::current().map(|file| file.resolve().to_string());
+    let declared_here = |candidate: &Value| match candidate.view() {
+        ValueView::Sub(data) => {
+            line.is_some() && data.source_line == line && data.source_file == file
+        }
+        _ => false,
+    };
+    if let Ok(candidates) = interp.call_method_with_values(routine.clone(), "candidates", Vec::new())
+        && let ValueView::Array(items, _) = candidates.view()
+    {
+        let items = items.as_slice();
+        if let Some(found) = items.iter().find(|candidate| declared_here(candidate)) {
+            return Some(Ok(found.clone()));
+        }
+        // No candidate carries a position (an `EVAL`ed unit): the unit's own
+        // dispatcher holds its candidates in declaration order.
+        if line.is_none()
+            && let Some(candidate) = items.get(index)
+        {
+            return Some(Ok(candidate.clone()));
+        }
+    }
+    check_time_routine(interp, node, name)
+}
+
 /// The source text of a `sub` declaration, from its origin's unit text and
-/// character range, without a leading `my`/`our` scope: `None` when the range
-/// is not a `sub` declaration.
+/// character range, without a leading `my`/`our` scope or `multi`: `None`
+/// when the range is not a `sub` declaration.
 // Cost: O(t), t = characters of the unit text up to the range's end.
 fn declaration_text(source: &Value, from: &Value, to: &Value) -> Option<String> {
     let ValueView::Instance { attributes, .. } = source.view() else {
@@ -97,5 +163,12 @@ fn declaration_text(source: &Value, from: &Value, to: &Value) -> Option<String> 
         .strip_prefix("my ")
         .or_else(|| text.strip_prefix("our "))
         .map_or(text, str::trim_start);
+    // `multi sub f` and `multi f` declare a candidate: built as a plain sub.
+    if let Some(candidate) = text.strip_prefix("multi ").map(str::trim_start) {
+        return Some(match candidate.strip_prefix("sub ") {
+            Some(_) => candidate.to_string(),
+            None => format!("sub {candidate}"),
+        });
+    }
     text.starts_with("sub ").then(|| text.to_string())
 }

@@ -449,12 +449,11 @@ pub(super) fn sub_value(
     }
     // A `multi sub` is its own candidate of the dispatcher, as in rakudo.
     if let Some(index) = crate::rakuast::declared_multi_candidate(node)
-        && let Ok(candidates) =
-            interp.call_method_with_values(routine.clone(), "candidates", Vec::new())
-        && let ValueView::Array(items, _) = candidates.view()
-        && let Some(candidate) = items.as_slice().get(index)
+        && let Some(candidate) = super::rakuast_check_time_routine::declared_candidate(
+            interp, node, &name, &routine, index,
+        )
     {
-        return Some(Ok(candidate.clone()));
+        return Some(candidate);
     }
     Some(Ok(routine))
 }

@@ -353,6 +353,16 @@ impl Compiler {
     /// its own again as the body compiles.
     // Cost: O(s * c), s = call-site chains of `origin`, c = sets per chain.
     pub(crate) fn seed_lexical_import_chain_from(&mut self, origin: &crate::opcode::CompiledCode) {
+        // The routines declared around the body still shadow the imports of
+        // the sets opened before them (`lexical_import_chain_idx`).
+        self.inherited_scope_routine_decls = origin
+            .enclosing_routine_decls
+            .iter()
+            .map(|&decl| (0, decl))
+            .collect();
+        for &(id, mark) in &origin.enclosing_set_decl_marks {
+            self.lexical_set_decl_mark.insert(id, mark as usize);
+        }
         self.import_region_chain = origin
             .enclosing_import_regions
             .iter()
