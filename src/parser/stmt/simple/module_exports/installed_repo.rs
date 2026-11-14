@@ -60,3 +60,19 @@ pub(super) fn find_in_installed_repo(prefix: &str, module: &str) -> Option<Strin
     }
     best.map(|(_, source)| source.to_string_lossy().into_owned())
 }
+
+/// Find `module` through the `provides` map of `<base>/META6.json`, the way the
+/// runtime does for a repository whose prefix holds the `META6.json` itself.
+// Cost: O(m), m = size of the META6.json file.
+pub(super) fn find_in_meta6(base: &Path, module: &str) -> Option<String> {
+    let text = std::fs::read_to_string(base.join("META6.json")).ok()?;
+    let meta = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    let entry = meta.get("provides")?.get(module)?;
+    let file = entry
+        .as_str()
+        .or_else(|| entry.get("file").and_then(serde_json::Value::as_str))?;
+    let source = base.join(file);
+    source
+        .is_file()
+        .then(|| source.to_string_lossy().into_owned())
+}

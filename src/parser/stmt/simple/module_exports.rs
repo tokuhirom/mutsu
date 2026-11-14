@@ -838,6 +838,12 @@ fn find_module_file(module: &str) -> Option<String> {
                     return Some(candidate.to_string_lossy().into_owned());
                 }
             }
+            // A distribution root (`use lib $dist`) maps names that are not
+            // file names, such as `⊙`, through META6.json `provides`; the
+            // runtime resolves the same way.
+            if let Some(found) = installed_repo::find_in_meta6(base_path, module) {
+                return Some(found);
+            }
         }
         None
     })
