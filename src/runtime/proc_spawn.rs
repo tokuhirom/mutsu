@@ -37,6 +37,23 @@ impl ProcSpawn {
     // Cost: O(a + e), a = arguments, e = environment entries (plus the
     // fork/exec).
     pub(crate) fn spawn(&self) -> std::io::Result<Child> {
+        self.command().spawn()
+    }
+
+    /// Spawn the child behind a new pseudo-terminal of `size` (its stdio is
+    /// the slave, the stdin/stdout settings above do not apply); answers the
+    /// child and the master side (`proc_pty`).
+    // Cost: as `spawn`, plus the pty's syscalls.
+    pub(crate) fn spawn_with_pty(
+        &self,
+        size: crate::runtime::proc_pty::PtySize,
+    ) -> std::io::Result<(Child, std::fs::File)> {
+        crate::runtime::proc_pty::spawn_with_pty(self.command(), size)
+    }
+
+    /// The command for the child, before it is spawned.
+    // Cost: O(a + e), as `spawn`.
+    fn command(&self) -> Command {
         let pipe = |piped: bool| {
             if piped {
                 Stdio::piped()
@@ -64,7 +81,7 @@ impl ProcSpawn {
             cmd.env_clear();
             cmd.envs(env.iter().map(|(k, v)| (k, v)));
         }
-        cmd.spawn()
+        cmd
     }
 }
 

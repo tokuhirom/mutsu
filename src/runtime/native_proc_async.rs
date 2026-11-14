@@ -156,6 +156,8 @@ pub(crate) enum ProcAsyncOp {
     Started,
     W,
     Pid,
+    Pty,
+    ResizePty,
 }
 
 impl ProcAsyncOp {
@@ -181,6 +183,8 @@ impl ProcAsyncOp {
             ProcAsyncOp::Started => "started",
             ProcAsyncOp::W => "w",
             ProcAsyncOp::Pid => "pid",
+            ProcAsyncOp::Pty => "pty",
+            ProcAsyncOp::ResizePty => "resize-pty",
         }
     }
 }
@@ -246,6 +250,19 @@ impl Interpreter {
     ) -> Result<(Value, AttrMap), RuntimeError> {
         let method = op.name();
         match op {
+            // Whether the child runs behind a pseudo-terminal (`:pty`).
+            ProcAsyncOp::Pty => Ok((
+                if crate::runtime::proc_pty::pty_size_of(&attrs).is_some() {
+                    Value::TRUE
+                } else {
+                    Value::FALSE
+                },
+                attrs,
+            )),
+            ProcAsyncOp::ResizePty => {
+                let value = self.proc_async_resize_pty(&mut attrs, &args)?;
+                Ok((value, attrs))
+            }
             ProcAsyncOp::Command | ProcAsyncOp::Started | ProcAsyncOp::W | ProcAsyncOp::Pid => {
                 let value = self.native_proc_async_read(&attrs, op)?;
                 Ok((value, attrs))
@@ -448,7 +465,15 @@ impl Interpreter {
                     pipe_stdout: capture_stdout,
                     pipe_stderr: capture_stderr,
                 };
-                let child_result = spawn.spawn();
+                // `:pty(:rows, :cols)`: the child runs behind a pseudo-terminal
+                // whose master the parent reads and writes (`proc_pty`).
+                let pty_size = crate::runtime::proc_pty::pty_size_of(&attrs);
+                let child_result = match pty_size {
+                    Some(size) => spawn
+                        .spawn_with_pty(size)
+                        .map(|(child, master)| (child, Some(master))),
+                    None => spawn.spawn().map(|child| (child, None)),
+                };
 
                 // If spawn failed, break all promises with X::OS and return
                 if let Err(e) = child_result {
@@ -497,7 +522,7 @@ impl Interpreter {
                     return Ok((Value::promise(promise), attrs));
                 }
 
-                let mut child = child_result.unwrap();
+                let (mut child, pty_master) = child_result.unwrap();
 
                 let pid = child.id();
                 attrs.insert("pid".to_string(), Value::int(pid as i64));
@@ -514,9 +539,23 @@ impl Interpreter {
 
                 // Store stdin in global registry if piped
                 let mut stdin_spawned: std::io::Result<()> = Ok(());
-                if let Some(stdin) = child.stdin.take() {
+                // Behind a pty the writes go to its master, `:w` or not, as in
+                // rakudo.
+                let stdin_sink = match &pty_master {
+                    Some(master) => master
+                        .try_clone()
+                        .ok()
+                        .map(super::native_methods::ProcStdinSink::Pty),
+                    None => child
+                        .stdin
+                        .take()
+                        .map(super::native_methods::ProcStdinSink::Pipe),
+                };
+                if let Some(stdin) = stdin_sink {
                     let stdin_arc = std::sync::Arc::new(std::sync::Mutex::new(Some(stdin)));
-                    if w_flag && let Ok(mut map) = proc_stdin_map().lock() {
+                    if (w_flag || pty_master.is_some())
+                        && let Ok(mut map) = proc_stdin_map().lock()
+                    {
                         map.insert(pid, stdin_arc.clone());
                     }
                     if let Some(bytes) = stdin_bytes {
@@ -757,7 +796,15 @@ impl Interpreter {
                 }
 
                 // Take stdout/stderr handles before moving child into thread
-                let child_stdout = child.stdout.take();
+                // Behind a pty both of the child's output streams are the
+                // master, read as `.stdout`; `.stderr` stays silent.
+                let child_stdout: Option<Box<dyn std::io::Read + Send>> = match pty_master {
+                    Some(master) => Some(Box::new(crate::runtime::proc_pty::PtyReader(master))),
+                    None => child
+                        .stdout
+                        .take()
+                        .map(|out| Box::new(out) as Box<dyn std::io::Read + Send>),
+                };
                 let child_stderr = child.stderr.take();
 
                 let promise = SharedPromise::new();
@@ -1089,7 +1136,9 @@ impl Interpreter {
                 Ok((Value::NIL, attrs))
             }
             ProcAsyncOp::Write => {
-                if !attrs.get("w").is_some_and(|v| v.truthy()) {
+                if !attrs.get("w").is_some_and(|v| v.truthy())
+                    && crate::runtime::proc_pty::pty_size_of(&attrs).is_none()
+                {
                     return Err(proc_async_error(
                         "X::Proc::Async::OpenForWriting",
                         &[("method", Value::str_from("write"))],
@@ -1376,7 +1425,9 @@ impl Interpreter {
                 Ok((attrs.get("supply").cloned().unwrap_or(Value::NIL), attrs))
             }
             ProcAsyncOp::Print | ProcAsyncOp::Put | ProcAsyncOp::Say => {
-                if !attrs.get("w").is_some_and(|v| v.truthy()) {
+                if !attrs.get("w").is_some_and(|v| v.truthy())
+                    && crate::runtime::proc_pty::pty_size_of(&attrs).is_none()
+                {
                     return Err(proc_async_error(
                         "X::Proc::Async::OpenForWriting",
                         &[("method", Value::str_from(method))],

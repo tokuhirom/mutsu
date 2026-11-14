@@ -23,6 +23,7 @@ mod method_type_decls;
 mod native_io_special;
 pub(crate) mod native_methods;
 pub(crate) mod native_proc_async;
+pub(crate) mod proc_pty;
 pub(crate) mod proc_spawn;
 pub(crate) mod tcp_core;
 mod native_proc_async_refusal;
