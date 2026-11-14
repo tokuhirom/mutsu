@@ -39,7 +39,14 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
-    let (rest, module) = qualified_ident(rest)?;
+    // `use ::('Name')` is the indirect module-name form: the name is a
+    // compile-time string, so it is the same as writing the name bare. It
+    // is the only way to spell a module name that is not an identifier
+    // (`use ::('⊙')`).
+    let (rest, module) = match indirect_module_name(rest) {
+        Some(res) => res?,
+        None => qualified_ident(rest)?,
+    };
     // Adverbs glued to the module name (`use CSS::Module:CSS3;`,
     // `use Foo:ver<1.0>`) belong to the name, not the import list: rakudo
     // reads a non-selector one as an inert name adverb and imports DEFAULT.
@@ -329,6 +336,36 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         use_stmt
     };
     Ok((rest, stmt))
+}
+
+/// Recognise `::('Name')` / `::("Name")` after `use`. Returns `None` when the
+/// input is not the indirect form, and an error when the parenthesised part
+/// is not a plain string literal (rakudo requires a compile-time constant).
+// Cost: O(n), n = length of the parenthesised name.
+fn indirect_module_name(input: &str) -> Option<PResult<'_, String>> {
+    let after = input.strip_prefix("::(")?;
+    let parse = || {
+        let (inner, _) = ws(after)?;
+        let quote = inner
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '\'' | '"'))
+            .ok_or_else(|| PError::expected("string literal in indirect module name"))?;
+        let body = &inner[1..];
+        let end = body
+            .find(quote)
+            .ok_or_else(|| PError::expected("closing quote in indirect module name"))?;
+        let name = &body[..end];
+        if name.is_empty() || name.contains(['\\', '$', '{', '@', '&']) {
+            return Err(PError::expected("constant module name"));
+        }
+        let (r, _) = ws(&body[end + 1..])?;
+        let r = r
+            .strip_prefix(')')
+            .ok_or_else(|| PError::expected("closing ')' in indirect module name"))?;
+        Ok((r, name.to_string()))
+    };
+    Some(parse())
 }
 
 /// Parse one positional `use` argument. Raku's CLI modules commonly put a

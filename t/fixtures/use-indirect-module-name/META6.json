@@ -1,0 +1,1 @@
+{ "name": "Alias", "version": "0.0.1", "provides": { "Alias": "lib/Alias.rakumod", "⊙": "lib/Alias.rakumod" } }
