@@ -700,8 +700,8 @@ impl Interpreter {
             ValueView::Whatever => {
                 // * iterates all elements — no bounds check needed at this level,
                 // but recurse into each element for remaining dimensions
-                if let ValueView::Array(items, ..) = target.view() {
-                    for item in items.iter() {
+                if let Some(items) = Self::multidim_level_items(target) {
+                    for item in &items {
                         self.check_shaped_array_bounds(item, rest, dim_offset + 1)?;
                     }
                 }
@@ -709,21 +709,12 @@ impl Interpreter {
             }
             ValueView::Array(indices, ..) => {
                 // Multiple indices — check each one
-                let items = match target.view() {
-                    ValueView::Array(items, ..) => items,
-                    _ => return Ok(()),
-                };
+                if !matches!(target.view(), ValueView::Array(..)) {
+                    return Ok(());
+                }
                 for idx in indices.iter() {
                     if let Some(i) = Self::index_to_usize(idx) {
-                        if i >= items.len() {
-                            return Err(RuntimeError::new(format!(
-                                "Index {} for dimension {} out of range (must be 0..{})",
-                                i,
-                                dim_offset + 1,
-                                items.len() - 1
-                            )));
-                        }
-                        self.check_shaped_array_bounds(&items[i], rest, dim_offset + 1)?;
+                        self.check_shaped_level(target, i, rest, dim_offset)?;
                     }
                 }
                 Ok(())
@@ -739,22 +730,35 @@ impl Interpreter {
                 };
                 let idx = resolved.as_ref().unwrap_or(dim);
                 if let Some(i) = Self::index_to_usize(idx) {
-                    let items = match target.view() {
-                        ValueView::Array(items, ..) => items,
-                        _ => return Ok(()),
-                    };
-                    if i >= items.len() {
-                        return Err(RuntimeError::new(format!(
-                            "Index {} for dimension {} out of range (must be 0..{})",
-                            i,
-                            dim_offset + 1,
-                            items.len() - 1
-                        )));
-                    }
-                    self.check_shaped_array_bounds(&items[i], rest, dim_offset + 1)?;
+                    self.check_shaped_level(target, i, rest, dim_offset)?;
                 }
                 Ok(())
             }
+        }
+    }
+
+    /// One scalar index `i` of [`Self::check_shaped_array_bounds`]: out of
+    /// range is an error, an element in range is checked for `rest`. A
+    /// non-array `target` has nothing to check.
+    // Cost: O(1), plus the check of `rest`.
+    fn check_shaped_level(
+        &self,
+        target: &Value,
+        i: usize,
+        rest: &[Value],
+        dim_offset: usize,
+    ) -> Result<(), RuntimeError> {
+        let Some(level) = Self::multidim_level_elem(target, i) else {
+            return Ok(());
+        };
+        match level.elem {
+            Some(elem) => self.check_shaped_array_bounds(&elem, rest, dim_offset + 1),
+            None => Err(RuntimeError::new(format!(
+                "Index {} for dimension {} out of range (must be 0..{})",
+                i,
+                dim_offset + 1,
+                level.len.saturating_sub(1)
+            ))),
         }
     }
 
@@ -862,7 +866,7 @@ impl Interpreter {
             let mut m = ValueMap::default();
             m.insert(key, value);
             let dim = Self::normalize_multidim_dim(&dims[0]);
-            return self.multi_dim_hash_read(&m, &dim, &dims[1..]);
+            return self.multi_dim_hash_read(None, &m, &dim, &dims[1..]);
         }
         // A Seq is positional too: `.map({...})[*;*]` must flatten the mapped
         // rows, not treat the whole Seq as one scalar element (Cro's HTTP/2
@@ -905,15 +909,14 @@ impl Interpreter {
         // Hash targets index by key (string), recursing into the nested value
         // for the remaining dimensions: `%h{"a";"b";"c"}`.
         if let ValueView::Hash(map, ..) = target.view() {
-            return self.multi_dim_hash_read(&map, dim, rest);
+            return self.multi_dim_hash_read(Some(target), &map, dim, rest);
         }
 
         match dim.view() {
             ValueView::Whatever => {
                 // Iterate all elements at this level
-                let items = match target.view() {
-                    ValueView::Array(items, ..) => items,
-                    _ => return Ok(Value::NIL),
+                let Some(items) = Self::multidim_level_items(target) else {
+                    return Ok(Value::NIL);
                 };
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
@@ -943,10 +946,9 @@ impl Interpreter {
             }
             ValueView::Array(indices, ..) => {
                 // Multiple indices at this dimension level
-                let (items, target_is_real_array) = match target.view() {
-                    ValueView::Array(items, kind) => (items, kind.is_real_array()),
-                    _ => return Ok(Value::NIL),
-                };
+                if !matches!(target.view(), ValueView::Array(..)) {
+                    return Ok(Value::NIL);
+                }
                 let has_more_multi = rest.iter().any(|v| {
                     matches!(
                         Self::normalize_multidim_dim(v).view(),
@@ -959,10 +961,12 @@ impl Interpreter {
                 });
                 let mut out = Vec::with_capacity(indices.len());
                 for idx in indices.iter() {
-                    let result = if let Some(i) = Self::index_to_usize(idx) {
-                        if i < items.len() {
-                            self.multi_dim_index_read(&items[i], rest)?
-                        } else if target_is_real_array {
+                    let level = Self::index_to_usize(idx)
+                        .and_then(|i| Self::multidim_level_elem(target, i));
+                    let result = if let Some(level) = level {
+                        if let Some(elem) = level.elem {
+                            self.multi_dim_index_read(&elem, rest)?
+                        } else if level.is_real {
                             // A missing slot of a real Array reads as its
                             // element default, Any (indexing further into the
                             // Any type object stays Any, matching raku).
@@ -1018,13 +1022,12 @@ impl Interpreter {
                 }
                 let idx = resolved.as_ref().unwrap_or(dim);
                 let scalar = if let Some(i) = Self::index_to_usize(idx) {
-                    let (items, is_real) = match target.view() {
-                        ValueView::Array(items, kind) => (items, kind.is_real_array()),
-                        _ => return Ok(Value::NIL),
+                    let Some(level) = Self::multidim_level_elem(target, i) else {
+                        return Ok(Value::NIL);
                     };
-                    if i < items.len() {
-                        self.multi_dim_index_read(&items[i], rest)?
-                    } else if is_real {
+                    if let Some(elem) = level.elem {
+                        self.multi_dim_index_read(&elem, rest)?
+                    } else if level.is_real {
                         // Out of bounds on a real Array: the element default
                         // (Any), like a single-dim OOB read; a List stays Nil.
                         Value::package(crate::symbol::wk::any())
@@ -1036,13 +1039,12 @@ impl Interpreter {
                     // Non-numeric index (e.g., string "0")
                     let i = idx.to_string_value().parse::<usize>().ok();
                     if let Some(i) = i {
-                        let (items, is_real) = match target.view() {
-                            ValueView::Array(items, kind) => (items, kind.is_real_array()),
-                            _ => return Ok(Value::NIL),
+                        let Some(level) = Self::multidim_level_elem(target, i) else {
+                            return Ok(Value::NIL);
                         };
-                        if i < items.len() {
-                            self.multi_dim_index_read(&items[i], rest)?
-                        } else if is_real {
+                        if let Some(elem) = level.elem {
+                            self.multi_dim_index_read(&elem, rest)?
+                        } else if level.is_real {
                             Value::package(crate::symbol::wk::any())
                         } else {
                             Value::NIL
@@ -1081,6 +1083,7 @@ impl Interpreter {
 
     fn multi_dim_hash_read(
         &mut self,
+        owner: Option<&Value>,
         map: &ValueMap,
         dim: &Value,
         rest: &[Value],
@@ -1092,9 +1095,7 @@ impl Interpreter {
             |this: &mut Self, key: &Value, rest: &[Value]| -> Result<Value, RuntimeError> {
                 // An object hash (`%h{Str:D; ...}`) stores its first-dimension
                 // keys by `.WHICH`, so fall back to that spelling.
-                let found = map
-                    .get(key.to_string_value().as_str())
-                    .or_else(|| map.get(crate::runtime::utils::value_which_key(key).as_str()));
+                let found = Self::multidim_hash_lookup(owner, map, key);
                 match found {
                     Some(v) => {
                         // Decontainerize a Scalar-wrapped nested value before recursing.
@@ -1127,7 +1128,7 @@ impl Interpreter {
                     )
                 });
                 let mut out = Vec::with_capacity(map.len());
-                for v in map.values() {
+                for v in Self::multidim_hash_values(owner, map) {
                     let inner = match v.view() {
                         ValueView::Scalar(b) => b.clone(),
                         _ => v.clone(),
