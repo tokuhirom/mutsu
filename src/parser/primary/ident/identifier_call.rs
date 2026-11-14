@@ -126,6 +126,33 @@ fn starts_glued_prefix_arg(s: &str) -> bool {
     })
 }
 
+/// [`starts_glued_prefix_arg`] for a named unary builtin (`lc`, `uc`, `abs`,
+/// ...), which is a listop: a chain of glued prefix operators (`lc ~?$b`,
+/// `uc ~?True`) opens its argument too, and so does a prefix glued to a
+/// bareword term (`lc ~?True`'s `?True`, `lc ?True`). The chain starts with
+/// `~`, `-`, `+` or `?`: `!` is left out because `!eq`/`!before` are negated
+/// infixes, `~~` and `??` are excluded outright, and every other
+/// two-character infix (`-=`, `+<`, `?|`) continues with a character that is
+/// neither a prefix operator nor a term start.
+// Cost: O(p), p = prefix operators in the chain.
+fn starts_glued_prefix_chain_arg(s: &str) -> bool {
+    // `~~` (smartmatch) and `??` (ternary) are infixes, never a prefix chain.
+    if s.starts_with("~~") || s.starts_with("??") {
+        return false;
+    }
+    let Some(mut rest) = s.strip_prefix(['~', '-', '+', '?']) else {
+        return false;
+    };
+    while let Some(r) = rest.strip_prefix(['~', '-', '+', '?', '!']) {
+        rest = r;
+    }
+    rest.chars().next().is_some_and(|c| {
+        matches!(c, '(' | '$' | '@' | '%' | '&' | '\'' | '"')
+            || c.is_ascii_digit()
+            || crate::parser::helpers::is_raku_identifier_start(c)
+    })
+}
+
 /// A slip prefix (`|`) directly followed by a term-starting sigil/paren/angle
 /// is an unambiguous argument start, so `unique |$x` / `min |@a` /
 /// `test |<all is>` parse as a call with a flattened argument rather than
@@ -2584,7 +2611,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // not the bareword concatenated with `~$cell`. The glue (no space
             // between the sigil and the term) separates it from the infix.
             || (crate::parser::primary::ident::predicates::is_named_unary_builtin(&name)
-                && starts_glued_prefix_arg(r))
+                && (starts_glued_prefix_arg(r) || starts_glued_prefix_chain_arg(r)))
             // After whitespace, `[` opens an array literal or a reduction
             // (`flip [~] 1, 2`, `uc [~] <a b>`) for a named unary builtin:
             // `flip [~] ...` is `flip([~] ...)`, not `flip ~ ...`.
