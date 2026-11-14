@@ -48,6 +48,11 @@ impl Interpreter {
         let as_cells = Self::promotable_array_len(target).is_some();
         let current_len = |t: &Value| {
             if as_cells {
+                // Another thread may restructure a shared array between
+                // chunks; its length is read under the node's stripe
+                // (ADR-0068 §16.1), with no user code inside.
+                let _structure =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, t);
                 Self::promotable_array_len(t).unwrap_or(0)
             } else {
                 crate::runtime::utils::with_receiver_items(t, <[Value]>::len)

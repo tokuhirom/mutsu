@@ -909,6 +909,16 @@ the snapshot. The stripe is keyed on the node address (`acquire_for(None, ..)`),
 as `shared_snapshot`'s was. Pinned by
 `t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t`.
 
+`.first` on a non-shaped Array joined the exemption on 2026-11-14. It answers
+the matching element's own container, so `my $x := @a.first(* > 1); $x = 9`
+writes `@a`, and a snapshot handed out a slot of the copy instead. Red's CHECK
+compiler rewrites every `.first` call through such a binding, and any `start`
+earlier in the program made the write vanish. Its chunked scan already fetches
+each chunk through `array_slot_ref`, which promotes under the stripe. It now
+reads the length under the stripe too, and runs the matcher on the copied-out
+chunk with nothing held. Pinned by
+`t/collections/transform/first-binds-live-element-after-start.t`.
+
 ## 17. A celled container is keyed on its cell and its node (2026-10-12, #13016)
 
 §7 keyed the structure lock on the shared `ContainerCell` when a writer reached the
