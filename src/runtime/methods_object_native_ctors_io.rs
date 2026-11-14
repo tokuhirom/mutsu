@@ -282,7 +282,7 @@ impl Interpreter {
                     enc = Value::str(value.to_string_value());
                 }
                 ValueView::Pair(key, value) if key == "pty" => {
-                    pty = Self::proc_async_pty_arg(&value)?;
+                    pty = Self::proc_async_pty_arg(value)?;
                 }
                 // Rakudo's signature is `(*@args where .so, *%_)`: EVERY named
                 // argument lands in the slurpy `*%_` and is absorbed, whether
