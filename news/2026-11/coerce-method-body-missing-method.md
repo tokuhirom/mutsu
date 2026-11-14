@@ -12,4 +12,4 @@ for each exception.
 
 Only an X::Method::NotFound for `COERCE` itself now counts as "no such
 coercion". A real exception from a parameter coercion propagates unchanged,
-as on rakudo. The test is `t/exceptions/coerce-method-exception-propagates.t`.
+as on rakudo. The test is `t/oo/method/coerce-method-body-missing-method.t`.
