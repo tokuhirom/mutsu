@@ -1340,7 +1340,7 @@ impl Interpreter {
                 && !imported_proto
                 && !exported_method_candidates
                 && let [(key, def)] = function_entries.as_slice()
-                && !key.as_str().contains('/')
+                && key.as_str() == target_single
                 && self.bind_plain_builtin_operator_lexically(&name, &def.clone())
             {
                 function_entries.clear();
@@ -1351,7 +1351,7 @@ impl Interpreter {
                 && (!imported_proto || bodied_proto)
                 && !exported_method_candidates
                 && let [(key, def)] = function_entries.as_slice()
-                && !key.as_str().contains('/')
+                && key.as_str() == target_single
                 && self.bind_routine_lexically(&name, &def.clone())
             {
                 function_entries.clear();

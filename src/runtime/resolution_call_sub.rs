@@ -526,8 +526,13 @@ impl Interpreter {
         };
         // The winner joins the operator's core candidates and takes the call
         // only when it out-narrows them, as a registry candidate does
-        // (ADR-0071).
-        if let [left, right] = args.as_slice()
+        // (ADR-0071). A family that shadows the built-in (a `proto`, or a
+        // plain `sub infix:<op>` the block imported) has no core candidate
+        // to rank against: its own candidates are the only ones.
+        let shadows_core = matches!(func.view(), ValueView::Sub(f)
+            if f.env.contains_key_sym(crate::symbol::wk::multi_dispatch_proto_shadows_core()));
+        if !shadows_core
+            && let [left, right] = args.as_slice()
             && let ValueView::Sub(data) = candidate.view()
             && let Some(def) = self
                 .module
