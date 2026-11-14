@@ -73,6 +73,38 @@ impl Interpreter {
             .is_some()
     }
 
+    /// The outermost wrapper a call of `method` on `receiver_class`, resolved
+    /// to `def` on `owner`, would enter first — the routine whose signature
+    /// binds the call's arguments (so decides Junction autothreading). Pushes
+    /// no frame; `None` when the call enters no wrap chain.
+    // Cost: O(1) when nothing in the program is wrapped; otherwise O(m + c),
+    // m = receiver MRO length, c = candidates of `method` on `owner`.
+    pub(crate) fn method_call_outermost_wrapper(
+        &mut self,
+        receiver_class: &str,
+        method: &str,
+        owner: &str,
+        def: &MethodDef,
+    ) -> Option<Value> {
+        if !self.has_any_wrap_chains() {
+            return None;
+        }
+        if let Some(chain) = self.dispatcher_wrap_chain(receiver_class, method) {
+            return chain.last().map(|(_, wrapper)| wrapper.clone());
+        }
+        if !self
+            .registry()
+            .candidate_wrapped_methods
+            .contains(method)
+        {
+            return None;
+        }
+        let idx = self.find_method_candidate_index(owner, method, def)?;
+        self.get_method_wrap_chain(owner, method, idx)?
+            .last()
+            .map(|(_, wrapper)| wrapper.clone())
+    }
+
     /// The dispatcher wrap chain a call of `method` on `receiver_class`
     /// enters, if any: that of the first class in the MRO declaring
     /// `method` (the class whose dispatcher the call resolves through).

@@ -797,7 +797,7 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
 /// Collect the externally usable names of a named parameter: the primary name
 /// for a plain `:$x`, plus the alias chain for alias sub-signatures (`:x($a)`,
 /// `:x(:y(:z($a)))`). Slurpy `*%h` and captures have no named_names.
-fn collect_named_names(p: &ParamDef, name: &str, is_capture: bool) -> Vec<String> {
+pub(crate) fn collect_named_names(p: &ParamDef, name: &str, is_capture: bool) -> Vec<String> {
     if !p.named || is_capture || name.is_empty() {
         return Vec::new();
     }
