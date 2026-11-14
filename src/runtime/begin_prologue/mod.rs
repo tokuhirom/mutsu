@@ -327,6 +327,7 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
             tags,
             condition: Some(condition),
             if_imports,
+            imports,
         } => {
             let slot = next_if_condition_slot(prologue);
             prologue.extend(if_condition_check(*condition, &slot));
@@ -336,6 +337,7 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
                 tags,
                 condition: Some(Box::new(Expr::Var(slot))),
                 if_imports,
+                imports,
             }
         }
         other => other,

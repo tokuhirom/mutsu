@@ -15,7 +15,15 @@ fn parse_pair_lvalue_colonparen_form() {
 fn parse_custom_postfix_operator_call() {
     let (rest, expr) = expression("$base!").unwrap();
     assert_eq!(rest, "");
-    match expr {
+    // The operator form is spelled so RakuAST keeps the `ApplyPostfix`.
+    let Expr::Spelled(spelled) = expr else {
+        panic!("expected a spelled postfix operator call");
+    };
+    assert!(matches!(
+        spelled.spelling,
+        crate::ast::spelled::Spelling::UserPostfixOperator
+    ));
+    match spelled.expr {
         Expr::Call { name, args, .. } => {
             assert_eq!(name, "postfix:<!>");
             assert_eq!(args.len(), 1);
@@ -29,7 +37,15 @@ fn parse_custom_postfix_operator_call() {
 fn parse_unicode_custom_postfix_operator_call() {
     let (rest, expr) = expression("3§").unwrap();
     assert_eq!(rest, "");
-    match expr {
+    // The operator form is spelled so RakuAST keeps the `ApplyPostfix`.
+    let Expr::Spelled(spelled) = expr else {
+        panic!("expected a spelled postfix operator call");
+    };
+    assert!(matches!(
+        spelled.spelling,
+        crate::ast::spelled::Spelling::UserPostfixOperator
+    ));
+    match spelled.expr {
         Expr::Call { name, args, .. } => {
             assert_eq!(name, "postfix:<§>");
             assert_eq!(args.len(), 1);

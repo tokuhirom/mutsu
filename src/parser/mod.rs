@@ -107,7 +107,7 @@ pub(crate) fn register_rakuast_user_sub_binding(stmt: &crate::ast::Stmt) {
                 return;
             }
             let tags = (!tags.is_empty()).then_some(tags.as_slice());
-            stmt::simple::register_use_exports(module, tags, false);
+            stmt::simple::register_use_exports(module, tags);
         }
         _ => {}
     }

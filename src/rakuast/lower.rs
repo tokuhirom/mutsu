@@ -5705,11 +5705,18 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                         listop: false,
                     })
                 }
-                // `$x++` / `$x--` -> Postfix(operator => "++").
-                RakuAstClass::Postfix => Ok(Expr::PostfixOp {
-                    op: postfix_token(postfix)?,
-                    expr: Box::new(operand),
-                }),
+                // `$x++` / `$x--` -> Postfix(operator => "++"); a user
+                // operator routine (`5!`, a user `postfix:<++>`) is called.
+                RakuAstClass::Postfix => {
+                    let symbol = leaf_str(postfix, "operator")?;
+                    match super::user_postfix::lower(postfix, &symbol, operand) {
+                        Ok(call) => Ok(call),
+                        Err(operand) => Ok(Expr::PostfixOp {
+                            op: postfix_token(postfix)?,
+                            expr: Box::new(operand),
+                        }),
+                    }
+                }
                 // `$f(EXPR)` / `Type.(EXPR)` -> Call::Term(args) -> a call on the
                 // operand term.
                 RakuAstClass::CallTerm

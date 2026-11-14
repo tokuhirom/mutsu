@@ -2696,6 +2696,12 @@ pub(crate) enum Stmt {
         /// out False they were never imported, so the undeclared-routine check
         /// must not count them as declared (ADR-0134 §2.1.6, #10331).
         if_imports: Vec<String>,
+        /// The routine names the parse-time export scan imported into the
+        /// `use`'s scope (the same set for a conditional one). A CHECK-time
+        /// resolver that pushed the enclosing scope (`resolve-lexical`, Red's
+        /// `red-compile`) finds them there, as rakudo's finds the import in
+        /// the block's pad; the scan's scopes are gone after the parse.
+        imports: Vec<String>,
     },
     /// `no Module ...;` — disable pragma/module effects for current lexical scope.
     No {

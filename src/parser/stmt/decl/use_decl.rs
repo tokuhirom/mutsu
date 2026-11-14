@@ -35,6 +35,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 tags: Vec::new(),
                 condition: None,
                 if_imports: Vec::new(),
+                imports: Vec::new(),
             },
         ));
     }
@@ -85,6 +86,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 tags: Vec::new(),
                 condition: None,
                 if_imports: Vec::new(),
+                imports: Vec::new(),
             },
         ));
     }
@@ -286,7 +288,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let empty_import = module != "lib"
         && arg.as_ref().is_some_and(Expr::is_empty_import_list)
         && use_tags.is_empty();
-    let if_imports = if empty_import {
+    let imports = if empty_import {
         super::super::simple::register_module_type_names(&module);
         Vec::new()
     } else {
@@ -295,7 +297,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         // Positional arguments go to the module's `sub EXPORT`, which may
         // import anything; only a tag-only `use` selects `is export` traits.
         let import_tags = arg.is_none().then_some(use_tags.as_slice());
-        super::super::simple::register_use_exports(&module, import_tags, condition.is_some())
+        super::super::simple::register_use_exports(&module, import_tags)
+    };
+    let if_imports = if condition.is_some() {
+        imports.clone()
+    } else {
+        Vec::new()
     };
     // A slang-activating module (its source `use`s Slangify) executes at
     // parse time so its slang registration can switch parser modes for the
@@ -318,6 +325,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         tags: use_tags,
         condition,
         if_imports,
+        imports,
     };
     // `use Foo ..., proto sub MAIN(|) {*}` passes the proto object to Foo's
     // EXPORT routine. The proto declaration is part of the use argument's
@@ -531,6 +539,7 @@ fn parse_use_smiley_pragma<'a>(input: &'a str, pragma_name: &'a str) -> PResult<
             tags: Vec::new(),
             condition: None,
             if_imports: Vec::new(),
+            imports: Vec::new(),
         },
     ))
 }

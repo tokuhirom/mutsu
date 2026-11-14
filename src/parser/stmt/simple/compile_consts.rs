@@ -331,25 +331,21 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
 }
 
 /// Register the exports of a `use` of `module` (see
-/// [`super::register_module_exports_with_tags`]). For a conditional `use`
-/// (`use Foo:if(EXPR)`) the names it imported are returned: the parse cannot
-/// know the BEGIN-time condition, so they stay registered for the rest of the
-/// parse, and the statement keeps them (`Stmt::Use::if_imports`) so the
+/// [`super::register_module_exports_with_tags`]) and return the function names
+/// it imported into the current scope. The statement keeps them
+/// (`Stmt::Use::imports`) for a CHECK-time resolver that pushes this scope.
+/// For a conditional `use` (`use Foo:if(EXPR)`) the parse cannot know the
+/// BEGIN-time condition, so they stay registered for the rest of the parse,
+/// and the statement keeps them as `Stmt::Use::if_imports` too so the
 /// undeclared-routine check can discount them if the condition is False
-/// (#10331). An unconditional `use` returns nothing.
+/// (#10331).
 // Cost: O(s + k), s = the module's export registration, k = names imported
 // into the current scope so far.
 pub(in crate::parser) fn register_use_exports(
     module: &str,
     import_tags: Option<&[String]>,
-    conditional: bool,
 ) -> Vec<String> {
-    let register = || super::register_module_exports_with_tags(module, import_tags);
-    if !conditional {
-        register();
-        return Vec::new();
-    }
-    capture_imported_functions(register)
+    capture_imported_functions(|| super::register_module_exports_with_tags(module, import_tags))
 }
 
 /// Run `register` (a `use`'s export registration) and return exactly the

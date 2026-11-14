@@ -335,11 +335,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                         crate::parser::stmt::simple::lookup_postfix_precedence(&post_name);
                     if post_prec.is_some_and(|p| p < own_level) {
                         let after = &rest[post_len..];
-                        result = Expr::Call {
-                            name: Symbol::intern(&post_name),
-                            args: vec![result],
-                            listop: false,
-                        };
+                        result = user_postfix_call(&post_name, result);
                         rest = after;
                         continue;
                     }
@@ -445,11 +441,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 && crate::parser::stmt::simple::lookup_postfix_precedence(&post_name)
                     .is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX)
             {
-                result = Expr::Call {
-                    name: Symbol::intern(&post_name),
-                    args: vec![result],
-                    listop: false,
-                };
+                result = user_postfix_call(&post_name, result);
                 rest = &rest[post_len..];
             }
             return Ok((rest, result));
@@ -1764,11 +1756,7 @@ fn postfix_expr_loop_from<'a>(
                 // method spelling wins the tie, as in Rakudo's longest-token
                 // parse: `4!zz` is postfix:<!zz> when that operator exists.
                 if postfix_len > private_name_len {
-                    expr = Expr::Call {
-                        name: Symbol::intern(&postfix_name),
-                        args: vec![expr],
-                        listop: false,
-                    };
+                    expr = user_postfix_call(&postfix_name, expr);
                     rest = &rest[postfix_len..];
                     continue;
                 }
@@ -3084,11 +3072,7 @@ fn postfix_expr_loop_from<'a>(
             };
             if crate::parser::stmt::simple::is_user_declared_postfix_sub(symbol) {
                 rest = &rest[len..];
-                expr = Expr::Call {
-                    name: Symbol::intern(&format!("postfix:<{}>", symbol)),
-                    args: vec![expr],
-                    listop: false,
-                };
+                expr = user_postfix_call(&format!("postfix:<{}>", symbol), expr);
                 continue;
             }
             rest = &rest[len..];
@@ -3134,11 +3118,7 @@ fn postfix_expr_loop_from<'a>(
                     // Don't consume this postfix here; let it be consumed at prefix level
                     postfix_deferred = true;
                 } else {
-                    expr = Expr::Call {
-                        name: Symbol::intern(&name),
-                        args: vec![expr],
-                        listop: false,
-                    };
+                    expr = user_postfix_call(&name, expr);
                     rest = after;
                     continue;
                 }
@@ -3148,11 +3128,7 @@ fn postfix_expr_loop_from<'a>(
         if !postfix_deferred && let Some((op, len)) = parse_custom_postfix_operator(rest) {
             let after = &rest[len..];
             if is_postfix_operator_boundary(after) {
-                expr = Expr::Call {
-                    name: Symbol::intern(&format!("postfix:<{op}>")),
-                    args: vec![expr],
-                    listop: false,
-                };
+                expr = user_postfix_call(&format!("postfix:<{op}>"), expr);
                 rest = after;
                 continue;
             }
@@ -3323,4 +3299,19 @@ fn reject_called_double_closure(target: &Expr) -> Result<(), PError> {
         return Err(err);
     }
     Ok(())
+}
+
+/// The call of a user postfix operator routine `name` applied as an operator
+/// to `operand`: RakuAST keeps it as the operator application
+/// (`Spelling::UserPostfixOperator`).
+// Cost: O(1).
+fn user_postfix_call(name: &str, operand: Expr) -> Expr {
+    Expr::spelled(
+        Expr::Call {
+            name: Symbol::intern(name),
+            args: vec![operand],
+            listop: false,
+        },
+        || crate::ast::spelled::Spelling::UserPostfixOperator,
+    )
 }

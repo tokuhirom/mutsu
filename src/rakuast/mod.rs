@@ -237,6 +237,7 @@ mod unit_span;
 mod unspell;
 mod use_origins;
 mod use_stmt;
+mod user_postfix;
 mod user_prefix;
 pub(crate) use user_prefix::user_prefix_overrides_core;
 mod var_decl_constructor;

@@ -199,6 +199,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             tags: _,
             condition,
             if_imports: _,
+            imports: _,
         } => {
             if let Some(e) = arg {
                 v.visit_expr_mut(e);
