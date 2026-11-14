@@ -195,6 +195,16 @@ impl Interpreter {
                         ),
                     }));
                 }
+                // A `List`'s value elements have no container to alias:
+                // promoting one would make the immutable List writable. Its
+                // container elements (`($a, $b)`) reach the result as they are.
+                if matches!(arr_kind, crate::value::ArrayKind::List) {
+                    return self.eval_grep_with_adverb(
+                        args.first().cloned(),
+                        items.to_vec(),
+                        &grep_adverb,
+                    );
+                }
                 self.grep_over_array_promoting(items.clone(), args.first().cloned(), &grep_adverb)
             }
             ValueView::Range(..)
