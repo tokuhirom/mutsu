@@ -443,6 +443,10 @@ impl Interpreter {
                             | "Supplier"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
+                            // A cat handle with a role mixed in place (`$h does
+                            // R` names the instance `IO::CatHandle+{R}`) keeps
+                            // the cat's read state (#17755).
+                            | "IO::CatHandle"
                     )
                 })
         };

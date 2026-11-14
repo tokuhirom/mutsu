@@ -153,7 +153,7 @@ pub(super) const fn opaque(
 
 /// The built-in classes whose instances have an opaque shape, beyond the one
 /// each shape is named after: `Lock::Soft` is answered by `Lock`'s methods.
-pub(super) const ALIASES: [(&str, DispatchShape); 4] = [
+pub(super) const ALIASES: [(&str, DispatchShape); 5] = [
     ("Lock::Soft", DispatchShape::Lock),
     // `Seq.from-loop(&body)`'s iterator: an `Iterator` whose state is its body.
     ("FromLoopIterator", DispatchShape::Iterator),
@@ -161,4 +161,7 @@ pub(super) const ALIASES: [(&str, DispatchShape); 4] = [
     // `Iterator` over the wrapped one that stops after `$n` pulls.
     ("HeadIterator", DispatchShape::Iterator),
     ("Perl", DispatchShape::RakuSystemic),
+    // `$*ARGFILES` / `IO::ArgFiles.new(@files)`: a cat handle over the
+    // program's arguments, answered by `IO::CatHandle`'s rows (#17754).
+    ("IO::ArgFiles", DispatchShape::CatHandle),
 ];

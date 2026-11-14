@@ -17,6 +17,10 @@ use super::*;
 use crate::value::AttrMap;
 use std::collections::HashMap;
 
+/// The attribute marking an `$*ARGFILES` cat whose sources are still to be
+/// read from `@*ARGS` (see `Interpreter::build_argfiles_handle`).
+const ARGFILES_FROM_ARGS: &str = "argfiles-from-args";
+
 /// Extract an integer from an `Int` value (allomorphs/strings yield `None`).
 fn val_int(v: &Value) -> Option<i64> {
     v.as_int()
@@ -31,7 +35,9 @@ impl Interpreter {
     }
 
     fn cat_is_exhausted(attrs: &AttrMap) -> bool {
-        Self::cat_active_handle(attrs).is_none()
+        // An `$*ARGFILES` whose sources are not read yet has not started.
+        !attrs.get(ARGFILES_FROM_ARGS).is_some_and(Value::truthy)
+            && Self::cat_active_handle(attrs).is_none()
             && attrs.get("pos").and_then(val_int).unwrap_or(0)
                 >= Self::cat_sources_len(attrs) as i64
     }
@@ -39,6 +45,54 @@ impl Interpreter {
     /// Build a fresh `IO::CatHandle` instance from positional source values and
     /// `:chomp` / `:nl-in` / `:encoding` named args (the `.new` constructor).
     pub(crate) fn build_io_cathandle(&mut self, class_name: Symbol, args: &[Value]) -> Value {
+        let mut attrs = self.cathandle_attrs(args);
+        // Raku's `IO::CatHandle.new` immediately opens the first source handle
+        // (via `.open` -> `.next-handle`), firing the `on-switch` callback once
+        // for that initial handle. Reproduce that eager open so `.next-handle`,
+        // `.on-switch` counting and `.opened` match rakudo.
+        let _ = self.cat_next_handle(&mut attrs);
+        Value::make_instance(class_name, attrs)
+    }
+
+    /// `$*ARGFILES`: an `IO::ArgFiles` cat over the program's arguments. Its
+    /// sources are read from `@*ARGS` (each a path, `-` for `$*IN`; `$*IN`
+    /// alone when there are none) when it first opens a handle, not now, so a
+    /// program that rewrites `@*ARGS` before reading sees its own list and a
+    /// missing file fails only when it is reached -- rakudo builds it on first
+    /// access (#17754).
+    // Cost: O(1).
+    pub(crate) fn build_argfiles_handle(&mut self) -> Value {
+        let mut attrs = self.cathandle_attrs(&[]);
+        attrs.insert(ARGFILES_FROM_ARGS.to_string(), Value::TRUE);
+        Value::make_instance(Symbol::intern("IO::ArgFiles"), attrs)
+    }
+
+    /// The deferred sources of [`Self::build_argfiles_handle`]: the paths in
+    /// `@*ARGS`, `-` meaning `$*IN`, or `$*IN` alone for an empty `@*ARGS`.
+    // Cost: O(a), a = program arguments.
+    fn argfiles_sources_from_args(&self) -> Vec<Value> {
+        let stdin = || self.get_dynamic_handle("$*IN").unwrap_or(Value::NIL);
+        let args: Vec<Value> = match self.env.get("@*ARGS").map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.to_vec(),
+            _ => Vec::new(),
+        };
+        if args.is_empty() {
+            return vec![stdin()];
+        }
+        args.into_iter()
+            .map(|arg| {
+                if arg.to_string_value() == "-" {
+                    stdin()
+                } else {
+                    arg
+                }
+            })
+            .collect()
+    }
+
+    /// The attributes of a not-yet-opened cat handle over `args` (positional
+    /// sources plus `:chomp` / `:nl-in` / `:encoding` / `:on-switch` / `:bin`).
+    fn cathandle_attrs(&mut self, args: &[Value]) -> AttrMap {
         let mut sources: Vec<Value> = Vec::new();
         let mut chomp = Value::TRUE;
         let mut nl_in = Value::array(vec![
@@ -92,12 +146,7 @@ impl Interpreter {
         attrs.insert("on-switch".to_string(), on_switch);
         attrs.insert("path".to_string(), Value::NIL);
         attrs.insert("nl-out".to_string(), Value::str("\n".to_string()));
-        // Raku's `IO::CatHandle.new` immediately opens the first source handle
-        // (via `.open` -> `.next-handle`), firing the `on-switch` callback once
-        // for that initial handle. Reproduce that eager open so `.next-handle`,
-        // `.on-switch` counting and `.opened` match rakudo.
-        let _ = self.cat_next_handle(&mut attrs);
-        Value::make_instance(class_name, attrs)
+        attrs
     }
 
     /// Invoke the `on-switch` callback for a handle transition, passing the new
@@ -275,6 +324,11 @@ impl Interpreter {
     /// Close the active handle (if any) and open the next source. Returns the new
     /// active handle, or `Nil` when the sources are exhausted.
     fn cat_next_handle(&mut self, attrs: &mut AttrMap) -> Value {
+        if attrs.get(ARGFILES_FROM_ARGS).is_some_and(Value::truthy) {
+            attrs.insert(ARGFILES_FROM_ARGS.to_string(), Value::FALSE);
+            let sources = self.argfiles_sources_from_args();
+            attrs.insert("sources".to_string(), Value::array(sources));
+        }
         // Remember the previously-active handle: it becomes the `$old` argument
         // to `on-switch` and must be closed before we open the next source.
         let old = match attrs.get("active").cloned() {

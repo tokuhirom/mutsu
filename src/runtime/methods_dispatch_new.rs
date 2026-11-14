@@ -40,35 +40,11 @@ impl Interpreter {
         ))
     }
 
-    /// `IO::ArgFiles.new(@files)`: an `$*ARGFILES`-like handle that reads from
-    /// an explicit file list rather than the global `@*ARGS`.
-    // Cost: O(f), f = files named.
+    /// `IO::ArgFiles.new(@files)`: a cat handle over an explicit file list,
+    /// `$*ARGFILES`'s class (#17754).
+    // Cost: O(f), f = files named, plus the first file's open.
     pub(crate) fn argfiles_new_late(&mut self, args: &[Value]) -> Value {
-        let paths: Vec<String> = args
-            .iter()
-            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-            .flat_map(|a| match a.view() {
-                ValueView::Array(items, ..) => items
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>(),
-                ValueView::Seq(items) => items
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>(),
-                _ => vec![a.to_string_value()],
-            })
-            .collect();
-        let handle = self.create_handle(
-            crate::runtime::IoHandleTarget::ArgFiles,
-            crate::runtime::IoHandleMode::Read,
-            None,
-        );
-        let _ = self.with_handle_mut_opt(&handle, |state| {
-            state.argfiles_paths = Some(paths);
-            Ok(())
-        });
-        handle
+        self.build_io_cathandle(crate::symbol::Symbol::intern("IO::ArgFiles"), args)
     }
 
     /// `Failure.handled`: read the handled state, or set it

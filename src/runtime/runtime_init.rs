@@ -1054,6 +1054,15 @@ impl Interpreter {
                 class_level_attrs: ValueMap::default(),
             },
         );
+        // `IO::ArgFiles` is a cat handle over the program's arguments
+        // (`$*ARGFILES`, `IO::ArgFiles.new(@files)`): `IO::CatHandle`'s methods,
+        // with its own name first in the MRO (#17754).
+        if let Some(cat) = classes.get("IO::CatHandle").cloned() {
+            let mut argfiles = cat;
+            argfiles.parents = vec!["IO::CatHandle".to_string()];
+            argfiles.mro = sym_mro(&["IO::ArgFiles", "IO::CatHandle"]);
+            classes.insert("IO::ArgFiles".to_string(), argfiles);
+        }
         classes.insert(
             "Backtrace".to_string(),
             ClassDef {
