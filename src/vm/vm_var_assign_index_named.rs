@@ -4677,6 +4677,11 @@ impl Interpreter {
         {
             return Ok(false);
         }
+        // A Blob is immutable however it is reached (`$m<k>[0] = 9` on a Map
+        // of Blobs), as the direct `$blob[0] = 9` store refuses it.
+        if crate::runtime::utils::is_blob_like_class(&class_name.resolve()) {
+            return Err(RuntimeError::assignment_ro(Some("Blob")));
+        }
         let Ok(pos) = pos.parse::<usize>() else {
             return Ok(true);
         };
@@ -6198,6 +6203,14 @@ impl Interpreter {
         {
             return Err(RuntimeError::assignment_ro_value(
                 target.descalarize().clone(),
+            ));
+        }
+        // An immutable `Map` reached through an expression (`@rows[0].raw<k> =
+        // v`) refuses the store, as a Map held in a variable does.
+        if !is_positional && target.deref_container().is_immutable_map() {
+            return Err(crate::runtime::refuse_map_assignment(
+                &target.deref_container().descalarize(),
+                &idx,
             ));
         }
         let key = idx.to_string_value();

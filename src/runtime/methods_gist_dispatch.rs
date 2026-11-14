@@ -210,7 +210,13 @@ impl Interpreter {
                                 )
                             })
                             .collect();
-                        format!("{{{}}}", parts.join(", "))
+                        // An immutable Map gists as `Map.new((...))`, as the
+                        // pure gist path renders it.
+                        if map.declared_type.as_deref() == Some("Map") {
+                            format!("Map.new(({}))", parts.join(", "))
+                        } else {
+                            format!("{{{}}}", parts.join(", "))
+                        }
                     }
                     ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(interp, v)),
                     ValueView::ValuePair(k, v) => {
