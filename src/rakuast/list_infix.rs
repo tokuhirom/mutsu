@@ -205,32 +205,42 @@ enum SeqToken {
 }
 
 /// Flatten `expr` into the tokens of a `...` chain: a `l ... r` splits into
-/// `l`'s tokens, the operator and `r`. `None` when a `...^` is involved:
-/// rakudo refuses to chain it with anything ("Only identical operators may
-/// be list associative"), so such a list keeps its own lowering.
+/// `l`'s tokens, the operator and `r`. Only the left spine of a chain is a
+/// chain (`a ... b ... c` nests to the left), so this follows that spine and
+/// looks at nothing else. `None` when a `...^` is involved: rakudo refuses to
+/// chain it with anything ("Only identical operators may be list
+/// associative"), so such a list keeps its own lowering.
+// Cost: O(k), k = operators on the spine.
 fn sequence_tokens(expr: Expr, out: &mut Vec<SeqToken>) -> Option<()> {
     use crate::token_kind::TokenKind;
-    match expr {
-        Expr::Binary {
-            left,
-            op: TokenKind::DotDotDot,
-            right,
-            ..
-        } => {
-            sequence_tokens(*left, out)?;
-            out.push(SeqToken::Op);
-            out.push(SeqToken::Item(*right));
-            Some(())
-        }
-        Expr::Binary {
-            op: TokenKind::DotDotDotCaret,
-            ..
-        } => None,
-        other => {
-            out.push(SeqToken::Item(other));
-            Some(())
+    let mut rights = Vec::new();
+    let mut head = expr;
+    loop {
+        match head {
+            Expr::Binary {
+                left,
+                op: TokenKind::DotDotDot,
+                right,
+                ..
+            } => {
+                rights.push(*right);
+                head = *left;
+            }
+            Expr::Binary {
+                op: TokenKind::DotDotDotCaret,
+                ..
+            } => return None,
+            other => {
+                out.push(SeqToken::Item(other));
+                break;
+            }
         }
     }
+    for right in rights.into_iter().rev() {
+        out.push(SeqToken::Op);
+        out.push(SeqToken::Item(right));
+    }
+    Some(())
 }
 
 /// Lower a comma list whose elements hold two or more `...` operators to the
