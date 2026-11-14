@@ -669,11 +669,8 @@ impl Interpreter {
                             // read inside `EXPORT::override` must not answer the
                             // routine's own `$timezone` parameter (User::Timezone).
                             let current = self.current_package_sym();
-                            let current = current.as_str();
-                            if current != split.pkg
-                                && !current
-                                    .strip_suffix(split.pkg)
-                                    .is_some_and(|head| head.ends_with("::"))
+                            if current.as_str() != split.pkg
+                                && crate::qualified::last_segment(current).as_str() != split.pkg
                             {
                                 return None;
                             }
