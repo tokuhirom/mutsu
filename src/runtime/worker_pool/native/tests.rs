@@ -16,6 +16,7 @@ fn state(queue: usize, idle: usize, live: usize, starting: usize, blocked: usize
         live,
         starting,
         blocked,
+        helpers: 0,
     }
 }
 

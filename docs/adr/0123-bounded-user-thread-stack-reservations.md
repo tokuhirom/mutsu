@@ -1,6 +1,7 @@
 # ADR-0123: User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it
 
-- **Status**: Accepted (user approval 2026-09-25; implemented with #9377). D2 (the stack tiers)
+- **Status**: Accepted (user approval 2026-09-25; implemented with #9377); §7 amendment (helping a
+  refused task, #17392) is **Proposed**, awaiting the maintainer. D2 (the stack tiers)
   and its §6 amendment are superseded by [ADR-17392](17392-user-thread-stacks-grow-in-segments.md)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9377](https://github.com/tokuhirom/mutsu/issues/9377). Supersedes the growth rule
@@ -202,3 +203,62 @@ This moves the cliff; it does not remove it. 500 parked workers now run in 0.2 s
 stack (growable VM stacks, or a continuation-style `await`) -- the open part of #17392.
 
 Pinned by `t/concurrency/thread-lock/thread-pool-small-stack-tier.t`.
+
+## 7. Amendment (2026-11-14, Proposed): a refused task waits for a worker, and a blocked worker helps
+
+D4 rejects a pool task when a `Required` growth is refused. ADR-17392 made each parked task cheap
+in address space, but a parked task still holds an OS thread, so a thread *count* limit has the
+same cliff. The ecosystem sandbox runs `ulimit -u 400` as an unprivileged user. There, Log::Dispatch's
+500 `start { $ready.keep; await $starter }` tasks were refused at about 400 threads. The refused
+tasks never kept their `$ready`, and the main thread's `await @ready` hung (#17392). Rakudo runs the
+same program on a handful of threads.
+
+**Decision.** A pool worker blocked in `gc::wait_until` registers as a *helper*, provided it has
+stack to spare (the third rule below). The pool then changes in two ways.
+
+1. **Growth.** When every live worker is blocked and at least one is a helper, the pool tries
+   only a thread that fits the budget. It no longer goes past the budget (D2's `Required`
+   exception). A thread past the budget would only eat the heap that the parked tasks need:
+   under `ulimit -v`, 3000 parked `start`s used to abort with "memory allocation failed".
+2. **Refusal.** When a growth that every blocked worker needs is refused, the task stays
+   queued, and a process-wide flag marks the pool as starved. Today D4 rejects the task at that
+   point. Now it is rejected only if the pool has **no live worker at all**. With any live
+   worker, the task waits, as rakudo's bounded pool queues past `max_threads`. A starting
+   worker, a running one, or one that wakes up comes back for the queue, and a helper takes it
+   sooner.
+
+Helpers poll the flag at the period their STW-aware wait already polls at (10 ms). A helper that
+sees the flag leaves its wait, runs one queued task nested on its own stack, and then waits
+again. The rules:
+
+- **Only pool workers running a task help.** The main thread, and any other non-pool thread,
+  never runs a task nested. In the motivating program the main thread is the one that keeps
+  `$starter`, so if it ran a task that waits on `$starter`, nothing could keep it.
+- **A helper helps only while no worker is running.** A running worker comes back for the
+  queue by itself (D3).
+- **A helper helps only with stack to spare.** Its headroom above the guard must be at least
+  half of what a freshly started worker can use. Every nested task deepens its helper's stack,
+  and under an address-space limit there may be no segment to grow onto (ADR-17392). A helper
+  that is already deep leaves the task to a shallower one. Otherwise the nested task would die
+  with "Too deep recursion" before doing anything.
+- **While a helper runs a task, the pool counts it running, not blocked, and not as a
+  helper.** A helper buried under a nested task polls nothing, so counting it would stop growth
+  that nobody else can stand in for. Its blocking depth restarts at zero, so the nested task's own waits are counted, and may help in turn, like any
+  task's.
+- **The task-boundary GC reset is not run for a nested task** (`drop_thread_local_gc_state`).
+  It would drop the state of the task the helper is still inside.
+
+**Why it is only a last resort.** A nested task delays its helper: the helper's own task resumes
+only after the nested one returns. So a nested task that waits for something only its helper's
+continuation produces cannot finish. Without helping, that task would not have run at all, so the
+trade is a possible stall in place of a certain failure, and only after the OS has refused a
+thread. The wasm build already runs every wait this way (`wait_until` pumps its cooperative
+scheduler), which is also the evidence that task closures nest. A blocked task that costs no thread
+at all remains ADR-15967 §4.2's stackful-task direction, which this amendment does not decide.
+
+The limit is not enforced for root and counts every thread its user owns, so it cannot be
+tested by setting the limit. `MUTSU_USER_THREAD_LIMIT=N` injects it instead, the same way
+`MUTSU_REFUSE_SERVICE_THREADS` does for service threads. It refuses a user-code thread with
+`EAGAIN` once `N` are alive. It can only refuse more than the OS would.
+
+Pinned by `t/concurrency/thread-lock/pool-helps-refused-thread.t`.
