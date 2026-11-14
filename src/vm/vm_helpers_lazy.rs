@@ -563,10 +563,10 @@ impl Interpreter {
                     // (`(gather {...}).List`) is a List that keeps pulling as
                     // it is read (§2.4): the callee pulls what it reads.
                     let list_view = matches!(v.view(),
-                        ValueView::Seq(body) if matches!(
-                            body.view(),
-                            crate::value::SeqView::List | crate::value::SeqView::ItemList
-                        ));
+                    ValueView::Seq(body) if matches!(
+                        body.view(),
+                        crate::value::SeqView::List | crate::value::SeqView::ItemList
+                    ));
                     if !list_view {
                         self.reify_gather_seq(&v)?;
                     }

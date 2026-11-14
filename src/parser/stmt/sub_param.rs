@@ -30,12 +30,12 @@ pub(crate) use helpers::{
 };
 
 // These were pub(super) in the original file (visible within `stmt`).
+pub(crate) use helpers::forget_anonymous_param_state;
 pub(super) use helpers::{is_anonymous_sigil_param, starts_with_sigil_param};
 pub(super) use method_decl::{
     expr_position_method_decl, mark_params_as_invocant, method_decl, method_decl_body,
     method_decl_body_my, submethod_decl,
 };
-pub(crate) use helpers::forget_anonymous_param_state;
 pub(crate) use param_inner::param_spans;
 pub(super) use param_inner::parse_single_param;
 pub(super) use type_constraint::{
