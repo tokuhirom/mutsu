@@ -213,8 +213,8 @@ same cliff. The ecosystem sandbox runs `ulimit -u 400` as an unprivileged user. 
 tasks never kept their `$ready`, and the main thread's `await @ready` hung (#17392). Rakudo runs the
 same program on a handful of threads.
 
-**Decision.** A pool worker blocked in `gc::wait_until` registers as a *helper*. The pool then
-changes in two ways.
+**Decision.** A pool worker blocked in `gc::wait_until` registers as a *helper*, provided it has
+stack to spare (the third rule below). The pool then changes in two ways.
 
 1. **Growth.** When every live worker is blocked and at least one is a helper, the pool tries
    only a thread that fits the budget. It no longer goes past the budget (D2's `Required`
@@ -241,8 +241,9 @@ again. The rules:
   and under an address-space limit there may be no segment to grow onto (ADR-17392). A helper
   that is already deep leaves the task to a shallower one. Otherwise the nested task would die
   with "Too deep recursion" before doing anything.
-- **While a helper runs a task, the pool counts it running, not blocked.** Its blocking depth
-  restarts at zero, so the nested task's own waits are counted, and may help in turn, like any
+- **While a helper runs a task, the pool counts it running, not blocked, and not as a
+  helper.** A helper buried under a nested task polls nothing, so counting it would stop growth
+  that nobody else can stand in for. Its blocking depth restarts at zero, so the nested task's own waits are counted, and may help in turn, like any
   task's.
 - **The task-boundary GC reset is not run for a nested task** (`drop_thread_local_gc_state`).
   It would drop the state of the task the helper is still inside.

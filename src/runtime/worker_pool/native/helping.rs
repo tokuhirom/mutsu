@@ -58,11 +58,14 @@ fn has_room_to_help() -> bool {
 }
 
 /// Count the calling thread as a helper, if it is a pool worker running a
-/// task; `false` (and nothing counted) otherwise. Paired with
-/// [`unregister_helper`] by the GC's wait (`gc::stw_help`).
+/// task with stack to spare (`has_room_to_help`); `false` (and nothing
+/// counted) otherwise. Only a helper that can actually run a task may stop
+/// the pool from growing past the budget, so one too deep to help is not
+/// counted. Paired with [`unregister_helper`] by the GC's wait
+/// (`gc::stw_help`).
 // Cost: O(1) (the pool lock).
 pub(super) fn register_helper() -> bool {
-    if !pool_enabled() || !IN_TASK.with(Cell::get) {
+    if !pool_enabled() || !IN_TASK.with(Cell::get) || !has_room_to_help() {
         return false;
     }
     lock_pool().helpers += 1;
@@ -91,8 +94,8 @@ pub(super) fn hooks() -> crate::gc::HelpHooks {
 /// queued and no worker is running to take it. Called by a helper with no
 /// lock held and out of the GC's quiescent state. Returns whether a task ran.
 ///
-/// While the task runs, the helper counts as running, not blocked, and its
-/// blocking depth starts from zero, so the nested task's own waits are
+/// While the task runs, the helper counts as running, not blocked (nor as a
+/// helper), and its blocking depth starts from zero, so the nested task's own waits are
 /// accounted (and may help in turn) like any task's. The task boundary's
 /// `drop_thread_local_gc_state` is NOT run: it would drop the state of the
 /// task the helper is still inside.
@@ -111,7 +114,10 @@ pub(super) fn help_one() -> bool {
             STARVED.store(false, Ordering::Release);
         }
         if task.is_some() {
+            // Running the task, this thread neither waits nor can help: a
+            // helper buried under a nested task polls nothing.
             st.blocked -= 1;
+            st.helpers -= 1;
         }
         task
     };
@@ -124,6 +130,8 @@ pub(super) fn help_one() -> bool {
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task.run));
     super::super::yield_points::flush_own();
     BLOCK_DEPTH.with(|d| d.set(depth));
-    lock_pool().blocked += 1;
+    let mut st = lock_pool();
+    st.blocked += 1;
+    st.helpers += 1;
     true
 }
