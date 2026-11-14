@@ -116,6 +116,10 @@ pub(crate) fn parse_sub_traits_upto(
                 },
             ));
         }
+        // A slang's own trait (`trait_mod:sym<for>`) is tried first (#13370).
+        if let Some(e) = crate::parser::stmt::simple::trait_mod_hook(r) {
+            return Err(e);
+        }
         if let Some(r_after) = keyword("handles", r) {
             // No space before the angle-word list is legal — `method build
             // handles<token node at-rule> { ... }` is how CSS::Grammar::Actions

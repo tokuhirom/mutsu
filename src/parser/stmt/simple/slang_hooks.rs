@@ -120,6 +120,9 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
         // Only a candidate that parses its own body; one that calls the core
         // `<package_def>` is ADR-0091's keyword alias instead (ADR-17741 §2.1).
         "package-declarator" | "package_declarator" => Some("package-declarator"),
+        // A trait a slang adds (OO::Plugin's `trait_mod:sym<for>`); rakudo's
+        // RakuAST grammar spells this category with an underscore.
+        "trait_mod" | "trait-mod" => Some("trait-mod"),
         "term" => Some("term"),
         "value" => Some("value"),
         "number" => Some("number"),
@@ -301,6 +304,22 @@ fn leading_literal(body: &str, sym: Option<&str>) -> Option<String> {
     }
     if body.starts_with("<sym>") || body.starts_with("<.sym>") {
         return sym.map(str::to_string);
+    }
+    // A leading group without alternatives (`[ <sym> {} <.check> ] ...`, OO::Plugin's
+    // `trait_mod:sym<for>`) starts where its own first atom does.
+    if let Some(group) = body.strip_prefix('[') {
+        let mut depth = 0usize;
+        for (at, c) in group.char_indices() {
+            match c {
+                '[' | '(' | '<' | '{' => depth += 1,
+                '>' | '}' | ')' => depth = depth.saturating_sub(1),
+                ']' if depth == 0 => return leading_literal(&group[..at], sym),
+                ']' => depth -= 1,
+                '|' | '\'' | '"' if depth == 0 => return None,
+                _ => {}
+            }
+        }
+        return None;
     }
     let quote = body.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
     let inner = &body[1..];
@@ -566,6 +585,40 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
     }))
 }
 
+/// Try the slang's `trait_mod` productions at `input`, a position where a
+/// declaration's traits are parsed, ahead of the built-in traits. `None`: no
+/// production matched here, the built-in traits go on. A production that raised
+/// (OO::Plugin's `<.in-plug-class>` panics outside a `plug-class`, as it does on
+/// rakudo) is that error.
+// Cost: O(r), r = registered hook rules (none without a slang); plus
+// [`run_category`] when a trait hook is registered.
+pub(in crate::parser) fn trait_mod_hook(input: &str) -> Option<PError> {
+    // Every declaration's trait loop asks: with no trait added, answer at once,
+    // ahead of the memo table.
+    let any = HOOKS.with(|h| {
+        h.borrow()
+            .rules
+            .iter()
+            .any(|r| slang_hook_rule(&r.rule) == Some("trait-mod"))
+    });
+    if !any {
+        return None;
+    }
+    let found = run_category(&["trait-mod"], input)?;
+    Some(match found {
+        Err(e) => e,
+        // TODO: apply the trait node a slang's action attached to the declaration
+        // (lower a `RakuAST::Trait::*` into the declaration's traits); no slang a
+        // ledger distribution uses has one that matches and attaches a node.
+        Ok(_) => PError::fatal_at(
+            "a slang trait_mod production matched, but applying the trait it built is not \
+             supported yet"
+                .to_string(),
+            input,
+        ),
+    })
+}
+
 /// Whether a slang added any `routine-declarator` production.
 // Cost: O(r), r = registered hook rules.
 pub(super) fn has_routine_declarator_hooks() -> bool {
@@ -779,6 +832,18 @@ mod prefix_tests {
             leading_literal(":ratchet <sym> <.ws>", Some("twice")),
             Some("twice".into())
         );
+    }
+
+    #[test]
+    fn a_leading_plain_group_starts_with_its_first_atom() {
+        assert_eq!(
+            leading_literal(
+                "[ <sym> {} <.in-plug-class( 'for' )> ] <ptype-name-list>",
+                Some("for")
+            ),
+            Some("for".into())
+        );
+        assert_eq!(leading_literal("[ 'a' | 'b' ] <x>", None), None);
     }
 
     #[test]

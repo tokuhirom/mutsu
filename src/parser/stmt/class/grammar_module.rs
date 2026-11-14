@@ -220,6 +220,10 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     let mut is_export = false;
     // The header traits as written, for a parse that keeps spellings.
     let mut written: Vec<RoutineTrait> = Vec::new();
+    // A slang's own trait (`trait_mod:sym<for>`) is tried first (#13370).
+    if let Some(e) = crate::parser::stmt::simple::trait_mod_hook(r) {
+        return Err(e);
+    }
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent_name) = qualified_ident(r2)?;

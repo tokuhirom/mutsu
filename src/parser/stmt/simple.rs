@@ -135,7 +135,7 @@ pub(in crate::parser) use slang_hooks::{
     hooks_snapshot, note_slang_activation, numish_hook, register_action, register_hook,
     register_pointy_starters, register_wrapper, restore_hooks, set_activator,
     set_host as set_slang_host, statement_control_hook, statementlist_wrapper,
-    take_wrapper_back_call, term_hook,
+    take_wrapper_back_call, term_hook, trait_mod_hook,
 };
 pub(crate) use slang_hooks::{
     parse_pointy_starters, parse_slang_arglist, parse_slang_for_expr, parse_slang_pointy_block,
