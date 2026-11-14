@@ -163,11 +163,56 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
     if items.len() < 2 {
         return items;
     }
+    // Raku's `...` binds more loosely than the comma: the elements before the
+    // first sequence are its seeds and every element after it belongs to its
+    // right operand (`0 ... 2, 5` is `0 ... (2, 5)`), and two or more of them
+    // form one list-associative chain (`1 ... 3, 10 ... 20`).
+    if let Some(idx) = items.iter().position(is_sequence_binary)
+        && idx + 1 < items.len()
+    {
+        let seeds = items[..idx].to_vec();
+        if let Some(call) =
+            crate::rakuast::list_infix::sequence_chain_call(seeds.clone(), items[idx..].to_vec())
+        {
+            return vec![call];
+        }
+        if let Expr::Binary {
+            left, op, right, ..
+        } = &items[idx]
+        {
+            let mut lhs = seeds;
+            lhs.push(*left.clone());
+            let mut rhs = vec![*right.clone()];
+            rhs.extend(items[idx + 1..].iter().cloned());
+            return vec![Expr::Binary {
+                left: Box::new(if lhs.len() == 1 {
+                    lhs.remove(0)
+                } else {
+                    Expr::ArrayLiteral(lhs)
+                }),
+                op: op.clone(),
+                right: Box::new(Expr::ArrayLiteral(rhs)),
+                form: Default::default(),
+            }];
+        }
+    }
     let seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
     match merge_seeds_into_sequence(items.last().unwrap(), &seeds) {
         Some(merged) => vec![merged],
         None => items,
     }
+}
+
+/// Whether `expr` is a `...`/`...^` sequence term.
+// Cost: O(1).
+fn is_sequence_binary(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Binary {
+            op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
+            ..
+        }
+    )
 }
 
 /// Fold `seeds` into the LHS of the sequence at (or inside) `last`.

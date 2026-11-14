@@ -48,7 +48,9 @@ is (1, { $_ + 2 } ... *).[^5].join(', '), '1, 3, 5, 7, 9', 'infinite closure';
 my @fib = 0, 1, *+* ... *;
 my @fib-seed = @fib[^7];
 @fib-seed.push(8);
-is infix:<...>(|@fib-seed).join(', '), '0, 1, 1, 2, 3, 5, 8', 'slurped multi-seed LHS from array';
+# Raku's `infix:<...>` with several operands is the list-associative chain:
+# (0, 1, 1, 2, 3, 5, 8, 8) is `0 ... 1 ... 1 ... 2 ... 3 ... 5 ... 8 ... 8`.
+is infix:<...>(|@fib-seed).join(', '), '0, 1, 2, 3, 4, 5, 6, 7, 8', 'slurped operands chain';
 
 my $geo-rat = infix:<...>((1, 1/2, 1/4), 0).head(10).List;
 isa-ok $geo-rat[3], Rat, 'geometric continuation keeps Rat type';
