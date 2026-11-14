@@ -31,7 +31,8 @@ fn scope_declarations(scope: &RakuAstNode) -> HashMap<String, Value> {
 }
 
 /// Register the variables and parameters `node` declares, not descending into
-/// the scopes nested in it.
+/// the scopes nested in it. (The routines its `use` statements import are
+/// declared by `hoist`, which the unit's own resolution shares.)
 // Cost: O(size of the subtree, not counting nested scopes).
 fn declare_variables(node: &RakuAstNode, scopes: &mut Scopes) {
     let mut visit = |child: &Value| {
