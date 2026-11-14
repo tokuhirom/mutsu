@@ -50,16 +50,27 @@ struct Entry {
 impl Entry {
     /// Whether `found` is (a stale copy of) this process binding.
     fn holds(&self, found: &Value) -> bool {
-        values_same_object(found, &self.value)
+        same_binding(found, &self.value)
             || self
                 .initial
                 .as_ref()
-                .is_some_and(|initial| values_same_object(found, initial))
+                .is_some_and(|initial| same_binding(found, initial))
             || self
                 .superseded
                 .iter()
-                .any(|old| values_same_object(found, old))
+                .any(|old| same_binding(found, old))
     }
+}
+
+/// Whether the env binding `found` is the stash value `held`. A `:=`-bound
+/// dynamic (`PROCESS::<$x> := $var`) holds the variable's container cell,
+/// while its env mirror is read dereferenced, so a cell is compared by what
+/// it currently holds.
+// Cost: O(1), a cell lock plus one identity comparison.
+fn same_binding(found: &Value, held: &Value) -> bool {
+    values_same_object(found, held)
+        || (matches!(held.view(), crate::value::ValueView::ContainerRef(_))
+            && values_same_object(&found.clone().into_deref(), &held.clone().into_deref()))
 }
 
 #[derive(Default)]

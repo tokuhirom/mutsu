@@ -5,7 +5,7 @@ use Test;
 # IO::CatHandle::AutoLines (used by the LN distribution) publishes its line
 # counter this way: `PROCESS::<$LN> := $!ln` in a TWEAK.
 
-plan 9;
+plan 11;
 
 {
     my $x = 1;
@@ -41,6 +41,17 @@ class Counter {
     sub peek { $*PSB-T }
     is peek(), 6, 'a routine reads the current value through the dynamic';
     is (await start { $*PSB-T }), 6, 'another thread reads it too';
+}
+
+{
+    class Box { has $.p }
+    my $first = Box.new(:p<first>);
+    my $second = Box.new(:p<second>);
+    PROCESS::<$PSB-RB> := $first;
+    PROCESS::<$PSB-RB> := $second;
+    is $*PSB-RB.p, 'second', 'a second bind replaces the first';
+    PROCESS::<$PSB-RB> := $first;
+    is $*PSB-RB.p, 'first', 'binding back restores the first';
 }
 
 {
