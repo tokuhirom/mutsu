@@ -163,10 +163,12 @@ impl Interpreter {
             // IO::Handle.lines — ADR-0034) into an eager array element.
             // A plain gather in a List literal stays an unread Seq element: it
             // may be infinite, and Rakudo does not run it until it is read
-            // (ADR-11678).
+            // (ADR-11678). So does a not-yet-run `.map`/`.grep`: rakudo's
+            // List holds the Seq, and `((1..2).map({ say $_ }), 3);` prints
+            // nothing until an element is read (#17749).
             let val = if let ValueView::Seq(body) = val.view()
                 && body.needs_touch()
-                && (is_real_array || !body.is_gather_source())
+                && (is_real_array || !(body.is_gather_source() || body.is_map_grep_source()))
             {
                 let body = std::sync::Arc::clone(&body);
                 match self.reify_seq_body(&body) {
