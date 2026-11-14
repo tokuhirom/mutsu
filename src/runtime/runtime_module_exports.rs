@@ -1330,7 +1330,24 @@ impl Interpreter {
             // the same way (stage 2, `lexically_bindable_operator`); a proto, a
             // candidate of a built-in operator and `postcircumfix` keep the alias.
             let mut bound_plain_routine = false;
-            if (!name.contains(":<") || Self::lexically_bindable_operator(&name))
+            // A plain `sub infix:<+>` replaces the built-in operator in the
+            // importing block (rakudo: the import is a pad declaration that
+            // hides CORE's). Its uses all read the set, so it binds as a
+            // one-candidate family that shadows the built-in (#17767).
+            let mut plain_operator_bound = false;
+            if name.contains(":<")
+                && crate::lexical_builtin_op::binds_lexically(&name)
+                && !imported_proto
+                && !exported_method_candidates
+                && let [(key, def)] = function_entries.as_slice()
+                && !key.as_str().contains('/')
+                && self.bind_plain_builtin_operator_lexically(&name, &def.clone())
+            {
+                function_entries.clear();
+                plain_operator_bound = true;
+            }
+            if !plain_operator_bound
+                && (!name.contains(":<") || Self::lexically_bindable_operator(&name))
                 && (!imported_proto || bodied_proto)
                 && !exported_method_candidates
                 && let [(key, def)] = function_entries.as_slice()
@@ -1347,7 +1364,9 @@ impl Interpreter {
             // (A plain routine bound just above is the whole import: the
             // `GLOBAL::name` proto a bare-file module's family left behind is
             // another file's, not this export's.)
-            let family_bound_lexically = if bound_plain_routine {
+            let family_bound_lexically = if plain_operator_bound {
+                true
+            } else if bound_plain_routine {
                 // The routine is bound; the proto a bare-file module left under
                 // `GLOBAL::name` only keeps the family's own handling off.
                 proto_def.is_some()
