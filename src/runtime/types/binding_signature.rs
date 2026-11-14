@@ -3369,7 +3369,26 @@ impl Interpreter {
                         && arg_source_name
                             .as_deref()
                             .is_some_and(|name| self.name_is_readonly_binding(name));
-                    if is_rw || (is_raw && !implicit_raw_veto && !raw_readonly_source) {
+                    // A coercion-typed `is rw` / `is raw` parameter whose
+                    // variable argument the coercion converts (`Int() $b is rw`
+                    // given a Str variable) binds the coerced value, immutable,
+                    // not the caller's container: the caller's variable keeps its
+                    // value (rakudo). An argument that already has the target type
+                    // still aliases the variable.
+                    let coerced_from_variable = (is_rw || is_raw)
+                        && (arg_is_container_ref || arg_source_name.is_some())
+                        && pd
+                            .type_constraint
+                            .as_deref()
+                            .and_then(parse_coercion_type)
+                            .is_some_and(|(target, _)| {
+                                let arg = unwrap_varref_value(args[positional_idx].clone())
+                                    .deref_container();
+                                !self.type_matches_value(target, &arg)
+                            });
+                    if coerced_from_variable {
+                        raw_nonlvalue_params.push(storage_name.to_string());
+                    } else if is_rw || (is_raw && !implicit_raw_veto && !raw_readonly_source) {
                         // A `$x is raw` parameter that took a literal is bound to
                         // the value itself (`Immutable`, no Scalar behind it);
                         // forwarding it to an `is rw` parameter hands over no
