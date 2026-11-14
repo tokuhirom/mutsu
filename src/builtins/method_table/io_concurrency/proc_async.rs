@@ -1,7 +1,7 @@
 //! The rows of `Proc::Async` (ADR-11276 §9.128): `start`, `kill`, `write`,
 //! `print`, `put`, `say`, `close-stdin`, `bind-stdin`, `bind-stdout`,
 //! `bind-stderr`, `ready`, `stdout`, `stderr`, `Supply`, `command`, `started`,
-//! `w` and `pid`.
+//! `w`, `pid`, `pty` and `resize-pty`.
 //!
 //! A `Proc::Async` is an instance whose state is its shared attribute cell, so
 //! a method that changes it (`start`, the binds, selecting an output Supply)
@@ -55,6 +55,8 @@ const fn named_of(name: &str) -> &'static [&'static str] {
         &["ENV", "cwd", "scheduler"]
     } else if const_str_eq(name, "print") || const_str_eq(name, "write") {
         &["scheduler"]
+    } else if const_str_eq(name, "resize-pty") {
+        &["cols", "rows"]
     } else if const_str_eq(name, "stdout")
         || const_str_eq(name, "stderr")
         || const_str_eq(name, "Supply")
@@ -84,6 +86,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("started", Started),
     row!("w", W),
     row!("pid", Pid),
+    row!("pty", Pty),
+    row!("resize-pty", ResizePty),
 ];
 
 // Cost: the method's own.

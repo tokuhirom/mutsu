@@ -5,7 +5,43 @@ use std::process::ChildStdin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ChildStdin>>>>>;
+type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ProcStdinSink>>>>>;
+
+/// Where a `Proc::Async`'s writes go: its stdin pipe, or the master side of
+/// the pseudo-terminal it runs behind (`:pty`, `proc_pty`).
+pub(in crate::runtime) enum ProcStdinSink {
+    Pipe(ChildStdin),
+    Pty(std::fs::File),
+}
+
+impl ProcStdinSink {
+    /// The pty master, for `.resize-pty`.
+    // Cost: O(1).
+    pub(in crate::runtime) fn pty_master(&self) -> Option<&std::fs::File> {
+        match self {
+            ProcStdinSink::Pty(master) => Some(master),
+            ProcStdinSink::Pipe(_) => None,
+        }
+    }
+}
+
+impl std::io::Write for ProcStdinSink {
+    // Cost: one write(2).
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            ProcStdinSink::Pipe(pipe) => pipe.write(buf),
+            ProcStdinSink::Pty(master) => master.write(buf),
+        }
+    }
+
+    // Cost: O(1).
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            ProcStdinSink::Pipe(pipe) => pipe.flush(),
+            ProcStdinSink::Pty(master) => master.flush(),
+        }
+    }
+}
 
 pub(in crate::runtime) fn proc_stdin_map() -> &'static StdinMap {
     static MAP: OnceLock<StdinMap> = OnceLock::new();

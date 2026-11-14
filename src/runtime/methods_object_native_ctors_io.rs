@@ -230,6 +230,41 @@ impl Interpreter {
     /// spawned later, by `.start`. The interpreter's `dispatch_new` arm delegates
     /// here so the native VM fast path is byte-identical.
     // Cost: O(a), a = command elements after slurpy flattening.
+    /// The size `Proc::Async.new(:pty(:rows(24), :cols(80)))` asks for; `None`
+    /// for `:!pty`. Anything else is rakudo's "`:pty` must be set as follows"
+    /// error.
+    // Cost: O(n), n = the pairs in the argument.
+    fn proc_async_pty_arg(
+        value: &Value,
+    ) -> Result<Option<crate::runtime::proc_pty::PtySize>, RuntimeError> {
+        if matches!(value.view(), ValueView::Bool(false)) || value.is_nil() {
+            return Ok(None);
+        }
+        let mut rows = None;
+        let mut cols = None;
+        if let ValueView::Array(items, ..) = value.view() {
+            for item in items.iter() {
+                let (key, v) = match item.view() {
+                    ValueView::Pair(key, v) => (key.to_string(), v),
+                    ValueView::ValuePair(key, v) => (key.to_string_value(), v),
+                    _ => continue,
+                };
+                let n = v.to_f64().clamp(0.0, f64::from(u16::MAX)) as u16;
+                match key.as_str() {
+                    "rows" => rows = Some(n),
+                    "cols" => cols = Some(n),
+                    _ => {}
+                }
+            }
+        }
+        match (rows, cols) {
+            (Some(rows), Some(cols)) => Ok(Some(crate::runtime::proc_pty::PtySize { rows, cols })),
+            _ => Err(RuntimeError::new(
+                ":pty must be set as follows: :pty(:cols(12), :rows(34))",
+            )),
+        }
+    }
+
     pub(crate) fn build_native_proc_async_value(
         class_name: Symbol,
         args: &[Value],
@@ -237,6 +272,7 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut w_flag = false;
         let mut enc = Value::str_from("utf-8");
+        let mut pty: Option<crate::runtime::proc_pty::PtySize> = None;
         for arg in args {
             match arg.view() {
                 ValueView::Pair(key, value) if key == "w" => {
@@ -244,6 +280,9 @@ impl Interpreter {
                 }
                 ValueView::Pair(key, value) if key == "enc" => {
                     enc = Value::str(value.to_string_value());
+                }
+                ValueView::Pair(key, value) if key == "pty" => {
+                    pty = Self::proc_async_pty_arg(&value)?;
                 }
                 // Rakudo's signature is `(*@args where .so, *%_)`: EVERY named
                 // argument lands in the slurpy `*%_` and is absorbed, whether
@@ -323,6 +362,16 @@ impl Interpreter {
         attrs.insert("cmd".to_string(), Value::array(positional));
         attrs.insert("started".to_string(), Value::FALSE);
         attrs.insert("enc".to_string(), enc);
+        if let Some(size) = pty {
+            attrs.insert(
+                crate::runtime::proc_pty::PTY_ROWS.to_string(),
+                Value::int(i64::from(size.rows)),
+            );
+            attrs.insert(
+                crate::runtime::proc_pty::PTY_COLS.to_string(),
+                Value::int(i64::from(size.cols)),
+            );
+        }
         attrs.insert(
             "stdout".to_string(),
             Value::make_instance(Symbol::intern("Supply"), stdout_supply_attrs),

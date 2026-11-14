@@ -277,7 +277,9 @@ impl Interpreter {
                         if let Ok(mut map) = super::native_methods::proc_stdin_map().lock() {
                             map.insert(
                                 pid as u32,
-                                std::sync::Arc::new(std::sync::Mutex::new(Some(stdin))),
+                                std::sync::Arc::new(std::sync::Mutex::new(Some(
+                                    crate::runtime::native_methods::ProcStdinSink::Pipe(stdin),
+                                ))),
                             );
                         }
                         let mut in_attrs = HashMap::new();
