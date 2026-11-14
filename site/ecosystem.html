@@ -41,12 +41,13 @@
   .s-blocked_load { background: rgba(109,40,217,0.14); color: #6d28d9; }
   .s-blocked_dep  { background: rgba(107,114,128,0.18); color: #4b5563; }
   .s-no_baseline  { background: rgba(107,114,128,0.14); color: #6b7280; }
+  .s-excluded     { background: rgba(107,114,128,0.14); color: #6b7280; }
   .s-skipped      { background: rgba(107,114,128,0.14); color: #6b7280; }
   @media (prefers-color-scheme: dark) {
     table.eco th { background: var(--bg, #0d1117); }
     .s-green { color: #4ade80; } .s-partial { color: #f0b429; }
     .s-red { color: #fb7185; }   .s-blocked_load { color: #c4b5fd; }
-    .s-blocked_dep, .s-no_baseline, .s-skipped { color: #9ca3af; }
+    .s-blocked_dep, .s-no_baseline, .s-excluded, .s-skipped { color: #9ca3af; }
   }
 </style>
 </head>
@@ -100,7 +101,7 @@ const EN = {
          'Search for a module to see whether it works, how much of its suite passes, and why the rest does not.',
   method: 'rakudo is the baseline: a test file rakudo does not pass cleanly is left out of the ' +
           'numbers entirely, never counted against mutsu. Both interpreters run the same sources, ' +
-          'the same dependencies and the same timeout.',
+          'the same dependencies and the same timeout. Distributions the project has decided will never be supported are shown as “out of scope” and are not counted either.',
   distParity: 'distributions fully passing',
   fileParity: 'test files passing',
   measured: 'measured',
@@ -119,7 +120,7 @@ const EN = {
   status: {
     green: 'works', partial: 'partly works', red: 'fails',
     blocked_load: 'does not load', blocked_dep: 'dependency missing',
-    no_baseline: 'no rakudo baseline', skipped: 'skipped',
+    no_baseline: 'no rakudo baseline', excluded: 'out of scope', skipped: 'skipped',
   },
 };
 
@@ -128,7 +129,7 @@ const JA = {
   intro: '各 zef ディストリビューション自身のテストスイートを、rakudo と mutsu の両方で実行した結果です。' +
          'モジュール名で検索すると、動くかどうか、スイートのどこまで通るか、通らない理由が分かります。',
   method: '基準は rakudo です。rakudo 自身が通らないテストファイルは数値から完全に除外され、mutsu の失敗としては数えません。' +
-          '両インタプリタは同じソース・同じ依存・同じタイムアウトで実行されます。',
+          '両インタプリタは同じソース・同じ依存・同じタイムアウトで実行されます。対応しないと決めたディストリビューションは「対象外」と表示し、同様に数値には含めません。',
   distParity: '完全に通ったディストリビューション',
   fileParity: '通ったテストファイル',
   measured: '計測時点',
@@ -147,7 +148,7 @@ const JA = {
   status: {
     green: '動作', partial: '一部動作', red: '失敗',
     blocked_load: 'ロード不可', blocked_dep: '依存が不足',
-    no_baseline: 'rakudo 基準なし', skipped: 'スキップ',
+    no_baseline: 'rakudo 基準なし', excluded: '対象外', skipped: 'スキップ',
   },
 };
 

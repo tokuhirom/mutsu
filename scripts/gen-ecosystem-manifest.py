@@ -22,14 +22,18 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ecosystem_common as eco  # noqa: E402
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+EXCLUDE_LIST = os.path.join(REPO, "ecosystem", "exclude.txt")
 DISTS_DIR = os.path.join(REPO, "ecosystem", "dists")
 OUT_PATH = os.path.join(REPO, "site", "content", "ecosystem.json")
 
 # Worst first: the reason a reader opens this page is to find out whether their
 # module is in trouble, not to admire the green ones.
 STATUS_ORDER = ["red", "partial", "blocked_load", "blocked_dep", "green",
-                "no_baseline", "skipped"]
+                "no_baseline", "excluded", "skipped"]
 
 
 def first_reason(record: dict) -> str:
@@ -53,6 +57,12 @@ def main() -> int:
     if not os.path.isdir(DISTS_DIR):
         sys.exit(f"no records at {DISTS_DIR} — run scripts/ecosystem-ledger.sh pull first")
 
+    # A distribution listed in ecosystem/exclude.txt was investigated and judged
+    # permanently out of reach by a decision the project will not revisit, so it
+    # is shown as `excluded` (with the list's reason) and left out of the KPI,
+    # exactly as `no_baseline` is. The record's own status is untouched.
+    excluded = eco.load_exclude(EXCLUDE_LIST)
+
     rows, measured = [], {}
     # The page is keyed by the record's own `dist`, never by its filename, so a
     # second file claiming the same distribution would list it twice with two
@@ -72,7 +82,7 @@ def main() -> int:
                          f"{record['dist']!r}:\n  {where[record['dist']]}\n  {path}")
             where[record.get("dist")] = path
             totals = record.get("totals") or {}
-            rows.append({
+            row = {
                 "dist": record["dist"],
                 "version": record.get("version", "?"),
                 "status": record.get("status", "skipped"),
@@ -80,7 +90,11 @@ def main() -> int:
                 "passed": totals.get("parity_files", 0),
                 "baseline": totals.get("baseline_files", 0),
                 "reason": first_reason(record)[:160],
-            })
+            }
+            if eco.is_excluded(excluded, record["dist"], record.get("version")):
+                row.update(status="excluded", passed=0, baseline=0,
+                           reason=excluded[record["dist"]][1][:160])
+            rows.append(row)
             measured = record.get("measured", measured)
 
     rows.sort(key=lambda r: (STATUS_ORDER.index(r["status"])
