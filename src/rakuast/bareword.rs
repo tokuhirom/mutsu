@@ -33,6 +33,8 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 mod package_alias;
+mod parameterized;
+pub(super) use parameterized::parameterized_type_word_expr;
 
 /// What a bareword naming something the same compilation unit declared means.
 ///

@@ -367,7 +367,14 @@ impl<'ast> Visit<'ast> for Scan {
             && name != "self"
             && !name.starts_with(|c: char| c.is_ascii_uppercase())
         {
-            self.record_call(name);
+            // A parameterized type word (`gptr[Str]`, a typed attribute's
+            // implicit default over a lowercase `constant gptr = Array`) refers
+            // to its base; the arguments are types, not part of the name.
+            let base = match name.find('[') {
+                Some(open) if name.ends_with(']') => &name[..open],
+                _ => name.as_str(),
+            };
+            self.record_call(base);
         }
         // `$( ... )` is parsed as the `.item` of a desugared block, but is not
         // a lexical scope: a routine declared inside belongs to the enclosing one.
