@@ -292,7 +292,16 @@ fn is_modifier_body(body: &[Stmt]) -> bool {
 /// sink to each element.
 fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
     match expr {
-        Expr::Grouped(inner) => warn_expr_sink(inner, nil_hint, line),
+        // A parenthesized expression is never reported, whatever it holds
+        // (`(5);`, `(1, 2);`, `(1 + 2);` are silent on rakudo); only an
+        // empty `()` is still a useless value. A bare comma list without
+        // the parentheses distributes the sink below (`(1, 2), 3;` reports
+        // the 3 alone).
+        Expr::Grouped(inner) => {
+            if matches!(inner.as_ref(), Expr::ArrayLiteral(elems) if elems.is_empty()) {
+                emit("()".to_string(), nil_hint, line);
+            }
+        }
         // A term whose spelling the parse kept (`<42i>`): the wrapper only
         // records how it was written, never what it is.
         Expr::Spelled(spelled) => warn_expr_sink(&spelled.expr, nil_hint, line),
