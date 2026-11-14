@@ -989,7 +989,9 @@ impl Interpreter {
         classes.insert(
             "IO::CatHandle".to_string(),
             ClassDef {
-                parents: Vec::new(),
+                // `IO::CatHandle is IO::Handle` (rakudo): a cat satisfies
+                // `IO::Handle` constraints and smartmatches (#17754).
+                parents: vec!["IO::Handle".to_string()],
                 attributes: Vec::new(),
                 native_methods: [
                     "get",
@@ -1044,7 +1046,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: sym_mro(&["IO::CatHandle"]),
+                mro: sym_mro(&["IO::CatHandle", "IO::Handle"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1060,7 +1062,7 @@ impl Interpreter {
         if let Some(cat) = classes.get("IO::CatHandle").cloned() {
             let mut argfiles = cat;
             argfiles.parents = vec!["IO::CatHandle".to_string()];
-            argfiles.mro = sym_mro(&["IO::ArgFiles", "IO::CatHandle"]);
+            argfiles.mro = sym_mro(&["IO::ArgFiles", "IO::CatHandle", "IO::Handle"]);
             classes.insert("IO::ArgFiles".to_string(), argfiles);
         }
         classes.insert(

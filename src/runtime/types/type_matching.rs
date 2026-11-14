@@ -98,7 +98,11 @@ impl Interpreter {
             return false;
         }
         for role in composed {
-            let Some((role_base, role_args)) = Self::parse_parametric_type_name(&role) else {
+            // A role mixed in with arguments (`$o does R[Int]`) is keyed
+            // `R[Int]\u{0}<argument identity>` (`parameterized_mixin_role_key`):
+            // its type is the part before the NUL.
+            let spelled = role.split_once('\u{0}').map_or(role.as_str(), |(spelled, _)| spelled);
+            let Some((role_base, role_args)) = Self::parse_parametric_type_name(spelled) else {
                 continue;
             };
             // A named argument (`does R[Int,Str,:value-type]`) is not part of

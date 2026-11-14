@@ -66,6 +66,51 @@ impl Interpreter {
         base_class: &str,
         new_roles: &[String],
     ) -> Result<String, RuntimeError> {
+        self.ensure_mixin_class_with_args(base_class, new_roles, &[])
+    }
+
+    /// The name a parameterized role takes inside a mixin type, and the
+    /// arguments that compose it: `$o does R[1, :x]` composes `R` with
+    /// `(1, :x)` and spells it `R[Int]` as rakudo does (a positional
+    /// argument by its type, a named one not at all; `R` when every argument
+    /// is named). The registry key carries the arguments' identity after a
+    /// NUL, so `R[1]` and `R[2]` are distinct types with the same name.
+    // Cost: O(a), a = the arguments (each one's `WHICH` key).
+    pub(crate) fn parameterized_mixin_role_key(role: &str, args: &[Value]) -> String {
+        let positional: Vec<String> = args
+            .iter()
+            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .map(crate::value::types::what_type_name)
+            .collect();
+        let mut key = if positional.is_empty() {
+            format!("{role}[]")
+        } else {
+            format!("{role}[{}]", positional.join(","))
+        };
+        // The identity is hex-encoded so it never adds a `,`, `[` or `}` to
+        // the mixin type's name, which is split on those.
+        key.push('\u{0}');
+        for arg in args {
+            for byte in crate::value::which_key::value_which_key(arg).bytes() {
+                key.push_str(&format!("{byte:02x}"));
+            }
+            key.push('.');
+        }
+        key
+    }
+
+    /// [`Self::ensure_mixin_class`] where some roles are parameterized:
+    /// `role_args[i]`, when present, holds the evaluated arguments of
+    /// `new_roles[i]` (a key from [`Self::parameterized_mixin_role_key`]),
+    /// and the role is composed with them.
+    // Cost: O(r) for r roles once the type exists; composing it the first
+    // time is a class declaration.
+    pub(crate) fn ensure_mixin_class_with_args(
+        &mut self,
+        base_class: &str,
+        new_roles: &[String],
+        role_args: &[Option<Vec<Value>>],
+    ) -> Result<String, RuntimeError> {
         // The roles of *this* `does` are composed together into one new type, but
         // that type INHERITS from `base_class`. So a second `does` on an already
         // mixed-in object stacks a type on the previous one (`C+{A}+{B}`, exactly
@@ -78,11 +123,15 @@ impl Interpreter {
             .class_composed_roles
             .get(base_class)
             .cloned();
-        let fresh: Vec<String> = new_roles
-            .iter()
-            .filter(|role| !already.as_ref().is_some_and(|c| c.contains(role)))
-            .cloned()
-            .collect();
+        let mut fresh: Vec<String> = Vec::new();
+        let mut fresh_args: Vec<Option<Vec<Value>>> = Vec::new();
+        for (i, role) in new_roles.iter().enumerate() {
+            if already.as_ref().is_some_and(|c| c.contains(role)) {
+                continue;
+            }
+            fresh.push(role.clone());
+            fresh_args.push(role_args.get(i).cloned().flatten());
+        }
         if fresh.is_empty() {
             return Ok(base_class.to_string());
         }
@@ -95,6 +144,22 @@ impl Interpreter {
         // than inheritance parents, so the roles appear in both.
         let mut parents = vec![base_class.to_string()];
         parents.extend(fresh.iter().cloned());
+        // A parameterized role's arguments arrive evaluated: they are handed
+        // to the composition as literal declaration arguments, never re-read
+        // from the key's text.
+        let literal_args: Vec<Option<Vec<crate::opcode::DeclTraitArg>>> = std::iter::once(None)
+            .chain(fresh_args.iter().map(|args| {
+                args.as_ref().map(|args| {
+                    args.iter()
+                        .cloned()
+                        .map(crate::opcode::DeclTraitArg::Literal)
+                        .collect()
+                })
+            }))
+            .collect();
+        let parent_pre_args: Vec<Option<&[crate::opcode::DeclTraitArg]>> =
+            literal_args.iter().map(|args| args.as_deref()).collect();
+        let has_args = fresh_args.iter().any(Option::is_some);
         let language_version = crate::parser::current_language_version();
         let modifiers = ClassDeclModifiers {
             class_is_rw: false,
@@ -113,7 +178,7 @@ impl Interpreter {
             method_decls: &[],
             declared_static_names: &[],
             nested_decl_names: &[],
-            parent_pre_args: &[],
+            parent_pre_args: if has_args { &parent_pre_args } else { &[] },
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
             is_hoisted_shell: crate::runtime::HoistedShell::No,
@@ -143,6 +208,7 @@ impl Interpreter {
             crate::runtime::published_mixins::MixinRecipe {
                 base: base_class.to_string(),
                 roles: fresh,
+                role_args: fresh_args,
                 body_lexicals,
             },
         );
@@ -201,7 +267,8 @@ impl Interpreter {
                 .insert(format!("class:{class_name}:{role}"));
         }
         self.types.adopting_mixins.push(class_name.to_string());
-        let composed = self.ensure_mixin_class(&recipe.base, &recipe.roles);
+        let composed =
+            self.ensure_mixin_class_with_args(&recipe.base, &recipe.roles, &recipe.role_args);
         self.types.adopting_mixins.retain(|n| n != class_name);
         if !recipe.body_lexicals.is_empty() {
             let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
@@ -340,19 +407,34 @@ impl Interpreter {
         {
             return Ok(None);
         }
-        // A parameterised mixin (`$o does R[Int]`) still needs the wrapper's
-        // per-object type-argument bookkeeping. An initializer (`$o does
-        // R(5)`) is the value of the role's one public attribute, which the
-        // mixed-in object holds like any other (#13528): a `Parameter` a
-        // trait mutated keeps `HasMCPType($mcp-type)`'s value that way.
+        // A parameterised mixin (`$o does R[Int]`, `$h does R[:reset]`) is
+        // the type `C+{R[Int]}`, R composed with those arguments; an object
+        // mixed with other arguments gets another type of the same name. An
+        // initializer (`$o does R(5)`) is the value of the role's one public
+        // attribute, which the mixed-in object holds like any other (#13528):
+        // a `Parameter` a trait mutated keeps `HasMCPType($mcp-type)`'s value
+        // that way.
         let mut initializers: Vec<(String, Value)> = Vec::new();
+        let mut role_keys: Vec<String> = Vec::with_capacity(roles.len());
+        let mut role_args: Vec<Option<Vec<Value>>> = Vec::with_capacity(roles.len());
         for (name, args, parametric) in roles {
             match (args.as_slice(), parametric) {
-                ([], _) => {}
+                ([], _) => {
+                    role_keys.push(name.clone());
+                    role_args.push(None);
+                }
                 ([value], false) => match self.role_single_public_attribute(name) {
-                    Some(attr) => initializers.push((attr, value.clone())),
+                    Some(attr) => {
+                        initializers.push((attr, value.clone()));
+                        role_keys.push(name.clone());
+                        role_args.push(None);
+                    }
                     None => return Ok(None),
                 },
+                (_, true) => {
+                    role_keys.push(Self::parameterized_mixin_role_key(name, args));
+                    role_args.push(Some(args.clone()));
+                }
                 _ => return Ok(None),
             }
         }
@@ -367,7 +449,7 @@ impl Interpreter {
         // inside `ensure_mixin_class`), diverging from `raku` (see the
         // case table in
         // news/2026-08/role-composition-memo-key-raku-case-table.md).
-        let mixin_class = self.ensure_mixin_class(&base, &role_names)?;
+        let mixin_class = self.ensure_mixin_class_with_args(&base, &role_keys, &role_args)?;
         attributes.rebless(Symbol::intern(&mixin_class));
         let reblessed = Value::instance_sharing_cell(
             &attributes,
@@ -385,7 +467,7 @@ impl Interpreter {
         self.run_mixin_buildplan(&reblessed, &mixin_class)?;
         // 6.e runs a composed role's BUILD/TWEAK on the object it was mixed into.
         for name in &role_names {
-            self.run_mixin_role_build(&reblessed, &attributes, name)?;
+            self.run_mixin_role_build(&reblessed, &attributes, name, &mixin_class)?;
         }
         Ok(Some(reblessed))
     }
@@ -519,16 +601,25 @@ impl Interpreter {
     /// Run a freshly composed role's `BUILD` / `TWEAK` submethods on the object.
     /// A submethod is not inherited, so it cannot be reached by an ordinary
     /// method call on the mixin type — run the role's own definition directly,
-    /// with the object as the invocant.
+    /// with the object as the invocant. The role's parameters are bound as the
+    /// mixin type composed them (`$h does R` over `role R[:$reset = True]`
+    /// gives the submethod `$reset` = `True`, as its methods see it).
+    // Cost: O(p) for the p role-parameter bindings, plus the submethod calls.
     fn run_mixin_role_build(
         &mut self,
         target: &Value,
         attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
         role_name: &str,
+        mixin_class: &str,
     ) -> Result<(), RuntimeError> {
         let Some(role) = self.registry().roles.get(role_name).cloned() else {
             return Ok(());
         };
+        let class_bindings: Option<std::sync::Arc<Vec<(String, Value)>>> = self
+            .registry()
+            .get_role_param_bindings(mixin_class)
+            .filter(|bindings| !bindings.is_empty())
+            .map(|bindings| std::sync::Arc::new(bindings.into_iter().collect()));
         for submethod in ["BUILD", "TWEAK"] {
             let Some(def) = role
                 .methods
@@ -538,6 +629,10 @@ impl Interpreter {
             else {
                 continue;
             };
+            let mut def = def;
+            if def.role_param_bindings.is_none() {
+                def.role_param_bindings = class_bindings.clone();
+            }
             let (_, updated) = self.run_resolved_method_compiled_or_treewalk(
                 role_name,
                 role_name,

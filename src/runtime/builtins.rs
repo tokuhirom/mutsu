@@ -1256,7 +1256,10 @@ impl Interpreter {
             "getlogin" => Ok(Value::str(Self::get_login_name().unwrap_or_default())),
             "gethost" => self.builtin_gethost(&args),
             "chroot" => self.builtin_chroot(&args),
-            "run" => self.builtin_run(&args),
+            "run" => {
+                let args = self.stringify_run_object_args(args)?;
+                self.builtin_run(&args)
+            }
             "shell" => self.builtin_shell(&args),
             "QX" | "qx" => self.builtin_qx(&args),
             "kill" => self.builtin_kill(&args),
