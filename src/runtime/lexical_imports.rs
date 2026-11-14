@@ -283,6 +283,28 @@ impl Interpreter {
         true
     }
 
+    /// Bind a plain `sub infix:<op>` of a built-in operator as the one
+    /// candidate of a family that shadows the built-in in the importing block
+    /// (a plain routine replaces CORE's operator, it does not extend it).
+    // Cost: O(1).
+    pub(crate) fn bind_plain_builtin_operator_lexically(
+        &mut self,
+        name: &str,
+        def: &std::sync::Arc<crate::ast::FunctionDef>,
+    ) -> bool {
+        let importer = self.executing_unit_sym_for_module_load();
+        let Some(capture) = self.module.lexical_import_capture.as_mut() else {
+            return false;
+        };
+        let sym = Symbol::intern(name);
+        if capture.unit != importer || capture.block_multis.contains(&sym) {
+            return false;
+        }
+        capture.multi_defs.insert(sym, vec![std::sync::Arc::clone(def)]);
+        capture.declared_protos.insert(sym);
+        true
+    }
+
     /// Whether the operator routine `name` binds in a lexical import set
     /// instead of the registry: an `infix:<op>` that is not a built-in
     /// operator, whose every use site reads the set (`LexImportInfix`,
