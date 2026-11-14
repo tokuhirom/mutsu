@@ -664,6 +664,21 @@ impl Interpreter {
                             if split.bare.is_empty() {
                                 return None;
                             }
+                            // A qualifier naming another package is an explicit
+                            // package-variable access: `$UserTimezone::timezone`
+                            // read inside `EXPORT::override` must not answer the
+                            // routine's own `$timezone` parameter (User::Timezone).
+                            // The compiler qualifies such a name with the package
+                            // it is written in or one enclosing it (`A::x` in a
+                            // class nested in `A`); any other qualifier was
+                            // written explicitly.
+                            let current = self.current_package_sym();
+                            if !crate::qualified::package_ancestors(current).any(|pkg| {
+                                pkg.as_str() == split.pkg
+                                    || crate::qualified::last_segment(pkg).as_str() == split.pkg
+                            }) {
+                                return None;
+                            }
                             self.get_env_with_main_alias(split.bare)
                         })
                         // Bare-name package-chain fallback: `our` variables and
