@@ -11,7 +11,7 @@
 
 use std::fs::File;
 use std::io::Read;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 
 /// The size of a pseudo-terminal, in character cells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,6 +64,7 @@ pub(crate) fn spawn_with_pty(mut cmd: Command, size: PtySize) -> std::io::Result
     // SAFETY: `slave_fd` is a fresh fd nothing else owns.
     let slave = unsafe { File::from_raw_fd(slave_fd) };
     resize(&master, size)?;
+    use std::process::Stdio;
     cmd.stdin(Stdio::from(slave.try_clone()?))
         .stdout(Stdio::from(slave.try_clone()?))
         .stderr(Stdio::from(slave));
