@@ -2,6 +2,7 @@
 mod act_loop;
 pub(in crate::runtime) mod attr_publish;
 mod channel_supply;
+mod promise_supply;
 mod compiler_config;
 pub(crate) mod emit_scope;
 mod concurrency;
@@ -554,6 +555,7 @@ impl Interpreter {
                 | "__SupplyQuitForwarder"
                 | "__SupplyDerive"
                 | "__ChannelSupply"
+                | "__PromiseSupply"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 | "FakeScheduler"
@@ -605,6 +607,7 @@ impl Interpreter {
                             | "__SupplyQuitForwarder"
                             | "__SupplyDerive"
                             | "__ChannelSupply"
+                            | "__PromiseSupply"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                             | "FakeScheduler"
@@ -716,6 +719,7 @@ impl Interpreter {
             "__SupplyQuitForwarder" => self.native_supply_quit_forwarder(attributes, method, args),
             "__SupplyDerive" => self.native_supply_derive(attributes, method, args),
             "__ChannelSupply" => self.native_channel_supply(attributes, method, args),
+            "__PromiseSupply" => self.native_promise_supply(attributes, method, args),
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),

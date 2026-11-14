@@ -1033,7 +1033,7 @@ impl Interpreter {
         self.env.get(first_param).cloned()
     }
 
-    fn dispatch_next_candidate(
+    pub(super) fn dispatch_next_candidate(
         &mut self,
         func_name: &str,
         override_args: Option<Vec<Value>>,
@@ -1435,6 +1435,14 @@ impl Interpreter {
                     return Ok(result);
                 }
                 Some(DeferralEntry::Candidate { .. }) => {}
+            }
+            if let Some(result) =
+                self.autothread_wrapped_candidate(frame_idx, func_name, &override_args)?
+            {
+                if tail_call {
+                    return Err(RuntimeError::return_signal(result));
+                }
+                return Ok(result);
             }
             let (
                 receiver_class,

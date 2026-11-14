@@ -590,6 +590,30 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__PromiseSupply".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                // The per-tap producer of a `Promise.Supply`, and its `.then`
+                // settler -- see `native_methods::promise_supply`.
+                native_methods: [
+                    "__mutsu_promise_supply_start",
+                    "__mutsu_promise_supply_settle",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: sym_mro(&["__PromiseSupply"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: HashSet::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: ValueMap::default(),
+            },
+        );
+        classes.insert(
             "__SupplyDerive".to_string(),
             ClassDef {
                 parents: Vec::new(),

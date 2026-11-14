@@ -515,6 +515,12 @@ impl Interpreter {
                 self.how_metamethod_autothread_indices(target, method, args, &junction_indices)
             {
                 indices
+            } else if let ValueView::Instance { class_name, .. } = target.view()
+                && Self::is_metamodel_how(&class_name)
+            {
+                // A built-in metaobject's methods take their arguments as
+                // `Mu` (`$j.HOW.isa($j, Junction)` is 1, not a junction).
+                Vec::new()
             } else {
                 // A type-object receiver (`Path::Finder.skip-dir(any(...))`) binds
                 // its parameters by the same rules as an instance: a `Mu` parameter
@@ -541,7 +547,36 @@ impl Interpreter {
                                 &resolved_args,
                             )
                         };
+                        // A wrapped method binds its arguments to the outermost
+                        // wrapper's signature first: a `|capture` wrapper takes a
+                        // junction whole and its `callsame` threads it later.
+                        let wrapper = match &resolved {
+                            Some((owner, def)) if !method.starts_with('!') => self
+                                .method_call_outermost_wrapper(
+                                    &class_name.resolve(),
+                                    method,
+                                    owner.as_str(),
+                                    def,
+                                ),
+                            _ => None,
+                        };
+                        let wrapper_params = wrapper.as_ref().and_then(|w| match w.view() {
+                            ValueView::Sub(data) => Some(data.param_defs.clone()),
+                            _ => None,
+                        });
                         match resolved {
+                            Some(_) if let Some(pds) = wrapper_params => {
+                                // The wrapper receives `[invocant, ...args]`.
+                                let mut call_args = Vec::with_capacity(args.len() + 1);
+                                call_args.push(target.clone());
+                                call_args.extend(args.iter().cloned());
+                                let shifted: Vec<usize> =
+                                    junction_indices.iter().map(|i| i + 1).collect();
+                                self.autothread_indices_for_params(&call_args, &shifted, &pds)
+                                    .into_iter()
+                                    .filter_map(|i| i.checked_sub(1))
+                                    .collect()
+                            }
                             Some((_, def)) => {
                                 let mut indices = self.autothread_indices_for_params(
                                     args,
@@ -843,10 +878,17 @@ impl Interpreter {
         for &idx in junction_indices {
             // A named arg (Pair) — find the matching named param.
             if let ValueView::Pair(key, _) = args[idx].view() {
-                if let Some(pd) = pds
-                    .iter()
-                    .find(|pd| pd.named && !pd.slurpy && !pd.double_slurpy && pd.name == *key)
-                {
+                // An alias (`:socket-name(:$socket)`) is passed by any name
+                // of its chain.
+                if let Some(pd) = pds.iter().find(|pd| {
+                    pd.named
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && (pd.name == *key
+                            || crate::value::signature::collect_named_names(pd, &pd.name, false)
+                                .iter()
+                                .any(|n| n == key))
+                }) {
                     if !accepts_junction(self, pd) {
                         out.push(idx);
                     }
@@ -857,8 +899,10 @@ impl Interpreter {
                 // value, so a Junction is stored as-is rather than threaded.
                 // A slurpy hash is a slurpy param whose sigil is `%` (a slurpy
                 // `*@a` only collects positionals, not named args).
+                // A capture (`|c`, slurpy and sigilless) takes it whole too.
                 let has_slurpy_hash = pds.iter().any(|pd| {
-                    (pd.slurpy || pd.double_slurpy || pd.onearg) && pd.name.starts_with('%')
+                    ((pd.slurpy || pd.double_slurpy || pd.onearg) && pd.name.starts_with('%'))
+                        || (pd.slurpy && pd.sigilless)
                 });
                 if !has_slurpy_hash {
                     out.push(idx); // No slurpy hash to collect it — auto-thread

@@ -280,6 +280,8 @@ impl Interpreter {
             }
             _ => supply_val,
         };
+        // `whenever $promise.Supply` is `whenever $promise`.
+        let supply_val = Self::promise_supply_source(&supply_val).unwrap_or(supply_val);
 
         // A `Proc::Async` merge is a live stream, not a replayable output
         // buffer.  Registering `whenever` after `.start` loses a race with the

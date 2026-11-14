@@ -1,7 +1,9 @@
 use super::*;
 
 pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
+    let anon_states_before = crate::parser::stmt::simple::current_scope_anon_state_count();
     let (mut r, mut param) = parse_pointy_param_inner(input)?;
+    crate::parser::stmt::sub_param::forget_anonymous_param_state(anon_states_before, &param);
     // A default on a capture parameter (`-> |c = 42`) is `X::Parameter::Default`
     // in rakudo, not a syntax error: read it and let the validator reject it.
     if input.starts_with('|') && param.slurpy && param.default.is_none() {

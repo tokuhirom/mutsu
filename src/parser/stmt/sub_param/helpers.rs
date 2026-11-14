@@ -264,3 +264,21 @@ pub(crate) fn parse_required_suffix(input: &str) -> (&str, bool, bool) {
         (input, false, false)
     }
 }
+
+/// An anonymous `$` parameter is read by the bare-`$` term parser, which mints
+/// an anonymous `state` variable of the enclosing block. A parameter is no such
+/// variable: forget that name, so a routine whose signature (or a nested pointy
+/// block's: `.tap(-> $ { ... })`) has one does not declare a phantom `state`.
+/// Anonymous states of a default expression stay. `before` is the scope's
+/// anonymous-state count taken before the parameter was parsed.
+// Cost: O(k), k = anonymous states the parameter's parse recorded.
+pub(crate) fn forget_anonymous_param_state(before: usize, p: &crate::ast::ParamDef) {
+    if p.name != "__ANON_STATE#" {
+        return;
+    }
+    let minted = crate::parser::stmt::simple::current_scope_anon_state_names_from(before);
+    crate::parser::stmt::simple::truncate_current_scope_anon_states(before);
+    for name in minted.iter().skip(1) {
+        crate::parser::stmt::simple::record_anon_state_name(name);
+    }
+}

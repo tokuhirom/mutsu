@@ -149,6 +149,7 @@ impl Interpreter {
         &mut self,
         role_name: &str,
         stmt: &crate::ast::Stmt,
+        compiled_fns: &crate::opcode::CompiledFns,
     ) -> Result<(), RuntimeError> {
         let crate::ast::Stmt::ProtoDecl {
             name,
@@ -161,6 +162,17 @@ impl Interpreter {
         else {
             return Ok(());
         };
+        // The main pass compiled the proto body in the role's lexical context
+        // (the routines its module `use`s). Keep it under the role, so each
+        // composing class installs that body rather than recompiling it from
+        // the AST with no enclosing scope (where an imported helper is an
+        // unknown function).
+        let key = crate::compiler::method_body_key(role_name, &name.resolve(), param_defs, body);
+        if let Some(cf) = compiled_fns.get(&key) {
+            let compiled = (cf.code.clone(), cf.compiled_fns.clone());
+            self.registry_mut()
+                .set_proto_compiled(role_name, &name.resolve(), compiled);
+        }
         let effective_param_defs =
             crate::method_signature_shared::effective_method_param_defs(param_defs, false);
         let params: Vec<String> = effective_param_defs

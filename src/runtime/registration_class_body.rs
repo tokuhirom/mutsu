@@ -678,6 +678,16 @@ impl Interpreter {
             );
             fns.get(&key).map(|cf| (cf.code.clone(), cf.compiled_fns.clone()))
         });
+        // A proto composed from a role: the body the role's own main pass
+        // compiled (see `role_body_deferred_proto_method`).
+        let main_pass_body = main_pass_body.or_else(|| {
+            (lexical_package != owner)
+                .then(|| {
+                    self.registry()
+                        .get_proto_compiled(lexical_package, &method_name)
+                })
+                .flatten()
+        });
         self.registry_mut()
             .set_proto_method(owner, &method_name, fdef);
         if let Some(compiled) = main_pass_body {
