@@ -762,8 +762,15 @@ impl Interpreter {
         };
         // An object reblessed on another thread may carry a mixin type this
         // thread has not composed yet (#11456).
-        if let ValueView::Instance { class_name, .. } = value.view() {
-            self.adopt_published_mixin(class_name.as_str());
+        match value.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.adopt_published_mixin(class_name.as_str());
+            }
+            // A type object minted on another thread (#17697).
+            ValueView::Package(name) => {
+                self.adopt_published_minted_type(name.as_str());
+            }
+            _ => {}
         }
         // A routine does the roles composed into it, through every alias
         // (ADR-11827).

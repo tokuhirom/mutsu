@@ -274,6 +274,13 @@ pub(crate) struct TypeState {
     /// the same type into its own registry (#11456). Shared by every fork, not
     /// snapshotted: see [`super::published_mixins`].
     pub(crate) published_mixins: Arc<super::published_mixins::PublishedMixins>,
+    /// Types minted by `Metamodel::*HOW.new_type`, published process-wide
+    /// once composed so a sibling thread that meets one can copy its registry
+    /// entries in (#17697). Shared by every fork, not snapshotted: see
+    /// [`super::published_minted_types`].
+    pub(crate) published_minted_types: Arc<super::published_minted_types::PublishedMintedTypes>,
+    /// This thread's names known not to be in `published_minted_types`.
+    pub(crate) minted_type_misses: super::published_minted_types::MintedTypeMisses,
     /// Mixin types this thread is composing from a published recipe right
     /// now (`Interpreter::adopt_published_mixin`'s re-entry guard).
     pub(crate) adopting_mixins: Vec<String>,
@@ -339,6 +346,8 @@ impl TypeState {
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
             published_mixins: Default::default(),
+            published_minted_types: Default::default(),
+            minted_type_misses: Default::default(),
             adopting_mixins: Vec::new(),
             sc: super::nqp_ops_sc::ScState::new(),
         }
@@ -416,6 +425,11 @@ impl TypeState {
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
             published_mixins: Arc::clone(&self.published_mixins),
+            published_minted_types: {
+                self.published_minted_types.note_fork();
+                Arc::clone(&self.published_minted_types)
+            },
+            minted_type_misses: Default::default(),
             adopting_mixins: Vec::new(),
             sc: self.sc.fork_for_thread(),
             user_declared_classes: self.user_declared_classes.clone(),
