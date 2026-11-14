@@ -157,6 +157,18 @@ impl Interpreter {
             .insert(name.to_string());
     }
 
+    /// Whether the innermost named routine running is a method of `package`
+    /// (a `my class` declared now is lexical to that method, not part of
+    /// the class body).
+    // Cost: O(f), f = block frames above the innermost named routine.
+    pub(crate) fn running_method_of(&self, package: crate::symbol::Symbol) -> bool {
+        self.routine_stack
+            .iter()
+            .rev()
+            .find(|frame| !frame.is_block)
+            .is_some_and(|frame| frame.is_method && frame.package == package)
+    }
+
     /// Push a new lexical class scope frame.
     pub(crate) fn push_lexical_class_scope(&mut self) {
         self.types.lexical_class_scopes.push(Vec::new());
@@ -725,9 +737,12 @@ impl Interpreter {
     /// `Cro::HTTP::Header` dispatch to the foreign type instead of the class's own
     /// `my grammar Header`.
     pub(crate) fn resolve_suppressed_type(&self, name: &str) -> Option<String> {
-        if !self.types.suppressed_names.contains(name)
-            && !self.types.class_scoped_short_names.contains(name)
-        {
+        // Only a type a class or role body declared is reached through its
+        // owner package. A name suppressed only because the block or `EVAL`
+        // that declared it ended (`pop_lexical_class_scope`) is out of scope
+        // everywhere: probing the running package for it found an `EVAL`'s
+        // `my class` again from a later `EVAL` in the same class (#17750).
+        if !self.types.class_scoped_short_names.contains(name) {
             return None;
         }
         // Check current package
