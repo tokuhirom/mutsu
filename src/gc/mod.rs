@@ -31,6 +31,8 @@ pub(crate) mod stats;
 mod stw;
 #[cfg(not(target_arch = "wasm32"))]
 mod stw_help;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use stw_help::{HelpHooks, install_help_hooks};
 
 pub(crate) use collect::collect_at_program_end;
 #[cfg(test)]

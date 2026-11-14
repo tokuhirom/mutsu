@@ -399,18 +399,18 @@ pub(crate) fn wait_until<'a, T>(
         // Registered before `enter_blocking`, whose growth must already count
         // this worker as one that can run a task the OS refused a thread for
         // (ADR-0123 §7).
-        let helper = crate::runtime::worker_pool::register_helper();
+        let helper = super::stw_help::Helper::register();
         let _blocking = crate::runtime::worker_pool::enter_blocking();
-        if !helper.can_help() {
+        let Some(hooks) = helper.hooks() else {
             let guard = mutex.lock().unwrap();
             return Some(stw_aware_wait(cvar, guard, &mut ready));
-        }
+        };
         loop {
             let guard = mutex.lock().unwrap();
-            if let Some(guard) = super::stw_help::wait_or_help(cvar, guard, &mut ready) {
+            if let Some(guard) = super::stw_help::wait_or_help(cvar, guard, &mut ready, hooks) {
                 return Some(guard);
             }
-            crate::runtime::worker_pool::help_one();
+            (hooks.help)();
         }
     }
     #[cfg(target_arch = "wasm32")]

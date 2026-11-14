@@ -123,6 +123,8 @@ mod native {
     pub(super) fn pool() -> &'static (Mutex<PoolState>, Condvar) {
         static POOL: OnceLock<(Mutex<PoolState>, Condvar)> = OnceLock::new();
         POOL.get_or_init(|| {
+            // Before the first worker exists: its waits may help (ADR-0123 §7).
+            crate::gc::install_help_hooks(helping::hooks());
             (
                 Mutex::new(PoolState {
                     queue: VecDeque::new(),
@@ -370,7 +372,6 @@ mod native {
     }
 
     mod helping;
-    pub(crate) use helping::{help_one, help_wanted, register_helper};
 
     #[cfg(test)]
     mod tests;
@@ -425,13 +426,6 @@ pub(crate) fn enter_blocking() -> (native::BlockingGuard, crate::value::waker::P
     let parked = crate::value::waker::park_dispatching();
     (native::enter_blocking(), parked)
 }
-
-/// Register the calling thread, for as long as the returned guard lives, as a
-/// pool worker blocked in a wait that can run a starved task nested (ADR-0123
-/// §7); a no-op guard on any other thread. Take it before [`enter_blocking`],
-/// so the growth that blocking triggers already counts this thread.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) use native::{help_one, help_wanted, register_helper};
 
 /// A pooled worker is about to make a foreign (C) call that may block for
 /// good (`accept`, `recv`): count it blocked in the pool, so queued tasks get

@@ -40,7 +40,7 @@ pub(super) fn mark_starved() {
 /// Whether a starved task may be waiting for a helper, and the calling thread
 /// has the stack to run one.
 // Cost: O(1), one atomic load and a stack-pointer probe.
-pub(crate) fn help_wanted() -> bool {
+pub(super) fn help_wanted() -> bool {
     STARVED.load(Ordering::Acquire) && has_room_to_help()
 }
 
@@ -57,35 +57,34 @@ fn has_room_to_help() -> bool {
         .is_some_and(|room| room >= crate::native_stack::fresh_stack_usable_bytes() / 2)
 }
 
-/// A pool worker's registration as a helper; see [`register_helper`].
-pub(crate) struct HelperGuard {
-    counted: bool,
-}
-
-impl HelperGuard {
-    /// Whether this thread may run a starved task while it waits.
-    pub(crate) fn can_help(&self) -> bool {
-        self.counted
-    }
-}
-
-impl Drop for HelperGuard {
-    fn drop(&mut self) {
-        if self.counted {
-            lock_pool().helpers -= 1;
-        }
-    }
-}
-
-/// Count the calling thread as a helper for as long as the guard lives, if it
-/// is a pool worker running a task; otherwise a guard that cannot help.
+/// Count the calling thread as a helper, if it is a pool worker running a
+/// task; `false` (and nothing counted) otherwise. Paired with
+/// [`unregister_helper`] by the GC's wait (`gc::stw_help`).
 // Cost: O(1) (the pool lock).
-pub(crate) fn register_helper() -> HelperGuard {
+pub(super) fn register_helper() -> bool {
     if !pool_enabled() || !IN_TASK.with(Cell::get) {
-        return HelperGuard { counted: false };
+        return false;
     }
     lock_pool().helpers += 1;
-    HelperGuard { counted: true }
+    true
+}
+
+/// Undo a [`register_helper`] that returned `true`.
+// Cost: O(1) (the pool lock).
+pub(super) fn unregister_helper() {
+    lock_pool().helpers -= 1;
+}
+
+/// The hooks the GC's wait helps through (installed with the pool).
+pub(super) fn hooks() -> crate::gc::HelpHooks {
+    crate::gc::HelpHooks {
+        register: register_helper,
+        unregister: unregister_helper,
+        wanted: help_wanted,
+        help: || {
+            help_one();
+        },
+    }
 }
 
 /// Run one starved task nested on the calling helper's stack, if one is still
@@ -98,7 +97,7 @@ pub(crate) fn register_helper() -> HelperGuard {
 /// `drop_thread_local_gc_state` is NOT run: it would drop the state of the
 /// task the helper is still inside.
 // Cost: O(1) bookkeeping, plus the nested task.
-pub(crate) fn help_one() -> bool {
+pub(super) fn help_one() -> bool {
     let task = {
         let mut st = lock_pool();
         if st.unclaimed() == 0 || st.running() > 0 {
