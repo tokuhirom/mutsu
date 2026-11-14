@@ -237,10 +237,16 @@ impl Interpreter {
     /// a native-storage array has no `Value` slots to promote, and a MULTI-
     /// dimensional shaped array keeps its leaves in nested inner arrays, so
     /// `array_slot_ref` would hand out the rows rather than the elements.
+    // Cost: O(1).
     pub(crate) fn promotable_array_len(target: &Value) -> Option<usize> {
         let ValueView::Array(data, kind) = target.view() else {
             return None;
         };
+        // The length read walks the node another thread may be restructuring
+        // (`.first` scans a shared Array live, ADR-0068 §16.1): take its stripe
+        // (a leaf; `None` when this thread already holds one).
+        let _structure =
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target);
         if !matches!(
             kind,
             crate::value::ArrayKind::Array

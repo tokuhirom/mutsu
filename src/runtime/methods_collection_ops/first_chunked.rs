@@ -48,6 +48,8 @@ impl Interpreter {
         let as_cells = Self::promotable_array_len(target).is_some();
         let current_len = |t: &Value| {
             if as_cells {
+                // Re-read per chunk under the node's stripe
+                // (`promotable_array_len` takes it; ADR-0068 §16.1).
                 Self::promotable_array_len(t).unwrap_or(0)
             } else {
                 crate::runtime::utils::with_receiver_items(t, <[Value]>::len)
