@@ -664,6 +664,19 @@ impl Interpreter {
                             if split.bare.is_empty() {
                                 return None;
                             }
+                            // A qualifier naming another package is an explicit
+                            // package-variable access: `$UserTimezone::timezone`
+                            // read inside `EXPORT::override` must not answer the
+                            // routine's own `$timezone` parameter (User::Timezone).
+                            let current = self.current_package_sym();
+                            let current = current.as_str();
+                            if current != split.pkg
+                                && !current
+                                    .strip_suffix(split.pkg)
+                                    .is_some_and(|head| head.ends_with("::"))
+                            {
+                                return None;
+                            }
                             self.get_env_with_main_alias(split.bare)
                         })
                         // Bare-name package-chain fallback: `our` variables and
