@@ -182,7 +182,7 @@ impl Interpreter {
                         is_method: true, ..
                     } = &**raw
                     {
-                        self.role_body_deferred_proto_method(cx.name, raw)?;
+                        self.role_body_deferred_proto_method(cx.name, raw, cx.compiled_fns)?;
                     }
                     // Every other statement (non-method/non-attribute/non-`does`,
                     // including `SetLine` source-line markers) is deferred to
