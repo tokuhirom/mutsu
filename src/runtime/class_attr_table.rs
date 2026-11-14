@@ -36,6 +36,12 @@ impl<V> ClassAttrTable<V> {
         self.by_class.contains_key(class)
     }
 
+    /// Every entry of `class`, keyed by attribute.
+    // Cost: O(1) expected.
+    pub(crate) fn class_entries(&self, class: &str) -> Option<&FxHashMap<String, V>> {
+        self.by_class.get(class)
+    }
+
     /// Set the entry for `attr` of `class`, replacing any previous one.
     // Cost: O(1) expected.
     pub(crate) fn insert(&mut self, class: &str, attr: &str, value: V) {

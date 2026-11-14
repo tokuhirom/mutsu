@@ -1,6 +1,6 @@
 # ADR-17697: A type minted at run time on a worker thread is reachable from its sibling threads
 
-- **Status**: Proposed (2026-11-13; awaiting the maintainer's decision)
+- **Status**: Accepted (2026-11-13, approved by the maintainer)
 - **Date**: 2026-11-13
 - **Issue**: [#17697](https://github.com/tokuhirom/mutsu/issues/17697) (Red t/104 subtest 6)
 - **Related**: ADR-11456 (run-time mixin types are published process-wide as recipes),
@@ -83,7 +83,7 @@ meets the name with no registry entry composes the type into its own registry fr
    consumer that resolves by name (`.^name` lookups, smartmatch, stash, `::()`). It is a
    campaign, not a fix.
 
-## 3. Proposed decision
+## 3. Decision
 
 **Option 2.** It is the smallest change that makes a synchronized program correct, and it reuses
 a mechanism already accepted and in production (ADR-11456):
@@ -130,3 +130,29 @@ minted) on a worker thread is out of scope here and would need its own issue.
 - Option 2 (adopt published entries) or option 1 (a shared registry)? Option 2 is proposed as the
   bounded fix; option 1 is the general one.
 - Should `PublishedMixins` and the new table be merged now, or later when a third kind appears?
+
+## 7. Implementation notes (2026-11-14)
+
+The maintainer chose option 2. As implemented:
+
+- `Registry::copy_type_entries` (`src/runtime/registry_type_entries.rs`) copies one set of
+  type names' entries between two registries, keeping entries the destination already has. It
+  destructures `Registry` exhaustively, so a new field does not compile until it is classified
+  there as type-keyed (copied) or not (skipped with the reason). This answers ADR-11456 §3's
+  objection to entry copying, that a copy missing one table fails silently.
+- `PublishedMintedTypes` (`src/runtime/published_minted_types.rs`) is a separate table next to
+  `PublishedMixins`, shared by every fork. The §6 merge question is left for the third kind, as
+  §4 suggests.
+- The native `compose` (`mop_compose`) publishes a minted type once a thread has been forked
+  from the interpreter's lineage. A type composed before any fork is in every fork's snapshot, so
+  a single-threaded program publishes nothing. The bundle holds the type and the names it was
+  built from (its MRO and composed roles), so a role specialization or parent the minting thread
+  created at run time travels with it. Per-interpreter state outside the registry that a minted
+  type can own also travels: `.^add_fallback` handlers and class/role-body lexicals.
+- An adopting thread copies only the names its registry has neither as a class nor as a role.
+  It then bumps the method generation and clears the constructor-plan caches. Adoption runs no
+  user code.
+- The miss paths that adopt are `adopt_published_mixin`'s callers (method resolution, `.new`,
+  type matching, parent resolution), plus smartmatch with a type object or instance on the left.
+  The probe is one relaxed atomic load when nothing was ever published. After that it is one
+  registry probe of the name, and the table's read lock only on a miss.

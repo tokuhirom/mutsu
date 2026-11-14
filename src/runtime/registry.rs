@@ -2631,6 +2631,10 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
     }
 }
 
+// A child module so the exhaustive destructuring can name the private fields.
+#[path = "registry_type_entries.rs"]
+pub(crate) mod type_entries;
+
 #[cfg(test)]
 mod tests {
     use super::*;

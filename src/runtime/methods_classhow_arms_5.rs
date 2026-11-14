@@ -153,6 +153,9 @@ impl Interpreter {
             self.types.classes_composing_accessors.remove(&class_name);
             self.caches.native_ctor_plan_cache.clear();
             self.caches.native_ctor_plan_builtin.clear();
+            // A sibling thread may meet this type through a shared value
+            // without having it in its registry (#17697).
+            self.publish_composed_minted_type(&class_name);
             // Rakudo returns the composed type object. MOP clients use
             // that result directly (for example Test::Mock calls
             // `$mocker.HOW.compose($mocker).CREATE`), so returning Nil

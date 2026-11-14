@@ -157,6 +157,10 @@ impl Interpreter {
     // registered or not a mixin name; otherwise one class composition per
     // missing level of a stacked `C+{A}+{B}`.
     pub(crate) fn adopt_published_mixin(&mut self, class_name: &str) -> bool {
+        // A type `new_type` minted on another thread (#17697).
+        if self.adopt_published_minted_type(class_name) {
+            return true;
+        }
         if self.types.published_mixins.may_hold_pun(class_name) {
             return self.adopt_published_pun(class_name);
         }

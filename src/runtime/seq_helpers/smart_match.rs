@@ -482,6 +482,18 @@ impl Interpreter {
             let inner = cell.load();
             return self.smart_match_inner(&inner, right, err);
         }
+        // A type object, or an instance of a type, minted on another thread
+        // (#17697): its type has to be in this registry before any role or
+        // MRO question about it can be answered.
+        match left.view() {
+            ValueView::Package(name) => {
+                self.adopt_published_minted_type(name.as_str());
+            }
+            ValueView::Instance { class_name, .. } => {
+                self.adopt_published_minted_type(class_name.as_str());
+            }
+            _ => {}
+        }
         // ADR-0040 slices 1-2: a `Range`/`Seq`/`Set`-family value stored as a
         // real `Array`/`Hash` element is itemized as `Scalar(inner)`. Raku's
         // smartmatch protocol is `$matcher.ACCEPTS($topic)`, and both the
