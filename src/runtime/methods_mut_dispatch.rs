@@ -720,7 +720,25 @@ impl Interpreter {
                     )));
                 }
                 let was_proxy = delegate.clone().deref_container().is_proxy_value();
+                // An attribute promoted to a Scalar cell (`my $r := $!raw` in
+                // one of the class's methods binds it) holds that cell: the
+                // method is called on the object in it, as the non-mut
+                // `forward_resolved_delegation` does, and the updated delegate
+                // goes back into the cell, keeping every alias of it live.
+                let attr_cell = match delegate.view() {
+                    ValueView::ContainerRef(cell)
+                        if !is_method_based && !delegate.container_ref_is_itemized() =>
+                    {
+                        Some(cell.clone())
+                    }
+                    _ => None,
+                };
                 let delegate = self.fetch_proxy_delegate(delegate)?;
+                let delegate = if attr_cell.is_some() {
+                    delegate.deref_container()
+                } else {
+                    delegate
+                };
                 // Determine sigil for temp var based on delegate type
                 let sigil = match delegate.view() {
                     ValueView::Array(..) => "@",
@@ -753,7 +771,9 @@ impl Interpreter {
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
                 self.env.remove(&temp_var);
                 // A Proxy attribute keeps its Proxy: the fetched value is not stored back.
-                if !is_method_based && !was_proxy {
+                if let Some(cell) = attr_cell.filter(|_| !was_proxy) {
+                    let _ = cell.store(updated_delegate);
+                } else if !is_method_based && !was_proxy {
                     // Write the updated delegate back into the frontend's live cell.
                     let mut updated = attributes.to_map();
                     updated.insert(attr_key.to_string(), updated_delegate);
