@@ -398,7 +398,9 @@ impl Interpreter {
     /// [`Self::is_toplevel_global_routine_key`], whose predicate this is.
     pub(crate) fn toplevel_global_routine_name(key: &str) -> Option<&str> {
         key.strip_prefix("GLOBAL::").filter(|tail| {
-            !crate::qualified::is_qualified_str(tail) && !tail.contains('/') && *tail != "EXPORT"
+            !crate::qualified::is_qualified_str(tail)
+                && !has_candidate_separator(tail)
+                && *tail != "EXPORT"
         })
     }
 
@@ -577,5 +579,17 @@ impl Interpreter {
                     .module_visibility
                     .module_routine_providers
                     .contains_key(&name))
+    }
+}
+
+/// Whether the registry key tail `tail` names a multi candidate
+/// (`name/<arity>...`) rather than a plain routine. The `/` of an operator
+/// name such as `infix:</>` sits inside its `<...>` and is no separator: a
+/// candidate's separator follows the closing `>` (`infix:</>/2`).
+// Cost: O(m), m = bytes of `tail`.
+fn has_candidate_separator(tail: &str) -> bool {
+    match tail.split_once(":<") {
+        Some((_, op)) => op.contains(">/"),
+        None => tail.contains('/'),
     }
 }
