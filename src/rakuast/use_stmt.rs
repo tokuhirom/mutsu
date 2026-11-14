@@ -158,6 +158,30 @@ pub(super) fn view_use(
     Ok(node)
 }
 
+/// [`view_use`] of a `Stmt::Use`.
+// Cost: as [`view_use`].
+pub(super) fn view_use_stmt(names: &NameScope, stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    let Stmt::Use {
+        module,
+        arg,
+        tags,
+        condition,
+        if_imports,
+        imports,
+    } = stmt
+    else {
+        return Err(super::view::unsupported("use statement"));
+    };
+    view_use(
+        names,
+        module,
+        arg.as_ref(),
+        tags,
+        condition.as_deref(),
+        (if_imports, imports),
+    )
+}
+
 /// An inline `proto sub` is the `use` argument itself in Rakudo's tree. The
 /// parser declares it ahead of the import in a transparent synthetic block;
 /// replace that block with the public `Statement::Use` shape.

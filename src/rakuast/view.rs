@@ -264,21 +264,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
         // `Statement::LanguageVersion`. The `if` distribution's condition is
         // source provenance: the visible RakuAST use node omits it.
-        Stmt::Use {
-            module,
-            arg,
-            tags,
-            condition,
-            if_imports,
-            imports,
-        } => Ok(Some(super::use_stmt::view_use(
-            names,
-            module,
-            arg.as_ref(),
-            tags,
-            condition.as_deref(),
-            (if_imports, imports),
-        )?)),
+        Stmt::Use { .. } => super::use_stmt::view_use_stmt(names, stmt).map(Some),
         // `need Module;` / `import Module :tag;`.
         Stmt::Need { module } => Ok(Some(super::use_stmt::view_need(module))),
         Stmt::Import { module, tags } => Ok(Some(super::use_stmt::view_import(module, tags))),
