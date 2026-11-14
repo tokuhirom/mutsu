@@ -520,7 +520,7 @@ impl Interpreter {
             // names the native type whose zero fills the gap.
             let tc = self.decl_type_constraint(decl, &var_name).or_else(|| {
                 self.place_env_get(place, &var_name)
-                    .and_then(|container| self.container_type_metadata(&container))
+                    .and_then(|container| self.container_type_metadata(container))
                     .map(|meta| meta.value_type)
                     .filter(|t| crate::runtime::native_types::is_native_array_element_type(t))
             });
