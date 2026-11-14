@@ -663,6 +663,11 @@ impl Interpreter {
         method: &str,
         handle_iterator: bool,
     ) -> Result<Value, RuntimeError> {
+        // A metamethod (`$s.^isa(Junction)`, `.^name`) describes the type,
+        // not the elements: it pulls nothing from a lazy List or Seq.
+        if method.starts_with('^') {
+            return Ok(target);
+        }
         let ValueView::Seq(body) = target.view() else {
             // A Seq read out of a container (`%h<k>`, `@a[0]`, a `$`-bound
             // element) arrives wrapped in its Scalar cell, so the match above

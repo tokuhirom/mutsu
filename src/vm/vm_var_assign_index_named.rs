@@ -5008,6 +5008,13 @@ impl Interpreter {
             let cell = cell.clone();
             let mut guard = cell.lock().unwrap();
             Self::assign_into_nested_container_keyed(&mut guard, outer_key, key_object, val)?;
+        } else if target.is_immutable_map() {
+            // A Map reached through a chained subscript (`$m<a><b> = v`, where
+            // `$m<a>` is a Map) is as immutable as one addressed directly.
+            return Err(crate::runtime::refuse_map_assignment(
+                &target.descalarize(),
+                &Value::str(outer_key.to_string()),
+            ));
         } else if let Some(aggregate) = Self::pair_subscript_aggregate(target, Some(outer_key)) {
             // `%h<x><y> = v` where `%h<x>` is the Pair `y => [...]`. The
             // subscript addresses the Pair's value, which is a real container,

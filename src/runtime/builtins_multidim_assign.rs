@@ -215,7 +215,7 @@ impl Interpreter {
         // An accessor answering an immutable `Map` (`has Map:D $.env`) exposes
         // no writable element: `$o.env<k> = v` dies as `$map<k> = v` does.
         if current.is_immutable_map() {
-            return Err(super::methods_subscript_protocol::refuse_map_assignment(
+            return Err(super::refuse_map_assignment(
                 &current.descalarize(),
                 &index,
             ));
