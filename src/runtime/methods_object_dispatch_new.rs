@@ -31,6 +31,10 @@ fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
 pub(crate) fn default_new_accepts_positionals(class_mro: &[Symbol]) -> bool {
     class_mro.iter().any(|n| {
         *n == "Array" || *n == "List" || *n == "Int" || *n == "Num" || *n == "Rat" || *n == "Hash" || *n == "Map"
+            // A RakuAST node class takes its children positionally
+            // (`Term::Declaration.new($declaration)`); its native constructor,
+            // which builds the subclass's node (ADR-9761), checks them.
+            || n.resolve().starts_with("RakuAST::")
     })
 }
 

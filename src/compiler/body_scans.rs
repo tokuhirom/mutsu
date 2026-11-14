@@ -445,7 +445,19 @@ impl<'ast> Visit<'ast> for BoundDeclScan {
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        if !self.found && !opens_own_scope(expr) {
+        if self.found {
+            return;
+        }
+        // A block the expression runs in place (`$t := do { my $s := Str; $s }`)
+        // stores into the same frame, which would consume the markers too.
+        if matches!(
+            expr,
+            Expr::DoBlock { .. } | Expr::DoStmt(_) | Expr::Try { .. } | Expr::Once { .. }
+        ) {
+            self.found = true;
+            return;
+        }
+        if !opens_own_scope(expr) {
             walk_expr(self, expr);
         }
     }
@@ -454,8 +466,9 @@ impl<'ast> Visit<'ast> for BoundDeclScan {
     fn visit_regex_node(&mut self, _node: &'ast RegexNode) {}
 }
 
-/// Whether `expr` contains a bind declaration (`(my $q := $p).succ`) whose own
-/// bind markers a surrounding rebind's markers must not precede.
+/// Whether `expr` contains a bind declaration (`(my $q := $p).succ`), or a
+/// block it runs in place (`do { ... }`), whose own stores a surrounding
+/// rebind's markers must not precede.
 // Cost: O(n), n = size of the part of `expr` in the block's own scope.
 pub(super) fn expr_declares_bound_var(expr: &Expr) -> bool {
     let mut scan = BoundDeclScan::default();

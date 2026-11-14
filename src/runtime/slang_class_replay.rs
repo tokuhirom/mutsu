@@ -31,6 +31,13 @@ struct ClassLog {
     /// Names the hook's production: the unit replays a production's actions once
     /// however often it runs the statement that holds them.
     site: u64,
+    /// How many of the slang's own actions are running (they nest).
+    in_action: u32,
+    /// The names minted while one of the slang's own actions ran: the effects of
+    /// that action, which the action replay re-creates in the unit, so a
+    /// production that is action-replayed does not class-replay them too
+    /// (ADR-17741 §2.4: `modern-install`'s stub packages, the host's scratch).
+    action_minted: HashSet<String>,
 }
 
 thread_local! {
@@ -87,13 +94,53 @@ fn is_slang_own_action(method: &str) -> bool {
     !crate::parser::slang_action_rule(method) && !matches!(method, "typename" | "attach")
 }
 
+/// Whether `actions` is the host's composed actions object (`Raku::Actions`),
+/// whose methods are the slang's production actions. A grammar a production
+/// parses with its own actions (a `FOREIGN-LANG` language) runs those on
+/// another object; they are not the slang's (ADR-17741 §2.4).
+// Cost: O(n), n = the class name's length.
+fn is_host_actions(actions: &Value) -> bool {
+    let ValueView::Instance { class_name, .. } = actions.view() else {
+        return false;
+    };
+    let name = class_name.resolve();
+    name.split('\u{0}').next() == Some("Raku::Actions")
+}
+
+/// Whether a hook is recording, so the slang's own action about to run must be
+/// scoped with [`enter_own_action`] / [`leave_own_action`].
+// Cost: O(1).
+pub(super) fn own_action_scope(actions: &Value, method: &str) -> bool {
+    LOGS.with(|l| !l.borrow().is_empty()) && is_slang_own_action(method) && is_host_actions(actions)
+}
+
+/// One of the slang's own actions starts running.
+// Cost: O(1).
+pub(super) fn enter_own_action() {
+    LOGS.with(|l| {
+        if let Some(log) = l.borrow_mut().last_mut() {
+            log.in_action += 1;
+        }
+    });
+}
+
+/// The action [`enter_own_action`] announced is done.
+// Cost: O(1).
+pub(super) fn leave_own_action() {
+    LOGS.with(|l| {
+        if let Some(log) = l.borrow_mut().last_mut() {
+            log.in_action = log.in_action.saturating_sub(1);
+        }
+    });
+}
+
 impl Interpreter {
     /// Record that the slang's action `method` ran over `match_obj` during the
     /// running hook (ADR-17243): side effects of arbitrary Raku code happen in this
     /// interpreter only, so the unit re-runs the action at the production's position.
     // Cost: O(1) when no hook runs; otherwise O(v), v = the match's `:my` dynamics.
-    pub(super) fn record_slang_action(&self, method: &str, match_obj: &Value) {
-        if !is_slang_own_action(method) {
+    pub(super) fn record_slang_action(&self, actions: &Value, method: &str, match_obj: &Value) {
+        if !is_slang_own_action(method) || !is_host_actions(actions) {
             return;
         }
         LOGS.with(|l| {
@@ -165,6 +212,9 @@ impl Interpreter {
                 return;
             };
             log.minted.insert(name.resolve().to_string());
+            if log.in_action > 0 {
+                log.action_minted.insert(name.resolve().to_string());
+            }
             let mut recorded = vec![Value::str(how_class.to_string())];
             recorded.extend(args.iter().cloned());
             recorded.push(minted.clone());
@@ -173,9 +223,34 @@ impl Interpreter {
     }
 
     /// `__mutsu_slang_class_log()`: the recorded calls of the running hook.
+    /// `__mutsu_slang_class_log(True)` leaves out the types the slang's own
+    /// actions minted, for a production whose actions are replayed too
+    /// (ADR-17741 §2.4).
     // Cost: O(k), k = the recorded calls.
-    pub(super) fn builtin_slang_class_log(&mut self) -> Result<Value, RuntimeError> {
-        Ok(peek_class_log())
+    pub(super) fn builtin_slang_class_log(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if !args.first().is_some_and(Value::truthy) {
+            return Ok(peek_class_log());
+        }
+        Ok(LOGS.with(|l| {
+            let logs = l.borrow();
+            let Some(log) = logs.last() else {
+                return Value::array(Vec::new());
+            };
+            let by_action = |op: &str, args: &[Value]| {
+                let target = if op == "new_type" { args.last() } else { args.first() };
+                matches!(target.map(Value::view), Some(ValueView::Package(name))
+                    if log.action_minted.contains(name.resolve().as_str()))
+            };
+            Value::array(
+                log.ops
+                    .iter()
+                    .filter(|(op, args)| !by_action(op, args))
+                    .map(|(op, args)| {
+                        Value::array(vec![Value::str(op.clone()), Value::array(args.clone())])
+                    })
+                    .collect(),
+            )
+        }))
     }
 
     /// `__mutsu_slang_replay_class($log, $name)`: apply the recorded calls here
@@ -190,6 +265,23 @@ impl Interpreter {
             Some(ValueView::Package(name)) => name.resolve().to_string(),
             _ => String::new(),
         };
+        let renamed = self.replay_class_log(&log)?;
+        Ok(renamed
+            .iter()
+            .find(|(old, _)| *old == wanted)
+            .map(|(_, now)| now.clone())
+            // A type the production did not mint (`Int`) stands for itself.
+            .unwrap_or_else(|| args.get(1).cloned().unwrap_or(Value::NIL)))
+    }
+
+    /// Apply a hook's recorded metamodel calls `log` here: the host's name of
+    /// each type it minted, with the type that now stands for it.
+    // Cost: O(k * t), k = the recorded calls (each a metamodel call), t = the
+    // minted types an argument is looked up among.
+    pub(super) fn replay_class_log(
+        &mut self,
+        log: &Value,
+    ) -> Result<Vec<(String, Value)>, RuntimeError> {
         let Some(entries) = log.as_list_items() else {
             return Err(RuntimeError::new("slang class replay without a log"));
         };
@@ -242,11 +334,6 @@ impl Interpreter {
                 }
             };
         }
-        Ok(renamed
-            .iter()
-            .find(|(old, _)| *old == wanted)
-            .map(|(_, now)| now.clone())
-            // A type the production did not mint (`Int`) stands for itself.
-            .unwrap_or_else(|| args.get(1).cloned().unwrap_or(Value::NIL)))
+        Ok(renamed)
     }
 }

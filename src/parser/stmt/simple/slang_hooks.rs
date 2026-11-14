@@ -117,6 +117,9 @@ pub(crate) fn slang_hook_rule(name: &str) -> Option<&'static str> {
         "routine-declarator" | "routine_declarator" => Some("routine-declarator"),
         "scope-declarator" | "scope_declarator" => Some("scope-declarator"),
         "statement-prefix" | "statement_prefix" => Some("statement-prefix"),
+        // Only a candidate that parses its own body; one that calls the core
+        // `<package_def>` is ADR-0091's keyword alias instead (ADR-17741 §2.1).
+        "package-declarator" | "package_declarator" => Some("package-declarator"),
         "term" => Some("term"),
         "value" => Some("value"),
         "number" => Some("number"),
@@ -265,9 +268,17 @@ pub(crate) fn run_slang_action_at(
     host.run_action_at(rule, node, source, start, Some(span))
 }
 
-/// The literal a token body starts with: `'twice' ...` or `"twice" ...`.
+/// The symbol of a `category:sym<name>` rule name: `name`.
+// Cost: O(n), n = name length.
+fn hook_symbol(rule: &str) -> Option<&str> {
+    let (_, rest) = rule.split_once(":sym<")?;
+    rest.strip_suffix('>').filter(|sym| !sym.is_empty())
+}
+
+/// The literal a token body starts with: `'twice' ...` or `"twice" ...`, or
+/// the candidate's own symbol `sym` for a leading `<sym>` / `<.sym>`.
 // Cost: O(n), n = body length.
-fn leading_literal(body: &str) -> Option<String> {
+fn leading_literal(body: &str, sym: Option<&str>) -> Option<String> {
     let mut body = body.trim_start();
     // Regex adverbs the token carries (`:ratchet 'twice'`, `:!s`) stand before the
     // first atom and match nothing themselves.
@@ -288,6 +299,9 @@ fn leading_literal(body: &str) -> Option<String> {
         }
         body = word[end..].trim_start();
     }
+    if body.starts_with("<sym>") || body.starts_with("<.sym>") {
+        return sym.map(str::to_string);
+    }
     let quote = body.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
     let inner = &body[1..];
     let end = inner.find(quote)?;
@@ -307,7 +321,7 @@ pub(in crate::parser) fn register_hook(name: &str, body: Option<&str>) {
         hooks.rules.retain(|r| r.rule != name);
         hooks.rules.push(HookRule {
             rule: name.to_string(),
-            prefix: body.and_then(leading_literal),
+            prefix: body.and_then(|body| leading_literal(body, hook_symbol(name))),
         });
     });
 }
@@ -541,6 +555,7 @@ pub(in crate::parser) fn statement_control_hook(input: &str) -> Option<PResult<'
             "routine-declarator",
             "scope-declarator",
             "statement-prefix",
+            "package-declarator",
         ],
         input,
     )?;
@@ -741,22 +756,37 @@ mod prefix_tests {
     #[test]
     fn the_literal_after_regex_adverbs_is_the_prefix() {
         assert_eq!(
-            leading_literal("'mold' <.end-keyword>"),
+            leading_literal("'mold' <.end-keyword>", None),
             Some("mold".into())
         );
         assert_eq!(
-            leading_literal(":ratchet 'aggsub'\n\t\t<.end-keyword>"),
+            leading_literal(":ratchet 'aggsub'\n\t\t<.end-keyword>", None),
             Some("aggsub".into())
         );
-        assert_eq!(leading_literal(":!s :ratchet \"x\""), Some("x".into()));
+        assert_eq!(
+            leading_literal(":!s :ratchet \"x\"", None),
+            Some("x".into())
+        );
+    }
+
+    #[test]
+    fn a_leading_sym_is_the_candidates_own_symbol() {
+        assert_eq!(
+            leading_literal("<.sym><.kok> <longname>", Some("bnf-grammar")),
+            Some("bnf-grammar".into())
+        );
+        assert_eq!(
+            leading_literal(":ratchet <sym> <.ws>", Some("twice")),
+            Some("twice".into())
+        );
     }
 
     #[test]
     fn no_prefix_when_the_first_atom_is_not_a_plain_literal() {
-        assert_eq!(leading_literal(":ratchet <.ws> 'a'"), None);
-        assert_eq!(leading_literal(":my $x = 1; 'a'"), None);
+        assert_eq!(leading_literal(":ratchet <.ws> 'a'", None), None);
+        assert_eq!(leading_literal(":my $x = 1; 'a'", None), None);
         // A case-insensitive literal is not matched by `starts_with`.
-        assert_eq!(leading_literal(":i 'abc'"), None);
-        assert_eq!(leading_literal("<sym> 'a'"), None);
+        assert_eq!(leading_literal(":i 'abc'", None), None);
+        assert_eq!(leading_literal("<sym> 'a'", None), None);
     }
 }

@@ -1187,6 +1187,9 @@ impl Interpreter {
                     && let Some(term) = self.imported_term(bare)
                 {
                     term
+                // `M::Nested::In` through a package a stash binding placed.
+                } else if let Some(found) = self.stash_bound_member(bare) {
+                    found
                 } else {
                     return Err(self.no_such_qualified_symbol(pkg, sym));
                 }

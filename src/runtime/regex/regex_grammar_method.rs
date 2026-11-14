@@ -45,7 +45,8 @@ impl Interpreter {
     }
 
     /// [`Self::regex_grammar_method_end`]'s run of the method.
-    // Cost: the method's own run, plus O(1) to read its answer.
+    // Cost: the method's own run, plus O(n) to compare the target with the
+    // `orig` of a Match of another grammar it returned, n = target length.
     fn grammar_method_call(
         &mut self,
         name: &str,
@@ -129,12 +130,17 @@ impl Interpreter {
                 }
             })
             .filter(|&t| t >= 0)?;
-        // A grammar cursor (what `self.tok` returns) reports an ABSOLUTE `to`;
-        // any other Match keeps the relative reading.
+        // A grammar cursor (what `self.tok` returns) reports an ABSOLUTE `to`,
+        // and so does a Match over the same target, whatever grammar made it
+        // (`OtherGrammar.subparse(self.orig, :pos(self.pos))`, a slang's
+        // `FOREIGN-LANG`, ADR-17741); a Match over some other string (a
+        // substring of the target) keeps the relative reading.
         let is_cursor = matches!(
             v.view(),
             ValueView::Instance { class_name, .. } if class_name == pkg
-        );
+        ) || v
+            .match_orig()
+            .is_some_and(|orig| orig.to_string_value().chars().eq(chars.iter().copied()));
         let end = if is_cursor {
             to as usize
         } else {

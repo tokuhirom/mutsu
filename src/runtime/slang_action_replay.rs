@@ -47,7 +47,12 @@ sub mutsu-slang-replay-build(@roles, Str $name) {
     $a.^compose;
     ($a.new, Mutsu::Slang::Host::Resolver.new, Mutsu::Slang::Host::CompUnit.new)
 }
-&mutsu-slang-replay-build
+# The resolver of a package declarator's replay (ADR-17741 §2.3): the package
+# the production stands in and `GLOBAL`, the real ones.
+sub mutsu-slang-replay-resolver(Mu $package) {
+    Mutsu::Slang::Host::Resolver.new(:known, :$package, :global(GLOBAL))
+}
+(&mutsu-slang-replay-build, &mutsu-slang-replay-resolver)
 "#;
 
 impl Interpreter {
@@ -66,12 +71,7 @@ impl Interpreter {
         // anonymous role) cannot be composed here: such a slang keeps its effects in
         // the host, as before.
         // TODO: slangs registered through a role only the host can name (#17008).
-        if let Some(items) = roles.as_list_items()
-            && items.iter().any(|role| match role.view() {
-                ValueView::Package(name) => !self.registry().roles.contains_key(&*name.resolve()),
-                _ => true,
-            })
-        {
+        if !self.slang_replay_roles_known(&roles) {
             return Ok(Value::NIL);
         }
         let site = events
@@ -83,6 +83,25 @@ impl Interpreter {
         {
             return Ok(Value::NIL);
         }
+        self.replay_action_events(roles, events, None)
+    }
+
+    /// Whether every role of `roles` is one this interpreter can compose (a
+    /// `my` or anonymous role the host defined is not).
+    // Cost: O(r), r = the roles.
+    pub(super) fn slang_replay_roles_known(&self, roles: &Value) -> bool {
+        roles.as_list_items().is_none_or(|items| {
+            items.iter().all(|role| match role.view() {
+                ValueView::Package(name) => self.registry().roles.contains_key(&*name.resolve()),
+                _ => false,
+            })
+        })
+    }
+
+    /// The two subs of the replay entry: the actions builder and the resolver
+    /// builder.
+    // Cost: O(1) after the first call, which compiles the stubs.
+    fn slang_replay_entry(&mut self) -> Result<(Value, Value), RuntimeError> {
         let mut entry = REPLAY_ENTRY.with(|e| e.borrow().clone());
         if entry.is_none() {
             let built = self.eval_code_string(&format!(
@@ -92,6 +111,31 @@ impl Interpreter {
             REPLAY_ENTRY.with(|e| *e.borrow_mut() = Some(built.clone()));
             entry = Some(built);
         }
+        let entry = entry.unwrap_or(Value::NIL);
+        let subs = entry.as_list_items().unwrap_or_default();
+        match (subs.first(), subs.get(1)) {
+            (Some(build), Some(resolver)) => Ok((build.clone(), resolver.clone())),
+            _ => Err(RuntimeError::new("slang action replay has no entry")),
+        }
+    }
+
+    /// The replay resolver for a production standing in `package`.
+    // Cost: O(1) plus the resolver's construction.
+    pub(super) fn slang_replay_resolver(&mut self, package: Value) -> Result<Value, RuntimeError> {
+        let (_, resolver) = self.slang_replay_entry()?;
+        self.call_sub_value(resolver, vec![package])
+    }
+
+    /// Call each recorded action of `events` here, with the actions of `roles`,
+    /// `$*R` bound to `resolver` (the stub one when `None`).
+    // Cost: O(a) action calls, a = the recorded actions.
+    pub(super) fn replay_action_events(
+        &mut self,
+        roles: Value,
+        events: &[Value],
+        resolver: Option<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let (entry, _) = self.slang_replay_entry()?;
         // One actions class per set of roles, however many productions use it.
         let key = roles
             .as_list_items()
@@ -106,7 +150,7 @@ impl Interpreter {
                     s.get()
                 });
                 let built = self.call_sub_value(
-                    entry.unwrap_or(Value::NIL),
+                    entry,
                     vec![roles, Value::str(format!("Mutsu::Slang::Replay::Actions{serial}"))],
                 )?;
                 BUILT.with(|b| b.borrow_mut().push((key, built.clone())));
@@ -124,7 +168,8 @@ impl Interpreter {
             }
             interp.env.insert(key, value);
         };
-        install(self, "*R".to_string(), parts.get(1).cloned().unwrap_or(Value::NIL));
+        let resolver = resolver.unwrap_or_else(|| parts.get(1).cloned().unwrap_or(Value::NIL));
+        install(self, "*R".to_string(), resolver);
         install(self, "*CU".to_string(), parts.get(2).cloned().unwrap_or(Value::NIL));
         let _replay_unit =
             crate::unit_source_file::ReplayUnitGuard::enter(self.current_source_file_sym());

@@ -16,6 +16,10 @@ pub(crate) struct RegexGrammarState {
     /// and actions half, for the slang host to compose (ADR-15762 §2.2).
     pub(crate) slang_grammar_roles: Vec<Value>,
     pub(crate) slang_action_roles: Vec<Value>,
+    /// The named languages a slang registered with `define_slang($name,
+    /// $grammar, $actions)` for a name other than `MAIN`: `(name, grammar,
+    /// actions)`, which the host's `FOREIGN-LANG` parses with (ADR-17741 §2.2).
+    pub(crate) slang_named_languages: Vec<(String, Value, Value)>,
     /// Package declarators a slang grammar role registered via
     /// `token package_declarator:sym<name>` (ADR-0091). Populated by
     /// `$*LANG.define_slang` in both the activation sub-interpreter (where the
