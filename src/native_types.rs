@@ -115,6 +115,14 @@ pub(crate) fn is_native_array_element_type(name: &str) -> bool {
     is_native_int_type(name) || matches!(name, "num" | "num32" | "num64" | "str")
 }
 
+/// The declared type of an `@` container whose elements are a native type:
+/// `has uint32 @.x` is an `array[uint32]` (zero-filled holes, native
+/// storage), as `my uint32 @x` is, not an `Array[uint32]`.
+// Cost: O(1).
+pub(crate) fn native_array_declared_type(sigil: char, elem_type: &str) -> Option<String> {
+    (sigil == '@' && is_native_array_element_type(elem_type)).then(|| format!("array[{elem_type}]"))
+}
+
 /// Whether `name` spells a *lowercase* native type in term position — the set
 /// that Rakudo also lets carry a type smiley (`int:D`, `array:U`, `num64:_`).
 ///

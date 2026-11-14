@@ -515,7 +515,15 @@ impl Interpreter {
         // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
         // Must be done before mutable borrows to avoid borrow conflicts.
         let native_fill = {
-            let tc = self.decl_type_constraint(decl, &var_name);
+            // An attribute (`has uint32 @!to; @!to[5] = 0`) has no
+            // declaration in this frame: its own element-type metadata
+            // names the native type whose zero fills the gap.
+            let tc = self.decl_type_constraint(decl, &var_name).or_else(|| {
+                self.place_env_get(place, &var_name)
+                    .and_then(|container| self.container_type_metadata(container))
+                    .map(|meta| meta.value_type)
+                    .filter(|t| crate::runtime::native_types::is_native_array_element_type(t))
+            });
             Self::native_fill_for_constraint(tc.as_deref())
         };
         // Capture the old Arc pointer before any mutation so the post-mutation

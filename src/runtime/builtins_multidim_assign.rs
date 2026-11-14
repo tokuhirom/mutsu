@@ -844,14 +844,31 @@ impl Interpreter {
                 ValueView::Array(items, kind) => {
                     let idx = crate::runtime::to_int(&index) as usize;
                     let mut new_items = (**items).clone();
+                    // A typed container keeps its element type, and a native
+                    // one (`has int @.c` is an `array[int]`) fills the gap
+                    // with its zero, as an element store on the variable does.
+                    let meta = self.container_type_metadata(&current);
                     if idx >= new_items.len() {
                         if crate::runtime::utils::is_shaped_array(&current) {
                             return Err(RuntimeError::new("Index out of bounds"));
                         }
-                        new_items.resize(idx + 1, Value::package(crate::symbol::wk::any()));
+                        let native = meta.as_ref().map(|m| m.value_type.as_str()).filter(|t| {
+                            crate::runtime::native_types::is_native_array_element_type(t)
+                        });
+                        // The skipped slots stay holes (`.List` reads them as
+                        // `Nil`), as an element store on the variable leaves them.
+                        Self::autoviv_resize_tracking(
+                            &mut new_items,
+                            idx,
+                            Self::native_fill_for_constraint(native),
+                        )?;
                     }
                     new_items[idx] = effective_value.clone();
-                    Value::array_with_kind(crate::gc::Gc::new(new_items), kind)
+                    let rebuilt = Value::array_with_kind(crate::gc::Gc::new(new_items), kind);
+                    match meta {
+                        Some(meta) => self.tag_container_metadata(rebuilt, meta),
+                        None => rebuilt,
+                    }
                 }
                 // The accessor's location holds `Any` (`has $.x is rw` never
                 // assigned): the element store autovivifies an Array or a
