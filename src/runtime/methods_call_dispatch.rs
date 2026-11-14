@@ -2062,16 +2062,21 @@ impl Interpreter {
             // reports. The pure `value_to_capture` dumped the raw attribute
             // store instead, which both ignored the override and leaked
             // private (`$!x`) attributes into the Capture.
-            // Exact native IO::Handle instances carry additional native
-            // settings outside the declared path attribute; their Capture
-            // exposes the stored settings through the pure path.
+            // Exact native IO::Handle / IO::CatHandle / IO::ArgFiles
+            // instances carry additional native settings outside the declared
+            // path attribute; their Capture exposes the stored settings
+            // through the pure path.
             // An on-demand pull list (`Channel.list`, `IO::CatHandle.lines`)
             // has nothing cached until pulled: drain it first.
             ValueView::LazyList(ll) if ll.is_cat_pull() => Some(
                 self.force_lazy_list(&ll)
                     .and_then(|items| self.list_to_capture(&Value::array(items))),
             ),
-            ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => None,
+            ValueView::Instance { class_name, .. }
+                if Self::is_native_io_handle_class(class_name.as_str()) =>
+            {
+                None
+            }
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 let attrs = self.class_attributes_shared(&cn);

@@ -201,7 +201,6 @@ impl Interpreter {
                         crate::builtins::decode_utf8_handle_text(&bytes)
                     }
                 }
-                IoHandleTarget::ArgFiles => Ok(String::new()),
                 IoHandleTarget::File => {
                     let file = state
                         .file

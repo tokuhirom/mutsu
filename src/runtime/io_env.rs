@@ -207,11 +207,7 @@ impl Interpreter {
             self.env.insert("*IN".to_string(), stdin);
         }
         if !(for_thread_clone && self.inherited_io_entry_usable("$*ARGFILES", "*ARGFILES")) {
-            let argfiles = self.create_handle(
-                IoHandleTarget::ArgFiles,
-                IoHandleMode::Read,
-                Some("$*ARGFILES".to_string()),
-            );
+            let argfiles = self.default_argfiles_handle();
             self.env.insert("$*ARGFILES".to_string(), argfiles.clone());
             self.env.insert("*ARGFILES".to_string(), argfiles);
         }
@@ -481,6 +477,27 @@ impl Interpreter {
                 }
             })
             .as_deref()
+    }
+
+    /// `$*ARGFILES`: an `IO::ArgFiles` cat that reads `@*ARGS` when it first
+    /// opens a source, so a program that sets `@*ARGS` before reading sees
+    /// its own list, as rakudo's first-access binding does (#17754). With
+    /// no arguments then, its one source is `$*IN`.
+    // TODO: rakudo binds `$*ARGFILES` to `$*IN` itself when `@*ARGS` is empty
+    // at first access (`.^name` is `IO::Handle`). That needs a dynamic built
+    // on its first read; the cat reads the same input meanwhile.
+    // Cost: O(1).
+    pub(crate) fn default_argfiles_handle(&mut self) -> Value {
+        self.build_argfiles_handle()
+    }
+
+    /// Rebind `$*ARGFILES` for a new `@*ARGS` (the command line's, set after
+    /// the IO environment is built).
+    // Cost: O(1).
+    pub(crate) fn rebind_argfiles(&mut self) {
+        let argfiles = self.default_argfiles_handle();
+        self.env.insert("$*ARGFILES".to_string(), argfiles.clone());
+        self.env.insert("*ARGFILES".to_string(), argfiles);
     }
 
     pub(super) fn get_dynamic_handle(&self, name: &str) -> Option<Value> {

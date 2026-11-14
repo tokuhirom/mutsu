@@ -656,16 +656,20 @@ fn coerce_method_absent(err: &RuntimeError) -> bool {
     if err.is_multi_no_match() {
         return true;
     }
+    // Only `COERCE` itself being missing counts: a method the body calls that
+    // does not exist (`self.new` reaching a FALLBACK that dies with
+    // X::Method::NotFound for another name) is the body's own exception and
+    // propagates, as on rakudo.
+    if err.is_method_not_found() {
+        return err.is_method_not_found_for("COERCE");
+    }
     if let Some(ex) = err.exception.as_deref()
         && let ValueView::Instance { class_name, .. } = ex.view()
     {
         // A binding failure is the COERCE call's own signature rejecting the
         // value (a submethod `COERCE(Numeric:D $v)` given an Array): no
         // acceptable candidate, not an exception the body threw.
-        return matches!(
-            class_name.resolve().as_str(),
-            "X::Method::NotFound" | "X::TypeCheck::Binding::Parameter"
-        );
+        return class_name.resolve() == "X::TypeCheck::Binding::Parameter";
     }
-    err.message.contains("No such method")
+    false
 }

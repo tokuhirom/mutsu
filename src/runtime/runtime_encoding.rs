@@ -856,6 +856,7 @@ impl Interpreter {
     pub fn set_args(&mut self, args: Vec<Value>) {
         self.env
             .insert("@*ARGS".to_string(), Value::real_array(args));
+        self.rebind_argfiles();
     }
 
     /// Seed `%*COMPILING<%?OPTIONS>` with mutsu's own subset of the CLI

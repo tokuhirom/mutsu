@@ -822,12 +822,22 @@ impl Interpreter {
         self.try_native_method(inner, Symbol::intern(method_name), args)
     }
 
-    /// `value` itself when it is a plain `IO::Handle` instance (the inner value
-    /// of a mixin wrapper), else `None`.
+    /// Whether `class` is one of the native handle classes, whose methods are
+    /// rows rather than `MethodDef`s: `IO::Handle`, `IO::CatHandle` and
+    /// `IO::ArgFiles`.
+    // Cost: O(1), a fixed-length string compare.
+    pub(crate) fn is_native_io_handle_class(class: &str) -> bool {
+        matches!(class, "IO::Handle" | "IO::CatHandle" | "IO::ArgFiles")
+    }
+
+    /// `value` itself when it is a plain native handle instance (the inner
+    /// value of a mixin wrapper), else `None`.
     // Cost: O(1).
     fn plain_io_handle_instance(value: &Value) -> Option<Value> {
         match value.view() {
-            ValueView::Instance { class_name, .. } if class_name.as_str() == "IO::Handle" => {
+            ValueView::Instance { class_name, .. }
+                if Self::is_native_io_handle_class(class_name.as_str()) =>
+            {
                 Some(value.clone())
             }
             _ => None,
@@ -1362,9 +1372,9 @@ impl Interpreter {
                     } else if let ValueView::Mixin(inner, _) = invocant.view()
                         && let Some(plain) = Self::plain_io_handle_instance(inner)
                     {
-                        // A parameterized role mixed into an open handle
-                        // (`$*ARGFILES does R[:reset]`) stays a mixin wrapper
-                        // over the plain handle: the base behind its
+                        // A parameterized role mixed into an open handle or a
+                        // cat (`$*ARGFILES does R[:reset]`) stays a mixin
+                        // wrapper over the plain handle: the base behind its
                         // `callsame` is the native method on that handle.
                         self.call_method_with_values(plain, &name, args)?
                     } else if let ValueView::Mixin(inner, _) = invocant.view() {

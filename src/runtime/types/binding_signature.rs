@@ -551,10 +551,15 @@ impl Interpreter {
         pd: &ParamDef,
         interp: Option<&Interpreter>,
     ) -> RuntimeError {
-        if matches!(
-            err.exception.as_deref().map(Value::view),
-            Some(ValueView::Instance { class_name, .. }) if class_name.resolve() == "X::Coerce::Impossible"
-        ) {
+        // A coercion that raised a real exception -- X::Coerce::Impossible, or
+        // whatever the target's `COERCE`/`new` threw (`die "boom"` reads as
+        // X::AdHoc on rakudo) -- propagates unchanged. Only an internal
+        // failure without an exception object becomes the binding error.
+        if err
+            .exception
+            .as_deref()
+            .is_some_and(|ex| matches!(ex.view(), ValueView::Instance { .. }))
+        {
             err
         } else {
             let message = err.message.to_string();

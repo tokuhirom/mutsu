@@ -230,7 +230,7 @@ impl Interpreter {
                     Err(RuntimeError::new("Socket not connected"))
                 }
             }),
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
+            IoHandleTarget::Stdin => {
                 Err(RuntimeError::new("Cannot write to read-only handle"))
             }
         }
@@ -295,7 +295,7 @@ impl Interpreter {
                     Err(RuntimeError::new("Socket not connected"))
                 }
             }),
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => {
+            IoHandleTarget::Stdin => {
                 Err(RuntimeError::new("Cannot write to read-only handle"))
             }
         }

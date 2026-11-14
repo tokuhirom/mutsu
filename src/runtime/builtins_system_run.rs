@@ -23,6 +23,31 @@ impl Interpreter {
         ))
     }
 
+    /// `run`'s object arguments as their `.Str` (rakudo stringifies every
+    /// argument): an `IO::Path` with a role mixed in (`$p does R`, Temp::Path's
+    /// `make-temp-path`) or a user class names its file, not its type. A plain
+    /// `IO::Path` program stays as it is, so `builtin_run` still sees it.
+    // Cost: O(a) for a = the arguments, plus one `.Str` call per object.
+    pub(super) fn stringify_run_object_args(
+        &mut self,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let mut out = Vec::with_capacity(args.len());
+        for (idx, arg) in args.into_iter().enumerate() {
+            let plain = arg.unwrap_varref();
+            let stringify = match plain.view() {
+                ValueView::Instance { class_name, .. } => idx > 0 || class_name != "IO::Path",
+                _ => false,
+            };
+            if stringify {
+                out.push(Value::str(self.stringify_value(plain.clone())?));
+            } else {
+                out.push(arg);
+            }
+        }
+        Ok(out)
+    }
+
     pub(super) fn builtin_run(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
             return Ok(Self::make_proc_instance(

@@ -197,17 +197,25 @@ impl Compiler {
         // A statement-position chain with no `else` simply falls through; a
         // value-position one still has to leave something behind.
         if else_branch.is_empty() && !value_mode {
-            if has_element_source_capture {
-                self.code.emit(OpCode::ClearElementSource);
-            }
-            if needs_cond_value {
-                // Pop the leftover duplicated condition value on the false
-                // branch only (JumpIfFalse consumed one copy; the taken branch
-                // consumed the other binding `@_` / the placeholder). Falling
-                // through into the Pop would eat the caller's stack slot.
+            if has_element_source_capture || needs_cond_value {
+                // The false branch only: the taken branch's topicalizing
+                // `given` already consumed the element-source tag, so it is
+                // the untaken `with %h<k> { }` that must drop it -- left
+                // pending, the next `given` (`$_ = v without $x`, even in
+                // another routine) aliased that element instead of its own
+                // topic and lost its writeback (PDF::Font::Loader::CSS).
+                // Likewise pop the leftover duplicated condition value here
+                // (JumpIfFalse consumed one copy; the taken branch consumed
+                // the other binding `@_` / the placeholder). Falling through
+                // into the Pop would eat the caller's stack slot.
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_else);
-                self.code.emit(OpCode::Pop);
+                if has_element_source_capture {
+                    self.code.emit(OpCode::ClearElementSource);
+                }
+                if needs_cond_value {
+                    self.code.emit(OpCode::Pop);
+                }
                 self.code.patch_jump(jump_end);
             } else {
                 self.code.patch_jump(jump_else);
