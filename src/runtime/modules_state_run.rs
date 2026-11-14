@@ -61,6 +61,7 @@ pub(crate) mod runtime_var_default;
 pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
+mod sequence_chain;
 mod sequence_closure_call;
 mod sequence_gen_run;
 pub(crate) mod shared_store;

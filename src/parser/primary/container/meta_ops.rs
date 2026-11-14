@@ -44,17 +44,8 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
                 break;
             }
             let (r2, item) = expression(r2)?;
-            let item = match item {
-                Expr::Binary {
-                    left,
-                    op:
-                        crate::token_kind::TokenKind::DotDotDot
-                        | crate::token_kind::TokenKind::DotDotDotCaret,
-                    right,
-                    ..
-                } => Expr::ArrayLiteral(vec![*left, *right]),
-                other => other,
-            };
+            // A nested `a ... b` stays a sequence term: the chain is lowered
+            // as a whole (`sequence_chain_call`), which needs the operator.
             extra_items.push(item);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -79,12 +70,12 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
             items.extend(extra_items);
             Expr::ArrayLiteral(items)
         };
-        let seq = Expr::Binary {
+        let seq = crate::rakuast::list_infix::normalize_sequence_waypoints(Expr::Binary {
             left: Box::new(left),
             op,
             right: Box::new(right_expr),
             form: Default::default(),
-        };
+        });
         // Left-exclusive sequence: drop the first generated element (stays lazy).
         let seq = if is_left_excl {
             // Keep the written operator: `.AST` renders `(1, 2 ^... 10)`, not
@@ -215,8 +206,7 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
     // Extra endpoint items after the first (`a ... limit, extra1, extra2`) are
     // absorbed into the sequence, since the operator owns the whole comma level.
     // Parse each with the FULL expression parser (like `try_parse_sequence_in_paren`)
-    // so a chained/waypoint sequence in an extra (`1 ... 3, 5 ... 7`) is consumed;
-    // a nested `a ... b` waypoint becomes an `[a, b]` pair, matching the paren form.
+    // so a chained/waypoint sequence in an extra (`1 ... 3, 5 ... 7`) is consumed.
     let mut extra_items = Vec::new();
     loop {
         let (rws, _) = ws(rest)?;
@@ -236,15 +226,8 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
             break;
         }
         let (r2, item) = expression(after_ws)?;
-        let item = match item {
-            Expr::Binary {
-                left,
-                op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
-                right,
-                ..
-            } => Expr::ArrayLiteral(vec![*left, *right]),
-            other => other,
-        };
+        // A nested `a ... b` stays a sequence term: the chain is lowered as a
+        // whole (`sequence_chain_call`), which needs to see the operator.
         extra_items.push(item);
         rest = r2;
     }
@@ -265,12 +248,12 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
         v.extend(extra_items.into_iter().map(maybe_wrap_whatever));
         Expr::ArrayLiteral(v)
     };
-    let seq = Expr::Binary {
+    let seq = crate::rakuast::list_infix::normalize_sequence_waypoints(Expr::Binary {
         left: Box::new(left),
         op,
         right: Box::new(right),
         form: Default::default(),
-    };
+    });
     // `^...` / `^...^` drop the seed element from the generated series.
     let seq = if is_left_excl {
         Expr::spelled(

@@ -197,7 +197,122 @@ fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
     })
 }
 
+/// One token of a comma list that holds sequence operators: an operand
+/// element, or the `...` between two operand lists.
+enum SeqToken {
+    Item(Expr),
+    Op,
+}
+
+/// Flatten `expr` into the tokens of a `...` chain: a `l ... r` splits into
+/// `l`'s tokens, the operator and `r`. `None` when a `...^` is involved:
+/// rakudo refuses to chain it with anything ("Only identical operators may
+/// be list associative"), so such a list keeps its own lowering.
+fn sequence_tokens(expr: Expr, out: &mut Vec<SeqToken>) -> Option<()> {
+    use crate::token_kind::TokenKind;
+    match expr {
+        Expr::Binary {
+            left,
+            op: TokenKind::DotDotDot,
+            right,
+            ..
+        } => {
+            sequence_tokens(*left, out)?;
+            out.push(SeqToken::Op);
+            out.push(SeqToken::Item(*right));
+            Some(())
+        }
+        Expr::Binary {
+            op: TokenKind::DotDotDotCaret,
+            ..
+        } => None,
+        other => {
+            out.push(SeqToken::Item(other));
+            Some(())
+        }
+    }
+}
+
+/// Lower a comma list whose elements hold two or more `...` operators to the
+/// list-associative call `infix:<...>(g0, g1, ...)`: raku's `...` binds more
+/// loosely than the comma, so `1 ... 3, 10 ... 20` is `1 ... (3, 10) ... 20`.
+/// `seeds` are the list's elements before the first operator's left operand.
+/// `None` when the list has fewer than two operators (the plain binary form
+/// already covers it) or uses `...^`.
+// Cost: O(n), n = elements of the list.
+pub(crate) fn sequence_chain_call(seeds: Vec<Expr>, items: Vec<Expr>) -> Option<Expr> {
+    let mut tokens: Vec<SeqToken> = seeds.into_iter().map(SeqToken::Item).collect();
+    for item in items {
+        sequence_tokens(item, &mut tokens)?;
+    }
+    if tokens.iter().filter(|t| matches!(t, SeqToken::Op)).count() < 2 {
+        return None;
+    }
+    let mut groups: Vec<Vec<Expr>> = vec![Vec::new()];
+    for token in tokens {
+        match token {
+            SeqToken::Op => groups.push(Vec::new()),
+            SeqToken::Item(e) => groups.last_mut()?.push(e),
+        }
+    }
+    let args = groups
+        .into_iter()
+        .map(|mut group| {
+            if group.len() == 1 {
+                group.remove(0)
+            } else {
+                Expr::ArrayLiteral(group)
+            }
+        })
+        .collect();
+    Some(Expr::Call {
+        name: crate::symbol::Symbol::intern("infix:<...>"),
+        args,
+        listop: false,
+    })
+}
+
 pub(crate) fn normalize_sequence_waypoints(expr: Expr) -> Expr {
+    // `(a ... (b, c) ... d)`: a directly nested chain.
+    if let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::DotDotDot,
+        ..
+    } = &expr
+        && matches!(
+            left.as_ref(),
+            Expr::Binary {
+                op: crate::token_kind::TokenKind::DotDotDot,
+                ..
+            }
+        )
+        && let Some(call) = sequence_chain_call(Vec::new(), vec![expr.clone()])
+    {
+        return call;
+    }
+    // `(a ... b, c ... d)`: the paren parser read the first `...` and took
+    // the rest of the comma list as its right operand.
+    if let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::DotDotDot,
+        right,
+        ..
+    } = &expr
+        && let Expr::ArrayLiteral(items) = right.as_ref()
+    {
+        let mut all = vec![Expr::Binary {
+            left: left.clone(),
+            op: crate::token_kind::TokenKind::DotDotDot,
+            right: Box::new(items.first().cloned().unwrap_or(Expr::Literal(Value::NIL))),
+            form: Default::default(),
+        }];
+        all.extend(items.iter().skip(1).cloned());
+        if !items.is_empty()
+            && let Some(call) = sequence_chain_call(Vec::new(), all)
+        {
+            return call;
+        }
+    }
     match expr {
         Expr::Binary {
             left, op, right, ..
