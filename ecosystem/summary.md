@@ -7,18 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **98.7%** (1321/1338) |
-| file parity | 99.4% (5088/5117) |
-| assertion parity | 99.9% |
+| **dist parity** (published headline) | **98.8%** (1322/1338) |
+| file parity | 98.9% (5121/5180) |
+| assertion parity | 99.8% |
 | accepted divergences (out of the KPI, ADR-0130) | 13 file(s) |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 2 |
-| `blocked_load` | 8 |
-| `green` | 1321 |
+| `blocked_load` | 9 |
+| `green` | 1322 |
 | `no_baseline` | 328 |
-| `partial` | 11 |
+| `partial` | 10 |
 | `red` | 6 |
 
 ## Distributions
@@ -173,8 +173,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Audio::Convert::Samplerate` | 0.0.11 | green | 3/3 |
 | `Audio::Encode::LameMP3` | 0.0.15 | green | 2/2 |
 | `Audio::Fingerprint::Chromaprint` | 0.0.5 | green | 3/3 |
-| `Audio::Hydrogen` | 0.0.7 | green | 4/4 |
-| `Audio::Icecast` | 0.0.6 | green | 5/5 |
+| `Audio::Hydrogen` | 0.0.7 | blocked_load | — |
+| `Audio::Icecast` | 0.0.6 | blocked_load | — |
 | `Audio::Libshout` | 0.0.15 | green | 3/3 |
 | `Audio::Liquidsoap` | 0.1.3 | green | 5/5 |
 | `Audio::Playlist::JSPF` | 0.0.6 | green | 4/4 |
@@ -259,13 +259,13 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Compress::LZString` | 0.0.1 | green | 3/3 |
 | `Compress::PDF` | 0.5.0 | no_baseline | — |
 | `CompUnit::Util` | 0.7.0 | green | 8/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
+| `Concurrent::BoundedChannel` | 0.4.1 | no_baseline | — |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
 | `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
 | `Concurrent::Progress` | 1.2 | green | 2/2 |
 | `Concurrent::Queue` | 1.2 | green | 2/2 |
-| `Concurrent::Stack` | 1.3 | green | 2/2 |
+| `Concurrent::Stack` | 1.3 | green | 1/1 |
 | `Concurrent::Trie` | 1.2 | green | 2/2 |
 | `Config::BINDish` | 0.0.18 | no_baseline | — |
 | `Config::INI` | 1.2 | green | 3/3 |
@@ -346,7 +346,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Data::Dump` | 0.0.18 | green | 9/9 |
 | `Data::Dump::Tree` | 2.9.4 | green | 16/16 |
 | `Data::ExampleDatasets` | 0.2.4 | green | 2/2 |
-| `Data::Generators` | 0.1.11 | green | 8/8 |
+| `Data::Generators` | 0.1.11 | green | 9/9 |
 | `Data::Geographics` | 0.1.5 | no_baseline | — |
 | `Data::Importers` | 0.1.8 | green | 1/1 |
 | `Data::MessagePack` | 0.1.4 | green | 26/26 |
@@ -361,7 +361,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Data::Tree` | 0.3 | no_baseline | — |
 | `Data::TypeSystem` | 0.1.9 | green | 5/5 |
 | `Data::UkraineWar::MoD` | 0.0.5 | green | 3/3 |
-| `DataStar` | 0.0.5 | green | 2/2 |
+| `DataStar` | 0.0.5 | partial | 1/2 |
 | `Datastar::SDK` | 0.1.1 | green | 4/4 |
 | `Date::Calendar::Armenian` | 0.1.0 | green | 3/3 |
 | `Date::Calendar::Bahai` | 0.1.0 | green | 3/3 |
@@ -604,14 +604,14 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Gnome::GObject` | 0.20.0 | green | 4/4 |
 | `Gnome::Graphene` | 0.1.11 | no_baseline | — |
 | `Gnome::Gsk4` | 0.2.1 | no_baseline | — |
-| `Gnome::Gtk3` | 0.49.1 | blocked_load | — |
+| `Gnome::Gtk3` | 0.49.1 | green | 54/54 |
 | `Gnome::Gtk4` | 0.2.13 | green | 1/1 |
 | `Gnome::N` | 0.22.0 | green | 4/4 |
 | `Gnome::Pango` | 0.1.14 | no_baseline | — |
 | `GnomeTools` | 0.8.5 | no_baseline | — |
 | `GNU::Time` | 0.0.2 | green | 2/2 |
 | `GOTO` | 0.1.71 | green | 1/1 |
-| `Grammar::BNF` | 1.2 | partial | 2/5 |
+| `Grammar::BNF` | 1.2 | green | 5/5 |
 | `Grammar::Common` | 0.3.2 | green | 6/6 |
 | `Grammar::Debugger` | 1.0.3 | green | 3/3 |
 | `Grammar::Editor` | 0.0.2 | green | 1/1 |
@@ -694,7 +694,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `HTTP::Server::Router` | 0.1.7 | no_baseline | — |
 | `HTTP::Server::Router::YAML` | 0.0.1 | no_baseline | — |
 | `HTTP::Status` | 0.0.5 | green | 3/3 |
-| `HTTP::Tiny` | 0.2.6 | partial | 5/7 |
+| `HTTP::Tiny` | 0.2.6 | green | 7/7 |
 | `HTTP::Tinyish` | 0.4.2 | green | 1/1 |
 | `HTTP::UserAgent` | 1.2.0 | green | 23/23 |
 | `HTTP::UserAgent::Strict` | 0.9.2 | green | 24/24 |
@@ -838,6 +838,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `lemmatize` | 0.0.3 | green | 1/1 |
 | `LibraryCheck` | 0.0.12 | green | 2/2 |
 | `LibraryMake` | 1.0.5 | red | 0/1 |
+| `LibTmux` | 0.0.1 | partial | 5/16 |
 | `LibXML` | 0.11.3 | green | 2/2 |
 | `LibXML::Class` | 0.0.1 | no_baseline | — |
 | `LibXML::Writer` | 0.0.5 | no_baseline | — |
@@ -861,7 +862,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Linux::Cpuinfo` | 0.1.2 | green | 5/5 |
 | `Linux::Fuser` | 0.0.16 | green | 2/2 |
 | `Linux::Joystick` | 0.0.3 | green | 1/1 |
-| `Linux::NFTables` | 0.0.3 | green | 3/3 |
+| `Linux::NFTables` | 0.0.3 | green | 4/4 |
 | `List::Agnostic` | 0.0.7 | green | 1/1 |
 | `List::Allmax` | 0.0.1 | no_baseline | — |
 | `List::AllUtils` | 0.0.6 | green | 2/2 |
@@ -888,7 +889,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `LLM::Prompts` | 0.2.15 | green | 4/4 |
 | `LLM::Resources` | 0.0.3 | no_baseline | — |
 | `LLM::RetrievalAugmentedGeneration` | 0.0.8 | green | 4/4 |
-| `LN` | 1.001002 | partial | 2/3 |
+| `LN` | 1.001002 | green | 3/3 |
 | `Locale::Codes::Country` | 0.0.2 | green | 1/1 |
 | `Locale::Dates` | 0.0.7 | green | 2/2 |
 | `Locale::US` | 0.0.2 | green | 1/1 |
@@ -1012,7 +1013,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `MetamodelX::Dataclass` | 0.0.2 | green | 2/2 |
 | `Method::Also` | 0.0.10 | green | 1/1 |
 | `Method::Misspelt` | 0.0.2 | green | 1/1 |
-| `Method::Protected` | 0.0.4 | no_baseline | — |
+| `Method::Protected` | 0.0.4 | red | 0/1 |
 | `Metropolis` | 1.0.3 | green | 1/1 |
 | `Mi6::Helper` | 1.2.1 | green | 1/1 |
 | `MIDI::Make` | 0.11.0 | green | 1/1 |
@@ -1041,7 +1042,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Moneys` | 0.0.4 | green | 1/1 |
 | `MongoDB::Fast` | 0.2.2 | green | 4/4 |
 | `MongoDB::Queue` | 0.1.1 | no_baseline | — |
-| `Monitor::Monit` | 0.0.6 | green | 4/4 |
+| `Monitor::Monit` | 0.0.6 | partial | 3/4 |
 | `Moonphase` | 0.0.2 | green | 1/1 |
 | `MQ::Posix` | 0.0.5 | green | 5/5 |
 | `MQTT::Client` | 0.2 | green | 1/1 |
@@ -1051,7 +1052,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `MUGS::UI::CLI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::TUI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::WebSimple` | 0.1.4 | no_baseline | — |
-| `Mux` | 0.0.4 | green | 1/1 |
+| `Mux` | 0.0.4 | green | 2/2 |
 | `mv2d` | 0.1.333 | green | 1/1 |
 | `MVC::Keayl` | 0.9.2 | green | 37/37 |
 | `MVC::Keayl::Admin` | 0.9.1 | green | 3/3 |
@@ -1164,7 +1165,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | chou.5 | green | 4/4 |
 | `Parameterizable` | 0.0.4 | green | 2/2 |
-| `ParaSeq` | 0.2.7 | partial | 47/48 |
+| `ParaSeq` | 0.2.7 | green | 48/48 |
 | `Parse::Paths` | 0.1.3 | green | 1/1 |
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |
@@ -1183,7 +1184,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `PDF::Document` | 0.0.10 | no_baseline | — |
 | `PDF::Extract` | 0.0.4 | no_baseline | — |
 | `PDF::Font::Loader` | 0.8.15 | green | 4/4 |
-| `PDF::Font::Loader::CSS` | 0.0.1 | red | 0/1 |
+| `PDF::Font::Loader::CSS` | 0.0.1 | green | 1/1 |
 | `PDF::Font::Loader::HarfBuzz` | 0.0.2 | no_baseline | — |
 | `PDF::Grammar` | 0.3.6 | green | 10/10 |
 | `PDF::ISO_32000` | 0.0.13 | green | 2/2 |
@@ -1301,10 +1302,10 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `ReadWriteLock` | 0.3.3 | green | 2/2 |
 | `RealDentalCosts::API` | 0.1.0 | no_baseline | — |
 | `Recipe::Parser` | 0.0.1 | green | 19/19 |
-| `Red` | 0.2.10 | partial | 123/126 |
+| `Red` | 0.2.10 | partial | 98/126 |
 | `Red::Driver::MySQL` | 0.0.2 | green | 3/3 |
 | `Red::Driver::Pg` | 0.0.1 | no_baseline | — |
-| `RedFactory` | 0.0.3 | green | 3/3 |
+| `RedFactory` | 0.0.3 | partial | 1/3 |
 | `Redis` | 0.1.6 | green | 17/17 |
 | `RedX::HashedPassword` | 0.0.8 | green | 3/3 |
 | `RegexUtils` | 0.1.5 | green | 3/3 |
@@ -1608,7 +1609,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `User::grent` | 0.0.4 | green | 3/3 |
 | `User::Language` | 0.5.2 | green | 1/1 |
 | `User::pwent` | 0.0.4 | green | 3/3 |
-| `User::Timezone` | 0.3.3 | partial | 2/3 |
+| `User::Timezone` | 0.3.3 | green | 3/3 |
 | `UserTimezone` | 0.3.1 | green | 3/3 |
 | `Util::Bitfield` | 0.1.0 | green | 3/3 |
 | `Util::Uuencode` | 0.0.3 | green | 2/2 |
@@ -1653,7 +1654,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `WebService::Slack::Webhook` | 0.1.3 | green | 3/3 |
 | `WebService::Soundcloud` | 0.0.10 | green | 9/9 |
 | `WebService::TMDB` | 0.1.2 | green | 4/4 |
-| `Wheel` | 0.0.1 | partial | 4/7 |
+| `Wheel` | 0.0.1 | green | 7/7 |
 | `WhereList` | 1.001002 | green | 2/2 |
 | `Wikidata::API` | 0.0.5 | no_baseline | — |
 | `Win32::Registry` | 0.0.7 | green | 1/1 |
@@ -1688,7 +1689,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `XML` | 0.3.6 | green | 15/15 |
 | `XML::Actions` | 0.5.2 | green | 6/6 |
 | `XML::Canonical` | 1.0.2 | green | 1/1 |
-| `XML::Class` | 0.0.11 | green | 15/15 |
+| `XML::Class` | 0.0.11 | partial | 14/15 |
 | `XML::Entity::HTML` | 0.1.2 | green | 1/1 |
 | `XML::Fast` | 0.0.3 | green | 1/1 |
 | `XML::Query` | 1.1 | green | 1/1 |

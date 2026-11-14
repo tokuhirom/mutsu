@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.25,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 2.29,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 112,
         "plan": 112,
-        "secs": 0.53,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 112,
         "plan": 112,
-        "secs": 3.17,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -122,11 +122,11 @@
       "cmp": "no_baseline",
       "path": "t/03-file.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/98F9F703DBEB7A54C42CFD314318FEADD44BD5A41D4A77841E03A72F85492FC7' with mode '0o700': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/EE4244C144B2C6C8BB6D5FA960FB758B59E63BE80793A7AE25417801ED1BFF04' with mode '0o700': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 7,
         "plan": 119,
-        "secs": 12.31,
+        "secs": 11.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -136,11 +136,11 @@
       "cmp": "no_baseline",
       "path": "t/04-config.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/998AE6CCB1C9C6F240174F183BB3C591F909656CA8B8F92736FD28FC3342D8B9' with mode '0o700': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/C2A0FC042D98AF31D41E75274F97A10469C84708BE721B32B7040F03A8D22C49' with mode '0o700': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 37,
-        "secs": 3.73,
+        "secs": 3.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.18,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.96,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +176,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 26.1,
+        "secs": 23.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -234,7 +234,7 @@
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10d7928f",
+    "mutsu_commit": "7cde7835",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

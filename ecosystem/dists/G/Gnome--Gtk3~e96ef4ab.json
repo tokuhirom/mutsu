@@ -14,140 +14,2589 @@
     "unresolved": []
   },
   "dist": "Gnome::Gtk3",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/AboutDialog.rakutest",
+      "raku": {
+        "first_failure": "(AboutDialog.rakutest:2): Gtk-CRITICAL **: 14:11:50.527: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 85.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 8.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/AccelGroup.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 9.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AccelLabel.rakutest",
+      "raku": {
+        "first_failure": "(AccelLabel.rakutest:2): Gtk-CRITICAL **: 14:12:27.817: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/AccelMap.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ActionBar.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Actionable.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Adjustment.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AppChooser.rakutest",
+      "raku": {
+        "first_failure": "(AppChooser.rakutest:2): Gtk-CRITICAL **: 14:13:35.296: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 21.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AppChooserButton.rakutest",
+      "raku": {
+        "first_failure": "(AppChooserButton.rakutest:2): Gtk-CRITICAL **: 14:13:50.113: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AppChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "(AppChooserDialog.rakutest:2): Gtk-CRITICAL **: 14:14:05.986: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AppChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "(AppChooserWidget.rakutest:2): Gtk-CRITICAL **: 14:14:18.905: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Application.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 20.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 10.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ApplicationWindow.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/AspectFrame.rakutest",
+      "raku": {
+        "first_failure": "(AspectFrame.rakutest:2): Gtk-CRITICAL **: 14:15:14.258: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Assistant.rakutest",
+      "raku": {
+        "first_failure": "(Assistant.rakutest:2): Gtk-CRITICAL **: 14:15:28.587: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Bin.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Border.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Box.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Buildable.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Builder.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Button.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ButtonBox.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellLayout.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRenderer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRendererAccel.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRendererCombo.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRendererPixbuf.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRendererProgress.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRendererSpin.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRendererSpinner.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CellRendererText.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CellRendererToggle.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CheckButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/CheckMenuItem.rakutest",
+      "raku": {
+        "first_failure": "(CheckMenuItem.rakutest:2): Gtk-CRITICAL **: 14:18:01.240: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ColorChooser.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ColorChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "(ColorChooserWidget.rakutest:2): Gtk-CRITICAL **: 14:18:48.077: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ComboBox.rakutest",
+      "raku": {
+        "first_failure": "(ComboBox.rakutest:2): Gtk-CRITICAL **: 14:19:00.724: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ComboBoxText.rakutest",
+      "raku": {
+        "first_failure": "(ComboBoxText.rakutest:2): Gtk-CRITICAL **: 14:19:15.203: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provid",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Container.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CssProvider.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 9.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/CssSection.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 5.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Dialog.rakutest",
+      "raku": {
+        "first_failure": "(Dialog.rakutest:2): Gtk-CRITICAL **: 14:20:01.494: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Drag.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/DragDest.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/DragSource.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/DrawingArea.rakutest",
+      "raku": {
+        "first_failure": "(DrawingArea.rakutest:2): Gtk-CRITICAL **: 14:20:30.561: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Editable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Entry.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EntryCompletion.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Enums.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/EventBox.rakutest",
+      "raku": {
+        "first_failure": "(EventBox.rakutest:2): Gtk-CRITICAL **: 14:21:10.823: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Expander.rakutest",
+      "raku": {
+        "first_failure": "(Expander.rakutest:2): Gtk-CRITICAL **: 14:21:25.850: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/FileChooser.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FileChooserButton.rakutest",
+      "raku": {
+        "first_failure": "(FileChooserButton.rakutest:2): Gtk-CRITICAL **: 14:21:45.314: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FileChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "(FileChooserDialog.rakutest:2): Gtk-CRITICAL **: 14:21:59.859: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/FileChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "(FileChooserWidget.rakutest:2): Gtk-CRITICAL **: 14:22:14.850: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/FileFilter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Fixed.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Frame.rakutest",
+      "raku": {
+        "first_failure": "(Frame.rakutest:2): Gtk-CRITICAL **: 14:22:44.647: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Grid.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/HeaderBar.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/IconInfo.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 4.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/IconTheme.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/IconView.rakutest",
+      "raku": {
+        "first_failure": "(IconView.rakutest:2): Gtk-CRITICAL **: 14:23:41.542: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 15.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Image.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type [at dist/t/Image.rakutest:11]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Label.rakutest",
+      "raku": {
+        "first_failure": "(Label.rakutest:2): Gtk-CRITICAL **: 14:24:04.986: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Layout.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/LevelBar.rakutest",
+      "raku": {
+        "first_failure": "(LevelBar.rakutest:2): Gtk-CRITICAL **: 14:24:35.223: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListBox.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ListBoxRow.rakutest",
+      "raku": {
+        "first_failure": "(ListBoxRow.rakutest:2): Gtk-CRITICAL **: 14:25:07.606: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ListStore.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Main.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Menu.rakutest",
+      "raku": {
+        "first_failure": "(Menu.rakutest:2): Gtk-CRITICAL **: 14:25:31.966: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priva",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MenuBar.rakutest",
+      "raku": {
+        "first_failure": "(MenuBar.rakutest:2): Gtk-CRITICAL **: 14:25:45.882: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pr",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MenuButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MenuItem.rakutest",
+      "raku": {
+        "first_failure": "(MenuItem.rakutest:2): Gtk-CRITICAL **: 14:26:13.994: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MenuShell.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/MessageDialog.rakutest",
+      "raku": {
+        "first_failure": "(MessageDialog.rakutest:2): Gtk-CRITICAL **: 14:26:44.276: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Notebook.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/OffscreenWindow.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Orientable.rakutest",
+      "raku": {
+        "first_failure": "(Orientable.rakutest:2): Gtk-CRITICAL **: 14:27:23.699: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Paned.rakutest",
+      "raku": {
+        "first_failure": "(Paned.rakutest:2): Gtk-CRITICAL **: 14:27:37.498: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PlacesSidebar.rakutest",
+      "raku": {
+        "first_failure": "(PlacesSidebar.rakutest:2): Gtk-CRITICAL **: 14:27:54.069: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 7.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Popover.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/PopoverMenu.rakutest",
+      "raku": {
+        "first_failure": "(PopoverMenu.rakutest:2): Gtk-CRITICAL **: 14:28:17.839: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ProgressBar.rakutest",
+      "raku": {
+        "first_failure": "(ProgressBar.rakutest:2): Gtk-CRITICAL **: 14:28:32.049: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RadioButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RadioMenuItem.rakutest",
+      "raku": {
+        "first_failure": "(RadioMenuItem.rakutest:2): Gtk-CRITICAL **: 14:29:03.597: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Range.rakutest",
+      "raku": {
+        "first_failure": "(Range.rakutest:2): Gtk-CRITICAL **: 14:29:20.124: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RecentChooser.rakutest",
+      "raku": {
+        "first_failure": "(RecentChooser.rakutest:2): Gtk-CRITICAL **: 14:29:39.279: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RecentChooserDialog.rakutest",
+      "raku": {
+        "first_failure": "(RecentChooserDialog.rakutest:2): Gtk-CRITICAL **: 14:29:56.076: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RecentChooserMenu.rakutest",
+      "raku": {
+        "first_failure": "(RecentChooserMenu.rakutest:2): Gtk-CRITICAL **: 14:30:09.779: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/RecentChooserWidget.rakutest",
+      "raku": {
+        "first_failure": "(RecentChooserWidget.rakutest:2): Gtk-CRITICAL **: 14:30:24.011: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 8.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/RecentFilter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 2.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/RecentInfo.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 1.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/RecentManager.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Revealer.rakutest",
+      "raku": {
+        "first_failure": "(Revealer.rakutest:2): Gtk-CRITICAL **: 14:30:56.201: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Scale.rakutest",
+      "raku": {
+        "first_failure": "(Scale.rakutest:2): Gtk-CRITICAL **: 14:31:09.061: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Scrollable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ScrolledWindow.rakutest",
+      "raku": {
+        "first_failure": "(ScrolledWindow.rakutest:2): Gtk-CRITICAL **: 14:31:24.555: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_prov",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SearchEntry.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/SelectionData.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Separator.rakutest",
+      "raku": {
+        "first_failure": "(Separator.rakutest:2): Gtk-CRITICAL **: 14:31:55.441: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SeparatorMenuItem.rakutest",
+      "raku": {
+        "first_failure": "(SeparatorMenuItem.rakutest:2): Gtk-CRITICAL **: 14:32:08.729: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 6.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ShortcutsGroup.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 6.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ShortcutsSection.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 6.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ShortcutsShortcut.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 2.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 12.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/ShortcutsWindow.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 2.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/SpinButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Spinner.rakutest",
+      "raku": {
+        "first_failure": "(Spinner.rakutest:2): Gtk-CRITICAL **: 14:33:15.836: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pr",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Stack.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StackSidebar.rakutest",
+      "raku": {
+        "first_failure": "(StackSidebar.rakutest:2): Gtk-CRITICAL **: 14:33:42.467: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provid",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StackSwitcher.rakutest",
+      "raku": {
+        "first_failure": "(StackSwitcher.rakutest:2): Gtk-CRITICAL **: 14:33:56.847: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Statusbar.rakutest",
+      "raku": {
+        "first_failure": "(Statusbar.rakutest:2): Gtk-CRITICAL **: 14:34:11.655: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/StyleContext.rakutest",
+      "raku": {
+        "first_failure": "(StyleContext.rakutest:2): Gtk-ERROR **: 14:34:25.592: Can't create a GtkStyleContext without a display connection",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/StyleProvider.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Switch.rakutest",
+      "raku": {
+        "first_failure": "(Switch.rakutest:2): Gtk-CRITICAL **: 14:34:41.867: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TargetEntry.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TargetList.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 5.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TargetTable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Targets.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 9.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TextBuffer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TextIter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TextTag.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TextTagTable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextView.rakutest",
+      "raku": {
+        "first_failure": "(TextView.rakutest:2): Gtk-CRITICAL **: 14:35:32.040: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ToggleButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ToolButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type [at dist/t/ToolButton.rakutest:6]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ToolItem.rakutest",
+      "raku": {
+        "first_failure": "(ToolItem.rakutest:2): Gtk-CRITICAL **: 14:36:08.340: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Tooltip.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TreeIter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TreeModel.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TreePath.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TreeRowReference.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TreeSelection.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TreeStore.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeView.rakutest",
+      "raku": {
+        "first_failure": "(TreeView.rakutest:2): Gtk-CRITICAL **: 14:36:46.875: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TreeViewColumn.rakutest",
+      "raku": {
+        "first_failure": "(TreeViewColumn.rakutest:2): Gtk-CRITICAL **: 14:36:59.944: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_prov",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Viewport.rakutest",
+      "raku": {
+        "first_failure": "(Viewport.rakutest:2): Gtk-CRITICAL **: 14:37:14.832: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Widget.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/WidgetPath.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Window.rakutest",
+      "raku": {
+        "first_failure": "(Window.rakutest:2): Gtk-CRITICAL **: 14:37:50.952: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Gnome::Gtk3::AboutDialog": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::AboutDialog": "ok",
     "Gnome::Gtk3::AccelGroup": "ok",
-    "Gnome::Gtk3::AccelLabel": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::AccelLabel": "ok",
     "Gnome::Gtk3::AccelMap": "ok",
-    "Gnome::Gtk3::ActionBar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::ActionBar": "ok",
     "Gnome::Gtk3::Actionable": "ok",
     "Gnome::Gtk3::Adjustment": "ok",
     "Gnome::Gtk3::AppChooser": "ok",
-    "Gnome::Gtk3::AppChooserButton": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::AppChooserDialog": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::AppChooserWidget": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::AppChooserButton": "ok",
+    "Gnome::Gtk3::AppChooserDialog": "ok",
+    "Gnome::Gtk3::AppChooserWidget": "ok",
     "Gnome::Gtk3::Application": "ok",
-    "Gnome::Gtk3::ApplicationWindow": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::AspectFrame": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Assistant": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Bin": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::ApplicationWindow": "ok",
+    "Gnome::Gtk3::AspectFrame": "ok",
+    "Gnome::Gtk3::Assistant": "ok",
+    "Gnome::Gtk3::Bin": "ok",
     "Gnome::Gtk3::Border": "ok",
-    "Gnome::Gtk3::Box": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Box": "ok",
     "Gnome::Gtk3::Buildable": "ok",
     "Gnome::Gtk3::Builder": "ok",
-    "Gnome::Gtk3::Button": "raku_also_fails",
-    "Gnome::Gtk3::ButtonBox": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Button": "ok",
+    "Gnome::Gtk3::ButtonBox": "ok",
     "Gnome::Gtk3::CellLayout": "ok",
-    "Gnome::Gtk3::CellRenderer": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererAccel": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererCombo": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererPixbuf": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererProgress": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererSpin": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererSpinner": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererText": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CellRendererToggle": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::CheckButton": "raku_also_fails",
-    "Gnome::Gtk3::CheckMenuItem": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ColorButton": "raku_also_fails",
+    "Gnome::Gtk3::CellRenderer": "ok",
+    "Gnome::Gtk3::CellRendererAccel": "ok",
+    "Gnome::Gtk3::CellRendererCombo": "ok",
+    "Gnome::Gtk3::CellRendererPixbuf": "ok",
+    "Gnome::Gtk3::CellRendererProgress": "ok",
+    "Gnome::Gtk3::CellRendererSpin": "ok",
+    "Gnome::Gtk3::CellRendererSpinner": "ok",
+    "Gnome::Gtk3::CellRendererText": "ok",
+    "Gnome::Gtk3::CellRendererToggle": "ok",
+    "Gnome::Gtk3::CheckButton": "ok",
+    "Gnome::Gtk3::CheckMenuItem": "ok",
+    "Gnome::Gtk3::ColorButton": "ok",
     "Gnome::Gtk3::ColorChooser": "ok",
-    "Gnome::Gtk3::ColorChooserDialog": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ColorChooserWidget": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ComboBox": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ComboBoxText": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Container": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::ColorChooserDialog": "ok",
+    "Gnome::Gtk3::ColorChooserWidget": "ok",
+    "Gnome::Gtk3::ComboBox": "ok",
+    "Gnome::Gtk3::ComboBoxText": "ok",
+    "Gnome::Gtk3::Container": "ok",
     "Gnome::Gtk3::CssProvider": "ok",
     "Gnome::Gtk3::CssSection": "ok",
-    "Gnome::Gtk3::Dialog": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Dialog": "ok",
     "Gnome::Gtk3::Drag": "ok",
     "Gnome::Gtk3::DragDest": "ok",
     "Gnome::Gtk3::DragSource": "ok",
-    "Gnome::Gtk3::DrawingArea": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::DrawingArea": "ok",
     "Gnome::Gtk3::Editable": "ok",
-    "Gnome::Gtk3::Entry": "raku_also_fails",
-    "Gnome::Gtk3::EntryCompletion": "raku_also_fails",
+    "Gnome::Gtk3::Entry": "ok",
+    "Gnome::Gtk3::EntryCompletion": "ok",
     "Gnome::Gtk3::Enums": "ok",
-    "Gnome::Gtk3::EventBox": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Expander": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::EventBox": "ok",
+    "Gnome::Gtk3::Expander": "ok",
     "Gnome::Gtk3::FileChooser": "ok",
-    "Gnome::Gtk3::FileChooserButton": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::FileChooserDialog": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::FileChooserWidget": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::FileChooserButton": "ok",
+    "Gnome::Gtk3::FileChooserDialog": "ok",
+    "Gnome::Gtk3::FileChooserWidget": "ok",
     "Gnome::Gtk3::FileFilter": "ok",
-    "Gnome::Gtk3::Fixed": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Frame": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Grid": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::HeaderBar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Fixed": "ok",
+    "Gnome::Gtk3::Frame": "ok",
+    "Gnome::Gtk3::Grid": "ok",
+    "Gnome::Gtk3::HeaderBar": "ok",
     "Gnome::Gtk3::IconInfo": "ok",
     "Gnome::Gtk3::IconTheme": "ok",
-    "Gnome::Gtk3::IconView": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Image": "raku_also_fails",
-    "Gnome::Gtk3::Label": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Layout": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::LevelBar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ListBox": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ListBoxRow": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::IconView": "ok",
+    "Gnome::Gtk3::Image": "ok",
+    "Gnome::Gtk3::Label": "ok",
+    "Gnome::Gtk3::Layout": "ok",
+    "Gnome::Gtk3::LevelBar": "ok",
+    "Gnome::Gtk3::ListBox": "ok",
+    "Gnome::Gtk3::ListBoxRow": "ok",
     "Gnome::Gtk3::ListStore": "ok",
-    "Gnome::Gtk3::Main": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Menu": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::MenuBar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::MenuButton": "raku_also_fails",
-    "Gnome::Gtk3::MenuItem": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::MenuShell": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::MessageDialog": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Misc": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Notebook": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::OffscreenWindow": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Main": "ok",
+    "Gnome::Gtk3::Menu": "ok",
+    "Gnome::Gtk3::MenuBar": "ok",
+    "Gnome::Gtk3::MenuButton": "ok",
+    "Gnome::Gtk3::MenuItem": "ok",
+    "Gnome::Gtk3::MenuShell": "ok",
+    "Gnome::Gtk3::MessageDialog": "ok",
+    "Gnome::Gtk3::Misc": "ok",
+    "Gnome::Gtk3::Notebook": "ok",
+    "Gnome::Gtk3::OffscreenWindow": "ok",
     "Gnome::Gtk3::Orientable": "ok",
-    "Gnome::Gtk3::Paned": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::PlacesSidebar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Popover": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::PopoverMenu": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ProgressBar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::RadioButton": "raku_also_fails",
-    "Gnome::Gtk3::RadioMenuItem": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Range": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Paned": "ok",
+    "Gnome::Gtk3::PlacesSidebar": "ok",
+    "Gnome::Gtk3::Popover": "ok",
+    "Gnome::Gtk3::PopoverMenu": "ok",
+    "Gnome::Gtk3::ProgressBar": "ok",
+    "Gnome::Gtk3::RadioButton": "ok",
+    "Gnome::Gtk3::RadioMenuItem": "ok",
+    "Gnome::Gtk3::Range": "ok",
     "Gnome::Gtk3::RecentChooser": "ok",
-    "Gnome::Gtk3::RecentChooserDialog": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::RecentChooserMenu": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::RecentChooserWidget": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::RecentChooserDialog": "ok",
+    "Gnome::Gtk3::RecentChooserMenu": "ok",
+    "Gnome::Gtk3::RecentChooserWidget": "ok",
     "Gnome::Gtk3::RecentFilter": "ok",
     "Gnome::Gtk3::RecentInfo": "ok",
     "Gnome::Gtk3::RecentManager": "ok",
-    "Gnome::Gtk3::Revealer": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Scale": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Revealer": "ok",
+    "Gnome::Gtk3::Scale": "ok",
     "Gnome::Gtk3::Scrollable": "ok",
-    "Gnome::Gtk3::ScrolledWindow": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::SearchEntry": "raku_also_fails",
-    "Gnome::Gtk3::SelectionData": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Separator": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::SeparatorMenuItem": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ShortcutsGroup": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ShortcutsSection": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ShortcutsShortcut": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ShortcutsWindow": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::SpinButton": "raku_also_fails",
-    "Gnome::Gtk3::Spinner": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Stack": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::StackSidebar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::StackSwitcher": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Statusbar": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::StyleContext": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::ScrolledWindow": "ok",
+    "Gnome::Gtk3::SearchEntry": "ok",
+    "Gnome::Gtk3::SelectionData": "ok",
+    "Gnome::Gtk3::Separator": "ok",
+    "Gnome::Gtk3::SeparatorMenuItem": "ok",
+    "Gnome::Gtk3::ShortcutsGroup": "ok",
+    "Gnome::Gtk3::ShortcutsSection": "ok",
+    "Gnome::Gtk3::ShortcutsShortcut": "ok",
+    "Gnome::Gtk3::ShortcutsWindow": "ok",
+    "Gnome::Gtk3::SpinButton": "ok",
+    "Gnome::Gtk3::Spinner": "ok",
+    "Gnome::Gtk3::Stack": "ok",
+    "Gnome::Gtk3::StackSidebar": "ok",
+    "Gnome::Gtk3::StackSwitcher": "ok",
+    "Gnome::Gtk3::Statusbar": "ok",
+    "Gnome::Gtk3::StyleContext": "ok",
     "Gnome::Gtk3::StyleProvider": "ok",
-    "Gnome::Gtk3::Switch": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Switch": "ok",
     "Gnome::Gtk3::TargetEntry": "ok",
     "Gnome::Gtk3::TargetList": "ok",
     "Gnome::Gtk3::TargetTable": "ok",
     "Gnome::Gtk3::Targets": "ok",
-    "Gnome::Gtk3::TextBuffer": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::TextBuffer": "ok",
     "Gnome::Gtk3::TextIter": "ok",
-    "Gnome::Gtk3::TextTag": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::TextTagTable": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::TextView": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ToggleButton": "raku_also_fails",
-    "Gnome::Gtk3::ToolButton": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::ToolItem": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::TextTag": "ok",
+    "Gnome::Gtk3::TextTagTable": "ok",
+    "Gnome::Gtk3::TextView": "ok",
+    "Gnome::Gtk3::ToggleButton": "ok",
+    "Gnome::Gtk3::ToolButton": "ok",
+    "Gnome::Gtk3::ToolItem": "ok",
     "Gnome::Gtk3::Tooltip": "ok",
     "Gnome::Gtk3::TreeIter": "ok",
     "Gnome::Gtk3::TreeModel": "ok",
@@ -155,19 +2604,19 @@
     "Gnome::Gtk3::TreeRowReference": "ok",
     "Gnome::Gtk3::TreeSelection": "ok",
     "Gnome::Gtk3::TreeStore": "ok",
-    "Gnome::Gtk3::TreeView": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::TreeView": "ok",
     "Gnome::Gtk3::TreeViewColumn": "ok",
-    "Gnome::Gtk3::Viewport": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
-    "Gnome::Gtk3::Widget": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa",
+    "Gnome::Gtk3::Viewport": "ok",
+    "Gnome::Gtk3::Widget": "ok",
     "Gnome::Gtk3::WidgetPath": "ok",
-    "Gnome::Gtk3::Window": "Failed to parse module 'Gnome::Cairo::Types': MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: RakuAST: `.AST` does not yet support this construct: BareWord(\"gpointer[cairo_pa"
+    "Gnome::Gtk3::Window": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-13",
+    "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10d7928f",
+    "mutsu_commit": "7cde7835",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -178,12 +2627,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/NO/GNOME_GTK3/da29634a8119e5b4aa7b9427ba29d096480ff7ce.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 53,
+    "baseline_files": 54,
+    "mutsu_assertions": 53,
+    "parity_files": 54,
     "regressed_files": 0
   },
   "version": "0.49.1"

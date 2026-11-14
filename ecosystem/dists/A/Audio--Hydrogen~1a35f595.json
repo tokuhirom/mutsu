@@ -10,109 +10,20 @@
     "unresolved": []
   },
   "dist": "Audio::Hydrogen",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.24,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/001-meta.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.92,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/010-use.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 30.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 99,
-        "plan": 99,
-        "secs": 12.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/020-drumkit.t",
-      "raku": {
-        "nok": 0,
-        "ok": 99,
-        "plan": 99,
-        "secs": 2.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 14.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/030-song.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 2.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Audio::Hydrogen": "ok",
+    "Audio::Hydrogen": "Confused. expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at -e:1]",
     "Audio::Hydrogen::Drumkit": "ok",
     "Audio::Hydrogen::Instrument": "ok",
     "Audio::Hydrogen::Pattern": "ok",
-    "Audio::Hydrogen::Song": "ok"
+    "Audio::Hydrogen::Song": "Confused. expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at -e:1]"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10d7928f",
+    "mutsu_commit": "7cde7835",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,12 +34,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/UD/AUDIO_HYDROGEN/81627387cb2425d013de3435a26101662857e816.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 107,
-    "baseline_files": 4,
-    "mutsu_assertions": 107,
-    "parity_files": 4,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.0.7"

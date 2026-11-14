@@ -22,11 +22,11 @@
       "cmp": "no_baseline",
       "path": "t/01-tst.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-u8xq5zzd/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-tp4u_cpd/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 7.74,
+        "secs": 8.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -36,11 +36,11 @@
       "cmp": "no_baseline",
       "path": "t/02-dim.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-u8xq5zzd/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-tp4u_cpd/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 6.54,
+        "secs": 7.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.4,
+        "secs": 0.42,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10d7928f",
+    "mutsu_commit": "7cde7835",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

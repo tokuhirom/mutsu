@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.36,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,29 +28,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.76,
+        "secs": 5.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown function: lc",
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.28,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/1-patch-elements.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.58,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -66,7 +67,7 @@
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "10d7928f",
+    "mutsu_commit": "7cde7835",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -77,13 +78,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATASTAR/2055d09bdb2e58bef270f97c4e171f2c2465c878.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 2,
-    "mutsu_assertions": 4,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.5"
 }
