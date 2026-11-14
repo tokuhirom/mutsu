@@ -126,26 +126,40 @@ pub(super) fn declared_candidate(
 ) -> Option<Result<Value, RuntimeError>> {
     let line = declaration_line(node);
     let file = crate::unit_source_file::current().map(|file| file.resolve().to_string());
-    let declared_here = |candidate: &Value| match candidate.view() {
-        ValueView::Sub(data) => {
-            line.is_some() && data.source_line == line && data.source_file == file
-        }
-        _ => false,
-    };
     if let Ok(candidates) =
         interp.call_method_with_values(routine.clone(), "candidates", Vec::new())
         && let ValueView::Array(items, _) = candidates.view()
     {
-        let items = items.as_slice();
-        if let Some(found) = items.iter().find(|candidate| declared_here(candidate)) {
-            return Some(Ok(found.clone()));
-        }
-        // No candidate carries a position (an `EVAL`ed unit): the unit's own
-        // dispatcher holds its candidates in declaration order.
-        if line.is_none()
-            && let Some(candidate) = index.and_then(|index| items.get(index))
+        let items = items.as_slice().to_vec();
+        // A candidate's position is the one `.line`/`.file` report.
+        let mut position = |candidate: &Value| {
+            let mut at = |what| {
+                interp
+                    .code_line_file(candidate, what)
+                    .and_then(Result::ok)
+                    .filter(|v| !v.is_nil())
+            };
+            let line = at("line").map(|l| crate::value::numeric_coerce::to_int(&l));
+            (line, at("file").map(|f| f.to_string_value()))
+        };
+        let positions: Vec<_> = items.iter().map(&mut position).collect();
+        let here = line.map(i64::from);
+        if let Some(found) = positions
+            .iter()
+            .position(|(l, f)| here.is_some() && *l == here && *f == file)
         {
-            return Some(Ok(candidate.clone()));
+            return Some(Ok(items[found].clone()));
+        }
+        // No candidate is at the declaration's line (a top-level `multi`'s
+        // candidate reports none): the unit's own dispatcher holds its
+        // candidates in declaration order, so the one at the declaration's
+        // index is it -- when that one is the unit's, not the setting's or
+        // an imported module's.
+        if let Some(index) = index
+            && let Some((_, candidate_file)) = positions.get(index)
+            && (candidate_file.is_none() || *candidate_file == file)
+        {
+            return Some(Ok(items[index].clone()));
         }
     }
     check_time_routine(interp, node, name)
