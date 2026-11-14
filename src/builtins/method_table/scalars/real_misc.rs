@@ -370,7 +370,11 @@ fn chr(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     match u32::try_from(code).ok().and_then(char::from_u32) {
         Some(ch) if code <= 0x10FFFF => {
             use unicode_normalization::UnicodeNormalization;
-            Ok(Value::str(ch.to_string().nfc().collect::<String>()))
+            let s = ch.to_string().nfc().collect::<String>();
+            // A literal U+10FFFD is escaped (ADR-17800).
+            Ok(Value::str(
+                crate::runtime::utf8_c8::escape_literal_marker(&s).into_owned(),
+            ))
         }
         // MoarVM's own bound: a codepoint it could store but Unicode lacks.
         _ if (0x110000..1 << 31).contains(&code) => Err(RuntimeError::new(format!(

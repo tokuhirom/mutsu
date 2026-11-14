@@ -20,6 +20,44 @@ use crate::grapheme_break_data::TABLE;
 /// The utf8-c8 synthetic marker; `runtime::utf8_c8` re-exports it.
 pub(crate) const SYNTHETIC_MARKER: char = '\u{10FFFD}';
 
+/// Escape every literal `U+10FFFD` in `s` as the doubled marker
+/// `U+10FFFD U+10FFFD`, so it cannot be read as (the start of) a utf8-c8
+/// synthetic `U+10FFFD x H H` (ADR-17800). Applied wherever codepoints enter
+/// a `Str` from outside: decoders, `chr`, codepoint escapes.
+// Cost: O(n), n = bytes of `s`; no allocation without a marker.
+pub(crate) fn escape_literal_marker(s: &str) -> std::borrow::Cow<'_, str> {
+    if !s.contains(SYNTHETIC_MARKER) {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len() + 8);
+    for ch in s.chars() {
+        out.push(ch);
+        if ch == SYNTHETIC_MARKER {
+            out.push(SYNTHETIC_MARKER);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// The inverse of [`escape_literal_marker`]: the codepoints a `Str` exposes
+/// (`.ords`, an encoder). A doubled marker is one literal `U+10FFFD`; a
+/// synthetic `U+10FFFD x H H` keeps its four codepoints, as rakudo exposes it.
+// Cost: O(n), n = bytes of `s`; no allocation without a doubled marker.
+pub(crate) fn unescape_literal_marker(s: &str) -> std::borrow::Cow<'_, str> {
+    if !s.contains("\u{10FFFD}\u{10FFFD}") {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        out.push(ch);
+        if ch == SYNTHETIC_MARKER && chars.peek() == Some(&SYNTHETIC_MARKER) {
+            chars.next();
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 const OTHER: u8 = 0;
 const CR: u8 = 1;
 const LF: u8 = 2;
@@ -136,6 +174,10 @@ fn synthetic_len(rest: &[u8]) -> usize {
     let marker = SYNTHETIC_MARKER.len_utf8();
     match rest.get(marker..marker + 3) {
         Some([b'x', h1, h2]) if is_hex_byte(*h1) && is_hex_byte(*h2) => marker + 3,
+        // The doubled marker is one literal U+10FFFD (ADR-17800).
+        _ if rest[marker..].starts_with(SYNTHETIC_MARKER.encode_utf8(&mut [0u8; 4]).as_bytes()) => {
+            2 * marker
+        }
         _ => marker,
     }
 }

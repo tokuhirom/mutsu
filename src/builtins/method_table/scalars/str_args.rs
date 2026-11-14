@@ -144,7 +144,9 @@ pub(crate) fn encode(target: &Value, args: &[Value]) -> Result<Value, RuntimeErr
         )));
     }
     Ok(with_str(target, |s| {
-        crate::value::value_buf::make_buf_from_bytes(Symbol::intern("utf8"), s.as_bytes())
+        // A doubled marker is one literal U+10FFFD (ADR-17800).
+        let exposed = crate::grapheme_break::unescape_literal_marker(s);
+        crate::value::value_buf::make_buf_from_bytes(Symbol::intern("utf8"), exposed.as_bytes())
     }))
 }
 
