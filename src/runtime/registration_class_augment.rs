@@ -398,7 +398,7 @@ impl Interpreter {
                     }
                     self.apply_method_is_traits(
                         name, &resolved_method_name, &effective_params, &effective_param_defs,
-                        &decl.body, decl.is_rw, false, decl.return_type.as_deref(),
+                        &decl.body, decl.is_rw, decl.is_raw, false, decl.return_type.as_deref(),
                         &decl.custom_traits, &method_cell, candidate_idx,
                     )?;
                     self.finish_method_value_prototype(prototype.as_deref(), name, &resolved_method_name, candidate_idx)?;

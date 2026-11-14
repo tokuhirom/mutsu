@@ -708,6 +708,7 @@ impl Interpreter {
             &proto_param_defs,
             proto_body,
             false,
+            false,
             true,
             return_type.as_deref(),
             trait_args,

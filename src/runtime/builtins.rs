@@ -614,7 +614,7 @@ impl Interpreter {
             "__mutsu_stub_fatal" => self.builtin_stub_fatal(&args),
             "__mutsu_undeclared_var_die" => self.builtin_undeclared_var_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
-            "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
+            "__mutsu_incdec_nomatch" => self.builtin_incdec_operand(&args),
             "__mutsu_index_var_meta" => self.builtin_index_var_meta(&args),
             "__mutsu_anon_index_var_meta" => self.builtin_anon_index_var_meta(&args),
             "exit" => self.builtin_exit(&args),
