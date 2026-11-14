@@ -773,7 +773,11 @@ impl Interpreter {
             // schedulers' and the handle classes' methods are rows, found by their
             // owner; they commit through the instance's shared cell (ADR-11276
             // §9.128, §9.130, §9.132, §9.133, §9.157).
+            // A method the subclass (or a role mixed in place) declares itself
+            // wins over the row, as in the immutable entry
+            // (`methods_instance_ops.rs`).
             if let Some(owners) = self.carried_state_owners_of(&target)
+                && !self.has_user_method(&class_name.resolve(), method)
                 && let Some(result) = crate::builtins::method_table::invoke_owner(
                     self,
                     owners,
