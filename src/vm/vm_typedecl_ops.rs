@@ -877,8 +877,12 @@ impl Interpreter {
             // Only suppress when the parent package is itself a class, not a module.
             // Also register the short name in the lexical env so it is available
             // within the enclosing class body and its methods.
-            let parent_is_class =
-                qualified_parent.is_some_and(|parent| self.has_class(parent.as_str()));
+            // A type declared while a method of the parent runs (in the
+            // method's body, or in an `EVAL` it runs) is lexical to that code,
+            // not a type of the class body: no other method may see it (#17750).
+            let parent_is_class = qualified_parent.is_some_and(|parent| {
+                self.has_class(parent.as_str()) && !self.running_method_of(parent)
+            });
             if qualified_name != resolved_name && !resolved_is_qualified && parent_is_class {
                 self.suppress_name(&resolved_name);
                 // ... and remember the short name permanently, so a later

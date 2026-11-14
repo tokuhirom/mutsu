@@ -1167,6 +1167,23 @@ impl Interpreter {
     /// declaration shadow a same-named outer one; an already-fully-qualified name
     /// simply fails every probe and falls back to itself.
     pub(crate) fn resolve_type_in_current_package(&self, name: &str) -> Option<String> {
+        let found = self.resolve_type_in_current_package_any_scope(name)?;
+        // A lexical type (`my class`, stored under a NUL-mangled key) whose
+        // block or `EVAL` has ended is out of scope: its short name was
+        // suppressed at the scope's end, and only a type a class or role body
+        // declared stays visible through its package (#17750).
+        if found.contains('\u{0}')
+            && self.is_name_suppressed(name)
+            && !self.types.class_scoped_short_names.contains(name)
+        {
+            return None;
+        }
+        Some(found)
+    }
+
+    /// [`Self::resolve_type_in_current_package`] before the out-of-scope
+    /// lexical filter.
+    fn resolve_type_in_current_package_any_scope(&self, name: &str) -> Option<String> {
         if name.is_empty() {
             return None;
         }
