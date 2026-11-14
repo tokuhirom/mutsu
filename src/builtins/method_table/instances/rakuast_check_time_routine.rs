@@ -132,7 +132,8 @@ pub(super) fn declared_candidate(
         }
         _ => false,
     };
-    if let Ok(candidates) = interp.call_method_with_values(routine.clone(), "candidates", Vec::new())
+    if let Ok(candidates) =
+        interp.call_method_with_values(routine.clone(), "candidates", Vec::new())
         && let ValueView::Array(items, _) = candidates.view()
     {
         let items = items.as_slice();

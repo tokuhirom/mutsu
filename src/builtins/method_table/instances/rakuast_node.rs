@@ -440,8 +440,7 @@ pub(super) fn sub_value(
     // A resolution's copy of a `multi` declaration carries no candidate
     // index; its `multiness` still says what it declares.
     let multi_index = crate::rakuast::declared_multi_candidate(node);
-    let is_multi =
-        multi_index.is_some() || super::rakuast_check_time_routine::declares_multi(node);
+    let is_multi = multi_index.is_some() || super::rakuast_check_time_routine::declares_multi(node);
     // A `sub` declared inside a nested block is installed when its block runs:
     // at CHECK time it is built from the node, with the declaration's identity.
     if !matches!(routine.view(), ValueView::Sub(_))
