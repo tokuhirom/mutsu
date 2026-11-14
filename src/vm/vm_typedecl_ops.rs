@@ -880,9 +880,17 @@ impl Interpreter {
             // A type declared while a method of the parent runs (in the
             // method's body, or in an `EVAL` it runs) is lexical to that code,
             // not a type of the class body: no other method may see it (#17750).
-            let parent_is_class = qualified_parent.is_some_and(|parent| {
-                self.has_class(parent.as_str()) && !self.running_method_of(parent)
-            });
+            // Its short name is still bound in that code's own scope.
+            let in_parent_method =
+                qualified_parent.is_some_and(|parent| self.running_method_of(parent));
+            let parent_is_class = qualified_parent
+                .is_some_and(|parent| self.has_class(parent.as_str()) && !in_parent_method);
+            if qualified_name != resolved_name && !resolved_is_qualified && in_parent_method {
+                self.env_mut().insert(
+                    resolved_name.clone(),
+                    Value::package(Symbol::intern(&storage_name)),
+                );
+            }
             if qualified_name != resolved_name && !resolved_is_qualified && parent_is_class {
                 self.suppress_name(&resolved_name);
                 // ... and remember the short name permanently, so a later
