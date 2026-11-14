@@ -93,6 +93,8 @@ impl Encode for CompiledCode {
             lexical_import_chains,
             enclosing_import_chain,
             enclosing_import_regions,
+            enclosing_routine_decls,
+            enclosing_set_decl_marks,
             eval_site_chains,
             free_var_parent_slots,
             upvalue_parent_slots,
@@ -264,6 +266,8 @@ impl Encode for CompiledCode {
         lexical_import_chains.encode(encoder)?;
         enclosing_import_chain.encode(encoder)?;
         enclosing_import_regions.encode(encoder)?;
+        enclosing_routine_decls.encode(encoder)?;
+        enclosing_set_decl_marks.encode(encoder)?;
         eval_site_chains.encode(encoder)?;
         free_var_parent_slots.encode(encoder)?;
         upvalue_parent_slots.encode(encoder)?;
@@ -421,6 +425,8 @@ impl Decode<DecodeCtx> for CompiledCode {
             lexical_import_chains: Decode::decode(decoder)?,
             enclosing_import_chain: Decode::decode(decoder)?,
             enclosing_import_regions: Decode::decode(decoder)?,
+            enclosing_routine_decls: Decode::decode(decoder)?,
+            enclosing_set_decl_marks: Decode::decode(decoder)?,
             eval_site_chains: Decode::decode(decoder)?,
             free_var_parent_slots: Decode::decode(decoder)?,
             upvalue_parent_slots: Decode::decode(decoder)?,

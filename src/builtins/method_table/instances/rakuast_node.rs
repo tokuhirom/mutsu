@@ -437,14 +437,31 @@ pub(super) fn sub_value(
     {
         return Some(Ok(interp.sub_value_from_function_def(def)));
     }
-    // A `multi sub` is its own candidate of the dispatcher, as in rakudo.
-    if let Some(index) = crate::rakuast::declared_multi_candidate(node)
-        && let Ok(candidates) =
-            interp.call_method_with_values(routine.clone(), "candidates", Vec::new())
-        && let ValueView::Array(items, _) = candidates.view()
-        && let Some(candidate) = items.as_slice().get(index)
+    // A resolution's copy of a `multi` declaration carries no candidate
+    // index; its `multiness` still says what it declares.
+    let multi_index = crate::rakuast::declared_multi_candidate(node);
+    let is_multi = multi_index.is_some() || super::rakuast_check_time_routine::declares_multi(node);
+    // A `sub` declared inside a nested block is installed when its block runs:
+    // at CHECK time it is built from the node, with the declaration's identity.
+    if !matches!(routine.view(), ValueView::Sub(_))
+        && !interp.has_proto(&name)
+        && !is_multi
+        && let Some(result) =
+            super::rakuast_check_time_routine::check_time_routine(interp, node, &name)
     {
-        return Some(Ok(candidate.clone()));
+        return Some(result);
+    }
+    // A `multi sub` is its own candidate of the dispatcher, as in rakudo.
+    if is_multi
+        && let Some(candidate) = super::rakuast_check_time_routine::declared_candidate(
+            interp,
+            node,
+            &name,
+            &routine,
+            multi_index,
+        )
+    {
+        return Some(candidate);
     }
     Some(Ok(routine))
 }

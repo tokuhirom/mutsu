@@ -379,7 +379,12 @@ fn static_id(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErr
     // A closure is told apart by its signature and body and its line, not its
     // file or package: the closure a block node's `compile-time-value` makes in the CHECK
     // phase is compiled where the phaser's code runs (Red's module).
-    let routine = data.compiled_routine.is_some() || data.body.is_empty();
+    // A named routine (not a block or an anonymous sub) is one declaration too,
+    // compiled or not: the CHECK phase's code object of a block-nested `sub`
+    // (`compile-time-value`) is built from its node, not from bytecode.
+    let routine = data.compiled_routine.is_some()
+        || data.body.is_empty()
+        || (!data.name.is_empty() && !data.is_bare_block);
     let content = if routine {
         crate::ast::stable_hash::stable_hash(&*data.params)
     } else {

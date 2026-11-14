@@ -986,9 +986,13 @@ impl Interpreter {
         // block: the declaring activation's capture binds it as `&name`
         // (#13037), which the code-variable call resolves through the frame's
         // static link ahead of the registry's latest-activation routine.
-        if self
-            .env()
-            .frame_activation_binds_routine(Self::const_str(code, name_idx))
+        // `++`/`--` are ranked against their core candidates first (below):
+        // an imported family the frame binds as `&prefix:<++>` would get the
+        // operand's value, and the core increment of it would be lost.
+        if IncrementOp::from_routine_name(Self::const_str(code, name_idx)).is_none()
+            && self
+                .env()
+                .frame_activation_binds_routine(Self::const_str(code, name_idx))
         {
             return Some(self.exec_call_on_code_var_op(
                 code,

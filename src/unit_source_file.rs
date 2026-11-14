@@ -70,6 +70,37 @@ thread_local! {
     static REPLAY_UNIT: Cell<Option<Symbol>> = const { Cell::new(None) };
     /// How many RakuAST trees are being evaluated (`EVAL` of a node).
     static TREE_EVAL_DEPTH: Cell<u32> = const { Cell::new(0) };
+    /// Whether a declaration of the unit being compiled is being compiled
+    /// again out of its scope ([`UnitDeclarationRecompileGuard`]).
+    static RECOMPILING_UNIT_DECLARATION: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Marks the span in which a routine declaration of the unit being compiled
+/// is compiled once more, on its own, for a CHECK-time `compile-time-value`
+/// asked by whatever module's code walks `$*CU` (Red's `red-compile`). The
+/// declaration already passed the unit's own name checks; compiled out of the
+/// unit's scope, a routine the unit imported (`ast-value`) would read as
+/// undeclared there, so the `EVAL` unit that compiles it skips that judgement
+/// and the call stays late-bound, as the unit compiled it.
+pub(crate) struct UnitDeclarationRecompileGuard(bool);
+
+impl UnitDeclarationRecompileGuard {
+    pub(crate) fn enter() -> Self {
+        Self(RECOMPILING_UNIT_DECLARATION.with(|cell| cell.replace(true)))
+    }
+}
+
+impl Drop for UnitDeclarationRecompileGuard {
+    fn drop(&mut self) {
+        let previous = self.0;
+        RECOMPILING_UNIT_DECLARATION.with(|cell| cell.set(previous));
+    }
+}
+
+/// Whether a [`UnitDeclarationRecompileGuard`] span is open.
+// Cost: O(1).
+pub(crate) fn recompiling_unit_declaration() -> bool {
+    RECOMPILING_UNIT_DECLARATION.with(Cell::get)
 }
 
 /// Marks the span in which a replayed slang action runs for the unit `file`.

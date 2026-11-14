@@ -341,10 +341,7 @@ impl Interpreter {
             // sigilless name and their `&` code-variable spelling. Role
             // composition stores the parameter bindings directly, so preserve
             // that alias for a role method such as `:&cmp` as well as `cmp(...)`.
-            if matches!(
-                v.view(),
-                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-            ) {
+            if crate::runtime::types::binds_as_code_variable(v) {
                 cx.out
                     .class_role_param_bindings
                     .insert(format!("&{p}"), v.clone());
@@ -367,10 +364,7 @@ impl Interpreter {
                 for (name, value) in role_param_names.iter().zip(role_arg_values.iter()) {
                     bindings.push((name.clone(), value.clone()));
                     bindings.extend(Self::role_type_capture_marker(name, value));
-                    if matches!(
-                        value.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    ) {
+                    if crate::runtime::types::binds_as_code_variable(value) {
                         bindings.push((format!("&{name}"), value.clone()));
                     }
                 }

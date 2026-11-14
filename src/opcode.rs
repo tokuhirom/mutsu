@@ -7454,6 +7454,15 @@ pub(crate) struct CompiledCode {
     /// code was written in, innermost first: a frame of this code does not
     /// hide what those blocks imported (`hide_unit_names_from_frame`).
     pub(crate) enclosing_import_regions: Vec<Symbol>,
+    /// The routines declared in the scopes around this closure body where it
+    /// was attached to its creating code, in declaration order, and for each
+    /// import set around it how many of them were declared when the set was
+    /// opened: a recompile of the body (a map/grep loop body) keeps a routine
+    /// declared after a set's `use` (a block's own `multi infix:<+>`) winning
+    /// over that set's imports of the name, as the original compile did.
+    pub(crate) enclosing_routine_decls: Vec<Symbol>,
+    /// See [`Self::enclosing_routine_decls`].
+    pub(crate) enclosing_set_decl_marks: Vec<(Symbol, u32)>,
     /// The lexical import chains of this code's `EVAL` calls (one per distinct
     /// chain, innermost first): the sets an EVAL'd unit starts inside
     /// (`Interpreter::eval_lexical_import_chain`). Empty when the code calls
@@ -8755,6 +8764,8 @@ impl CompiledCode {
             lexical_import_chains: Vec::new(),
             enclosing_import_chain: Vec::new(),
             enclosing_import_regions: Vec::new(),
+            enclosing_routine_decls: Vec::new(),
+            enclosing_set_decl_marks: Vec::new(),
             eval_site_chains: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),

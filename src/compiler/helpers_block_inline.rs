@@ -255,9 +255,17 @@ impl Compiler {
     /// the mainline, as "succeed without when clause") rather than end this block
     /// with the clause's value -- `{ when True { say 1 }; say 2 }` as the last
     /// statement.
+    ///
+    /// A body that declares a routine goes through `DoBlockExpr` too: the
+    /// routine is lexical to this block (`scope_routines`), where inlining it
+    /// would register it for the rest of the enclosing closure's caller --
+    /// `st { { multi infix:<+>(A, Int) {...} } }` left the candidate behind,
+    /// and a sibling block's same-signature `multi` was then ambiguous.
     // Cost: O(n), n = size of the block body.
     pub(super) fn compile_tail_block_inline(&mut self, stmts: &[Stmt]) {
-        if Self::body_has_toplevel_when(stmts) && !Self::has_catch_or_control(stmts) {
+        if (Self::body_has_toplevel_when(stmts) || Self::stmts_declare_routines(stmts))
+            && !Self::has_catch_or_control(stmts)
+        {
             self.compile_do_block_expr(stmts, &None, crate::ast::DoBlockOrigin::Desugar);
         } else {
             self.compile_block_inline(stmts);
