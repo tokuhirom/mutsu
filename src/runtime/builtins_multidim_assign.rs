@@ -216,7 +216,7 @@ impl Interpreter {
         // no writable element: `$o.env<k> = v` dies as `$map<k> = v` does.
         if current.is_immutable_map() {
             return Err(super::refuse_map_assignment(
-                &current.descalarize(),
+                current.descalarize(),
                 &index,
             ));
         }

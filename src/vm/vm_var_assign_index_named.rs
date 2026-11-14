@@ -5017,7 +5017,7 @@ impl Interpreter {
             // A Map reached through a chained subscript (`$m<a><b> = v`, where
             // `$m<a>` is a Map) is as immutable as one addressed directly.
             return Err(crate::runtime::refuse_map_assignment(
-                &target.descalarize(),
+                target.descalarize(),
                 &Value::str(outer_key.to_string()),
             ));
         } else if let Some(aggregate) = Self::pair_subscript_aggregate(target, Some(outer_key)) {
@@ -6209,7 +6209,7 @@ impl Interpreter {
         // v`) refuses the store, as a Map held in a variable does.
         if !is_positional && target.deref_container().is_immutable_map() {
             return Err(crate::runtime::refuse_map_assignment(
-                &target.deref_container().descalarize(),
+                target.deref_container().descalarize(),
                 &idx,
             ));
         }
