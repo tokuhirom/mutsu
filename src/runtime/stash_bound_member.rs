@@ -19,7 +19,7 @@ impl Interpreter {
         let mut name = Symbol::intern(name);
         // Each rewrite replaces a bound prefix by the package it names; the
         // segment count bounds the steps a well-formed chain takes.
-        for _ in 0..name.as_str().matches("::").count() {
+        for _ in 1..crate::qualified::segments(name).len() {
             let ancestors: Vec<Symbol> =
                 crate::qualified::package_ancestors(crate::qualified::package_parent(name)?).collect();
             let (bound, real) = ancestors.iter().find_map(|prefix| {
