@@ -433,11 +433,20 @@ impl Interpreter {
         {
             return Ok(threaded);
         }
+        // The call site's argument sources serve both the candidate ranking
+        // below (a variable argument prefers an `is rw` candidate) and the
+        // winner's binding. The ranking's trial binds may consume them, and
+        // an `is rw` winner then saw a variable argument as a bare value
+        // (Red's CHECK-built templates calling an imported `infix:<lt>`), so
+        // they are handed to the winner again.
+        let arg_sources = self.take_pending_call_arg_sources_shared();
+        self.set_pending_call_arg_sources_shared(arg_sources.clone());
         if let Some((candidate, remaining, key_decided)) = self.pick_captured_multi_candidate(
             family_name.unwrap_or(""),
             candidates,
             &call_args,
         )? {
+            self.set_pending_call_arg_sources_shared(arg_sources.clone());
             // An imported increment candidate joins the native increment's
             // core candidates and takes the call only when it out-ranks them,
             // as a registry candidate does (ADR-8751 stage 2).
@@ -473,7 +482,8 @@ impl Interpreter {
                 && cand_data.param_defs.iter().any(|pd| pd.slurpy)
             {
                 let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
-                    return self.call_sub_value(candidate, call_args);
+                self.set_pending_call_arg_sources_shared(arg_sources);
+                return self.call_sub_value(candidate, call_args);
             }
         }
         // User candidates of a built-in operator add to it: a call none of
@@ -499,7 +509,8 @@ impl Interpreter {
         }
         if let Some(candidate) = candidates.first() {
             let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
-                    return self.call_sub_value(candidate, call_args);
+            self.set_pending_call_arg_sources_shared(arg_sources);
+            return self.call_sub_value(candidate, call_args);
         }
         Err(self.multi_no_match_error(family_name.unwrap_or(""), &call_args))
     }

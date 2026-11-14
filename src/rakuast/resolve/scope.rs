@@ -30,9 +30,9 @@ fn scope_declarations(scope: &RakuAstNode) -> HashMap<String, Value> {
     scopes.scopes.pop().unwrap_or_default()
 }
 
-/// Register the variables and parameters `node` declares, and the routines its
-/// `use` statements import, not descending into the scopes nested in it.
-// Cost: O(size of the subtree, not counting nested scopes, plus the imports).
+/// Register the variables and parameters `node` declares, not descending into
+/// the scopes nested in it.
+// Cost: O(size of the subtree, not counting nested scopes).
 fn declare_variables(node: &RakuAstNode, scopes: &mut Scopes) {
     let mut visit = |child: &Value| {
         let ValueView::RakuAst(held) = child.view() else {
@@ -42,16 +42,6 @@ fn declare_variables(node: &RakuAstNode, scopes: &mut Scopes) {
             && let Some(name) = declared_variable(held)
         {
             scopes.declare(name, child.clone());
-        }
-        // A `use` binds what it imports in the pad of the scope it is in:
-        // rakudo's resolver finds `&name` there as a `Declaration::Import`.
-        if held.class == C::StatementUse {
-            for routine in super::super::use_stmt::recorded_imports(held) {
-                let name = format!("&{routine}");
-                if let Some(import) = external("RakuAST::Declaration::Import", &name) {
-                    scopes.declare(name, import);
-                }
-            }
         }
         if !opens_scope(held.class) {
             declare_variables(held, scopes);

@@ -369,6 +369,17 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
             Value::rakuast(Box::new(RakuAstNode::clone(held))),
         );
     }
+    // A `use` binds what it imports in the pad of the scope it is in:
+    // rakudo's resolver finds `&name` (an operator too) there as a
+    // `Declaration::Import`.
+    if held.class == C::StatementUse {
+        for routine in super::use_stmt::recorded_imports(held) {
+            let name = format!("&{routine}");
+            if let Some(import) = external("RakuAST::Declaration::Import", &name) {
+                scopes.declare(name, import);
+            }
+        }
+    }
     if let Some(name) = super::declared_routines::declared_by(held)
         && held.class == C::Sub
     {
@@ -921,6 +932,10 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 "postfix"
             };
             let name = format!("{category}:<{}>", leaf(node, "operator")?);
+            // An operator the unit declares or imports is that routine.
+            if let Some(declared) = scopes.find(&format!("&{name}")) {
+                return Some(declared.clone());
+            }
             (!(scopes.shadowed)(&name)).then(|| external_setting(&name))?
         }
         C::PostcircumfixArrayIndex => external_setting("postcircumfix:<[ ]>"),
