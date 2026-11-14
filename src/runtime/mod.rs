@@ -1470,7 +1470,6 @@ enum IoHandleTarget {
     Stdout,
     Stderr,
     Stdin,
-    ArgFiles,
     File,
     Socket,
 }
@@ -1620,13 +1619,6 @@ pub(crate) struct IoHandleState {
     /// For utf16 auto-detect: the detected endianness after reading BOM.
     /// None = not yet detected, Some(true) = big-endian, Some(false) = little-endian.
     utf16_detected_be: Option<bool>,
-    /// For ArgFiles: index into @*ARGS tracking which file we're reading
-    argfiles_index: usize,
-    /// For ArgFiles: currently open file reader (buffered)
-    argfiles_reader: Option<std::io::BufReader<fs::File>>,
-    /// For ArgFiles created via `IO::ArgFiles.new(@files)`: the explicit file
-    /// list to read from, overriding the global `@*ARGS`. None = use `@*ARGS`.
-    argfiles_paths: Option<Vec<String>>,
     /// Buffered words not yet yielded by `read_word_from_handle_value`. A single
     /// line read can produce many words; the leftovers live here until consumed.
     pending_words: std::collections::VecDeque<String>,

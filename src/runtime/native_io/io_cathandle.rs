@@ -50,7 +50,10 @@ impl Interpreter {
         // (via `.open` -> `.next-handle`), firing the `on-switch` callback once
         // for that initial handle. Reproduce that eager open so `.next-handle`,
         // `.on-switch` counting and `.opened` match rakudo.
-        let _ = self.cat_next_handle(&mut attrs);
+        let _ = self.cat_next_handle(
+            &mut attrs,
+            &mut crate::runtime::native_methods::AttrPublisher::detached(),
+        );
         Value::make_instance(class_name, attrs)
     }
 
@@ -323,7 +326,11 @@ impl Interpreter {
 
     /// Close the active handle (if any) and open the next source. Returns the new
     /// active handle, or `Nil` when the sources are exhausted.
-    fn cat_next_handle(&mut self, attrs: &mut AttrMap) -> Value {
+    fn cat_next_handle(
+        &mut self,
+        attrs: &mut AttrMap,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Value {
         if attrs.get(ARGFILES_FROM_ARGS).is_some_and(Value::truthy) {
             attrs.insert(ARGFILES_FROM_ARGS.to_string(), Value::FALSE);
             let sources = self.argfiles_sources_from_args();
@@ -351,6 +358,8 @@ impl Interpreter {
                 attrs.insert("path".to_string(), Value::NIL);
                 // Exhaustion still fires on-switch with a Nil active handle,
                 // matching rakudo (so the count is `handles + 1`).
+                // The callback reads the cat (`$cat.path`): it sees the switch.
+                publish.publish(attrs);
                 self.cat_fire_on_switch(&on_switch, Value::NIL, old);
                 return Value::NIL;
             }
@@ -377,6 +386,7 @@ impl Interpreter {
                 };
                 attrs.insert("active".to_string(), handle.clone());
                 attrs.insert("path".to_string(), path_val);
+                publish.publish(attrs);
                 self.cat_fire_on_switch(&on_switch, handle.clone(), old);
                 return handle;
             }
@@ -385,7 +395,11 @@ impl Interpreter {
 
     /// Ensure there is an active handle, opening the first/next source if needed.
     /// Returns `Nil` when nothing more can be read.
-    fn cat_ensure_active(&mut self, attrs: &mut AttrMap) -> Value {
+    fn cat_ensure_active(
+        &mut self,
+        attrs: &mut AttrMap,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Value {
         let active = attrs.get("active").cloned();
         if let Some(active) = &active
             && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
@@ -395,22 +409,26 @@ impl Interpreter {
         // Don't advance the cursor past sources here unless nothing has opened yet.
         let pos = attrs.get("pos").and_then(val_int).unwrap_or(0);
         if pos == 0 {
-            return self.cat_next_handle(attrs);
+            return self.cat_next_handle(attrs, publish);
         }
         Value::NIL
     }
 
     /// Read the next line across all handles, switching when one is exhausted.
-    fn cat_get(&mut self, attrs: &mut AttrMap) -> Result<Value, RuntimeError> {
+    fn cat_get(
+        &mut self,
+        attrs: &mut AttrMap,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Result<Value, RuntimeError> {
         loop {
-            let active = self.cat_ensure_active(attrs);
+            let active = self.cat_ensure_active(attrs, publish);
             if active.is_nil() {
                 return Ok(Value::NIL);
             }
             self.cat_sync_active_settings(attrs);
             let line = self.native_io_handle_method(&active, "get", vec![])?;
             if line.is_nil() {
-                let next = self.cat_next_handle(attrs);
+                let next = self.cat_next_handle(attrs, publish);
                 if next.is_nil() {
                     return Ok(Value::NIL);
                 }
@@ -421,16 +439,20 @@ impl Interpreter {
     }
 
     /// Read one character across all handles.
-    fn cat_getc(&mut self, attrs: &mut AttrMap) -> Result<Value, RuntimeError> {
+    fn cat_getc(
+        &mut self,
+        attrs: &mut AttrMap,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Result<Value, RuntimeError> {
         loop {
-            let active = self.cat_ensure_active(attrs);
+            let active = self.cat_ensure_active(attrs, publish);
             if active.is_nil() {
                 return Ok(Value::NIL);
             }
             self.cat_sync_active_settings(attrs);
             let c = self.native_io_handle_method(&active, "getc", vec![])?;
             if c.is_nil() {
-                let next = self.cat_next_handle(attrs);
+                let next = self.cat_next_handle(attrs, publish);
                 if next.is_nil() {
                     return Ok(Value::NIL);
                 }
@@ -441,7 +463,11 @@ impl Interpreter {
     }
 
     /// Slurp the remaining content of all handles into one string.
-    fn cat_slurp(&mut self, attrs: &mut AttrMap) -> Result<Value, RuntimeError> {
+    fn cat_slurp(
+        &mut self,
+        attrs: &mut AttrMap,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Result<Value, RuntimeError> {
         if attrs.get("closed").is_some_and(|v| v.truthy()) {
             return Ok(Value::NIL);
         }
@@ -455,7 +481,7 @@ impl Interpreter {
         if attrs.get("bin").is_some_and(|v| v.truthy()) {
             let mut bytes: Vec<u8> = Vec::new();
             loop {
-                let active = self.cat_ensure_active(attrs);
+                let active = self.cat_ensure_active(attrs, publish);
                 if active.is_nil() {
                     break;
                 }
@@ -465,7 +491,7 @@ impl Interpreter {
                 } else {
                     bytes.extend(chunk.to_string_value().into_bytes());
                 }
-                if self.cat_next_handle(attrs).is_nil() {
+                if self.cat_next_handle(attrs, publish).is_nil() {
                     break;
                 }
             }
@@ -473,13 +499,13 @@ impl Interpreter {
         }
         let mut out = String::new();
         loop {
-            let active = self.cat_ensure_active(attrs);
+            let active = self.cat_ensure_active(attrs, publish);
             if active.is_nil() {
                 break;
             }
             let s = self.native_io_handle_method(&active, "slurp", vec![])?;
             out.push_str(&s.to_string_value());
-            if self.cat_next_handle(attrs).is_nil() {
+            if self.cat_next_handle(attrs, publish).is_nil() {
                 break;
             }
         }
@@ -488,7 +514,12 @@ impl Interpreter {
 
     /// Collect remaining lines into a Seq, honouring an optional positional
     /// `$limit` (max number of lines) and a `:close` named arg.
-    fn cat_lines(&mut self, attrs: &mut AttrMap, args: &[Value]) -> Result<Value, RuntimeError> {
+    fn cat_lines(
+        &mut self,
+        attrs: &mut AttrMap,
+        args: &[Value],
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Result<Value, RuntimeError> {
         let mut limit: Option<i64> = None;
         let mut close = false;
         for arg in args {
@@ -506,7 +537,7 @@ impl Interpreter {
                 {
                     break;
                 }
-                let line = self.cat_get(attrs)?;
+                let line = self.cat_get(attrs, publish)?;
                 if line.is_nil() {
                     break;
                 }
@@ -522,7 +553,12 @@ impl Interpreter {
     /// Collect whitespace-delimited words while keeping each source-handle
     /// boundary as a word boundary. Slurping the whole cat first would merge
     /// the final word of one source with the first word of the next source.
-    fn cat_words(&mut self, attrs: &mut AttrMap, args: &[Value]) -> Result<Value, RuntimeError> {
+    fn cat_words(
+        &mut self,
+        attrs: &mut AttrMap,
+        args: &[Value],
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+    ) -> Result<Value, RuntimeError> {
         let mut limit: Option<usize> = None;
         let mut close = false;
         for arg in args {
@@ -544,7 +580,7 @@ impl Interpreter {
                 {
                     break;
                 }
-                let line = self.cat_get(attrs)?;
+                let line = self.cat_get(attrs, publish)?;
                 if line.is_nil() {
                     break;
                 }
@@ -661,9 +697,15 @@ impl Interpreter {
         attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-        _publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
+        publish: &mut crate::runtime::native_methods::AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         let mut attrs = attributes;
+        // `$*ARGFILES` opens its first source on first use, as rakudo's does
+        // when it is first accessed: an `on-switch` set before the first read
+        // is not called for that first source.
+        if attrs.get(ARGFILES_FROM_ARGS).is_some_and(Value::truthy) {
+            let _ = self.cat_next_handle(&mut attrs, publish);
+        }
         // Character-oriented reads are illegal on a binary-mode cat handle.
         if attrs.get("bin").is_some_and(|v| v.truthy())
             && matches!(
@@ -688,13 +730,13 @@ impl Interpreter {
                 // opened the first source handle, so just hand back `self`.
                 Value::make_instance(class_name, attrs.clone())
             }
-            "get" => self.cat_get(&mut attrs)?,
-            "getc" => self.cat_getc(&mut attrs)?,
-            "lines" => self.cat_lines(&mut attrs, &args)?,
-            "slurp" => self.cat_slurp(&mut attrs)?,
-            "words" => self.cat_words(&mut attrs, &args)?,
+            "get" => self.cat_get(&mut attrs, publish)?,
+            "getc" => self.cat_getc(&mut attrs, publish)?,
+            "lines" => self.cat_lines(&mut attrs, &args, publish)?,
+            "slurp" => self.cat_slurp(&mut attrs, publish)?,
+            "words" => self.cat_words(&mut attrs, &args, publish)?,
             "comb" => {
-                let slurped = self.cat_slurp(&mut attrs)?;
+                let slurped = self.cat_slurp(&mut attrs, publish)?;
                 let text = if slurped.is_nil() {
                     String::new()
                 } else {
@@ -704,7 +746,7 @@ impl Interpreter {
                 self.call_method_with_values(str_val, "comb", args)?
             }
             "split" => {
-                let slurped = self.cat_slurp(&mut attrs)?;
+                let slurped = self.cat_slurp(&mut attrs, publish)?;
                 let text = if slurped.is_nil() {
                     String::new()
                 } else {
@@ -718,7 +760,7 @@ impl Interpreter {
                 let count = args.first().and_then(val_int).map(|n| n as usize);
                 let mut out = String::new();
                 loop {
-                    let active = self.cat_ensure_active(&mut attrs);
+                    let active = self.cat_ensure_active(&mut attrs, publish);
                     if active.is_nil() {
                         break;
                     }
@@ -735,7 +777,7 @@ impl Interpreter {
                         .native_io_handle_method(&active, "readchars", chunk_args)?
                         .to_string_value();
                     if chunk.is_empty() {
-                        if self.cat_next_handle(&mut attrs).is_nil() {
+                        if self.cat_next_handle(&mut attrs, publish).is_nil() {
                             break;
                         }
                         continue;
@@ -757,7 +799,7 @@ impl Interpreter {
                 let want = args.first().and_then(val_int).unwrap_or(65536).max(0) as usize;
                 let mut bytes: Vec<u8> = Vec::new();
                 while bytes.len() < want {
-                    let active = self.cat_ensure_active(&mut attrs);
+                    let active = self.cat_ensure_active(&mut attrs, publish);
                     if active.is_nil() {
                         break;
                     }
@@ -774,7 +816,7 @@ impl Interpreter {
                         .map(|b| b as u8)
                         .collect();
                     if chunk_bytes.is_empty() {
-                        if self.cat_next_handle(&mut attrs).is_nil() {
+                        if self.cat_next_handle(&mut attrs, publish).is_nil() {
                             break;
                         }
                         continue;
@@ -784,7 +826,7 @@ impl Interpreter {
                 // `.read` always returns a `Buf[uint8]` (buf8) in Raku.
                 Self::make_buf(bytes)
             }
-            "next-handle" => self.cat_next_handle(&mut attrs),
+            "next-handle" => self.cat_next_handle(&mut attrs, publish),
             "close" | "DESTROY" => {
                 self.cat_close(&mut attrs);
                 Value::TRUE
@@ -794,14 +836,14 @@ impl Interpreter {
                 if attrs.get("closed").is_some_and(|v| v.truthy()) {
                     Value::TRUE
                 } else {
-                    let active = self.cat_ensure_active(&mut attrs);
+                    let active = self.cat_ensure_active(&mut attrs, publish);
                     if active.is_nil() {
                         Value::TRUE
                     } else {
                         let e = self.native_io_handle_method(&active, "eof", vec![])?;
                         if e.truthy() {
                             // Peek the next handle to decide true EOF.
-                            let next = self.cat_next_handle(&mut attrs);
+                            let next = self.cat_next_handle(&mut attrs, publish);
                             Value::truth(next.is_nil())
                         } else {
                             Value::FALSE
@@ -816,7 +858,7 @@ impl Interpreter {
                 if attrs.get("closed").is_some_and(|v| v.truthy()) {
                     Value::FALSE
                 } else {
-                    let active = self.cat_ensure_active(&mut attrs);
+                    let active = self.cat_ensure_active(&mut attrs, publish);
                     Value::truth(matches!(active.view(), ValueView::Instance { .. }))
                 }
             }
@@ -879,7 +921,7 @@ impl Interpreter {
                     Some(ValueView::Nil) | None
                 ) && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
                 {
-                    let _ = self.cat_ensure_active(&mut attrs);
+                    let _ = self.cat_ensure_active(&mut attrs, publish);
                 }
                 attrs.get("path").cloned().unwrap_or(Value::NIL)
             }
@@ -889,12 +931,12 @@ impl Interpreter {
                 // simple, eager view, return active + remaining-opened handles.
                 let mut out = Vec::new();
                 loop {
-                    let active = self.cat_ensure_active(&mut attrs);
+                    let active = self.cat_ensure_active(&mut attrs, publish);
                     if active.is_nil() {
                         break;
                     }
                     out.push(active);
-                    if self.cat_next_handle(&mut attrs).is_nil() {
+                    if self.cat_next_handle(&mut attrs, publish).is_nil() {
                         break;
                     }
                 }
@@ -909,7 +951,7 @@ impl Interpreter {
                 ) && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
                     && !attrs.get("closed").is_some_and(|v| v.truthy())
                 {
-                    let _ = self.cat_ensure_active(&mut attrs);
+                    let _ = self.cat_ensure_active(&mut attrs, publish);
                 }
                 match attrs.get("active").cloned() {
                     Some(active) if matches!(active.view(), ValueView::Instance { .. }) => {
@@ -934,7 +976,7 @@ impl Interpreter {
                 ) && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
                     && !attrs.get("closed").is_some_and(|v| v.truthy())
                 {
-                    let _ = self.cat_ensure_active(&mut attrs);
+                    let _ = self.cat_ensure_active(&mut attrs, publish);
                 }
                 match attrs.get("path").cloned() {
                     Some(p) if !p.is_nil() => Value::str(p.to_string_value()),
@@ -960,7 +1002,7 @@ impl Interpreter {
                 // on demand). `.seek` operates on the active handle only and
                 // never switches handles. On an exhausted/zero-source cat the
                 // result is Nil.
-                let active = self.cat_ensure_active(&mut attrs);
+                let active = self.cat_ensure_active(&mut attrs, publish);
                 if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
                 {
                     self.native_io_handle_method(&active, method, args)?
@@ -971,7 +1013,7 @@ impl Interpreter {
             "t" => {
                 // `.t` (is-this-a-TTY) of the active handle; a cat with no active
                 // handle (exhausted/zero-source) is not a TTY, so `False`.
-                let active = self.cat_ensure_active(&mut attrs);
+                let active = self.cat_ensure_active(&mut attrs, publish);
                 if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
                 {
                     self.native_io_handle_method(&active, "t", vec![])?
@@ -998,7 +1040,7 @@ impl Interpreter {
                 if is_bin {
                     let mut bytes: Vec<u8> = Vec::new();
                     loop {
-                        let active = self.cat_ensure_active(&mut attrs);
+                        let active = self.cat_ensure_active(&mut attrs, publish);
                         if active.is_nil() {
                             break;
                         }
@@ -1008,7 +1050,7 @@ impl Interpreter {
                         } else {
                             bytes.extend(chunk.to_string_value().into_bytes());
                         }
-                        if self.cat_next_handle(&mut attrs).is_nil() {
+                        if self.cat_next_handle(&mut attrs, publish).is_nil() {
                             break;
                         }
                     }
@@ -1017,7 +1059,7 @@ impl Interpreter {
                         values.push(Self::make_buf(chunk.to_vec()));
                     }
                 } else {
-                    let slurped = self.cat_slurp(&mut attrs)?;
+                    let slurped = self.cat_slurp(&mut attrs, publish)?;
                     let text = if slurped.is_nil() {
                         String::new()
                     } else {
