@@ -38,3 +38,10 @@ since #17766. It used to read as Nil in the role body. Red's
 `&rel2`, so every Red test that defines a relationship died with "No matching
 candidate found for the parametric role" (t/001, t/004, t/010 and about 25
 more).
+
+**`does` on an object that is already a mixin.** Mixing a parameterized role
+into an object that is already a mixin type (`Attribute+{R[Block]}`) keeps
+that type as the new type's base. The base used to be read as a role
+application: it was qualified by the package doing the `does`, then parsed as
+source. Red t/017 `require`s a module whose models were already loaded, and it
+died with "Confused" at the program's first line.
