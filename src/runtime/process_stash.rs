@@ -50,16 +50,27 @@ struct Entry {
 impl Entry {
     /// Whether `found` is (a stale copy of) this process binding.
     fn holds(&self, found: &Value) -> bool {
-        values_same_object(found, &self.value)
+        same_binding(found, &self.value)
             || self
                 .initial
                 .as_ref()
-                .is_some_and(|initial| values_same_object(found, initial))
+                .is_some_and(|initial| same_binding(found, initial))
             || self
                 .superseded
                 .iter()
-                .any(|old| values_same_object(found, old))
+                .any(|old| same_binding(found, old))
     }
+}
+
+/// Whether the env binding `found` is the stash value `held`. A `:=`-bound
+/// dynamic (`PROCESS::<$x> := $var`) holds the variable's container cell,
+/// while its env mirror is read dereferenced, so a cell is compared by what
+/// it currently holds.
+// Cost: O(1), a cell lock plus one identity comparison.
+fn same_binding(found: &Value, held: &Value) -> bool {
+    values_same_object(found, held)
+        || (matches!(held.view(), crate::value::ValueView::ContainerRef(_))
+            && values_same_object(&found.clone().into_deref(), &held.clone().into_deref()))
 }
 
 #[derive(Default)]
@@ -142,6 +153,31 @@ impl ProcessStash {
             }
         }
         self.0.populated.store(true, Ordering::Relaxed);
+    }
+
+    /// Store `value` into the container `key` is bound to (`PROCESS::<$x> :=
+    /// $var`), leaving the binding itself in place. `false` when `key` holds
+    /// a plain value (or is unpublished), which the caller then replaces.
+    // Cost: O(|key|), one hash probe under the read lock plus the cell's lock.
+    pub(crate) fn assign_through_bound_container(&self, key: &str, value: &Value) -> bool {
+        if !self.is_populated() {
+            return false;
+        }
+        let entries = self.read();
+        let Some(entry) = entries.get(key) else {
+            return false;
+        };
+        let crate::value::ValueView::ContainerRef(cell) = entry.value.view() else {
+            return false;
+        };
+        if let crate::value::ValueView::ContainerRef(new_cell) = value.view()
+            && crate::gc::Gc::ptr_eq(&cell, &new_cell)
+        {
+            return true;
+        }
+        let mut slot = cell.lock().unwrap_or_else(|e| e.into_inner());
+        *slot = value.clone().into_deref();
+        true
     }
 
     /// Every published `(key, value)` pair.
@@ -386,7 +422,12 @@ impl Interpreter {
         let Some(key) = stash_key(name) else {
             return;
         };
-        if self.binding_is_process_level(name, key) {
+        if self.binding_is_process_level(name, key)
+            && !self
+                .lexicals
+                .process_dynamics
+                .assign_through_bound_container(key, value)
+        {
             self.lexicals
                 .process_dynamics
                 .set(key, value.clone(), || self.process_dynamic_seed(key));
