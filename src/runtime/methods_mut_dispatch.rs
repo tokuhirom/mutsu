@@ -746,6 +746,12 @@ impl Interpreter {
                     _ => "$",
                 };
                 let temp_var = format!("{}__mutsu_delegation_tmp__", sigil);
+                // The name is fixed, so a delegation nested inside this one (a
+                // delegated `self.n` in the block a delegated `protect` runs)
+                // reuses it: save the binding found here and put it back,
+                // or the outer write-back reads the inner one's removal and
+                // stores Nil into its own attribute.
+                let saved_temp = self.env.get(&temp_var).cloned();
                 self.env.insert(temp_var.clone(), delegate.clone());
                 // A delegated method whose target class declares a `proto method`
                 // must run that proto body first (its `{*}` dispatches to the
@@ -763,13 +769,23 @@ impl Interpreter {
                 let result = if let Some(proto_result) =
                     self.try_proto_method_body(&proto_invocant, target_method, &args)
                 {
-                    proto_result?
+                    proto_result
                 } else {
-                    self.call_method_mut_with_values(&temp_var, delegate, target_method, args)?
+                    self.call_method_mut_with_values(&temp_var, delegate, target_method, args)
                 };
                 // Read back the potentially-updated delegate
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
-                self.env.remove(&temp_var);
+                match saved_temp {
+                    Some(prev) => self.env.insert(temp_var.clone(), prev),
+                    None => self.env.remove(&temp_var),
+                };
+                let result = match result {
+                    Ok(result) => result,
+                    Err(err) => {
+                        self.dispatch.skip_pseudo_method_native = saved_skip_pseudo;
+                        return Err(err);
+                    }
+                };
                 // A Proxy attribute keeps its Proxy: the fetched value is not stored back.
                 if let Some(cell) = attr_cell.filter(|_| !was_proxy) {
                     let _ = cell.store(updated_delegate);

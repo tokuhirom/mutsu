@@ -855,7 +855,13 @@ impl Interpreter {
                         let native = meta.as_ref().map(|m| m.value_type.as_str()).filter(|t| {
                             crate::runtime::native_types::is_native_array_element_type(t)
                         });
-                        new_items.resize(idx + 1, Self::native_fill_for_constraint(native));
+                        // The skipped slots stay holes (`.List` reads them as
+                        // `Nil`), as an element store on the variable leaves them.
+                        Self::autoviv_resize_tracking(
+                            &mut new_items,
+                            idx,
+                            Self::native_fill_for_constraint(native),
+                        )?;
                     }
                     new_items[idx] = effective_value.clone();
                     let rebuilt = Value::array_with_kind(crate::gc::Gc::new(new_items), kind);
