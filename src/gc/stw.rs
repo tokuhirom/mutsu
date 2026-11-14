@@ -125,7 +125,7 @@ pub(crate) fn test_reset() {
     STW_RETRY_AT_MS.store(0, Ordering::Release);
 }
 
-fn quiescent_enter() {
+pub(super) fn quiescent_enter() {
     // SeqCst (not AcqRel): this store participates in the Dekker-style handshake
     // with `try_stop_the_world` (which stores STOP then loads QUIESCENT). AcqRel
     // does not order a store-then-load pair against another thread's store-then-
@@ -159,7 +159,7 @@ pub(crate) fn notify_worker_exit() {
 /// re-enter quiescence and park until release, then try to leave again. This
 /// closes the race where collector A releases, this thread starts leaving, and
 /// collector B achieves a fresh stop with the stale count.
-fn quiescent_exit_checked() {
+pub(super) fn quiescent_exit_checked() {
     loop {
         // Both the count decrement and the stop check are SeqCst: this is the
         // mutator side of the Dekker handshake with `try_stop_the_world`. Ordering
@@ -396,9 +396,22 @@ pub(crate) fn wait_until<'a, T>(
             return Some(guard);
         }
         drop(guard);
+        // Registered before `enter_blocking`, whose growth must already count
+        // this worker as one that can run a task the OS refused a thread for
+        // (ADR-0123 §7).
+        let helper = crate::runtime::worker_pool::register_helper();
         let _blocking = crate::runtime::worker_pool::enter_blocking();
-        let guard = mutex.lock().unwrap();
-        Some(stw_aware_wait(cvar, guard, &mut ready))
+        if !helper.can_help() {
+            let guard = mutex.lock().unwrap();
+            return Some(stw_aware_wait(cvar, guard, &mut ready));
+        }
+        loop {
+            let guard = mutex.lock().unwrap();
+            if let Some(guard) = super::stw_help::wait_or_help(cvar, guard, &mut ready) {
+                return Some(guard);
+            }
+            crate::runtime::worker_pool::help_one();
+        }
     }
     #[cfg(target_arch = "wasm32")]
     {

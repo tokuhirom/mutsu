@@ -13,10 +13,14 @@
 //! - **Grow regardless** when no worker is running at all -- every live worker
 //!   is blocked (`await`, a channel receive, `sleep`, a join). mutsu's `await`
 //!   holds its thread, so a queued task may be exactly what those workers wait
-//!   for; queueing it would deadlock. The new worker steps down to a smaller
-//!   stack, past the budget if it must.
-//! - **Reject** the task only when the OS refuses even that thread: its
-//!   rejecter turns the failure into a catchable Raku error (a broken
+//!   for; queueing it would deadlock. The new worker goes past the budget if it
+//!   must -- unless a blocked worker can run the task nested (below).
+//! - **Help** when that thread is refused (the OS limit, or the budget with a
+//!   helper waiting): the task stays queued, and a worker blocked in
+//!   `gc::wait_until` runs it nested on its own stack (ADR-0123 §7,
+//!   `native::helping`).
+//! - **Reject** the task only when it is refused and the pool has no worker at
+//!   all: its rejecter turns the failure into a catchable Raku error (a broken
 //!   `start` promise), never a panic.
 //!
 //! "Blocked" is observed at the GC's blocking choke points: `gc::block_quiescent`
@@ -70,6 +74,9 @@ mod native {
         pub(super) starting: usize,
         /// Workers inside a task that are blocked (see `enter_blocking`).
         pub(super) blocked: usize,
+        /// Workers blocked in a wait that can run a starved task nested
+        /// (`helping`, ADR-0123 §7).
+        pub(super) helpers: usize,
     }
 
     impl PoolState {
@@ -123,6 +130,7 @@ mod native {
                     live: 0,
                     starting: 0,
                     blocked: 0,
+                    helpers: 0,
                 }),
                 Condvar::new(),
             )
@@ -169,7 +177,7 @@ mod native {
         pub(super) static IN_TASK: Cell<bool> = const { Cell::new(false) };
         /// Nesting depth of `enter_blocking` on this thread; only the
         /// outermost level is counted.
-        static BLOCK_DEPTH: Cell<u32> = const { Cell::new(0) };
+        pub(super) static BLOCK_DEPTH: Cell<u32> = const { Cell::new(0) };
     }
 
     /// Grow the pool per [`PoolState::growth`] until it says to stop, and
@@ -179,14 +187,24 @@ mod native {
     pub(in crate::runtime::worker_pool) fn grow_as_needed() {
         let cvar = &pool().1;
         loop {
-            let policy = {
+            let (policy, helped) = {
                 let mut st = lock_pool();
                 let Some(policy) = st.growth(soft_cap()) else {
                     return;
                 };
                 st.live += 1;
                 st.starting += 1;
-                policy
+                // A thread every blocked worker needs is created past the
+                // address-space budget -- unless a blocked worker can run the
+                // task nested instead (ADR-0123 §7): then a thread past the
+                // budget would only eat the heap the tasks need.
+                let helped = policy == StackPolicy::Required && st.helpers > 0;
+                let policy = if helped {
+                    StackPolicy::Budgeted
+                } else {
+                    policy
+                };
+                (policy, helped)
             };
             let err = match crate::runtime::builtins_system::try_spawn_user_thread(
                 "pool",
@@ -203,14 +221,25 @@ mod native {
                 let mut st = lock_pool();
                 st.live -= 1;
                 st.starting -= 1;
+                if (helped || policy == StackPolicy::Required) && st.live > 0 {
+                    // No new thread, but there is a worker: a blocked one can
+                    // run the task nested, and any other comes back for the
+                    // queue -- a starting one, a running one, or one that wakes
+                    // up. Leave the task queued (ADR-0123 §7), as rakudo's
+                    // bounded pool queues, instead of failing it.
+                    helping::mark_starved();
+                    drop(st);
+                    cvar.notify_all();
+                    return;
+                }
                 match (policy, st.growth(soft_cap())) {
                     // The budget ran out; a running worker will get to the
                     // queue. (If the pool meanwhile lost its last running
                     // worker, `growth` now says `Required`: go round again.)
                     (StackPolicy::Budgeted, Some(StackPolicy::Required)) => None,
                     (StackPolicy::Budgeted, _) => return,
-                    // Nothing can run the newest task: give it back to its
-                    // waiter as an error.
+                    // There is no worker at all, so nothing can ever run the
+                    // newest task: give it back to its waiter as an error.
                     (StackPolicy::Required, _) => st.queue.pop_back(),
                 }
             };
@@ -340,6 +369,9 @@ mod native {
         (st.live, st.queue.len())
     }
 
+    mod helping;
+    pub(crate) use helping::{help_one, help_wanted, register_helper};
+
     #[cfg(test)]
     mod tests;
 }
@@ -393,6 +425,13 @@ pub(crate) fn enter_blocking() -> (native::BlockingGuard, crate::value::waker::P
     let parked = crate::value::waker::park_dispatching();
     (native::enter_blocking(), parked)
 }
+
+/// Register the calling thread, for as long as the returned guard lives, as a
+/// pool worker blocked in a wait that can run a starved task nested (ADR-0123
+/// §7); a no-op guard on any other thread. Take it before [`enter_blocking`],
+/// so the growth that blocking triggers already counts this thread.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use native::{help_one, help_wanted, register_helper};
 
 /// A pooled worker is about to make a foreign (C) call that may block for
 /// good (`accept`, `recv`): count it blocked in the pool, so queued tasks get
@@ -516,64 +555,5 @@ fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, _reject: Option<Rejecter
     crate::runtime::builtins_system::spawn_user_thread("pool", run);
 }
 
-/// Handle on a pooled task whose completion (and result) the spawner waits
-/// for. Natively this is a channel the task sends its result on — a worker
-/// that panics drops the sender during unwind, so `join` reports the panic as
-/// `Err` exactly like a dedicated thread's `join` would. On wasm32 it wraps
-/// the cooperative scheduler's `JoinHandle`, whose `join` *runs* the queued
-/// task — a channel wait would spin forever there, which is why the cfg fork
-/// lives here and not at the call sites.
-pub(crate) struct TaskHandle<T> {
-    #[cfg(not(target_arch = "wasm32"))]
-    rx: std::sync::mpsc::Receiver<T>,
-    #[cfg(target_arch = "wasm32")]
-    inner: crate::thread_compat::JoinHandle<T>,
-}
-
-impl<T> TaskHandle<T> {
-    /// Wait for the task to finish and take its result. Callers wrap this in
-    /// `gc::block_quiescent` like any thread join — the wait itself touches no
-    /// `Gc` state.
-    pub(crate) fn join(self) -> std::thread::Result<T> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.rx
-                .recv()
-                .map_err(|e| Box::new(e) as Box<dyn std::any::Any + Send>)
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.inner.join()
-        }
-    }
-}
-
-/// Run `task` on a pooled worker and return a handle its spawner can `join`.
-/// For the joined fan-out sites (hyper/race batches, throttle workers). The
-/// tasks run concurrently up to the pool's growth rule (ADR-0123); a spawner
-/// that blocks joining them frees its own slot, and if every worker ends up
-/// blocked the pool grows regardless, so a join never waits on a task that
-/// nobody will run. A task the pool has to reject drops its sender, so its
-/// `join` reports `Err` like a panicked thread's would.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn submit_joinable<T: Send + 'static>(
-    task: impl FnOnce() -> T + Send + 'static,
-) -> TaskHandle<T> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    submit_or_reject(
-        move || {
-            let _ = tx.send(task());
-        },
-        |_| {},
-    );
-    TaskHandle { rx }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn submit_joinable<T: Send + 'static>(
-    task: impl FnOnce() -> T + Send + 'static,
-) -> TaskHandle<T> {
-    TaskHandle {
-        inner: crate::runtime::builtins_system::spawn_user_thread("pool", task),
-    }
-}
+mod task_handle;
+pub(crate) use task_handle::{TaskHandle, submit_joinable};

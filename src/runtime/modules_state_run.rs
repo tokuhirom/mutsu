@@ -85,6 +85,7 @@ mod str_ast;
 mod package_meta_object;
 /// Address-space budget for user-code thread stacks (ADR-0123).
 pub(crate) mod stack_budget;
+pub(crate) mod user_thread_limit;
 pub(crate) mod thread_sharing;
 pub(crate) mod topic_state;
 pub(crate) mod type_state;

@@ -29,6 +29,8 @@ mod safepoint;
 mod soundness_smoke;
 pub(crate) mod stats;
 mod stw;
+#[cfg(not(target_arch = "wasm32"))]
+mod stw_help;
 
 pub(crate) use collect::collect_at_program_end;
 #[cfg(test)]
