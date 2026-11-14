@@ -20,6 +20,9 @@ use std::collections::HashMap;
 /// The attribute marking an `$*ARGFILES` cat whose sources are still to be
 /// read from `@*ARGS` (see `Interpreter::build_argfiles_handle`).
 const ARGFILES_FROM_ARGS: &str = "argfiles-from-args";
+/// Set once a `$*ARGFILES` cat found `@*ARGS` empty on first use: it is then
+/// `$*IN` (rakudo binds `$*IN` itself), and every method goes to that handle.
+const ARGFILES_STDIN: &str = "argfiles-stdin";
 
 /// Extract an integer from an `Int` value (allomorphs/strings yield `None`).
 fn val_int(v: &Value) -> Option<i64> {
@@ -68,6 +71,15 @@ impl Interpreter {
         let mut attrs = self.cathandle_attrs(&[]);
         attrs.insert(ARGFILES_FROM_ARGS.to_string(), Value::TRUE);
         Value::make_instance(Symbol::intern("IO::ArgFiles"), attrs)
+    }
+
+    /// Whether `@*ARGS` is empty: a `$*ARGFILES` first used then is `$*IN`.
+    // Cost: O(1).
+    fn argfiles_args_empty(&self) -> bool {
+        !matches!(
+            self.env.get("@*ARGS").map(Value::view),
+            Some(ValueView::Array(items, ..)) if !items.is_empty()
+        )
     }
 
     /// The deferred sources of [`Self::build_argfiles_handle`]: the paths in
@@ -525,8 +537,12 @@ impl Interpreter {
         for arg in args {
             match arg.view() {
                 ValueView::Pair(k, v) if k == "close" => close = v.truthy(),
-                ValueView::Int(n) => limit = Some(n),
-                _ => {}
+                // Any numeric limit (`5`, `5/1`, `5e0`, `<5>`, `5+0i`).
+                _ => {
+                    if let Some(n) = numeric_limit_arg(arg) {
+                        limit = Some(n as i64);
+                    }
+                }
             }
         }
         let mut lines = Vec::new();
@@ -672,7 +688,7 @@ impl Interpreter {
                 // A positional `$limit` or a `:close` adverb keeps the eager path,
                 // which already returns the bounded/closing result directly.
                 let has_limit_or_close = args.iter().any(|a| {
-                    matches!(a.view(), ValueView::Int(_))
+                    numeric_limit_arg(a).is_some()
                         || matches!(a.view(), ValueView::Pair(k, _) if k == "close")
                 });
                 if has_limit_or_close {
@@ -704,7 +720,19 @@ impl Interpreter {
         // when it is first accessed: an `on-switch` set before the first read
         // is not called for that first source.
         if attrs.get(ARGFILES_FROM_ARGS).is_some_and(Value::truthy) {
-            let _ = self.cat_next_handle(&mut attrs, publish);
+            if self.argfiles_args_empty() {
+                attrs.insert(ARGFILES_FROM_ARGS.to_string(), Value::FALSE);
+                let stdin = self.get_dynamic_handle("$*IN").unwrap_or(Value::NIL);
+                attrs.insert(ARGFILES_STDIN.to_string(), stdin);
+            } else {
+                let _ = self.cat_next_handle(&mut attrs, publish);
+            }
+        }
+        if let Some(stdin) = attrs.get(ARGFILES_STDIN).cloned()
+            && !stdin.is_nil()
+        {
+            let result = self.native_io_handle_method(&stdin, method, args)?;
+            return Ok((result, attrs));
         }
         // Character-oriented reads are illegal on a binary-mode cat handle.
         if attrs.get("bin").is_some_and(|v| v.truthy())

@@ -479,20 +479,16 @@ impl Interpreter {
             .as_deref()
     }
 
-    /// What `$*ARGFILES` is for the current `@*ARGS`, as rakudo binds it:
-    /// `$*IN` itself when there are no arguments, else an `IO::ArgFiles` cat
-    /// whose sources are read from `@*ARGS` when it first opens one (#17754).
+    /// `$*ARGFILES`: an `IO::ArgFiles` cat that reads `@*ARGS` when it first
+    /// opens a source, so a program that sets `@*ARGS` before reading sees
+    /// its own list, as rakudo's first-access binding does (#17754). With
+    /// no arguments then, its one source is `$*IN`.
+    // TODO: rakudo binds `$*ARGFILES` to `$*IN` itself when `@*ARGS` is empty
+    // at first access (`.^name` is `IO::Handle`). That needs a dynamic built
+    // on its first read; the cat reads the same input meanwhile.
     // Cost: O(1).
     pub(crate) fn default_argfiles_handle(&mut self) -> Value {
-        let has_args = matches!(
-            self.env.get("@*ARGS").map(Value::view),
-            Some(ValueView::Array(items, ..)) if !items.is_empty()
-        );
-        if has_args {
-            self.build_argfiles_handle()
-        } else {
-            self.get_dynamic_handle("$*IN").unwrap_or(Value::NIL)
-        }
+        self.build_argfiles_handle()
     }
 
     /// Rebind `$*ARGFILES` for a new `@*ARGS` (the command line's, set after
