@@ -155,4 +155,7 @@ The maintainer chose option 2. As implemented:
 - The miss paths that adopt are `adopt_published_mixin`'s callers (method resolution, `.new`,
   type matching, parent resolution), plus smartmatch with a type object or instance on the left.
   The probe is one relaxed atomic load when nothing was ever published. After that it is one
-  registry probe of the name, and the table's read lock only on a miss.
+  registry probe of the name, then a per-thread cache of names known to be unpublished, valid for
+  the table's current publication count. Only a name missing from both takes the table's read
+  lock, so threads that keep probing builtin type names (which are not in `classes`) do not
+  contend on the shared lock.

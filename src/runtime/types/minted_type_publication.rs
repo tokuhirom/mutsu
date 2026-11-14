@@ -84,7 +84,11 @@ impl Interpreter {
         if self.registry().classes.contains_key(name) {
             return false;
         }
-        let Some(entries) = self.types.published_minted_types.lookup(name) else {
+        let Some(entries) = self
+            .types
+            .published_minted_types
+            .lookup(name, &mut self.types.minted_type_misses)
+        else {
             return false;
         };
         // Only the names this thread lacks: a parent or role it already has is

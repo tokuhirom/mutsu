@@ -18,7 +18,7 @@
 //! [`super::published_mixins`], which publishes mixin types as recipes.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
 use super::registry::Registry;
@@ -48,6 +48,9 @@ pub(crate) struct PublishedMintedTypes {
     /// Set once the first type is published, so the miss-path probe of a
     /// program that never mints a type after a fork costs one relaxed load.
     any: AtomicBool,
+    /// How many types are published: a thread's [`MintedTypeMisses`] is
+    /// valid while this count is unchanged.
+    count: AtomicUsize,
     types: RwLock<HashMap<String, Arc<MintedTypeEntries>>>,
 }
 
@@ -77,9 +80,10 @@ impl PublishedMintedTypes {
     // Cost: O(n) expected, n = name.len() (hash + one write-locked insert).
     pub(crate) fn publish(&self, name: &str, entries: MintedTypeEntries) {
         let mut types = self.types.write().unwrap_or_else(|e| e.into_inner());
-        types
-            .entry(name.to_string())
-            .or_insert_with(|| Arc::new(entries));
+        if let std::collections::hash_map::Entry::Vacant(slot) = types.entry(name.to_string()) {
+            slot.insert(Arc::new(entries));
+            self.count.fetch_add(1, Ordering::Relaxed);
+        }
         self.any.store(true, Ordering::Relaxed);
     }
 
@@ -91,14 +95,49 @@ impl PublishedMintedTypes {
         self.any.load(Ordering::Relaxed)
     }
 
-    /// The published entries of `name`.
+    /// The published entries of `name`. A name `misses` (this thread's)
+    /// already recorded as unpublished at the current count answers without
+    /// taking the table's lock, so a thread probing the same builtin or
+    /// declared names over and over does not contend with its siblings.
     // Cost: O(1) when nothing was published; otherwise O(n) expected,
-    // n = name.len() (hash + read-locked probe).
-    pub(crate) fn lookup(&self, name: &str) -> Option<Arc<MintedTypeEntries>> {
+    // n = name.len() (one hash probe, plus a read-locked probe on a miss of
+    // the per-thread cache).
+    pub(crate) fn lookup(
+        &self,
+        name: &str,
+        misses: &mut MintedTypeMisses,
+    ) -> Option<Arc<MintedTypeEntries>> {
         if !self.may_hold() {
             return None;
         }
-        let types = self.types.read().unwrap_or_else(|e| e.into_inner());
-        types.get(name).cloned()
+        let count = self.count.load(Ordering::Relaxed);
+        if misses.count != count {
+            misses.count = count;
+            misses.names.clear();
+        } else if misses.names.contains(name) {
+            return None;
+        }
+        let found = {
+            let types = self.types.read().unwrap_or_else(|e| e.into_inner());
+            types.get(name).cloned()
+        };
+        if found.is_none() && misses.names.len() < MintedTypeMisses::CAPACITY {
+            misses.names.insert(name.to_string());
+        }
+        found
     }
+}
+
+/// One thread's names known to be unpublished, valid for one publication
+/// count of [`PublishedMintedTypes`].
+#[derive(Default)]
+pub(crate) struct MintedTypeMisses {
+    count: usize,
+    names: rustc_hash::FxHashSet<String>,
+}
+
+impl MintedTypeMisses {
+    /// Bounds the cache: a program probing more distinct names than this
+    /// takes the table's read lock for the rest.
+    const CAPACITY: usize = 4096;
 }
