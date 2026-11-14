@@ -2515,6 +2515,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::UserPrefixOperator => {
                 super::user_prefix::view_spelled_core(names, &spelled.expr)
             }
+            Spelling::UserPostfixOperator => {
+                super::user_postfix::view_spelled(names, &spelled.expr)
+            }
             Spelling::PrefixCall => super::user_prefix::view_prefix_call(names, &spelled.expr),
             Spelling::NegatedInfix => {
                 let Expr::Unary {

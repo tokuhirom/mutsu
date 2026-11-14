@@ -54,6 +54,10 @@ pub(crate) enum Spelling {
     /// operator routine (`prefix:<!>($x)`), but RakuAST keeps the operator
     /// application `ApplyPrefix(Prefix("!"))` of a core prefix symbol.
     UserPrefixOperator,
+    /// `5!`, or `$x++` with a user `multi postfix:<++>` in scope: the parser
+    /// calls the operator routine (`postfix:<!>(5)`), but RakuAST keeps the
+    /// operator application `ApplyPostfix(Postfix("!"))`.
+    UserPostfixOperator,
     /// `$<x>:exists` / `$0:delete`: subscript adverbs on capture-variable
     /// sugar. The parser evaluates the subscript of `$/` it stands for; RakuAST
     /// keeps the `Var::NamedCapture` / `Var::PositionalCapture` with its
