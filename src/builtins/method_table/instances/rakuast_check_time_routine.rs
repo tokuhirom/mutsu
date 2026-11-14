@@ -31,13 +31,7 @@ pub(super) fn check_time_routine(
 ) -> Option<Result<Value, RuntimeError>> {
     // A `proto` declares the dispatcher itself, which this cannot build; a
     // `multi` candidate is built like a plain sub (`declared_candidate`).
-    if node.class != RakuAstClass::Sub
-        || node.fields.iter().any(|field| {
-            field.name == Some("multiness")
-                && matches!(&field.value, crate::rakuast::RakuAstFieldValue::Node(value)
-                    if value.to_string_value() == "proto")
-        })
-    {
+    if node.class != RakuAstClass::Sub || multiness(node).as_deref() == Some("proto") {
         return None;
     }
     let origin = crate::rakuast::node_accessor(node, "origin");
@@ -83,6 +77,23 @@ pub(super) fn check_time_routine(
     Some(Ok(Value::sub_value(crate::gc::Gc::new(routine))))
 }
 
+/// The `multiness` a routine declaration node spells (`multi`, `proto`).
+// Cost: O(f), f = fields of the node.
+fn multiness(node: &RakuAstNode) -> Option<String> {
+    node.fields.iter().find_map(|field| match &field.value {
+        crate::rakuast::RakuAstFieldValue::Node(value) if field.name == Some("multiness") => {
+            Some(value.to_string_value())
+        }
+        _ => None,
+    })
+}
+
+/// Whether the routine declaration node declares a `multi` candidate.
+// Cost: O(f), f = fields of the node.
+pub(super) fn declares_multi(node: &RakuAstNode) -> bool {
+    multiness(node).as_deref() == Some("multi")
+}
+
 /// The line of the unit a declaration node starts on, from its origin.
 // Cost: O(1).
 fn declaration_line(node: &RakuAstNode) -> Option<u32> {
@@ -111,7 +122,7 @@ pub(super) fn declared_candidate(
     node: &RakuAstNode,
     name: &str,
     routine: &Value,
-    index: usize,
+    index: Option<usize>,
 ) -> Option<Result<Value, RuntimeError>> {
     let line = declaration_line(node);
     let file = crate::unit_source_file::current().map(|file| file.resolve().to_string());
@@ -131,7 +142,7 @@ pub(super) fn declared_candidate(
         // No candidate carries a position (an `EVAL`ed unit): the unit's own
         // dispatcher holds its candidates in declaration order.
         if line.is_none()
-            && let Some(candidate) = items.get(index)
+            && let Some(candidate) = index.and_then(|index| items.get(index))
         {
             return Some(Ok(candidate.clone()));
         }

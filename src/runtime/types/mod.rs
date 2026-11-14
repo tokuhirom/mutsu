@@ -1669,3 +1669,17 @@ mod value_is_defined_tests {
         assert!(value_is_defined(&cell_val));
     }
 }
+
+/// Whether a role parameter's bound value is also its `&name` code variable:
+/// a code object, or the `Callable` type object an unsupplied `&cb?` binds
+/// ([`Interpreter::missing_optional_param_value`]), so the role body reads
+/// `&cb` as a parameterisation of itself passes it on (Red's
+/// `Red::Attr::Relationship[&rel1, &rel2, ...]` after `does R[&ref]`).
+// Cost: O(1).
+pub(crate) fn binds_as_code_variable(value: &Value) -> bool {
+    match value.view() {
+        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
+        ValueView::Package(name) => name == "Callable",
+        _ => false,
+    }
+}

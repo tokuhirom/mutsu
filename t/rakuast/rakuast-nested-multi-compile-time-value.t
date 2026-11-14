@@ -2,6 +2,8 @@ use experimental :rakuast;
 use lib 't/lib';
 use Test;
 use RakuastCheckWalker;
+# A `sub EXPORT` hook hands the unit a family of `+` too, as `use Red` does.
+use HookOperatorFamily;
 
 # The resolution of a `+` inside a block that declares its own
 # `multi infix:<+>` is that declaration; asked at CHECK time, before the block
@@ -10,7 +12,8 @@ use RakuastCheckWalker;
 # implementation": Red's CHECK compiler falls back to the user operator when a
 # candidate comes from outside the setting). It was the setting's first `+`
 # candidate, or the whole setting dispatcher when the candidate's body called
-# a routine the unit imported and the walk ran in another module's code.
+# a routine the unit imported and the walk ran in another module's code, or
+# the imported family when a hook had handed the unit one.
 
 plan 6;
 
