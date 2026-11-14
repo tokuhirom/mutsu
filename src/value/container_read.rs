@@ -147,12 +147,16 @@ pub(crate) fn reads_live_receiver(method: &str) -> bool {
 /// live node with nothing held instead: `MapGrepItems::Live` reads it under the
 /// stripe, and the pull's element promotion (`grep`) and write-back (`map`)
 /// take the stripe around the in-place store, with no user code inside.
+/// `.first` is exempt for the same reason: it answers the element's own
+/// container (`my $x := @a.first(...)` binds into `@a`), and its chunked scan
+/// (`find_first_match_chunked_with`) reads the length and promotes each chunk
+/// under the stripe, then runs the matcher with nothing held.
 // Cost: O(1) when no snapshot is taken; `shared_snapshot`'s otherwise.
 pub(crate) fn snapshot_read_receiver(method: &str, container: &Value) -> Option<Value> {
     if !multi_mutator_threads_live() || reads_live_receiver(method) {
         return None;
     }
-    if matches!(method, "map" | "grep")
+    if matches!(method, "map" | "grep" | "first")
         && matches!(container.view(), ValueView::Array(..))
         && !crate::value::shaped_array::is_shaped_array(container)
     {
