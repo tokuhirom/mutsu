@@ -51,7 +51,7 @@ pub(super) fn view_use(
     arg: Option<&Expr>,
     tags: &[String],
     condition: Option<&Expr>,
-    if_imports: &[String],
+    (if_imports, imports): (&[String], &[String]),
 ) -> Result<RakuAstNode, RuntimeError> {
     // The parser keeps `use v6.d`'s version text as the argument of a `v6`
     // pseudo-module.
@@ -142,6 +142,19 @@ pub(super) fn view_use(
             ),
         });
     }
+    // What the import binds in the enclosing scope, which a CHECK-time
+    // resolver reads (`resolve::scope`); hidden like the `if` provenance.
+    if !imports.is_empty() {
+        node.fields.push(RakuAstField {
+            name: Some(SOURCE_IMPORTS),
+            value: RakuAstFieldValue::List(
+                imports
+                    .iter()
+                    .map(|name| Value::str(name.clone()))
+                    .collect(),
+            ),
+        });
+    }
     Ok(node)
 }
 
@@ -163,6 +176,7 @@ pub(super) fn view_inline_proto(
         tags,
         condition,
         if_imports,
+        imports,
     } = use_stmt
     else {
         return Err(super::view::unsupported("inline proto use statement"));
@@ -173,7 +187,7 @@ pub(super) fn view_inline_proto(
         arg.as_ref(),
         tags,
         condition.as_deref(),
-        if_imports,
+        (if_imports, imports),
     )?;
     let declaration = super::view::view_stmt(names, proto)?
         .ok_or_else(|| super::view::unsupported("inline proto declaration"))?;
@@ -231,8 +245,32 @@ fn replace_code_var(arg: &mut RakuAstNode, name: &str, proto: RakuAstNode) -> bo
 pub(super) fn is_source_field(field: &RakuAstField) -> bool {
     matches!(
         field.name,
-        Some("source-if-condition" | "source-if-imports")
+        Some("source-if-condition" | "source-if-imports" | SOURCE_IMPORTS)
     )
+}
+
+/// The hidden field of a `Statement::Use` that lists the routine names the
+/// parse-time scan imported into the enclosing scope.
+pub(super) const SOURCE_IMPORTS: &str = "source-imports";
+
+/// The routine names (sigil-less) a `Statement::Use` view recorded as imported
+/// into its scope: empty for a hand-built node.
+// Cost: O(i), i = recorded imports.
+pub(super) fn recorded_imports(node: &RakuAstNode) -> Vec<String> {
+    node.fields
+        .iter()
+        .find(|field| field.name == Some(SOURCE_IMPORTS))
+        .map(|field| match &field.value {
+            RakuAstFieldValue::List(items) => items
+                .iter()
+                .filter_map(|value| match value.view() {
+                    ValueView::Str(name) => Some(name.to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        })
+        .unwrap_or_default()
 }
 
 // Cost: O(i), i = imported names recorded by the `if` adverb.
@@ -536,6 +574,7 @@ pub(super) fn lower_pragma(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
         tags,
         condition: condition.map(Box::new),
         if_imports,
+        imports: recorded_imports(node),
     })
 }
 
@@ -578,6 +617,7 @@ pub(super) fn lower_use(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         tags,
         condition: condition.map(Box::new),
         if_imports,
+        imports: recorded_imports(node),
     };
     Ok(match inline_proto {
         Some(proto) => super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::InlineProtoUse {
@@ -689,6 +729,7 @@ pub(super) fn lower_language_version(node: &RakuAstNode) -> Result<Stmt, Runtime
         tags: Vec::new(),
         condition: None,
         if_imports: Vec::new(),
+        imports: Vec::new(),
     })
 }
 
