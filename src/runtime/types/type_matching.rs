@@ -179,14 +179,19 @@ impl Interpreter {
         self.resolve_type_alias_chain(name)
     }
 
-    /// `constraint` with a `constant` alias in the base of a parameterization
-    /// followed (`CA2[uint16]` -> `CArray[uint16]` under `constant CA2 =
-    /// CArray`). A declaration records its type this way while the alias is
-    /// still in scope: the frames that check it later (a submethod run by the
-    /// constructor) do not see the declaring scope's constants.
+    /// `constraint` with a `constant` alias followed, in the base of a
+    /// parameterization (`CA2[uint16]` -> `CArray[uint16]` under `constant CA2 =
+    /// CArray`) or as the whole type, smiley kept (`gp:D` -> `Pointer:D` under
+    /// `constant \gp = Pointer`). A declaration records its type this way while
+    /// the alias is still in scope: the frames that check it later (a submethod
+    /// run by the constructor, a CStruct's member layout) do not see the
+    /// declaring scope's constants, and rakudo settles the alias when the
+    /// attribute compiles (`.type` is the aliased type object).
     ///
     /// `aliases` are the declaring frame's own `(alias, type)` pairs, which win
     /// over the env: the frame's pad is not reachable by name from here.
+    // Cost: O(a + c), a = `aliases` + the alias chain's env probes (at most 16),
+    // c = length of `constraint`.
     pub(crate) fn resolve_parameterized_alias_base(
         &self,
         constraint: &str,
@@ -204,8 +209,19 @@ impl Interpreter {
             if let Some(target) = target {
                 return format!("{target}{}", &constraint[open..]);
             }
+            return constraint.to_string();
         }
-        constraint.to_string()
+        let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint);
+        let target = aliases
+            .iter()
+            .find(|(alias, _)| alias == base)
+            .map(|(_, target)| target.clone())
+            .or_else(|| self.type_alias_target(base));
+        match (target, smiley) {
+            (Some(target), Some(smiley)) => format!("{target}:{smiley}"),
+            (Some(target), None) => target,
+            (None, _) => constraint.to_string(),
+        }
     }
 
     pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {

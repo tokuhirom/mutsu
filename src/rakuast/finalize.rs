@@ -363,6 +363,14 @@ impl VisitMut for Finalize<'_> {
                 *expr = term;
                 return;
             }
+            // A parameterized type over a lowercase alias (`gpointer[T]`): see
+            // `bareword::parameterized_type_word_expr`.
+            if let Expr::BareWord(word) = &*expr
+                && let Some(ty) = super::bareword::parameterized_type_word_expr(names, word)
+            {
+                *expr = ty;
+                return;
+            }
             // A native type with a smiley (`int:D`): see `bareword::smiley_type_word_expr`.
             if let Expr::BareWord(word) = &*expr
                 && let Some(ty) = super::bareword::smiley_type_word_expr(names, word)
