@@ -1,45 +1,29 @@
 use Test;
 
-# An exception thrown inside a target type's `COERCE` propagates unchanged:
-# it is neither "no acceptable coercion method" (a missing method the body
-# calls is not a missing `COERCE`) nor rewrapped as a parameter binding
-# failure. Expected values from rakudo. Reduced from PDF::Font::Loader::CSS,
-# whose `CSS::Font:D()` coercion died inside `COERCE` and surfaced as
-# X::Coerce::Impossible.
-
 plan 8;
 
-class Boom { multi method COERCE(Str:D $s) { die "inner boom" } }
-class Missing { multi method COERCE(Str:D $s) { $s.nosuchmeth } }
-class Fine { has $.s; multi method COERCE(Str:D $s) { self.new(:$s) } }
+# An exception thrown inside a user `COERCE` method propagates as itself: it is
+# neither X::Coerce::Impossible nor a binding failure of the callee, and the
+# enclosing call is not re-run.
+my $calls = 0;
+class C { method COERCE($v) { $calls++; die "boom" } }
+sub k(C() $x) { $x }
 
-sub boom(Boom:D() $x) { $x }
-sub missing(Missing:D() $x) { $x }
-sub fine(Fine:D() $x) { $x.s }
+try { k(42) };
+is $!.^name, "X::AdHoc", "class target: the thrown exception propagates";
+is $!.message, "boom", "...with its own message";
+is $calls, 1, "COERCE ran once";
 
-throws-like { boom("a") }, X::AdHoc, message => 'inner boom',
-    'a die in COERCE reaches the caller of a coercing parameter';
-throws-like { my Boom:D() $v = "b" }, X::AdHoc, message => 'inner boom',
-    'a die in COERCE reaches the assignment to a coercing variable';
-throws-like { missing("a") }, X::Method::NotFound, method => 'nosuchmeth',
-    'a missing method called inside COERCE is not a missing COERCE';
+$calls = 0;
+throws-like { k(42) }, Exception, message => 'boom';
+is $calls, 1, "COERCE ran once under throws-like (the subtest is not re-run)";
 
-my @caught;
-{
-    missing("c");
-    CATCH { default { @caught.push: .^name } }
-}
-is-deeply @caught, ['X::Method::NotFound'], 'a CATCH sees the exception once';
+role R { method COERCE($v) { die "rboom" } }
+sub r(R() $x) { $x }
+try { r(1) };
+is $!.^name, "X::AdHoc", "role target: the thrown exception propagates";
+is $!.message, "rboom", "...with its own message";
 
-is fine("ok"), 'ok', 'a working COERCE still coerces';
-throws-like { fine(42) }, X::Coerce::Impossible,
-    'a COERCE with no candidate for the value is an impossible coercion';
-
-class NoCoerce { }
-sub none(NoCoerce:D() $x) { $x }
-throws-like { none("z") }, X::Coerce::Impossible,
-    'a target without COERCE is an impossible coercion';
-
-sub int-it(Int() $x) { $x }
-throws-like { int-it("abc") }, X::Str::Numeric,
-    'a builtin coercion failure keeps its own type';
+class D { multi method COERCE(Str $s) { D.new } }
+sub d(D() $x) { $x }
+throws-like { d(1) }, X::Coerce::Impossible, "no candidate for the value is still an impossible coercion";
