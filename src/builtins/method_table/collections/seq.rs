@@ -154,16 +154,19 @@ pub(crate) fn list_type(target: &Value, args: &[Value]) -> Option<Result<Value, 
     cached_items(target).map(|items| items.map(Value::array))
 }
 
-/// A List view over a gather that is still being pulled (ADR-11678 §2.4) is
-/// already the List `.list` / `.List` answer: it reifies from the coroutine as
-/// it is read, so copying its (partial) elements would truncate it.
+/// A List view over a gather that is still being pulled (ADR-11678 §2.4), or
+/// over a `.map`/`.grep` pipeline not yet run to its end (#17773), is already
+/// the List `.list` / `.List` answer: it reifies from its source as it is
+/// read, so copying its (partial) elements would truncate it.
 // Cost: O(1).
 fn lazy_gather_list_view(target: &Value) -> Option<Value> {
     use crate::value::SeqView;
     let ValueView::Seq(body) = target.view() else {
         return None;
     };
-    if !matches!(body.view(), SeqView::List | SeqView::ItemList) || !body.is_gather_source() {
+    if !matches!(body.view(), SeqView::List | SeqView::ItemList)
+        || !(body.is_gather_source() || body.is_map_grep_source())
+    {
         return None;
     }
     Some(Value::seq_body(body.as_list_view()))
