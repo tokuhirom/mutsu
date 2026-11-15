@@ -4559,7 +4559,8 @@ pub(crate) enum OpCode {
     /// exception with its backtrace, `line` and `file`, and raises it as a `fail`
     /// error, which the enclosing routine turns into a returned `Failure`. `fail`
     /// in expression position compiles to a `CallFunc` instead.
-    Fail,
+    /// Raise `fail`; the flag says whether its lexical scope has a routine.
+    Fail(bool),
 
     /// A `has`-attribute declaration that reaches runtime (mainline / EVAL'd
     /// source). Registers the attribute onto the class currently being defined,

@@ -465,6 +465,11 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.is_fail() => {
+                    if e.fail_passes_frame(callable_id) {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        result = Err(e);
+                        break;
+                    }
                     // fail() — restore let saves and return a Failure value
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);

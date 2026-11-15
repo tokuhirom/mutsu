@@ -69,7 +69,17 @@ impl Interpreter {
         // missing `$*x`) ends the routine with a Failure value, exactly as
         // the untyped entries do at their routine boundary (#11728).
         match outcome {
-            Err(e) if e.is_fail() => Ok(TrOutcome::Value(self.fail_error_to_failure_value(&e))),
+            Err(e) if e.is_fail() => {
+                let callable_id = self.registration_clone_id(
+                    &self.current_package_sym().resolve(),
+                    &chunk.name.resolve(),
+                );
+                if e.fail_passes_frame(callable_id) {
+                    Err(e)
+                } else {
+                    Ok(TrOutcome::Value(self.fail_error_to_failure_value(&e)))
+                }
+            }
             other => other,
         }
     }

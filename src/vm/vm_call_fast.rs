@@ -304,6 +304,11 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.is_fail() => {
+                    if e.fail_passes_frame(self.registration_clone_id(&cf.package, fn_name)) {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        result = Err(e);
+                        break;
+                    }
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));

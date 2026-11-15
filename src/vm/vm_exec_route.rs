@@ -323,7 +323,7 @@ impl Interpreter {
             | OpCode::ExistsExpr
             | OpCode::ExistsIndexAdv(..)
             | OpCode::ExistsIndexNamedAdv { .. }
-            | OpCode::Fail
+            | OpCode::Fail(..)
             | OpCode::GetEnvIndex(..)
             | OpCode::NonDestructiveSubst { .. }
             | OpCode::PackageScope { .. }
