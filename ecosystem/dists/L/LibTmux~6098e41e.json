@@ -11,23 +11,22 @@
   "dist": "LibTmux",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "validate all membership before dispatch without exhausting deferred input",
-        "nok": 4,
-        "ok": 2,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 2.05,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/batch.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 22.26,
+        "secs": 32.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,76 +40,73 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.62,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "invalid async client inputs return one broken Promise",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 2.94,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/client.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 6.73,
+        "secs": 9.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "admission errors precede dispatch",
-        "nok": 3,
-        "ok": 1,
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.32,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/command.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.4,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: admit-operation",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.65,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/unit/commands.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 18.02,
+        "secs": 24.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -122,7 +118,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.76,
+        "secs": 4.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,7 +128,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.16,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -144,7 +140,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.29,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,53 +150,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.57,
+        "secs": 4.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "endpoint configuration fixes command scope and environment",
-        "nok": 2,
-        "ok": 0,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.83,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/engine.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "independent captured tokens across codec and repair boundaries",
-        "nok": 1,
-        "ok": 3,
-        "plan": 4,
-        "secs": 2.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/unit/format.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 2.79,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,7 +184,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.52,
+        "secs": 4.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/unit/format.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 3.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -222,7 +216,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.08,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -234,7 +228,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.4,
+        "secs": 4.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -244,122 +238,117 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.56,
+        "secs": 2.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "planner admission rejects Junctions before native autothreading",
-        "nok": 1,
-        "ok": 3,
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 3.47,
+        "secs": 5.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/plan.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.64,
+        "secs": 4.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "one filter admits one schema and one limits value",
-        "nok": 2,
-        "ok": 4,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 1.41,
+        "secs": 2.0,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/query.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.14,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Expected one pane; captured 0",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.19,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.77,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/unit/selection.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.24,
+        "secs": 2.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "session existence rejects junction targets before observation",
-        "nok": 4,
-        "ok": 26,
+        "nok": 0,
+        "ok": 30,
         "plan": 30,
-        "secs": 5.07,
+        "secs": 7.47,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/server.rakutest",
       "raku": {
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 10.27,
+        "secs": 15.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Junction inputs cannot multiply process admission",
-        "nok": 1,
-        "ok": 4,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.7,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/unit/transport.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.13,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -371,7 +360,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.52,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -381,7 +370,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.87,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -419,7 +408,7 @@
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7cde7835",
+    "mutsu_commit": "bfb7694e",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -430,13 +419,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/IB/LIBTMUX/e66034b8a38890d5296dc46ea35f5061d498d8d0.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 93,
     "baseline_files": 16,
-    "mutsu_assertions": 68,
-    "parity_files": 5,
-    "regressed_files": 11
+    "mutsu_assertions": 93,
+    "parity_files": 16,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

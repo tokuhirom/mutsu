@@ -29,11 +29,11 @@
       "cmp": "no_baseline",
       "path": "t/00-basics.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/C0C59866C078F5E845407B910CFA8E64EFE26C7FA2FF601A8EFE08D31E16C83E: Read-only file system",
+        "first_failure": "Failed to open file /tmp/145F339D510B254490B44D5DE7D89DC74493A0346AEE4ABA225849B4CAB2E69B: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 33,
-        "secs": 9.12,
+        "secs": 12.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,7 +48,7 @@
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7cde7835",
+    "mutsu_commit": "bfb7694e",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

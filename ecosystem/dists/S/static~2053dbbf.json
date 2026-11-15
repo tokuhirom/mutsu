@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 1.17,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 12.42,
+        "secs": 18.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 1.6,
+        "secs": 3.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,29 +46,30 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 5.93,
+        "secs": 14.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 24,
+        "first_failure": "matching multi",
+        "nok": 3,
+        "ok": 21,
         "plan": 24,
-        "secs": 1.0,
+        "secs": 2.49,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/03-calls.rakutest",
       "raku": {
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 3.61,
+        "secs": 8.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +81,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.35,
+        "secs": 2.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +91,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 5.22,
+        "secs": 9.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +103,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.63,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +113,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 2.4,
+        "secs": 4.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +125,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.37,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +135,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 5.36,
+        "secs": 8.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,7 +147,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 0.58,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +157,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 1.76,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -168,7 +169,7 @@
         "nok": 0,
         "ok": 444,
         "plan": 444,
-        "secs": 7.49,
+        "secs": 12.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,29 +179,30 @@
         "nok": 0,
         "ok": 444,
         "plan": 444,
-        "secs": 33.57,
+        "secs": 47.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 218,
+        "first_failure": "multi specificity / fail-on-unverifiable",
+        "nok": 13,
+        "ok": 205,
         "plan": 218,
-        "secs": 3.91,
+        "secs": 6.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/09-signature-coverage.rakutest",
       "raku": {
         "nok": 0,
         "ok": 218,
         "plan": 218,
-        "secs": 16.66,
+        "secs": 23.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,7 +214,7 @@
         "nok": 0,
         "ok": 180,
         "plan": 180,
-        "secs": 3.09,
+        "secs": 4.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -222,7 +224,7 @@
         "nok": 0,
         "ok": 180,
         "plan": 180,
-        "secs": 13.04,
+        "secs": 18.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -234,7 +236,7 @@
         "nok": 0,
         "ok": 200,
         "plan": 200,
-        "secs": 2.8,
+        "secs": 4.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -244,7 +246,7 @@
         "nok": 0,
         "ok": 200,
         "plan": 200,
-        "secs": 11.61,
+        "secs": 16.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -256,7 +258,7 @@
         "nok": 0,
         "ok": 80,
         "plan": 80,
-        "secs": 1.52,
+        "secs": 2.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -266,7 +268,7 @@
         "nok": 0,
         "ok": 80,
         "plan": 80,
-        "secs": 6.31,
+        "secs": 8.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -278,7 +280,7 @@
         "nok": 0,
         "ok": 206,
         "plan": 206,
-        "secs": 2.63,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -288,7 +290,7 @@
         "nok": 0,
         "ok": 206,
         "plan": 206,
-        "secs": 12.3,
+        "secs": 17.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -298,11 +300,11 @@
       "cmp": "no_baseline",
       "path": "t/14-cli.rakutest",
       "raku": {
-        "first_failure": "Failed to remove the file '/tmp/static-cli-2-1794668049': Failed to delete file: read-only file system",
+        "first_failure": "Failed to remove the file '/tmp/static-cli-2-1794701214': Failed to delete file: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.46,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -314,7 +316,7 @@
         "nok": 0,
         "ok": 630,
         "plan": 630,
-        "secs": 9.82,
+        "secs": 16.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -324,7 +326,7 @@
         "nok": 0,
         "ok": 630,
         "plan": 630,
-        "secs": 45.67,
+        "secs": 64.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -340,10 +342,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-14",
+    "date": "2026-11-15",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7cde7835",
+    "mutsu_commit": "bfb7694e",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -354,13 +356,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/TA/STATIC/2459b1308761d3f081998163346a13151e0f72b0.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 2174,
     "baseline_files": 14,
-    "mutsu_assertions": 2174,
-    "parity_files": 14,
-    "regressed_files": 0
+    "mutsu_assertions": 2158,
+    "parity_files": 12,
+    "regressed_files": 2
   },
   "version": "0.0.1"
 }

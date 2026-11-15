@@ -32,7 +32,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 30.19,
+        "secs": 21.97,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -54,7 +54,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.87,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 2,
         "ok": 9,
         "plan": 11,
-        "secs": 1.27,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -78,11 +78,11 @@
       "cmp": "no_baseline",
       "path": "t/02-functions.t",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/work/_temp/_runner_file_commands/set_env_71693161-1e22-4069-a35f-02f79137bfbd: Read-only file system",
+        "first_failure": "Failed to open file /home/runner/work/_temp/_runner_file_commands/set_env_a4bb56a9-bff6-461c-9b13-05d4d4d8dc64: Read-only file system",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 11.42,
+        "secs": 8.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -97,7 +97,7 @@
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7cde7835",
+    "mutsu_commit": "bfb7694e",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

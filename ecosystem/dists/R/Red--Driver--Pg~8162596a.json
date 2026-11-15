@@ -44,11 +44,11 @@
       "cmp": "no_baseline",
       "path": "t/00-pg-test-runner.rakutest",
       "raku": {
-        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-586584': Failed to delete file: read-only file system",
+        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-835441': Failed to delete file: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.01,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -58,10 +58,11 @@
       "cmp": "no_baseline",
       "path": "t/01-pg.rakutest",
       "raku": {
+        "first_failure": "createdb: error: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 207.37,
+        "secs": 77.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,26 +72,99 @@
       "cmp": "no_baseline",
       "path": "t/02-schema-reader.rakutest",
       "raku": {
+        "first_failure": "createdb: error: connection to server at \"127.0.0.1\", port 5432 failed: Connection refused",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 7.63,
+        "secs": 5.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 6.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/driver-support.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 90.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/regex-renderer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 4.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "schema options validate identifiers and key counts",
+        "nok": 1,
+        "ok": 9,
+        "plan": 10,
+        "secs": 9.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/schema-constraints.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 14.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       }
     }
   ],
   "load": {
     "Red::Driver::Pg": "ok",
-    "Red::Driver::Pg::SchemaReader": "ok"
+    "Red::Driver::Pg::AST": "ok",
+    "Red::Driver::Pg::Migrations": "ok",
+    "Red::Driver::Pg::Regex": "ok",
+    "Red::Driver::Pg::Schema": "ok",
+    "Red::Driver::Pg::SchemaReader": "ok",
+    "Red::Driver::Pg::Support": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-14",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "7cde7835",
+    "mutsu_commit": "bfb7694e",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -99,15 +173,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/R/ED/RED_DRIVER_PG/7741d07f17e581b30c41fec0df395749661cc89b.tar.gz"
+    "url": "https://360.zef.pm/R/ED/RED_DRIVER_PG/15bf209674ddcf17dc0332189ddf22a1cb311cc2.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 31,
+    "baseline_files": 3,
+    "mutsu_assertions": 30,
+    "parity_files": 2,
+    "regressed_files": 1
   },
-  "version": "0.0.1"
+  "version": "0.0.2"
 }
