@@ -3,7 +3,7 @@ use Test;
 # `Mu.clone` on a user-class instance: a shallow copy with named twiddles
 # applied to public attributes, unless the class or a role declares `clone`.
 
-plan 15;
+plan 18;
 
 class P {
     has $.a = 1; has @.l; has %.h; has Int $.n is rw = 0; has $!priv = 'p';
@@ -34,3 +34,15 @@ class W does CR { has $.v }
 is W.new.clone, 'role clone', 'a role clone wins';
 class E is Exception { has $.m; method message { $!m } }
 is E.new(:m<boom>).clone(:m<bang>).message, 'bang', 'an Exception subclass';
+
+class Inner { has $.value = 7 }
+class Delegating { has $.inner handles <clone> }
+is Delegating.new(inner => Inner.new).clone.WHAT.^name, 'Inner',
+    'a delegated clone wins over Mu.clone';
+
+is (P.new but role { method clone(*%) { 'mixed-in clone' } }).clone,
+    'mixed-in clone', 'a mixed-in clone wins over Mu.clone';
+
+class Unbuilt { has $.value is built(False) = 1 }
+is Unbuilt.new.clone(:value(5)).value, 5,
+    'clone twiddles a public attribute even when new cannot build it';
