@@ -90,7 +90,9 @@ pub(in crate::parser) use compile_consts::{
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
 pub(in crate::parser) use lib_paths::{parser_lib_paths, register_preload_module_exports};
-pub(crate) use module_exports::exported_types::{scanned_exported_types, scanned_hook_type_keys};
+pub(crate) use module_exports::exported_types::{
+    scanned_exported_types, scanned_hook_reexport_type_keys, scanned_hook_type_keys,
+};
 pub(crate) use module_exports::exported_vars::{
     ExportedVar, scanned_exported_vars, scanned_exported_vars_complete,
 };

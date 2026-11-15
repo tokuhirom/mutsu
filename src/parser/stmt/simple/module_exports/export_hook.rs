@@ -10,7 +10,7 @@
 use super::InlineModuleExport;
 use crate::ast::Stmt;
 use crate::ast::var_marks::TermMark;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Does this module install its imports at run time through a `sub EXPORT`
 /// hook, rather than through `is export` traits?
@@ -413,6 +413,45 @@ pub(super) fn collect_export_hook_type_keys(stmts: &[Stmt]) -> Vec<String> {
         crate::ast_visit::Visit::visit_stmt(&mut keys, stmt);
     }
     keys.names
+}
+
+/// Types re-exported through a qualified `Pkg::EXPORT::TAG::` stash reference.
+/// Look through the module's methods too: a hook may return `Exporter.exports`,
+/// whose method body contains the stash reference.
+// Cost: O(n + r * t), n = AST nodes, r = stash references,
+// t = exported types in a referenced module.
+pub(super) fn collect_export_hook_stash_types(stmts: &[Stmt]) -> Vec<String> {
+    #[derive(Default)]
+    struct StashTypes {
+        names: Vec<String>,
+        seen: HashSet<String>,
+    }
+    impl<'ast> crate::ast_visit::Visit<'ast> for StashTypes {
+        fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
+            if let crate::ast::Expr::PseudoStash(stash) = expr
+                && let Some((module, tag)) = stash.split_once("::EXPORT::")
+                && let Some(tag) = tag.strip_suffix("::")
+                && let Some(types) = super::exported_types::scanned_exported_types(module)
+            {
+                let tags = if tag == "DEFAULT" {
+                    Vec::new()
+                } else {
+                    vec![tag.to_string()]
+                };
+                for ty in types.iter().filter(|ty| ty.imported_by(&tags)) {
+                    if self.seen.insert(ty.name.clone()) {
+                        self.names.push(ty.name.clone());
+                    }
+                }
+            }
+            crate::ast_visit::walk_expr(self, expr);
+        }
+    }
+    let mut found = StashTypes::default();
+    for stmt in stmts {
+        crate::ast_visit::Visit::visit_stmt(&mut found, stmt);
+    }
+    found.names
 }
 
 /// The `'Name' => Type` pair keys ([`collect_export_hook_type_keys`]).

@@ -48,7 +48,8 @@ pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::simple::superseded_declarator;
 pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,
-    scanned_exported_vars, scanned_exported_vars_complete, scanned_hook_type_keys,
+    scanned_exported_vars, scanned_exported_vars_complete, scanned_hook_reexport_type_keys,
+    scanned_hook_type_keys,
 };
 pub(crate) use stmt::sub::placeholder_signature_exception;
 pub(crate) use stmt::sub::{INDIRECT_DECL_NAME, op_prec_trait};

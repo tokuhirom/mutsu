@@ -30,6 +30,7 @@ pub(super) fn record_scanned_exports(module: &str, scan: &ModuleScanResult) {
         },
     );
     exported_types::record_hook_type_keys(module, &scan.hook_type_keys);
+    exported_types::record_hook_reexport_type_keys(module, &scan.hook_reexport_type_keys);
     if scan.unlisted_exported_vars || scan.declares_export_hook {
         exported_vars::record_incomplete(module);
     }
