@@ -70,12 +70,12 @@ impl Interpreter {
         if !attrs.contains_key("done") {
             attrs.insert("done", Value::FALSE);
         }
-        attrs.insert(
-            "supplier_id",
-            Value::int(super::native_methods::next_supplier_id() as i64),
-        );
+        let supplier_id = super::native_methods::next_supplier_id();
+        attrs.insert("supplier_id", Value::int(supplier_id as i64));
         if preserving {
             attrs.insert("preserving", Value::TRUE);
+        } else {
+            super::native_methods::state::supplier_mark_plain(supplier_id);
         }
     }
 

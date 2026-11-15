@@ -390,6 +390,15 @@ fn next_sink_id() -> u64 {
 #[derive(Debug, Default)]
 struct SupplierRuntimeState {
     emitted: Vec<Value>,
+    /// Absolute position of the first retained emission.
+    base: usize,
+    /// Total emissions since the last reset, including discarded history.
+    emitted_count: usize,
+    /// Completion promises need the final value even when history was trimmed.
+    last_emitted: Option<Value>,
+    /// Plain user Suppliers discard delivered values; internal emitters and
+    /// preserving suppliers retain their replay history.
+    plain: bool,
     /// Global emit sequence for each entry in `emitted` (parallel vector), used
     /// to merge buffered values across suppliers in true emit order at sink
     /// registration.
@@ -426,7 +435,7 @@ struct SupplierRuntimeState {
     /// drive loop has not registered its sink yet (`react_setup.rs`). Their
     /// producers wait for the registration — Rakudo taps at the `whenever`.
     setup_holds: Vec<crate::value::waker::ReactWaker>,
-    /// `emitted.len()` when each setup hold (by waker id) was taken: what a
+    /// `emitted_count` when each setup hold (by waker id) was taken: what a
     /// plain `Supplier` emitted before its react tapped it is dropped, as in
     /// Rakudo, so the sink registering for that hold replays only from here.
     hold_starts: rustc_hash::FxHashMap<usize, usize>,
@@ -454,7 +463,11 @@ impl SupplierRuntimeState {
         self.terminal_seq = None;
         self.emitted.clear();
         self.emitted_seq.clear();
+        self.base = 0;
+        self.emitted_count = 0;
+        self.last_emitted = None;
         self.replay_from = 0;
+        self.preserved_consumed = 0;
         self.hold_starts.clear();
     }
 
@@ -466,6 +479,27 @@ impl SupplierRuntimeState {
         self.hold_starts
             .get(&waker_id)
             .map_or(self.replay_from, |start| (*start).max(self.replay_from))
+            .saturating_sub(self.base)
+    }
+
+    /// Keep only emissions that a setup hold may still replay. Live sinks
+    /// already own their queued events, so they do not pin the history.
+    // Cost: O(e + h), e = discarded emits, h = setup holds.
+    fn trim_plain(&mut self) {
+        if !self.plain {
+            return;
+        }
+        let oldest = self
+            .hold_starts
+            .values()
+            .copied()
+            .min()
+            .unwrap_or(self.emitted_count)
+            .max(self.base);
+        let drop_count = oldest.saturating_sub(self.base).min(self.emitted.len());
+        self.emitted.drain(..drop_count);
+        self.emitted_seq.drain(..drop_count);
+        self.base += drop_count;
     }
 
     /// Drop `waker_id`'s setup hold; the last one out runs a deferred reset.
@@ -475,6 +509,8 @@ impl SupplierRuntimeState {
         self.hold_starts.remove(&waker_id);
         if self.reset_deferred && self.setup_holds.is_empty() {
             self.reset_terminal();
+        } else {
+            self.trim_plain();
         }
     }
 
@@ -518,7 +554,7 @@ pub(crate) fn supplier_add_setup_hold(
             // A `Supplier::Preserving` keeps what was emitted before its first
             // tap for that tap; only a plain `Supplier` drops it.
             if !preserving {
-                state.hold_starts.insert(waker.id(), state.emitted.len());
+                state.hold_starts.insert(waker.id(), state.emitted_count);
             }
         }
     }
@@ -686,7 +722,8 @@ pub(crate) fn supplier_sink_unregister(supplier_id: u64, sink_id: u64) {
         let had_sinks = !state.sinks.is_empty();
         state.sinks.retain(|s| s.sink_id != sink_id);
         if had_sinks && state.sinks.is_empty() {
-            state.replay_from = state.emitted.len();
+            state.replay_from = state.emitted_count;
+            state.trim_plain();
         }
     }
 }
@@ -730,7 +767,7 @@ pub(crate) fn collect_supplier_values(
 pub(crate) fn supplier_status(supplier_id: u64) -> (usize, bool, Option<Value>) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
-        (state.emitted.len(), state.done, state.quit_reason.clone())
+        (state.emitted_count, state.done, state.quit_reason.clone())
     } else {
         (0, false, None)
     }
@@ -852,7 +889,7 @@ pub(crate) fn supplier_register_promise(supplier_id: u64, promise: SharedPromise
         if let Some(reason) = state.quit_reason.clone() {
             promise.break_with(reason, String::new(), String::new());
         } else if state.done {
-            let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
+            let result = state.last_emitted.clone().unwrap_or(Value::NIL);
             promise.keep(result, String::new(), String::new());
         } else {
             state.pending_promises.push(promise);
@@ -916,7 +953,27 @@ pub(in crate::runtime) fn supplier_emit_push(
     }
     state.emitted.push(value);
     state.emitted_seq.push(seq);
+    state.last_emitted = state.emitted.last().cloned();
+    state.emitted_count += 1;
     Some(PendingSinkDelivery { wakers, seq })
+}
+
+/// Mark a public, non-preserving Supplier and release history no longer held
+/// for a pending react registration.
+pub(in crate::runtime) fn supplier_mark_plain(supplier_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        state.plain = true;
+        state.trim_plain();
+    }
+}
+
+pub(in crate::runtime) fn supplier_trim_plain(supplier_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock()
+        && let Some(state) = map.get_mut(&supplier_id)
+    {
+        state.trim_plain();
+    }
 }
 
 /// `Supplier::Preserving`: take the buffered backlog (values emitted while no
@@ -924,8 +981,9 @@ pub(in crate::runtime) fn supplier_emit_push(
 pub(in crate::runtime) fn supplier_take_preserved_backlog(supplier_id: u64) -> Vec<Value> {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
-        let backlog = state.emitted[state.preserved_consumed.min(state.emitted.len())..].to_vec();
-        state.preserved_consumed = state.emitted.len();
+        let start = state.preserved_consumed.saturating_sub(state.base).min(state.emitted.len());
+        let backlog = state.emitted[start..].to_vec();
+        state.preserved_consumed = state.emitted_count;
         backlog
     } else {
         Vec::new()
@@ -938,7 +996,7 @@ pub(in crate::runtime) fn supplier_take_preserved_backlog(supplier_id: u64) -> V
 pub(in crate::runtime) fn supplier_has_preserved_backlog(supplier_id: u64) -> bool {
     supplier_state_map().lock().is_ok_and(|map| {
         map.get(&supplier_id)
-            .is_some_and(|state| state.preserved_consumed < state.emitted.len())
+            .is_some_and(|state| state.preserved_consumed < state.emitted_count)
     })
 }
 
@@ -972,7 +1030,7 @@ pub(in crate::runtime) fn supplier_take_preserved_terminal(supplier_id: u64) -> 
 pub(in crate::runtime) fn supplier_mark_preserved_consumed(supplier_id: u64) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
-        state.preserved_consumed = state.emitted.len();
+        state.preserved_consumed = state.emitted_count;
     }
 }
 
@@ -988,7 +1046,7 @@ pub(crate) fn supplier_done(supplier_id: u64) -> bool {
         let seq = next_emit_seq();
         state.terminal_seq = Some(seq);
         let waits = state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Done);
-        let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
+        let result = state.last_emitted.clone().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
         drop(map);
         // The reacts handle `done` (their LAST phasers, `whenever` completion)
@@ -1017,7 +1075,7 @@ pub(in crate::runtime) fn supplier_done_deferred(
         let seq = next_emit_seq();
         state.terminal_seq = Some(seq);
         let waits = state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Done);
-        let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
+        let result = state.last_emitted.clone().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
         drop(map);
         await_sink_delivery(waits, seq);
@@ -1454,6 +1512,51 @@ pub(in crate::runtime) fn set_listener_closed(listener_id: u64) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while !stopped.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
         crate::gc::block_quiescent(|| std::thread::sleep(std::time::Duration::from_millis(1)));
+    }
+}
+
+#[cfg(test)]
+mod supplier_history_tests {
+    use super::*;
+
+    #[test]
+    fn plain_supplier_releases_values_but_keeps_count_and_last() {
+        let id = next_supplier_id();
+        supplier_mark_plain(id);
+        for n in 0..1_000 {
+            supplier_emit(id, Value::int(n));
+            supplier_trim_plain(id);
+        }
+        let mut map = supplier_state_map().lock().unwrap();
+        let state = &map[&id];
+        assert!(state.emitted.is_empty());
+        assert!(state.emitted_seq.is_empty());
+        assert_eq!(state.base, 1_000);
+        assert_eq!(state.emitted_count, 1_000);
+        assert_eq!(state.last_emitted.as_ref().and_then(Value::as_int), Some(999));
+        map.remove(&id);
+    }
+
+    #[test]
+    fn setup_hold_pins_only_its_replay_window() {
+        let mut state = SupplierRuntimeState {
+            plain: true,
+            ..Default::default()
+        };
+        for n in 0..5 {
+            state.emitted.push(Value::int(n));
+            state.emitted_seq.push(n as u64);
+            state.emitted_count += 1;
+        }
+        state.hold_starts.insert(1, 2);
+        state.trim_plain();
+        assert_eq!(state.base, 2);
+        assert_eq!(state.replay_start(1), 0);
+        assert_eq!(state.emitted.len(), 3);
+        state.hold_starts.remove(&1);
+        state.trim_plain();
+        assert!(state.emitted.is_empty());
+        assert_eq!(state.base, 5);
     }
 }
 
