@@ -521,6 +521,15 @@ impl Interpreter {
             .as_ref()
             .and_then(Self::eval_context_package)
             .or_else(|| repl_unit.map(|_| "GLOBAL".to_string()))
+            // A method EVAL compiles under its declaring package even if
+            // dispatch left the caller's package current. Keep class-body
+            // EVAL in its current package (#17609).
+            .or_else(|| {
+                self.routine_stack
+                    .last()
+                    .filter(|frame| frame.is_method)
+                    .map(|frame| frame.package.resolve())
+            })
             .map(|pkg| {
                 let saved = self.current_package();
                 self.set_current_package(pkg);
