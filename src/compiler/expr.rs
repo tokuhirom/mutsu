@@ -475,6 +475,27 @@ impl Compiler {
                     // creating frame bound instead of the caller's `T`.
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
+                } else if self.in_eval_unit
+                    && self.current_package == "GLOBAL"
+                    && self.eval_outer_term_names.contains(name.as_str())
+                    && self.lexical_types_in_scope.contains(name.as_str())
+                {
+                    // A lexical type declared by EVAL wins over a term that
+                    // its caller bound under the same name. Its type-only key
+                    // is distinct from a same-named scalar. Package-local
+                    // lexical types instead use qualified keys.
+                    let key = crate::runtime::term_names::lexical_type_key(name);
+                    let name_idx = self.code.add_constant(Value::str(key));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
+                } else if self.in_eval_unit
+                    && self.eval_outer_term_names.contains(name.as_str())
+                    && self.class_names_current_scope.contains(name.as_str())
+                {
+                    // A package class declared in this unit names that class,
+                    // even if the caller of EVAL has a sigilless term with
+                    // the same spelling.
+                    let idx = self.code.add_constant(Value::package(Symbol::intern(name)));
+                    self.code.emit(OpCode::LoadConst(idx));
                 } else if self.enclosing_sigilless.contains(name.as_str()) {
                     // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
                     // scope, read here from a nested — possibly escaping — closure.

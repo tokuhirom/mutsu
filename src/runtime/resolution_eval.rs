@@ -286,6 +286,9 @@ impl Interpreter {
         compiler.static_class_hidden = self.current_class_is_hidden();
         if is_eval_unit {
             compiler.mark_as_eval_unit();
+            compiler.seed_eval_outer_term_names(self.env().iter().filter_map(|(key, _)| {
+                crate::term_names::term_spelling(key.as_str()).map(str::to_string)
+            }));
             compiler.eval_unit_lax = body
                 .iter()
                 .any(|s| matches!(s, Stmt::No { module, .. } if module == "strict"));
