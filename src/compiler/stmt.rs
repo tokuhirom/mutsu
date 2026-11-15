@@ -3336,7 +3336,9 @@ impl Compiler {
             Stmt::Fail(expr) => {
                 // A failed value is stored/propagated -> closure escapes.
                 self.with_escape(true, |c| c.compile_expr(expr));
-                self.code.emit(OpCode::Fail);
+                self.code.emit(OpCode::Fail(
+                    self.return_is_routine() || self.return_lexically_in_routine(),
+                ));
             }
             Stmt::Proceed => {
                 self.code.emit(OpCode::Proceed);

@@ -156,7 +156,7 @@ impl Interpreter {
         let mut raised: Option<Result<Value, RuntimeError>> = None;
         while ip < cc.ops.len() {
             if let Err(e) = self.exec_one_backedge_polled(cc, &mut ip, compiled_fns, polls) {
-                raised = Some(if e.is_fail() {
+                raised = Some(if e.is_fail() && e.fail_target_callable_id().is_none() {
                     Ok(self.fail_error_to_failure_value(&e))
                 } else {
                     Err(e)

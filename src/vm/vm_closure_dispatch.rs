@@ -1493,7 +1493,18 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
-                Err(e) if e.is_fail() => {
+                Err(mut e) if e.is_fail() => {
+                    if !cc.is_routine && e.fail_target_callable_id().is_none() {
+                        e.set_fail_target_callable_id(
+                            crate::runtime::return_target::return_target_in_env(&data.env),
+                        );
+                    }
+                    if !cc.is_routine || e.fail_passes_frame(Some(data.id)) {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        handled_let_saves = true;
+                        result = Err(e);
+                        break;
+                    }
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));

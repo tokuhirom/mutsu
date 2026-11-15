@@ -152,6 +152,8 @@ pub struct RuntimeErrorCold {
     /// For non-local returns (CX::Return from a block), the callable ID of the
     /// lexically enclosing routine that the return targets.
     pub return_target_callable_id: Option<u64>,
+    /// The lexical routine whose boundary converts `fail` to a Failure.
+    pub fail_target_callable_id: Option<u64>,
     /// The return signal came from the `.return` method rather than the
     /// `return` routine. Only the method form checks the enclosing routine's
     /// definite return value at run time (rakudo's `Mu.return` →
@@ -333,6 +335,13 @@ impl RuntimeError {
     pub fn return_target_callable_id(&self) -> Option<u64> {
         self.cold.as_ref().and_then(|c| c.return_target_callable_id)
     }
+    pub fn fail_target_callable_id(&self) -> Option<u64> {
+        self.cold.as_ref().and_then(|c| c.fail_target_callable_id)
+    }
+    pub fn fail_passes_frame(&self, callable_id: Option<u64>) -> bool {
+        self.fail_target_callable_id()
+            .is_some_and(|target| Some(target) != callable_id)
+    }
     /// Whether this is a `return` signal stamped with the routine it leaves
     /// ([`Self::return_target_callable_id`]). Every routine boundary that is
     /// not that target declines it: it is no part of that routine's result,
@@ -425,6 +434,9 @@ impl RuntimeError {
     }
     pub(crate) fn set_return_target_callable_id(&mut self, v: Option<u64>) {
         self.cold_mut().return_target_callable_id = v;
+    }
+    pub(crate) fn set_fail_target_callable_id(&mut self, v: Option<u64>) {
+        self.cold_mut().fail_target_callable_id = v;
     }
     pub(crate) fn set_from_downstream_tap(&mut self) {
         self.cold_mut().from_downstream_tap = true;
