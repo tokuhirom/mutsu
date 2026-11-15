@@ -423,6 +423,9 @@ impl Interpreter {
             };
             return self.run_native_ctor(&ctor, &call, args.to_vec());
         }
+        if let Some(result) = self.try_native_objat_subclass_construct(class_name, args) {
+            return Some(result);
+        }
         // A Buf/Blob spelling the table does not list (`Buf[uint16]`, ...).
         if Self::is_native_buf_constructible(&cn) {
             Some(Ok(Self::build_native_buf_value(class_name, args)))

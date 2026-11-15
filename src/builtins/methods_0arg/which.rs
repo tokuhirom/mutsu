@@ -91,7 +91,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
         attributes,
         ..
     } = target.view()
-        && matches!(class_name.resolve().as_str(), "ObjAt" | "ValueObjAt")
+        && attributes.as_map().is_objat_instance(class_name.as_str())
     {
         let inner = attributes.as_map().objat_which().unwrap_or_default();
         let mut attrs = std::collections::HashMap::new();
@@ -99,6 +99,13 @@ pub(crate) fn which_of(target: &Value) -> Value {
             "WHICH".to_string(),
             Value::str(format!("{}|{}", class_name.resolve(), inner)),
         );
+        if attributes
+            .as_map()
+            .get(crate::value::OBJAT_SUBCLASS_MARKER)
+            .is_some()
+        {
+            attrs.insert(crate::value::OBJAT_SUBCLASS_MARKER.to_string(), Value::TRUE);
+        }
         return Value::make_instance(class_name, attrs);
     }
     // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
