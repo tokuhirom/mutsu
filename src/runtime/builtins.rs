@@ -573,7 +573,7 @@ impl Interpreter {
             crate::lvalue_call::INCDEC_NAMED_SUB => self.builtin_incdec_named_sub_lvalue(&args),
             crate::lvalue_call::ASSIGN_CALLABLE => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
-            "__mutsu_var_is_writable" => self.builtin_var_is_writable(&args),
+            "__mutsu_var_has_container" => self.builtin_var_has_container(&args),
             "__mutsu_custom_store" => self.builtin_custom_store(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_sig_bind" => self.builtin_sig_bind(&args),

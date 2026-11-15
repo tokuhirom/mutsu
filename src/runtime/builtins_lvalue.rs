@@ -898,8 +898,8 @@ impl Interpreter {
         self.assign_callable_lvalue_with_values(callable, call_args, value)
     }
 
-    /// `__mutsu_var_is_writable('name')` -- does the named scalar have a
-    /// container that can be assigned through?
+    /// `__mutsu_var_has_container('name')` -- does the named scalar retain a
+    /// container, including a read-only parameter's container?
     ///
     /// Used by the `//=` / `||=` / `&&=` short-circuit desugar: when the short
     /// circuit KEEPS the current value, rakudo returns the LHS *container* if
@@ -907,22 +907,23 @@ impl Interpreter {
     /// the bare *value* if it does not (so `my $a := 42; ($a //= 42) += 10`
     /// dies with X::Assignment::RO on the returned value). Only the runtime
     /// knows which, so the desugar branches on this.
-    pub(super) fn builtin_var_is_writable(
+    // Cost: O(d), d = env tiers walked by the read-only probes.
+    pub(super) fn builtin_var_has_container(
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let Some(name) = args.first().map(Value::to_string_value) else {
             return Ok(Value::TRUE);
         };
-        Ok(Value::truth(self.var_is_writable(&name)))
+        Ok(Value::truth(self.var_has_container(&name)))
     }
 
-    /// The one implementation behind `__mutsu_var_is_writable` and the
-    /// `VarIsWritable` opcode the compiler emits for it.
+    /// The one implementation behind `__mutsu_var_has_container` and the
+    /// `VarHasContainer` opcode the compiler emits for it.
     // Cost: O(d), d = env tiers walked by the two read-only probes.
-    pub(crate) fn var_is_writable(&self, name: &str) -> bool {
-        if self.readonly_kind(name).is_some() {
-            return false;
+    pub(crate) fn var_has_container(&self, name: &str) -> bool {
+        if let Some(kind) = self.readonly_kind(name) {
+            return kind == crate::ast::ReadonlyKind::Alias;
         }
         if crate::env::sigilless_readonly_keys_possible() {
             let key = crate::runtime::sigilless_readonly_key(name);
