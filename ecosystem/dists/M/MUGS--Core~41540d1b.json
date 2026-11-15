@@ -64,14 +64,14 @@
       "cmp": "no_baseline",
       "path": "t/00-use.rakutest",
       "raku": {
-        "first_failure": "SWEEP-TIMEOUT",
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.11,
+        "secs": 46.01,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "die"
       }
     },
     {
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.24,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 2.51,
+        "secs": 1.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 112,
         "plan": 112,
-        "secs": 0.44,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 112,
         "plan": 112,
-        "secs": 3.38,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -122,11 +122,11 @@
       "cmp": "no_baseline",
       "path": "t/03-file.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/07D8E43DE6C2B979CE3BCAE55353385633A7C822911E6A1289932024CC0B8293' with mode '0o700': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/B6D90FE2461D8566BC85698546E1386182E2C0AA3F3C47C0257DC9131DA1E60A' with mode '0o700': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 7,
         "plan": 119,
-        "secs": 11.82,
+        "secs": 10.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -136,11 +136,11 @@
       "cmp": "no_baseline",
       "path": "t/04-config.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/880B9273FD7B888A3DCCDFE0D5EFE7623295F0A0F554EEB09473874F01D85767' with mode '0o700': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/7CDDD606A1D1486B80F70BCF8EA4EE786F4E061DACB102DECDD432D201765B67' with mode '0o700': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 37,
-        "secs": 3.41,
+        "secs": 3.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.17,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 2.0,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +176,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 23.51,
+        "secs": 18.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -231,10 +231,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-14",
-    "harness": 2,
+    "date": "2026-11-15",
+    "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfb7694e",
+    "mutsu_commit": "146f9ebf",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

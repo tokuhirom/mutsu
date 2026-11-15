@@ -7,8 +7,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **99.2%** (1330/1341) |
-| file parity | 99.7% (5178/5196) |
+| **dist parity** (published headline) | **99.2%** (1332/1343) |
+| file parity | 99.7% (5181/5199) |
 | assertion parity | 99.9% |
 | accepted divergences (out of the KPI, ADR-0130) | 13 file(s) |
 
@@ -16,8 +16,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 |---|---|
 | `blocked_dep` | 2 |
 | `blocked_load` | 7 |
-| `green` | 1330 |
-| `no_baseline` | 328 |
+| `green` | 1332 |
+| `no_baseline` | 326 |
 | `partial` | 6 |
 | `red` | 5 |
 
@@ -169,7 +169,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Async::Workers` | 0.3.1 | no_baseline | — |
 | `Attribute::Lazy` | 0.0.7 | green | 3/3 |
 | `Attribute::Predicate` | 0.0.6 | green | 1/1 |
-| `AttrX::Mooish` | 1.0.10 | partial | 32/34 |
+| `AttrX::Mooish` | 1.0.10 | partial | 33/34 |
 | `Audio::Convert::Samplerate` | 0.0.11 | green | 3/3 |
 | `Audio::Encode::LameMP3` | 0.0.15 | green | 2/2 |
 | `Audio::Fingerprint::Chromaprint` | 0.0.5 | green | 3/3 |
@@ -259,7 +259,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Compress::LZString` | 0.0.1 | green | 3/3 |
 | `Compress::PDF` | 0.5.0 | no_baseline | — |
 | `CompUnit::Util` | 0.7.0 | green | 8/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | no_baseline | — |
+| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
 | `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
@@ -324,7 +324,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `CSS::Module` | 0.7.8 | green | 16/16 |
 | `CSS::Module::CSS3::Selectors` | 0.0.7 | green | 1/1 |
 | `CSS::Nested` | 0.0.1 | green | 1/1 |
-| `CSS::Properties` | 0.10.11 | green | 24/24 |
+| `CSS::Properties` | 0.10.11 | green | 25/25 |
 | `CSS::Selector::To::XPath` | 0.0.9 | green | 4/4 |
 | `CSS::Specification` | 0.6.0 | green | 2/2 |
 | `CSS::Stylesheet` | 0.1.5 | green | 9/9 |
@@ -682,7 +682,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `HTML::Strip` | 0.1.3 | green | 1/1 |
 | `HTML::Tag` | 0.1.2 | green | 4/4 |
 | `HTML::Template` | 0.0.1 | green | 3/3 |
-| `HTTP::Core` | 0.1.0 | green | 2/2 |
+| `HTTP::Core` | 0.1.0 | green | 1/1 |
 | `HTTP::Easy` | 1.3 | green | 1/1 |
 | `HTTP::HPACK` | 1.0.3 | green | 2/2 |
 | `HTTP::RequestTarget::Raw` | 0.1.0 | green | 1/1 |
@@ -874,7 +874,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `List::UtilsBy` | 0.0.8 | green | 15/15 |
 | `Listicles` | 1.6.0 | green | 1/1 |
 | `LIVR` | 2.3.1 | green | 10/10 |
-| `LLM::Agent` | 0.6.3 | green | 4/4 |
+| `LLM::Agent` | 0.6.3 | green | 5/5 |
 | `LLM::Character` | 0.3.1 | green | 14/14 |
 | `LLM::Chat` | 0.10.4 | green | 15/15 |
 | `LLM::Chat::Backend` | 0.2.1 | green | 7/7 |
@@ -1001,7 +1001,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `MCP::Server::Tool::Shell` | 0.4.5 | green | 13/13 |
 | `MCP::Server::Tool::Web` | 0.1.2 | partial | 3/4 |
 | `MeCab` | 0.0.19 | no_baseline | — |
-| `Memoize` | 0.0.11 | green | 2/2 |
+| `Memoize` | 0.0.11 | green | 1/1 |
 | `Menu::Simple` | 0.17 | green | 4/4 |
 | `MergeOrderedSeqs` | 0.0.2 | green | 1/1 |
 | `MermaidJS::Grammar` | 0.0.2 | green | 1/1 |
@@ -1165,7 +1165,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | chou.5 | green | 4/4 |
 | `Parameterizable` | 0.0.4 | green | 2/2 |
-| `ParaSeq` | 0.2.7 | partial | 47/48 |
+| `ParaSeq` | 0.2.7 | green | 47/47 |
 | `Parse::Paths` | 0.1.3 | green | 1/1 |
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |
@@ -1184,7 +1184,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `PDF::Document` | 0.0.10 | no_baseline | — |
 | `PDF::Extract` | 0.0.4 | no_baseline | — |
 | `PDF::Font::Loader` | 0.8.15 | green | 4/4 |
-| `PDF::Font::Loader::CSS` | 0.0.1 | no_baseline | — |
+| `PDF::Font::Loader::CSS` | 0.0.1 | green | 1/1 |
 | `PDF::Font::Loader::HarfBuzz` | 0.0.2 | no_baseline | — |
 | `PDF::Grammar` | 0.3.6 | green | 10/10 |
 | `PDF::ISO_32000` | 0.0.13 | green | 2/2 |
@@ -1302,8 +1302,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `ReadWriteLock` | 0.3.3 | green | 2/2 |
 | `RealDentalCosts::API` | 0.1.0 | no_baseline | — |
 | `Recipe::Parser` | 0.0.1 | green | 19/19 |
-| `Red` | 0.2.11 | green | 128/128 |
-| `Red::Driver::DuckDB` | 0.0.2 | green | 1/1 |
+| `Red` | 0.2.12 | partial | 128/130 |
+| `Red::Driver::DuckDB` | 0.0.4 | green | 1/1 |
 | `Red::Driver::MySQL` | 0.0.3 | green | 7/7 |
 | `Red::Driver::Pg` | 0.0.2 | partial | 2/3 |
 | `RedFactory` | 0.0.3 | green | 3/3 |
@@ -1341,7 +1341,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `SDL2-ttf` | 0.0.3 | no_baseline | — |
 | `SelectiveImporting` | 0.1.3 | no_baseline | — |
 | `Selkie` | 0.16.0 | green | 96/96 |
-| `Selkie::UI` | 0.0.4 | green | 6/6 |
+| `Selkie::UI` | 0.0.4 | green | 7/7 |
 | `SEO::WebChecker` | 1.0.0 | green | 2/2 |
 | `SeqSplitter` | 0.0.3 | green | 2/2 |
 | `Sequence::Generator` | 0.0.8 | green | 3/3 |
@@ -1475,7 +1475,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Terminal::Getpass` | 0.0.11 | green | 1/1 |
 | `Terminal::Graphing::BarChart` | 2.0.0 | green | 2/2 |
 | `Terminal::LineEditor` | 0.0.23 | green | 6/6 |
-| `Terminal::MultiProgress` | 0.0.4 | green | 7/7 |
+| `Terminal::MultiProgress` | 0.0.4 | green | 6/6 |
 | `Terminal::Print` | 0.978 | green | 1/1 |
 | `Terminal::QuickCharts` | 0.0.2 | green | 6/6 |
 | `Terminal::ReadKey` | 0.0.2 | green | 1/1 |
