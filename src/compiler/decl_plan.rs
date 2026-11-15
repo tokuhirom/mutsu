@@ -385,8 +385,8 @@ impl Compiler {
     /// a `CompiledDeclExpr`, since that needs a child `Compiler`
     /// (package/distribution context), not just pattern matching.
     /// `ClassSub` shares `Other`'s chunk mechanism (a top-level `SubDecl`
-    /// runs through the same `class_body_other_stmt` path at registration,
-    /// `ClassSub` only adds the `class_subs` tail-probe fact on top).
+    /// runs through the same `class_body_other_stmt` path at registration)
+    /// and has a hoisted copy for earlier class-body statements.
     /// `CodeAlias`/`ProtoMethod` (D6-3c) compile the same way — each still
     /// executes its raw statement wholesale at registration
     /// (`class_body_code_alias`'s trailing `run_block_raw`,

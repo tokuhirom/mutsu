@@ -606,12 +606,6 @@ pub(crate) struct ResolutionCaches {
         (usize, crate::symbol::Symbol),
         (crate::gc::Gc<crate::value::MixinOverrides>, crate::value::Value),
     >,
-    /// `has_class_scoped_subs` answers per class name, valid for the
-    /// `class_subs` table state they were computed from (its
-    /// `CowTable::state_id`): the answer scans every class that declares a
-    /// sub, on every method call.
-    pub(crate) class_scoped_subs:
-        std::cell::RefCell<((usize, u64), rustc_hash::FxHashMap<String, bool>)>,
     /// Subscript stores for which the user `postcircumfix` candidates in scope
     /// were run and none delegated to the CORE routine (see
     /// `remap_index_through_user_postcircumfix`); the values keep the

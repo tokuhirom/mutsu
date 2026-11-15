@@ -177,16 +177,6 @@ pub(crate) struct ModuleState {
     /// (`M::it`): the proto twin of `module_registered_functions`, put back
     /// by a scope restore that resets the proto tables wholesale (#13877).
     pub(crate) module_registered_protos: std::sync::Arc<HashSet<Symbol>>,
-    /// Packages that received a routine import from a role's own deferred
-    /// `use`/`need` body statement (`run_role_deferred_use_stmt`). Consulted
-    /// by method dispatch (`vm_method_dispatch.rs`) as an extra reason to set
-    /// `current_package` to the receiver's class even when none of the
-    /// existing fast-path conditions (class-scoped subs, package lexicals, a
-    /// `::`-qualified owner name) apply — a FLAT (non-namespaced) role/class
-    /// name can still own package-qualified imported routines that
-    /// `bare_name_packages()` can only find by walking outward from itself
-    /// (#8646 shape 1).
-    pub(crate) packages_with_deferred_use_imports: std::sync::Arc<HashSet<Symbol>>,
     /// The `GLOBAL::`-qualified keys of routines spliced in as a PRELUDE
     /// (`PRELUDE_SUB_TRAIT` — mutsu's NativeCall helpers).
     ///
@@ -784,7 +774,6 @@ impl ModuleState {
             loaded_unit_pads: HashMap::new(),
             module_registered_functions: Default::default(),
             module_registered_protos: Default::default(),
-            packages_with_deferred_use_imports: Default::default(),
             prelude_registered_functions: Default::default(),
             prelude_declaring_units: Default::default(),
             module_package_globals: Default::default(),
@@ -909,7 +898,6 @@ impl ModuleState {
             loaded_unit_pads: self.loaded_unit_pads.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
             module_registered_protos: self.module_registered_protos.clone(),
-            packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),
             prelude_registered_functions: self.prelude_registered_functions.clone(),
             prelude_declaring_units: self.prelude_declaring_units.clone(),
             module_package_globals: self.module_package_globals.clone(),

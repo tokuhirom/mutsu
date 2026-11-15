@@ -5,7 +5,8 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// The package to make current while the body of `method_def`, declared
-    /// by `owner_class`, runs; `None` keeps the caller's.
+    /// by `owner_class`, runs; `None` keeps the caller's for a mixin without
+    /// an originating role.
     ///
     /// Keyed on the owner (the class or role that lexically declares the
     /// body), not on the receiver's dynamic class: a method's lexical scope is
@@ -18,7 +19,7 @@ impl Interpreter {
     /// braces is no package nesting; anchoring the package to the mixin type
     /// registered a `sub` the method declares where a `samewith`, run from the
     /// role's package, could not find it (AttrX::Mooish's `set-option`).
-    // Cost: O(1) amortized: memoized registry probes.
+    // Cost: O(1) expected, role-composition scope lookup.
     pub(crate) fn method_body_package(
         &mut self,
         owner_class: &str,
@@ -47,18 +48,11 @@ impl Interpreter {
                 .or(method_def.role_origin.as_deref())
                 .map(Symbol::intern);
         }
-        // The class body declared subs, method-local types or `my` statics,
-        // which a method read resolves through the owner's package; or the
-        // class is declared inside a package (`class Searcher` inside `unit
-        // module NL` registers as `NL::Searcher`), or it is a flat role/class
-        // whose own deferred `use` imported a routine under its bare name
-        // (#8646 shape 1) -- either way, bare-name lookup walks outwards from
-        // the owner (`bare_name_packages`).
-        (self.has_class_scoped_subs(owner_class)
-            || self.class_has_method_type_decls(owner_class)
-            || self.class_has_package_lexicals(owner_class)
-            || crate::qualified::is_qualified(owner_sym)
-            || self.package_has_deferred_use_imports(owner_class))
-        .then_some(owner_sym)
+        // A method always runs in its declaring package. Bare-name lookup
+        // walks outwards from that owner (`bare_name_packages`), and an EVAL
+        // inside the method registers its declarations under the same package
+        // the EVAL compiler used. Sampling the caller's package for a simple
+        // class made `my class` in such an EVAL lose its `Owner::` prefix.
+        Some(owner_sym)
     }
 }

@@ -6067,9 +6067,8 @@ pub(crate) enum ClassBodyOp {
         name: Symbol,
         args: Option<Vec<DeclTraitArg>>,
     },
-    /// A `sub` declaration. Runs like `Other` (via `chunk`), plus carries
-    /// the fact that a successful registration also needs the
-    /// `class_subs` tail-probe `run_class_body` performs after executing it.
+    /// A `sub` declaration. Runs like `Other` (via `chunk`) and has a
+    /// hoisted copy available to earlier class-body statements.
     ClassSub {
         name: Symbol,
         chunk: Option<CompiledDeclExpr>,
