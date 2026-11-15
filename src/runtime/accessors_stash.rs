@@ -878,6 +878,17 @@ impl Interpreter {
         {
             return value.clone();
         }
+        // Hook imports live in the importing lexical scope, which may be
+        // separate from the current frame's term and scalar env slots.
+        if !name.starts_with(['$', '@', '%', '&'])
+            && let Some(value) = self.lexical_import_hook_term(
+                &self.active_lexical_import_chain(),
+                Symbol::intern(name),
+            )
+            && !value.is_nil()
+        {
+            return value;
+        }
         // Likewise a sigil-less constant, in the term namespace (#9962).
         if let Some(value) = self.term_value(name)
             && !value.is_nil()
