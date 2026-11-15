@@ -473,6 +473,11 @@ pub(crate) struct Registry {
     /// leading package is a `module`/`package` (Badger's `my module AST {}`);
     /// see `Interpreter::my_scoped_type_visible_here`.
     pub(crate) namespaced_lexical_types: HashSet<String>,
+    /// Classes with a method whose body declares a class or role (see
+    /// `runtime::method_type_decls`). Method dispatch anchors
+    /// `current_package` to the owner of such a method so the nested type is
+    /// named under it (`Q::X`).
+    pub(crate) classes_with_method_type_decls: HashSet<String>,
     /// Registry keys whose `::` segments come from a **compound declared name**
     /// (`class Foo::List { ... }` written at file scope) rather than from real
     /// lexical nesting (`unit module NL; class Searcher { ... }`).
@@ -609,6 +614,8 @@ pub(crate) struct Registry {
     pub(crate) class_does_only_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Roles implicitly composed by enums: enum -> [role names].
     pub(crate) class_enum_roles: CowTable<HashMap<String, Vec<String>>>,
+    /// Subs declared inside a class body: class -> (sub name -> value).
+    pub(crate) class_subs: CowTable<HashMap<String, HashMap<String, Value>>>,
     /// Role composition scopes (`K::&role:R`) holding a role body's `sub`
     /// whose name the composing class declares too; a role method composed
     /// into `K` runs in its scope (`role_composition_scope`, #14177).
@@ -2696,6 +2703,7 @@ mod tests {
         parent
             .role_candidates
             .insert("R".to_string(), Vec::new());
+        parent.class_subs.insert("C".to_string(), HashMap::default());
         parent
             .class_role_param_bindings
             .insert("C".to_string(), HashMap::default());
@@ -2708,11 +2716,17 @@ mod tests {
         );
         assert!(child.roles.shares_with(&shared.roles));
         assert!(child.role_candidates.shares_with(&shared.role_candidates));
+        assert!(child.class_subs.shares_with(&shared.class_subs));
         assert!(
             child
                 .class_role_param_bindings
                 .shares_with(&shared.class_role_param_bindings)
         );
+        child
+            .class_subs
+            .insert("D".to_string(), HashMap::default());
+        assert!(!child.class_subs.shares_with(&shared.class_subs));
+        assert!(!shared.class_subs.contains_key("D"));
         assert!(child.roles.shares_with(&shared.roles));
     }
 

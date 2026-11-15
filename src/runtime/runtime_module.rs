@@ -358,6 +358,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // The caller has already set `current_package` to the role/class this
         // `use`/`need` statement belongs to (`type_owner`/`base_role_name`).
+        let owner_sym = self.current_package_sym();
         let before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
         let result = body(self);
         let new_keys: Vec<Symbol> = self
@@ -376,8 +377,36 @@ impl Interpreter {
             for key in new_keys {
                 table.insert(key);
             }
+            crate::runtime::cow_table_mut(&mut self.module.packages_with_deferred_use_imports)
+                .insert(owner_sym);
         }
         result
+    }
+
+    /// Whether `class_name`'s own package received a routine import from a
+    /// role's deferred `use`/`need` body statement — see
+    /// `run_role_deferred_use_stmt`. Consulted by method dispatch as an extra
+    /// reason to anchor `current_package` to a FLAT (non-namespaced)
+    /// receiver class, which owns no `::` for the existing checks to key off
+    /// (#8646 shape 1).
+    ///
+    /// `class_name` here is the *receiver's* class, which for a parameterised
+    /// role-pun carries its type argument in brackets (`FlatHolder[FlatComparable]`)
+    /// — the deferred body ran, and was recorded, against the role's own bare
+    /// name (`FlatHolder`; see `run_role_body_for_composition`'s `type_owner`).
+    /// Strip the bracket suffix before looking up, exactly like
+    /// `compute_bare_name_packages` does for the same reason.
+    // Cost: O(1) when no package received a deferred import (the common case).
+    pub(crate) fn package_has_deferred_use_imports(&self, class_name: &str) -> bool {
+        if self.module.packages_with_deferred_use_imports.is_empty() {
+            return false;
+        }
+        let base = class_name.split('[').next().unwrap_or(class_name);
+        Symbol::lookup(base).is_some_and(|sym| {
+            self.module
+                .packages_with_deferred_use_imports
+                .contains(&sym)
+        })
     }
 
     /// Remove the `GLOBAL::MAIN` candidates a module (not the program)

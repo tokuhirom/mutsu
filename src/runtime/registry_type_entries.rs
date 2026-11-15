@@ -303,6 +303,7 @@ impl Registry {
             // The re-entry stamp of a static declaration site.
             class_site_stamps: _,
             namespaced_lexical_types,
+            classes_with_method_type_decls,
             compound_declared_types,
             compound_name_overrides,
             compound_identity_bindings,
@@ -335,6 +336,7 @@ impl Registry {
             class_direct_composed_roles,
             class_does_only_roles,
             class_enum_roles,
+            class_subs,
             role_composition_scopes,
             buildplans,
             attribute_build_overrides,
@@ -455,6 +457,11 @@ impl Registry {
         copy(hidden_classes, &mut dst.hidden_classes, names);
         copy(lexical_classes, &mut dst.lexical_classes, names);
         copy(namespaced_lexical_types, &mut dst.namespaced_lexical_types, names);
+        copy(
+            classes_with_method_type_decls,
+            &mut dst.classes_with_method_type_decls,
+            names,
+        );
         copy(compound_declared_types, &mut dst.compound_declared_types, names);
         copy(compound_name_overrides, &mut dst.compound_name_overrides, names);
         copy(compound_identity_bindings, &mut dst.compound_identity_bindings, names);
@@ -476,6 +483,7 @@ impl Registry {
         copy(class_direct_composed_roles, &mut dst.class_direct_composed_roles, names);
         copy(class_does_only_roles, &mut dst.class_does_only_roles, names);
         copy(class_enum_roles, &mut dst.class_enum_roles, names);
+        copy(class_subs, &mut dst.class_subs, names);
         copy(buildplans, &mut dst.buildplans, names);
         copy(attribute_build_overrides, &mut dst.attribute_build_overrides, names);
         copy(class_attribute_defaults, &mut dst.class_attribute_defaults, names);
