@@ -475,14 +475,20 @@ impl Compiler {
                     // creating frame bound instead of the caller's `T`.
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
-                } else if self.lexical_types_in_scope.contains(name.as_str()) {
-                    // A lexical type declared here wins over an outer term of
-                    // the same name. Its type-only key is also distinct from
-                    // a same-named scalar in this frame.
+                } else if self.in_eval_unit
+                    && self.current_package == "GLOBAL"
+                    && self.lexical_types_in_scope.contains(name.as_str())
+                {
+                    // A lexical type declared in an EVAL unit's global scope
+                    // wins over an outer term of the same name. Its type-only
+                    // key is distinct from a same-named scalar. A lexical
+                    // type inside a package has a qualified key instead.
                     let key = crate::runtime::term_names::lexical_type_key(name);
                     let name_idx = self.code.add_constant(Value::str(key));
                     self.code.emit(OpCode::GetGlobal(name_idx));
-                } else if self.class_names_current_scope.contains(name.as_str()) {
+                } else if self.in_eval_unit
+                    && self.class_names_current_scope.contains(name.as_str())
+                {
                     // A package class declared in this unit names that class,
                     // even if the caller of EVAL has a sigilless term with
                     // the same spelling.
