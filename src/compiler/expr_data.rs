@@ -66,7 +66,9 @@ impl Compiler {
                 self.scalar_bind_autovivify = saved_av;
                 self.bind_terminal = saved_terminal;
             } else {
-                if let Expr::Var(src) = expr {
+                if crate::value::attr_twigil_base(name).is_some()
+                    && let Expr::Var(src) = expr
+                {
                     self.register_container_ref_capture_if_free(src);
                 }
                 self.compile_call_arg(expr);

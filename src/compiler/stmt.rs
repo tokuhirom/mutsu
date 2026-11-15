@@ -2759,10 +2759,13 @@ impl Compiler {
                             slot: u32::MAX,
                         });
                     } else {
-                        // A bind captures the source container. If it belongs
-                        // to an outer frame, box it at its declaration and
-                        // keep this read on the by-name cell path (ADR-0032).
-                        if let Expr::Var(src) = expr {
+                        // An attribute bind must seat the source's own cell
+                        // in the instance. An ordinary lexical bind keeps its
+                        // existing name-resolution path through shadowing
+                        // callers and later source rebinds (ADR-0024).
+                        if crate::value::attr_twigil_base(effective_name).is_some()
+                            && let Expr::Var(src) = expr
+                        {
                             self.register_container_ref_capture_if_free(src);
                         }
                         self.compile_call_arg(expr);

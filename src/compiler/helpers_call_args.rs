@@ -983,9 +983,6 @@ impl Compiler {
             // (#13782). Untagged, the binder refuses it with
             // `X::Parameter::RW`, as it refuses a literal.
         } else if let Some(name) = source_name {
-            if is_bind_target && matches!(arg, Expr::Var(_)) {
-                self.register_container_ref_capture_if_free(&name);
-            }
             // Deliberately the non-ADR-0032-D1 emitter here, for EVERY arg
             // shape (including a genuine `Expr::Var`/`Expr::DoStmt` VarDecl
             // read). This call site fires for every plain call argument in
