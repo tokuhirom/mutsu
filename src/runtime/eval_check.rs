@@ -37,6 +37,9 @@ fn collect_use_declared_type_names(
     if let Some(keys) = crate::parser::scanned_hook_type_keys(module) {
         out.extend(keys.iter().cloned());
     }
+    if let Some(keys) = crate::parser::scanned_hook_reexport_type_keys(module) {
+        out.extend(keys.iter().cloned());
+    }
     let path = module_source_in_dirs(module, extra_dirs)
         .or_else(|| interp.resolve_module_path(module).map(|(p, _)| p));
     let Some(path) = path else {

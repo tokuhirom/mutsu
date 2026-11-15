@@ -111,3 +111,28 @@ pub(super) fn record_hook_type_keys(module: &str, keys: &[String]) {
 pub(crate) fn scanned_hook_type_keys(module: &str) -> Option<Rc<[String]>> {
     SCANNED_HOOK_TYPE_KEYS.with(|m| m.borrow().get(module).cloned())
 }
+
+thread_local! {
+    /// Types another module exports through a stash referenced by this
+    /// module's hook. Used only by CHECK-time parameter validation; unlike
+    /// literal hook keys, these do not declare parser terms or variables.
+    static SCANNED_HOOK_REEXPORT_TYPE_KEYS: RefCell<HashMap<String, Rc<[String]>>> =
+        RefCell::new(HashMap::new());
+}
+
+// Cost: O(n), n = length of `module` plus `keys`.
+pub(super) fn record_hook_reexport_type_keys(module: &str, keys: &[String]) {
+    SCANNED_HOOK_REEXPORT_TYPE_KEYS.with(|m| {
+        let mut map = m.borrow_mut();
+        if keys.is_empty() {
+            map.remove(module);
+        } else {
+            map.insert(module.to_string(), keys.into());
+        }
+    });
+}
+
+// Cost: O(n), n = length of `module`.
+pub(crate) fn scanned_hook_reexport_type_keys(module: &str) -> Option<Rc<[String]>> {
+    SCANNED_HOOK_REEXPORT_TYPE_KEYS.with(|m| m.borrow().get(module).cloned())
+}
