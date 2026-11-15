@@ -1,7 +1,7 @@
 use Test;
 use nqp;
 
-plan 9;
+plan 10;
 
 sub container-name(Mu \value) { value.VAR.^name }
 sub is-container(Mu \value) { nqp::iscont(value) }
@@ -9,6 +9,7 @@ sub raw-name(Mu $value is raw) { $value.VAR.^name }
 
 is container-name([1]), 'Array', 'an Array literal binds as its own container';
 is is-container([1]), 0, 'the sigilless Array literal has no Scalar wrapper';
+is container-name($[1]), 'Scalar', 'an itemized Array retains its Scalar wrapper';
 
 my @array = 1;
 is container-name(@array), 'Array', 'an Array variable still binds directly';

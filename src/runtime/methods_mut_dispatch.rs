@@ -221,10 +221,8 @@ impl Interpreter {
             {
                 return Ok(target);
             }
-            // Probe the live binding before the name-keyed cache: `h($x)` then
-            // `h(1)` must answer Scalar then Int (#9346). A sigilless term
-            // bound to a real Array has no Scalar either (#17707); only a
-            // scalar-named readonly binding keeps the real Array exception.
+            // Probe the live binding before the name-keyed cache (#9346).
+            // A sigilless term bound to an unitemized Array has no Scalar (#17707).
             let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
             let alias_key = crate::runtime::sigilless_alias_key(target_var);
             let has_sigilless_meta =
@@ -253,9 +251,11 @@ impl Interpreter {
                     .env
                     .get_sym(readonly_key)
                     .is_some_and(|v| matches!(v.view(), ValueView::Bool(true)));
-                let itemized_array =
+                let real_array =
                     matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array());
-                if readonly && (!itemized_array || target_var.starts_with('\\')) {
+                let itemized_array =
+                    matches!(target.view(), ValueView::Array(_, kind) if kind.is_itemized());
+                if readonly && (!real_array || (target_var.starts_with('\\') && !itemized_array)) {
                     return Ok(target);
                 }
             }
