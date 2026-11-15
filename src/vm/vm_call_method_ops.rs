@@ -987,6 +987,7 @@ impl Interpreter {
             RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
         })?;
         let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
+        self.prepare_attribute_set_value_arg(code, &target, method_sym, &mut args);
         // Reify/consume a deferred Seq (ADR-0034 §2.3) — including an
         // `IO::Handle.lines`/`.words` source (formerly the separate
         // `LazyIoLines` special case). Introspection must not consume the

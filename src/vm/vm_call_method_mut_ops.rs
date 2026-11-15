@@ -646,11 +646,12 @@ impl Interpreter {
         };
         // ADR-0040's store boundary, Proxy half — see
         // `Interpreter::fetch_proxy_mutator_args`.
-        let args = self.fetch_proxy_mutator_args(method, args)?;
+        let mut args = self.fetch_proxy_mutator_args(method, args)?;
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
         let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
+        self.prepare_attribute_set_value_arg(code, &target, method_sym, &mut args);
         // A plain gather argument of a built-in method is read the way
         // Rakudo's method reads it (ADR-11678 §8.3).
         let mut args = self.method_gather_args(&target, method, args)?;

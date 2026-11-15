@@ -1112,6 +1112,7 @@ mod expr_incdec_ternary;
 mod expr_index_assign_emit;
 mod expr_index_concat_assign;
 mod expr_method;
+mod expr_method_var_index;
 mod expr_multidim_bind;
 mod expr_ops;
 mod expr_postfix;
