@@ -405,6 +405,10 @@ impl Interpreter {
         let result =
             self.drive_react_subscriptions_loop(&mut react_subs, policy, &waker, &mut sink_regs);
         drop(synchronous);
+        crate::runtime::react_setup::release_pending_subscriptions(
+            &self.async_state.pending_react_subscriptions,
+            &waker,
+        );
         self.async_state.current_react_waker = prev_waker;
         for (sid, sink_id) in sink_regs {
             supplier_sink_unregister(sid, sink_id);
