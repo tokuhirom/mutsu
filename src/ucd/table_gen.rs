@@ -1,59 +1,83 @@
 //! Shared machinery for generating and verifying the Unicode property tables.
 //!
 //! Test-only. Both `ucd::gc_gen` and `builtins::unicode_script_gen` answer the same
-//! question -- "which of these N disjoint `\p{...}` classes is this codepoint
-//! in?" -- and both bake the answer into the same three-tier shape, so the
-//! derivation, the tier construction, the emitter and the drift check live
-//! here once.
-//!
-//! The tables are derived from `regex-syntax`'s Unicode data, which is the
-//! very data `regex`'s `\p{...}` classes match against, folded in the same
-//! first-match-wins order the ordered-regex probes used before
-//! [#8999](https://github.com/tokuhirom/mutsu/issues/8999). That is what makes
-//! each generated answer identical to the regexes' by construction rather than
-//! by argument.
+//! question -- "which property does this codepoint have?" -- from the pinned
+//! Unicode 17 UCD files. Both bake the answer into the same three-tier shape.
 
-use regex_syntax::hir::{Class, HirKind};
 use std::fmt::Write as _;
 
 /// Codepoints per BMP leaf block, as a shift.
 pub(crate) const SHIFT: u32 = 6;
 pub(crate) const BLOCK: usize = 1 << SHIFT;
 
-/// The codepoint ranges of one `\p{...}` class, straight out of `regex-syntax`.
-pub(crate) fn ranges_for(pattern: &str) -> Vec<(u32, u32)> {
-    // The class-forcing brackets keep a single-codepoint class (`Zp`) from
-    // being folded into a `Literal` by the HIR translator.
-    let hir = regex_syntax::parse(&format!("[{pattern}]")).expect("valid class");
-    match hir.kind() {
-        HirKind::Class(Class::Unicode(class)) => class
-            .iter()
-            .map(|r| (r.start() as u32, r.end() as u32))
-            .collect(),
-        HirKind::Literal(lit) => std::str::from_utf8(&lit.0)
-            .expect("utf8 literal")
-            .chars()
-            .map(|c| (c as u32, c as u32))
-            .collect(),
-        other => panic!("unexpected HIR for {pattern}: {other:?}"),
-    }
+/// Parse the range and property on each non-comment UCD line.
+pub(crate) fn property_ranges(source: &str) -> Vec<(u32, u32, &str)> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let (range, property) = line.split_once(';')?;
+            let range = range.trim();
+            if !range.starts_with(|c: char| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            let property = property.split('#').next().unwrap().trim();
+            let (start, end) = range.split_once("..").unwrap_or((range, range));
+            let start = u32::from_str_radix(start, 16).expect("UCD range start");
+            let end = u32::from_str_radix(end, 16).expect("UCD range end");
+            assert!(start <= end && end < 0x110000, "UCD range bounds");
+            Some((start, end, property))
+        })
+        .collect()
 }
 
-/// One code per codepoint: the index of the first pattern in `patterns` whose
-/// class contains it, or `patterns.len()` (the fallthrough) where none does.
-pub(crate) fn derive_table(patterns: &[String]) -> Vec<u8> {
-    let fallback = u8::try_from(patterns.len()).expect("fallthrough code fits in u8");
+/// One code per codepoint, indexed by `names`, or `names.len()` for the
+/// property's default value. `ignored` names are explicit UCD defaults or
+/// values unreachable through Rust `char` (surrogates).
+pub(crate) fn derive_ucd_table(source: &str, names: &[&str], ignored: &[&str]) -> Vec<u8> {
+    let fallback = u8::try_from(names.len()).expect("fallthrough code fits in u8");
     let mut table = vec![fallback; 0x110000];
-    // Reverse order so an earlier pattern wins, exactly as a first-match-wins
-    // regex probe did.
-    for (i, pattern) in patterns.iter().enumerate().rev() {
-        for (start, end) in ranges_for(pattern) {
-            for cp in start..=end {
-                table[cp as usize] = i as u8;
-            }
+    for (start, end, property) in property_ranges(source) {
+        if ignored.contains(&property) {
+            continue;
+        }
+        let code = names
+            .iter()
+            .position(|name| *name == property)
+            .unwrap_or_else(|| panic!("unknown UCD property {property}")) as u8;
+        for cp in start..=end {
+            assert_eq!(
+                table[cp as usize], fallback,
+                "overlapping UCD range U+{cp:04X}"
+            );
+            table[cp as usize] = code;
         }
     }
     table
+}
+
+/// MoarVM classifies the still-reserved tails of CJK extensions D, F and G
+/// as ideographs. Apply that block-level compatibility rule to either the GC
+/// or Script table after reading the standard UCD property data.
+pub(crate) fn apply_moar_cjk_tails(table: &mut [u8], fallback: u8, ideograph: u8) -> usize {
+    const BLOCKS: &str = include_str!("data/Blocks-17.0.0.txt");
+    let mut changed = 0;
+    for (start, end, name) in property_ranges(BLOCKS) {
+        if !matches!(
+            name,
+            "CJK Unified Ideographs Extension D"
+                | "CJK Unified Ideographs Extension F"
+                | "CJK Unified Ideographs Extension G"
+        ) {
+            continue;
+        }
+        for cp in start..=end {
+            if table[cp as usize] == fallback {
+                table[cp as usize] = ideograph;
+                changed += 1;
+            }
+        }
+    }
+    changed
 }
 
 /// The three tiers derived from a per-codepoint table: ASCII, the BMP trie,
@@ -214,6 +238,9 @@ pub(crate) fn render(t: &Tables, header: &str, extra: &str) -> String {
     );
     emit_u8(&mut out, &t.astral_cats, 64);
     out.push_str(extra);
+    while out.ends_with("\n\n") {
+        out.pop();
+    }
     out
 }
 

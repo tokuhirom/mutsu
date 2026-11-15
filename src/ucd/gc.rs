@@ -9,14 +9,13 @@
 //! segmentation properties -- so a JSON decode paid it 23,520 times.
 //!
 //! It is now a table lookup against [`super::gc_data`], which is generated
-//! from `regex-syntax`'s own Unicode tables (see that module's header) and so
-//! answers exactly what the regexes did. Three tiers, cheapest first:
+//! from the pinned Unicode 17 UCD (see `gc_gen`). Three tiers, cheapest first:
 //!
 //! | codepoint | structure | cost |
 //! | --- | --- | --- |
 //! | `< 0x80` | direct index into a 128-byte table | one load |
 //! | `< 0x10000` | two-stage trie, 64-codepoint blocks | two loads |
-//! | above | binary search over 1,200 runs | ~11 branches |
+//! | above | binary search over constant-category runs | logarithmic branches |
 //!
 //! Total static data is ~21 KB in `.rodata`: no heap, no lock, no lazy
 //! initialisation, and nothing to memoize per process.
@@ -26,9 +25,7 @@ use super::gc_data as data;
 /// A Unicode General_Category value.
 ///
 /// `Cs` (surrogate) is deliberately absent. A Rust `char` can never be a
-/// surrogate, and the ordered-regex probe this replaced had no `Cs` arm
-/// either -- the `regex` crate does not support `\p{Cs}` -- so a surrogate
-/// codepoint fell through to `Cn`. The tables keep that answer.
+/// surrogate, so the table stores `Cn` for surrogate codepoints.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub(crate) enum GeneralCategory {
