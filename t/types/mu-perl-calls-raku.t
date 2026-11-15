@@ -4,7 +4,7 @@ use Test;
 # user-declared `perl` in reach is a call to `raku`, so every receiver
 # answers `.perl` exactly as it answers `.raku`, a user `raku` included.
 
-plan 28;
+plan 30;
 
 # Built-in values: `.perl` and `.raku` agree.
 for 42, 1.5, 1e10, <1/0>, 3+4i, "a\"b", True, Nil, Any, Int, (1, 2), [1, [2]],
@@ -41,3 +41,5 @@ is Q.new.perl, "P:Qr", 'callsame out of a user perl calls the receiver\'s raku';
 
 # `.^find_method('perl')` is `Mu.perl`.
 is R.^find_method('perl')(R.new), "R!", 'Mu.perl called as a code object';
+is R.new.Mu::perl, "R!", 'qualified Mu.perl delegates to the receiver raku';
+is P.new.Mu::perl, "praku", 'qualified Mu.perl bypasses a user perl';

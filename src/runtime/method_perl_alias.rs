@@ -21,6 +21,11 @@ impl Interpreter {
     // `perl`, O(r + d), r = roles, d = MRO depth; a mixin adds O(m), m =
     // mixed-in roles.
     pub(crate) fn perl_as_raku(&mut self, target: &Value, method: Symbol) -> Symbol {
+        // An explicit Mu::perl selects Mu's body even when the receiver has
+        // its own perl; that body delegates to the receiver's raku.
+        if method.as_str() == "Mu::perl" {
+            return wk::raku();
+        }
         if method != wk::perl() || self.user_perl_in_reach(target) {
             method
         } else {
