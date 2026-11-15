@@ -183,7 +183,6 @@ impl Interpreter {
             if let ValueView::Instance { attributes, .. } = value.view() {
                 attributes.insert(crate::value::OBJAT_SUBCLASS_MARKER, Value::TRUE);
             }
-            value
         }))
     }
 
