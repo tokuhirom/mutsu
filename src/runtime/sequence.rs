@@ -775,6 +775,11 @@ impl Interpreter {
 
         // Generate values
         let mut result: Vec<Value> = seeds.clone();
+        let longer_string_seed = Self::sequence_longer_string_seed(&seeds, endpoint.as_ref());
+        if longer_string_seed && matches!(mode, SeqMode::Arithmetic(step) if step > 0.0) {
+            result.extend(extra_rhs);
+            return Ok(Value::array(result));
+        }
         let max_gen = match (&mode, &endpoint_kind) {
             // Retain finite closure sequences from the start. We cannot
             // soundly infer a recurrence from generated values: the closure
@@ -782,6 +787,7 @@ impl Interpreter {
             // them through their explicit forcing paths.
             (SeqMode::Closure, Some(EndpointKind::Value(_))) => 0,
             (SeqMode::Closure, None) => 0,
+            (SeqMode::Arithmetic(step), Some(_)) if longer_string_seed && *step < 0.0 => 32,
             (_, Some(_)) => 10000,
             (_, None) => 32,
         };
@@ -831,29 +837,23 @@ impl Interpreter {
         } else {
             None
         };
-        let uniform_string_alphabet = if is_string_seq
+        let string_product = if is_string_seq
             && let Some(ValueView::Str(ep)) = endpoint.as_ref().map(Value::view)
             && seeds.len() == 1
             && matches!(mode, SeqMode::Arithmetic(step) if step != 0.0)
             && let ValueView::Str(seed) = seeds[0].view()
         {
-            let seed_chars: Vec<char> = seed.chars().collect();
-            let ep_chars: Vec<char> = ep.chars().collect();
-            if seed_chars.len() > 1
-                && seed_chars.len() == ep_chars.len()
-                && seed_chars.iter().all(|c| *c == seed_chars[0])
-                && ep_chars.iter().all(|c| *c == ep_chars[0])
-            {
-                let a = seed_chars[0] as u32;
-                let b = ep_chars[0] as u32;
-                let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-                let alpha: Vec<char> = (lo..=hi).filter_map(char::from_u32).collect();
-                if alpha.len() >= 2 { Some(alpha) } else { None }
+            let width = seed.chars().count();
+            if width > 1 && width == ep.chars().count() {
+                if width > 1_048_576 {
+                    return Err(RuntimeError::new("Sequence string is too long"));
+                }
+                true
             } else {
-                None
+                false
             }
         } else {
-            None
+            false
         };
 
         // How the closure generator is called, decided once for the whole sequence.
@@ -870,7 +870,7 @@ impl Interpreter {
             is_string_seq,
             use_codepoint,
             digit_string_radix,
-            uniform_string_alphabet,
+            string_product,
             rat_step,
             generator: generator.clone(),
             generator_shape,
