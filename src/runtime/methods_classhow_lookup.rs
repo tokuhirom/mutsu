@@ -26,7 +26,17 @@ impl Interpreter {
                 .get(&class_name)
                 .is_some_and(|class_def| class_def.native_methods.contains(method_name))
             {
-                return Some(self.make_native_method_object(method_name, &class_name));
+                let owner = self
+                    .builtin_method_ancestors(&class_name)
+                    .into_iter()
+                    .find(|ancestor| {
+                        crate::builtins::method_introspection::native_method_declared(
+                            ancestor,
+                            method_name,
+                        )
+                    })
+                    .unwrap_or(class_name);
+                return Some(self.make_native_method_object(method_name, &owner));
             }
         }
         (method_name == "new").then(|| self.make_native_method_object("new", "Mu"))
@@ -440,11 +450,13 @@ impl Interpreter {
                 self.builtin_method_ancestors(&class_name_str)
                     .into_iter()
                     .find(|level| {
-                        crate::builtin_types::catalog::builtin_type_info(level).is_some()
-                            && self.registry().declares_builtin_method(level, method_name)
+                        crate::builtins::method_introspection::native_method_declared(
+                            level,
+                            method_name,
+                        )
                     })
-                    // A user class inherits its constructors from `Mu`
-                    // (`C.^find_method('new').package` is `Mu`).
+                    // The native row table has no entry for every constructor
+                    // yet; user classes inherit these from Mu.
                     .unwrap_or_else(|| {
                         if matches!(method_name, "new" | "bless") {
                             "Mu".to_string()
@@ -833,7 +845,7 @@ impl Interpreter {
     /// Phase F box F3 step 2, `t/native-int-coerce-methods-are-cool-only.t`'s
     /// "Pair cannot int8" pin).
     // Cost: O(d * m), d = ancestors, m = MRO length of a catalog ancestor.
-    fn builtin_method_ancestors(&self, type_name: &str) -> Vec<String> {
+    pub(crate) fn builtin_method_ancestors(&self, type_name: &str) -> Vec<String> {
         use crate::builtin_types::catalog::builtin_type_info;
         let own: Vec<String> = match builtin_type_info(type_name) {
             Some(info) => info.mro.iter().map(|s| s.to_string()).collect(),

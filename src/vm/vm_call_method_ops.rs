@@ -2389,7 +2389,9 @@ impl Interpreter {
         modifier_idx: Option<u32>,
         arity: u32,
     ) -> MethodName<'a> {
-        if modifier_idx.is_some() || name.sym != crate::symbol::wk::perl() {
+        if modifier_idx.is_some()
+            || (name.sym != crate::symbol::wk::perl() && name.raw != "Mu::perl")
+        {
             return name;
         }
         let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1) else {

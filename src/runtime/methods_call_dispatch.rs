@@ -85,8 +85,8 @@ impl Interpreter {
         let target = Self::lazy_slip_receiver(target, method);
         let target = Self::shaped_iteration_receiver(target, method);
         // `Mu.perl` is `self.raku` (ADR-11276 §9.152).
-        let method = if method == "perl" {
-            self.perl_as_raku(&target, crate::symbol::wk::perl())
+        let method = if matches!(method, "perl" | "Mu::perl") {
+            self.perl_as_raku(&target, Symbol::intern(method))
                 .as_str()
         } else {
             method
