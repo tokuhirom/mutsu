@@ -9,6 +9,11 @@
 use super::Compiler;
 
 impl Compiler {
+    // Cost: O(n) expected, n = candidate names in the caller's environment.
+    pub(crate) fn seed_eval_outer_term_names(&mut self, names: impl Iterator<Item = String>) {
+        self.eval_outer_term_names.extend(names);
+    }
+
     /// The package-store name of an `our` declaration spelled `spelled` whose
     /// lexical storage key is `storage`. A qualified store (`Pkg::b`) is keyed
     /// by the spelling; an unqualified one (a GLOBAL-scope `constant b`) IS the

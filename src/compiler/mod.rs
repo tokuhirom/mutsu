@@ -1860,10 +1860,11 @@ pub(crate) struct Compiler {
     /// not a sigilless `\X` of an outer scope (#15806). A later `my \X` of the
     /// same scope drops the name again.
     use_declared_names: std::collections::HashSet<String>,
-    /// True for an `EVAL`'d unit (`mark_as_eval_unit`). It cannot see which
-    /// sigilless bindings its call site holds, so its own `use X` declares `X`
-    /// whether or not one is visible at compile time.
+    /// True for an `EVAL`'d unit (`mark_as_eval_unit`).
     in_eval_unit: bool,
+    /// Term names visible at the EVAL call site. A type the EVAL declares
+    /// under one of these names must outrank the caller's term binding.
+    eval_outer_term_names: std::collections::HashSet<String>,
     /// Bare names of the lexical types (`my class`/`my role`/`my grammar`)
     /// declared in this scope or an enclosing one. A method body's compiler
     /// reads them through `lexical_type_shadows`, so a method names such a
@@ -2298,6 +2299,7 @@ impl Compiler {
             lexical_type_shadows: std::collections::HashSet::new(),
             use_declared_names: std::collections::HashSet::new(),
             in_eval_unit: false,
+            eval_outer_term_names: std::collections::HashSet::new(),
             lexical_types_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
