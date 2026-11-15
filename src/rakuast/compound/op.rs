@@ -379,7 +379,9 @@ pub(crate) fn short_circuit_compound_assign_expr(
     // rakudo returns the *container* when there is one (so
     // `my $a = 52; ($a //= 42) += 10` leaves 62 in `$a`) and the bare *value*
     // when there is not (so `my $a := 42; ($a //= 42) += 10` dies with
-    // X::Assignment::RO on the returned value). Only the runtime knows which,
+    // X::Assignment::RO on the returned value). A read-only parameter still
+    // has a container; an outer assignment through it raises X::AdHoc.
+    // Only the runtime knows which,
     // so branch on it: the lvalue arm is a plain `Var`, which an outer compound
     // assignment's ternary distribution writes through, while the value arm is
     // a `DoBlock` that the same distribution treats as a non-lvalue and turns
@@ -388,7 +390,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
     // pin exactly this split.
     let keep_value = Expr::Ternary {
         cond: Box::new(Expr::Call {
-            name: Symbol::intern("__mutsu_var_is_writable"),
+            name: Symbol::intern("__mutsu_var_has_container"),
             args: vec![Expr::Literal(Value::str(name.to_string()))],
             listop: false,
         }),
