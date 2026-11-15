@@ -56,7 +56,7 @@ DISTS_DIR = os.path.join(DATA_DIR, "dists")
 EXCLUDE_LIST = os.path.join(DATA_DIR, "exclude.txt")
 ACCEPTED_LIST = os.path.join(DATA_DIR, "accepted-divergences.toml")
 SCHEMA = 1
-HARNESS = 2
+HARNESS = 3
 
 # How much more time the one retry after a timeout gets. See measure().
 TIMEOUT_RETRY_FACTOR = 2
@@ -82,11 +82,12 @@ def log(msg):
 
 # --- running -----------------------------------------------------------------
 
-def run(cmd, cwd, timeout, sandbox, sbx_home, writable=()):
+def run(cmd, cwd, timeout, sandbox, sbx_home, writable=(), cache_dir=None):
     """One interpreter run. Returns (returncode, combined output)."""
     interp_dir = os.path.dirname(cmd[0]) if os.sep in cmd[0] else ""
     if sandbox:
-        cmd = eco.sandbox_wrap(cmd, cwd, sbx_home, writable=writable)
+        cmd = eco.sandbox_wrap(cmd, cwd, sbx_home, writable=writable,
+                               cache_dir=cache_dir)
     # MUTSU_FUDGE is roast-only: with it set, a stray `#?rakudo skip` comment in
     # a distribution would silently drop the next statement.
     env = {k: v for k, v in os.environ.items() if k != "MUTSU_FUDGE"}
@@ -120,7 +121,8 @@ def side_result(rc, out, secs):
     return side
 
 
-def measure(cmd, cwd, timeout, sandbox, sbx_home, writable, attempts):
+def measure(cmd, cwd, timeout, sandbox, sbx_home, writable, attempts,
+            cache_dir=None):
     """Run a file, retrying only when it did not pass.
 
     A suite that flakes must not move the KPI, and retrying everything would
@@ -152,7 +154,7 @@ def measure(cmd, cwd, timeout, sandbox, sbx_home, writable, attempts):
     budget = timeout
     for _ in range(attempts):
         start = dt.datetime.now()
-        rc, out = run(cmd, cwd, budget, sandbox, sbx_home, writable)
+        rc, out = run(cmd, cwd, budget, sandbox, sbx_home, writable, cache_dir)
         side = side_result(rc, out, (dt.datetime.now() - start).total_seconds())
         timed_out = side["verdict"] == "timeout"
         budget_limited = timed_out and budget == timeout and attempts > 1
@@ -251,6 +253,12 @@ def sweep_dist(name, index, opts, bundled) -> dict:
 
         sbx_home = os.path.join(workdir, "sbxhome")
         os.makedirs(sbx_home, exist_ok=True)
+        # Each interpreter gets its own private cache. The test files in one
+        # distribution share it; another distribution gets a fresh workdir.
+        mutsu_cache = os.path.join(workdir, "mutsu-cache")
+        raku_cache = os.path.join(workdir, "raku-cache")
+        os.mkdir(mutsu_cache, 0o700)
+        os.mkdir(raku_cache, 0o700)
         common = dict(cwd=root, timeout=opts.timeout, sandbox=opts.sandbox,
                       sbx_home=sbx_home, writable=(root,))
 
@@ -261,11 +269,16 @@ def sweep_dist(name, index, opts, bundled) -> dict:
         blocked = False
         for module in sorted(meta.get("provides") or {}):
             probe = ["-e", f"use {module}; exit 0"]
-            m_rc, m_out = run([opts.mutsu] + libs + probe, **common)
+            m_rc, m_out = run([opts.mutsu] + libs + probe,
+                              cache_dir=mutsu_cache, **common)
+            # Both interpreters must get the same untimed load warmup. The
+            # old conditional rakudo probe made the first file cold on
+            # rakudo but warm on mutsu whenever mutsu loaded successfully.
+            r_rc, _r_out = run([opts.raku] + libs + probe,
+                               cache_dir=raku_cache, **common)
             if m_rc == 0:
                 record["load"][module] = "ok"
                 continue
-            r_rc, _r_out = run([opts.raku] + libs + probe, **common)
             if r_rc != 0:
                 record["load"][module] = "raku_also_fails"
             else:
@@ -285,12 +298,14 @@ def sweep_dist(name, index, opts, bundled) -> dict:
             # at a file the baseline got one is not a fair comparison, even
             # though the asymmetry would only ever shrink the denominator.
             raku, raku_flaky = measure([opts.raku] + libs + [path],
-                                       attempts=opts.attempts, **common)
+                                       attempts=opts.attempts,
+                                       cache_dir=raku_cache, **common)
             if raku["verdict"] != "pass":
                 record["files"].append({"path": rel, "raku": raku, "cmp": "no_baseline"})
                 continue
             mutsu, flaky = measure([opts.mutsu] + libs + [path],
-                                   attempts=opts.attempts, **common)
+                                   attempts=opts.attempts,
+                                   cache_dir=mutsu_cache, **common)
             entry = {"path": rel, "raku": raku, "mutsu": mutsu}
             if flaky or raku_flaky:
                 entry["flaky"] = True
@@ -821,7 +836,8 @@ def _self_test() -> int:
         times out unless the budget it was given covers budget_needed."""
         calls = []
 
-        def fake(cmd, cwd, timeout, sandbox, sbx_home, writable=()):
+        def fake(cmd, cwd, timeout, sandbox, sbx_home, writable=(),
+                 cache_dir=None):
             needed, out = plan[min(len(calls), len(plan) - 1)]
             calls.append(timeout)
             if needed > timeout:

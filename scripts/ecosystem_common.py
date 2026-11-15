@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -466,11 +467,16 @@ def _sandbox_secret_masks(environ=None) -> list[str]:
     return args
 
 
-def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=()):
+def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *,
+                 writable=(), cache_dir=None):
     """Wrap `cmd` so untrusted distribution code runs with NO network, a
     read-only filesystem, an isolated throwaway HOME, its own PID namespace,
     and rlimits. `sbx_home` must already exist (a fresh tmpfs is mounted over
-    it, so nothing the code writes reaches the host).
+    it, so ordinary HOME writes are discarded). `cache_dir`, when given, is
+    a private directory inside the same temporary workdir as the writable
+    distribution copy. It persists only until that distribution's run ends
+    and is mounted under the throwaway HOME after the tmpfs, so each test file
+    can reuse precompilation without exposing the host's real cache.
 
     Loading a module, let alone running its test suite, executes arbitrary
     BEGIN/CHECK phasers and load-time code from an unaudited distribution.
@@ -495,9 +501,20 @@ def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=(
     an optional module (e.g. IO::Socket::SSL) that Rakudo's flat dependency
     closure lacks (#8844).
     """
+    if cache_dir is not None:
+        cache_stat = os.stat(cache_dir, follow_symlinks=False)
+        if (not stat.S_ISDIR(cache_stat.st_mode)
+                or cache_stat.st_uid != os.getuid()
+                or cache_stat.st_mode & 0o077
+                or os.path.dirname(os.path.realpath(cache_dir))
+                   != os.path.realpath(os.path.dirname(sbx_home))):
+            raise ValueError("sandbox cache must be a private sibling of sbx_home")
     binds = []
     for path in writable:
         binds += ["--bind", path, path]
+    cache_bind = (["--dir", os.path.join(sbx_home, ".cache"),
+                   "--bind", cache_dir, os.path.join(sbx_home, ".cache")]
+                  if cache_dir is not None else [])
     return [
         "bwrap",
         "--unshare-all",              # user+net+pid+ipc+uts+cgroup+mount (net = offline)
@@ -508,6 +525,7 @@ def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=(
         "--proc", "/proc",
         "--tmpfs", "/run",
         "--tmpfs", sbx_home,          # writable throwaway HOME (tmpfs over an existing dir)
+        *cache_bind,
         "--setenv", "HOME", sbx_home,
         # Keep interpreter precompilation caches out of the read-only host
         # filesystem; the parent process may spawn children that also need it.
@@ -1185,6 +1203,45 @@ def _self_test() -> int:
             print(f"sandbox_wrap: malformed XDG_CACHE_HOME setenv: {wrapped!r}",
                   file=sys.stderr)
             failures += 1
+
+        # The bind must come after HOME's tmpfs mount. Two invocations for
+        # one distribution see the same cache, but another distribution does
+        # not. Exercise the actual mount when bwrap is available.
+        if have_bwrap():
+            home = os.path.join(tmp, "home")
+            first_cache = os.path.join(tmp, "first-cache")
+            second_cache = os.path.join(tmp, "second-cache")
+            for path in (home, first_cache, second_cache):
+                os.mkdir(path, 0o700)
+            unsafe_cache = os.path.join(tmp, "unsafe-cache")
+            os.symlink(first_cache, unsafe_cache)
+            try:
+                sandbox_wrap(["mutsu", "-e", "1"], tmp, home,
+                             cache_dir=unsafe_cache)
+                print("sandbox_wrap: accepted symlink cache directory", file=sys.stderr)
+                failures += 1
+            except ValueError:
+                pass
+            write = [sys.executable, "-c", "import os; from pathlib import Path; "
+                     "Path(os.environ['XDG_CACHE_HOME'], 'probe').write_text('warm')"]
+            read = [sys.executable, "-c", "import os; from pathlib import Path; "
+                    "print(Path(os.environ['XDG_CACHE_HOME'], 'probe').read_text())"]
+            missing = [sys.executable, "-c", "import os; from pathlib import Path; "
+                       "print(Path(os.environ['XDG_CACHE_HOME'], 'probe').exists())"]
+            first = subprocess.run(sandbox_wrap(write, tmp, home, cache_dir=first_cache),
+                                   capture_output=True, text=True)
+            second = subprocess.run(sandbox_wrap(read, tmp, home, cache_dir=first_cache),
+                                    capture_output=True, text=True)
+            isolated = subprocess.run(sandbox_wrap(missing, tmp, home,
+                                                    cache_dir=second_cache),
+                                      capture_output=True, text=True)
+            if (first.returncode != 0 or second.returncode != 0
+                    or second.stdout.strip() != "warm" or isolated.returncode != 0
+                    or isolated.stdout.strip() != "False"):
+                print("sandbox_wrap: per-dist cache did not persist in isolation: "
+                      f"{first.stderr!r}, {second.stderr!r}, {isolated.stderr!r}",
+                      file=sys.stderr)
+                failures += 1
 
     # The sandbox must not hand a distribution the runner's tokens: secret-
     # looking variables are unset, ordinary ones (PATH, LANG) are kept.
