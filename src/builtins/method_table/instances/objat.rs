@@ -36,24 +36,20 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("ObjAt", "raku", raku),
 ];
 
-/// The class name and identity text of an exact `ObjAt` / `ValueObjAt`
-/// instance; `None` for any other receiver (a type object, a mixin).
+/// The class name and identity text of an `ObjAt` / `ValueObjAt` instance or
+/// subclass; `None` for any other receiver (a type object, a mixin).
 // Cost: O(n), n = chars of the identity text.
-fn objat(target: &Value) -> Option<(&'static str, Option<String>)> {
+fn objat(target: &Value) -> Option<(String, Option<String>)> {
     match target.view() {
         ValueView::Instance {
             class_name,
             attributes,
             ..
         } => {
-            let class = if class_name == "ValueObjAt" {
-                "ValueObjAt"
-            } else if class_name == "ObjAt" {
-                "ObjAt"
-            } else {
+            if !attributes.as_map().is_objat_instance(class_name.as_str()) {
                 return None;
-            };
-            Some((class, attributes.as_map().objat_which()))
+            }
+            Some((class_name.resolve(), attributes.as_map().objat_which()))
         }
         _ => None,
     }
@@ -79,6 +75,6 @@ pub(crate) fn objat_str(target: &Value) -> Option<Value> {
 fn raku(target: &Value, _args: &[Value]) -> Answer {
     let (class, which) = objat(target)?;
     Some(Ok(Value::str(crate::value::raku_repr::objat_raku(
-        class, which,
+        &class, which,
     ))))
 }

@@ -161,6 +161,32 @@ impl Interpreter {
         }
     }
 
+    /// A declared subclass inherits the positional constructor of ObjAt or
+    /// ValueObjAt, unless it supplies its own `new`.
+    // Cost: O(m + a), m = MRO entries, a = arguments.
+    pub(crate) fn try_native_objat_subclass_construct(
+        &mut self,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let name = class_name.resolve();
+        if !self.types.user_declared_classes.contains(&name)
+            || self.has_user_method(&name, "new")
+            || !self
+                .class_mro(&name)
+                .iter()
+                .any(|parent| matches!(parent.as_str(), "ObjAt" | "ValueObjAt"))
+        {
+            return None;
+        }
+        Some(Self::build_native_objat_value(class_name, args).map(|value| {
+            if let ValueView::Instance { attributes, .. } = value.view() {
+                attributes.insert(crate::value::OBJAT_SUBCLASS_MARKER, Value::TRUE);
+            }
+            value
+        }))
+    }
+
     /// VM-native construction for `Failure.new($exception?)` — pure data assembly
     /// reading only VM-owned state: the explicit exception argument (or `$!` from
     /// env when omitted, or the `X::AdHoc("Failed")` default), wrapped into an

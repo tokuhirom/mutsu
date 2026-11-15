@@ -257,10 +257,11 @@ fn raku_raw_repr(v: &Value) -> Option<String> {
 /// them exactly (and better than dispatch would for a nested Match).
 pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
     match v.view() {
-        ValueView::Instance { class_name, .. } => {
-            !(v.is_match_instance()
-                || crate::value::AttrMap::is_objat_class_name(class_name.as_str()))
-        }
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } => !(v.is_match_instance() || attributes.as_map().is_objat_instance(class_name.as_str())),
         ValueView::CustomType(_) | ValueView::CustomTypeInstance(_) => true,
         // A Code leaf needs dispatch for the same reason it does on the gist
         // side: the pure renderer has no Code arm, so a block inside a list
@@ -1338,7 +1339,7 @@ fn raku_value_node(v: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if crate::value::AttrMap::is_objat_class_name(class_name.as_str()) => {
+        } if attributes.as_map().is_objat_instance(class_name.as_str()) => {
             objat_raku(class_name.as_str(), attributes.as_map().objat_which())
         }
         ValueView::Mixin(inner, mixins) => {
