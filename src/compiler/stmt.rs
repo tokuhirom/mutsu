@@ -3471,6 +3471,31 @@ impl Compiler {
                         self.code.ops.last(),
                         Some(OpCode::TagContainerRef(..) | OpCode::TagContainerRefReversed(..))
                     );
+                    // A scalar assignment expression evaluates to its target
+                    // container, just as a bare `$x` does. Its trailing tag
+                    // identifies the writeback source. Array/hash assignments
+                    // still yield read-only topics, and `:=` may bind a scalar
+                    // to an immutable value.
+                    let mut assignment_topic = topic;
+                    while let Expr::Grouped(inner) = assignment_topic {
+                        assignment_topic = inner;
+                    }
+                    let scalar_assignment_topic = match assignment_topic {
+                        Expr::AssignExpr { name, is_bind, .. } => {
+                            !*is_bind
+                                && !name.starts_with('@')
+                                && !name.starts_with('%')
+                                && !name.starts_with('&')
+                        }
+                        Expr::CompoundAssign { expanded, .. } => matches!(
+                            expanded.as_ref(),
+                            Expr::AssignExpr { name, is_bind: false, .. }
+                                if !name.starts_with('@')
+                                    && !name.starts_with('%')
+                                    && !name.starts_with('&')
+                        ),
+                        _ => false,
+                    };
                     // The topic is read-only unless it is a bare scalar variable
                     // (`given $x` aliases `$x` rw), a scalar declaration topic
                     // (`given my $x = ...`), or an `is copy` writable copy.
@@ -3478,7 +3503,8 @@ impl Compiler {
                     // errors on `$_ = ...`).
                     topic_readonly = !is_copy_topic
                         && !matches!(topic, Expr::Var(_))
-                        && topic_decl_scalar.is_none();
+                        && topic_decl_scalar.is_none()
+                        && !(scalar_assignment_topic && tagged_source);
                 }
                 // A pointy block (`given @a -> @p { ... }`) starts with a
                 // parser-generated synthetic declaration containing a bound declaration.
