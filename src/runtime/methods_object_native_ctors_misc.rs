@@ -179,7 +179,7 @@ impl Interpreter {
         {
             return None;
         }
-        Some(Self::build_native_objat_value(class_name, args).map(|value| {
+        Some(Self::build_native_objat_value(class_name, args).inspect(|value| {
             if let ValueView::Instance { attributes, .. } = value.view() {
                 attributes.insert(crate::value::OBJAT_SUBCLASS_MARKER, Value::TRUE);
             }
