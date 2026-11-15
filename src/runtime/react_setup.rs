@@ -16,6 +16,7 @@
 //! deadlocking with them; their events are then replayed asynchronously, the
 //! behavior this replaces.
 use crate::value::waker::{DispatchGuard, ReactWaker};
+use crate::value::{Value, ValueView};
 
 #[derive(Debug)]
 pub(crate) struct ReactSetup {
@@ -72,6 +73,36 @@ impl Drop for ReactSetup {
         // error) must not leave a producer waiting on a setup that never ends.
         // After a drive loop this is a no-op: its own guard already ended it.
         self.waker.end_synchronous_delivery();
+    }
+}
+
+/// A `whenever` registered inside another handler has no setup frame. Keep
+/// emissions made before the drive loop adopts it, including those queued
+/// before its tap closes. The sink registration releases this hold.
+pub(crate) fn hold_pending_subscription(source: &Value, waker: Option<&ReactWaker>) {
+    if let Some(waker) = waker
+        && let ValueView::Instance { attributes, .. } = source.view()
+        && !attributes.as_map().contains_key("preserving")
+        && let Some(ValueView::Int(sid)) = attributes.as_map().get("supplier_id").map(Value::view)
+        && sid > 0
+    {
+        crate::runtime::native_methods::supplier_add_setup_hold(sid as u64, waker, false);
+    }
+}
+
+/// Release holds whose nested subscriptions never reached sink registration,
+/// for example when a react exits on an error.
+pub(crate) fn release_pending_subscriptions(markers: &[Value], waker: &ReactWaker) {
+    for marker in markers {
+        if let ValueView::Array(items, ..) = marker.view()
+            && let Some(source) = items.first()
+            && let ValueView::Instance { attributes, .. } = source.view()
+            && let Some(ValueView::Int(sid)) =
+                attributes.as_map().get("supplier_id").map(Value::view)
+            && sid > 0
+        {
+            crate::runtime::native_methods::supplier_remove_setup_hold(sid as u64, waker.id());
+        }
     }
 }
 

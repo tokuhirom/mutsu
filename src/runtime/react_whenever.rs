@@ -422,7 +422,11 @@ impl Interpreter {
             } else {
                 // No registration frame: this `whenever` ran inside a
                 // `whenever` body, so hand it to the drive loop, which adopts
-                // it on its next round.
+                // it on its next round. Pin emissions until adoption.
+                super::react_setup::hold_pending_subscription(
+                    &supply_val,
+                    self.async_state.current_react_waker.as_ref(),
+                );
                 self.async_state.pending_react_subscriptions.push(sub);
             }
 
