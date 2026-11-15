@@ -854,6 +854,13 @@ impl Interpreter {
         } else {
             let target = Self::lazy_slip_receiver(target, method);
             let target = Self::shaped_iteration_receiver(target, method);
+            // A named Seq receiver takes this mutable opcode even for the
+            // read-only `.first`. Pull its deferred map/grep source only up to
+            // the match, as the plain CallMethod path does.
+            if let Some(found) = self.first_over_map_grep_seq(&target, method, &args)? {
+                self.stack.push(found);
+                return Ok(());
+            }
             let target = match self.take_seq_prefix(&target, method, &args)? {
                 Some(prefix) if Self::is_lazy_head_result(&prefix, method, &args) => {
                     self.stack.push(prefix);
