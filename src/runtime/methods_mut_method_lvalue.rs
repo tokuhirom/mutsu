@@ -1925,7 +1925,18 @@ impl Interpreter {
             {
                 return Ok(assigned_value);
             }
-            updated.insert(attr_name, assigned_value.clone());
+            if attr_sigil == '$'
+                && !updated
+                    .get(attr_name.as_str())
+                    .is_some_and(Value::container_ref_is_itemized)
+            {
+                // A raw method exposes the attribute's current Scalar. A
+                // bound attribute shares that cell with its source variable,
+                // so assignment must store through it rather than replace it.
+                updated.insert_through(attr_name.as_str(), assigned_value.clone());
+            } else {
+                updated.insert(attr_name, assigned_value.clone());
+            }
             // The instance's attribute cell is shared by every handle to it,
             // so the store commits into it whether or not the invocant was a
             // named variable: `f().z = 9` and `D.^lookup('z')($d) = 9` have no
