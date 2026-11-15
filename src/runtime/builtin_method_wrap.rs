@@ -71,13 +71,16 @@ impl Interpreter {
             _ => crate::runtime::utils::value_type_name(target).to_string(),
         };
         let chain = self.builtin_method_wrap_chain(&class_name, &method_sym.resolve())?;
-        // A class declared in the program (its generated accessors too) is
-        // wrapped at the user-method sites; running the chain here as well
-        // would wrap twice.
-        // A built-in class the runtime registers (`DateTime`) is not one.
-        if self.has_user_method_sym(&class_name, method_sym)
-            || (self.has_class(&class_name)
-                && crate::builtin_types::catalog::builtin_type_info(&class_name).is_none())
+        // User methods and generated accessors are wrapped at their own
+        // dispatch sites. A user class can still inherit a native method
+        // such as Mu.clone, whose wrap chain belongs to the native owner.
+        let user_class = self.has_class(&class_name)
+            && crate::builtin_types::catalog::builtin_type_info(&class_name).is_none();
+        if (user_class
+            && self
+                .resolve_user_method_or_accessor_sym(&class_name, method_sym)
+                .is_some())
+            || (!user_class && self.has_user_method_sym(&class_name, method_sym))
         {
             return None;
         }
@@ -105,7 +108,8 @@ impl Interpreter {
     /// The `.wrap` chain of `method` on the built-in class `class_name`, if any.
     /// `None` too inside the chain's own terminal re-dispatch.
     ///
-    // Cost: O(1).
+    // Cost: O(d * m), d = user class MRO depth, m = catalog ancestor depth,
+    // when a native ancestor is wrapped.
     pub(crate) fn builtin_method_wrap_chain(
         &self,
         class_name: &str,
@@ -121,8 +125,14 @@ impl Interpreter {
         {
             return None;
         }
-        self.registry()
+        let registry = self.registry();
+        registry
             .builtin_method_wrap_chain_along_mro(class_name, method)
+            .or_else(|| {
+                self.builtin_method_ancestors(class_name)
+                    .iter()
+                    .find_map(|owner| registry.method_wrap_chain(owner, method, 0))
+            })
             .cloned()
     }
 
