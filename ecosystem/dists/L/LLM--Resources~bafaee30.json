@@ -64,16 +64,16 @@
     "date": "2026-11-15",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "146f9ebf",
+    "mutsu_commit": "e05d23f9",
     "mutsu_version": "0.26.1",
-    "raku_backend": "moar 2026.09",
-    "raku_version": "2026.09",
+    "raku_backend": "moar 2026.11",
+    "raku_version": "2026.11",
     "sandbox": "bwrap"
   },
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/L/LM/LLM_RESOURCES/feadf5ba83e42f0a84975d8330c9ec9ddb837925.tar.gz"
+    "url": "https://360.zef.pm/L/LM/LLM_RESOURCES/e4233030501b7d42907b562e79f5ec1db882ec96.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -83,5 +83,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.3"
+  "version": "0.0.4"
 }

@@ -22,11 +22,11 @@
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 5,
+        "ok": 6,
         "plan": 6,
-        "secs": 1.11,
+        "secs": 1.25,
         "skip": 0,
-        "todo": 1,
+        "todo": 0,
         "verdict": "pass"
       }
     }
@@ -39,10 +39,10 @@
     "date": "2026-11-15",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "146f9ebf",
+    "mutsu_commit": "e05d23f9",
     "mutsu_version": "0.26.1",
-    "raku_backend": "moar 2026.09",
-    "raku_version": "2026.09",
+    "raku_backend": "moar 2026.11",
+    "raku_version": "2026.11",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -52,9 +52,9 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 5,
+    "baseline_assertions": 6,
     "baseline_files": 1,
-    "mutsu_assertions": 5,
+    "mutsu_assertions": 6,
     "parity_files": 1,
     "regressed_files": 0
   },

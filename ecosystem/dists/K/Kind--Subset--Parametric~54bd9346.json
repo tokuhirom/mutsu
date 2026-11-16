@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.16,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.69,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,11 +36,11 @@
       "cmp": "no_baseline",
       "path": "t/02-will.t",
       "raku": {
-        "first_failure": "An exception X::Comp::AdHoc occurred while evaluating a BEGIN:",
+        "first_failure": "P6opaque: representation mismatch when storing value (of type Int) to attribute (of type int)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.67,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -56,10 +56,10 @@
     "date": "2026-11-15",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "146f9ebf",
+    "mutsu_commit": "e05d23f9",
     "mutsu_version": "0.26.1",
-    "raku_backend": "moar 2026.09",
-    "raku_version": "2026.09",
+    "raku_backend": "moar 2026.11",
+    "raku_version": "2026.11",
     "sandbox": "bwrap"
   },
   "schema": 1,

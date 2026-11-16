@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 0.31,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 1.88,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 0.5,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,29 +48,30 @@
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 2.49,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method 'data' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 28,
+        "ok": 21,
         "plan": 28,
-        "secs": 0.68,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-dfo.t",
       "raku": {
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 2.77,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +83,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 1.13,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +93,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 2.7,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,10 +108,10 @@
     "date": "2026-11-15",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "146f9ebf",
+    "mutsu_commit": "e05d23f9",
     "mutsu_version": "0.26.1",
-    "raku_backend": "moar 2026.09",
-    "raku_version": "2026.09",
+    "raku_backend": "moar 2026.11",
+    "raku_version": "2026.11",
     "sandbox": "bwrap"
   },
   "schema": 1,
@@ -118,13 +119,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AN/DAN/168ae7eccc305521ca9190a826e9f97a00109dc9.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 113,
     "baseline_files": 4,
-    "mutsu_assertions": 113,
-    "parity_files": 4,
-    "regressed_files": 0
+    "mutsu_assertions": 106,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.0.3"
 }
