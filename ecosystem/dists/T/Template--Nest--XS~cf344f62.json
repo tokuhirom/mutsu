@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/00-basic.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
         "nok": 0,
         "ok": 1,
         "plan": 70,
-        "secs": 1.19,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,35 +28,7 @@
       "cmp": "no_baseline",
       "path": "t/01-render.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
-        "nok": 0,
-        "ok": 0,
-        "plan": 6,
-        "secs": 0.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/02-default.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
-        "nok": 0,
-        "ok": 1,
-        "plan": 5,
-        "secs": 1.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/03-params.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
         "nok": 0,
         "ok": 0,
         "plan": 6,
@@ -68,13 +40,41 @@
     },
     {
       "cmp": "no_baseline",
+      "path": "t/02-default.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
+        "nok": 0,
+        "ok": 1,
+        "plan": 5,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-params.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
       "path": "t/04-indent.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.73,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -84,11 +84,11 @@
       "cmp": "no_baseline",
       "path": "t/05-escapes.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.87,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -98,11 +98,11 @@
       "cmp": "no_baseline",
       "path": "t/06-badparams.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.82,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,11 +112,11 @@
       "cmp": "no_baseline",
       "path": "t/07-escapes_with_fixed_indent.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-1engg4lk/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-1e",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-as7e93na/dist/template-nest-xs/resources/libraries/templatenest.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-as",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.93,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -128,10 +128,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-15",
+    "date": "2026-11-16",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e05d23f9",
+    "mutsu_commit": "f3f3e482",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

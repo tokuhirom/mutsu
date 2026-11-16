@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.12,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.56,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,11 +49,11 @@
       "cmp": "no_baseline",
       "path": "t/01-CatHandle.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/95AFDE0B00BBC12C2BC35890D7C63E591CD0089C363D81714B5CDB1771D48EFD: Read-only file system",
+        "first_failure": "Failed to open file /tmp/449F170F496D0D4B93A4F06D0B2191A95348E997899EA3C5A1649BC091F13279: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 9.23,
+        "secs": 8.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.75,
+        "secs": 3.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 21.15,
+        "secs": 20.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,10 +87,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-15",
+    "date": "2026-11-16",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e05d23f9",
+    "mutsu_commit": "f3f3e482",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
