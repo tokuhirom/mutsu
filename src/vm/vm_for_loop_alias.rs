@@ -651,4 +651,32 @@ impl Interpreter {
             _ => false,
         }
     }
+
+    /// A `for` loop's `@`/`%` parameter carries the implicit `Positional` /
+    /// `Associative` check a routine's does (`for 1, 2 -> @q {}` dies, #17866).
+    /// An `@` parameter also takes what a routine's binds through
+    /// `PositionalBindFailover` (a Seq, a lazy list).
+    // Cost: O(1) for a built-in aggregate; a type walk for an object element.
+    pub(super) fn check_loop_sigil_param(
+        &mut self,
+        name: &str,
+        bound: &Value,
+    ) -> Result<(), RuntimeError> {
+        let (expected, ok) = if name.starts_with('@') {
+            let ok = matches!(
+                bound.view(),
+                ValueView::Array(..) | ValueView::Seq(..) | ValueView::LazyList(..)
+            ) || self.type_matches_value("Positional", bound)
+                || self.type_matches_value("PositionalBindFailover", bound);
+            ("Positional", ok)
+        } else {
+            let ok = matches!(bound.view(), ValueView::Hash(..))
+                || self.type_matches_value("Associative", bound);
+            ("Associative", ok)
+        };
+        if ok {
+            return Ok(());
+        }
+        Err(self.typecheck_binding_parameter_failure(name, expected, bound))
+    }
 }
