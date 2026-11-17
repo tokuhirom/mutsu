@@ -64,6 +64,15 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
                 }
                 i += 1;
             }
+            '<' if chars.get(i + 1) == Some(&'$') => {
+                // `<$var>` interpolates its value as regex source, with
+                // semantics of its own (#13029, #13042), read where the
+                // parse-time `<$var>` arm reads it.
+                while i < chars.len() && chars[i] != '>' {
+                    i += 1;
+                }
+                i += 1;
+            }
             '{' => {
                 seen_block = true;
                 let mut depth = 1usize;
@@ -251,6 +260,7 @@ mod tests {
         assert!(scalars_in_pattern("<a=$b>").0.is_empty());
         assert_eq!(scalars_in_pattern("$<a>=$b").0, ["b"]);
         assert_eq!(scalars_in_pattern("$0 = $b").0, ["b"]);
+        assert!(scalars_in_pattern("<$b> 'x'").0.is_empty());
         assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
         assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
     }
