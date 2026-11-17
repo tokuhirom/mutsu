@@ -339,6 +339,18 @@ pub(crate) struct ResolutionCaches {
     /// [`Self::plain_method_lane`]. Set (or cleared) by that opcode's
     /// gate on every dispatch, so it always describes the innermost one.
     pub(crate) plain_method_lane_candidate: Option<PlainMethodLaneKey>,
+    /// ADR-15737 D1: per lane key, the replayable outcome of its dispatch
+    /// tail (`None`: found unplannable), valid for the registry write
+    /// generation in [`Self::method_call_plans_generation`]. See
+    /// `vm_method_call_plan`.
+    pub(crate) method_call_plans: rustc_hash::FxHashMap<
+        PlainMethodLaneKey,
+        Option<Arc<crate::vm::vm_method_call_plan::MethodCallPlan>>,
+    >,
+    pub(crate) method_call_plans_generation: u64,
+    /// The lane key whose dispatch tail, now running, should record its plan
+    /// (`Interpreter::install_method_call_plan`).
+    pub(crate) method_call_plan_candidate: Option<PlainMethodLaneKey>,
     /// The argument-type buffer of the last lane gate that hit, handed back so
     /// the next call builds its key without allocating (see
     /// `vm_call_method_plain_lane`).

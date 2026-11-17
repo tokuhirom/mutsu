@@ -30,6 +30,9 @@ pub(crate) struct MethodDefSyms {
     role_binding_syms: OnceLock<RoleBindingSyms>,
     /// Memo of `MethodDef::signature_name_tokens` (`vm_role_binding_observers`).
     pub(crate) signature_name_tokens: OnceLock<Option<Box<rustc_hash::FxHashSet<Symbol>>>>,
+    /// The frame plan of a compiled call (`vm_method_frame_plan`), checked
+    /// against the owner and compiled code it was built for on every use.
+    pub(crate) frame_plan: OnceLock<crate::vm::vm_method_frame_plan::MethodFramePlan>,
 }
 
 type RoleBindingSyms = (

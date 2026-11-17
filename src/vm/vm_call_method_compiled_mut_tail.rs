@@ -112,6 +112,16 @@ impl Interpreter {
                 // class and method name, and it is where the lane's memo is
                 // written. See `vm_call_method_plain_lane`.
                 self.note_plain_method_lane_reached(class_sym, method_sym);
+                // ADR-15737 D1: record this tail's outcome for a lane gate that
+                // asked (`vm_method_call_plan`).
+                self.install_method_call_plan(
+                    class_sym,
+                    method_sym,
+                    owner_class,
+                    &method_def,
+                    &target,
+                    &args,
+                );
                 let cc = method_def.compiled_code.clone().expect("compiled_code set");
                 let target_id = match target.view() {
                     ValueView::Instance { id, .. } => Some(id),
@@ -155,29 +165,13 @@ impl Interpreter {
                     self.pop_method_dispatch();
                 }
                 self.pop_method_samewith_context();
-                let (result, reconciled) = method_result?;
-                if let Some(id) = target_id {
-                    // Commit only a `:=`-adjusted snapshot (cell-CAS race
-                    // avoidance — see the primary dispatch site).
-                    if let (Some(m), Some(cell)) = (&reconciled, &attrs_cell) {
-                        cell.commit_attrs(m.clone());
-                    }
-                    if result.is_proxy_value()
-                        && !self.in_lvalue_assignment
-                        && !Self::method_is_rw_capable(&method_def)
-                        && matches!(result.view(), ValueView::Proxy { .. })
-                    {
-                        // Without a `:=` adjustment the returned map is absent —
-                        // re-snapshot the live cell for the proxy fetcher.
-                        let proxy_attrs = match (&reconciled, &attrs_cell) {
-                            (Some(m), _) => m.clone(),
-                            (None, Some(cell)) => cell.to_map(),
-                            (None, None) => AttrMap::new(),
-                        };
-                        return loan_env!(self, proxy_fetch(&result, None, cn, &proxy_attrs, id));
-                    }
-                }
-                return Ok(result);
+                return self.finish_compiled_method_mut_call(
+                    cn,
+                    target_id,
+                    attrs_cell.as_ref(),
+                    &method_def,
+                    method_result,
+                );
             }
         }
         // Full method dispatch runs on the frame's env as it is, scoped or not:
@@ -271,5 +265,45 @@ impl Interpreter {
         // ③ state ownership / first-class container Phase 2.
         crate::vm::vm_stats::record_method_fallback(method);
         self.vm_call_method_mut_with_values(target_name, target, method, args)
+    }
+
+    /// What a compiled user-method call does with its answer on return:
+    /// commit a `:=`-adjusted attribute snapshot to the receiver's cell, and
+    /// fetch a returned Proxy unless the method is rw-capable or the call is
+    /// an assignment target. Shared by the dispatch tail and the method-call
+    /// plan's replay (`vm_method_call_plan`).
+    // Cost: O(1), plus the snapshot commit (O(attributes)) when the body
+    // rebound one with `:=`, plus a Proxy's FETCH.
+    pub(super) fn finish_compiled_method_mut_call(
+        &mut self,
+        cn: &str,
+        target_id: Option<u64>,
+        attrs_cell: Option<&crate::gc::Gc<crate::value::InstanceAttrs>>,
+        method_def: &crate::runtime::MethodDef,
+        method_result: Result<(Value, Option<AttrMap>), RuntimeError>,
+    ) -> Result<Value, RuntimeError> {
+        let (result, reconciled) = method_result?;
+        if let Some(id) = target_id {
+            // Commit only a `:=`-adjusted snapshot (cell-CAS race
+            // avoidance — see the primary dispatch site).
+            if let (Some(m), Some(cell)) = (&reconciled, attrs_cell) {
+                cell.commit_attrs(m.clone());
+            }
+            if result.is_proxy_value()
+                && !self.in_lvalue_assignment
+                && !Self::method_is_rw_capable(method_def)
+                && matches!(result.view(), ValueView::Proxy { .. })
+            {
+                // Without a `:=` adjustment the returned map is absent —
+                // re-snapshot the live cell for the proxy fetcher.
+                let proxy_attrs = match (&reconciled, attrs_cell) {
+                    (Some(m), _) => m.clone(),
+                    (None, Some(cell)) => cell.to_map(),
+                    (None, None) => AttrMap::new(),
+                };
+                return loan_env!(self, proxy_fetch(&result, None, cn, &proxy_attrs, id));
+            }
+        }
+        Ok(result)
     }
 }
