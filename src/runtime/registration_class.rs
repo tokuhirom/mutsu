@@ -749,7 +749,7 @@ impl Interpreter {
         // methods Rakudo declares on those (`TOP` suggests `to`) are offered too.
         if self.class_is_grammar(type_name) {
             for builtin in ["Grammar", "Match", "Capture"] {
-                for name in super::did_you_mean::candidate_names(builtin) {
+                for &name in super::did_you_mean::candidate_names(builtin).iter() {
                     if !names.iter().any(|n| n == name) {
                         names.push(name.to_string());
                     }
