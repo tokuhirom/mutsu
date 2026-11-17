@@ -3,49 +3,6 @@ use crate::value::ValueView;
 use crate::value::value_buf::{buf_bytes_or_empty, with_buf_elems};
 
 impl Interpreter {
-    /// Interpreter-native `.encode` (a `Cool` scalar -> `Buf`) and `.decode`
-    /// (a `Buf`/`Blob` -> `Str`) for built-in receivers, sharing the single
-    /// `dispatch_encode` / `dispatch_decode` impl the interpreter's catch-all also
-    /// uses (ledger §D). Pure transformations: they stringify/encode or decode
-    /// bytes via the VM-owned encoding registry (`&self` reads) and allocate no
-    /// `io_handles`.
-    ///
-    /// `.encode` is gated to plain `Cool` scalars (Str / numeric / Bool); `.decode`
-    /// is gated by `dispatch_decode` itself to `Buf`/`Blob` instances (it returns
-    /// `None` for anything else). User Instances (a custom `.encode`/`.decode` is
-    /// resolved earlier as a compiled method), `Supply` (its own chunk-encode), and
-    /// `Buf` receivers for `.encode` fall through to the interpreter. The 0-arg
-    /// `.encode` is already native via `methods_0arg`; this drains the
-    /// explicit-encoding form (`.encode("utf-16")`). Behavior-invariant.
-    pub(crate) fn try_native_encode_decode(
-        &mut self,
-        target: &Value,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        match method {
-            "encode"
-                if matches!(
-                    target.view(),
-                    ValueView::Str(_)
-                        | ValueView::Int(_)
-                        | ValueView::BigInt(_)
-                        | ValueView::Num(_)
-                        | ValueView::Rat(..)
-                        | ValueView::FatRat(..)
-                        | ValueView::Complex(..)
-                        | ValueView::Bool(_)
-                ) =>
-            {
-                Some(self.dispatch_encode(target, args))
-            }
-            // `dispatch_decode` is internally gated to Buf/Blob instances and
-            // returns `None` for any other receiver, so it falls through cleanly.
-            "decode" => self.dispatch_decode(target, args),
-            _ => None,
-        }
-    }
-
     pub(crate) fn dispatch_say(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let gist = self.render_gist_value(target)?;
         self.write_to_named_handle("$*OUT", &gist, true)?;
@@ -222,22 +179,12 @@ impl Interpreter {
         self.encode_string_buffer(&translated, &encoding, replacement.as_deref())
     }
 
-    pub(super) fn dispatch_decode(
-        &mut self,
-        target: &Value,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        let encoding = args.iter().find(|v| !v.is_string_pair_value());
-        let replacement = Self::named_value(args, "replacement");
-        self.decode_buf(target, encoding, replacement.as_ref())
-    }
-
     /// `Blob.decode($encoding, :$replacement)`: the buffer as text, by the
     /// encoding named (the buffer's own default when absent: UTF-16 for a
     /// `utf16`, UTF-8 otherwise, 16-bit buffers included), with the platform's newline translation.
-    /// `None` for a receiver that is not a `Buf`/`Blob`. The one implementation:
-    /// the `Blob`/`Buf` `decode` rows (`method_table::blob_decode`) and the
-    /// cascade for a receiver with no shape both end here.
+    /// `None` for a receiver that is not a `Buf`/`Blob`. The one implementation,
+    /// reached only through the `Blob`/`Buf` `decode` rows
+    /// (`method_table::blob_decode`).
     // Cost: O(e) to copy the elements out and decode them, e = elements.
     pub(crate) fn decode_buf(
         &self,

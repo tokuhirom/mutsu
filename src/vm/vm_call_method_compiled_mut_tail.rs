@@ -270,14 +270,6 @@ impl Interpreter {
         {
             return result;
         }
-        // Native `.encode` (Cool scalar -> Buf) / `.decode` (Buf/Blob -> Str) for
-        // variable receivers (`$s.encode("utf-16")`) — same pure transformation as
-        // the non-mut path; returns a *new* Buf/Str, no writeback.
-        if !lever_a_blocked
-            && let Some(result) = self.try_native_encode_decode(native_target, method, &args)
-        {
-            return result;
-        }
         // TODO: compile to bytecode — native/Buf/Failure method fork, mut (ledger §1).
         // User-defined methods run as bytecode (compiled at registration or on
         // demand above); what remains is native receiver dispatch blocked on
