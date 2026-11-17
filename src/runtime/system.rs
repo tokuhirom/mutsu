@@ -533,7 +533,7 @@ impl Interpreter {
     /// initializer runs its initializer (run-time code), writing through to the
     /// adopted binding.
     // Cost: O(n), n = top-level statements.
-    fn adopt_rewritten_restart_toplevel_decls(stmts: &mut Vec<Stmt>) {
+    pub(super) fn adopt_rewritten_restart_toplevel_decls(stmts: &mut Vec<Stmt>) {
         stmts.retain(|stmt| {
             let Stmt::VarDecl {
                 name,

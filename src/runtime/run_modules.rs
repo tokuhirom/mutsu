@@ -1023,6 +1023,7 @@ impl Interpreter {
         };
         // `$*CU` while this module compiles (`unit_source_text`).
         let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&source_text);
+        crate::unit_source_text::mark_module_unit();
         let path_text = source_path.to_string_lossy().into_owned();
         let (mut module_ast, facts, effects, precompiled) = match &entry {
             Some(entry) => {
@@ -1055,6 +1056,10 @@ impl Interpreter {
                     None => order(&mut stmts),
                 };
                 crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
+                let prologue_len = crate::runtime::begin_prologue::insert_module_run_check_code(
+                    &mut stmts,
+                    prologue_len,
+                );
                 let facts = super::module_load_facts::ModuleLoadFacts::compute(
                     &stmts,
                     prologue_len,
@@ -1416,7 +1421,8 @@ impl Interpreter {
                     // (`unit module Sway::Config::CLI` after `use Sway::Config`).
                     interp.register_unit_pod_before_mainline(unit_name.as_deref());
                     interp.run_module_mainline(|interp| {
-                        interp.run_module_block(&module_ast, facts.has_block_phasers, code_slot)
+                        interp.run_module_block(&module_ast, facts.has_block_phasers, code_slot)?;
+                        interp.restart_module_from_rewritten_cu()
                     })
                 }),
                 Err(err) => Err(err),

@@ -1168,7 +1168,7 @@ impl Interpreter {
     /// Run `stmts` with their block phasers. `module_unit`: they are a
     /// module's mainline, whose main body compiles as one with or without a
     /// cache `slot` (`compile_module_mainline_uncached`).
-    fn run_block_with(
+    pub(super) fn run_block_with(
         &mut self,
         stmts: &[Stmt],
         slot: Option<super::module_bytecode::ModuleCodeSlot>,

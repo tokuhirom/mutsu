@@ -1741,9 +1741,13 @@ impl Interpreter {
             if has_multi && !has_proto && !shadows_outer_eval_multi {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
+            // A unit restarted from its CHECK-rewritten tree declares the
+            // first compile's routines again (#17644, #17886); the first
+            // compile already rejected any genuine redeclaration.
             if has_single
                 && !existing_is_stub
                 && !shadows_outer_eval_single
+                && !restarting_unit
                 && !same_site_reexecution()
             {
                 // A stub declaration re-arriving from its own site: `RegisterSub`
