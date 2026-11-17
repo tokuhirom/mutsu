@@ -15,7 +15,8 @@ mod reduction;
 mod topic_scan;
 
 pub(super) use anon_decl::{
-    anon_class_expr, anon_grammar_expr, indirect_method_call, mark_anon_package_decl,
+    anon_class_expr, anon_class_expr_scoped, anon_grammar_expr, indirect_method_call,
+    mark_anon_package_decl,
 };
 pub(crate) use anon_decl::{
     mark_anon_package_stmt, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,

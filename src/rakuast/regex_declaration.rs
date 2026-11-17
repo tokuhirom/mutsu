@@ -105,3 +105,17 @@ pub(super) fn restore_source(node: &RakuAstNode, value: Value) -> Result<Value, 
     let source = super::lower::leaf_str(node, SOURCE)?;
     Ok(value.with_regex_declared_source(&source))
 }
+
+/// The `scope` a `token`/`regex`/`rule` declaration was written with: `my`,
+/// `our` or none.
+// Cost: O(1).
+pub(super) fn scope(is_my: bool, is_our: bool) -> Result<Option<&'static str>, RuntimeError> {
+    match (is_my, is_our) {
+        (false, false) => Ok(None),
+        (true, false) => Ok(Some("my")),
+        (false, true) => Ok(Some("our")),
+        (true, true) => Err(super::view::unsupported(
+            "regex declaration both `my` and `our`",
+        )),
+    }
+}

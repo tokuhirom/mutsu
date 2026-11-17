@@ -1643,6 +1643,23 @@ pub(super) fn package_head(
             }),
             _ => Err(unsupported(node)),
         },
+        // `my class :: { }` (a lexical class written as a term): nameless,
+        // like `anon class :: { }`, but kept `my`.
+        Some("my")
+            if named_child(node, "name").is_ok_and(
+                |n| matches!(name_parts::name_shape(n), Some(NameShape::Stash(s)) if s == "::"),
+            ) =>
+        {
+            Ok(PackageHead {
+                name: fresh(),
+                is_lexical: true,
+                is_unit: false,
+                colons: true,
+                leading_colons: false,
+                declarator: super::declare_how::marker(node)?,
+                anon: false,
+            })
+        }
         None | Some("my" | "our" | "unit") => Ok(PackageHead {
             name: if node.fields.iter().any(|f| f.name == Some("name")) {
                 super::routine_lower::declarator_name(names, node)?.0
@@ -1825,10 +1842,6 @@ fn lower_regex_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
     let (params, param_defs) = signature_positional_params(names, node)?;
     let (is_my, is_our) = regex_declaration_scope(node)?;
     let multi = multiness == "multi";
-    if (is_my || is_our) && node.class == RakuAstClass::RuleDeclaration {
-        // `Stmt::RuleDecl` has no scope; the view never renders one.
-        return Err(unsupported(node));
-    }
     match node.class {
         RakuAstClass::RegexDeclaration | RakuAstClass::TokenDeclaration => Ok(Stmt::TokenDecl {
             name: crate::symbol::Symbol::intern(&name),
@@ -1856,6 +1869,8 @@ fn lower_regex_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
             multi,
             is_export,
             export_tags,
+            is_my,
+            is_our,
         }),
         _ => Err(unsupported(node)),
     }

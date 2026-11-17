@@ -161,6 +161,8 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 multi: is_multi,
                 is_export,
                 export_tags,
+                is_my: false,
+                is_our: false,
             },
         ))
     } else {

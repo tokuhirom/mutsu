@@ -125,6 +125,7 @@ roast/S02-types/nan.t	20
 roast/S02-types/nan.t	21
 roast/S02-types/nan.t	22
 roast/S02-types/nan.t	23
+roast/S02-types/nan.t	24
 roast/S02-types/nan.t	25
 roast/S02-types/resolved-in-setting.t	0
 roast/S02-types/resolved-in-setting.t	1
@@ -1061,6 +1062,7 @@ roast/S05-metasyntax/unknown.t	4
 roast/S05-metasyntax/unknown.t	5
 roast/S05-metasyntax/unknown.t	6
 roast/S05-metasyntax/unknown.t	7
+roast/S05-metasyntax/unknown.t	8
 roast/S05-metasyntax/unknown.t	9
 roast/S05-metasyntax/unknown.t	10
 roast/S05-metasyntax/unknown.t	11
@@ -2094,6 +2096,7 @@ roast/S32-num/real-bridge.t	188
 roast/S32-num/real-bridge.t	189
 roast/S32-num/real-bridge.t	190
 roast/S32-num/real-bridge.t	191
+roast/S32-num/real-bridge.t	192
 roast/S32-str/Collation.t	0
 roast/S32-str/Collation.t	1
 roast/S32-str/Collation.t	2

@@ -162,12 +162,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     "regex declaration with an unnamed parameter list",
                 ));
             }
-            let scope = match (*is_my, *is_our) {
-                (false, false) => None,
-                (true, false) => Some("my"),
-                (false, true) => Some("our"),
-                (true, true) => return Err(unsupported("regex declaration both `my` and `our`")),
-            };
+            let scope = super::regex_declaration::scope(*is_my, *is_our)?;
             let Some(tree) = source_regex else {
                 return Err(unsupported("regex declaration without a source tree"));
             };
@@ -236,13 +231,15 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             multi,
             is_export,
             export_tags,
-            ..
+            is_my,
+            is_our,
         } => {
             if params.len() != param_defs.len() {
                 return Err(unsupported(
                     "rule declaration with an unnamed parameter list",
                 ));
             }
+            let scope = super::regex_declaration::scope(*is_my, *is_our)?;
             let Some(tree) = source_regex else {
                 return Err(unsupported("rule declaration without a source tree"));
             };
@@ -251,7 +248,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 RakuAstClass::RuleDeclaration,
                 &name.resolve(),
                 tree,
-                (None, multi.then_some("multi")),
+                (scope, multi.then_some("multi")),
                 param_defs,
                 super::package_header::export_trait_value(
                     *is_export || !export_tags.is_empty(),
@@ -2178,7 +2175,7 @@ fn parenthesized_expression(names: &NameScope, expr: &Expr) -> Result<RakuAstNod
 /// internal `__ANON_*__` name, which rakudo has no counterpart for: its node
 /// simply has no `name`. The empty name `class :: { }` is told apart by the
 /// parser's marker (`colons`); rakudo gives it an `anon` scope over the name
-/// `::`.
+/// `::`, or the `my` written before it.
 // Cost: O(k), k = length of the name.
 pub(super) fn package_header_fields(
     name: crate::symbol::Symbol,
@@ -2186,7 +2183,9 @@ pub(super) fn package_header_fields(
     colons: bool,
 ) -> Vec<RakuAstField> {
     if colons {
-        let mut fields = vec![leaf_field(Some("scope"), Value::str_from("anon"))];
+        // `my class :: { }` keeps its written `my`.
+        let scope = if scope == Some("my") { "my" } else { "anon" };
+        let mut fields = vec![leaf_field(Some("scope"), Value::str_from(scope))];
         fields.extend(name_parts::stash_name("").map(|n| node_field(Some("name"), n)));
         return fields;
     }
