@@ -28,14 +28,15 @@ fn literal_compile_time_value(target: &Value, _args: &[Value]) -> Result<Value, 
     Ok(answer.unwrap_or(Value::NIL))
 }
 
-// Cost: O(s), s = total length of the segments.
+// Cost: as `rakuast_quoted_literal::literal_value`.
 fn quoted_string_maybe_compile_time_value(
     target: &Value,
     _args: &[Value],
 ) -> Result<Value, RuntimeError> {
+    // The quote's literal value: its words too (`<a 42>`), #17922.
     let answer = native_node(target).and_then(|base| match base.view() {
         ValueView::RakuAst(node) => {
-            Some(crate::rakuast::literal_queries::quoted_string_maybe_compile_time_value(node))
+            Some(super::rakuast_quoted_literal::literal_value(node, false).unwrap_or(Value::NIL))
         }
         _ => None,
     });

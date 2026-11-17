@@ -178,10 +178,15 @@ fn maybe_value(
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
-    if node.class == RakuAstClass::QuotedString {
-        return Some(Ok(
-            crate::rakuast::literal_queries::quoted_string_maybe_compile_time_value(node),
-        ));
+    // A quote's literal value, its words too (`<a 42>`, #17922).
+    if matches!(
+        node.class,
+        RakuAstClass::QuotedString | RakuAstClass::Heredoc
+    ) {
+        return Some(Ok(super::rakuast_quoted_literal::literal_value(
+            node, false,
+        )
+        .unwrap_or(Value::NIL)));
     }
     if let Some(answer) = lookup_value(interp, &target) {
         return Some(answer);
