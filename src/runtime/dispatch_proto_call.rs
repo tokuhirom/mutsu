@@ -340,7 +340,13 @@ impl Interpreter {
             if !seen_fps.insert(fp) {
                 continue; // duplicate
             }
-            if !self.args_match_multi_candidate_in_scope(args, cand) {
+            // A probe of the candidates `nextsame` may reach later: rakudo runs
+            // their `where` only when the chain gets there, so one that dies
+            // here does not fail the call that already has its winner.
+            if !self
+                .args_match_multi_candidate_in_scope(args, cand)
+                .unwrap_or(false)
+            {
                 continue; // doesn't match
             }
             if !found_current {

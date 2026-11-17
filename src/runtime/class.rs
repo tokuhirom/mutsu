@@ -131,11 +131,14 @@ impl Interpreter {
                 // Call the class's own DESTROY. rakudo's destroyer list takes
                 // each MRO class's own DESTROY whether it was declared as a
                 // `submethod` or a plain `method` (or added via `^add_method`).
-                if let Some(overloads) = destroy_overloads
-                    && let Some(method_def) = overloads
-                        .into_iter()
-                        .find(|def| !def.is_private && self.method_args_match(&[], &def.param_defs))
-                {
+                let mut destroy_def = None;
+                for def in destroy_overloads.into_iter().flatten() {
+                    if !def.is_private && self.method_args_match(&[], &def.param_defs)? {
+                        destroy_def = Some(def);
+                        break;
+                    }
+                }
+                if let Some(method_def) = destroy_def {
                     let invocant = Value::make_instance_without_destroy_with_id(
                         item.class_name,
                         current_attrs.clone(),

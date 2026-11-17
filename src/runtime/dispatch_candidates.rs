@@ -417,10 +417,6 @@ impl Interpreter {
         // not out-ranked by a candidate that did match. Deciding that needs the
         // winner, so the exception is parked here until the ranking below.
         let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
-        // A `where` exception recorded OUTSIDE this dispatch (by a method match
-        // earlier in the same instruction, say) must not be mistaken for one of
-        // these candidates': park it and put it back below.
-        let outer_where_exception = self.pending_where_exception.take();
         for (key, def) in ranked {
             // Strictly wider than the narrowest candidate that already bound:
             // every candidate from here on is too, since the list is sorted.
@@ -444,7 +440,7 @@ impl Interpreter {
                         !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
                     })
                     .count();
-                positional_arg_count == def.params.len()
+                Ok(positional_arg_count == def.params.len())
             } else {
                 // A candidate that binds the caller's container (`is rw`,
                 // `is raw`, `\x`, `|c`) is matched on the Proxy itself; any
@@ -458,14 +454,17 @@ impl Interpreter {
                 };
                 self.args_match_multi_candidate_in_scope(match_args, &def)
             };
-            if let Some(e) = self.take_where_exception() {
-                if threw.is_none() {
-                    threw = Some((def.clone(), e));
+            let type_ok = match type_ok {
+                Ok(type_ok) => type_ok,
+                Err(e) => {
+                    if threw.is_none() {
+                        threw = Some((def.clone(), e));
+                    }
+                    // A candidate whose `where` died did not match; whether the
+                    // exception escapes is settled after the winner is known.
+                    continue;
                 }
-                // A candidate whose `where` died did not match; whether the
-                // exception escapes is settled after the winner is known.
-                continue;
-            }
+            };
             if !type_ok && let Some(rejected) = rejected.as_deref_mut() {
                 rejected.insert(def.body_fingerprint());
             }
@@ -480,19 +479,9 @@ impl Interpreter {
         let tier_bind_check = matches.first().is_some_and(|(rank, _)| rank.tier_bind_check);
         let matches = match self.prune_incomparable_matches(name, args, matches) {
             Ok(matches) => matches,
-            Err(err) => {
-                self.pending_where_exception = outer_where_exception;
-                return Err(err);
-            }
+            Err(err) => return Err(err),
         };
-        self.settle_ranked_matches(
-            name,
-            args,
-            matches,
-            threw,
-            outer_where_exception,
-            tier_bind_check,
-        )
+        self.settle_ranked_matches(name, args, matches, threw, tier_bind_check)
     }
 
     /// The second half of [`Self::bind_ranked_candidates`]: given the
@@ -508,7 +497,6 @@ impl Interpreter {
         args: &[Value],
         mut matches: Vec<Arc<FunctionDef>>,
         threw: Option<(Arc<FunctionDef>, RuntimeError)>,
-        outer_where_exception: Option<Box<RuntimeError>>,
         tier_bind_check: bool,
     ) -> Resolved {
         if let Some((thrower, e)) = threw {
@@ -540,11 +528,9 @@ impl Interpreter {
             if reached {
                 // Raised the way an ambiguous dispatch is: as the resolution's
                 // error, which a caller that dispatches the call re-raises.
-                self.pending_where_exception = outer_where_exception;
                 return Err(e);
             }
         }
-        self.pending_where_exception = outer_where_exception;
         if matches.len() <= 1 {
             return Ok(matches.into_iter().next());
         }

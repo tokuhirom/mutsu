@@ -124,7 +124,11 @@ impl Interpreter {
     /// the capture. The invocant (first capture element) is not part of a
     /// method's declared signature, so the rest of the capture is matched.
     // Cost: O(c * p), c = candidates, p = parameters per candidate.
-    pub(super) fn method_object_cando(&mut self, method_obj: &Value, capture: &Value) -> Value {
+    pub(super) fn method_object_cando(
+        &mut self,
+        method_obj: &Value,
+        capture: &Value,
+    ) -> Result<Value, RuntimeError> {
         let all_args = Self::capture_to_call_args(capture);
         let candidates: Vec<Value> = match method_obj.view() {
             ValueView::Instance { attributes, .. } => {
@@ -149,23 +153,26 @@ impl Interpreter {
             }
             _ => vec![method_obj.clone()],
         };
-        let matching = candidates
-            .into_iter()
-            .filter(|candidate| {
-                // A built-in method's candidates are plain code objects; a
-                // user method's carry theirs as the `__mutsu_method_callable`
-                // payload of a Method instance.
-                let callable = match candidate.view() {
-                    ValueView::Instance { attributes, .. } => {
-                        attributes.as_map().get("__mutsu_method_callable").cloned()
-                    }
-                    ValueView::Sub(_) => Some(candidate.clone()),
-                    _ => None,
-                };
-                callable.is_some_and(|c| self.candidate_matches_capture(&c, &all_args))
-            })
-            .collect();
-        Value::array(matching)
+        let mut matching = Vec::new();
+        for candidate in candidates {
+            // A built-in method's candidates are plain code objects; a user
+            // method's carry theirs as the `__mutsu_method_callable` payload of
+            // a Method instance. A `where` that dies fails the `cando`, as in
+            // rakudo.
+            let callable = match candidate.view() {
+                ValueView::Instance { attributes, .. } => {
+                    attributes.as_map().get("__mutsu_method_callable").cloned()
+                }
+                ValueView::Sub(_) => Some(candidate.clone()),
+                _ => None,
+            };
+            if let Some(c) = callable
+                && self.candidate_matches_capture(&c, &all_args)?
+            {
+                matching.push(candidate);
+            }
+        }
+        Ok(Value::array(matching))
     }
 
     /// [`Self::candidate_matches_call_args`] for a whole call `capture`
@@ -179,7 +186,7 @@ impl Interpreter {
         &mut self,
         candidate: &Value,
         call_args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let ValueView::Sub(data) = candidate.view() else {
             return self.candidate_matches_call_args(candidate, call_args);
         };
@@ -217,21 +224,22 @@ impl Interpreter {
             return self.candidate_matches_call_args(candidate, call_args);
         };
         let Some((first, rest)) = call_args.split_first() else {
-            return false;
+            return Ok(false);
         };
-        self.args_match_param_types(std::slice::from_ref(first), std::slice::from_ref(invocant))
-            && self.candidate_matches_call_args(candidate, rest)
+        Ok(self
+            .args_match_param_types(std::slice::from_ref(first), std::slice::from_ref(invocant))?
+            && self.candidate_matches_call_args(candidate, rest)?)
     }
 
     pub(super) fn candidate_matches_call_args(
         &mut self,
         candidate: &Value,
         args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         match candidate.view() {
             ValueView::Sub(data) => {
                 if data.empty_sig && !args.is_empty() {
-                    return false;
+                    return Ok(false);
                 }
                 if data.param_defs.is_empty() && !data.params.is_empty() {
                     if args.iter().any(|arg| {
@@ -240,7 +248,7 @@ impl Interpreter {
                             ValueView::Pair(key, _) if key != "__mutsu_test_callsite_line"
                         )
                     }) {
-                        return false;
+                        return Ok(false);
                     }
                     let positional = args
                         .iter()
@@ -248,7 +256,7 @@ impl Interpreter {
                             !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
                         })
                         .count();
-                    return positional == data.params.len();
+                    return Ok(positional == data.params.len());
                 }
                 // A routine or block without an invocant matches like a sub
                 // call: a positional Pair (`ValuePair`) is a positional
@@ -264,13 +272,14 @@ impl Interpreter {
                     self.args_match_param_types(args, &data.param_defs)
                 }
             }
-            ValueView::WeakSub(weak) => weak
-                .upgrade()
-                .is_some_and(|strong| self.method_args_match(args, &strong.param_defs)),
+            ValueView::WeakSub(weak) => match weak.upgrade() {
+                Some(strong) => self.method_args_match(args, &strong.param_defs),
+                None => Ok(false),
+            },
             ValueView::Routine { name, .. } => self
                 .resolve_function_with_types(&name.resolve(), args)
-                .is_ok_and(|def| def.is_some()),
-            _ => false,
+                .map(|def| def.is_some()),
+            _ => Ok(false),
         }
     }
 

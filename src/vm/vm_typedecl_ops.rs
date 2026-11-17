@@ -1324,7 +1324,10 @@ impl Interpreter {
     /// parent) is deliberately NOT counted, so ordinary inheritance is
     /// untouched. See `advent2011-day14` AOP.
     fn typed_is_trait_candidate_matches(&mut self, call_args: &[Value]) -> bool {
-        let matches = self.resolve_all_matching_candidates("trait_mod:<is>", call_args);
+        // A probe: a candidate whose `where` dies is not an override.
+        let matches = self
+            .resolve_all_matching_candidates("trait_mod:<is>", call_args)
+            .unwrap_or_default();
         matches.iter().any(|def| {
             def.param_defs
                 .iter()

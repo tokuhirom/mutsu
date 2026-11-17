@@ -157,30 +157,29 @@ impl Interpreter {
         };
         let class_name = class_sym.resolve();
         let caller_class = self.private_calling_package();
-        let (pm_name, resolved) = match crate::qualified::split_qualified(
-            crate::qualified::known_symbol(private_rest),
-        )
-        .map(|(head, tail)| (head.as_str(), tail.as_str()))
-        {
-            Some((owner_class, pm_name)) => {
-                let (canonical_owner, _) = self.resolve_and_check_private_owner_on(
-                    caller_class.as_deref(),
-                    owner_class,
-                    Some(&class_name),
-                );
-                let resolved = self.resolve_private_method_with_owner(
-                    &class_name,
-                    &canonical_owner,
-                    pm_name,
-                    args,
-                );
-                (pm_name, resolved)
-            }
-            None => (
-                private_rest,
-                self.resolve_private_method_any_owner(&class_name, private_rest, args),
-            ),
-        };
+        let (pm_name, resolved) =
+            match crate::qualified::split_qualified(crate::qualified::known_symbol(private_rest))
+                .map(|(head, tail)| (head.as_str(), tail.as_str()))
+            {
+                Some((owner_class, pm_name)) => {
+                    let (canonical_owner, _) = self.resolve_and_check_private_owner_on(
+                        caller_class.as_deref(),
+                        owner_class,
+                        Some(&class_name),
+                    );
+                    let resolved = self.resolve_private_method_with_owner(
+                        &class_name,
+                        &canonical_owner,
+                        pm_name,
+                        args,
+                    );
+                    (pm_name, resolved)
+                }
+                None => (
+                    private_rest,
+                    self.resolve_private_method_any_owner(&class_name, private_rest, args),
+                ),
+            };
         let (owner, method_def) = resolved?;
         if !self.private_owner_trusts_caller(caller_class.as_deref(), &owner)
             && !self.lexical_self_allows_private(&owner)
@@ -307,7 +306,10 @@ impl Interpreter {
         if qualifier == "Cool" && !self.class_mro(&cn).iter().any(|c| c.as_str() == "Cool") {
             return None;
         }
-        if !matches!(target.view(), ValueView::Package(_) | ValueView::Instance { .. }) {
+        if !matches!(
+            target.view(),
+            ValueView::Package(_) | ValueView::Instance { .. }
+        ) {
             return None;
         }
         // `$o.Mu::gist` is `Mu`'s own method, whatever the receiver's class
@@ -551,7 +553,12 @@ impl Interpreter {
             {
                 {
                     for def in overloads {
-                        if !def.is_private && self.method_args_match(&args, &def.param_defs) {
+                        if !def.is_private
+                            && match self.method_args_match(&args, &def.param_defs) {
+                                Ok(matched) => matched,
+                                Err(e) => return Some(Err(e)),
+                            }
+                        {
                             let attrs_map = attributes.to_map();
                             let inst_cn = inst_cn_str;
                             // Bind THIS concretization's type parameters (`T`=`Int`)
@@ -734,7 +741,10 @@ impl Interpreter {
             for def in overloads {
                 if def.role_origin.as_deref() == Some(qualifier)
                     && !def.is_private
-                    && self.method_args_match(&args, &def.param_defs)
+                    && match self.method_args_match(&args, &def.param_defs) {
+                        Ok(matched) => matched,
+                        Err(e) => return Some(Err(e)),
+                    }
                 {
                     let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str;
@@ -769,7 +779,12 @@ impl Interpreter {
             && let Some(overloads) = role_def.methods.get(actual_method)
         {
             for def in overloads {
-                if !def.is_private && self.method_args_match(&args, &def.param_defs) {
+                if !def.is_private
+                    && match self.method_args_match(&args, &def.param_defs) {
+                        Ok(matched) => matched,
+                        Err(e) => return Some(Err(e)),
+                    }
+                {
                     let attrs_map = attributes.to_map();
                     let inst_cn = inst_cn_str;
                     let (result, updated) = match self.run_resolved_method_compiled_or_treewalk(
@@ -1089,7 +1104,12 @@ impl Interpreter {
                 Err(err) => return Some(Err(err)),
             }
             for def in overloads {
-                if def.is_private || !self.method_args_match(&args, &def.param_defs) {
+                if def.is_private
+                    || !match self.method_args_match(&args, &def.param_defs) {
+                        Ok(matched) => matched,
+                        Err(e) => return Some(Err(e)),
+                    }
+                {
                     continue;
                 }
                 // Start from the inner instance's attributes (for compose-time
@@ -1168,7 +1188,8 @@ impl Interpreter {
             let inst_cn_str = inner_cn.resolve();
             let inst_mro = self.class_mro(&inst_cn_str);
             let in_mro = inst_mro.iter().any(|c| c.as_str() == qualifier);
-            let in_composed_roles = !in_mro && self.qualifier_in_composed_roles(inst_mro.iter().map(|c| c.as_str()), qualifier);
+            let in_composed_roles = !in_mro
+                && self.qualifier_in_composed_roles(inst_mro.iter().map(|c| c.as_str()), qualifier);
             if !in_mro && !in_composed_roles {
                 return Some(Err(RuntimeError::invalid_qualifier(
                     actual_method,
@@ -1317,7 +1338,8 @@ impl Interpreter {
             // same way for a bare type object).
             let mro = self.class_mro(&pkg_name);
             let in_mro = qualifier == pkg_name || mro.iter().any(|c| c.as_str() == qualifier);
-            let in_composed_roles = !in_mro && self.qualifier_in_composed_roles(mro.iter().map(|c| c.as_str()), qualifier);
+            let in_composed_roles = !in_mro
+                && self.qualifier_in_composed_roles(mro.iter().map(|c| c.as_str()), qualifier);
             if !in_mro && !in_composed_roles {
                 return Some(Err(RuntimeError::invalid_qualifier(
                     actual_method,

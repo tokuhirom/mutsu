@@ -583,7 +583,7 @@ fn where_constraint_matches(
     where_expr: &Expr,
     pd: &ParamDef,
     candidate: &Value,
-) -> bool {
+) -> Result<bool, RuntimeError> {
     let saved = interpreter.env.clone();
     interpreter.env.insert("_".to_string(), candidate.clone());
     // The key of a rename (`left` of `:left($ll)`) is no variable, so it must not
@@ -641,7 +641,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
     value: &Value,
-) -> bool {
+) -> Result<bool, RuntimeError> {
     // A `where` of one sub-parameter may name the sub-parameters bound before
     // it (`:left($rl) where { compare $ll, $rl }`), so each candidate is bound
     // by name while the match runs; the env is put back afterwards.
@@ -729,7 +729,7 @@ fn sub_signature_matches_value_unbound(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
     value: &Value,
-) -> bool {
+) -> Result<bool, RuntimeError> {
     let value = interpreter.coerce_via_user_capture(value);
     let value = &object_as_public_capture(interpreter, sub_params, value);
     let mut positional = positional_values_from_unpack_target(value);
@@ -770,7 +770,7 @@ fn sub_signature_matches_value_unbound(
             _ => true,
         });
         if surplus_named && !has_named_slurpy {
-            return false;
+            return Ok(false);
         }
     }
     let mut positional_idx = 0usize;
@@ -801,18 +801,18 @@ fn sub_signature_matches_value_unbound(
             if pd.optional_marker || pd.default.is_some() || (pd.named && !pd.required) {
                 continue;
             }
-            return false;
+            return Ok(false);
         };
         if let Some(constraint) = &pd.type_constraint
             && !interpreter.type_matches_value(constraint, &candidate)
         {
-            return false;
+            return Ok(false);
         }
         // A literal parameter (`:@op ('in', $x, *@v)`) matches only that value.
         if let Some(literal) = &pd.literal_value
             && candidate.deref_container() != *literal
         {
-            return false;
+            return Ok(false);
         }
         // Sigil-based type constraints: an `@`-param requires a Positional
         // argument and a `%`-param requires an Associative one.  Without this a
@@ -822,18 +822,18 @@ fn sub_signature_matches_value_unbound(
                 && !candidate.is_nil()
                 && !interpreter.binds_to_positional_param(&candidate)
             {
-                return false;
+                return Ok(false);
             }
             if pd.name.starts_with('%')
                 && !candidate.is_nil()
                 && !interpreter.type_matches_value("Associative", &candidate)
             {
-                return false;
+                return Ok(false);
             }
             if pd.sigil_carrying_name().starts_with('&')
                 && !interpreter.type_matches_value("Callable", &candidate)
             {
-                return false;
+                return Ok(false);
             }
         }
         // Implicit Any constraint: untyped $ parameters reject Junction type objects
@@ -844,7 +844,7 @@ fn sub_signature_matches_value_unbound(
             && !pd.slurpy
             && !interpreter.type_matches_value("Any", &candidate)
         {
-            return false;
+            return Ok(false);
         }
         // A named parameter's parens are either a RENAME/alias target
         // (`:key($k)`, `:die(:$throw)`) or a genuine destructure
@@ -854,17 +854,17 @@ fn sub_signature_matches_value_unbound(
         // positional element it does not have, so a signature that binds fine
         // would be rejected during dispatch matching.
         if let Some(sub) = &pd.sub_signature
-            && !named_param_parens_accept(interpreter, pd, sub, &candidate)
+            && !named_param_parens_accept(interpreter, pd, sub, &candidate)?
         {
-            return false;
+            return Ok(false);
         }
         if sub_params.iter().any(|p| p.where_constraint.is_some()) {
             bind_sub_param_candidate_names(interpreter, pd, &candidate);
         }
         if let Some(where_expr) = &pd.where_constraint
-            && !where_constraint_matches(interpreter, where_expr, pd, &candidate)
+            && !where_constraint_matches(interpreter, where_expr, pd, &candidate)?
         {
-            return false;
+            return Ok(false);
         }
     }
     // An all-named destructure of an `Associative` consumes no positional
@@ -873,7 +873,7 @@ fn sub_signature_matches_value_unbound(
     // `multi sub p(%patch (:$op!, :@path!))` (every `Crane::Patch` operation
     // candidate) match a plain hash argument at all.
     if destructures_associative_by_name(value, sub_params) {
-        return associative_entries_all_named(value, sub_params);
+        return Ok(associative_entries_all_named(value, sub_params));
     }
     // If there are unconsumed positional elements and no slurpy param, the match
     // fails — unless this is an all-named destructure of a Pair, which consumes
@@ -883,7 +883,7 @@ fn sub_signature_matches_value_unbound(
         && positional_idx < positional.len()
         && !destructures_pair_by_name(value, sub_params)
     {
-        return false;
+        return Ok(false);
     }
     // Reject unexpected named arguments (for the multi-dispatch case where the
     // value is a Capture).  A named slurpy (`*%h`) accepts any named argument.
@@ -901,7 +901,7 @@ fn sub_signature_matches_value_unbound(
                     p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key
                 });
                 if !consumed {
-                    return false;
+                    return Ok(false);
                 }
             }
         }
@@ -923,12 +923,12 @@ fn sub_signature_matches_value_unbound(
                     p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key
                 });
                 if !consumed {
-                    return false;
+                    return Ok(false);
                 }
             }
         }
     }
-    true
+    Ok(true)
 }
 
 /// Bind a named parameter's sub-signature for renaming (e.g., `:a(:$b)`).
@@ -976,9 +976,9 @@ pub(in crate::runtime) fn named_param_parens_accept(
     pd: &ParamDef,
     sub_params: &[ParamDef],
     candidate: &Value,
-) -> bool {
+) -> Result<bool, RuntimeError> {
     if is_named_rename_sub_signature(pd) {
-        return true;
+        return Ok(true);
     }
     if pd.named_alias && sub_params.len() == 1 && !sub_params[0].named {
         // `:value((:key($k), :value($v)))`: the single positional is itself an

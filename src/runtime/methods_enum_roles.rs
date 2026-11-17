@@ -127,7 +127,11 @@ impl Interpreter {
                 continue;
             };
             for def in overloads {
-                if def.is_private || !self.method_args_match(args, &def.param_defs) {
+                let matched = match self.method_args_match(args, &def.param_defs) {
+                    Ok(matched) => matched,
+                    Err(e) => return Some(Err(e)),
+                };
+                if def.is_private || !matched {
                     continue;
                 }
                 let result = self.run_resolved_method_compiled_or_treewalk(

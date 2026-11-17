@@ -1787,7 +1787,7 @@ impl Interpreter {
             // (#8727), which is what `advanced_past` below consumes.
             let mut matched: Option<(usize, std::sync::Arc<FunctionDef>)> = None;
             for (i, cand) in candidates.iter() {
-                if self.args_match_multi_candidate_in_scope(&call_args, cand) {
+                if self.args_match_multi_candidate_in_scope(&call_args, cand)? {
                     matched = Some((i, std::sync::Arc::clone(cand)));
                     break;
                 }
@@ -2130,7 +2130,7 @@ impl Interpreter {
         // have dispatched to, skipping non-matching candidates.
         let mut matched: Option<(usize, std::sync::Arc<FunctionDef>)> = None;
         for (i, cand) in candidates.iter() {
-            if self.args_match_multi_candidate_in_scope(&orig_args, cand) {
+            if self.args_match_multi_candidate_in_scope(&orig_args, cand)? {
                 matched = Some((i, std::sync::Arc::clone(cand)));
                 break;
             }

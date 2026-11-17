@@ -8,6 +8,11 @@ type TokenCallCandidate = (String, Option<String>);
 /// clause that died, a proto that refuses the arguments).
 pub(crate) type Resolved = Result<Option<Arc<FunctionDef>>, RuntimeError>;
 
+/// A method resolution: the winning candidate with the class that owns it, no
+/// candidate, or the exception a candidate's `where` clause raised while the
+/// candidates were matched.
+pub(crate) type MethodResolved = Result<Option<(Symbol, MethodDef)>, RuntimeError>;
+
 impl Interpreter {
     pub(crate) fn constraint_base_name(constraint: &str) -> &str {
         // A `::` here is a package separator (`Foo::Base`), not the start of
