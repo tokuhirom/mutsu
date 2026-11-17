@@ -36,12 +36,29 @@ pub(super) fn is_source_field(field: &RakuAstField) -> bool {
 
 // Cost: O(n), n = quoted-string expression size.
 pub(super) fn view_format(names: &NameScope, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    view_processed(names, args, "format")
+}
+
+/// A shell quote's command run (`qx/echo hi/`, the `exec` processor): the
+/// `QuotedString` of its command with `exec` first in its processors (#17950).
+// Cost: O(n), n = the command's node size.
+pub(super) fn view_exec(names: &NameScope, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    view_processed(names, args, "exec")
+}
+
+/// The quote `args`' one string is, with `processor` first in its processors.
+// Cost: O(n), n = the string's node size.
+fn view_processed(
+    names: &NameScope,
+    args: &[Expr],
+    processor: &str,
+) -> Result<RakuAstNode, RuntimeError> {
     let [string] = args else {
-        return Err(super::view::unsupported("format quote arguments"));
+        return Err(super::view::unsupported("processed quote arguments"));
     };
     let mut quoted = super::view::view_expr(names, string)?;
     if quoted.class != RakuAstClass::QuotedString {
-        return Err(super::view::unsupported("format quote contents"));
+        return Err(super::view::unsupported("processed quote contents"));
     }
     if let Some(field) = quoted
         .fields
@@ -51,13 +68,13 @@ pub(super) fn view_format(names: &NameScope, args: &[Expr]) -> Result<RakuAstNod
         let RakuAstFieldValue::List(processors) = &mut field.value else {
             return Err(unsupported(&quoted));
         };
-        processors.insert(0, Value::str_from("format"));
+        processors.insert(0, Value::str_from(processor));
     } else {
         quoted.fields.insert(
             0,
             RakuAstField {
                 name: Some("processors"),
-                value: RakuAstFieldValue::List(vec![Value::str_from("format")]),
+                value: RakuAstFieldValue::List(vec![Value::str_from(processor)]),
             },
         );
     }
@@ -148,7 +165,13 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
         .any(|field| field.name == Some("processors"))
     {
         let processors = list_field(node, "processors")?;
-        if processors.first().and_then(Value::as_str) == Some("format") {
+        let first = processors.first().and_then(Value::as_str);
+        if matches!(first, Some("format" | "exec")) {
+            let wrap = if first == Some("exec") {
+                crate::ast::quote_processing::exec
+            } else {
+                crate::ast::quote_processing::format
+            };
             let mut contents = node.clone();
             let field = contents
                 .fields
@@ -160,9 +183,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
             };
             // The first processor was checked above; take only its own list.
             *processors = processors.iter().skip(1).cloned().collect();
-            return Ok(crate::ast::quote_processing::format(lower_contents(
-                names, &contents,
-            )?));
+            return Ok(wrap(lower_contents(names, &contents)?));
         }
     }
     lower_contents(names, node)

@@ -1768,7 +1768,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Call { ref name, ref args, .. } if name == "QX" && args.len() == 1
+            Expr::Call { ref name, ref args, .. } if name == "qx" && args.len() == 1
         ));
     }
 
@@ -1781,7 +1781,7 @@ mod tests {
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {
-                assert_eq!(name, "QX");
+                assert_eq!(name, "qx");
                 assert_eq!(args.len(), 1);
                 assert!(matches!(args[0], Expr::Literal(_)));
             }

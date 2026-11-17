@@ -12,3 +12,18 @@ pub(crate) fn format(string: Expr) -> Expr {
         listop: false,
     }
 }
+
+/// The routine a shell quote (`qx/.../`, `qqx/.../`, `q:x/.../`) runs its
+/// command through. A program cannot write it as a call (`qx(...)` is a quote),
+/// so the call is the quote's own, and the RakuAST view shows it as a
+/// `QuotedString` with the `exec` processor; a written `QX(...)` stays a call.
+pub(crate) const EXEC: &str = "qx";
+
+// Cost: O(1), the command expression is moved into the call.
+pub(crate) fn exec(command: Expr) -> Expr {
+    Expr::Call {
+        name: Symbol::intern(EXEC),
+        args: vec![command],
+        listop: false,
+    }
+}

@@ -1,7 +1,6 @@
 use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
-use crate::symbol::Symbol;
 
 use super::helpers::literal_str;
 /// Parse qx{...}, qqx{...} forms.
@@ -52,12 +51,5 @@ pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
         Expr::Literal(literal_str(s))
     };
 
-    Ok((
-        rest,
-        Expr::Call {
-            name: Symbol::intern("QX"),
-            args: vec![command_expr],
-            listop: false,
-        },
-    ))
+    Ok((rest, crate::ast::quote_processing::exec(command_expr)))
 }
