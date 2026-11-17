@@ -83,13 +83,9 @@ impl Interpreter {
         {
             earlier.extend(candidates);
         }
-        let same = |a: &Value, b: &Value| match (a.view(), b.view()) {
-            (ValueView::Sub(x), ValueView::Sub(y)) => x.id == y.id,
-            _ => false,
-        };
         let mut merged: Vec<Value> = Vec::with_capacity(earlier.len() + own.len());
         for candidate in earlier.into_iter().chain(own.iter().cloned()) {
-            if !merged.iter().any(|seen| same(seen, &candidate)) {
+            if !merged.iter().any(|seen| same_routine(seen, &candidate)) {
                 merged.push(candidate);
             }
         }
@@ -133,11 +129,7 @@ impl Interpreter {
             .and_then(Value::into_array)?;
         let mut merged: Vec<Value> = own.iter().cloned().collect();
         for candidate in hook_candidates {
-            let seen = merged.iter().any(|m| match (m.view(), candidate.view()) {
-                (ValueView::Sub(x), ValueView::Sub(y)) => x.id == y.id,
-                _ => false,
-            });
-            if !seen {
+            if !merged.iter().any(|seen| same_routine(seen, &candidate)) {
                 merged.push(candidate);
             }
         }
@@ -160,4 +152,23 @@ fn with_candidates(data: &crate::value::SubData, candidates: Vec<Value>) -> Valu
         ),
     );
     Value::sub_value(crate::gc::Gc::new(next))
+}
+
+/// Whether two candidate code objects are the same routine: one object, or
+/// two code objects one declaration made (the same family reached through a
+/// hook and through an `is export` import builds a code object for each).
+// Cost: O(1).
+fn same_routine(a: &Value, b: &Value) -> bool {
+    match (a.view(), b.view()) {
+        (ValueView::Sub(x), ValueView::Sub(y)) => {
+            x.id == y.id
+                || (x.name == y.name
+                    && x.package == y.package
+                    && ((!x.body.is_empty() && std::sync::Arc::ptr_eq(&x.body, &y.body))
+                        || (x.source_line.is_some()
+                            && x.source_line == y.source_line
+                            && x.source_file == y.source_file)))
+        }
+        _ => false,
+    }
 }
