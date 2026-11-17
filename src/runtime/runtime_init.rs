@@ -3183,7 +3183,6 @@ impl Interpreter {
             topic_state: Default::default(),
             async_state: Default::default(),
             block_scope_depth: 0,
-            pending_sigilless_store: None,
             regex_state: Default::default(),
             caches: Default::default(),
             pending_eval_sigilless: Vec::new(),

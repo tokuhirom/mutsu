@@ -868,7 +868,7 @@ impl Interpreter {
         idx: usize,
     ) -> Result<Option<()>, RuntimeError> {
         let name = &code.locals[idx];
-        let checked_sigilless = self.pending_sigilless_store.as_deref() == Some(name.as_str());
+        let checked_sigilless = self.sigilless_store_context().get();
         if !(name.starts_with('%')
             || name.starts_with('@')
             || self.take_pending_sigilless_slot(code, idx, name))
@@ -953,7 +953,7 @@ impl Interpreter {
         name: &str,
         attr_site: Option<&GlobalAttrSite<'_>>,
     ) -> Result<Option<()>, RuntimeError> {
-        let checked_sigilless = self.pending_sigilless_store.as_deref() == Some(name);
+        let checked_sigilless = self.sigilless_store_context().get();
         if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
             return Ok(None);
         }
@@ -1122,8 +1122,8 @@ impl Interpreter {
             .is_some_and(|v| has_store(self, v))
     }
 
-    /// Consume the `pending_sigilless_store` mark `CheckReadOnly` left for
-    /// `name`, reporting whether this store is that assignment.
+    /// Consume the `SIGILLESS_STORE` mark `CheckReadOnly` left for this
+    /// store, reporting whether it assigns through the bound value.
     ///
     /// The expression form (`say(foo -= 1)`) emits no `CheckReadOnly`, so a
     /// name that still carries the sigilless read-only marker counts too: only
@@ -1137,8 +1137,8 @@ impl Interpreter {
     // Cost: O(1): two flag-word reads when neither the marker key nor a
     // readonly mark exists.
     fn take_pending_sigilless_slot(&mut self, code: &CompiledCode, idx: usize, name: &str) -> bool {
-        if self.pending_sigilless_store.as_deref() == Some(name) {
-            self.pending_sigilless_store = None;
+        if self.sigilless_store_context().get() {
+            self.sigilless_store_context().set(false);
             return true;
         }
         if crate::env::sigilless_readonly_keys_possible()
@@ -1159,8 +1159,8 @@ impl Interpreter {
     }
 
     fn take_pending_sigilless(&mut self, name: &str) -> bool {
-        if self.pending_sigilless_store.as_deref() == Some(name) {
-            self.pending_sigilless_store = None;
+        if self.sigilless_store_context().get() {
+            self.sigilless_store_context().set(false);
             return true;
         }
         // A constant term is marked the same way through the readonly set

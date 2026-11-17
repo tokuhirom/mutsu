@@ -146,7 +146,7 @@ impl Compiler {
         // Fuse `$x OP= rhs` (parsed as `$x = $x OP rhs`) into an atomic RMW for
         // plain env-named scalars; the fused op leaves the new value on the
         // stack, exactly what expression context wants.
-        if self.try_compile_fused_compound_assign(name, expr) {
+        if self.try_compile_fused_compound_assign(name, expr, None) {
             let source_slot = self.local_map.get(name).copied();
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
             self.code

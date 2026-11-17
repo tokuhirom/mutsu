@@ -39,7 +39,7 @@ impl Interpreter {
 
     /// Refuse an assignment to the readonly variable `code.constants[name_idx]`,
     /// or let it through. A sigilless/`constant` term bound to an object with a
-    /// user `STORE` is let through with `pending_sigilless_store` set, so the
+    /// user `STORE` is let through with the `SIGILLESS_STORE` mark set, so the
     /// store that follows calls that `STORE`.
     ///
     /// This runs on every whole-variable assignment, per iteration in a tight
@@ -81,8 +81,7 @@ impl Interpreter {
                     if kind == crate::ast::ReadonlyKind::ImmutableValue
                         && Self::is_sigilless_assignable_aggregate(&bound.deref_container())
                     {
-                        self.pending_sigilless_store =
-                            Some(Self::const_str(code, name_idx).to_string());
+                        self.sigilless_store_context().set(true);
                         return Ok(());
                     }
                     return Err(Self::readonly_binding_error(kind, &bound));
@@ -104,7 +103,7 @@ impl Interpreter {
             if self.readonly_kind(name) == Some(crate::ast::ReadonlyKind::ImmutableValue)
                 && self.sigilless_value_has_store(code, name)
             {
-                self.pending_sigilless_store = Some(name.to_string());
+                self.sigilless_store_context().set(true);
                 return Ok(());
             }
             self.check_readonly_for_modify(name)?;
@@ -125,7 +124,7 @@ impl Interpreter {
                 // assignment through and have the store that follows
                 // call it (#9551, FixedInt).
                 if self.sigilless_value_has_store(code, name) {
-                    self.pending_sigilless_store = Some(name.to_string());
+                    self.sigilless_store_context().set(true);
                     return Ok(());
                 }
                 // A sigilless term (`my \\c = 5`) IS the value, so
@@ -182,7 +181,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         if self.sigilless_value_has_store(code, name) {
-            self.pending_sigilless_store = Some(name.to_string());
+            self.sigilless_store_context().set(true);
             return Ok(());
         }
         Err(self.readonly_term_error(code, code.const_sym(name_idx), name))
