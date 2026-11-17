@@ -457,6 +457,10 @@ impl Interpreter {
             // An object hash (`my %h{Any}`) stores `.WHICH`-encoded keys, so the
             // subscript has to be encoded the same way the read path encodes it.
             let object_hash = match target.view() {
+                // An immutable `Map`'s element is a value, not a location:
+                // an `is rw` parameter must refuse it (#17954), and promoting
+                // its leaf would rewrite the published, shared node (#17149).
+                ValueView::Hash(_) if target.is_immutable_map() => return None,
                 ValueView::Hash(map) => map.key_type.is_some(),
                 _ => return None,
             };
