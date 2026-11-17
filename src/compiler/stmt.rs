@@ -5169,11 +5169,10 @@ impl Compiler {
                     }
                 }
                 // A method installed by RegisterClass outlives this frame and has
-                // no closure-creation op, so a frame lexical it writes must keep
-                // the name-keyed shared lane. That set is harvested inside
-                // `add_class_decl_plan`'s own method-body compile pass (see
-                // `record_type_body_written_lexicals`), not by a separate
-                // analysis compile here.
+                // no closure-creation op, so a frame lexical it writes is boxed
+                // in a declaration-site cell. Those captures are harvested
+                // inside `add_class_decl_plan`'s own method-body compile pass,
+                // not by a separate analysis compile here.
                 // Pre-qualify the class name when compiling inside a
                 // `unit module`/`unit class` body so that the runtime
                 // registers it under the correct nested package

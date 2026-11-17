@@ -667,6 +667,13 @@ impl Interpreter {
             .iter()
             .flat_map(|op| op.declared_vars.iter().map(|name| name.resolve().to_string()))
             .collect();
+        // What the composing scope bound under each of those names before the
+        // body ran: the body's own bindings are persisted as the composing
+        // class's statics below and then leave the env, as a class body's do.
+        let saved_body_bindings: Vec<(String, Option<Value>)> = body_lexicals
+            .iter()
+            .map(|name| (name.clone(), self.env.get(name).cloned()))
+            .collect();
         for op in &role.deferred_body {
             // A lexical `my constant` is initialised once per role, not once
             // per composing class (#16255): a later composition of a
@@ -937,6 +944,21 @@ impl Interpreter {
                     &declared,
                     &value_params,
                 )?;
+            }
+            // The body is these names' whole scope: their authoritative copy is
+            // the composing class's static store, which method dispatch binds.
+            // Left in the env, a role-body `my $n` outlived the composition
+            // and answered a later, unrelated `$n` -- another class body's
+            // static, read from the env ahead of that class's own cell, became
+            // a per-thread copy on a worker (ADR-16595 slice 5).
+            // An `@`/`%`/`&` stays: the body's subs still reach such a
+            // lexical through this env binding, which shares the static's
+            // node (TODO(#17854): resolve a role body sub's aggregate through
+            // the composing class's static store, then restore these too).
+            for (name, saved) in saved_body_bindings {
+                if !bound.contains(&name) && !name.starts_with(['@', '%', '&']) {
+                    Self::restore_env_entry(&mut self.env, &name, saved);
+                }
             }
         }
         // Rename each newly-declared nested class to its
