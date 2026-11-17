@@ -336,7 +336,7 @@ impl Compiler {
     }
 
     fn compile_if_statement_branch_body(&mut self, branch: &[Stmt], is_statement_modifier: bool) {
-        if Self::has_block_enter_leave_phasers(branch) {
+        if Self::has_inline_scope_phasers(branch) {
             // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block
             // scope: its LEAVE must fire when the branch exits (OO::Monitors
             // unlocks its monitor lock this way).

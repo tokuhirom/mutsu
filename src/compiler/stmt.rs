@@ -3748,7 +3748,7 @@ impl Compiler {
                 // scope: its LEAVE fires however the clause exits (a matched
                 // body succeeds, or dies), with the body's value still left
                 // for the `When` op to succeed with -- as an `if` branch does.
-                if Self::has_block_enter_leave_phasers(body) {
+                if Self::has_inline_scope_phasers(body) {
                     self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
                 } else {
                     for (i, s) in body.iter().enumerate() {
@@ -3792,7 +3792,7 @@ impl Compiler {
                 if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
-                } else if Self::has_block_enter_leave_phasers(body) {
+                } else if Self::has_inline_scope_phasers(body) {
                     // As for a `when` body: a phaser block scope.
                     self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
                 } else {
