@@ -6,7 +6,7 @@ use Test;
 # its `my`. A `my rule` keeps its `my` / `our` too, as a `my token` does
 # (#14880, the `.DEPARSE` corpus's nan.t, real-bridge.t and unknown.t).
 
-plan 10;
+plan 13;
 
 sub deparse($src) { $src.AST.statements[*-1].DEPARSE.subst("\n", ' ', :g).subst(/\s+/, ' ', :g) }
 
@@ -29,3 +29,8 @@ is (my class :: { method n { 42 } }).n, 42, 'an anonymous my class works';
 
 my rule lexrule { a b }
 ok 'a b' ~~ /<lexrule>/, 'a my rule matches';
+
+# The view lowers back: `EVAL` of the `.AST` runs a `my class ::` term.
+is EVAL(Q{(my class :: { method n { 7 } }).n}.AST), 7, 'EVAL of an anonymous my class term';
+ok EVAL(Q{my class :: is IO::Spec { }}.AST) ~~ IO::Spec, 'with a parent';
+is EVAL(Q{my class LexEval { method m { 'm' } }.new.m}.AST), 'm', 'and of a named one';

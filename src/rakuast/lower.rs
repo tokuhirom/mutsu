@@ -1643,6 +1643,23 @@ pub(super) fn package_head(
             }),
             _ => Err(unsupported(node)),
         },
+        // `my class :: { }` (a lexical class written as a term): nameless,
+        // like `anon class :: { }`, but kept `my`.
+        Some("my")
+            if named_child(node, "name").is_ok_and(
+                |n| matches!(name_parts::name_shape(n), Some(NameShape::Stash(s)) if s == "::"),
+            ) =>
+        {
+            Ok(PackageHead {
+                name: fresh(),
+                is_lexical: true,
+                is_unit: false,
+                colons: true,
+                leading_colons: false,
+                declarator: super::declare_how::marker(node)?,
+                anon: false,
+            })
+        }
         None | Some("my" | "our" | "unit") => Ok(PackageHead {
             name: if node.fields.iter().any(|f| f.name == Some("name")) {
                 super::routine_lower::declarator_name(names, node)?.0
