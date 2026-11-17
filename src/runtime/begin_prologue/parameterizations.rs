@@ -67,23 +67,18 @@ pub(super) fn lift_parameterizations(stmts: &mut Vec<Stmt>) {
 }
 
 /// Record the classes `stmt` declares with their own `method ^parameterize`
-/// (an exported one arrives in the parser's synthetic group).
+/// (an exported one arrives in the parser's synthetic group, which
+/// `scope_members` looks through).
 // Cost: O(m), m = members of the declared class bodies.
 fn declare_parametric_classes(stmt: &Stmt, parametric: &mut HashSet<String>) {
-    match stmt {
-        Stmt::ClassDecl { name, body, .. }
-            if crate::ast::scope_members(body).any(
+    for member in crate::ast::scope_members(std::slice::from_ref(stmt)) {
+        if let Stmt::ClassDecl { name, body, .. } = member
+            && crate::ast::scope_members(body).any(
                 |s| matches!(s, Stmt::MethodDecl { name, .. } if *name == "^parameterize"),
-            ) =>
+            )
         {
             parametric.insert(name.resolve().to_string());
         }
-        Stmt::SyntheticBlock(inner) => {
-            for s in inner {
-                declare_parametric_classes(s, parametric);
-            }
-        }
-        _ => {}
     }
 }
 
