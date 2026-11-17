@@ -20,6 +20,7 @@
 
 use crate::opcode::CompiledCode;
 use crate::runtime::Interpreter;
+use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 /// Where a named element store finds its container (ADR-14632 §2.1).
@@ -148,6 +149,56 @@ impl Interpreter {
     // env mirror, so the by-name readers that remain see it (§2.3). A `Named`
     // place answers what the by-name call it replaced answered.
 
+    /// [`Self::place_env_get`] for a store that already holds its target
+    /// name's `Symbol`. The store bodies consult the target dozens of times
+    /// per element store; the `&str` form interned the name on every one
+    /// (21 interns per `%memo{$k} = [...]` on a captured hash).
+    // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked.
+    pub(super) fn place_env_get_sym(&self, place: StorePlace, sym: Symbol) -> Option<&Value> {
+        match place {
+            StorePlace::Slot { slot } => self.locals.get(slot),
+            StorePlace::Named if sym == crate::symbol::wk::self_() => self
+                .frame_invocant_ref()
+                .or_else(|| self.env().get_sym(sym)),
+            StorePlace::Named => self.env().get_sym(sym),
+        }
+    }
+
+    /// [`Self::place_env_get_mut`] keyed by the target's `Symbol`.
+    // Cost: as `place_env_get_mut`.
+    pub(super) fn place_env_get_mut_sym(
+        &mut self,
+        place: StorePlace,
+        sym: Symbol,
+    ) -> Option<&mut Value> {
+        match place {
+            StorePlace::Slot { slot } => self.locals.get_mut(slot),
+            StorePlace::Named
+                if sym == crate::symbol::wk::self_() && self.frame_invocant_ref().is_some() =>
+            {
+                self.frame_invocant_mut()
+            }
+            StorePlace::Named => self.env_mut().get_mut_sym(sym),
+        }
+    }
+
+    /// The store's target: the slot of a `Slot` place, else through the read
+    /// precedence (`get_env_with_main_alias_sym`: unit lexical, `our` mirror,
+    /// env). `sym` is `name`'s symbol.
+    // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked,
+    // plus the store probes.
+    pub(super) fn place_get_sym(
+        &self,
+        place: StorePlace,
+        name: &str,
+        sym: Symbol,
+    ) -> Option<Value> {
+        match place {
+            StorePlace::Slot { slot } => self.locals.get(slot).cloned(),
+            StorePlace::Named => self.get_env_with_main_alias_sym(name, sym),
+        }
+    }
+
     /// The store's target as stored: the slot of a `Slot` place, else
     /// `self.env().get(name)`.
     // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked.
@@ -171,17 +222,6 @@ impl Interpreter {
                 self.frame_invocant_ref().is_some() || self.env().contains_key(name)
             }
             StorePlace::Named => self.env().contains_key(name),
-        }
-    }
-
-    /// The store's target: the slot of a `Slot` place, else through the read
-    /// precedence (`get_env_with_main_alias`: unit lexical, `our` mirror, env).
-    // Cost: O(1) for a `Slot` place; else O(d), d = the env tiers walked,
-    // plus the store probes.
-    pub(super) fn place_get(&self, place: StorePlace, name: &str) -> Option<Value> {
-        match place {
-            StorePlace::Slot { slot } => self.locals.get(slot).cloned(),
-            StorePlace::Named => self.get_env_with_main_alias(name),
         }
     }
 

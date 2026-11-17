@@ -455,6 +455,13 @@ impl Interpreter {
             .as_deref()
             .unwrap_or(&original_var_name)
             .to_string();
+        // The target's symbol, for the `place_*_sym` accessors below: the
+        // chunk's constant-pool symbol, or one intern for an alias target.
+        let var_sym = if sigilless_alias_target.is_some() {
+            Symbol::intern(&var_name)
+        } else {
+            original_var_sym
+        };
         // A SetHash element assignment evaluates to the key's Bool existence, not
         // the assigned value (`$sh<k> = 2` is `Bool::True`); set in the Set store
         // arm and applied at the final result push.
@@ -519,7 +526,7 @@ impl Interpreter {
             // declaration in this frame: its own element-type metadata
             // names the native type whose zero fills the gap.
             let tc = self.decl_type_constraint(decl, &var_name).or_else(|| {
-                self.place_env_get(place, &var_name)
+                self.place_env_get_sym(place, var_sym)
                     .and_then(|container| self.container_type_metadata(container))
                     .map(|meta| meta.value_type)
                     .filter(|t| crate::runtime::native_types::is_native_array_element_type(t))
@@ -529,7 +536,7 @@ impl Interpreter {
         // Capture the old Arc pointer before any mutation so the post-mutation
         // sync code can distinguish stale COW copies from unrelated containers.
         let old_container_arc_ptr: Option<usize> =
-            if let Some(container) = self.place_env_get(place, &var_name) {
+            if let Some(container) = self.place_env_get_sym(place, var_sym) {
                 match container.view() {
                     ValueView::Array(arc, _) => Some(crate::gc::Gc::as_ptr(&arc) as usize),
                     ValueView::Hash(arc) => Some(crate::gc::Gc::as_ptr(&arc) as usize),
@@ -539,7 +546,7 @@ impl Interpreter {
                 None
             };
         let declared_type = self
-            .place_env_get(place, &var_name)
+            .place_env_get_sym(place, var_sym)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v))
             .and_then(|info| info.declared_type);
@@ -619,7 +626,7 @@ impl Interpreter {
         };
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
-            .or_else(|| self.place_env_get(place, &var_name).cloned())
+            .or_else(|| self.place_env_get_sym(place, var_sym).cloned())
             .map(|t| t.deref_container())
             && let ValueView::Mixin(_, mixins) = target.view()
             && self.mixin_composes_method(&target, assign_method)
@@ -675,7 +682,7 @@ impl Interpreter {
         };
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
-            .or_else(|| self.place_env_get(place, &var_name).cloned())
+            .or_else(|| self.place_env_get_sym(place, var_sym).cloned())
             .map(|t| t.deref_container())
             && let ValueView::Mixin(..) = target.view()
             && self.mixin_composes_method(&target, bind_method)
@@ -704,7 +711,7 @@ impl Interpreter {
         // ASSIGN-POS, which then owns the assignment.
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
-            .or_else(|| self.place_env_get(place, &var_name).cloned())
+            .or_else(|| self.place_env_get_sym(place, var_sym).cloned())
             .map(|t| t.deref_container())
             && let ValueView::Mixin(_, mixins) = target.view()
             && !matches!(
@@ -757,7 +764,7 @@ impl Interpreter {
         }
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
-            .or_else(|| self.place_env_get(place, &var_name).cloned())
+            .or_else(|| self.place_env_get_sym(place, var_sym).cloned())
             .map(|t| t.deref_container())
             && let ValueView::Instance {
                 class_name,
@@ -1072,7 +1079,7 @@ impl Interpreter {
             }
             _ => idx,
         };
-        let index_target = self.place_env_get(place, &var_name).cloned();
+        let index_target = self.place_env_get_sym(place, var_sym).cloned();
         let idx = self.resolve_whatever_index_for_target(idx, index_target.as_ref());
         // Normalize Seq/Slip/Range index to Array for uniform handling in assignment.
         // For hash variables, expand Range indices into individual keys so that
@@ -1208,7 +1215,7 @@ impl Interpreter {
             && let Some(target) = target_slot
                 .and_then(|slot| self.locals.get(slot as usize))
                 .cloned()
-                .or_else(|| self.place_get(place, &var_name))
+                .or_else(|| self.place_get_sym(place, &var_name, var_sym))
                 .map(|v| v.deref_container().descalarize().clone())
             && crate::runtime::types::value_is_defined(&target)
             && let Some(err) = self.scalar_subscript_protocol_error(&target, is_positional)
@@ -1259,13 +1266,15 @@ impl Interpreter {
         let val = if let Some(cell) = &bound_cell {
             self.element_store_through_cell(cell, val)?
         } else if val.is_nil() && !bind_mode {
-            let container = self.place_get(place, &var_name).unwrap_or_else(|| {
-                if is_positional {
-                    Value::real_array(Vec::new())
-                } else {
-                    Value::hash(ValueMap::default())
-                }
-            });
+            let container = self
+                .place_get_sym(place, &var_name, var_sym)
+                .unwrap_or_else(|| {
+                    if is_positional {
+                        Value::real_array(Vec::new())
+                    } else {
+                        Value::hash(ValueMap::default())
+                    }
+                });
             self.assign_store_nil_default(decl, &var_name, &container)
         } else {
             val
@@ -1303,7 +1312,7 @@ impl Interpreter {
         if is_positional
             && !bind_mode
             && let Some(target) = self
-                .place_env_get(place, &var_name)
+                .place_env_get_sym(place, var_sym)
                 .map(Value::deref_container)
             && let ValueView::Capture { positional, .. } = target.view()
             && let idx_i = crate::runtime::utils::to_int(&idx)
@@ -1324,7 +1333,7 @@ impl Interpreter {
             && !bind_mode
             // A closure-captured `@`-variable is held behind a shared cell;
             // the instance inside it is the target all the same (#10356).
-            && let Some(inst) = self.place_env_get(place, &var_name).map(Value::deref_container)
+            && let Some(inst) = self.place_env_get_sym(place, var_sym).map(Value::deref_container)
             && let ValueView::Instance { attributes, .. } = inst.view()
             && attributes.contains_key(crate::symbol::wk::array_storage())
         {
@@ -1366,7 +1375,7 @@ impl Interpreter {
         if is_positional
             && bind_mode
             && let Some(inst) = self
-                .place_env_get(place, &var_name)
+                .place_env_get_sym(place, var_sym)
                 .map(Value::deref_container)
             && matches!(&inst.view(), ValueView::Instance { attributes, .. }
                 if attributes.contains_key(crate::symbol::wk::array_storage()))
@@ -1410,7 +1419,7 @@ impl Interpreter {
         // instance with a fresh Hash, losing its class identity — the
         // Associative twin of the positional block above).
         if !is_positional
-            && let Some(inst) = self.place_env_get(place, &var_name).cloned()
+            && let Some(inst) = self.place_env_get_sym(place, var_sym).cloned()
             && (matches!(inst.view(), ValueView::Instance { .. })
                 || Self::hash_pun_inner(&inst).is_some())
         {
@@ -1504,7 +1513,7 @@ impl Interpreter {
         // that path for a readonly, non-`:=`-bound `%`-constant hash; only a
         // genuine bound Map value (`:=`) uses the container-level message here.
         let is_shadowing_user_class = matches!(
-            self.place_env_get(place, &var_name).map(Value::view),
+            self.place_env_get_sym(place, var_sym).map(Value::view),
             Some(ValueView::Instance { class_name, .. })
                 if self.is_container_subclass(&class_name.resolve())
         );
@@ -1512,7 +1521,7 @@ impl Interpreter {
             let is_ro_constant_hash = var_name.starts_with('%')
                 && self.is_readonly(&var_name)
                 && matches!(
-                    self.place_env_get(place, &var_name).map(Value::view),
+                    self.place_env_get_sym(place, var_sym).map(Value::view),
                     Some(ValueView::Hash(_))
                 );
             if !is_ro_constant_hash {
@@ -1525,7 +1534,7 @@ impl Interpreter {
                     ));
                 } else {
                     let map = self
-                        .place_env_get(place, &var_name)
+                        .place_env_get_sym(place, var_sym)
                         .map(Value::deref_container);
                     return Err(match map {
                         Some(map) => crate::runtime::refuse_map_assignment(&map, &idx),
@@ -1547,7 +1556,7 @@ impl Interpreter {
         // holds, leaving the Pair itself (and every other alias of that Array)
         // in place.
         if !bind_mode
-            && let Some(aggregate) = self.place_env_get(place, &var_name).and_then(|t| {
+            && let Some(aggregate) = self.place_env_get_sym(place, var_sym).and_then(|t| {
                 Self::pair_subscript_aggregate(t, Some(idx.to_string_value().as_str()))
             })
         {
@@ -1555,7 +1564,7 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
-        if let Some(target_val) = self.place_env_get(place, &var_name)
+        if let Some(target_val) = self.place_env_get_sym(place, var_sym)
             && let Some((pair_key, pair_value)) = match target_val.view() {
                 ValueView::Pair(k, v) => Some((k.clone(), v.clone())),
                 ValueView::ValuePair(k, v) => Some((k.to_string_value(), v.clone())),
@@ -1596,7 +1605,7 @@ impl Interpreter {
         // When `my Mix $m; $m<key> = val`, the variable is undefined (Nil or
         // type object) but has an immutable type constraint.
         {
-            let current_val = self.place_env_get(place, &var_name).cloned();
+            let current_val = self.place_env_get_sym(place, var_sym).cloned();
             let is_undefined = current_val.is_none()
                 || matches!(current_val.as_ref().map(Value::view), Some(ValueView::Nil))
                 || matches!(
@@ -1619,7 +1628,7 @@ impl Interpreter {
         // Read through a capture cell: `my @l := (1, 2, 3)` captured by an
         // escaping closure is a shared `ContainerRef` (#9488).
         if let Some(target_val) = self
-            .place_env_get(place, &var_name)
+            .place_env_get_sym(place, var_sym)
             .map(Value::deref_container)
         {
             let is_immutable = matches!(
@@ -1700,7 +1709,7 @@ impl Interpreter {
         // no cell rebind is needed. Without this, the classification below
         // missed the Buf and fell into the array-autoviv lane, replacing the
         // caller's Buf with a fresh Array (`sub f($d is rw) { $d[0] = 3 }`).
-        let rw_buf_instance = match self.place_env_get(place, &var_name).map(Value::view) {
+        let rw_buf_instance = match self.place_env_get_sym(place, var_sym).map(Value::view) {
             Some(ValueView::ContainerRef(cell)) => {
                 let inner = cell.lock().unwrap();
                 matches!(inner.view(), ValueView::Instance { .. }).then(|| inner.clone())
@@ -1715,7 +1724,7 @@ impl Interpreter {
             }) = rw_buf_instance
                 .as_ref()
                 .map(Value::view)
-                .or_else(|| self.place_env_get(place, &var_name).map(Value::view))
+                .or_else(|| self.place_env_get_sym(place, var_sym).map(Value::view))
         {
             let cn = class_name.resolve();
             // Storage-backed instances only. An **unmanaged** `CArray` — a
@@ -1831,7 +1840,7 @@ impl Interpreter {
         // dropping the address (DBDish::mysql pokes result-length buffers
         // through such casts).
         if !bind_mode {
-            let carray_target = match self.place_env_get(place, &var_name).map(Value::view) {
+            let carray_target = match self.place_env_get_sym(place, var_sym).map(Value::view) {
                 Some(ValueView::Instance {
                     attributes,
                     class_name,
@@ -2061,13 +2070,15 @@ impl Interpreter {
                 // default, exactly like the single-element store above
                 // (`@a[0,1] = Nil, 5` stores `Any`, not `Nil`).
                 let vals = if !bind_mode && vals.iter().any(Value::is_nil) {
-                    let container = self.place_get(place, &var_name).unwrap_or_else(|| {
-                        if is_positional {
-                            Value::real_array(Vec::new())
-                        } else {
-                            Value::hash(ValueMap::default())
-                        }
-                    });
+                    let container = self
+                        .place_get_sym(place, &var_name, var_sym)
+                        .unwrap_or_else(|| {
+                            if is_positional {
+                                Value::real_array(Vec::new())
+                            } else {
+                                Value::hash(ValueMap::default())
+                            }
+                        });
                     vals.into_iter()
                         .map(|v| {
                             if v.is_nil() {
@@ -2291,14 +2302,14 @@ impl Interpreter {
                     // empty container first, so the slice store below records
                     // each key's element object as the single-key store does.
                     if let Some(ValueView::Package(sym)) =
-                        self.place_env_get(place, &var_name).map(Value::view)
+                        self.place_env_get_sym(place, var_sym).map(Value::view)
                         && matches!(sym.resolve().as_str(), "MixHash" | "BagHash" | "SetHash")
                     {
                         let empty = Self::empty_mutable_quanthash(&sym.resolve());
                         self.place_env_insert(place, &var_name, empty);
                     }
                     let (is_set, is_bag, is_mix, is_mut) =
-                        match self.place_env_get(place, &var_name).map(Value::view) {
+                        match self.place_env_get_sym(place, var_sym).map(Value::view) {
                             Some(ValueView::Set(_, m)) => (true, false, false, m),
                             Some(ValueView::Bag(_, m)) => (false, true, false, m),
                             Some(ValueView::Mix(_, m)) => (false, false, true, m),
@@ -2328,7 +2339,8 @@ impl Interpreter {
                             let key_val = &key_val;
                             if is_bag {
                                 let count = Self::bag_assignment_count(&v)?;
-                                if let Some(container) = self.place_env_get_mut(place, &var_name) {
+                                if let Some(container) = self.place_env_get_mut_sym(place, var_sym)
+                                {
                                     container.with_bag_mut(|bag, _| {
                                         let b = crate::value::gc_data_mut(bag);
                                         if count == num_bigint::BigInt::from(0) {
@@ -2350,7 +2362,8 @@ impl Interpreter {
                                 results.push(Value::bigint(count));
                             } else if is_mix {
                                 let weight = Self::mix_assignment_weight(&v)?;
-                                if let Some(container) = self.place_env_get_mut(place, &var_name) {
+                                if let Some(container) = self.place_env_get_mut_sym(place, var_sym)
+                                {
                                     container.with_mix_mut(|mix, _| {
                                         let m = crate::value::gc_data_mut(mix);
                                         if weight == 0.0 {
@@ -2372,7 +2385,8 @@ impl Interpreter {
                                 results.push(crate::value::mix_weight_to_value(weight));
                             } else {
                                 let present = v.truthy();
-                                if let Some(container) = self.place_env_get_mut(place, &var_name) {
+                                if let Some(container) = self.place_env_get_mut_sym(place, var_sym)
+                                {
                                     container.with_set_mut(|set, _| {
                                         let s = crate::value::gc_data_mut(set);
                                         if present {
@@ -2436,7 +2450,7 @@ impl Interpreter {
                 // Treating the cell as "not a Hash" replaced the whole
                 // container with a fresh one holding only the sliced keys,
                 // detached from every other closure sharing the cell (#9488).
-                let celled_hash = match self.place_env_get(place, &var_name).map(Value::view) {
+                let celled_hash = match self.place_env_get_sym(place, var_sym).map(Value::view) {
                     Some(ValueView::ContainerRef(cell))
                         if matches!(cell.lock().unwrap().view(), ValueView::Hash(_)) =>
                     {
@@ -2446,7 +2460,7 @@ impl Interpreter {
                 };
                 if celled_hash.is_none()
                     && !matches!(
-                        self.place_env_get(place, &var_name).map(Value::view),
+                        self.place_env_get_sym(place, var_sym).map(Value::view),
                         Some(ValueView::Hash(_))
                     )
                 {
@@ -2497,7 +2511,7 @@ impl Interpreter {
                 let mut assigned_values: Vec<Value> = Vec::new();
                 let target = match celled_inner.as_mut() {
                     Some(inner) => Some(inner),
-                    None => self.place_env_get_mut(place, &var_name),
+                    None => self.place_env_get_mut_sym(place, var_sym),
                 };
                 if let Some(entry) = target {
                     let _ = entry.with_hash_mut(|hash| {
@@ -2729,7 +2743,7 @@ impl Interpreter {
                 let resolved_idx;
                 let idx_for_slice = if let ValueView::GenericRange { .. } = idx.view() {
                     let array_len = if let Some(ValueView::Array(items, ..)) =
-                        self.place_env_get(place, &var_name).map(Value::view)
+                        self.place_env_get_sym(place, var_sym).map(Value::view)
                     {
                         items.len()
                     } else {
@@ -2765,7 +2779,7 @@ impl Interpreter {
                 // assignment silently replaced the role object with a plain Hash.
                 let current_target = self
                     .read_self_attr_cell(&var_name)
-                    .or_else(|| self.place_env_get(place, &var_name).cloned())
+                    .or_else(|| self.place_env_get_sym(place, var_sym).cloned())
                     .map(|v| match v.view() {
                         ValueView::ContainerRef(_) => v.deref_container(),
                         _ => v,
@@ -2861,11 +2875,11 @@ impl Interpreter {
                 let is_readonly_hash_var = var_name.starts_with('%') && self.is_readonly(&var_name);
                 if is_readonly_hash_var
                     && matches!(
-                        self.place_env_get(place, &var_name).map(Value::view),
+                        self.place_env_get_sym(place, var_sym).map(Value::view),
                         Some(ValueView::Hash(h)) if h.declared_type.as_deref() == Some("Map")
                     )
                 {
-                    let elem = match self.place_env_get(place, &var_name).map(Value::view) {
+                    let elem = match self.place_env_get_sym(place, var_sym).map(Value::view) {
                         Some(ValueView::Hash(hd)) => hd.map.get(&key).cloned(),
                         _ => None,
                     };
@@ -2886,7 +2900,7 @@ impl Interpreter {
                 // `$s` holds the parameterized QuantHash inside a shared
                 // `ContainerRef`.
                 let set_val_clone = self
-                    .place_env_get(place, &var_name)
+                    .place_env_get_sym(place, var_sym)
                     .map(Value::deref_container)
                     .filter(|v| {
                         matches!(
@@ -2946,7 +2960,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                }) = self.place_env_get(place, &var_name).map(Value::view)
+                }) = self.place_env_get_sym(place, var_sym).map(Value::view)
                     && self.is_container_subclass(&class_name.resolve())
                 {
                     let cn = class_name.resolve();
@@ -2966,7 +2980,7 @@ impl Interpreter {
                     if let Some(type_name) = effective_type
                         && matches!(type_name, "MixHash" | "BagHash" | "SetHash")
                         && matches!(
-                            self.place_env_get(place, &var_name).map(Value::view),
+                            self.place_env_get_sym(place, var_sym).map(Value::view),
                             Some(ValueView::Nil) | Some(ValueView::Package(_)) | None
                         )
                     {
@@ -2982,7 +2996,7 @@ impl Interpreter {
                         };
                         self.stack.push(result);
                         // Update local slot
-                        if let Some(new_val) = self.place_env_get(place, &var_name).cloned() {
+                        if let Some(new_val) = self.place_env_get_sym(place, var_sym).cloned() {
                             self.place_write_slot(place, code, eff_slot, &var_name, new_val);
                         }
                         return Ok(());
@@ -3406,7 +3420,7 @@ impl Interpreter {
                 // an undefined scalar there leaves the env entry (what the frame
                 // reads) undefined. Rebind it to the vivified container.
                 if let Some(root) = vivified_root
-                    && self.place_env_get(place, &var_name).is_none_or(|v| {
+                    && self.place_env_get_sym(place, var_sym).is_none_or(|v| {
                         let v = v.deref_container().descalarize().clone();
                         matches!(v.view(), ValueView::Nil | ValueView::Package(_))
                     })
@@ -3438,7 +3452,7 @@ impl Interpreter {
                 }
             }
         }
-        if let Some(updated) = self.place_get(place, &var_name) {
+        if let Some(updated) = self.place_get_sym(place, &var_name, var_sym) {
             self.place_write_slot(place, code, eff_slot, &var_name, updated.clone());
             // Write the whole topic back to its source variable only when the
             // source is a scalar (e.g. `for $x { $_[1] = ... }`). For array/hash
@@ -3487,7 +3501,7 @@ impl Interpreter {
         // not refs to unrelated nested containers.
         if let Some(old_ptr) = old_container_arc_ptr {
             let current = self
-                .place_get(place, &var_name)
+                .place_get_sym(place, &var_name, var_sym)
                 .or_else(|| self.env().get(&original_var_name).cloned());
             if let Some(ref container) = current {
                 let new_arc_ptr = match container.view() {
@@ -3898,6 +3912,7 @@ impl Interpreter {
             return result;
         }
         let var_name = Self::const_str(code, name_idx).to_string();
+        let var_sym = code.const_sym(name_idx);
         let decl = self.store_decl(code, target_slot, false);
         let place = self.store_place(code, target_slot, false, &var_name);
         self.check_store_place(place, &var_name);
@@ -4129,7 +4144,7 @@ impl Interpreter {
         // returned Any. (The outer subscript already had this resolution, just
         // below; only the inner one was missing.)
         let inner_idx = if matches!(inner_idx.view(), ValueView::Sub(_)) {
-            let root = self.place_env_get(place, &var_name).cloned();
+            let root = self.place_env_get_sym(place, var_sym).cloned();
             self.resolve_whatever_index_for_target(inner_idx, root.as_ref())
         } else {
             inner_idx
@@ -4139,7 +4154,7 @@ impl Interpreter {
         // `%h{$obj}[3] = v` must find the same entry `%h{$obj}` does.
         let inner_object_key = (!inner_positional
             && self
-                .place_env_get(place, &var_name)
+                .place_env_get_sym(place, var_sym)
                 .is_some_and(|root| self.is_object_hash(&root.deref_container())))
         .then(|| inner_idx.clone());
         let inner_key = match &inner_object_key {
@@ -4154,7 +4169,7 @@ impl Interpreter {
         // `[...]` subscript; `inner_key` is the container it indexes into.
         let outer_idx = if matches!(outer_idx.view(), ValueView::Sub(_)) {
             let inner_container: Option<Value> =
-                match self.place_env_get(place, &var_name).map(Value::view) {
+                match self.place_env_get_sym(place, var_sym).map(Value::view) {
                     Some(ValueView::Hash(map)) => map.get(&inner_key).cloned(),
                     Some(ValueView::Array(arr, ..)) => inner_key
                         .parse::<usize>()
@@ -4209,7 +4224,7 @@ impl Interpreter {
         // it, so `Nil` stays `Nil` there too.
         let row_structure = self.chained_root_guard(place, &var_name);
         let row = self
-            .place_env_get(place, &var_name)
+            .place_env_get_sym(place, var_sym)
             .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional));
         let bound_leaf_cell = (!is_bind_value)
             .then(|| {
@@ -4231,7 +4246,7 @@ impl Interpreter {
         // The inner subscript addresses the Pair's value, and the outer one
         // then indexes THAT — neither arm below recognizes a Pair as a root, so
         // the whole store used to be dropped while reporting success.
-        if let Some(root) = self.place_env_get(place, &var_name).cloned() {
+        if let Some(root) = self.place_env_get_sym(place, var_sym).cloned() {
             let inner_key_for_pair = (!inner_positional).then_some(inner_key.as_str());
             if let Some(mut aggregate) = Self::pair_subscript_aggregate(&root, inner_key_for_pair) {
                 Self::assign_into_nested_container(&mut aggregate, &outer_key, val.clone())?;
@@ -4311,7 +4326,7 @@ impl Interpreter {
         // dropped the write. A *defined* value is left alone — raku dies with
         // "does not support associative indexing" there, which is a separate
         // gap, not something to paper over by clobbering the value.
-        let root_needs_viv = match self.place_env_get(place, &var_name) {
+        let root_needs_viv = match self.place_env_get_sym(place, var_sym) {
             None => true,
             // Undefined == `Nil` or a type object, matching `.defined`.
             Some(v) => {
@@ -4381,7 +4396,7 @@ impl Interpreter {
         if !is_bind_value
             && let Some(mut slot) = {
                 let _structure = self.chained_root_guard(place, &var_name);
-                self.place_env_get(place, &var_name)
+                self.place_env_get_sym(place, var_sym)
                     .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
             }
         {
@@ -4545,7 +4560,7 @@ impl Interpreter {
             })
             && handled?
         {
-            if let Some(updated) = self.place_get(place, &var_name) {
+            if let Some(updated) = self.place_get_sym(place, &var_name, var_sym) {
                 self.update_local_if_exists(code, &var_name, &updated);
             }
             self.stack.push(val);
@@ -4560,7 +4575,7 @@ impl Interpreter {
         if !is_bind_value
             && let Some(mut slot) = {
                 let _structure = self.chained_root_guard(place, &var_name);
-                self.place_env_get(place, &var_name)
+                self.place_env_get_sym(place, var_sym)
                     .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
             }
         {
@@ -4643,7 +4658,7 @@ impl Interpreter {
                 })
             })
             .transpose()?;
-        if let Some(updated) = self.place_get(place, &var_name) {
+        if let Some(updated) = self.place_get_sym(place, &var_name, var_sym) {
             self.update_local_if_exists(code, &var_name, &updated);
         }
         self.stack.push(val);
@@ -5471,6 +5486,7 @@ impl Interpreter {
             return result;
         }
         let var_name = Self::const_str(code, name_idx).to_string();
+        let var_sym = code.const_sym(name_idx);
         if let Some(err) = self.lvalue_root_temp_not_a_container(&var_name) {
             return Err(err);
         }
@@ -5567,7 +5583,7 @@ impl Interpreter {
             .iter()
             .any(|v| matches!(v.view(), ValueView::Sub(_)))
         {
-            let mut cur = self.place_env_get(place, &var_name).cloned();
+            let mut cur = self.place_env_get_sym(place, var_sym).cloned();
             for level in 0..depth {
                 if matches!(indices_val[level].view(), ValueView::Sub(_)) {
                     indices_val[level] = self.resolve_whatever_index_for_target(
@@ -5712,7 +5728,7 @@ impl Interpreter {
         // level that does not exist yet stops the walk, and `None` then means
         // the row is about to be walk-created untyped.
         let row_structure = self.chained_root_guard(place, &var_name);
-        let mut row = self.place_env_get(place, &var_name).cloned();
+        let mut row = self.place_env_get_sym(place, var_sym).cloned();
         for level in 0..depth - 1 {
             let Some(current) = row.as_ref() else { break };
             row = Self::subscript_peek_step(current, &indices[level], positional_flags[level]);
@@ -5759,7 +5775,7 @@ impl Interpreter {
         // Walk down the chain of indices, autovivifying containers as needed.
         // We need a mutable reference to the current container at each level.
         // Use raw pointer traversal to avoid borrow checker issues with nested mutation.
-        let root: *mut Value = self.place_env_get_mut(place, &var_name).unwrap() as *mut Value;
+        let root: *mut Value = self.place_env_get_mut_sym(place, var_sym).unwrap() as *mut Value;
 
         let mut current: *mut Value = root;
         // Containers produced by an object step below. `Box` keeps each address
