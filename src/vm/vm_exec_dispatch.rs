@@ -7205,6 +7205,13 @@ impl Interpreter {
                 self.mark_my_scoped_package_item(storage.clone());
                 let name_sym = Symbol::intern(&name);
                 self.record_lexical_package_unit(name_sym);
+                // A module's routine names `Name::member` from wherever it is
+                // called, through its unit's record of the lexical heads; a
+                // package holding no type records no type key (#17720).
+                if storage != name && self.module_load_active() {
+                    let unit = self.executing_unit_sym_for_module_load();
+                    self.record_unit_lexical_types(unit, std::iter::once(&storage));
+                }
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
                 if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
