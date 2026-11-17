@@ -122,6 +122,9 @@ pub(crate) enum Spelling {
     /// parser runs as `$_++`. RakuAST keeps it as a `Term::TopicCall` of the
     /// `Postfix`.
     TopicPostfix,
+    /// The `$!` a bare `die` / `fail` throws again: the parser supplies it as
+    /// the argument, while RakuAST keeps the call without arguments.
+    ImplicitError,
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),
@@ -188,6 +191,7 @@ impl Expr {
     pub(crate) fn written_die_args(&self) -> &[Expr] {
         match self {
             Expr::ArrayLiteral(items) => items,
+            Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::ImplicitError) => &[],
             other => std::slice::from_ref(other.written_list_arg()),
         }
     }
@@ -204,6 +208,22 @@ impl Expr {
             Expr::Spelled(spelled) => spelled.expr.unpositioned_mut(),
             _ => unreachable!("checked above"),
         }
+    }
+}
+
+/// The `$!` argument of a bare `die` / `fail` (`Spelling::ImplicitError`).
+// Cost: O(1).
+pub(crate) fn implicit_error() -> Expr {
+    Expr::spelled(Expr::Var("!".to_string()), || Spelling::ImplicitError)
+}
+
+/// The arguments of a `fail` as written: none for the `$!` a bare one
+/// supplies.
+// Cost: O(1).
+pub(crate) fn written_control_args(arg: &Expr) -> &[Expr] {
+    match arg {
+        Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::ImplicitError) => &[],
+        other => std::slice::from_ref(other),
     }
 }
 

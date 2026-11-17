@@ -725,6 +725,15 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
                     }),
                     Err(_) => Ok(Stmt::Expr(lower_expr(names, node)?)),
                 },
+                // A bare `die` / `fail` throws `$!` again, as the parser has it.
+                "die" | "fail" if args.is_empty() => {
+                    let error = crate::ast::spelled::implicit_error();
+                    Ok(if name == "die" {
+                        Stmt::Die(error)
+                    } else {
+                        Stmt::Fail(error)
+                    })
+                }
                 "die" => Ok(Stmt::Die(die_argument(args))),
                 "fail" => Ok(Stmt::Fail(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),

@@ -372,7 +372,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
         Stmt::Fail(expr) => Ok(Some(statement_expression(control_call(
             names,
             "fail",
-            std::slice::from_ref(expr),
+            crate::ast::spelled::written_control_args(expr),
         )?))),
         // `take EXPR` / `take-rw EXPR` are bare calls too.
         Stmt::Take(expr, is_rw) => Ok(Some(statement_expression(control_call(
@@ -2589,7 +2589,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::DottyInfixCall => dotty_infix_call(names, &spelled.expr),
             Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
             Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
-            Spelling::ColonPairValue(_) | Spelling::AttributeCall(_) => {
+            Spelling::ColonPairValue(_) | Spelling::AttributeCall(_) | Spelling::ImplicitError => {
                 view_expr(names, &spelled.expr)
             }
         },
