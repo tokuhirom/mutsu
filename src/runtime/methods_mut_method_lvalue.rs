@@ -1416,11 +1416,15 @@ impl Interpreter {
         {
             def
         } else if method_args.is_empty() {
-            let class_attrs = self.collect_class_attributes(&class_name.resolve());
+            // The one public attribute's shape, not a clone of every
+            // attribute definition of the MRO: `$obj.attr = v` on an `is rw`
+            // accessor paid ~15k instructions for that clone and its drop
+            // (Timezones::ZoneInfo's `$tmp.year = ...`, #15079).
+            let public_attr = self.find_public_class_attribute(&class_name.resolve(), method);
             let mut found_public_rw = false;
             let mut attr_sigil = '$';
-            for attr in &class_attrs {
-                if attr.name == method && attr.is_public {
+            if let Some(attr) = public_attr {
+                {
                     // @ and % attributes are containers whose elements are always writable
                     // through indexing, even without `is rw`.
                     if !attr.is_rw && attr.sigil != '@' && attr.sigil != '%' {
@@ -1457,9 +1461,11 @@ impl Interpreter {
                             ValueView::Nil | ValueView::Package(_) => {
                                 let type_name = match held.view() {
                                     ValueView::Package(sym) => sym.resolve(),
-                                    _ => attr
-                                        .type_constraint
-                                        .clone()
+                                    _ => self
+                                        .collect_class_attributes(&class_name.resolve())
+                                        .into_iter()
+                                        .find(|a| a.name == method && a.is_public)
+                                        .and_then(|a| a.type_constraint)
                                         .unwrap_or_else(|| "Any".to_string()),
                                 };
                                 RuntimeError::assignment_ro_type_object(&type_name)
@@ -1469,7 +1475,6 @@ impl Interpreter {
                     }
                     found_public_rw = true;
                     attr_sigil = attr.sigil;
-                    break;
                 }
             }
             if found_public_rw {
