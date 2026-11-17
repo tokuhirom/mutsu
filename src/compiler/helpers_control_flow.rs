@@ -1378,7 +1378,14 @@ impl Compiler {
                             self.compile_phaser_block_scope(block_body, PhaserBlockResult::Push);
                             self.pop_dynamic_scope_lexical(saved_scope);
                         } else {
-                            self.compile_tail_stmt_value(stmt);
+                            // A real block, as `do { ... }` compiles one: what
+                            // a `use` in it imports is dropped on every exit,
+                            // a `die` included.
+                            self.compile_do_block_expr(
+                                block_body,
+                                &None,
+                                crate::ast::DoBlockOrigin::SourceBlock,
+                            );
                         }
                         main_leaves_value = true;
                         continue;
