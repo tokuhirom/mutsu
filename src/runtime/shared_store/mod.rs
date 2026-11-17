@@ -442,10 +442,4 @@ impl SharedStore {
             .filter_map(|k| self.get(&k).map(|v| (k, v)))
             .collect()
     }
-
-    /// Drop own entries whose key is not in `keep`. Only touches this lineage —
-    /// an ancestor's entries are not this store's to retract.
-    pub(crate) fn retain_own<F: Fn(&str) -> bool>(&self, keep: F) {
-        self.own.write().unwrap().retain(|k, _| keep(k));
-    }
 }
