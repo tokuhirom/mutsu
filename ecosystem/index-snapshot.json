@@ -1,14 +1,14 @@
 {
   "fetched": "2026-11-17",
   "fez": {
-    "dists": 1679,
-    "sha256": "f7a43757af318605f0244aecad728bb0525cccda4323cd5a53c3eb06050316b0",
+    "dists": 1681,
+    "sha256": "82f8bb0875c044ab81e5e957fd51ce3a32c718a58bd6911c83a0461b732fd71b",
     "url": "https://360.zef.pm/"
   },
   "modules": 14174,
   "rea": {
-    "dists_added": 919,
-    "sha256": "ebd22b40cef4f2469201a7fc32de8c1872b3f7460366f8c673a399b418409c8c",
+    "dists_added": 917,
+    "sha256": "de89a6aac63331ce5afe3cdaadcfe57dccbfca434e0428823aec161e9420ddda",
     "url": "https://raw.githubusercontent.com/Raku/REA/main/META.json"
   }
 }

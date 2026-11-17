@@ -1,0 +1,41 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "Compress::Zlib::Raw"
+    ],
+    "unresolved": []
+  },
+  "dist": "Compress::Zlib",
+  "files": [],
+  "load": {
+    "Compress::Zlib": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-11-17",
+    "harness": 3,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "41f9bbd1",
+    "mutsu_version": "0.26.1",
+    "raku_backend": "moar 2026.11",
+    "raku_version": "2026.11",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/OM/COMPRESS_ZLIB/784f538db87eb369b3f58f3b1f2202d22ffa14da.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "2.0.0"
+}

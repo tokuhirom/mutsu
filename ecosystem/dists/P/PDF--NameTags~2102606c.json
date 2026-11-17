@@ -51,7 +51,7 @@
         "nok": 1,
         "ok": 4,
         "plan": 5,
-        "secs": 83.39,
+        "secs": 93.38,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.35,
+        "secs": 12.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.48,
+        "secs": 13.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.07,
+        "secs": 12.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.42,
+        "secs": 13.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,7 +117,7 @@
   "load": {
     "PDF::GraphPaper": "ok",
     "PDF::NameTags": "raku_also_fails",
-    "PDF::NameTags::FreeFonts": "ok",
+    "PDF::NameTags::FreeFonts": "raku_also_fails",
     "PDF::NameTags::Help": "ok",
     "PDF::NameTags::Subs": "ok",
     "PDF::NameTags::Vars": "ok"
@@ -127,7 +127,7 @@
     "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f3f3e482",
+    "mutsu_commit": "41f9bbd1",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
