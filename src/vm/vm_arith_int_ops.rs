@@ -384,16 +384,7 @@ impl Interpreter {
             return Ok(());
         }
 
-        // An object count repeats by its `.Int` (CORE's `x` coerces the count
-        // with `.Int`), which dies for a class without one.
-        let right = if matches!(right.view(), ValueView::Instance { .. }) {
-            let caller_code = self.current_code;
-            let count = self.try_compiled_method_or_interpret(right, "Int", vec![]);
-            self.reconcile_caller_after_internal_dispatch(caller_code);
-            count?
-        } else {
-            right
-        };
+        let right = self.repeat_count_operand(right)?;
         let Some(n_raw) = crate::runtime::Interpreter::parse_repeat_count(&right)? else {
             // `'a' x Inf` is a Failure (X::NYI), not an exception.
             self.stack.push(RuntimeError::nyi_failure("Cat object"));

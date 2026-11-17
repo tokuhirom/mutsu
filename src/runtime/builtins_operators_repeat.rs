@@ -305,7 +305,22 @@ impl Interpreter {
         )
     }
 
-    pub(super) fn call_repeat_infix(
+    /// The repeat count `x` reads from its right operand: an object counts
+    /// by its `.Int` (CORE's `x` coerces the count with `.Int`), which dies
+    /// for a class without one; any other value as it is. Shared by the
+    /// operator and the routine form (`infix:<x>(2, $obj)`).
+    // Cost: O(1) besides the `.Int` call.
+    pub(crate) fn repeat_count_operand(&mut self, right: Value) -> Result<Value, RuntimeError> {
+        if !matches!(right.view(), ValueView::Instance { .. }) {
+            return Ok(right);
+        }
+        let caller_code = self.current_code;
+        let count = self.try_compiled_method_or_interpret(right, "Int", vec![]);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
+        count
+    }
+
+    pub(crate) fn call_repeat_infix(
         &mut self,
         op: &str,
         args: &[Value],
@@ -336,7 +351,8 @@ impl Interpreter {
                         acc = self.make_x_whatevercode(acc);
                         continue;
                     }
-                    let Some(n_raw) = Self::parse_repeat_count(rhs)? else {
+                    let rhs = self.repeat_count_operand(rhs.clone())?;
+                    let Some(n_raw) = Self::parse_repeat_count(&rhs)? else {
                         // `'a' x Inf` is a Failure, not an exception (a lazy
                         // `Cat` would be needed to repeat without bound).
                         return Ok(RuntimeError::nyi_failure("Cat object"));

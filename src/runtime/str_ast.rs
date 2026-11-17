@@ -22,11 +22,16 @@ impl Interpreter {
             self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
         );
-        let result = if compunit {
-            crate::rakuast::str_dot_ast_compunit(&scope, source, &Self::str_ast_unit_check)
-        } else {
-            crate::rakuast::str_dot_ast_checked(&scope, source, &Self::str_ast_unit_check)
-        };
+        // Rakudo's `.AST` compiles the source: its `use`s load their modules
+        // as the parser reaches them, and the parse reads what they provide
+        // (ADR-17558), exactly as for a program this interpreter runs.
+        let result = self.parse_with_loader(|| {
+            if compunit {
+                crate::rakuast::str_dot_ast_compunit(&scope, source, &Self::str_ast_unit_check)
+            } else {
+                crate::rakuast::str_dot_ast_checked(&scope, source, &Self::str_ast_unit_check)
+            }
+        });
         crate::parser::clear_parser_lib_paths();
         // Rakudo's `.AST` resolves the tree's lookups before handing it out:
         // a `<name>` assertion's `my regex` among them.
@@ -63,12 +68,14 @@ impl Interpreter {
             self.str_ast_caller_terms(),
             self.str_ast_caller_trait_types(),
         );
-        let result = crate::rakuast::str_dot_ast_with_slang(
-            &scope,
-            source,
-            slang.as_deref(),
-            &Self::str_ast_unit_check,
-        );
+        let result = self.parse_with_loader(|| {
+            crate::rakuast::str_dot_ast_with_slang(
+                &scope,
+                source,
+                slang.as_deref(),
+                &Self::str_ast_unit_check,
+            )
+        });
         crate::parser::clear_parser_lib_paths();
         if let Ok(tree) = &result {
             crate::rakuast::declared_ahead::record_unit_layout(tree);

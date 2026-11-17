@@ -8,7 +8,7 @@ use Test;
 # case runs a child process so the module's own output is visible; every
 # expectation is what rakudo prints.
 
-plan 4;
+plan 5;
 
 sub run-code(Str $code) {
     my $proc = run $*EXECUTABLE, '-I', 't/lib', '-e', $code, :out, :err;
@@ -46,4 +46,14 @@ sub run-code(Str $code) {
         { use ComputedStashLoud; say 7ZZ; }
         CODE
     is %r<out>, "ComputedStashLoud loaded\n7 ZZ\n", 'a use inside a block reads the loaded unit too';
+}
+
+{
+    # `Str.AST` compiles its source, so its `use` loads the module there too.
+    my %r = run-code(q:to/CODE/);
+        use experimental :rakuast;
+        use MONKEY-SEE-NO-EVAL;
+        say EVAL(q[use ComputedStashLoud; 8ZZ].AST);
+        CODE
+    is %r<out>, "ComputedStashLoud loaded\n8 ZZ\n", 'Str.AST reads the unit its use loaded';
 }
