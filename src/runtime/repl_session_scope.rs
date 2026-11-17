@@ -20,11 +20,40 @@
 //!   (bareword resolution), nor its parse (the EVAL type-name preseed), nor
 //!   EVAL's undeclared-name check.
 //!
+//! A type a session unit declares under the name of one of those hidden types
+//! is the session's own, living alongside the program's (#17652): rakudo
+//! declares it in the session's fresh `GLOBAL`. mutsu declares it the way a
+//! `my class` is ([`declare_session_types_apart`]), under a storage name of its
+//! own (ADR-0047), which the session's later units see as they see any lexical
+//! of an earlier unit, and which leaves the program's type untouched.
+//!
 //! A session's units are the ones `Perl6::Compiler.eval` ran with no outer
 //! context, the units later run in their contexts, and every `EVAL` nested in
 //! one of those ([`Interpreter::unit_in_repl_session`]).
 
 use super::*;
+
+/// Declare each top-level `class` / `role` (a grammar is a class) of a REPL
+/// session unit whose name is one of the program's types the session does not
+/// see (`hidden`) as a lexical type, so it is a type of the session's own
+/// instead of a redeclaration of the program's.
+// Cost: O(s), s = top-level statements of the unit.
+pub(crate) fn declare_session_types_apart(stmts: &mut [Stmt], hidden: &HashSet<String>) {
+    for stmt in stmts {
+        let (name, is_lexical) = match stmt {
+            Stmt::ClassDecl {
+                name, is_lexical, ..
+            }
+            | Stmt::RoleDecl {
+                name, is_lexical, ..
+            } => (*name, is_lexical),
+            _ => continue,
+        };
+        if !*is_lexical && hidden.contains(name.as_str()) {
+            *is_lexical = true;
+        }
+    }
+}
 
 impl Interpreter {
     /// Record that the type `name` was just declared: a declaration the main
@@ -79,6 +108,22 @@ impl Interpreter {
                 .main_declared_types
                 .contains(&name)
             && self.unit_in_repl_session(unit)
+    }
+
+    /// The lexical (`my`) type `env` binds the bare name `name` to here, under
+    /// its ADR-0047 storage name: what a name hidden from the code running now
+    /// still means when the code's own scope declared a type of it (#17652).
+    // Cost: O(1) expected, one env probe.
+    pub(crate) fn lexical_type_in_scope(&self, name: &str) -> Option<Value> {
+        self.env()
+            .get(name)
+            .filter(|value| {
+                matches!(value.view(), ValueView::Package(sym)
+                    if crate::qualified::unqualified_part(sym).with_str(|short| {
+                        short.split_once('\u{0}').is_some_and(|(head, _)| head == name)
+                    }))
+            })
+            .cloned()
     }
 
     /// [`Self::main_type_hidden_in_unit`] for the code chunk running now.
