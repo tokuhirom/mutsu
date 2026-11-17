@@ -17,6 +17,12 @@
 # starts failing any other way (another assertion, a die, one more failure) is
 # graded normally again, so an entry can never hide a new bug.
 #
+# `first_failure` may instead be a list of alternatives, each an exact line or
+# `re:<pattern>` matched against the whole line. It is only for a failure whose
+# first line varies from run to run, such as heap corruption in a native
+# library. Pin the rest of the shape (`ok` / `nok`) so the entry stays narrow
+# (ADR-0130 amendment 2026-11-17).
+#
 # This is per FILE, unlike `exclude.txt` (per distribution): the rest of the
 # distribution stays measured and drawable. An entry needs the issue that
 # records the decision, and that decision must be the user's (AGENTS.md) or an
@@ -123,6 +129,26 @@ reason = """same as Jupyter::Chatbook t/05-autocomplete.rakutest: the candidate 
 refuses (ADR-12640 rejected, maintainer decision 2026-10-21, #14416)."""
 
 [[divergence]]
+dist = "Linux::NFTables"
+file = "t/02-oo.rakutest"
+shape = { verdict = "die", ok = 2, nok = 0, first_failure = [
+  "free(): invalid pointer",
+  "double free or corruption (out)",
+  "free(): double free detected in tcache 2",
+  "mutsu crash report",
+  "re:Internal error: index out of bounds: the len is \\d+ but the index is \\d+",
+  "re:thread 'mutsu-main' \\(\\d+\\) panicked at .*",
+] }
+issue = 17834
+reason = """every assertion has passed (ok = 2) when the process dies: the class's \
+`submethod DESTROY { nft_ctx_free($!ctx) }` runs once `$nft` leaves the subtest, and libnftables \
+double-frees a context `nft_ctx_clear_vars` was called on. The heap corruption surfaces as a \
+different first line on each run, hence the alternatives. rakudo dies identically once a forced \
+GC (`$*VM.request-garbage-collection`) runs that DESTROY; it passes only because MoarVM never \
+collects the object before exit, and DESTROY timing is unspecified (maintainer decision \
+2026-11-17, #17834)."""
+
+[[divergence]]
 dist = "NativeHelpers::Blob"
 file = "t/02-cstruct.rakutest"
 shape = { verdict = "die", ok = 0, nok = 0, plan = 34, first_failure = "Unknown VM; don't know how to compile test libraries" }
@@ -142,6 +168,24 @@ reason = """test 7 checks that `$foo3` is still a trampoline while a sibling thr
 gets there first is unordered; rakudo also fails the assertion once a 0.3 s delay is inserted \
 before the block. The write-through itself matches rakudo since #16914 (maintainer decision \
 2026-11-12, #16898)."""
+
+[[divergence]]
+dist = "ParaSeq"
+file = "t/08-grep.rakutest"
+shape = { verdict = "timeout", ok = 0, nok = 0, first_failure = "SWEEP-TIMEOUT" }
+issue = 17723
+reason = """a race in ParaSeq 0.2.7 itself: `sub fast()` can deadlock when a batch finishes \
+before `$result.close-queues` runs. On raku 2026.11, a `sleep 0.05` injected before that call \
+deadlocks 5 runs of 5 (0 of 5 unmodified); mutsu's slower batching widens the same window \
+(maintainer decision 2026-11-17, #17723)."""
+
+[[divergence]]
+dist = "ParaSeq"
+file = "t/20-unique.rakutest"
+shape = { verdict = "timeout", ok = 0, nok = 0, first_failure = "SWEEP-TIMEOUT" }
+issue = 17723
+reason = """same race as t/08-grep.rakutest: ParaSeq 0.2.7's `close-queues` window, \
+reproduced on raku 2026.11 with an injected delay (maintainer decision 2026-11-17, #17723)."""
 
 [[divergence]]
 dist = "SOAP::Client"

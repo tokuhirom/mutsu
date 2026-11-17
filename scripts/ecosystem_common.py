@@ -863,6 +863,17 @@ def load_accepted(path: str) -> dict[tuple[str, str], dict]:
             raise SystemExit(f"{where}: unknown shape key(s) {', '.join(unknown)}")
         if "verdict" not in shape or "first_failure" not in shape:
             raise SystemExit(f"{where}: shape needs at least verdict and first_failure")
+        alternatives = shape["first_failure"]
+        if isinstance(alternatives, list):
+            if not alternatives or not all(isinstance(a, str) for a in alternatives):
+                raise SystemExit(f"{where}: first_failure must be a string or a "
+                                 "non-empty list of strings")
+            for alt in alternatives:
+                if alt.startswith("re:"):
+                    try:
+                        re.compile(alt[3:])
+                    except re.error as err:
+                        raise SystemExit(f"{where}: bad first_failure pattern {alt!r}: {err}")
         key = (entry["dist"], entry["file"])
         if key in out:
             raise SystemExit(f"{where}: {key[0]} {key[1]} is listed twice")
@@ -876,9 +887,24 @@ def accepted_entry(accepted: dict, dist: str, path: str, mutsu: dict | None):
     entry = accepted.get((dist, path))
     if entry is None or mutsu is None:
         return None
-    if all(mutsu.get(k) == v for k, v in entry["shape"].items()):
+    if all(_shape_value_matches(k, v, mutsu.get(k)) for k, v in entry["shape"].items()):
         return entry
     return None
+
+
+def _shape_value_matches(key: str, want, got) -> bool:
+    """One shape field against the record's value. Every field is compared
+    exactly, except that `first_failure` may list alternatives: a failure that
+    crashes non-deterministically (heap corruption in a native library) prints
+    a different first line on each run. Each alternative is an exact string,
+    or `re:<pattern>` matched against the whole line (ADR-0130 amendment
+    2026-11-17)."""
+    if key != "first_failure" or not isinstance(want, list):
+        return got == want
+    if not isinstance(got, str):
+        return False
+    return any(re.fullmatch(alt[3:], got) is not None if alt.startswith("re:")
+               else got == alt for alt in want)
 
 
 def load_records(dists_dir: str) -> list[dict]:
@@ -1163,10 +1189,29 @@ def _self_test() -> int:
                 print(f"accepted_entry: {name}: want {want}", file=sys.stderr)
                 failures += 1
 
+        # A list of alternatives: each an exact line or a whole-line `re:`.
+        with open(acc, "w", encoding="utf-8") as fh:
+            fh.write(entry_text.replace(
+                'first_failure = "not ok 6 -"',
+                'first_failure = ["free(): invalid pointer", "re:the len is \\\\d+"]'))
+        got = load_accepted(acc)
+        crash = {"verdict": "fail", "nok": 1}
+        for name, line, want in (
+                ("an exact alternative matches", "free(): invalid pointer", True),
+                ("a pattern alternative matches", "the len is 7056", True),
+                ("a pattern matches the whole line only", "the len is 7056 but", False),
+                ("another line does not match", "free(): double free", False)):
+            if (accepted_entry(got, "A::B", "t/x.t",
+                               {**crash, "first_failure": line}) is not None) != want:
+                print(f"accepted_entry: {name}: want {want}", file=sys.stderr)
+                failures += 1
+
         for bad, why in ((entry_text + entry_text, "a duplicate entry"),
                          (entry_text.replace('issue = 1\n', ''), "a missing issue"),
                          (entry_text.replace('verdict = "fail", ', ''), "a shape without verdict"),
-                         (entry_text.replace('nok = 1', 'nokk = 1'), "an unknown shape key")):
+                         (entry_text.replace('nok = 1', 'nokk = 1'), "an unknown shape key"),
+                         (entry_text.replace('"not ok 6 -"', '[]'), "an empty alternatives list"),
+                         (entry_text.replace('"not ok 6 -"', '["re:("]'), "a bad pattern")):
             with open(acc, "w", encoding="utf-8") as fh:
                 fh.write(bad)
             try:
