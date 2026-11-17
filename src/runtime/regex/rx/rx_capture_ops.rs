@@ -155,12 +155,18 @@ impl Interpreter {
                     // A markless body consumes whole graphemes, so it starts
                     // only on a grapheme boundary.
                     let floor = self.lookbehind_start_floor_in(pattern, chars, pos, pkg);
-                    (floor..=pos)
+                    // Matched as rakudo does, reversed, where the pattern
+                    // flips; it runs no code, so it writes no lexicals.
+                    match self.lookbehind_flipped(pattern, chars, pos, floor, pkg) {
+                        Some(true) => Some(RegexCaptures::default()),
+                        Some(false) => None,
+                        None => (floor..=pos)
                         .filter(|&from| {
                             !program.markless
                                 || super::super::regex_helpers::is_grapheme_boundary(chars, from)
                         })
-                        .find_map(|from| run(self, from, Some(pos)))
+                        .find_map(|from| run(self, from, Some(pos))),
+                    }
                 } else {
                     run(self, pos, None)
                 };

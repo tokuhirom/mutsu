@@ -54,6 +54,10 @@ pub(crate) struct PatternDerived {
     /// with a multi-character fold (matched on the folded subject), so its
     /// compiled program is built once rather than per match.
     pub(crate) folded: std::sync::OnceLock<Arc<RegexPattern>>,
+    /// The look-behind form (`regex_lookbehind_flip`): the pattern reversed
+    /// with its anchors mirrored, or `None` when it holds an atom with no
+    /// direction-free meaning.
+    pub(crate) flipped: std::sync::OnceLock<Option<Arc<RegexPattern>>>,
     /// The unanchored-scan prefilter (ADR-0099 Stage 1), for a pattern that
     /// mentions no rule name — a pure function of the pattern, so one slot.
     pub(crate) prefilter:
