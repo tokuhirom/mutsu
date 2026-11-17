@@ -604,12 +604,25 @@ impl Interpreter {
             // container and a captured `|c` shows `:foo(Bool::True)`, not `:foo`.
             args.push(Value::pair(name.clone(), coerced.itemize_for_hash_element()));
         }
+        // A `proto MAIN` with a body of its own (`{ $config = ...; {*} }`)
+        // runs it first, as rakudo's `RUN-MAIN` calls `&MAIN` itself: run the
+        // proto through the VM (it closes over its module's lexicals), and its
+        // `{*}` dispatches to the candidate.
+        let name = candidate.name.resolve();
+        let result = match self.vm_try_run_nontrivial_proto_body(
+            &name,
+            args.clone(),
+            &CompiledFns::default(),
+        ) {
+            Some(result) => result,
+            None => self.call_routine_def(candidate, args),
+        };
         // rakudo's `RUN-MAIN` SINKS whatever `MAIN` returns
         // (`roast/S06-other/main.t`'s "MAIN return value is sunk"), so a `MAIN`
         // whose tail is a `map` still runs its callback. Since ADR-0058 that
         // tail is a not-yet-run Seq rather than an already-evaluated List, and
         // dropping it here dropped the side effects with it.
-        match self.call_routine_def(candidate, args) {
+        match result {
             Ok(v) => {
                 self.sink_map_grep_seq(&v)?;
                 Ok(())

@@ -3262,7 +3262,7 @@ impl Interpreter {
     /// - the proto's signature or (rewritten) body is not OTF-compilable, or the
     ///   body declares `state` (whose shared-cell identity the fingerprint cache
     ///   cannot preserve).
-    pub(super) fn vm_try_run_nontrivial_proto_body(
+    pub(crate) fn vm_try_run_nontrivial_proto_body(
         &mut self,
         name: &str,
         args: Vec<Value>,
