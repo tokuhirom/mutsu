@@ -113,7 +113,7 @@ impl Interpreter {
                     // NB: a module sub's free read of its own compunit's
                     // file-scope `my` resolves inside `get_env_with_main_alias`,
                     // which does not consult `env` for such a name (`unit_lexicals`).
-                    self.get_env_with_main_alias(name)
+                    self.get_env_with_main_alias_sym(name, code.const_sym(name_idx))
                         .or_else(|| self.package_chain_var_fallback(code.const_sym(name_idx)))
                         .unwrap_or(Value::NIL)
                 }

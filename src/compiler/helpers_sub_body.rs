@@ -701,16 +701,7 @@ impl Compiler {
         sub_compiler.resolve_frame_lexical_routines(body);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
-        if !sub_compiler.routine_scoped_names.is_empty() {
-            let shadowed: Vec<crate::symbol::Symbol> = sub_compiler
-                .code
-                .free_var_syms
-                .iter()
-                .filter(|sym| sym.with_str(|n| sub_compiler.routine_scoped_names.contains(n)))
-                .copied()
-                .collect();
-            sub_compiler.code.routine_scoped_free = shadowed;
-        }
+        sub_compiler.record_routine_scoped_free();
         // See the twin call in `compile_closure_body_of_kind`: a
         // parameter default / `where` constraint reads its outer lexicals from
         // the `ParamDef` AST at call time, invisibly to the op scan. A named
@@ -2173,6 +2164,9 @@ impl Compiler {
         // capture set is consumed by `compute_upvalues` below and by
         // `add_closure_code_baked`'s parent-slot bake.
         self.fold_decl_time_param_captures(&mut sub_compiler.code, param_defs);
+        // A closure in a routine reads the routine's lexicals ahead of the
+        // module's same-named file-scope ones, as a nested `sub` does (#17466).
+        sub_compiler.record_routine_scoped_free();
         // Promote read-only plain-lexical free variables to index-based upvalues.
         // Closure-only (this path compiles anonymous closures/blocks); named subs
         // and the top-level program never get an upvalue array at runtime.

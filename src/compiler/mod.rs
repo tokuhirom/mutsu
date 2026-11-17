@@ -3196,6 +3196,24 @@ impl Compiler {
             .extend(self.lexical_types_in_scope.iter().cloned());
     }
 
+    /// Fill `CompiledCode::routine_scoped_free`: the free variables of the
+    /// code being compiled that an enclosing routine declares
+    /// (`routine_scoped_names`). Run once the code's free variables are final.
+    // Cost: O(f), f = the code's free variables.
+    pub(crate) fn record_routine_scoped_free(&mut self) {
+        if self.routine_scoped_names.is_empty() {
+            return;
+        }
+        let names = &self.routine_scoped_names;
+        self.code.routine_scoped_free = self
+            .code
+            .free_var_syms
+            .iter()
+            .filter(|sym| sym.with_str(|n| names.contains(n)))
+            .copied()
+            .collect();
+    }
+
     /// Record a named sub declared in this scope in
     /// [`Compiler::lexical_sub_free_vars`]. Only a sub declared inside a
     /// routine body is recorded: a mainline or bare-block sub already resolves

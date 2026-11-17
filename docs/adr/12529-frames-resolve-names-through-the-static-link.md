@@ -1721,6 +1721,26 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `my $*d` runs it reads `Any` (#13590). The whole-stash form
    (`DYNAMIC::.keys`) still reads the env chains.
 
+   **Slice 51 done** (`fix/17466-loop-param-local-slot`, #17466): a
+   closure created in a module routine resolves a free variable the
+   routine declares (its `my`, a pointy loop parameter) to that binding,
+   not to the module's same-named file-scope `my` or `our` variable. The
+   by-name chain asks the module stores (`unit_lexicals`, the `our`
+   mirrors, a unit module's imported file-scope names) *before* `env`,
+   because a bare env key in a module routine may belong to whoever loaded
+   the module; a closure's capture lives in `env`, so the module store won
+   for reads, and a closure's write (`{ $x = 5 }`, `{ $x++ }`) went to the
+   file-scope variable. The compiler already knew which free variables an
+   enclosing routine declares (`routine_scoped_names`, used since #15986
+   for a nested named sub against a package-block `my`); a closure now
+   records them in `CompiledCode::routine_scoped_free` too, and the
+   compunit store (`unit_lexical_slot` / `_mut`), the by-name read
+   chokepoint (`get_env_with_main_alias_sym`) and the rw-argument
+   container (`outer_store_lexical_cell`) decline such a name for the
+   running code. The name then resolves through the closure's capture, as
+   it does in a mainline routine. Pinned by
+   `t/modules/module-routine-closure-reads-routine-lexical-over-file-lexical.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

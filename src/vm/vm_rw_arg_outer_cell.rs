@@ -50,6 +50,11 @@ impl Interpreter {
         if name.starts_with(['@', '%']) {
             return None;
         }
+        // A free variable an enclosing routine declares is that routine's
+        // binding, reached through the capture, never an outer store (#17466).
+        if code.is_routine_scoped_free(sym) {
+            return None;
+        }
         if !self.lexicals.escaping_our_lexical_names.is_empty()
             && let Some(cell) = self.escaping_our_write_cell(code, name)
         {
