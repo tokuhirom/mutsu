@@ -700,8 +700,12 @@ impl Interpreter {
     /// to validate, so the check is the tag test (#12151). Anything else,
     /// including every mismatch, falls to the general path and its errors.
     // Cost: O(1) on a memo hit.
+    ///
+    /// A `Bool` stored into an `int`/`int64` (`my int $hit = $a < $b`, the
+    /// shape of every native flag computed in a loop) is the general path's
+    /// unboxing to `0`/`1` (`Bool` is an `Int` enum), done here in place.
     fn type_check_native_scalar_fast(
-        &self,
+        &mut self,
         code: &CompiledCode,
         tc_idx: u32,
         var_name: Option<&str>,
@@ -713,13 +717,24 @@ impl Interpreter {
         let Some(value) = self.stack.last() else {
             return false;
         };
-        matches!(
-            (constraint, value.view()),
+        let unboxed_bool = match (constraint, value.view()) {
+            ("int" | "int64", ValueView::Bool(b)) => Some(Value::int(i64::from(b))),
             ("int" | "int64", ValueView::Int(_))
-                | ("str", ValueView::Str(_))
-                | ("num" | "num64", ValueView::Num(_))
-        ) && self.registry().subsets.is_empty()
-            && self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint)
+            | ("str", ValueView::Str(_))
+            | ("num" | "num64", ValueView::Num(_)) => None,
+            _ => return false,
+        };
+        if !(self.registry().subsets.is_empty()
+            && self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint))
+        {
+            return false;
+        }
+        if let Some(int) = unboxed_bool
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = int;
+        }
+        true
     }
 
     fn type_check_plain_scalar_fast(
