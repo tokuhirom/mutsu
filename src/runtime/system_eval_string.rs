@@ -58,14 +58,23 @@ impl Interpreter {
         crate::parser::set_parser_program_path(self.io.program_path.clone());
         let result = crate::parser::with_rakuast_lexical_scope(|| {
             Self::register_lowered_unit_imports(&stmts);
+            // The restart of a module whose CHECK phase rewrote `$*CU` is that
+            // module's load, not an EVAL inside it: what it declares and
+            // exports must outlive it, as the first compile's would (#17886).
+            let module_restart = crate::unit_source_text::restart_compile_package().is_some();
             self.with_eval_import_scope(|interp| {
                 interp.run_compunit(|interp| {
-                    interp.isolated_eval_unit(|interp| {
+                    let run = |interp: &mut Self| {
                         if !docs.is_empty() {
                             interp.add_pod_declarator_entries_from_stmts(&stmts, docs);
                         }
                         interp.validate_and_run_eval_unit(stmts, true)
-                    })
+                    };
+                    if module_restart {
+                        run(interp)
+                    } else {
+                        interp.isolated_eval_unit(run)
+                    }
                 })
             })
         });
