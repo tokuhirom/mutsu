@@ -32,8 +32,11 @@ pub(super) fn lift_parameterizations(stmts: &mut Vec<Stmt>) {
     let mut out = Vec::with_capacity(stmts.len());
     for stmt in std::mem::take(stmts) {
         if !parametric.is_empty() {
+            let mut params = ParamNames::default();
+            params.visit_stmt(&stmt);
             let mut scan = Spellings {
                 parametric: &parametric,
+                bound: &params.names,
                 found: Vec::new(),
             };
             scan.visit_stmt(&stmt);
@@ -88,17 +91,62 @@ fn declare_parametric_classes(stmt: &Stmt, parametric: &mut HashSet<String>) {
 /// statement spells, by their spelling (`C[A, B]`).
 struct Spellings<'p> {
     parametric: &'p HashSet<String>,
+    /// Names the statement binds at run time (see [`ParamNames`]).
+    bound: &'p HashSet<String>,
     found: Vec<String>,
 }
 
 impl Spellings<'_> {
     // Cost: O(n), n = chars of the spelling, plus the found list.
     fn note(&mut self, spelling: String) {
-        let Some(base) = spelling.split('[').next() else {
+        let Some((base, args)) = crate::runtime::types::split_parameterization(&spelling) else {
             return;
         };
-        if self.parametric.contains(base.trim()) && !self.found.contains(&spelling) {
-            self.found.push(spelling);
+        // An argument the code binds when it runs (`method make(\t) { C[t] }`,
+        // `sub f(::T $x) { my C[T] $y }`) is not known at compile time.
+        if !self.parametric.contains(base)
+            || args.iter().any(|arg| mentions_bound(arg, self.bound))
+            || self.found.contains(&spelling)
+        {
+            return;
+        }
+        self.found.push(spelling);
+    }
+}
+
+/// Whether a type argument spelling names one of `bound` (as a whole word).
+// Cost: O(n * b), n = chars of the argument, b = bound names.
+fn mentions_bound(arg: &str, bound: &HashSet<String>) -> bool {
+    arg.split(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | ':')))
+        .any(|word| bound.contains(word))
+}
+
+/// The names a statement's parameters bind (sigilless `\t`, `$t`'s `t`, and
+/// type captures `::T`): an argument spelled with one is a run-time value.
+#[derive(Default)]
+struct ParamNames {
+    names: HashSet<String>,
+}
+
+impl<'ast> Visit<'ast> for ParamNames {
+    fn visit_param(&mut self, param: &'ast crate::ast::ParamDef) {
+        let name = param.name.trim_start_matches(['$', '@', '%', '&', '\\']);
+        if !name.is_empty() {
+            self.names.insert(name.to_string());
+        }
+        if let Some(capture) = &param.type_capture {
+            self.names.insert(capture.trim_start_matches(':').to_string());
+        }
+        crate::ast_visit::walk_param(self, param);
+    }
+
+    // A loop's or pointy block's parameter, and a sigilless `my \t`.
+    fn visit_name(&mut self, name: &str, kind: NameKind) {
+        if matches!(kind, NameKind::BlockParam | NameKind::VarDecl) {
+            let name = name.trim_start_matches(['$', '@', '%', '&', '\\']);
+            if !name.is_empty() {
+                self.names.insert(name.to_string());
+            }
         }
     }
 }
