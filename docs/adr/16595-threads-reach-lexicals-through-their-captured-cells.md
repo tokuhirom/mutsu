@@ -304,8 +304,10 @@ place a worker reaches, and the lane only hid two gaps on the way there.
 - Gap 1: composing a role left the role body's `my` lexicals bound in the
   composing scope. A later class's method found such a `$n` in the env ahead
   of its own static cell and, on a worker, wrote the env copy. The
-  composition now restores each body-declared name after persisting it as
-  the composing class's static (`registration_class_compose_body.rs`).
+  composition now restores each body-declared scalar after persisting it as
+  the composing class's static (`registration_class_compose_body.rs`); the
+  `@`/`%`/`&` names stay bound until a role body sub resolves them through
+  the static store (#17854).
 - Gap 2: a closure created at program scope that looks names up reflectively
   (`start { EVAL '$x = 1' }`, `::('$y')`) linked to the live program scope
   without boxing its scalars, which on a worker is the worker's env copy. It

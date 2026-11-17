@@ -21,7 +21,7 @@ spawn now publishes nothing, and the opaque predicate and the
 `type_body_written_lexicals` bookkeeping are gone. Removing the lane exposed
 two gaps it had been hiding, both fixed here:
 
-- Composing a role left the role body's `my` lexicals bound in the composing
+- Composing a role left the role body's `my` scalars bound in the composing
   scope; a later class's `my $n` static was then read from that stale binding
   instead of its own cell, and a method run on a worker lost its write.
 - A `start` block at program scope that names a lexical only through `EVAL` or
