@@ -76,6 +76,20 @@ fn contents_node(
             });
             continue;
         };
+        // `{"a" => 1, 2 => 3}`: the parser wrapped the value to remember the
+        // key as written; the pair is the `ApplyInfix` over it.
+        if let Expr::Spelled(spelled) = value
+            && let Spelling::HashPairKey { key: written, form } = &spelled.spelling
+        {
+            let pair = Expr::Binary {
+                left: written.clone(),
+                op: TokenKind::FatArrow,
+                right: Box::new(spelled.expr.clone()),
+                form: *form,
+            };
+            fatarrows.push(view_expr(names, &pair)?);
+            continue;
+        }
         // `{:2b, :!c, :d<x>}`: the parser wrapped the value to remember the
         // colonpair form; rebuild the pair and render its node.
         if let Expr::Spelled(spelled) = value
@@ -252,16 +266,25 @@ fn literal_pair(item: Expr) -> Option<(String, Option<Expr>)> {
         left,
         op: TokenKind::FatArrow,
         right,
-        ..
+        form,
     } = item
     else {
         return None;
     };
-    let (Expr::Literal(key) | Expr::LiteralSrc(key, _)) = *left else {
+    let (Expr::Literal(key) | Expr::LiteralSrc(key, _)) = &*left else {
         return None;
     };
-    let ValueView::Str(key) = key.view() else {
-        return None;
+    // A key written as a quoted string or a number (`"a" => 1`, `1 => 2`) is
+    // an `ApplyInfix`: keep it written, as the parser does.
+    let written = form != crate::ast::BinaryForm::Infix || key.as_str().is_none();
+    let key_text = key.to_string_value();
+    let value = if written {
+        Expr::spelled(*right, || Spelling::HashPairKey {
+            key: left.clone(),
+            form,
+        })
+    } else {
+        *right
     };
-    Some((key.to_string(), Some(*right)))
+    Some((key_text, Some(value)))
 }
