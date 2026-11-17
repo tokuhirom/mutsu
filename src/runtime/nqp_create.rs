@@ -196,6 +196,27 @@ impl Interpreter {
             .then(|| RuntimeError::constrained_type_instantiation(class_name))
     }
 
+    /// An `is IterationBuffer` `VMArray` class keeps its elements in a
+    /// reserved array attribute, which nqp code (`nqp::push(self, ...)`) writes
+    /// into from the first statement of a method. `nqp::create` seeds it
+    /// ([`Self::create_instance`]), so `.new` / `.bless` do as well; a
+    /// P6opaque subclass gets none (#17627, #17930).
+    // Cost: O(d), d = MRO depth of `class`.
+    pub(crate) fn seed_iteration_buffer_storage(
+        &self,
+        class: &str,
+        attrs: &mut crate::value::AttrMap,
+        class_mro: &[Symbol],
+    ) {
+        let items = super::nqp_ops_list::iteration_buffer_items_key();
+        if class_mro.iter().any(|name| name == "IterationBuffer")
+            && !attrs.contains_key(items)
+            && !self.is_opaque_iteration_buffer_class(class)
+        {
+            attrs.insert(items, Value::real_array(Vec::new()));
+        }
+    }
+
     /// Whether `class` inherits from `IterationBuffer` without declaring
     /// `is repr('VMArray')`, which leaves it `P6opaque` as in Rakudo: the
     /// `VMArray` representation is not inherited (#17627).

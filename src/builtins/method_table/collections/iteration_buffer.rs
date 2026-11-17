@@ -145,9 +145,44 @@ fn mu() -> Value {
     Value::package(Symbol::intern("Mu"))
 }
 
+/// What a refused row reports, as MoarVM names the REPR op it hit first.
+const ELEMS: &str = "elems";
+const POSITIONAL: &str = "positional operations";
+
+/// A class declared `is IterationBuffer` without `is repr('VMArray')` is
+/// `P6opaque` (#17627): it inherits these methods, but each is an `nqp::` op
+/// on `self` in Rakudo, which its REPR refuses (#17930). Such an instance is
+/// the only receiver here without element storage that is not an
+/// `IterationBuffer` itself (`create_instance` and the constructor seed the
+/// storage for every `VMArray` class).
+// Cost: O(1).
+fn refuse_opaque(target: &Value, what: &str) -> Option<RuntimeError> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
+        return None;
+    };
+    if class_name == "IterationBuffer" || attributes.as_map().contains_key(ITERATION_BUFFER_ITEMS) {
+        return None;
+    }
+    if crate::value::value_buf::has_buf_elems(&attributes) {
+        return None;
+    }
+    Some(RuntimeError::new(format!(
+        "This type ({}) does not support {what}",
+        crate::value::user_facing_type_name(&class_name.resolve())
+    )))
+}
+
 /// `IterationBuffer.elems`.
 // Cost: O(1).
 fn elems(target: &Value, _args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, ELEMS) {
+        return Some(Err(refused));
+    }
     if !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
@@ -160,6 +195,9 @@ fn elems(target: &Value, _args: &[Value]) -> Answer {
 /// (`nqp::atpos`).
 // Cost: O(1).
 fn at_pos(target: &Value, args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     if !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
@@ -179,6 +217,9 @@ fn at_pos(target: &Value, args: &[Value]) -> Answer {
 /// (`nqp::bindpos`).
 // Cost: O(1) amortized; O(i - n) when growing, i = index, n = elements.
 fn bind_pos(target: &Value, args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     if !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
@@ -194,6 +235,9 @@ fn bind_pos(target: &Value, args: &[Value]) -> Answer {
 /// `IterationBuffer.push(*@values)`: answers the last value pushed.
 // Cost: O(a) amortized, a = arguments.
 fn push(target: &Value, args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     let pushed = edit(target, |items| items.extend(args.iter().cloned()))?;
     Some(pushed.map(|()| args.last().cloned().unwrap_or(Value::NIL)))
 }
@@ -203,6 +247,9 @@ fn push(target: &Value, args: &[Value]) -> Answer {
 /// keeps a start offset.
 // Cost: O(a) amortized, a = arguments.
 fn unshift(target: &Value, args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     let unshifted = edit_front(target, args.to_vec())?;
     Some(unshifted.map(|()| args.last().cloned().unwrap_or(Value::NIL)))
 }
@@ -210,6 +257,9 @@ fn unshift(target: &Value, args: &[Value]) -> Answer {
 /// `IterationBuffer.append(@values)`: answers the buffer.
 // Cost: O(a) amortized, a = elements appended.
 fn append(target: &Value, args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, ELEMS) {
+        return Some(Err(refused));
+    }
     let appended = argument_items(&args[0]);
     let done = edit(target, |items| items.extend(appended))?;
     Some(done.map(|()| target.clone()))
@@ -218,6 +268,9 @@ fn append(target: &Value, args: &[Value]) -> Answer {
 /// `IterationBuffer.prepend(@values)`: answers the buffer.
 // Cost: O(a) amortized, a = elements prepended.
 fn prepend(target: &Value, args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     let done = edit_front(target, argument_items(&args[0]))?;
     Some(done.map(|()| target.clone()))
 }
@@ -225,12 +278,18 @@ fn prepend(target: &Value, args: &[Value]) -> Answer {
 /// `IterationBuffer.clear`.
 // Cost: O(n), n = elements (dropped).
 fn clear(target: &Value, _args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     Some(edit(target, Vec::clear)?.map(|()| Value::NIL))
 }
 
 /// `IterationBuffer.List`.
 // Cost: O(1) (shares the buffer's storage).
 fn list(target: &Value, _args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     // The `List` views the buffer's own storage (Rakudo's `List` is built over
     // the `IterationBuffer` as its `$!reified`), so an in-place `nqp::push` /
     // `nqp::shift` on the buffer shows through a `List` taken earlier -- the
@@ -252,6 +311,9 @@ fn list(target: &Value, _args: &[Value]) -> Answer {
 /// `IterationBuffer.Slip`.
 // Cost: O(n), n = elements (copied). Rakudo: O(1) (the Slip shares the buffer) -- see #17658.
 fn slip(target: &Value, _args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, POSITIONAL) {
+        return Some(Err(refused));
+    }
     items(target).map(|items| Ok(Value::slip(items)))
 }
 
@@ -260,6 +322,9 @@ fn slip(target: &Value, _args: &[Value]) -> Answer {
 /// before the Seq is read shows through.
 // Cost: O(1); O(1) per element pulled.
 fn seq(target: &Value, args: &[Value]) -> Answer {
+    if let Some(refused) = refuse_opaque(target, ELEMS) {
+        return Some(Err(refused));
+    }
     let list = list(target, args)?;
     Some(list.map(|list| {
         Value::seq_list_gen(

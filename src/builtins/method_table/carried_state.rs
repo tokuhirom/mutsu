@@ -24,7 +24,9 @@ const FILE_SYSTEM: &[&str] = &["CompUnit::Repository::FileSystem"];
 
 const PROC_ASYNC: &[&str] = &["Proc::Async"];
 const SUPPLIER: &[&str] = &["Supplier"];
-const ITERATION_BUFFER: &[&str] = &["IterationBuffer"];
+/// `IterationBuffer`'s owners, also answered for an instance of a P6opaque
+/// subclass, whose rows then refuse it (`Interpreter::carried_state_owners_of`).
+pub(crate) const ITERATION_BUFFER: &[&str] = &["IterationBuffer"];
 
 /// The owners whose rows answer `target`, an instance of a built-in class or
 /// of a user subclass carrying its state; `None` for anything else.

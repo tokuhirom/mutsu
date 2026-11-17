@@ -806,6 +806,7 @@ impl Interpreter {
             .cloned()
             .collect();
         super::seed_native_subclass_payloads(&mut attributes, &class_mro, &args, &positional_args);
+        self.seed_iteration_buffer_storage(cn_resolved, &mut attributes, &class_mro);
         self.seed_concurrency_payload(&mut attributes, &class_mro, &args);
         self.seed_repository_state(&mut attributes, &class_mro, &args);
         // `bless` can receive a typed `@`/`%` attribute through a custom

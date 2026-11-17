@@ -24,12 +24,14 @@ is $c.list.join(','), '1,2', 'a Channel subclass answers .list';
 class CO is Channel { method elems { 99 } }
 is CO.new.elems, 99, 'a Channel subclass method wins';
 
-class IB is IterationBuffer {}
+# A subclass keeps IterationBuffer's storage only with the VMArray REPR
+# (a plain one is P6opaque and refused, #17930).
+class IB is IterationBuffer is repr('VMArray') {}
 my $ib = IB.new;
 $ib.push(1);
 $ib.push(2);
 is $ib.elems, 2, 'an IterationBuffer subclass answers .push/.elems';
-class IBO is IterationBuffer { method push($x) { "my push" } }
+class IBO is IterationBuffer is repr('VMArray') { method push($x) { "my push" } }
 is IBO.new.push(1), 'my push', 'an IterationBuffer subclass method wins';
 
 class PR is Promise {}
