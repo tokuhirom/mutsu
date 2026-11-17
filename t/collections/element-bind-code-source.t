@@ -6,7 +6,7 @@ use Test;
 # loop alias still writes into its Array, and a block-declared `my sub` read
 # by `&name` resolves the same routine on every read.
 
-plan 9;
+plan 11;
 
 sub build() {
     my &a := { 'a' };
@@ -42,3 +42,10 @@ is $d[0](), 42, 'the refused store left the bound code object';
 
 sub reads() { my sub g { 7 }; my $x = &g; my $y = &g; $x === $y }
 ok reads(), 'two `&g` reads of a block-declared `my sub` are the same routine';
+
+# A missing element reads as `Any`, whose truth is False without a `Bool`
+# candidate to run; an underscore name is not its kebab-case twin.
+ok !$d[5], 'a missing element is false';
+our $a-b = 1; our $a_b = 2;
+sub kebab() { "$a_b $a-b" }
+is kebab(), '2 1', '`$a_b` and `$a-b` are distinct variables';

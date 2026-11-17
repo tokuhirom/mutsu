@@ -2,7 +2,7 @@
 
 `make-ansi-parser` fills sixteen 256-slot tables with `$dispatch[$byte] := &action`
 binds. Three costs made it 91.6M instructions per parser once `use Test` was loaded
-(55.5M without it), and now it is 32M either way (#17429):
+(55.5M without it), and now it is 30M either way (#17429):
 
 - A `&name` read of a block-declared `my sub` asks whether the name has `multi`
   candidates. That `&self` probe used the base-name key index only when the index already
@@ -17,5 +17,13 @@ binds. Three costs made it 91.6M instructions per parser once `use Test` was loa
   stores: the element of the alias's Array, and the code object as a read-only element.
 - The source-name list every indexed `:=` hands the store was rebuilt by a `MakeArray`
   per bind. It is all literals, so it is now one compile-time constant.
+- `if $dispatch[$byte]` on a missing element tests an `Any` type object, and every test
+  resolved `Any.Bool` through the full method resolution to find nothing. The test now
+  asks the memoized candidate-level index first and answers the raw truth when no level
+  of the MRO declares `Bool`.
+- A by-name variable read tried the name's kebab-case twin first whenever the name held
+  an `_`, so every `$_` read of a statement-modifier loop looked up `-` as well. Only a
+  dynamic name (`$*EXECUTABLE_NAME`) has such a twin now, and `$a_b` no longer reads a
+  same-scope `$a-b`.
 
-`t/03-csi.rakutest` went from ~16 s to ~9 s on a release build (rakudo: ~2.7 s).
+`t/03-csi.rakutest` went from ~16 s to ~8.4 s on a release build (rakudo: ~2.7 s).
