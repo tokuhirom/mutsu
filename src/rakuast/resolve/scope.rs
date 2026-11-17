@@ -2,7 +2,7 @@
 //! pushed the unit's scope nodes (`push-scope`) resolves a lexical name to, and
 //! the resolution `IMPL-BEGIN` / `IMPL-CHECK` give a node built at CHECK time.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::super::{RakuAstClass as C, RakuAstFieldValue, RakuAstNode};
 use super::{Scopes, declared_variable, external, external_setting, hoist, opens_scope, walk};
@@ -24,6 +24,8 @@ fn scope_declarations(scope: &RakuAstNode) -> HashMap<String, Value> {
         whatever_args: vec![0],
         anonymous_subsets: 0,
         multi_candidates: HashMap::new(),
+        dispatchers: HashSet::new(),
+        hidden: Vec::new(),
     };
     hoist(scope, &mut scopes);
     declare_variables(scope, &mut scopes);
@@ -76,6 +78,8 @@ fn annotate_in(
         whatever_args: vec![0],
         anonymous_subsets: 0,
         multi_candidates: HashMap::new(),
+        dispatchers: HashSet::new(),
+        hidden: Vec::new(),
     };
     scopes.scopes.push(HashMap::new());
     walk(node, &mut scopes);
