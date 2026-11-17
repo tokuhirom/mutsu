@@ -107,7 +107,10 @@ mod tests {
             value,
         };
         assert!(!may_read_attributes(&term("Nil", crate::value::Value::NIL)));
-        assert!(!may_read_attributes(&term("False", crate::value::Value::FALSE)));
+        assert!(!may_read_attributes(&term(
+            "False",
+            crate::value::Value::FALSE
+        )));
     }
 
     #[test]
