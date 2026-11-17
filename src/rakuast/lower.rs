@@ -4987,6 +4987,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         // `Expr::Reduction` keeps the triangle form in the operator string
         // itself (a leading backslash), which is how the view reads it
         // back out into the `triangle` field.
+        RakuAstClass::TermRadixNumber => super::radix_number::lower(names, node),
         RakuAstClass::TermReduce => {
             let infix = named_child(node, "infix")?;
             if infix.class != RakuAstClass::Infix {

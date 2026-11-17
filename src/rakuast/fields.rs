@@ -167,6 +167,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         TermName => &[("name", Absent::Required)],
         TermNamed => &[("name", Absent::Required)],
         TermTopicCall => &[("call", Absent::Required)],
+        TermRadixNumber => &[
+            ("radix", Absent::Required),
+            ("multi-part", Absent::False),
+            ("value", Absent::Required),
+        ],
         CallName
         | CallNameWithoutParentheses
         | CallMethod

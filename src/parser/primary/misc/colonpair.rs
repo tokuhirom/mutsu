@@ -291,11 +291,14 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 call_args.append(&mut args);
                 return Ok((
                     r_args,
-                    Expr::Call {
-                        name: Symbol::intern("UNBASE"),
-                        args: call_args,
-                        listop: false,
-                    },
+                    Expr::spelled(
+                        Expr::Call {
+                            name: Symbol::intern("UNBASE"),
+                            args: call_args,
+                            listop: false,
+                        },
+                        || crate::ast::spelled::Spelling::RadixNumber,
+                    ),
                 ));
             }
             // :N[list] — radix list notation (equivalent to RADIX_LIST(N, list...))

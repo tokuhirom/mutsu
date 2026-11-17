@@ -2,6 +2,9 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Trait::Will", "block"),
+    row!("RakuAST::Trait::Will", "phase"),
+    row!("RakuAST::Trait::WillBuild", "IMPL-TRAIT-NAME"),
     row!("RakuAST::Transliteration", "destructive"),
     row!("RakuAST::Transliteration", "left"),
     row!("RakuAST::Transliteration", "right"),
