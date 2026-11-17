@@ -537,6 +537,7 @@ impl Compiler {
                 return;
             }
             TokenKind::NotAndThen => {
+                let calls_rhs = Self::andthen_rhs_is_block_literal(right);
                 self.compile_expr(left);
                 self.code.emit(OpCode::SaveTopic);
                 self.code.emit(OpCode::Dup);
@@ -551,10 +552,10 @@ impl Compiler {
                 self.code.emit(OpCode::LoadConst(empty_idx));
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_undef);
-                // Like `orelse`, the undefined LHS is the RHS's topic:
-                // `Int notandthen $_.raku` is `"Int"`.
-                self.code.emit(OpCode::SetTopic);
-                self.compile_expr(right);
+                // Like `orelse`, the undefined LHS is the RHS's topic
+                // (`Int notandthen $_.raku` is `"Int"`), and a block or
+                // Whatever-curried RHS is called with it.
+                self.compile_andthen_rhs(right, calls_rhs);
                 self.code.emit(OpCode::RestoreTopic);
                 self.code.patch_jump(jump_end);
                 return;
