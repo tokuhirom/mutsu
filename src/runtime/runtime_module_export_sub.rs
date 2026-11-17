@@ -182,13 +182,22 @@ impl Interpreter {
                 self.bind_compile_time_lang();
                 self.bind_compile_time_resolver();
                 self.push_hook_importer_env(caller_env);
+                let hook_args = export_args.clone();
                 let result = self.call_sub_value(export_sub.clone(), export_args);
                 let caller_env = self.pop_hook_importer_env();
                 // The caller's env comes back whether the hook returned or died:
                 // a `die` must not leave the importer running in the module's env.
                 self.restore_caller_env_keeping_dynamics(caller_env);
                 let result = result?;
-                self.install_hook_result(&result, importer.as_deref());
+                let recorded = self
+                    .module
+                    .module_load_stack
+                    .last()
+                    .cloned()
+                    .is_some_and(|m| self.record_parse_time_hook_result(&m, &hook_args, &result));
+                if !recorded {
+                    self.install_hook_result(&result, importer.as_deref());
+                }
                 if let Some(m) = self.module.module_load_stack.last().cloned() {
                     self.module
                         .module_export_defs
@@ -239,10 +248,14 @@ impl Interpreter {
         // keeping the candidates for a later import's re-run.
         let candidates = self.export_routine_candidates();
         self.remove_export_routine();
+        let mut recorded = false;
         if let Some(m) = self.module.module_load_stack.last().cloned() {
             self.record_eval_hook_result(&m, &hook_args, &result);
+            recorded = self.record_parse_time_hook_result(&m, &hook_args, &result);
         }
-        self.install_hook_result(&result, importer.as_deref());
+        if !recorded {
+            self.install_hook_result(&result, importer.as_deref());
+        }
         if let Some(m) = self.module.module_load_stack.last().cloned() {
             // `module_env` is the module's own scope: a re-`use` of an
             // already-loaded module re-runs EXPORT there too (see
@@ -300,6 +313,16 @@ impl Interpreter {
             .pending_use_export_args
             .take()
             .unwrap_or_default();
+        // The parse already ran this `use`'s hook, when it loaded the module
+        // at compile time (ADR-17558): install that map.
+        if let Some((result, generated)) = self.take_parse_time_hook_result(module, &export_args) {
+            let importer = self.module.module_load_stack.last().cloned();
+            self.module.pending_generated_lexicals = generated;
+            // An `EVAL` pre-run that meets it keeps it for the `use` it lifts.
+            self.record_eval_hook_result(module, &export_args, &result);
+            self.install_hook_result(&result, importer.as_deref());
+            return Ok(());
+        }
         // The `EVAL` pre-run already ran this `use`'s hook: install its map.
         // A pre-run itself always runs the hook: every `use` runs it at BEGIN
         // time, a repeated `use M; use M` twice.
@@ -400,6 +423,107 @@ impl Interpreter {
         }
     }
 
+    /// Keep `result`, the map the hook of `module` returned for `args`, when
+    /// a parse-time load of the unit's `use` is running it: the hook's
+    /// importer is the unit (`parse_time_hook_depth`), not a module the load
+    /// pulls in. The map, and the declarations the hook merged into its
+    /// importer, are then installed by the `use`'s import in position, inside
+    /// the scope (block, `EVAL` region) it imports into, not here. Returns
+    /// whether the parse-time run is done with them: kept, or dropped for a
+    /// hook the import must run again.
+    // Cost: O(1) when not recording; else one key build and queue push.
+    fn record_parse_time_hook_result(
+        &mut self,
+        module: &str,
+        args: &[Value],
+        result: &Value,
+    ) -> bool {
+        if self.module.parse_time_hook_depth != Some(self.module.module_load_stack.len()) {
+            return false;
+        }
+        // A hook that attached a phaser to the scope of its `use` runs again
+        // at the import, where the attach takes effect; its map is that run's.
+        if std::mem::take(&mut self.module.parse_time_hook_attached) {
+            self.module.pending_generated_lexicals.clear();
+            return true;
+        }
+        let key = Self::hook_replay_key(module, args);
+        let mut generated = std::mem::take(&mut self.module.pending_generated_lexicals);
+        // A `use` inside a block loads under a preload scope: a declaration
+        // the hook merged into the unit (`set-unit`) belongs to the unit, not
+        // to the block, so it is bound now, past the scope's rollback, as the
+        // BEGIN-time preload binds it (`install_unit_generated_lexical`).
+        if self.in_preload_scope() {
+            let (unit, block): (Vec<_>, Vec<_>) =
+                generated.into_iter().partition(|(into_block, _, _)| !*into_block);
+            for (_, name, value) in unit {
+                self.install_unit_generated_lexical(name, value, None);
+            }
+            generated = block;
+        }
+        self.module
+            .parse_time_hook_results
+            .entry(key)
+            .or_default()
+            .push_back((result.clone(), generated));
+        true
+    }
+
+    /// Whether a map the hook of `module` returned at parse time, still to be
+    /// installed, binds `&MAIN`: the module hands its `MAIN` over to the
+    /// unit, so the load keeps the candidates (`remove_leaked_main_routines`).
+    // Cost: O(r * m), r = recorded maps of `module`, m = their entries.
+    pub(super) fn parse_time_hook_exports_main(&self, module: &str) -> bool {
+        self.module
+            .parse_time_hook_results
+            .iter()
+            .filter(|(key, _)| {
+                key.strip_prefix(module)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('\u{1f}'))
+            })
+            .flat_map(|(_, queue)| queue.iter())
+            .any(|(map, _)| Self::export_map_binds(map, "&MAIN"))
+    }
+
+    /// Whether the export map `val` (as [`Self::install_export_map`] reads
+    /// it) binds `name`.
+    // Cost: O(m), m = entries of the map.
+    fn export_map_binds(val: &Value, name: &str) -> bool {
+        match val.view() {
+            ValueView::Hash(gc) => gc.map.contains_key(name),
+            ValueView::Array(items, ..) => items.iter().any(|item| Self::export_map_binds(item, name)),
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::value::types::is_stash_class_name(&class_name.resolve()) => attributes
+                .as_map()
+                .get("symbols")
+                .is_some_and(|symbols| Self::export_map_binds(symbols, name)),
+            _ => false,
+        }
+    }
+
+    /// The oldest map a parse-time load got from the hook of `module` for
+    /// `args` and no import has installed yet.
+    // Cost: O(1) when nothing was recorded; else one key build and lookup.
+    fn take_parse_time_hook_result(
+        &mut self,
+        module: &str,
+        args: &[Value],
+    ) -> Option<(Value, Vec<crate::runtime::module_state::GeneratedLexical>)> {
+        if self.module.parse_time_hook_results.is_empty() {
+            return None;
+        }
+        let key = Self::hook_replay_key(module, args);
+        let queue = self.module.parse_time_hook_results.get_mut(&key)?;
+        let entry = queue.pop_front();
+        if queue.is_empty() {
+            self.module.parse_time_hook_results.remove(&key);
+        }
+        entry
+    }
+
     /// The map a pre-run already got from the hook of `module` for `args`.
     // Cost: O(1) when nothing was recorded; else one key build and lookup.
     fn replay_eval_hook_result(
@@ -432,6 +556,16 @@ impl Interpreter {
         }
     }
 
+    /// Whether the innermost import scope is a preload's (`push_preload_scope`),
+    /// whose installs are rolled back when it closes.
+    // Cost: O(1).
+    fn in_preload_scope(&self) -> bool {
+        self.module
+            .import_scope_stack
+            .last()
+            .is_some_and(|scope| !scope.scope_classes)
+    }
+
     /// Install a declaration a `sub EXPORT` merged into its importing unit
     /// (`set-unit`). At the unit's top level that is where an export goes
     /// anyway. A `use` inside a block runs its hook twice: in the BEGIN-time
@@ -441,13 +575,7 @@ impl Interpreter {
     /// there, past the preload scope's rollback, so it outlives the block.
     // Cost: as `install_export_symbol`.
     fn install_unit_generated_lexical(&mut self, key: String, value: Value, importer: Option<&str>) {
-        let in_preload = importer.is_none()
-            && self
-                .module
-                .import_scope_stack
-                .last()
-                .is_some_and(|scope| !scope.scope_classes);
-        if !in_preload {
+        if importer.is_some() || !self.in_preload_scope() {
             self.install_export_symbol(key, value, importer);
             return;
         }

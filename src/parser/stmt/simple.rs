@@ -100,7 +100,7 @@ pub(crate) use module_exports::exported_vars::{
 pub(crate) use module_exports::module_declared_types;
 pub(crate) use module_exports::{CanonicalScans, canonical_export_scans};
 pub(in crate::parser) use module_exports::{
-    import_inline_module_exports, module_imports_through_hook, note_type_index_incomplete,
+    import_inline_module_exports, module_activates_slang, note_type_index_incomplete,
     register_import_tags, register_inline_module_exports, register_module_exports,
     register_module_type_names, scanned_module_value_terms, source_declares_export_hook,
     type_index_is_complete,

@@ -1989,7 +1989,8 @@ impl Interpreter {
                     .any(|m| m.contains_key("MAIN")))
                 || self.env.get("&MAIN").is_some_and(|v| {
                     matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. })
-                });
+                })
+                || self.parse_time_hook_exports_main(module);
             Self::remove_leaked_main_routines(
                 self.routines_mut().functions_mut(),
                 &before_function_keys,

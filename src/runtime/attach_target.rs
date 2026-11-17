@@ -373,6 +373,9 @@ impl Interpreter {
             _ => Target::Discard,
         };
         if matches!(place, Target::Discard) {
+            // A parse-time load's hook map cannot stand in for this run: the
+            // in-position `use` has to run the hook again to attach it.
+            self.module.parse_time_hook_attached = true;
             return Ok(Value::NIL);
         }
         // The phaser node's `meta-object` is the code it runs — for a phaser

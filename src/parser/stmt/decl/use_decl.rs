@@ -316,7 +316,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             has_arg: arg.is_some(),
             has_condition: condition.is_some(),
             nested: super::super::simple::in_nested_scope(),
-            through_hook: super::super::simple::module_imports_through_hook(&module),
+            activates_slang: super::super::simple::module_activates_slang(&module),
             lib_paths: &lib_paths,
         };
         match crate::compile_time_loader::load_use(&request) {

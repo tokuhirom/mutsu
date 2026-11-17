@@ -34,9 +34,9 @@ pub(crate) struct UseRequest<'a> {
     /// level: what the module installs while it loads is then lexical to that
     /// block, as for the prologue's preload of a nested `use`.
     pub(crate) nested: bool,
-    /// Whether the module imports through a `sub EXPORT` hook (its own or
-    /// Slangify's), as the parser's scan of it found.
-    pub(crate) through_hook: bool,
+    /// Whether the module activates a slang (it `use`s Slangify), which the
+    /// slang activation interpreter does at parse time (ADR-0026 §2.1).
+    pub(crate) activates_slang: bool,
     /// The parser's module search path at the `use`: the interpreter's chain
     /// plus the unit's parse-time `use lib` additions, in order.
     pub(crate) lib_paths: &'a [String],

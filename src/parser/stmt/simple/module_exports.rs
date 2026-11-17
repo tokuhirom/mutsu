@@ -182,12 +182,6 @@ thread_local! {
     /// before this record existed.
     static LAST_USE_SCAN_ACTIVATES_SLANG: RefCell<Option<(String, bool)>> =
         const { RefCell::new(None) };
-    /// The outcome of the same scan: module name → does the module import
-    /// through a `sub EXPORT` hook, its own or one it took from another
-    /// module (Slangify's). Read by the compile-time loader's call
-    /// (ADR-17558 slice 1), which leaves such a module to the run-time `use`.
-    static LAST_USE_SCAN_IMPORTS_THROUGH_HOOK: RefCell<Option<(String, bool)>> =
-        const { RefCell::new(None) };
     /// Set when this compilation unit imported a module the parser could not
     /// resolve to a file and scan, so the parse-time type index does not
     /// cover every name the unit can legally see. Diagnostics that conclude
@@ -266,23 +260,6 @@ fn import_is_pragma_like(module: &str) -> bool {
     )
 }
 
-fn record_use_scan_hook(module: &str, through_hook: bool) {
-    LAST_USE_SCAN_IMPORTS_THROUGH_HOOK.with(|c| {
-        *c.borrow_mut() = Some((module.to_string(), through_hook));
-    });
-}
-
-/// Whether the `use` statement scan that just ran found that `module`
-/// imports through a `sub EXPORT` hook (its own, or Slangify's).
-// Cost: O(|module|).
-pub(in crate::parser) fn module_imports_through_hook(module: &str) -> bool {
-    LAST_USE_SCAN_IMPORTS_THROUGH_HOOK.with(|c| {
-        c.borrow()
-            .as_ref()
-            .is_some_and(|(m, through_hook)| m == module && *through_hook)
-    })
-}
-
 fn record_use_scan_outcome(module: &str, activates: bool) {
     LAST_USE_SCAN_ACTIVATES_SLANG.with(|c| {
         *c.borrow_mut() = Some((module.to_string(), activates));
@@ -346,7 +323,6 @@ pub(crate) fn register_module_exports(module: &str) {
 /// the module's `is export` traits; see [`apply_scan_types`].
 pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Option<&[String]>) {
     record_use_scan_outcome(module, false);
-    record_use_scan_hook(module, false);
     // Unknown until a scan below says otherwise.
     exported_vars::record(module, None);
     exported_vars::clear_incomplete(module);
@@ -387,7 +363,6 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         // a zero-argument slang activation would call its four-argument
         // EXPORT with no arguments and fail every Slangify-based module.
         record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
-        record_use_scan_hook(module, scan.declares_export_hook || scan.uses_slangify);
         record_scanned_exports(module, &scan);
         apply_scan_types(&scan, import_tags);
         MODULE_DECLARED_TYPES.with(|m| {
@@ -1188,7 +1163,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
 /// `LAST_USE_SCAN_ACTIVATES_SLANG`), so modules the register step skips
 /// (native providers, pragmas, cycle-guarded or unresolvable names) are
 /// simply not slang-activating.
-pub(super) fn module_activates_slang(module: &str) -> bool {
+pub(in crate::parser) fn module_activates_slang(module: &str) -> bool {
     LAST_USE_SCAN_ACTIVATES_SLANG.with(|c| {
         c.borrow()
             .as_ref()
@@ -1315,7 +1290,6 @@ pub(crate) const TEST_EXPORTS: &[&str] = &[
 pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
     unit.take_cell(&TYPE_INDEX_INCOMPLETE, false);
     unit.take(&LAST_USE_SCAN_ACTIVATES_SLANG, None);
-    unit.take(&LAST_USE_SCAN_IMPORTS_THROUGH_HOOK, None);
 }
 
 #[cfg(test)]

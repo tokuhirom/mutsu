@@ -40,12 +40,10 @@ impl CompileTimeLoader for Interpreter {
         ) else {
             return LoadOutcome::NotTaken;
         };
-        // A module that imports through a `sub EXPORT` hook runs the hook once
-        // per `use`, at its import, with the `use`'s arguments.
-        // TODO: run the hook at parse time and install its map at the import
-        // (ADR-17558 slice 2); until then such a module loads at run time,
-        // where the first load and the hook happen together.
-        if request.through_hook {
+        // A slang module activates in the slang activation interpreter at
+        // parse time and loads here at run time, until slice 4 makes the
+        // program interpreter its host.
+        if request.activates_slang {
             return LoadOutcome::NotTaken;
         }
         let (bare, _) = Self::split_dist_selectors(module);
@@ -65,6 +63,15 @@ impl CompileTimeLoader for Interpreter {
         // The module's own compile is a parse of its own: the importer's parse
         // is suspended around it and resumes exactly where it was.
         let suspended = crate::parser::unit_state::suspend();
+        // A module that imports through a `sub EXPORT` hook runs it now, once
+        // for this `use`, as rakudo does at compile time; the map it returns
+        // is kept for the `use`'s import in position, which installs it
+        // instead of running the hook again (`rerun_module_export`).
+        let saved_hook_depth = self
+            .module
+            .parse_time_hook_depth
+            .replace(self.module.module_load_stack.len() + 1);
+        self.module.parse_time_hook_attached = false;
         let result = if request.nested {
             // A `use` inside a block: what the module installs while it loads
             // is lexical to the block (`OpCode::PreloadModule`'s scope).
@@ -75,6 +82,7 @@ impl CompileTimeLoader for Interpreter {
         } else {
             self.without_use_attach_depth(|interp| interp.preload_module(module))
         };
+        self.module.parse_time_hook_depth = saved_hook_depth;
         drop(suspended);
         self.module.lib_paths = saved_lib_paths;
         match result {
