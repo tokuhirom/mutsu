@@ -1,7 +1,7 @@
-# Terminal::ANSIParser builds its dispatch tables 2.9x cheaper with `use Test` loaded
+# Terminal::ANSIParser builds its dispatch tables 3x cheaper with `use Test` loaded
 
 `make-ansi-parser` fills sixteen 256-slot tables with `$dispatch[$byte] := &action`
-binds. Three costs made it 91.6M instructions per parser once `use Test` was loaded
+binds. Five costs made it 91.6M instructions per parser once `use Test` was loaded
 (55.5M without it), and now it is 30M either way (#17429):
 
 - A `&name` read of a block-declared `my sub` asks whether the name has `multi`
