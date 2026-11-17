@@ -348,6 +348,12 @@ pub(super) fn sub_value(
     use crate::rakuast::RakuAstClass as K;
     match node.class {
         K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // A scope's candidates joined to an outer family (#17826).
+        K::VarDeclarationImplicitConstant => {
+            return super::rakuast_compile_state::implicit_constant_value(
+                interp, target, _args, _named,
+            );
+        }
         // A role body is the routine that builds the role (rakudo: a `Sub` over
         // `::$?CLASS` and the role's parameters); one object per body.
         K::RoleBody => {

@@ -1681,6 +1681,15 @@ pub(crate) fn dispatcher_stub_candidates(node: &RakuAstNode) -> Option<Vec<Value
     }
 }
 
+/// The outer resolution and the scope's `multi` candidates a derived family
+/// (`VarDeclaration::Implicit::Constant` resolution of a scope's candidates of
+/// an outer routine name, #17826) carries, for its CHECK-time value; `None` for
+/// any other node.
+// Cost: O(c), c = the candidates copied.
+pub(crate) fn derived_family_parts(node: &RakuAstNode) -> Option<(Value, Vec<Value>)> {
+    resolve::derived_family_parts(node)
+}
+
 /// The `(package, name)` of a `Method` of the unit tree `$*CU` answers.
 // Cost: O(f), f = fields of the node.
 pub(crate) fn declared_method(node: &RakuAstNode) -> Option<(String, String)> {

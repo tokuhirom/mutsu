@@ -22,7 +22,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// The compile-time value of a lookup's `resolution`, by the kind of
 /// declaration it resolved to; `None` for a kind that has none.
 // Cost: O(1) plus the interpreter's lookup of a core or imported name.
-fn resolution_value(
+pub(super) fn resolution_value(
     interp: &mut Interpreter,
     resolution: &Value,
 ) -> Option<Result<Value, RuntimeError>> {

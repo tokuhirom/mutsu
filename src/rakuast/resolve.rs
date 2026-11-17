@@ -33,6 +33,7 @@
 use std::collections::{HashMap, HashSet};
 
 mod dispatcher;
+pub(super) use dispatcher::family_parts as derived_family_parts;
 mod regex_lookup;
 mod scope;
 pub(crate) use regex_lookup::regex_with_declarations;
@@ -376,6 +377,10 @@ fn attach_scope_candidates(scopes: &mut Scopes) {
         let ValueView::RakuAst(node) = stub.view() else {
             continue;
         };
+        if let Some(derived) = dispatcher::attach_candidates(node, &found) {
+            *stub = derived;
+            continue;
+        }
         if node.class != C::Sub
             || !super::lower::leaf_str(node, "multiness").is_ok_and(|m| m == "proto")
         {
@@ -483,7 +488,10 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
                 .scopes
                 .last()
                 .is_some_and(|scope| scope.contains_key(&key));
-        let implies_proto = is_multi && !has_dispatcher && !outer_dispatcher(&name, &key, scopes);
+        let outer = (is_multi && !has_dispatcher)
+            .then(|| outer_dispatcher(&name, &key, scopes))
+            .unwrap_or(false);
+        let implies_proto = is_multi && !has_dispatcher && !outer;
         if is_multi {
             let mut candidate = RakuAstNode::clone(held);
             candidate.fields.retain(|f| f.name != Some("body"));
@@ -493,7 +501,15 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
                 .or_default()
                 .push(Value::rakuast(Box::new(candidate)));
         }
-        if !has_dispatcher {
+        if outer {
+            // The scope's candidates join the outer family: rakudo's derived
+            // proto holds both (#17826).
+            let outer_resolution = dispatcher::outer_resolution(&name, &key, scopes);
+            scopes.declare(
+                key.clone(),
+                dispatcher::derived_family(&key, outer_resolution),
+            );
+        } else if !has_dispatcher {
             let mut stub = RakuAstNode::clone(held);
             stub.fields.retain(|f| f.name != Some("body"));
             if implies_proto

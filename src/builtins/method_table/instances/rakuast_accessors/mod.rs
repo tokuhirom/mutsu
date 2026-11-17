@@ -122,6 +122,30 @@ pub(in super::super) fn compiled_value(
     sub_value(interp, &target, args, named)
 }
 
+/// The one `value` row of a plain RakuAST node: its `value` field, or the
+/// family a derived `VarDeclaration::Implicit::Constant` stands for, built at
+/// CHECK time (#17826).
+// Cost: O(d + f), d = payload wrappers, f = fields scanned; as
+// `check_time_family` for a derived family.
+fn node_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if let Some(value) = read(target, "value", args) {
+        return Some(value);
+    }
+    let native = native_node(target)?;
+    let ValueView::RakuAst(node) = native.view() else {
+        return None;
+    };
+    if node.class != crate::rakuast::RakuAstClass::VarDeclarationImplicitConstant {
+        return None;
+    }
+    super::rakuast_compile_state::implicit_constant_value(interp, target, args, named)
+}
+
 // Cost: O(d + n), d = payload wrappers, n = parameter node size.
 fn meta_object(
     interp: &mut Interpreter,
