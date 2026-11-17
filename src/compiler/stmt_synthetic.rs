@@ -35,6 +35,11 @@ impl Compiler {
                 self.code.emit(OpCode::SinkPop(false, true));
                 continue;
             }
+            // The sunk result list of `my ($a, $b) = ...` (see
+            // `destructure_lane.rs`): building and sinking it observes nothing.
+            if Self::destructure_result_is_unobservable(stmts, s) {
+                continue;
+            }
             self.compile_stmt_discarding_value(s);
         }
         if restore_pointy_given_topic {

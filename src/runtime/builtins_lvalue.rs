@@ -971,12 +971,29 @@ impl Interpreter {
         if args.len() > 1 {
             return Ok(Value::array(args.to_vec()));
         }
-        if let ValueView::Array(items, kind) = v.view()
+        Ok(Self::list_assign_rhs_value(v))
+    }
+
+    /// The list a list-assigning declaration's staging array is assigned
+    /// from, for its single right-hand-side value `v`. Rakudo's `List.STORE`
+    /// iterates the right-hand side with one level of decontainerization, so
+    /// an itemized Array/List -- held directly, or in the Scalar container an
+    /// `is rw` routine returns -- iterates as its elements; anything else is
+    /// `v` itself. Shared by the `__mutsu_list_assign_rhs` helper and
+    /// `OpCode::ListAssignRhs`.
+    // Cost: O(1) (the item vector is shared, not copied).
+    pub(crate) fn list_assign_rhs_value(v: &Value) -> Value {
+        let inner = if v.is_container_ref() {
+            v.deref_container()
+        } else {
+            v.clone()
+        };
+        if let ValueView::Array(items, kind) = inner.view()
             && kind.is_itemized()
         {
-            return Ok(Value::array_with_kind(items.clone(), kind.decontainerize()));
+            return Value::array_with_kind(items.clone(), kind.decontainerize());
         }
-        Ok(v.clone())
+        v.clone()
     }
 
     /// `__mutsu_bind_positional_element(x)` — the staged element a `my (..., @a)

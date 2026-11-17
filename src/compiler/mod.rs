@@ -1097,6 +1097,7 @@ mod control_if;
 mod control_repeat;
 mod decl_plan;
 mod decl_reset;
+mod destructure_lane;
 mod enter_phaser_exprs;
 mod expr;
 mod expr_andthen;

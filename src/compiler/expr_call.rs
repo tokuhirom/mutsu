@@ -2207,6 +2207,8 @@ impl Compiler {
                     literal_native_args: self.literal_native_args_mask(name, args),
                     static_arg_types: self.static_arg_types(args),
                 });
+            } else if self.try_compile_list_assign_rhs_op(*name, args) {
+                // `my ($a, $b) = EXPR`'s right-hand side (`destructure_lane.rs`).
             } else {
                 let arity = args.len() as u32;
                 let arg_sources_idx = self.add_arg_sources_constant(args);

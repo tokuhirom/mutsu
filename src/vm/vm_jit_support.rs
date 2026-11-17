@@ -56,6 +56,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::LoadFalse
             | OpCode::Dup
             | OpCode::Pop
+            | OpCode::ListAssignRhs
             | OpCode::MarkPromiseSink
             // Variable reads
             | OpCode::GetGlobal(_)
