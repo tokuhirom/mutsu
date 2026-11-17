@@ -378,6 +378,31 @@ impl Interpreter {
             .any(|params| params.contains(name))
     }
 
+    /// The env binding of the running routine-nested sub's alias for its free
+    /// variable `name`: what [`Self::lexsub_alias_sym`] finds, read in the
+    /// same env walk that found it rather than walked a second time. `name_sym`
+    /// is `name` already interned (a read site's constant), compared instead
+    /// of the alias table's names.
+    // Cost: O(a + d), a = aliases of the running sub, d = env chain depth.
+    #[inline]
+    fn lexsub_alias_binding(&self, name: &str, name_sym: Option<Symbol>) -> Option<&Value> {
+        if self.lexicals.lexsub_free_aliases.is_empty() || self.active_loop_param_shadows(name) {
+            return None;
+        }
+        let frame = self.routine_stack().last()?;
+        if frame.is_block {
+            return None;
+        }
+        let list = self.lexicals.lexsub_free_aliases.get(&frame.name)?;
+        let env = self.env();
+        list.iter()
+            .filter(|(var, _)| match name_sym {
+                Some(sym) => *var == sym,
+                None => var.as_str() == name,
+            })
+            .find_map(|(_, alias)| env.get_sym(*alias))
+    }
+
     #[inline]
     fn lexsub_alias_sym(&self, name: &str) -> Option<Symbol> {
         if self.lexicals.lexsub_free_aliases.is_empty() {
@@ -433,8 +458,8 @@ impl Interpreter {
         if self.active_loop_param_shadows(name) {
             return None;
         }
-        match self.lexsub_alias_sym(name) {
-            Some(alias) => self.env().get_sym(alias),
+        match self.lexsub_alias_binding(name, name_sym) {
+            Some(cell) => Some(cell),
             None => self.lexsub_latest_cell(name, name_sym),
         }
     }
