@@ -7,6 +7,8 @@ pub(crate) use otf_call_entry::{OtfCallEntry, OtfCallKey};
 mod parametric_role_pun_memo;
 pub(crate) use parametric_role_pun_memo::ParamRolePunEntries;
 mod plain_fn_resolve_memo;
+mod proto_resolve_memo;
+pub(crate) use proto_resolve_memo::ProtoResolveMemo;
 pub(crate) mod registry_gen;
 /// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
 pub(crate) mod stack_id;

@@ -3185,7 +3185,7 @@ impl Interpreter {
         if self.is_interpreter_handled_function(name) {
             return None;
         }
-        let proto = self.resolve_proto_function_shared(name)?;
+        let proto = self.resolve_proto_function_memoized(name)?;
         // A trivial proto body is empty (bodyless proto) or exactly `{*}` — only
         // then is bypassing the body safe. `{*}` parses to `Stmt::Expr(Whatever)`.
         // The compiler prepends line-tracking `SetLine` markers (no runtime
@@ -3267,7 +3267,7 @@ impl Interpreter {
         if self.is_interpreter_handled_function(name) {
             return None;
         }
-        let proto = self.resolve_proto_function_shared(name)?;
+        let proto = self.resolve_proto_function_memoized(name)?;
         // Only handle *non-trivial* bodies here; the trivial (bodyless / `{*}`-only)
         // case is the trivial resolver's job. A bodyless proto (`def.body.empty`)
         // dispatches implicitly and must not be compiled here.
