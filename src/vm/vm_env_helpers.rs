@@ -573,10 +573,8 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
         name: &str,
     ) -> Option<Value> {
-        if code
-            .routine_scoped_free
-            .iter()
-            .any(|sym| sym.with_str(|n| n == name))
+        if !code.routine_scoped_free.is_empty()
+            && code.is_routine_scoped_free(crate::qualified::known_symbol(name))
         {
             return None;
         }
@@ -982,6 +980,10 @@ impl Interpreter {
         if !self.unit_lexicals_may_hold(name, name_sym) {
             return None;
         }
+        // An enclosing routine's own binding shadows the file-scope one.
+        if self.running_code_routine_scoped(name, name_sym) {
+            return None;
+        }
         // See `unit_lexical_slot_mut`: the frame's own same-named variable.
         if self.frame_binds_own(name, name_sym) {
             return None;
@@ -1139,6 +1141,10 @@ impl Interpreter {
             return None;
         }
         if !self.unit_lexicals_may_hold(name, name_sym) {
+            return None;
+        }
+        // An enclosing routine's own binding shadows the file-scope one.
+        if self.running_code_routine_scoped(name, name_sym) {
             return None;
         }
         // A variable the running frame binds itself shadows the compunit's
@@ -1825,7 +1831,13 @@ impl Interpreter {
         if let Some(key) = self.unmerged_package_var_key(sym) {
             return Some(self.unmerged_package_var(key));
         }
-        if let Some(v) = self.unit_scope_lexical(name, Some(sym)) {
+        // A free variable an enclosing routine declares is that routine's
+        // binding, which the running closure reaches through its capture in
+        // `env`: the module stores asked before `env` below (the compunit's
+        // file-scope `my`, an `our` mirror, a unit module's imported
+        // file-scope name) are scopes outside that routine (#17466).
+        let routine_scoped = self.running_code_routine_scoped(name, Some(sym));
+        if !routine_scoped && let Some(v) = self.unit_scope_lexical(name, Some(sym)) {
             return Some(v.into_deref());
         }
         // An `our @a` / `our %h` of the package the running routine belongs to
@@ -1836,7 +1848,7 @@ impl Interpreter {
         // key, which belongs to whatever scope loaded the module. Checked
         // AFTER `unit_scope_lexical` so a compunit's file-scope `my` still
         // wins over a same-named package variable. See `vm_our_package_vars`.
-        if let Some(v) = self.our_package_container(name) {
+        if !routine_scoped && let Some(v) = self.our_package_container(name) {
             return Some(v);
         }
         // The scalar twin of the redirect above. A scalar has no shared `Gc`
@@ -1845,7 +1857,7 @@ impl Interpreter {
         // `SetGlobal` arm. Same position in the order, and for the same
         // reason: a compunit's own file-scope `my` (checked first) still wins
         // over a same-named package variable.
-        if let Some(v) = self.our_package_scalar(name) {
+        if !routine_scoped && let Some(v) = self.our_package_scalar(name) {
             return Some(v);
         }
         // A unit module's imported file-scope names are lexical to the module,
@@ -1853,7 +1865,8 @@ impl Interpreter {
         // The compiler emits a global read for such a name, so prefer the
         // module table here when the running routine carries the unit owner;
         // ordinary local lexicals use a local-slot opcode and are unaffected.
-        if self.any_lexical_package_frame()
+        if !routine_scoped
+            && self.any_lexical_package_frame()
             && let Some(v) = self.module_imported_lexical(name)
         {
             return Some(v.clone());
@@ -3442,6 +3455,27 @@ impl Interpreter {
         if stale {
             self.set_env_with_main_alias(var_name, slot_val);
         }
+    }
+
+    /// Whether the running code reads `name` as a free variable an enclosing
+    /// routine declares (`CompiledCode::routine_scoped_free`) and reaches
+    /// through its capture: a closure in a
+    /// module routine naming the routine's `my $x` (or its loop parameter)
+    /// means that binding, never the module's same-named file-scope or `our`
+    /// variable (#17466).
+    // Cost: O(f), f = |routine_scoped_free| of the running code (0 outside a
+    // routine); plus a symbol lookup when `name_sym` is `None` and f > 0.
+    pub(crate) fn running_code_routine_scoped(&self, name: &str, name_sym: Option<Symbol>) -> bool {
+        // A nested named sub reaches its declaring routine's lexicals through
+        // those very stores (ADR-0024's captured cells, `lexsub_alias_*`), so
+        // only a closure, whose capture is its `env`, skips them.
+        self.running_code().is_some_and(|code| {
+            !code.routine_scoped_free.is_empty()
+                && !code.declared_in_routine
+                && code.is_routine_scoped_free(
+                    name_sym.unwrap_or_else(|| crate::qualified::known_symbol(name)),
+                )
+        })
     }
 
     /// Whether the running routine declares `name` and its frame binds it in

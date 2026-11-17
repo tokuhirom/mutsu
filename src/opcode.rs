@@ -15595,6 +15595,15 @@ mod compiled_fns_identity {
 /// `getlexref_*` references, which are written through later).
 // Cost: O(1).
 impl CompiledCode {
+    /// Whether `sym` is a free variable an enclosing routine declares
+    /// (`routine_scoped_free`): that routine's binding, which shadows the
+    /// module's same-named file-scope, package-block and `our` stores.
+    // Cost: O(f), f = |routine_scoped_free| (0 outside a routine).
+    #[inline]
+    pub(crate) fn is_routine_scoped_free(&self, sym: Symbol) -> bool {
+        !self.routine_scoped_free.is_empty() && self.routine_scoped_free.contains(&sym)
+    }
+
     /// Whether this code, or a closure nested in it, can write a lexical of
     /// this frame by a runtime name: `nqp::bindlex*` (or a `getlexref_*`
     /// reference), `EVAL`/`EVALFILE` (whose code may assign any visible
