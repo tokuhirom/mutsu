@@ -38,6 +38,7 @@ mod nested;
 mod nested_exports;
 mod package_body;
 mod package_phasers;
+mod parameterizations;
 mod use_if;
 
 use crate::ast::{Expr, PhaserKind, Stmt};
@@ -54,6 +55,8 @@ use use_if::{if_condition_check, next_if_condition_slot};
 pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<Stmt> {
     // A class declared in term position is a BEGIN-time declaration too.
     expr_type_decls::lift_expr_type_decls(stmts);
+    // So is the parameterization of a class with its own `^parameterize`.
+    parameterizations::lift_parameterizations(stmts);
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
     if is_eval {

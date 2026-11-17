@@ -17,7 +17,7 @@ use super::*;
 /// Split `C[A, B]` into `C` and its top-level arguments. `None` for anything
 /// that is not a single bracketed parameterization.
 // Cost: O(n), n = chars of the constraint.
-fn split_parameterization(constraint: &str) -> Option<(&str, Vec<&str>)> {
+pub(crate) fn split_parameterization(constraint: &str) -> Option<(&str, Vec<&str>)> {
     let open = constraint.find('[')?;
     let base = constraint[..open].trim();
     let inner = constraint[open + 1..].strip_suffix(']')?;
@@ -42,6 +42,26 @@ fn split_parameterization(constraint: &str) -> Option<(&str, Vec<&str>)> {
         return None;
     }
     Some((base, args))
+}
+
+/// The cache key of `base[args]` when every argument is a type object: the
+/// types' registered names, which are unique per type (a lexical class's is
+/// its mangled name). `None` when an argument is a value. The leading `\u{1}`
+/// keeps the key apart from a constraint spelling in the same cache.
+// Cost: O(a), a = arguments.
+fn parameterization_key(base: &Value, args: &[Value]) -> Option<String> {
+    let ValueView::Package(base) = base.view() else {
+        return None;
+    };
+    let mut key = format!("\u{1}{}", base.resolve());
+    for arg in args {
+        let ValueView::Package(name) = arg.view() else {
+            return None;
+        };
+        key.push('\u{1}');
+        key.push_str(&name.resolve());
+    }
+    Some(key)
 }
 
 impl Interpreter {
@@ -151,8 +171,40 @@ impl Interpreter {
                 None => Value::package(Symbol::intern(arg)),
             });
         }
-        self.call_method_with_values(base_ty, "^parameterize", how_args)
-            .ok()
+        let type_args = how_args.split_off(1);
+        self.parameterize_by_user_metamethod(base_ty, type_args).ok()
+    }
+
+    /// `base[args]` for a `base` whose metaclass is its own `method
+    /// ^parameterize`. A parameterization by type objects only is one type:
+    /// Rakudo resolves `C[T]` written in the source once, at compile time
+    /// (#17085), so the meta-method runs once per (base, argument types) and
+    /// later spellings -- a variable's or parameter's `C[T]` constraint, the
+    /// term `C[T]` at run time -- reuse the type it built. Any other argument
+    /// (a value) calls the meta-method every time.
+    // Cost: O(a) to build the key, a = type arguments, plus the meta-method
+    // once per distinct key.
+    pub(crate) fn parameterize_by_user_metamethod(
+        &mut self,
+        base_ty: Value,
+        type_args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let key = parameterization_key(&base_ty, &type_args);
+        if let Some(key) = &key
+            && let Some(ty) = self.caches.meta_parameterized_types.get(key)
+        {
+            return Ok(ty.clone());
+        }
+        let mut how_args = Vec::with_capacity(type_args.len() + 1);
+        how_args.push(base_ty.clone());
+        how_args.extend(type_args);
+        let ty = self.call_method_with_values(base_ty, "^parameterize", how_args)?;
+        if let Some(key) = key {
+            self.caches
+                .meta_parameterized_types
+                .insert(key, ty.clone());
+        }
+        Ok(ty)
     }
 
     /// The type object a bare type name in a constraint refers to: a term or
