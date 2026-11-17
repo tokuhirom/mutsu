@@ -3753,11 +3753,15 @@ pub(crate) enum OpCode {
     /// "Cannot modify an immutable Int (5)". The compiler cannot tell an `is rw`
     /// accessor call from an ordinary one, so the test is necessarily made here.
     ///
-    /// Record whether a sigilless declaration's bind SOURCE — still on the
-    /// stack — denotes a container, for the [`OpCode::MarkSigillessBind`] that
-    /// follows the store. Emitted immediately before the store by the
-    /// declaration itself; see that opcode for why the pair brackets the store.
-    MarkSigillessBindSource(u32),
+    /// Judge whether a sigilless declaration's bind SOURCE — on top of the
+    /// stack — denotes a container, and leave that verdict (a `Bool`, true
+    /// when writable) just below the source for the
+    /// [`OpCode::MarkSigillessBind`] with `from_stack` that follows the store:
+    /// `[v] → [verdict, v]`. A source judged a plain value also sets the
+    /// `BOUND_VALUE` mark the store's bound-term lane reads. Emitted by the
+    /// declaration itself before its store; see that opcode for why the pair
+    /// brackets the store.
+    MarkSigillessBindSource,
     /// Emitted right after the declaration, this writes the ordinary
     /// `__mutsu_sigilless_readonly::<name>` marker the parser used to set
     /// statically, so every existing consumer (`CheckReadOnly` in any frame, the
@@ -3767,7 +3771,7 @@ pub(crate) enum OpCode {
     ///
     /// The BIND SOURCE, not the destination slot, is the oracle — which is why
     /// [`OpCode::MarkSigillessBindSource`] runs before the store and leaves its
-    /// verdict in `Interpreter::sigilless_bind_source` for this op to consume.
+    /// verdict on the stack for this op to pop (`from_stack`).
     /// This op used to derive the answer itself by asking whether the slot now
     /// held a container, which is ambiguous: a slot also becomes a
     /// `ContainerRef` for reasons that have nothing to do with this bind.
@@ -3780,8 +3784,8 @@ pub(crate) enum OpCode {
     /// a `ContainerRef` and stayed writable, so the assignment raku refuses
     /// silently succeeded. The bind source cannot be confused that way; the
     /// slot inspection survives only as the fallback for a `MarkSigillessBind`
-    /// reached with no recorded verdict.
-    MarkSigillessBind(u32),
+    /// whose declaration emitted no source op (`from_stack: false`).
+    MarkSigillessBind { name_idx: u32, from_stack: bool },
     /// Write the `__mutsu_sigilless_readonly::<name>` marker of a readonly
     /// sigilless term declaration (`my \x = EXPR` in a loop or routine body):
     /// `true` after the store, `false` before it to clear a previous

@@ -929,13 +929,23 @@ impl Compiler {
         // below (see `Compiler::expr_depth`).
         let saved = std::mem::replace(&mut self.expr_depth, 1);
         let term = self.begin_term_decl_of(stmt);
+        let verdicts_before = self.sigilless_bind_verdicts;
         let init_aggregate = self.begin_decl_initializer_aggregate(stmt);
         self.compile_stmt_inner(stmt);
         if init_aggregate {
             self.decl_initializer_aggregates.pop();
         }
-        if let Some((name, kind, bound_expr)) = term {
-            self.end_term_decl(name, kind, bound_expr);
+        let from_stack = self.sigilless_bind_verdicts > verdicts_before;
+        self.sigilless_bind_verdicts = verdicts_before;
+        match term {
+            Some((name, kind, bound_expr)) => {
+                self.end_term_decl(name, kind, bound_expr, from_stack);
+            }
+            // A verdict nothing pairs with is dropped, never left behind.
+            None if from_stack => {
+                self.code.emit(OpCode::Pop);
+            }
+            None => {}
         }
         self.expr_depth = saved;
         self.share_outer_written_decl(stmt);
@@ -2178,19 +2188,21 @@ impl Compiler {
                         if stash_raw_init {
                             self.code.emit(OpCode::StashVarDeclInit { keep_raw: true });
                         }
-                        if our_dup {
-                            self.code.emit(OpCode::Dup);
-                        }
                         // A sigilless bind (`my \x := EXPR`) settles its
                         // writability from what the RHS actually DENOTES, and
                         // that is on the stack right here. Reading it back off
                         // the destination slot after the store cannot tell an
                         // aliased container apart from a slot that was boxed
                         // into a cell for an unrelated reason -- see
-                        // `OpCode::MarkSigillessBind`.
+                        // `OpCode::MarkSigillessBind`. Its verdict waits on the
+                        // stack, below the package store's copy, for the
+                        // `MarkSigillessBind` `end_term_decl` emits.
                         if sigilless_bind_vardecl {
-                            let src_idx = self.code.add_constant(Value::str(name.clone()));
-                            self.code.emit(OpCode::MarkSigillessBindSource(src_idx));
+                            self.code.emit(OpCode::MarkSigillessBindSource);
+                            self.sigilless_bind_verdicts += 1;
+                        }
+                        if our_dup {
+                            self.code.emit(OpCode::Dup);
                         }
                         if bind_vardecl {
                             self.code.emit(OpCode::MarkBindContext);

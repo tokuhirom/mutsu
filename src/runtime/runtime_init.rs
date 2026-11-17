@@ -3223,7 +3223,6 @@ impl Interpreter {
             #[cfg(feature = "jit")]
             jit_error: None,
             accessor_ref_pending: false,
-            sigilless_bind_source: None,
             mark_ctx: Box::default(),
             array_share_active: false,
             pending_rw_writeback_sources: Vec::new(),

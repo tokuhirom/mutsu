@@ -129,11 +129,23 @@ impl Compiler {
     /// declaration itself emits; the op emitted here writes the readonly
     /// marker, and has to run AFTER the store because a declaration clears
     /// that marker.
-    pub(super) fn end_term_decl(&mut self, name: &str, kind: TermMark, bound_expr: bool) {
+    /// `from_stack`: the declaration's `MarkSigillessBindSource` left its
+    /// verdict on the stack.
+    pub(super) fn end_term_decl(
+        &mut self,
+        name: &str,
+        kind: TermMark,
+        bound_expr: bool,
+        from_stack: bool,
+    ) {
         let slot = self
             .local_map
             .get(&crate::runtime::term_names::term_key(name))
             .copied();
+        // Only a bound term pairs with the verdict; any other kind drops it.
+        if from_stack && kind != TermMark::Bound {
+            self.code.emit(OpCode::Pop);
+        }
         match kind {
             TermMark::No => {}
             TermMark::Slot => self.note_other_term_binding(slot),
@@ -168,10 +180,12 @@ impl Compiler {
                 } else {
                     self.note_other_term_binding(slot);
                 }
-                let name_idx = self
-                    .code
-                    .add_constant(Value::str(crate::runtime::term_names::term_key(name)));
-                self.code.emit(OpCode::MarkSigillessBind(name_idx));
+                let key = crate::runtime::term_names::term_key(name);
+                let name_idx = self.code.add_constant(Value::str(key));
+                self.code.emit(OpCode::MarkSigillessBind {
+                    name_idx,
+                    from_stack,
+                });
             }
         }
     }
