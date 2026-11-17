@@ -2,6 +2,7 @@
 //! classification `CompiledCode::scan_reflective_name_access` latches the
 //! process-wide `NON_EVAL_REFLECTIVE_SEEN` on (#17998).
 use super::{CompiledCode, OpCode};
+use crate::symbol::Symbol;
 
 /// Whether the pseudo-stash `name` (`UNIT::`, `OUTER::OUTER::`, `Foo::Bar::`,
 /// ...) can only reach a scope that lexically encloses the code reading it,
@@ -11,12 +12,30 @@ use super::{CompiledCode, OpCode};
 // Cost: O(n), n = bytes of `name`.
 pub(super) fn pseudo_stash_names_enclosing_scope(name: &str) -> bool {
     !name.is_empty()
-        && name.split("::").all(|part| {
+        && every_segment(Symbol::intern(name), |part| {
             !matches!(
                 part,
                 "CALLER" | "CALLERS" | "DYNAMIC" | "CLIENT" | "LEXICAL"
             )
         })
+}
+
+/// Whether `pred` holds for every `::` segment of `name` (`Foo::Bar::` has the
+/// segments `Foo`, `Bar` and the empty last one).
+// Cost: O(s) memo probes, s = segments of `name`.
+fn every_segment(name: Symbol, pred: impl Fn(&str) -> bool) -> bool {
+    let mut rest = name;
+    loop {
+        match crate::qualified::split_qualified(rest) {
+            Some((head, tail)) => {
+                if !pred(tail.as_str()) {
+                    return false;
+                }
+                rest = head;
+            }
+            None => return pred(rest.as_str()),
+        }
+    }
 }
 
 /// Whether a computed indirect name that starts with the constant `prefix`
@@ -26,11 +45,11 @@ pub(super) fn pseudo_stash_names_enclosing_scope(name: &str) -> bool {
 /// `CALLER`, ...). A sigil or a bare word without `::` may name a lexical.
 // Cost: O(n), n = bytes of `prefix`.
 pub(super) fn names_package_member_prefix(prefix: &str) -> bool {
-    let Some((qualifier, _)) = prefix.rsplit_once("::") else {
+    let Some((qualifier, _)) = crate::qualified::split_qualified(Symbol::intern(prefix)) else {
         return false;
     };
-    !qualifier.is_empty()
-        && qualifier.split("::").all(|part| {
+    !qualifier.as_str().is_empty()
+        && every_segment(qualifier, |part| {
             part.starts_with(|c: char| c.is_alphabetic() || c == '_')
                 && part
                     .chars()
