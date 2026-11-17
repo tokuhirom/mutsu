@@ -30,6 +30,37 @@ impl Interpreter {
             .collect()
     }
 
+    /// The setting's candidates of the routine `package`/`name` a family of
+    /// the program's own `multi`s joins, in front of which those `multi`s
+    /// are listed: a scope that adds a `multi` to a setting multi routine
+    /// (`multi infix:<+>(Str, Int)`) derives a proto holding the setting's
+    /// candidates plus its own, as rakudo does (#17923). Empty when the
+    /// program declares no candidate of that name, any of its candidates is
+    /// an `only` sub, it declares its own `proto` (which owns the family), or
+    /// the setting routine is not a multi.
+    // Cost: O(f log f + c * s), f = registered functions, c = setting
+    // candidates, s = signature length (each is parsed).
+    pub(super) fn joined_setting_candidates(&self, package: &str, name: &str) -> Vec<Value> {
+        let declared = self.routine_candidate_defs(package, name);
+        if declared.is_empty()
+            || !declared.iter().all(|(_, is_multi)| *is_multi)
+            || self.registry().has_proto(package, name)
+        {
+            return Vec::new();
+        }
+        let is_global = package.is_empty() || crate::qualified::is_global_name(package);
+        if !is_global {
+            return Vec::new();
+        }
+        let rows = core_sub_candidates(name);
+        if rows.is_empty() || !rows.iter().all(|row| row.multi) {
+            return Vec::new();
+        }
+        rows.iter()
+            .filter_map(|row| self.builtin_candidate_code(package, name, row))
+            .collect()
+    }
+
     fn builtin_candidate_code(
         &self,
         package: &str,
