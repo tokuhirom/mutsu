@@ -111,6 +111,13 @@ pub(crate) enum Spelling {
     /// value; the number as written (underscores removed), which RakuAST
     /// keeps as the literal operand of a `Postfix("i")`.
     Imaginary(Box<str>),
+    /// `$.meth(args)` / `$.meth: args` / `$.^meth`: the `self` the parser
+    /// calls the method on (sigil `$`), or, for `@.meth(args)` /
+    /// `%.meth(args)`, the contextualized call itself (sigil `@`/`%`). RakuAST
+    /// keeps a public attribute access with arguments
+    /// (`Var::Attribute::Public(name => "$.meth", args => ...)`), and
+    /// `$.^meth` with its item contextualizer.
+    AttributeCall(char),
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),

@@ -358,7 +358,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         && !input.as_bytes()[1].is_ascii_alphabetic()
         && input.as_bytes()[1] != b'_'
     {
-        return Ok((input, Expr::BareWord("self".to_string())));
+        return Ok((input, attribute_call_self()));
     }
     // $.ident followed by ( or : → parse as self.ident(args) or self.ident: args
     // This ensures $.method(args) works as a method call, not a variable call.
@@ -380,7 +380,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         if after_ident.starts_with('(')
             || (after_ident.starts_with(':') && !after_ident.starts_with("::"))
         {
-            return Ok((input, Expr::BareWord("self".to_string())));
+            return Ok((input, attribute_call_self()));
         }
     }
     // Handle twigils: $*FOO, $?FILE, $!attr, $.attr, $~MAIN
@@ -541,5 +541,14 @@ fn parse_dollar_paren_block(input: &str) -> PResult<'_, Expr> {
 pub(crate) fn compiler_var(literal: Expr, written: &str) -> Expr {
     Expr::spelled(literal, || {
         crate::ast::spelled::Spelling::CompilerVar(written.into())
+    })
+}
+
+/// The `self` a `$.meth(...)` / `$.^meth` call is made on, marked so RakuAST
+/// keeps the `$.` spelling (`Spelling::AttributeCall`).
+// Cost: O(1).
+fn attribute_call_self() -> Expr {
+    Expr::spelled(Expr::BareWord("self".to_string()), || {
+        crate::ast::spelled::Spelling::AttributeCall('$')
     })
 }

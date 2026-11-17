@@ -2391,6 +2391,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
     if let Some(node) = super::deferred_name::view_node(names, expr) {
         return node;
     }
+    if let Some(node) = super::attribute_call::view_node(names, expr) {
+        return node;
+    }
     // The adverbs of a subscript lower from the class of the subscript.
     if let Some(node) = subscript_adverb::view_hyper_slice(names, expr) {
         return node;
@@ -2584,7 +2587,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             }
             Spelling::DottyInfixCall => dotty_infix_call(names, &spelled.expr),
             Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
-            Spelling::ColonPairValue(_) => view_expr(names, &spelled.expr),
+            Spelling::ColonPairValue(_) | Spelling::AttributeCall(_) => {
+                view_expr(names, &spelled.expr)
+            }
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept

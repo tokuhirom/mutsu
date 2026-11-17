@@ -5299,6 +5299,13 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(names, node) => {
             deref
         }
+        // `$.meth(args)`: the call it stands for.
+        RakuAstClass::VarAttributePublic
+            if let Some(call) =
+                super::attribute_call::lower(node, |args| arg_list_exprs(names, args)) =>
+        {
+            call
+        }
         RakuAstClass::VarLexical
         | RakuAstClass::VarPackage
         | RakuAstClass::VarDynamic
