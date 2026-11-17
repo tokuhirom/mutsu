@@ -27,3 +27,10 @@ two gaps it had been hiding, both fixed here:
 - A `start` block at program scope that names a lexical only through `EVAL` or
   `::('$x')` wrote the worker's copy of the program scope:
   `my $x = 1; await start { EVAL '$x = 42' }; say $x` printed `1`, now `42`.
+
+The same lane was behind #17794: IO::Socket::Async::SSL writes a lexical called
+`$alpn` in one method, which made every `$alpn` in the program opaque, so two
+concurrent `connect`s read each other's `:$alpn` parameter inside their
+`start` blocks and negotiated the wrong protocol. Its upstream
+`t/client-server.rakutest` failed 8 of 8 runs on a debug build and now passes
+every run.
