@@ -77,6 +77,14 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("add-statement", a[0].clone())),
     node_row!("RakuAST::StatementList", "unshift-statement", |t, a| t
         .rakuast_add_child("unshift-statement", a[0].clone())),
+    MethodRow {
+        owner: "RakuAST::StatementList",
+        name: "insert-statement",
+        arity: 2,
+        handler: Handler::Narrow(|t, a| t.rakuast_insert_statement(&a[0], &a[1])),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
     node_row!("RakuAST::ArgList", "push", |t, a| t
         .rakuast_add_child("push", a[0].clone())),
     node_row!("RakuAST::ArgList", "replace-args", |t, a| t
@@ -218,7 +226,7 @@ fn origin_position(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
 /// `compile-time-value` of a core declaration stub: the core routine named by
 /// its `lexical-name` (`&say`), or the type object of a core type.
 // Cost: O(1) plus the interpreter's lookup of the name.
-fn external_value(
+pub(super) fn external_value(
     interp: &mut Interpreter,
     target: &Value,
     _args: &[Value],
@@ -412,6 +420,10 @@ pub(super) fn sub_value(
             let name = crate::rakuast::declared_package_name(node)?;
             crate::type_captures::note(&name);
             return Some(Ok(Value::package(Symbol::intern(&name))));
+        }
+        // A type name's value is the type its resolution names (#14916).
+        K::TypeSimple | K::TypeSetting => {
+            return super::rakuast_lookup_values::lookup_value(interp, target);
         }
         // A constant's value is its initializer's, evaluated now.
         K::VarDeclarationConstant => {

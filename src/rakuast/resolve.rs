@@ -259,7 +259,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     if node.class == C::VarDeclarationSimple {
         refine_with_anonymous_subset(node, scopes);
     }
-    let parameter_type = (node.class == C::Parameter).then(|| type_field(node));
+    let mut parameter_type = (node.class == C::Parameter).then(|| type_field(node));
     for field in &mut node.fields {
         match &mut field.value {
             RakuAstFieldValue::Node(child) if field.name == Some("target") => {
@@ -267,6 +267,14 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
                     embed_declaration(child, type_node.as_ref());
                 }
                 visit_child(child, scopes);
+            }
+            // The declaration a parameter's target makes carries the type
+            // node as resolved, the same node the parameter visits.
+            RakuAstFieldValue::Node(child)
+                if field.name == Some("type") && parameter_type.is_some() =>
+            {
+                visit_child(child, scopes);
+                parameter_type = Some(Some(child.clone()));
             }
             RakuAstFieldValue::Node(child) => {
                 visit_child(child, scopes);
@@ -791,8 +799,12 @@ pub(super) fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
         ]))),
     ));
     // The constructor's own order (`type` first), which the field lookups of a
-    // declaration read.
-    if let Some(ty) = type_node {
+    // declaration read. An untyped parameter's implicit `Type::Setting` (`Any`)
+    // is the parameter's alone: its declaration has no type, as in rakudo.
+    let explicit = type_node.filter(|ty| {
+        !matches!(ty.view(), ValueView::RakuAst(ty) if ty.class == C::TypeSetting)
+    });
+    if let Some(ty) = explicit {
         fields.insert(0, super::view::leaf_field(Some("type"), ty.clone()));
     }
     let mut declaration = RakuAstNode {
@@ -980,7 +992,19 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             scopes.find(&name).cloned().or_else(|| match name.as_str() {
                 // Every block has its topic, match and exception variables.
                 "$_" | "$/" | "$!" => external("RakuAST::VarDeclaration::Implicit::Special", &name),
-                _ => None,
+                // `&say`: a routine of the setting, or one the unit imported.
+                _ => {
+                    let routine = name.strip_prefix('&')?;
+                    if crate::builtin_functions::is_builtin_function(routine)
+                        && !(scopes.shadowed)(routine)
+                    {
+                        external_setting(routine)
+                    } else if (scopes.imported)(routine) {
+                        external("RakuAST::Declaration::Import", &name)
+                    } else {
+                        None
+                    }
+                }
             })
         }
         C::Infix => {

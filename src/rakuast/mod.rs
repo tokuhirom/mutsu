@@ -22,6 +22,7 @@ mod assign_target;
 mod assign_writeback;
 mod atomic_op;
 pub(crate) mod attr_bind;
+pub(crate) mod statement_insert;
 mod attribute;
 mod attribute_decl;
 mod attribute_group;
