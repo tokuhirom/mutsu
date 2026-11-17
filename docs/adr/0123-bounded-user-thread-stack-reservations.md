@@ -1,7 +1,7 @@
 # ADR-0123: User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it
 
 - **Status**: Accepted (user approval 2026-09-25; implemented with #9377); §7 amendment (helping a
-  refused task, #17392) is **Proposed**, awaiting the maintainer. D2 (the stack tiers)
+  refused task, #17392) is **Accepted** (decision: the maintainer, 2026-11-17). D2 (the stack tiers)
   and its §6 amendment are superseded by [ADR-17392](17392-user-thread-stacks-grow-in-segments.md)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9377](https://github.com/tokuhirom/mutsu/issues/9377). Supersedes the growth rule
@@ -204,7 +204,7 @@ stack (growable VM stacks, or a continuation-style `await`) -- the open part of 
 
 Pinned by `t/concurrency/thread-lock/thread-pool-small-stack-tier.t`.
 
-## 7. Amendment (2026-11-14, Proposed): a refused task waits for a worker, and a blocked worker helps
+## 7. Amendment (2026-11-14, Accepted by the maintainer 2026-11-17): a refused task waits for a worker, and a blocked worker helps
 
 D4 rejects a pool task when a `Required` growth is refused. ADR-17392 made each parked task cheap
 in address space, but a parked task still holds an OS thread, so a thread *count* limit has the
