@@ -141,7 +141,7 @@ impl Interpreter {
     /// cell the Proxy carries, #14259). The access rules are an instance's:
     /// an unqualified call is allowed from the class itself (or code whose
     /// lexical `self` is one), a qualified one from a trusted caller.
-    pub(super) fn dispatch_private_method_on_proxy_subclass(
+    pub(crate) fn dispatch_private_method_on_proxy_subclass(
         &mut self,
         target: &Value,
         method: &str,
