@@ -420,6 +420,14 @@ impl Interpreter {
         {
             return Some(v.clone());
         }
+        if !self.lexicals.package_lexicals.contains_key(cur.as_str())
+            && let Some(v) = self
+                .types
+                .published_mixins
+                .role_lexical(cur.as_str(), name.as_str())
+        {
+            return Some(v);
+        }
         // A class nested in a class body sees the enclosing class's `my`
         // lexicals (the write side resolves the same owner).
         if crate::qualified::is_global_package(cur)
@@ -589,11 +597,12 @@ impl Interpreter {
 
     pub(crate) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
         let (cur, key) = self.package_scope_lexical_key(name)?;
-        self.lexicals
-            .package_lexicals
-            .get(cur)
-            .and_then(|m| m.get(key.as_ref()))
-            .cloned()
+        match self.lexicals.package_lexicals.get(cur) {
+            Some(m) => m.get(key.as_ref()).cloned(),
+            // A role body run on the thread that composed a mixin type (see
+            // `PublishedMixins::role_lexical`).
+            None => self.types.published_mixins.role_lexical(cur, key.as_ref()),
+        }
     }
 
     /// The package and the store key [`Self::package_scope_lexical`] looks

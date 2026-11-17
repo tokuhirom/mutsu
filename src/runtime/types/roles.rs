@@ -814,10 +814,13 @@ impl Interpreter {
                 // composition as already done just because some earlier,
                 // unrelated base type already composed the same role.
                 let base_type = crate::value::types::what_type_name(&left);
-                if self
-                    .registry_mut()
-                    .composed_role_bodies
-                    .insert(format!("mixin:{base_type}:{role_name}"))
+                let body_key = format!("mixin:{base_type}:{role_name}");
+                // Probe before writing: the registry is world state, and a
+                // write publishes a new version (copying it while another
+                // thread holds a snapshot), so `1 but R` in a loop must not
+                // write once the body has run (ADR-17216 slice 2b).
+                if !self.registry().composed_role_bodies.contains(&body_key)
+                    && self.registry_mut().composed_role_bodies.insert(body_key)
                 {
                     let (ops, decl_file) = role
                         .as_ref()

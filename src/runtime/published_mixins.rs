@@ -67,9 +67,49 @@ pub(crate) struct PublishedMixins {
     /// name (a type object cached in a shared `Map`, a `but`-mixed type), so
     /// the other thread has to be able to compose it too.
     puns: RwLock<HashMap<String, PunRecipe>>,
+    /// The role-body lexicals a mixin composition left, keyed by role name:
+    /// a role body runs once per composed type, on the thread that composes
+    /// it, and its methods find its `my` lexicals in that thread's
+    /// `package_lexicals` under the role's name. Since the mixin type itself
+    /// is world state (ADR-17216 slice 2b) another thread never composes it
+    /// again, so it reads them here. The scalars are cells shared with the
+    /// composing thread (#12825).
+    /// TODO: drop once `package_lexicals` is world state (ADR-17216 slice 4).
+    role_lexicals: RwLock<HashMap<String, Vec<(String, crate::value::Value)>>>,
+    /// Set once `role_lexicals` holds an entry.
+    any_role_lexicals: AtomicBool,
 }
 
 impl PublishedMixins {
+    /// Record the lexicals the body of `role` left on the composing thread.
+    /// The first record of a role wins (one body run per role and type).
+    // Cost: O(n) expected, n = role.len().
+    pub(crate) fn publish_role_lexicals(
+        &self,
+        role: &str,
+        lexicals: Vec<(String, crate::value::Value)>,
+    ) {
+        if lexicals.is_empty() {
+            return;
+        }
+        let mut table = self.role_lexicals.write().unwrap_or_else(|e| e.into_inner());
+        table.entry(role.to_string()).or_insert(lexicals);
+        self.any_role_lexicals.store(true, Ordering::Release);
+    }
+
+    /// The published role-body lexical `key` of `role`.
+    // Cost: O(1) when none was published; otherwise one read-locked probe.
+    pub(crate) fn role_lexical(&self, role: &str, key: &str) -> Option<crate::value::Value> {
+        if !self.any_role_lexicals.load(Ordering::Acquire) {
+            return None;
+        }
+        let table = self.role_lexicals.read().unwrap_or_else(|e| e.into_inner());
+        table
+            .get(role)?
+            .iter()
+            .find_map(|(bare, value)| (bare == key).then(|| value.clone()))
+    }
+
     /// Record `name`'s recipe. The first publication of a name wins; a later
     /// one (another thread composing the same recipe) describes the same type.
     // Cost: O(n) expected, n = name.len() (hash + one write-locked insert).
