@@ -282,3 +282,9 @@ pub(crate) fn forget_anonymous_param_state(before: usize, p: &crate::ast::ParamD
         crate::parser::stmt::simple::record_anon_state_name(name);
     }
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take_cell(&PARAM_DEFAULT_DEPTH, 0);
+}

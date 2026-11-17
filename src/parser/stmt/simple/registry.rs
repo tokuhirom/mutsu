@@ -330,6 +330,7 @@ pub(crate) fn reset_user_subs() {
         }
     });
     DECLARE_KEYWORDS.with(|m| m.borrow_mut().clear());
+    UNIT_BEGIN_SEEN.with(|seen| seen.set(false));
     EXPORTHOW_ERRORS.with(|e| e.borrow_mut().clear());
     super::slang_modes::reset_slang_modes();
     super::slang_hooks::reset_hooks();
@@ -481,6 +482,19 @@ pub(crate) fn register_supersede_keyword(module: &str, keyword: &str) {
     });
 }
 
+/// [`register_supersede_keyword`] for the scope of the `use`: a `SUPERSEDE` the
+/// `use` introduces ends with its block, as rakudo's lexical `EXPORTHOW` does
+/// (`roast/S12-meta/exporthow.t`, "EXPORTHOW::SUPERSEDE is lexical").
+// Cost: O(1).
+pub(crate) fn register_scoped_supersede_keyword(module: &str, keyword: &str) {
+    let key = format!("{SUPERSEDE_PREFIX}{keyword}");
+    let introduced = DECLARE_KEYWORDS.with(|m| !m.borrow().contains_key(&key));
+    register_supersede_keyword(module, keyword);
+    if introduced && DECLARE_KEYWORDS.with(|m| m.borrow().contains_key(&key)) {
+        super::compile_consts::note_slang_declarator(&key);
+    }
+}
+
 /// The declarator keyword a declaration written with the built-in declarator
 /// `keyword` records (`PackageMarks::declarator`) when `EXPORTHOW::SUPERSEDE`
 /// replaced its HOW.
@@ -547,4 +561,10 @@ pub(crate) fn current_language_version() -> String {
 /// a tight loop.
 pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
     CURRENT_LANGUAGE_VERSION.with(|v| v.borrow().starts_with(prefix))
+}
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&EXPORTHOW_ERRORS, HashMap::new());
 }

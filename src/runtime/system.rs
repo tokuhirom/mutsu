@@ -328,14 +328,17 @@ impl Interpreter {
         // names (needed for parenless calls like `use Foo; bar`).
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
-        let parse_result = crate::parser::parse_program_with_operators_and_user_subs(
-            src,
-            op_names,
-            op_assoc,
-            &user_sub_names,
-            &user_type_names,
-            &user_value_term_names,
-        );
+        // An EVAL'd `use` loads as the EVAL's parse reaches it (ADR-17558).
+        let parse_result = self.parse_with_loader(|| {
+            crate::parser::parse_program_with_operators_and_user_subs(
+                src,
+                op_names,
+                op_assoc,
+                &user_sub_names,
+                &user_type_names,
+                &user_value_term_names,
+            )
+        });
         crate::parser::clear_parser_lib_paths();
         match parse_result {
             Ok((mut stmts, _)) => {

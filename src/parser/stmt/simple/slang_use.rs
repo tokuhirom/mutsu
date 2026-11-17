@@ -237,7 +237,7 @@ pub(in crate::parser) fn activate_slang_module(
         }
     }
     for keyword in &activation.supersede_keywords {
-        register_supersede_keyword(module, keyword);
+        register_scoped_supersede_keyword(module, keyword);
     }
     if !activation.declarators.is_empty() || !activation.supersede_keywords.is_empty() {
         // A memoized parse from before the keyword existed must not be

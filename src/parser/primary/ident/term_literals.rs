@@ -663,6 +663,9 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         {
             let r = &input[kw_len..];
             let (r, _) = ws(r)?;
+            if phaser_kind == crate::ast::PhaserKind::Begin {
+                crate::parser::stmt::simple::note_unit_compile_time_effect();
+            }
             if r.starts_with('{') {
                 let (r, body) = parse_block_body(r)?;
                 return Ok((

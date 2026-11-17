@@ -3315,3 +3315,10 @@ fn user_postfix_call(name: &str, operand: Expr) -> Expr {
         || crate::ast::spelled::Spelling::UserPostfixOperator,
     )
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take_cell(&PENDING_PREFIX_LEVEL, None);
+    unit.take_cell(&PENDING_BUILTIN_PREFIX_LEVEL, None);
+}

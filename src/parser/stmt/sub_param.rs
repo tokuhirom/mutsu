@@ -42,3 +42,9 @@ pub(super) use type_constraint::{
     check_invalid_type_smiley, parse_implicit_invocant_marker, parse_of_type_constraint_chain,
     parse_type_constraint_expr, strip_type_capture,
 };
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    helpers::suspend_unit_state(unit);
+}

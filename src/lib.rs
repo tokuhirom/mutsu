@@ -11,6 +11,7 @@ mod builtin_types;
 mod builtins;
 pub(crate) mod chain_compare;
 pub(crate) mod codepoint;
+pub(crate) mod compile_time_loader;
 mod compiled_lazy;
 mod compiled_operator;
 mod compiler;

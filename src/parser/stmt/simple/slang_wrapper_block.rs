@@ -49,3 +49,9 @@ pub(in crate::parser) fn announce_routine_body(
 pub(in crate::parser) fn take_routine_body() -> Option<Value> {
     ROUTINE_BODY.with(|b| b.borrow_mut().take())
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&ROUTINE_BODY, None);
+}

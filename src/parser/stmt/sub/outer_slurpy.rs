@@ -55,3 +55,9 @@ pub(crate) fn enter_routine_body(param_defs: &[ParamDef], is_method: bool) -> Ro
 pub(crate) fn outer_declares_implicit_slurpy(name: &str) -> bool {
     matches!(name, "@_" | "%_") && OUTER_IMPLICIT_SLURPIES.with(|s| s.borrow().contains(&name))
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&OUTER_IMPLICIT_SLURPIES, Vec::new());
+}

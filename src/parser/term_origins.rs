@@ -455,6 +455,14 @@ impl VisitMut for Walk {
     }
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&NOTES, None);
+    unit.take_cell(&WANTED, false);
+    unit.take_cell(&LAST, (0, 0, None));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

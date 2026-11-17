@@ -66,3 +66,9 @@ pub(in crate::parser) fn start_of_run_ending_at(end: usize) -> Option<usize> {
             .min()
     })
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&RUNS, TriviaRuns::default());
+}

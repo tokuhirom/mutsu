@@ -304,6 +304,33 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         Vec::new()
     };
+    // The module loads now, in the interpreter compiling this unit, as rakudo
+    // loads it at BEGIN time (ADR-17558); the scan above still supplies the
+    // names it exports (slice 2 reads them from the loaded unit). Until the
+    // unit's own compile-time effects (a `BEGIN`, a `multi`/`proto`) happen at
+    // parse time too (§7.1), a `use` after one loads in the prologue, so the
+    // module never runs, or installs candidates, ahead of what was written
+    // before it.
+    if module != "lib" && !super::super::simple::unit_compile_time_effect_seen() {
+        let lib_paths = super::super::simple::parser_lib_paths();
+        let spec = format!("{module}{dist_selectors}");
+        let request = crate::compile_time_loader::UseRequest {
+            module: &spec,
+            tags: &use_tags,
+            has_arg: arg.is_some(),
+            has_condition: condition.is_some(),
+            nested: super::super::simple::in_nested_scope(),
+            through_hook: super::super::simple::module_imports_through_hook(&module),
+            lib_paths: &lib_paths,
+        };
+        if let crate::compile_time_loader::LoadOutcome::Failed(error) =
+            crate::compile_time_loader::load_use(&request)
+        {
+            let message = error.message.to_string();
+            crate::compile_time_loader::note_failure(error);
+            return Err(PError::fatal_at(message, input));
+        }
+    }
     // A slang-activating module (its source `use`s Slangify) executes at
     // parse time so its slang registration can switch parser modes for the
     // rest of this compilation unit (ADR-0026 §2.1). Activation failure —

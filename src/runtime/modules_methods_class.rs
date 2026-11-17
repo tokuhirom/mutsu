@@ -69,6 +69,7 @@ mod methods_instance_clone;
 pub(crate) mod module_merge;
 mod main_unit_routines;
 mod repl_session_scope;
+mod compile_time_use;
 mod module_preload_failure;
 mod pragma_monkey_eval;
 mod pragma_strict;

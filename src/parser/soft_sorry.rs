@@ -41,3 +41,9 @@ pub(crate) fn take() -> Vec<PError> {
     taken.sort_by_key(|e| std::cmp::Reverse(e.remaining_len));
     taken
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&PENDING, Vec::new());
+}

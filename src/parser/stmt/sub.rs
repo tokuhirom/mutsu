@@ -78,3 +78,9 @@ pub(super) use super::sub_param::{
     starts_with_sigil_param,
 };
 pub(super) use super::sub_param::{parse_single_param, parse_type_constraint_expr};
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    outer_slurpy::suspend_unit_state(unit);
+}

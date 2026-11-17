@@ -56,7 +56,7 @@ pub(crate) use l10n::{
 };
 pub(crate) use registry::{
     DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword,
-    register_supersede_keyword, superseded_declarator,
+    register_scoped_supersede_keyword, superseded_declarator,
 };
 pub(crate) use registry::{ExportHowError, take_exporthow_error};
 pub(crate) use registry::{
@@ -100,9 +100,10 @@ pub(crate) use module_exports::module_declared_types;
 pub(crate) use module_exports::register_module_exports_with_tags;
 pub(crate) use module_exports::{CanonicalScans, canonical_export_scans};
 pub(in crate::parser) use module_exports::{
-    import_inline_module_exports, note_type_index_incomplete, register_import_tags,
-    register_inline_module_exports, register_module_exports, register_module_type_names,
-    scanned_module_value_terms, source_declares_export_hook, type_index_is_complete,
+    import_inline_module_exports, module_imports_through_hook, note_type_index_incomplete,
+    register_import_tags, register_inline_module_exports, register_module_exports,
+    register_module_type_names, scanned_module_value_terms, source_declares_export_hook,
+    type_index_is_complete,
 };
 /// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
 /// `constant` may be a type alias the parser cannot see through (#11706).
@@ -377,6 +378,33 @@ thread_local! {
     /// Used by `import` to register exported operators at parse time.
     static INLINE_MODULE_EXPORTS: RefCell<HashMap<String, Vec<InlineModuleExport>>> =
         RefCell::new(HashMap::new());
+    /// Whether the unit being parsed has, before the parse position, a
+    /// compile-time effect mutsu still performs after the parse: a `BEGIN`
+    /// phaser, or a `multi`/`proto` declaration (whose candidates rank by when
+    /// they were installed). Until those happen at parse time too (ADR-17558
+    /// §7.1), a `use` after one is left to the BEGIN-time prologue, so the
+    /// module does not run ahead of what was written before it.
+    static UNIT_BEGIN_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the parse position is inside a block of the unit rather than at
+/// its top level.
+// Cost: O(1).
+pub(in crate::parser) fn in_nested_scope() -> bool {
+    SCOPES.with(|scopes| scopes.borrow().len() > 1)
+}
+
+/// Note that the unit being parsed has a compile-time effect here (a `BEGIN`
+/// phaser, a `multi` or `proto` declaration).
+// Cost: O(1).
+pub(in crate::parser) fn note_unit_compile_time_effect() {
+    UNIT_BEGIN_SEEN.with(|seen| seen.set(true));
+}
+
+/// Whether a compile-time effect of the unit precedes the parse position.
+// Cost: O(1).
+pub(in crate::parser) fn unit_compile_time_effect_seen() -> bool {
+    UNIT_BEGIN_SEEN.with(std::cell::Cell::get)
 }
 
 /// Save the lexical parser scopes around a nested fragment parse. The nested
@@ -490,6 +518,34 @@ pub(crate) fn settle_core_type_fold() {
     if term_keywords_shadowable() || !type_index_is_complete() {
         crate::parser::core_type_fold::disable_unit();
     }
+}
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&SCOPES, vec![LexicalScope::default()]);
+    unit.take(&PACKAGE_PATH, Vec::new());
+    unit.take(&LIB_PATHS, Vec::new());
+    unit.take(&PRELOAD_MODULES, Vec::new());
+    unit.take(&PROGRAM_PATH, None);
+    unit.take(&SOURCE_FILE, None);
+    unit.take(&EVAL_OPERATOR_PRESEED, Vec::new());
+    unit.take(&EVAL_OPERATOR_ASSOC_PRESEED, HashMap::new());
+    unit.take(&EVAL_USER_SUB_PRESEED, Vec::new());
+    unit.take(&EVAL_USER_TYPE_PRESEED, Vec::new());
+    unit.take(&EVAL_USER_VALUE_TERM_PRESEED, Vec::new());
+    unit.take(&EVAL_LANGUAGE_VERSION_PRESEED, None);
+    unit.take(&CURRENT_LANGUAGE_VERSION, "6.d".to_string());
+    unit.take(&DECLARE_KEYWORDS, HashMap::new());
+    unit.take_cell(&UNIT_BEGIN_SEEN, false);
+    registry::suspend_unit_state(unit);
+    l10n::suspend_unit_state(unit);
+    slang_lang::suspend_unit_state(unit);
+    slang_wrapper_block::suspend_unit_state(unit);
+    slang_modes::suspend_unit_state(unit);
+    slang_multiness::suspend_unit_state(unit);
+    slang_hooks::suspend_unit_state(unit);
+    module_exports::suspend_unit_state(unit);
 }
 
 #[cfg(test)]

@@ -594,6 +594,12 @@ impl Interpreter {
         let parse = || {
             parse_dispatch::parse_compilation_unit_of(&preprocessed)
         };
+        // The module's own `use`s still load in its BEGIN-time prologue, as on a
+        // precompilation hit, which parses nothing: the load's bookkeeping
+        // (`load_module_inner`) snapshots the registry and env after the parse,
+        // so a dependency loaded during the parse would count as the importer's.
+        // TODO: take those snapshots before the parse and give this parse the
+        // loader too (ADR-17558 §7.6).
         let result = match unit {
             Some(unit) => crate::anon_names::with_content_unit(unit.parse_session(), parse),
             None => parse(),
@@ -641,6 +647,10 @@ impl Interpreter {
             err
         })?;
         let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
+        // A module can now load before the program's own preludes register
+        // (its `use` loads at parse time, ADR-17558), so it brings the
+        // `Rational` role it composes itself, as it brings every other one.
+        Self::inject_prelude_roles(&code, &mut stmts);
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_repository_spec_prelude(&code, &mut stmts);
         Self::inject_distribution_locally_prelude(&code, &mut stmts);

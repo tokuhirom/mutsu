@@ -318,3 +318,44 @@ stack — every analysis entry point, and any thread nobody granted one — load
 the seam fail-closed by construction, the property ADR-17741 §3.2 asks of the parse-time
 execution gate; the `NoExecuteGuard` callers keep their guard, and the loader also refuses while
 one is held.
+
+### 7.6 Slice 1 as built (2026-11-17)
+
+Slice 1 landed the seam and moved the load of a `use` to the parse where that
+keeps every observable order rakudo's. It leaves these `use`s in the BEGIN-time
+prologue, each with the slice that moves it:
+
+- **A `use` after a compile-time effect of its unit** that mutsu still performs
+  after the parse: a `BEGIN` phaser (§7.1), and a `multi` or `proto`
+  declaration. The `multi`/`proto` case is the same order question as `BEGIN`:
+  rakudo installs a candidate when the parser reaches it, so a candidate the
+  unit declares before `use M` ranks before the ones `M` exports, and one
+  declared after it ranks after them (measured on rakudo 2026.09 with two
+  `trait_mod:<is>` candidates of equal signature: the earlier one wins, and the
+  later one warns "Redeclaration of multi sub ... would lead to ambiguous
+  dispatch"). mutsu ranks candidates by registration order, so loading `M`
+  before the unit's own hoisted candidates are registered would invert it.
+  Slice 5 moves these effects to the parse and drops the rule.
+- **A module that imports through a `sub EXPORT` hook**, its own or the
+  `&EXPORT` it took from another module's map (Slangify's). rakudo runs the
+  hook once per `use`, at compile time, with the `use`'s arguments; mutsu's
+  load runs it on the first load and its import runs it again, so a parse-time
+  load followed by the run-time import would run it twice. Slice 2 runs the
+  hook at parse time and installs the map it returned at the import.
+- **A `use` with arguments or a `:if` condition**, for the same reason as the
+  prologue's preload (`preloadable_module_name`). Slice 2.
+- **The `use`s of a module's own compile, and of a `require`d file.** The load
+  of a module snapshots the registry and the env after the module's parse
+  (`load_module_inner`), to tell what the module's body registered from what
+  its importer had; a dependency loaded during that parse would be counted as
+  the importer's, and leak (the transitive-type and package hiding of #7555).
+  A precompilation hit parses nothing, so its dependencies load in its
+  prologue either way. Slice 2 takes those snapshots before the parse and gives
+  a module's compile the loader too.
+- **The slang activation interpreter's own loads** (ADR-0026 §2.1): which
+  `define_slang` it hands the importer is decided by the load order of its
+  run-time `use`s (`slang_define_slang`'s load-stack test). Slice 4 retires it.
+
+A parse-time load prepends the unit's parse-time `use lib` paths to the search
+chain for that load only; the prologue's `use lib` registers them for good, in
+`$*REPO` too, at their own positions.

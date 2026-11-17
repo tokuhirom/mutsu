@@ -403,6 +403,12 @@ fn constant_truth(mut expr: &Expr) -> Option<bool> {
     }
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take_cell(&UNNUMBERED, 0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

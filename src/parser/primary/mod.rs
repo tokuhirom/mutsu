@@ -1031,6 +1031,18 @@ fn is_special_numish_literal(source: &str) -> bool {
     })
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&PRIMARY_MEMO_TLS, HashMap::default());
+    unit.take(&ORIGINAL_SOURCE, SourceOrigin::EMPTY);
+    unit.take(&LEAKED_REGIONS, Vec::new());
+    unit.take_cell(&PENDING_SPAN_BASE, None);
+    unit.take_cell(&PENDING_LINE_BASE, None);
+    trivia_runs::suspend_unit_state(unit);
+    fragment_attempts::suspend_unit_state(unit);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

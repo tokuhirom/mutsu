@@ -470,3 +470,10 @@ pub(in crate::parser) fn finish_unit() {
     let docs = with_table(|t| resolve::resolve(t)).unwrap_or_default();
     LAST_UNIT_DOCS.with(|d| *d.borrow_mut() = docs);
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&TABLES, Vec::new());
+    unit.take(&LAST_UNIT_DOCS, Vec::new());
+}

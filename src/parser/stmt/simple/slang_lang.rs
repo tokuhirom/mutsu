@@ -140,6 +140,12 @@ pub(crate) fn decode_slang_activations(values: &[Value]) -> Vec<SlangUseSpec> {
     out
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&SLANG_PRESEED, Vec::new());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
