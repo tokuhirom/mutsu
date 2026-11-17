@@ -196,6 +196,22 @@ impl Interpreter {
             .then(|| RuntimeError::constrained_type_instantiation(class_name))
     }
 
+    /// Whether `class` inherits from `IterationBuffer` without declaring
+    /// `is repr('VMArray')`, which leaves it `P6opaque` as in Rakudo: the
+    /// `VMArray` representation is not inherited (#17627).
+    // Cost: O(d), d = MRO depth of `class`.
+    pub(crate) fn is_opaque_iteration_buffer_class(&self, class: &str) -> bool {
+        class != "IterationBuffer"
+            && !self
+                .registry()
+                .vmarray_classes
+                .contains(crate::qualified::unqualified_part(Symbol::intern(class)).as_str())
+            && self
+                .mro_syms_readonly(class)
+                .iter()
+                .any(|name| name.as_str() == "IterationBuffer")
+    }
+
     /// [`CreateKind`] for the type named `name` (short name `short`).
     // Cost: O(n), n = chars of the name (two hash probes of the short name); a VM storage
     // class adds an O(m) scan, m = registered method entries, memoized per generation.
@@ -270,10 +286,14 @@ impl Interpreter {
                     .class_mro(class.as_str())
                     .iter()
                     .any(|name| Self::is_positional_base(name.as_str()));
-                let iteration_buffer = self
-                    .class_mro(class.as_str())
-                    .iter()
-                    .any(|name| name.as_str() == "IterationBuffer");
+                // Only a `VMArray` class has element storage: a plain
+                // `is IterationBuffer` subclass is `P6opaque` (#17627).
+                let iteration_buffer = class == "IterationBuffer"
+                    || (self
+                        .class_mro(class.as_str())
+                        .iter()
+                        .any(|name| name.as_str() == "IterationBuffer")
+                        && !self.is_opaque_iteration_buffer_class(class.as_str()));
                 let shape = CreateShape {
                     template,
                     associative,
