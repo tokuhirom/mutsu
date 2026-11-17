@@ -1055,11 +1055,22 @@ impl Interpreter {
                     None => order(&mut stmts),
                 };
                 crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
-                // The module's compile phase ends after its CHECK phasers: the
-                // closures `$*CU.add-check-code` queued run there, and a tree
-                // its CHECK phase rewrote (Red's `CHECK red-compile`) is what
-                // the rest of the module runs from, as for the main unit.
-                Self::insert_run_check_code(&mut stmts, prologue_len, false);
+                // The module's compile phase ends after its CHECK phasers: a
+                // tree its CHECK phase rewrote (Red's `CHECK red-compile`) is
+                // what the rest of the module runs from, as for the main unit.
+                // Only a module with a CHECK phaser of its own has a CHECK
+                // phase that can rewrite its tree.
+                if stmts.iter().any(|stmt| {
+                    matches!(
+                        stmt,
+                        crate::ast::Stmt::Phaser {
+                            kind: crate::ast::PhaserKind::Check,
+                            ..
+                        }
+                    )
+                }) {
+                    Self::insert_run_check_code(&mut stmts, prologue_len, false);
+                }
                 let facts = super::module_load_facts::ModuleLoadFacts::compute(
                     &stmts,
                     prologue_len,
