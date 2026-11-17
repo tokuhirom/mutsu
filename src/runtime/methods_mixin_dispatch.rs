@@ -447,7 +447,7 @@ impl Interpreter {
         // call none of them accepts falls through to the value's dispatch
         // (`$driver but LiteralSQL` adding one `translate` candidate).
         let mut role_candidates_all_multi = true;
-        for role_name in role_names {
+        for role_name in &role_names {
             // Only what the call reads, copied out of the borrowed def: the
             // whole `RoleDef` (every method) cost ~19k Ir per call (#16215).
             // The candidates themselves are cloned only when the winner memo
@@ -509,7 +509,7 @@ impl Interpreter {
             } else {
                 self.registry()
                 .role_candidates
-                .get(&role_name)
+                .get(role_name)
                 .and_then(|candidates| {
                     candidates
                         .iter()
@@ -970,8 +970,30 @@ impl Interpreter {
             && (!role_candidates_all_multi
                 || self.collect_can_methods(inner, method).is_empty())
         {
+            // rakudo lists the roles' candidates on the mixin type
+            // (`(Int+{R} $:: Int $x, *%_)`).
+            let type_name = crate::value::what_type_name(target);
+            let mut sigs = Vec::new();
+            for role_name in &role_names {
+                let role_sigs = self.with_mixin_role_def(mixins, role_name, |role| {
+                    role.methods
+                        .get(lookup_name)
+                        .map(|overloads| {
+                            overloads
+                                .iter()
+                                .filter(|def| !Self::is_runtime_stub_method_def(def))
+                                .map(|def| Self::format_method_def_signature(def, &type_name))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                });
+                sigs.extend(role_sigs.unwrap_or_default());
+            }
+            let profile = self.format_call_arg_profile(&args);
             return Some(Err(
-                super::methods_signature_errors::make_multi_no_match_error(method),
+                super::methods_signature_errors::make_multi_no_match_error_detailed(
+                    method, &type_name, true, &profile, &sigs,
+                ),
             ));
         }
         if method == "Str"

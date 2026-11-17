@@ -48,7 +48,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let Some(buf) = args.first() else {
             return Err(
-                crate::runtime::methods_signature_errors::make_multi_no_match_error("WRITE"),
+                crate::runtime::methods_signature_errors::builtin_method_no_match(target_val, "WRITE", args),
             );
         };
         let is_blob = matches!(buf.view(), ValueView::Instance { class_name, .. }
@@ -91,9 +91,11 @@ impl Interpreter {
         // matches no candidate (roast .../multi-no-match.t).
         if args.is_empty() {
             return Err(
-                crate::runtime::methods_signature_errors::make_multi_no_match_error(
-                    "printf",
-                ),
+                // `IO::Handle.printf` is `(IO::Handle:D $: |c)` handing `c` to
+                // the routine `printf($format, *@args)`, which reports it.
+                RuntimeError::new(crate::runtime::types::arity_message::too_few_positionals(
+                    1, None, 0,
+                )),
             );
         }
         // If the first arg is a Junction, thread through it

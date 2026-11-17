@@ -32,7 +32,7 @@ class C {
 }
 
 throws-like { C.new.foo = 1 }, X::Multi::NoMatch,
-    message => /'No matching candidates for method: foo'/,
+    message => /'Cannot resolve caller foo(C:D: ); none of these signatures matches:'/,
     'a real multi whose candidates all require an argument still raises X::Multi::NoMatch';
 
 done-testing;

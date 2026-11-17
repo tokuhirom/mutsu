@@ -1,6 +1,6 @@
 //! Shaped-array construction/inference and multi-candidate `call_method_all`.
 use super::methods_signature_errors::{
-    make_method_not_found_error, make_multi_no_match_error, make_private_permission_error,
+    make_method_not_found_error, make_private_permission_error,
 };
 use super::*;
 
@@ -316,7 +316,7 @@ impl Interpreter {
                 // matching Rakudo); only now report the level(s) that
                 // couldn't resolve a matching candidate for these args.
                 if any_failed {
-                    return Err(make_multi_no_match_error(method));
+                    return Err(self.user_method_no_match(&target, &class_name.resolve(), method, &args));
                 }
                 return Ok(out);
             }
@@ -335,7 +335,7 @@ impl Interpreter {
                     })
             });
             if method_exists {
-                return Err(make_multi_no_match_error(method));
+                return Err(self.user_method_no_match(&target, &own_class, method, &args));
             }
         }
 
@@ -368,7 +368,7 @@ impl Interpreter {
                         out.push(result);
                     }
                     if any_failed {
-                        return Err(make_multi_no_match_error(method));
+                        return Err(self.user_method_no_match(&target, &class_name, method, &args));
                     }
                     return Ok(out);
                 }
@@ -384,7 +384,7 @@ impl Interpreter {
                         })
                 });
                 if method_exists {
-                    return Err(make_multi_no_match_error(method));
+                    return Err(self.user_method_no_match(&target, &class_name, method, &args));
                 }
             }
         }

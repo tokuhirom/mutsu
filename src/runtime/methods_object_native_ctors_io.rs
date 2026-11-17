@@ -312,8 +312,10 @@ impl Interpreter {
         // (the program to run). No command resolves to no candidate and must
         // throw X::Multi::NoMatch (roast .../multi-no-match.t).
         if positional.is_empty() {
-            return Err(super::methods_signature_errors::make_multi_no_match_error(
+            return Err(super::methods_signature_errors::builtin_method_no_match(
+                &Value::package(class_name),
                 "new",
+                args,
             ));
         }
         let stdout_id = super::native_methods::next_supply_id();

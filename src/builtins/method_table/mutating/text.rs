@@ -68,7 +68,11 @@ fn subst_mutate_row(
     // receiver with no binding (a literal) matches no candidate.
     if place.name().is_none() {
         return Some(Err(
-            crate::runtime::methods_signature_errors::make_multi_no_match_error("subst-mutate"),
+            crate::runtime::methods_signature_errors::builtin_method_needs_mutable(
+                place.value(),
+                "subst-mutate",
+                args,
+            ),
         ));
     }
     let target = place.value().clone();

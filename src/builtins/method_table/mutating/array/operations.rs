@@ -450,7 +450,9 @@ pub(super) fn splice(
     for v in resolved_args.iter().take(2) {
         if !is_valid_splice_index(v) {
             return Err(
-                crate::runtime::methods_signature_errors::make_multi_no_match_error("splice"),
+                crate::runtime::methods_signature_errors::builtin_method_no_match(
+                    &target, "splice", args,
+                ),
             );
         }
     }

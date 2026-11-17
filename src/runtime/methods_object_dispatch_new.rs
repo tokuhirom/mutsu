@@ -1383,9 +1383,8 @@ impl Interpreter {
                         .iter()
                         .any(|s| matches!(s, Stmt::Expr(Expr::Whatever)))
                     {
-                        return Err(super::methods_signature_errors::make_multi_no_match_error(
-                            "new",
-                        ));
+                        let cn = class_name.resolve();
+                        return Err(self.user_method_no_match(&target, &cn, "new", &args));
                     }
                     let cn = class_name.resolve();
                     return self.run_proto_method(
@@ -1429,9 +1428,7 @@ impl Interpreter {
                                 )
                                 .is_none()
                         {
-                            Err(super::methods_signature_errors::make_multi_no_match_error(
-                                "new",
-                            ))
+                            Err(super::methods_signature_errors::multi_no_match_signal("new"))
                         } else {
                             self.run_instance_method_at(
                                 "newdispatch",
@@ -1466,11 +1463,7 @@ impl Interpreter {
                                 }) {
                                     return Err(e);
                                 }
-                                return Err(
-                                    super::methods_signature_errors::make_multi_no_match_error(
-                                        "new",
-                                    ),
-                                );
+                                return Err(self.user_method_no_match(&target, &cn, "new", &args));
                             }
                             // Mu.new only accepts named arguments. If the call
                             // had positional args and no multi candidate matched,

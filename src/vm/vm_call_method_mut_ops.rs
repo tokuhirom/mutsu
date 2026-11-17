@@ -1474,7 +1474,9 @@ impl Interpreter {
                     "lock-protect-nomatch",
                 );
                 return Err(
-                    crate::runtime::methods_signature_errors::make_multi_no_match_error("protect"),
+                    crate::runtime::methods_signature_errors::builtin_method_no_match(
+                        &target, "protect", &args,
+                    ),
                 );
             }
         }

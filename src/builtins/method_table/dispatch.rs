@@ -726,8 +726,10 @@ fn walk_mro(
         }
         if arity_rows && only_type_refused {
             return Some(Err(
-                crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                crate::runtime::methods_signature_errors::builtin_method_no_match(
+                    target,
                     method.as_str(),
+                    args,
                 ),
             ));
         }
@@ -738,7 +740,7 @@ fn walk_mro(
 /// The error for a call whose positional count (`arity`) no owner's row of
 /// `method` takes: rakudo's multi wording when its method is a multi;
 /// otherwise "Too many positionals passed" when every row takes fewer, and
-/// the bare `X::Multi::NoMatch` for an arity between the rows'.
+/// rakudo's `X::Multi::NoMatch` for an arity between the rows'.
 // Cost: O(n + a + c + k), as `builtin_multi_arity_mismatch`, plus k = 8 row
 // probes per owner.
 fn arity_mismatch(
@@ -765,7 +767,7 @@ fn arity_mismatch(
             arity + 1,
         ));
     }
-    errors::make_multi_no_match_error(method.as_str())
+    errors::builtin_method_no_match(target, method.as_str(), args)
 }
 
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,

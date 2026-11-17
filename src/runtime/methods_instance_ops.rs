@@ -1,5 +1,5 @@
 use super::methods_signature_errors::{
-    make_method_not_found_error, make_multi_no_match_error, make_private_permission_error,
+    make_method_not_found_error, make_private_permission_error,
     make_private_unqualified_error,
 };
 use super::*;
@@ -777,7 +777,10 @@ impl Interpreter {
                         match candidates.len() {
                             0 => None,
                             1 => Some(candidates.remove(0)),
-                            _ => return Err(make_multi_no_match_error(pm_name)),
+                            _ => {
+                                let cn = class_name.resolve();
+                                return Err(self.user_method_no_match(&target, &cn, pm_name, &args));
+                            }
                         }
                     }
                 };
@@ -1616,7 +1619,10 @@ impl Interpreter {
                         match candidates.len() {
                             0 => None,
                             1 => Some(candidates.remove(0)),
-                            _ => return Err(make_multi_no_match_error(pm_name)),
+                            _ => {
+                                let cn = name.resolve();
+                                return Err(self.user_method_no_match(&target, &cn, pm_name, &args));
+                            }
                         }
                     }
                 };

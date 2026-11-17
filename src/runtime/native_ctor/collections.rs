@@ -192,7 +192,11 @@ impl Interpreter {
                 // Named :type — need exactly one positional (the values).
                 if positional.len() != 1 {
                     return Err(
-                        super::methods_signature_errors::make_multi_no_match_error("new"),
+                        super::methods_signature_errors::builtin_method_no_match(
+                            &Value::package(Symbol::intern("Junction")),
+                            "new",
+                            &args,
+                        ),
                     );
                 }
                 t
@@ -204,8 +208,10 @@ impl Interpreter {
                 positional.remove(0);
                 name
             } else {
-                return Err(super::methods_signature_errors::make_multi_no_match_error(
+                return Err(super::methods_signature_errors::builtin_method_no_match(
+                    &Value::package(Symbol::intern("Junction")),
                     "new",
+                    &args,
                 ));
             };
             let kind = match type_name.as_str() {

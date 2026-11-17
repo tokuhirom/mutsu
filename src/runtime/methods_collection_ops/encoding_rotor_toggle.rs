@@ -124,8 +124,8 @@ impl Interpreter {
 
         // `rotor` has no candidate without a cycle spec.
         if positional_args.is_empty() {
-            return Err(crate::runtime::methods_signature_errors::make_multi_no_match_error(
-                "rotor",
+            return Err(crate::runtime::methods_signature_errors::builtin_method_no_match(
+                &target, "rotor", args,
             ));
         }
 
