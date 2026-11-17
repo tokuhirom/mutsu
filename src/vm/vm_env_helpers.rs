@@ -2032,6 +2032,11 @@ impl Interpreter {
             {
                 return Some(seed);
             }
+            // `@OUR::a` is the package variable, which the bare env key no
+            // longer is once a sub rebound the `our` alias (#17508).
+            if let Some(val) = self.our_pseudo_var_read(name).filter(|v| !v.is_nil()) {
+                return Some(val);
+            }
             if let Some(val) = self.env().get(&bare) {
                 return Some(val.clone());
             }
@@ -2312,6 +2317,19 @@ impl Interpreter {
             && self.env().contains_key(qualified.as_str())
         {
             self.env_mut().insert(qualified.resolve(), value);
+            return;
+        }
+        // `$OUR::x = v` assigns the current package's `our $x`: store through
+        // its shared cell, which its lexical alias (and a sub that captured the
+        // alias) reads, instead of replacing the bare env entry with a plain
+        // value (#17508).
+        if !fresh_binding
+            && !value.is_container_ref()
+            && let Some(key) = self.our_pseudo_var_key(name)
+            && let Some(ValueView::ContainerRef(cell)) = self.get_our_var(&key).map(Value::view)
+        {
+            let cell = cell.clone();
+            Self::cell_store_preserving_container_identity(&key, &cell, &value);
             return;
         }
         // Write through GLOBAL::, OUR::, MY:: pseudo-package qualifiers to the

@@ -766,7 +766,12 @@ impl Interpreter {
                     }
                     // `our`/`state`/`dynamic`-declared names are excluded —
                     // `my_declared_sym` is populated only for plain `my`.
-                    if !code.my_declared_sym.contains(&sym) {
+                    // An `our` declaration's lexical alias is a lexical of
+                    // this frame too: a sub that rebinds it (`%g := $x`)
+                    // rebinds the alias the declaring frame reads, not the
+                    // package variable (#17508).
+                    let our_alias = !code.my_declared_sym.contains(&sym);
+                    if our_alias && !Self::our_alias_of_frame(code, &name) {
                         continue;
                     }
                     // A local slot of the DECLARING frame is required: `code`
@@ -843,7 +848,10 @@ impl Interpreter {
                     // `vm_hoist_capture_cells.rs`). A rebound name's binding
                     // cell is left to the in-sequence pass, and so is an `our`
                     // sub's capture, which `escaped_our_lexical_cells` owns.
+                    // An `our` alias is never seeded: its container is the
+                    // package variable's, which its declaration installs.
                     let seeded = if is_hoisted_pass
+                        && !our_alias
                         && baked.is_some()
                         && *scope != crate::ast::SubScope::Our
                         && hoist_seed_slots.contains(&(slot_idx as u32))
