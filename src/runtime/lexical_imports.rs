@@ -459,8 +459,11 @@ impl Interpreter {
                 // dispatch finds them there, with the built-in as fallback), a
                 // set binding would shadow the built-in for a call none of
                 // them accepts.
+                // An earlier `use` of the scope that bound the operator's family
+                // as a dispatcher keeps it; this set binds that dispatcher
+                // extended by the hook's candidates (#17828).
                 if extends_builtin_operator(&name.resolve()) {
-                    None
+                    self.extend_earlier_family_with_hook(name, &earlier_sets, self.env.get_sym(amp))
                 } else {
                     self.env
                         .get_sym(amp)
@@ -480,8 +483,17 @@ impl Interpreter {
                 // dispatcher value (a `sub EXPORT` hook) is the same family.
                 let is_family = !capture.hook_routines.contains_key(&name)
                     && multi_defs.contains_key(&name);
-                let binding =
-                    self.merge_earlier_import_dispatchers(binding, name, &earlier_sets, is_family);
+                let env_hook = (is_family
+                    && self.module.export_amp_override_names.contains(&name))
+                .then(|| self.env.get_sym(amp).cloned())
+                .flatten();
+                let binding = self.merge_earlier_import_dispatchers(
+                    binding,
+                    name,
+                    &earlier_sets,
+                    is_family,
+                    env_hook.as_ref(),
+                );
                 set.insert(name, binding);
             }
         }

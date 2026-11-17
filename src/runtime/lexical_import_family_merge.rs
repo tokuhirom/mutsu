@@ -21,7 +21,10 @@ impl Interpreter {
     /// (`earlier_sets`, in import order) binds `name` to. With `is_family`
     /// (the binding is a dispatcher over this set's registry family, which
     /// already spans the earlier sets' families), only an earlier set that
-    /// bound `name` through a hook contributes.
+    /// bound `name` through a hook contributes, and so does `env_hook`: the
+    /// dispatcher a hook handed out for a built-in operator's name
+    /// (`&trait_mod:<is>`), which joins the operator through its env alias
+    /// instead of a set.
     // Cost: O(s * c), s = earlier sets, c = candidates of the family.
     pub(crate) fn merge_earlier_import_dispatchers(
         &self,
@@ -29,6 +32,7 @@ impl Interpreter {
         name: Symbol,
         earlier_sets: &[Symbol],
         is_family: bool,
+        env_hook: Option<&Value>,
     ) -> LexicalImport {
         let LexicalImport::Code(value) = &binding else {
             return binding;
@@ -73,6 +77,12 @@ impl Interpreter {
                 earlier.extend(candidates);
             }
         }
+        if is_family
+            && let Some(ValueView::Sub(hook)) = env_hook.map(Value::view)
+            && let Some(candidates) = Self::captured_dispatch_candidates(&hook)
+        {
+            earlier.extend(candidates);
+        }
         let same = |a: &Value, b: &Value| match (a.view(), b.view()) {
             (ValueView::Sub(x), ValueView::Sub(y)) => x.id == y.id,
             _ => false,
@@ -86,16 +96,68 @@ impl Interpreter {
         if merged.len() == own.len() {
             return binding;
         }
-        let mut next: crate::value::SubData = (**data).clone();
-        // The family is no longer the by-name family of the registry.
-        next.env.remove("__mutsu_multi_dispatch_gen");
-        next.env.insert_sym(
-            crate::symbol::wk::multi_dispatch_candidates(),
-            Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(merged)),
-                crate::value::ArrayKind::List,
-            ),
-        );
-        LexicalImport::Code(Value::sub_value(crate::gc::Gc::new(next)))
+        LexicalImport::Code(with_candidates(&data, merged))
     }
+
+    /// The dispatcher the last earlier set of the scope binds the built-in
+    /// operator family `name` to, with the candidates of `hook` (the
+    /// dispatcher a `sub EXPORT` hook just handed out under `&name`) after
+    /// its own. `None` when no earlier set binds `name` as a dispatcher: the
+    /// hook's candidates then join the operator through its env alias alone.
+    // Cost: O(s + c), s = earlier sets, c = candidates of both.
+    pub(crate) fn extend_earlier_family_with_hook(
+        &self,
+        name: Symbol,
+        earlier_sets: &[Symbol],
+        hook: Option<&Value>,
+    ) -> Option<LexicalImport> {
+        let ValueView::Sub(hook) = hook?.view() else {
+            return None;
+        };
+        let hook_candidates = Self::captured_dispatch_candidates(&hook)?;
+        let earlier = earlier_sets.iter().rev().find_map(|set| {
+            match self.module.lexical_import_sets.get(set)?.get(&name)? {
+                LexicalImport::Code(value) if matches!(value.view(), ValueView::Sub(_)) => {
+                    Some(value.clone())
+                }
+                _ => None,
+            }
+        })?;
+        let ValueView::Sub(data) = earlier.view() else {
+            return None;
+        };
+        let (own, _) = data
+            .env
+            .get_sym(crate::symbol::well_known::multi_dispatch_candidates())
+            .cloned()
+            .and_then(Value::into_array)?;
+        let mut merged: Vec<Value> = own.iter().cloned().collect();
+        for candidate in hook_candidates {
+            let seen = merged.iter().any(|m| match (m.view(), candidate.view()) {
+                (ValueView::Sub(x), ValueView::Sub(y)) => x.id == y.id,
+                _ => false,
+            });
+            if !seen {
+                merged.push(candidate);
+            }
+        }
+        Some(LexicalImport::Code(with_candidates(&data, merged)))
+    }
+}
+
+/// A copy of the dispatcher `data` over `candidates`. The family is no longer
+/// the registry's by-name family, so the generation that lets a call take the
+/// by-name path is dropped.
+// Cost: O(e), e = the dispatcher's captured env.
+fn with_candidates(data: &crate::value::SubData, candidates: Vec<Value>) -> Value {
+    let mut next = data.clone();
+    next.env.remove("__mutsu_multi_dispatch_gen");
+    next.env.insert_sym(
+        crate::symbol::wk::multi_dispatch_candidates(),
+        Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(candidates)),
+            crate::value::ArrayKind::List,
+        ),
+    );
+    Value::sub_value(crate::gc::Gc::new(next))
 }
