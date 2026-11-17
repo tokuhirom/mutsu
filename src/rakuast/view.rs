@@ -2588,6 +2588,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             }
             Spelling::DottyInfixCall => dotty_infix_call(names, &spelled.expr),
             Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
+            Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
             Spelling::ColonPairValue(_) | Spelling::AttributeCall(_) => {
                 view_expr(names, &spelled.expr)
             }
@@ -5524,7 +5525,7 @@ fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
 }
 
 /// `Postfix` — a single NAMED `operator` string (e.g. `Postfix.new(operator => "++")`).
-fn postfix_node(op: &crate::token_kind::TokenKind) -> RakuAstNode {
+pub(super) fn postfix_node(op: &crate::token_kind::TokenKind) -> RakuAstNode {
     RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::Postfix,

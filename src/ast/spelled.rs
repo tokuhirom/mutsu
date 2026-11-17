@@ -118,6 +118,10 @@ pub(crate) enum Spelling {
     /// (`Var::Attribute::Public(name => "$.meth", args => ...)`), and
     /// `$.^meth` with its item contextualizer.
     AttributeCall(char),
+    /// `.++` / `.--`: a postfix increment or decrement of the topic, which the
+    /// parser runs as `$_++`. RakuAST keeps it as a `Term::TopicCall` of the
+    /// `Postfix`.
+    TopicPostfix,
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),

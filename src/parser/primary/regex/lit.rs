@@ -1244,19 +1244,25 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     if let Some(rest) = r.strip_prefix("++") {
         return Ok((
             rest,
-            Expr::PostfixOp {
-                op: TokenKind::PlusPlus,
-                expr: Box::new(Expr::Var("_".to_string())),
-            },
+            Expr::spelled(
+                Expr::PostfixOp {
+                    op: TokenKind::PlusPlus,
+                    expr: Box::new(Expr::Var("_".to_string())),
+                },
+                || crate::ast::spelled::Spelling::TopicPostfix,
+            ),
         ));
     }
     if let Some(rest) = r.strip_prefix("--") {
         return Ok((
             rest,
-            Expr::PostfixOp {
-                op: TokenKind::MinusMinus,
-                expr: Box::new(Expr::Var("_".to_string())),
-            },
+            Expr::spelled(
+                Expr::PostfixOp {
+                    op: TokenKind::MinusMinus,
+                    expr: Box::new(Expr::Var("_".to_string())),
+                },
+                || crate::ast::spelled::Spelling::TopicPostfix,
+            ),
         ));
     }
     // .() — invoke topic as callable
