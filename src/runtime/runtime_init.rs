@@ -3236,6 +3236,9 @@ impl Interpreter {
             pending_alias_bind_names: Vec::new(),
             nested_run_depth: 0,
         };
+        // The resolution memos start empty: current for the `.wrap` tables
+        // as they stand (ADR-17216 §2.3, `sync_world_wraps`).
+        interpreter.caches.wraps_gen_seen = interpreter.dispatch.wraps.generation();
         interpreter.init_io_environment();
         interpreter.env.insert("Any".to_string(), Value::NIL);
         {
