@@ -355,6 +355,13 @@ pub(crate) struct ResolutionCaches {
     /// Written only from that outcome, and cleared with the other method caches
     /// on a registry generation change. See `vm_accessor_lane`.
     pub(crate) accessor_lane: rustc_hash::FxHashMap<(u32, Symbol), u32>,
+    /// `(class, accessor) ->` [`Interpreter::rw_accessor_type_constraint`]'s
+    /// answer (`None`: not a public `is rw` attribute; `Some(tc)`: its type
+    /// constraint). Cleared with the other method caches on a method
+    /// generation change, which every class declaration and attribute
+    /// addition takes.
+    pub(crate) rw_accessor_constraint:
+        rustc_hash::FxHashMap<(Symbol, Symbol), Option<Option<String>>>,
     /// Memoized `class -> NativeCtorPlan` for the native default constructor.
     /// Cleared wherever `fast_method_cache` is cleared, plus the MOP class-shape
     /// mutators (`Attribute.set_build`, `^add_attribute`, `^add_method`,

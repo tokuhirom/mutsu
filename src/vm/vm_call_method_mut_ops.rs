@@ -480,7 +480,7 @@ impl Interpreter {
         // `vm_accessor_lane`).
         if arity == 0
             && modifier_idx.is_none()
-            && !quoted
+            && !Self::quoting_matters(quoted, name.raw)
             && !self.accessor_ref_pending
             && !crate::runtime::find_method_intercept::any_user_find_method()
             && let Some(val) = self.try_accessor_lane(name.sym)
@@ -566,7 +566,7 @@ impl Interpreter {
         // arguments on an ordinary object (`try_plain_method_early_lane`).
         if arity == 0
             && modifier_idx.is_none()
-            && !quoted
+            && !Self::quoting_matters(quoted, name.raw)
             && arg_sources_idx.is_none()
             && !self.accessor_ref_pending
             && let Some(result) = self.try_plain_method_early_lane(
@@ -1234,7 +1234,11 @@ impl Interpreter {
             // Pure attribute read: does not mutate the invocant (see comment
             // above), so it does not dirty the caller's locals (Slice 6.3).
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
-            if !want_ref && modifier.is_none() && !quoted && args.is_empty() {
+            if !want_ref
+                && modifier.is_none()
+                && !Self::quoting_matters(quoted, method_sym.as_str())
+                && args.is_empty()
+            {
                 self.note_accessor_lane(&target, method_sym);
             }
             self.stack.push(val);
