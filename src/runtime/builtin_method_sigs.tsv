@@ -1,3 +1,9 @@
+AST	BUILD	-
+AST	POPULATE	-
+AST	Str	-
+AST	evaluate_unquotes	-
+AST	incarnate	-
+AST	is_quasi_ast	-
 Allomorph	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Allomorph	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Allomorph	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -7,24 +13,52 @@ Allomorph	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Allomorph	ACCEPTS	(Str:D $:: Str:D $other, *%_ --> Bool)
 Allomorph	ACCEPTS	(Str:D $:: Any:D \other, *%_ --> Bool)
 Allomorph	ACCEPTS	(Allomorph:D $:: Any:D \a, *%_)
+Allomorph	Bool	#1-1
 Allomorph	Bool	(Mu:U $:: *%_ --> Bool::False)
 Allomorph	Bool	(Mu:D $:: *%_)
 Allomorph	Bool	(Str:D $:: *%_ --> Bool)
 Allomorph	Bool	(Allomorph:D $:: *%_)
+Allomorph	POPULATE	-
+Allomorph	Str	-
 Allomorph	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Allomorph	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Allomorph	WHICH	(Str:D $:: *%_ --> ValueObjAt:D)
 Allomorph	WHICH	(Allomorph:D $:: *%_)
+Allomorph	chomp	-
+Allomorph	chop	-
+Allomorph	comb	-
+Allomorph	fc	-
+Allomorph	flip	-
+Allomorph	lc	-
+Allomorph	narrow	-
+Allomorph	pred	-
 Allomorph	raku	(Mu:U $:: *%_)
 Allomorph	raku	(Mu:D $:: *%_)
 Allomorph	raku	(Str:D $:: *%_ --> Str:D)
 Allomorph	raku	(Allomorph:D $:: *%_)
+Allomorph	samecase	-
+Allomorph	samemark	-
+Allomorph	samespace	-
+Allomorph	split	-
+Allomorph	subst	-
+Allomorph	subst-mutate	-
+Allomorph	substr	-
+Allomorph	substr-rw	-
+Allomorph	succ	-
+Allomorph	tc	-
+Allomorph	tclc	-
+Allomorph	trim	-
+Allomorph	trim-leading	-
+Allomorph	trim-trailing	-
+Allomorph	uc	-
+Allomorph	words	-
 Any	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Any	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Any	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
 Any	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Any	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Any	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Any	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
 Any	ASSIGN-POS	(Any:U \SELF:: \pos, Mu \assignee, *%_)
 Any	ASSIGN-POS	(Any:D \SELF:: Int:D \pos, Mu \assignee, *%_)
 Any	ASSIGN-POS	(Any:D \SELF:: Num:D \pos, Mu \assignee, *%_)
@@ -46,9 +80,13 @@ Any	AT-POS	($:: Any:U \pos, *%_)
 Any	AT-POS	(Any:D \SELF:: \one, \two, *%_)
 Any	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
 Any	AT-POS	(Any:D \SELF:: **@indices, *%_)
+Any	Array	($:: *%_)
 Any	BIND-KEY	(Any:D $:: \k, \v, *%_)
 Any	BIND-KEY	(Any:U $SELF: is rw: $key, $BIND, *%_)
 Any	BIND-KEY	(Any:U \SELF:: $key, $BIND, *%_)
+Any	BIND-POS	(Any:D $:: **@indices is raw, *%_)
+Any	Bag	($:: *%_ --> Bag:D)
+Any	BagHash	($:: *%_ --> BagHash:D)
 Any	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
 Any	DELETE-KEY	(Any:D $:: $, *%_)
 Any	DELETE-POS	(Any:U $:: $pos, *%_ --> Nil)
@@ -67,37 +105,63 @@ Any	EXISTS-POS	(Any:D $:: Any:U \pos, *%_)
 Any	EXISTS-POS	(Any:D $:: \one, \two, *%_ --> Bool)
 Any	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 Any	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
+Any	FLATTENABLE_HASH	-
+Any	FLATTENABLE_LIST	-
+Any	Hash	($:: *%_)
+Any	List	($:: *%_)
+Any	Map	($:: *%_)
+Any	Mix	($:: *%_ --> Mix:D)
+Any	MixHash	($:: *%_ --> MixHash:D)
+Any	POPULATE	-
+Any	Seq	($:: *%_)
+Any	Set	($:: *%_ --> Set:D)
+Any	SetHash	($:: *%_ --> SetHash:D)
+Any	Slip	($:: *%_)
+Any	Supply	($:: *%_)
+Any	ZEN-KEY	($:: *%unexpected)
+Any	all	-
 Any	antipairs	(Enumeration $:: *%_)
 Any	antipairs	(Bool $:: *%_)
 Any	antipairs	(Any:U $:: *%_)
 Any	antipairs	(Any:D $:: *%_)
+Any	any	-
+Any	append	(Any:U \SELF:: |values)
 Any	are	(Any:U $:: *%_)
 Any	are	(Any:D $:: *%_)
 Any	are	(Any:U $:: Mu:U $type, *%_ --> Bool)
 Any	are	(Any:D $:: Mu:U $type, *%_ --> Bool)
 Any	batch	(Any:D $:: Int:D :$elems!, *%_)
 Any	batch	(Any:D $:: Int:D $batch, *%_)
+Any	cache	-
 Any	categorize	($:: *%_)
 Any	categorize	($:: Whatever, :&as, *%_)
 Any	categorize	($:: $test, :$into!, :&as, *%_)
 Any	categorize	($:: $test, :&as, *%_)
+Any	chrs	#1-1
 Any	classify	($:: *%_)
 Any	classify	($:: Whatever, :&as, *%_)
 Any	classify	($:: $test, :$into!, :&as, *%_)
 Any	classify	($:: $test, :&as, *%_)
+Any	collate	($:: *%_)
+Any	combinations	-
 Any	deepmap	(Associative:D $:: &op, *%_)
 Any	deepmap	($:: &op, *%_)
 Any	duckmap	(Associative:D $:: &op, *%_)
 Any	duckmap	($:: &op, *%_)
+Any	eager	($:: *%_)
 Any	elems	(Any:U $:: *%_ --> 1)
 Any	elems	(Any:D $:: *%_)
 Any	end	(Any:U $:: *%_ --> 0)
 Any	end	(Any:D $:: *%_)
+Any	fail-cannot-be-empty	-
+Any	fail-iterator-cannot-be-lazy	-
 Any	first	($:: Bool:D $t, *%_)
 Any	first	($:: Regex:D $test, :$end, *%a)
 Any	first	($:: Callable:D $test, :$end, *%a)
 Any	first	($:: Mu $test, :$end, *%a)
 Any	first	($:: :$end, *%a)
+Any	flat	($:: *%_)
+Any	flatmap	($:: &block, :$label, *%_)
 Any	grep	($:: Bool:D $t, *%_)
 Any	grep	($:: Mu $t, *%_)
 Any	hash	(Any:U $:: *%_)
@@ -112,6 +176,8 @@ Any	invert	(Any:U $:: *%_)
 Any	invert	(Any:D $:: *%_)
 Any	iterator	(Mu $:: *%_)
 Any	iterator	($:: *%_)
+Any	iterator-and-first	-
+Any	join	-
 Any	keys	(Enumeration $:: *%_)
 Any	keys	(Bool $:: *%_)
 Any	keys	(Any:U $:: *%_)
@@ -120,6 +186,7 @@ Any	kv	(Enumeration $:: *%_)
 Any	kv	(Bool $:: *%_)
 Any	kv	(Any:U $:: *%_)
 Any	kv	(Any:D $:: *%_)
+Any	lazy-if	-
 Any	list	(Any:U $:: *%_)
 Any	list	(Any:D \SELF:: *%_)
 Any	map	($:: Hash:D \hash, *%_)
@@ -130,6 +197,7 @@ Any	map	($:: :&flat!, :$label, *%_)
 Any	map	($:: :&duck!, *%_)
 Any	map	($:: :&node!, *%_)
 Any	map	($:: :&deep!, *%_)
+Any	match	-
 Any	max	(Any:D $:: *%_)
 Any	max	(Any:D $:: :&by!, *%_)
 Any	max	(Any:D $:: &by, *%_)
@@ -137,6 +205,7 @@ Any	max	(Any:D $:: &by = Code.new, :$k!, *%_)
 Any	max	(Any:D $:: &by = Code.new, :$v!, *%_)
 Any	max	(Any:D $:: &by = Code.new, :$kv!, *%_)
 Any	max	(Any:D $:: &by = Code.new, :$p!, *%_)
+Any	maxpairs	(Any:D $:: &by = Code.new, *%_)
 Any	min	(Any:D $:: *%_)
 Any	min	(Any:D $:: :&by!, *%_)
 Any	min	(Any:D $:: &by, *%_)
@@ -147,41 +216,56 @@ Any	min	(Any:D $:: &by = Code.new, :$p!, *%_)
 Any	minmax	(Any:D $:: *%_)
 Any	minmax	(Any:D $:: :&by!, *%_)
 Any	minmax	(Any:D $:: &by, *%_)
+Any	minpairs	(Any:D $:: &by = Code.new, *%_)
+Any	nl-out	-
 Any	nodemap	(Associative:D $:: &op, *%_)
 Any	nodemap	($:: &op, *%_)
+Any	none	-
+Any	one	-
 Any	pairs	(Enumeration $:: *%_)
 Any	pairs	(Bool $:: *%_)
 Any	pairs	(Any:U $:: *%_)
 Any	pairs	(Any:D $:: *%_)
 Any	pairup	(Any:U $:: *%_)
 Any	pairup	(Any:D $:: *%_)
+Any	permutations	-
 Any	pick	($:: *%_)
 Any	pick	($:: $n, *%_)
 Any	pick	($:: HyperWhatever, *%_)
+Any	prepend	(Any:U \SELF:: |values)
+Any	print-nl	-
 Any	produce	(Any:U $:: &, *%_ --> Nil)
 Any	produce	(Any:D $:: &with, *%_)
+Any	push	(Any:U \SELF:: |values)
 Any	reduce	(Any:U $:: &, *%_ --> Nil)
 Any	reduce	(Any:D $:: &with, *%_)
 Any	repeated	($:: *%_)
 Any	repeated	($:: :&as!, :&with!, *%_)
 Any	repeated	($:: :&as!, *%_)
 Any	repeated	($:: :&with!, *%_)
+Any	reverse	-
 Any	roll	($:: *%_)
 Any	roll	($:: $n, *%_)
 Any	rotor	(Any:D $:: Int:D $batch, :$partial, *%_)
 Any	rotor	(Any:D $:: +@cycle, :$partial, *%_)
+Any	serial	($:: *%_)
 Any	skip	($:: *%_)
 Any	skip	($:: Whatever, *%_)
 Any	skip	($:: Callable:D $w, *%_)
 Any	skip	($:: Int(Any) $n, *%_)
+Any	slice	(Any:D $:: *@indices, *%_ --> Seq:D)
 Any	sort	(Any:U $:: |c)
 Any	sort	(Any:D $:: *%_)
 Any	sort	(Any:D $:: &by, *%_)
 Any	squish	($:: :&as!, :&with = Code.new, *%_)
 Any	squish	($:: :&with = Code.new, *%_)
+Any	sum	#1-1
+Any	sum	(Any:D $:: *%_)
 Any	tail	(Any:U $:: |c)
 Any	tail	(Any:D $:: *%_)
 Any	tail	(Any:D $:: $n, *%_)
+Any	throw-cannot-be-empty	-
+Any	throw-iterator-cannot-be-lazy	-
 Any	toggle	(Any:D $:: Callable:D \condition, :$off!, *%_)
 Any	toggle	(Any:D $:: Callable:D \condition, *%_)
 Any	toggle	(Any:D $:: *@conditions, :$off, *%_)
@@ -195,6 +279,7 @@ Any	unique	($:: *%_)
 Any	unique	($:: :&as!, :&with!, *%_)
 Any	unique	($:: :&as!, *%_)
 Any	unique	($:: :&with!, *%_)
+Any	unshift	(Any:U \SELF:: |values)
 Any	values	(Enumeration $:: *%_)
 Any	values	(Bool $:: *%_)
 Any	values	(Any:U $:: *%_)
@@ -234,6 +319,9 @@ Array	DELETE-POS	(Any:D $:: \one, \two, \three, *%_)
 Array	DELETE-POS	(Any:D $:: **@indices, *%_)
 Array	DELETE-POS	(Array:D $:: uint $pos, *%_)
 Array	DELETE-POS	(Array:D $:: Int:D $pos, *%_)
+Array	FLATTENABLE_LIST	-
+Array	GRAB_ONE	-
+Array	INSTANTIATE-GENERIC	#2-2
 Array	INSTANTIATE-GENERIC	(Mu:U $:: TypeEnv:D, *%_)
 Array	INSTANTIATE-GENERIC	(Mu:D $:: TypeEnv:D, *%_)
 Array	INSTANTIATE-GENERIC	(Array:D $:: TypeEnv:D \type-environment, *%_)
@@ -241,12 +329,15 @@ Array	List	($:: *%_)
 Array	List	(List:D $:: *%_)
 Array	List	(Array:D $:: :view($)!, *%_ --> List:D)
 Array	List	(Array:D $:: *%_ --> List:D)
+Array	POPULATE	-
 Array	STORE	(Array:D $:: Iterable:D \iterable, *%_ --> Array:D)
 Array	STORE	(Array:D $:: QuantHash:D \qh, *%_ --> Array:D)
 Array	STORE	(Array:D $:: Mu \item, *%_ --> Array:D)
 Array	Slip	($:: *%_)
 Array	Slip	(List:D $:: *%_ --> Slip:D)
 Array	Slip	(Array:D $:: *%_ --> Slip:D)
+Array	TEMP-LET-LOCALIZE	-
+Array	TEMP-LET-RESTORE	-
 Array	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Array	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Array	WHICH	(Array:D $:: *%_ --> ObjAt:D)
@@ -256,6 +347,8 @@ Array	append	(Array:D $:: **@values is raw, *%_ --> Array:D)
 Array	clone	(Mu:U $:: *%_)
 Array	clone	(Mu:D $:: *%twiddles)
 Array	clone	(Array:D $:: *%_ --> Array:D)
+Array	default	-
+Array	dynamic	-
 Array	flat	($:: *%_)
 Array	flat	(Array:D $:: $levels = Whatever, :$hammer = Bool::False, *%_)
 Array	fmt	(Cool $:: Str(Cool) $format = "\%s", *%_)
@@ -264,24 +357,30 @@ Array	fmt	(List:D $:: Str(Cool) $format, *%_ --> Str:D)
 Array	fmt	(List:D $:: Str(Cool) $format, $separator, *%_ --> Str:D)
 Array	fmt	(Array:D $:: *%_ --> Str:D)
 Array	fmt	(Array:D $:: Str(Cool) $format, $separator, *%_ --> Str:D)
+Array	from-iterator	-
+Array	from-list	-
 Array	grab	(Array:D $:: *%_)
 Array	grab	(Array:D $:: Callable:D $calculate, *%_)
 Array	grab	(Array:D $:: Whatever, *%_ --> Seq:D)
 Array	grab	(Array:D $:: \count, *%_ --> Seq:D)
+Array	is-generic	#1-1
 Array	is-generic	(Array:U $:: *%_)
 Array	is-generic	(Array:D $:: *%_)
 Array	iterator	(Mu $:: *%_)
 Array	iterator	($:: *%_)
 Array	iterator	(List:D $:: *%_ --> Iterator:D)
 Array	iterator	(Array:D $:: *%_ --> Iterator:D)
+Array	name	-
 Array	new	(Array $:: :$shape!, *%_ --> Array:D)
 Array	new	(Array $:: *%_ --> Array:D)
 Array	new	(Array $:: \values, :$shape!, *%_ --> Array:D)
 Array	new	(Array $:: \values, *%_ --> Array:D)
 Array	new	(Array $:: **@values is raw, :$shape!, *%_ --> Array:D)
 Array	new	(Array $:: **@values is raw, *%_ --> Array:D)
+Array	of	#1-1
 Array	of	(Array:U $:: *%_)
 Array	of	(Array:D $:: *%_)
+Array	pop	-
 Array	prepend	(Any:U \SELF:: |values)
 Array	prepend	(Array:D $:: \value, *%_ --> Array:D)
 Array	prepend	(Array:D $:: **@values is raw, *%_ --> Array:D)
@@ -293,10 +392,15 @@ Array	raku	(Mu:U $:: *%_)
 Array	raku	(Mu:D $:: *%_)
 Array	raku	(List:D \SELF:: *%_ --> Str:D)
 Array	raku	(Array:D \SELF:: *%_ --> Str:D)
+Array	reification-target	-
+Array	reverse	-
+Array	rotate	-
 Array	set-shape	(Array $:: Whatever, *%_)
 Array	set-shape	(Array $:: Range:D $range, *%_)
 Array	set-shape	(Array $:: \shape, *%_)
 Array	set-shape	(Array $:: List:D \shape, *%_)
+Array	shape	-
+Array	shift	-
 Array	splice	(Array:D \SELF:: *%_ --> Array:D)
 Array	splice	(Array:D $:: Whatever, *%_ --> Array:D)
 Array	splice	(Array:D $:: Callable:D $offset, *%_ --> Array:D)
@@ -347,26 +451,45 @@ Array	unshift	(Any:U \SELF:: |values)
 Array	unshift	(Array:D $:: Slip \value, *%_ --> Array:D)
 Array	unshift	(Array:D $:: \value, *%_ --> Array:D)
 Array	unshift	(Array:D $:: **@values is raw, *%_ --> Array:D)
+Attribute	<anon>	-
+Attribute	POPULATE	-
 Attribute	Str	(Mu:U \v:: *%_)
 Attribute	Str	(Mu:D $:: *%_)
 Attribute	Str	(Attribute:D $:: *%_)
+Attribute	WHY	-
+Attribute	apply_handles	-
+Attribute	compose	-
+Attribute	container	-
+Attribute	dimensions	-
+Attribute	get_value	-
 Attribute	gist	(Mu:U $:: *%_)
 Attribute	gist	(Mu:D $:: *%_)
 Attribute	gist	(Attribute:D $:: *%_)
+Attribute	inlined	-
+Attribute	readonly	-
+Attribute	set_value	-
+Attribute	set_why	-
+Backtrace	AT-POS	-
+Backtrace	POPULATE	-
+Backtrace	RAKUDO_VERBOSE_STACKFRAME	-
 Backtrace	Str	(Mu:U \v:: *%_)
 Backtrace	Str	(Mu:D $:: *%_)
 Backtrace	Str	(Backtrace:D $:: *%_)
+Backtrace	concise	-
 Backtrace	first	($:: Bool:D $t, *%_)
 Backtrace	first	($:: Regex:D $test, :$end, *%a)
 Backtrace	first	($:: Callable:D $test, :$end, *%a)
 Backtrace	first	($:: Mu $test, :$end, *%a)
 Backtrace	first	($:: :$end, *%a)
 Backtrace	first	(Backtrace:D $:: Mu $test, *%_)
+Backtrace	first-none-setting-line	-
 Backtrace	flat	($:: *%_)
 Backtrace	flat	(Backtrace:D $:: *%_)
+Backtrace	full	-
 Backtrace	gist	(Mu:U $:: *%_)
 Backtrace	gist	(Mu:D $:: *%_)
 Backtrace	gist	(Backtrace:D $:: *%_)
+Backtrace	is-runtime	-
 Backtrace	list	(Any:U $:: *%_)
 Backtrace	list	(Any:D \SELF:: *%_)
 Backtrace	list	(Backtrace:D $:: *%_)
@@ -389,6 +512,10 @@ Backtrace	new	(Backtrace $:: Exception:D $ex, Int:D $offset, *%_)
 Backtrace	new	(Backtrace $:: Mu \ex, Int:D $offset, *%_)
 Backtrace	new	(Backtrace $:: List:D $bt, *%_)
 Backtrace	new	(Backtrace $:: List:D $bt, Int:D $offset, *%_)
+Backtrace	next-interesting-index	-
+Backtrace	nice	-
+Backtrace	outer-caller-idx	-
+Backtrace	summary	-
 Bag	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Bag	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Bag	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -404,15 +531,18 @@ Bag	AT-KEY	(Any:D $:: $key, *%_)
 Bag	AT-KEY	(Any:U \SELF:: \key, *%_)
 Bag	AT-KEY	(Baggy:D $:: \k, *%_)
 Bag	AT-KEY	(QuantHash:U \SELF:: $key, *%_)
+Bag	ATTRIBUTE-new	-
 Bag	Bag	($:: *%_ --> Bag:D)
 Bag	Bag	(Bag:D $:: *%_)
 Bag	BagHash	($:: *%_ --> BagHash:D)
 Bag	BagHash	(Bag:D $:: *%_)
 Bag	Baggy	(Bag:U $:: *%_)
 Bag	Baggy	(Bag:D $:: *%_)
+Bag	Bool	#1-1
 Bag	Bool	(Mu:U $:: *%_ --> Bool::False)
 Bag	Bool	(Mu:D $:: *%_)
 Bag	Bool	(Baggy:D $:: *%_ --> Bool)
+Bag	Capture	-
 Bag	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
 Bag	DELETE-KEY	(Any:D $:: $, *%_)
 Bag	DELETE-KEY	(QuantHash:D $:: \k, *%_)
@@ -421,6 +551,8 @@ Bag	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
 Bag	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
 Bag	Hash	($:: *%_)
 Bag	Hash	(Baggy:D $:: *%_ --> Hash:D)
+Bag	Int	-
+Bag	Map	-
 Bag	Mix	($:: *%_ --> Mix:D)
 Bag	Mix	(Bag:D $:: *%_)
 Bag	Mix	(Baggy:D $:: *%_)
@@ -429,6 +561,12 @@ Bag	MixHash	(Bag:D $:: *%_)
 Bag	MixHash	(Baggy:D $:: *%_)
 Bag	Mixy	(Bag:U $:: *%_)
 Bag	Mixy	(Bag:D $:: *%_)
+Bag	Num	-
+Bag	Numeric	-
+Bag	OBJECTIFIER	-
+Bag	POPULATE	-
+Bag	RAW-HASH	-
+Bag	Real	-
 Bag	SETUP	(Bag:U $:: \elems, *%_)
 Bag	SETUP	(QuantHash:U $:: *%_)
 Bag	SETUP	(QuantHash:U $:: \elems, *%_)
@@ -448,6 +586,7 @@ Bag	Str	(Baggy:D $:: *%_ --> Str:D)
 Bag	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Bag	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Bag	WHICH	(Bag:D $:: *%_ --> ValueObjAt:D)
+Bag	WHICHIFY	-
 Bag	antipairs	(Enumeration $:: *%_)
 Bag	antipairs	(Bool $:: *%_)
 Bag	antipairs	(Any:U $:: *%_)
@@ -464,12 +603,15 @@ Bag	classify-list	(Bag $:: &test, **@list, |c)
 Bag	deepmap	(Associative:D $:: &op, *%_)
 Bag	deepmap	($:: &op, *%_)
 Bag	deepmap	(Baggy:D $:: &mapper, *%_)
+Bag	default	-
 Bag	elems	(Any:U $:: *%_ --> 1)
 Bag	elems	(Any:D $:: *%_)
 Bag	elems	(Baggy:D $:: *%_)
+Bag	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
 Bag	gist	(Mu:U $:: *%_)
 Bag	gist	(Mu:D $:: *%_)
 Bag	gist	(Bag:D $:: *%_ --> Str:D)
+Bag	grab	(Baggy:D $:: |c)
 Bag	grabpairs	(Bag:D $:: $count?, *%_)
 Bag	grabpairs	(Baggy:D $:: *%_)
 Bag	grabpairs	(Baggy:D $:: Callable:D $calculate, *%_)
@@ -486,6 +628,7 @@ Bag	invert	(Baggy:D $:: *%_)
 Bag	iterator	(Mu $:: *%_)
 Bag	iterator	($:: *%_)
 Bag	iterator	(Baggy:D $:: *%_)
+Bag	keyof	-
 Bag	keys	(Enumeration $:: *%_)
 Bag	keys	(Bool $:: *%_)
 Bag	keys	(Any:U $:: *%_)
@@ -496,6 +639,7 @@ Bag	kv	(Bool $:: *%_)
 Bag	kv	(Any:U $:: *%_)
 Bag	kv	(Any:D $:: *%_)
 Bag	kv	(Baggy:D $:: *%_)
+Bag	kxxv	(Baggy:D $:: *%_)
 Bag	list	(Any:U $:: *%_)
 Bag	list	(Any:D \SELF:: *%_)
 Bag	list	(QuantHash:D $:: *%_)
@@ -504,6 +648,8 @@ Bag	new	(Mu $:: $, *@, *%_)
 Bag	new	(Baggy $:: \value, *%_ --> Baggy:D)
 Bag	new	(Baggy $:: **@args, *%_)
 Bag	new	(QuantHash $:: *%_)
+Bag	new-from-pairs	-
+Bag	of	-
 Bag	pairs	(Enumeration $:: *%_)
 Bag	pairs	(Bool $:: *%_)
 Bag	pairs	(Any:U $:: *%_)
@@ -527,6 +673,7 @@ Bag	roll	(Baggy:D $:: *%_)
 Bag	roll	(Baggy:D $:: Whatever, *%_)
 Bag	roll	(Baggy:D $:: Callable:D $calculate, *%_)
 Bag	roll	(Baggy:D $:: \count, *%_)
+Bag	total	-
 Bag	values	(Enumeration $:: *%_)
 Bag	values	(Bool $:: *%_)
 Bag	values	(Any:U $:: *%_)
@@ -556,9 +703,11 @@ BagHash	BagHash	($:: *%_ --> BagHash:D)
 BagHash	BagHash	(BagHash:D $:: *%_)
 BagHash	Baggy	(BagHash:U $:: *%_)
 BagHash	Baggy	(BagHash:D $:: *%_)
+BagHash	Bool	#1-1
 BagHash	Bool	(Mu:U $:: *%_ --> Bool::False)
 BagHash	Bool	(Mu:D $:: *%_)
 BagHash	Bool	(Baggy:D $:: *%_ --> Bool)
+BagHash	Capture	-
 BagHash	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
 BagHash	DELETE-KEY	(Any:D $:: $, *%_)
 BagHash	DELETE-KEY	(BagHash:D $:: \k, *%_)
@@ -568,6 +717,8 @@ BagHash	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
 BagHash	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
 BagHash	Hash	($:: *%_)
 BagHash	Hash	(Baggy:D $:: *%_ --> Hash:D)
+BagHash	Int	-
+BagHash	Map	-
 BagHash	Mix	($:: *%_ --> Mix:D)
 BagHash	Mix	(BagHash:D $:: *%_)
 BagHash	Mix	(Baggy:D $:: *%_)
@@ -576,6 +727,12 @@ BagHash	MixHash	(BagHash:D $:: *%_)
 BagHash	MixHash	(Baggy:D $:: *%_)
 BagHash	Mixy	(BagHash:U $:: *%_)
 BagHash	Mixy	(BagHash:D $:: *%_)
+BagHash	Num	-
+BagHash	Numeric	-
+BagHash	OBJECTIFIER	-
+BagHash	POPULATE	-
+BagHash	RAW-HASH	-
+BagHash	Real	-
 BagHash	SETUP	(QuantHash:U $:: *%_)
 BagHash	SETUP	(QuantHash:U $:: \elems, *%_)
 BagHash	SETUP	(QuantHash:D $:: \elems, *%_)
@@ -591,6 +748,8 @@ BagHash	Setty	(BagHash:D $:: *%_)
 BagHash	Str	(Mu:U \v:: *%_)
 BagHash	Str	(Mu:D $:: *%_)
 BagHash	Str	(Baggy:D $:: *%_ --> Str:D)
+BagHash	WHICHIFY	-
+BagHash	add	-
 BagHash	antipairs	(Enumeration $:: *%_)
 BagHash	antipairs	(Bool $:: *%_)
 BagHash	antipairs	(Any:U $:: *%_)
@@ -604,13 +763,16 @@ BagHash	classify-list	(BagHash $:: &test, \list, *%_)
 BagHash	classify-list	(BagHash $:: %test, |c)
 BagHash	classify-list	(BagHash $:: @test, |c)
 BagHash	classify-list	(BagHash $:: &test, **@list, |c)
+BagHash	clone	-
 BagHash	deepmap	(Associative:D $:: &op, *%_)
 BagHash	deepmap	($:: &op, *%_)
 BagHash	deepmap	(BagHash:D $:: &mapper, *%_)
 BagHash	deepmap	(Baggy:D $:: &mapper, *%_)
+BagHash	default	-
 BagHash	elems	(Any:U $:: *%_ --> 1)
 BagHash	elems	(Any:D $:: *%_)
 BagHash	elems	(Baggy:D $:: *%_)
+BagHash	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
 BagHash	gist	(Mu:U $:: *%_)
 BagHash	gist	(Mu:D $:: *%_)
 BagHash	gist	(BagHash:D $:: *%_ --> Str:D)
@@ -635,6 +797,7 @@ BagHash	iterator	(Mu $:: *%_)
 BagHash	iterator	($:: *%_)
 BagHash	iterator	(BagHash:D $:: *%_)
 BagHash	iterator	(Baggy:D $:: *%_)
+BagHash	keyof	-
 BagHash	keys	(Enumeration $:: *%_)
 BagHash	keys	(Bool $:: *%_)
 BagHash	keys	(Any:U $:: *%_)
@@ -646,6 +809,7 @@ BagHash	kv	(Any:U $:: *%_)
 BagHash	kv	(Any:D $:: *%_)
 BagHash	kv	(BagHash:D $:: *%_)
 BagHash	kv	(Baggy:D $:: *%_)
+BagHash	kxxv	(Baggy:D $:: *%_)
 BagHash	list	(Any:U $:: *%_)
 BagHash	list	(Any:D \SELF:: *%_)
 BagHash	list	(QuantHash:D $:: *%_)
@@ -654,6 +818,8 @@ BagHash	new	(Mu $:: $, *@, *%_)
 BagHash	new	(Baggy $:: \value, *%_ --> Baggy:D)
 BagHash	new	(Baggy $:: **@args, *%_)
 BagHash	new	(QuantHash $:: *%_)
+BagHash	new-from-pairs	-
+BagHash	of	-
 BagHash	pairs	(Enumeration $:: *%_)
 BagHash	pairs	(Bool $:: *%_)
 BagHash	pairs	(Any:U $:: *%_)
@@ -673,28 +839,49 @@ BagHash	pickpairs	(Baggy:D $:: \count, *%_)
 BagHash	raku	(Mu:U $:: *%_)
 BagHash	raku	(Mu:D $:: *%_)
 BagHash	raku	(BagHash:D \SELF:: *%_ --> Str:D)
+BagHash	remove	-
 BagHash	roll	(Baggy:D $:: *%_)
 BagHash	roll	(Baggy:D $:: Whatever, *%_)
 BagHash	roll	(Baggy:D $:: Callable:D $calculate, *%_)
 BagHash	roll	(Baggy:D $:: \count, *%_)
+BagHash	total	-
 BagHash	values	(Enumeration $:: *%_)
 BagHash	values	(Bool $:: *%_)
 BagHash	values	(Any:U $:: *%_)
 BagHash	values	(Any:D $:: *%_)
 BagHash	values	(BagHash:D $:: *%_)
 BagHash	values	(Baggy:D $:: *%_)
+Block	<anon>	-
+Block	POPULATE	-
 Block	POSITIONS	(Block:D $:: Failure:D \failure, *%_)
 Block	POSITIONS	(Block:D $self:: \list, *%_)
+Block	WHY	-
+Block	add_phaser	-
+Block	callable_for_phaser	-
+Block	fire_if_phasers	-
+Block	fire_phasers	-
+Block	has-loop-phasers	-
+Block	has-phaser	-
+Block	has-phasers	-
+Block	of	#1-1
 Block	of	(Block:U $:: *%_)
 Block	of	(Block:D $:: *%_)
+Block	phasers	-
+Block	push-phaser	-
 Block	raku	(Mu:U $:: *%_)
 Block	raku	(Mu:D $:: *%_)
 Block	raku	(Block:D $:: *%_)
+Block	returns	-
+Block	set_why	-
+Block	unshift-phaser	-
+Bool	<anon>	-
 Bool	ACCEPTS	(Bool:D $:: Mu \topic, *%_)
 Bool	ACCEPTS	(Bool:U \SELF:: Junction:D \topic, *%_)
 Bool	ACCEPTS	(Bool:U $:: Mu \topic, *%_)
 Bool	Bool	(Bool:D $:: *%_)
 Bool	Bool	(Bool:U $:: *%_)
+Bool	Int	(Bool:D $:: *%_)
+Bool	Numeric	(Bool:D $:: *%_)
 Bool	Real	(Mu:U \v:: *%_)
 Bool	Real	(Cool $:: *%_)
 Bool	Real	(Real:D $:: *%_)
@@ -707,17 +894,36 @@ Bool	Str	(Int:D $:: :$superscript!, *%_ --> Str:D)
 Bool	Str	(Int:D $:: :$subscript!, *%_ --> Str:D)
 Bool	Str	(Real:D $:: *%_)
 Bool	Str	(Bool:D $:: *%_)
+Bool	enums	-
 Bool	gist	(Bool:D $:: *%_)
 Bool	gist	(Bool:U $:: *%_)
+Bool	new	-
 Bool	pick	(Bool:U $:: *%_)
 Bool	pick	(Bool:U $:: $n, *%_)
+Bool	pred	-
 Bool	raku	(Bool:D $:: *%_)
 Bool	raku	(Bool:U $:: *%_)
 Bool	roll	(Bool:U $:: *%_)
 Bool	roll	(Bool:U $:: $n, *%_)
+Bool	succ	-
+CallFrame	POPULATE	-
+CallFrame	SET-SELF	-
+CallFrame	annotations	-
+CallFrame	callframe	-
+CallFrame	code	-
+CallFrame	deprecate-IO-dash	-
+CallFrame	file	-
 CallFrame	gist	(Mu:U $:: *%_)
 CallFrame	gist	(Mu:D $:: *%_)
 CallFrame	gist	(CallFrame:D $:: *%_)
+CallFrame	language-revision	-
+CallFrame	line	-
+CallFrame	my	-
+CallFrame	new	-
+Cancellation	BUILD	-
+Cancellation	POPULATE	-
+Cancellation	cancel	-
+Cancellation	cancelled	-
 Capture	AT-KEY	(Any:D $:: $key, *%_)
 Capture	AT-KEY	(Any:U \SELF:: \key, *%_)
 Capture	AT-KEY	(Capture:D $:: Str(Any) $key, *%_)
@@ -734,9 +940,12 @@ Capture	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
 Capture	AT-POS	(Any:D \SELF:: **@indices, *%_)
 Capture	AT-POS	(Capture:D $:: uint $pos, *%_)
 Capture	AT-POS	(Capture:D $:: Int(Any) $pos, *%_)
+Capture	BUILD	-
+Capture	Bool	#1-1
 Capture	Bool	(Mu:U $:: *%_ --> Bool::False)
 Capture	Bool	(Mu:D $:: *%_)
 Capture	Bool	(Capture:D $:: *%_)
+Capture	Capture	-
 Capture	EXISTS-KEY	(Any:U $:: $, *%_ --> Bool::False)
 Capture	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
 Capture	EXISTS-KEY	(Capture:D $:: Str(Any) $key, *%_)
@@ -751,8 +960,11 @@ Capture	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 Capture	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 Capture	EXISTS-POS	(Capture:D $:: uint $pos, *%_)
 Capture	EXISTS-POS	(Capture:D $:: Int(Any) $pos, *%_)
+Capture	FLATTENABLE_HASH	-
+Capture	FLATTENABLE_LIST	-
 Capture	Numeric	(Mu:U \v:: *%_)
 Capture	Numeric	(Capture:D $:: *%_)
+Capture	POPULATE	-
 Capture	Str	(Mu:U \v:: *%_)
 Capture	Str	(Mu:D $:: *%_)
 Capture	Str	(Capture:D $:: *%_)
@@ -767,9 +979,11 @@ Capture	antipairs	(Capture:D $:: *%_)
 Capture	elems	(Any:U $:: *%_ --> 1)
 Capture	elems	(Any:D $:: *%_)
 Capture	elems	(Capture:D $:: *%_)
+Capture	from-args	-
 Capture	gist	(Mu:U $:: *%_)
 Capture	gist	(Mu:D $:: *%_)
 Capture	gist	(Capture:D $:: *%_)
+Capture	hash	-
 Capture	keys	(Enumeration $:: *%_)
 Capture	keys	(Bool $:: *%_)
 Capture	keys	(Any:U $:: *%_)
@@ -780,6 +994,7 @@ Capture	kv	(Bool $:: *%_)
 Capture	kv	(Any:U $:: *%_)
 Capture	kv	(Any:D $:: *%_)
 Capture	kv	(Capture:D $:: *%_)
+Capture	list	-
 Capture	pairs	(Enumeration $:: *%_)
 Capture	pairs	(Bool $:: *%_)
 Capture	pairs	(Any:U $:: *%_)
@@ -793,11 +1008,24 @@ Capture	values	(Bool $:: *%_)
 Capture	values	(Any:U $:: *%_)
 Capture	values	(Any:D $:: *%_)
 Capture	values	(Capture:D $:: *%_)
+Channel	BUILD	-
+Channel	Capture	-
+Channel	POPULATE	-
 Channel	Supply	($:: *%_)
 Channel	Supply	(Channel:D $:: *%_)
+Channel	close	-
+Channel	closed	-
 Channel	elems	(Any:U $:: *%_ --> 1)
 Channel	elems	(Any:D $:: *%_)
 Channel	elems	(Channel:D $:: *%_)
+Channel	fail	-
+Channel	get-await-handle	-
+Channel	iterator	-
+Channel	list	-
+Channel	poll	-
+Channel	receive	-
+Channel	send	-
+Code	<anon>	-
 Code	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Code	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Code	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -805,28 +1033,83 @@ Code	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Code	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Code	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Code	ACCEPTS	(Code:D $self:: Mu $topic is raw, *%_)
+Code	Capture	-
+Code	POPULATE	-
 Code	Str	(Mu:U \v:: *%_)
 Code	Str	(Mu:D $:: *%_)
 Code	Str	(Code:D $:: *%_)
+Code	arity	-
+Code	associative	-
+Code	assuming	-
+Code	bytecode-size	-
+Code	cando	-
+Code	count	-
+Code	file	-
+Code	iffy	-
+Code	is-implementation-detail	-
+Code	line	-
 Code	new	(Mu $:: *%attrinit)
 Code	new	(Mu $:: $, *@, *%_)
 Code	new	(Code $:: *%_)
+Code	of	-
+Code	outer	-
 Code	prec	(Code $:: *%_)
 Code	prec	(Code $:: Str:D, *%_)
+Code	precedence	-
+Code	reducer	-
+Code	returns	-
+Code	signature	-
+Code	static_id	-
+Code	thunky	-
+Collation	POPULATE	-
+Collation	check	-
+Collation	collation-level	-
+Collation	gist	-
+Collation	primary	-
+Collation	quaternary	-
+Collation	secondary	-
+Collation	set	-
+Collation	tertiary	-
+CompUnit	POPULATE	-
 CompUnit	Str	(Mu:U \v:: *%_)
 CompUnit	Str	(Mu:D $:: *%_)
 CompUnit	Str	(CompUnit:D $:: *%_ --> Str:D)
 CompUnit	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 CompUnit	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 CompUnit	WHICH	(CompUnit:D $:: *%_ --> ValueObjAt:D)
+CompUnit	api	-
+CompUnit	auth	-
+CompUnit	distribution	-
+CompUnit	from	-
 CompUnit	gist	(Mu:U $:: *%_)
 CompUnit	gist	(Mu:D $:: *%_)
 CompUnit	gist	(CompUnit:D $:: *%_ --> Str:D)
+CompUnit	handle	-
+CompUnit	precompiled	-
+CompUnit	repo	-
+CompUnit	repo-id	-
+CompUnit	short-name	-
+CompUnit	unit	-
+CompUnit	version	-
+Compiler	POPULATE	-
+Compiler	Str	-
+Compiler	TWEAK	-
+Compiler	auth	-
+Compiler	backend	-
+Compiler	codename	-
+Compiler	desc	-
+Compiler	flavor	-
 Compiler	gist	(Mu:U $:: *%_)
 Compiler	gist	(Mu:D $:: *%_)
 Compiler	gist	(Systemic:D $:: *%_ --> Str:D)
 Compiler	id	(Compiler:U $:: *%_)
 Compiler	id	(Compiler:D $:: *%_)
+Compiler	name	-
+Compiler	release	-
+Compiler	signature	-
+Compiler	supports-op	-
+Compiler	verbose-config	-
+Compiler	version	-
 Complex	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Complex	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Complex	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -834,18 +1117,23 @@ Complex	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Complex	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Complex	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Complex	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Complex	Bool	#1-1
 Complex	Bool	(Mu:U $:: *%_ --> Bool::False)
 Complex	Bool	(Mu:D $:: *%_)
 Complex	Bool	(Complex:D $:: *%_)
 Complex	Bool	(Numeric:D $:: *%_)
+Complex	Complex	-
 Complex	DUMP	(Mu:U $:: *%_)
 Complex	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 Complex	DUMP	(Numeric:D $:: *%_)
 Complex	FatRat	(Complex:D $:: *%_)
 Complex	FatRat	(Complex:D $:: $epsilon?, *%_)
+Complex	Int	-
+Complex	Num	-
 Complex	Numeric	(Mu:U \v:: *%_)
 Complex	Numeric	(Numeric:D $:: *%_)
 Complex	Numeric	(Numeric:U $:: *%_)
+Complex	POPULATE	-
 Complex	Rat	(Complex:D $:: *%_)
 Complex	Rat	(Complex:D $:: $epsilon, *%_)
 Complex	Real	(Mu:U \v:: *%_)
@@ -857,24 +1145,68 @@ Complex	Str	(Complex:D $:: *%_)
 Complex	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Complex	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Complex	WHICH	(Complex:D $:: *%_ --> ValueObjAt:D)
+Complex	abs	-
+Complex	acos	-
+Complex	acosec	-
+Complex	acosech	-
+Complex	acosh	-
+Complex	acotan	-
+Complex	acotanh	-
+Complex	asec	-
+Complex	asech	-
+Complex	asin	-
+Complex	asinh	-
+Complex	atan	-
+Complex	atanh	-
+Complex	ceiling	-
+Complex	cis	-
+Complex	conj	-
+Complex	cos	-
+Complex	cosec	-
+Complex	cosech	-
+Complex	cosh	-
+Complex	cotan	-
+Complex	cotanh	-
 Complex	exp	(Complex:D $:: *%_)
 Complex	exp	(Numeric:D $:: $base, *%_)
+Complex	floor	-
 Complex	gist	(Mu:U $:: *%_)
 Complex	gist	(Mu:D $:: *%_)
 Complex	gist	(Numeric:D $:: *%_)
+Complex	im	-
+Complex	isNaN	-
 Complex	log	(Complex:D $:: *%_)
 Complex	log	(Numeric:D $:: Cool $base, *%_)
 Complex	log	(Numeric:D $:: Numeric $base, *%_)
+Complex	log10	-
+Complex	log2	-
+Complex	narrow	-
 Complex	new	(Complex $:: *%_)
 Complex	new	(Complex $:: Num $re, Num $im, *%_)
 Complex	new	(Complex $:: Real:D $re, Real:D $im, *%_)
+Complex	polar	-
+Complex	pred	-
 Complex	raku	(Mu:U $:: *%_)
 Complex	raku	(Mu:D $:: *%_)
 Complex	raku	(Complex:D $:: *%_)
+Complex	re	-
+Complex	reals	-
+Complex	roots	-
 Complex	round	(Complex:D $:: *%_)
 Complex	round	(Complex:D $:: Real(Any) $scale, *%_)
+Complex	sec	-
+Complex	sech	-
+Complex	sin	-
+Complex	sinh	-
+Complex	sqrt	#1-1
 Complex	sqrt	(Cool:D $:: *%_)
 Complex	sqrt	(Complex:D $:: *%_)
+Complex	succ	-
+Complex	tan	-
+Complex	tanh	-
+Complex	truncate	-
+ComplexStr	Capture	-
+ComplexStr	Complex	-
 ComplexStr	Int	(Mu:U \v:: *%_)
 ComplexStr	Int	(Cool $:: *%_)
 ComplexStr	Int	(ComplexStr:D $:: *%_)
@@ -882,21 +1214,68 @@ ComplexStr	Numeric	(Mu:U \v:: *%_)
 ComplexStr	Numeric	(Str:D $:: Bool :$fail-or-nil, *%_ --> Numeric:D)
 ComplexStr	Numeric	(ComplexStr:U $:: *%_)
 ComplexStr	Numeric	(ComplexStr:D $:: *%_)
+ComplexStr	POPULATE	-
 ComplexStr	Real	(Mu:U \v:: *%_)
 ComplexStr	Real	(Cool $:: *%_)
 ComplexStr	Real	(Complex:D $:: *%_)
 ComplexStr	Real	(ComplexStr:U $:: *%_ --> 0e0)
 ComplexStr	Real	(ComplexStr:D $:: *%_)
+ComplexStr	new	-
+Cool	AST	-
+Cool	Complex	-
+Cool	EVAL	-
+Cool	Failure	-
+Cool	FatRat	-
 Cool	IO	(Cool:D $:: *%_)
 Cool	IO	(Cool:U $:: *%_)
 Cool	Int	(Mu:U \v:: *%_)
 Cool	Int	(Cool $:: *%_)
+Cool	NFC	#1-1
+Cool	NFC	(Cool:D $:: *%_)
+Cool	NFD	#1-1
+Cool	NFD	(Cool:D $:: *%_)
+Cool	NFKC	#1-1
+Cool	NFKC	(Cool:D $:: *%_)
+Cool	NFKD	#1-1
+Cool	NFKD	(Cool:D $:: *%_)
+Cool	Num	-
+Cool	Order	-
+Cool	POPULATE	-
+Cool	Rat	-
 Cool	Real	(Mu:U \v:: *%_)
 Cool	Real	(Cool $:: *%_)
+Cool	UInt	(Cool $:: *%_)
+Cool	Version	-
+Cool	abs	-
+Cool	acos	-
+Cool	acosec	-
+Cool	acosech	-
+Cool	acosh	-
+Cool	acotan	-
+Cool	acotanh	-
+Cool	asec	-
+Cool	asech	-
+Cool	asin	-
+Cool	asinh	-
+Cool	atan	-
+Cool	atan2	-
+Cool	atanh	-
+Cool	byte	-
+Cool	ceiling	-
+Cool	chars	#1-1
+Cool	chars	(Cool:D $:: *%_ --> Int:D)
+Cool	chomp	#1-2
 Cool	chomp	(Cool:D $:: *%_)
 Cool	chomp	(Cool:D $:: Cool:D $needle, *%_)
 Cool	chop	(Cool:D $:: *%_)
 Cool	chop	(Cool:D $:: Int(Any) $n, *%_)
+Cool	chr	#1-1
+Cool	chr	(Cool:D $:: *%_)
+Cool	chrs	#1-1
+Cool	chrs	(Cool:D $:: *%_)
+Cool	cis	-
+Cool	codes	#1-1
+Cool	codes	(Cool:D $:: *%_ --> Int:D)
 Cool	comb	(Cool:D $:: *%_ --> Seq:D)
 Cool	comb	(Cool:D $:: Cool:D $size, $limit = Code.new, *%_ --> Seq:D)
 Cool	comb	(Cool:D $:: Int:D $size, $limit = Code.new, *%_ --> Seq:D)
@@ -906,6 +1285,7 @@ Cool	comb	(Cool:D $:: Cool:D $pat, $limit, *%_ --> Seq:D)
 Cool	comb	(Cool:D $:: Str:D $pat, $limit, *%_ --> Seq:D)
 Cool	comb	(Cool:D $:: Regex:D $pattern, :$match, *%_ --> Seq:D)
 Cool	comb	(Cool:D $:: Regex:D $pattern, $limit, :$match, *%_ --> Seq:D)
+Cool	conj	-
 Cool	contains	(List:D $:: Cool:D \needle, *%_)
 Cool	contains	(Cool:D $:: Cool:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Bool)
 Cool	contains	(Cool:D $:: Cool:D $needle, :m(:$ignoremark)!, *%_ --> Bool)
@@ -915,11 +1295,27 @@ Cool	contains	(Cool:D $:: Cool:D $needle, Cool:D $pos, :i(:$ignorecase)!, :m(:$i
 Cool	contains	(Cool:D $:: Cool:D $needle, Cool:D $pos, :m(:$ignoremark)!, *%_ --> Bool)
 Cool	contains	(Cool:D $:: Cool:D $needle, Cool:D $pos, *%_ --> Bool)
 Cool	contains	(Cool:D $:: Regex:D $needle, Cool:D $pos, *%_ --> Bool)
+Cool	cos	-
+Cool	cosec	-
+Cool	cosech	-
+Cool	cosh	-
+Cool	cotan	-
+Cool	cotanh	-
+Cool	encode	#1-2
+Cool	encode	(Cool:D $:: |c)
 Cool	ends-with	(Cool:D $:: Cool:D $suffix, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Bool)
 Cool	ends-with	(Cool:D $:: Cool:D $suffix, :m(:$ignoremark)!, *%_ --> Bool)
 Cool	ends-with	(Cool:D $:: Cool:D $suffix, *%_ --> Bool)
 Cool	exp	(Cool:D $:: *%_)
 Cool	exp	(Cool:D $:: $base, *%_)
+Cool	fc	#1-1
+Cool	fc	(Cool:D $:: *%_)
+Cool	flip	#1-1
+Cool	flip	(Cool:D $:: *%_)
+Cool	floor	-
+Cool	fmt	(Cool $:: Str(Cool) $format = "\%s", *%_)
+Cool	indent	#2-2
+Cool	indent	(Cool:D $:: $steps, *%_)
 Cool	index	(List:D $:: Cool:D $needle, *%_)
 Cool	index	(Cool:D $:: Cool:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)
 Cool	index	(Cool:D $:: Cool:D $needle, :m(:$ignoremark)!, *%_ --> Int:D)
@@ -934,19 +1330,55 @@ Cool	indices	(Cool:D $:: Cool:D $needle, :$overlap, *%_)
 Cool	indices	(Cool:D $:: Cool:D $needle, Cool:D $pos, :i(:$ignorecase), :m(:$ignoremark), :$overlap, *%_)
 Cool	indices	(Cool:D $:: Cool:D $needle, Cool:D $pos, :m(:$ignoremark)!, :$overlap, *%_)
 Cool	indices	(Cool:D $:: Cool:D $needle, Cool:D $pos, :$overlap, *%_)
+Cool	int	-
+Cool	int16	-
+Cool	int32	-
+Cool	int64	-
+Cool	int8	-
+Cool	is-prime	-
+Cool	lc	#1-1
+Cool	lc	(Cool:D $:: *%_)
 Cool	lines	(Cool:D $:: *%_)
 Cool	lines	(Cool:D $:: :$count!, *%_)
 Cool	lines	(Cool:D $:: $limit, *%_)
 Cool	log	(Cool:D $:: *%_)
 Cool	log	(Cool:D $:: $base, *%_)
+Cool	log10	-
+Cool	log2	-
+Cool	ord	#1-1
+Cool	ord	(Cool:D $:: *%_ --> Int:D)
+Cool	ords	#1-1
+Cool	ords	(Cool:D $:: *%_)
+Cool	parse-names	-
+Cool	path	-
+Cool	printf	-
+Cool	rand	-
 Cool	rindex	(List:D $:: Cool:D $needle, *%_)
 Cool	rindex	(Cool:D $:: Cool:D $needle, *%_ --> Int:D)
 Cool	rindex	(Cool:D $:: Cool:D $needle, Cool:D $pos, *%_ --> Int:D)
+Cool	roots	-
 Cool	round	(Cool $:: *%_)
 Cool	round	(Cool $:: $base, *%_)
+Cool	samecase	#2-2
+Cool	samecase	(Cool:D $:: Cool:D $pattern, *%_)
+Cool	samemark	#2-2
+Cool	samemark	(Cool:D $:: Cool:D $pattern, *%_)
+Cool	samespace	#2-2
+Cool	samespace	(Cool:D $:: Cool:D $pattern, *%_)
+Cool	sec	-
+Cool	sech	-
+Cool	sign	-
+Cool	sin	-
+Cool	sinh	-
+Cool	split	-
+Cool	sprintf	-
+Cool	sqrt	#1-1
+Cool	sqrt	(Cool:D $:: *%_)
 Cool	starts-with	(Cool:D $:: Cool:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Bool)
 Cool	starts-with	(Cool:D $:: Cool:D $needle, :m(:$ignoremark)!, *%_ --> Bool)
 Cool	starts-with	(Cool:D $:: Cool:D $needle, *%_ --> Bool)
+Cool	subst	(Cool:D $:: $original, $replacement = "", *%options)
+Cool	subst-mutate	-
 Cool	substr	(Cool:D $:: *%_)
 Cool	substr	(Cool:D $:: \from, *%_)
 Cool	substr	(Cool:D $:: \from, \chars, *%_)
@@ -955,14 +1387,56 @@ Cool	substr-eq	(Cool:D $:: Any:D $needle, Cool:D $pos, *%_)
 Cool	substr-eq	(Cool:D $:: Any:D $needle, Any:D $pos, *%_)
 Cool	substr-rw	(Cool:D $container: is rw: |c)
 Cool	substr-rw	(Cool:D $:: |)
+Cool	tan	-
+Cool	tanh	-
+Cool	tc	#1-1
+Cool	tc	(Cool:D $:: *%_)
+Cool	tclc	#1-1
+Cool	tclc	(Cool:D $:: *%_)
+Cool	trans	(Cool:D $:: |c)
+Cool	trim	#1-1
+Cool	trim	(Cool:D $:: *%_)
+Cool	trim-leading	#1-1
+Cool	trim-leading	(Cool:D $:: *%_)
+Cool	trim-trailing	#1-1
+Cool	trim-trailing	(Cool:D $:: *%_)
+Cool	truncate	-
+Cool	uc	#1-1
+Cool	uc	(Cool:D $:: *%_)
+Cool	uint	-
+Cool	uint16	-
+Cool	uint32	-
+Cool	uint64	-
+Cool	uint8	-
+Cool	unimatch	#2-3
 Cool	unimatch	(Cool:D $:: Str:D $pvalname, *%_ --> Bool)
 Cool	unimatch	(Cool:D $:: Str:D $pvalname, Str:D $propname, *%_ --> Bool)
+Cool	uniname	#1-1
+Cool	uniname	(Cool:D $:: *%_ --> Str:D)
+Cool	uninames	#1-1
+Cool	uninames	(Cool:D $:: *%_ --> Seq:D)
+Cool	uniparse	#1-1
+Cool	uniparse	(Cool:D $:: *%_ --> Str:D)
+Cool	uniprop	#1-2
 Cool	uniprop	(Cool:D $:: *%_)
 Cool	uniprop	(Cool:D $:: Str:D $propname, *%_)
+Cool	uniprops	#1-2
 Cool	uniprops	(Cool:D $:: *%_)
 Cool	uniprops	(Cool:D $:: Str:D $propname, *%_)
+Cool	unival	#1-1
+Cool	unival	(Cool:D $:: *%_)
+Cool	univals	#1-1
+Cool	univals	(Cool:D $:: *%_)
+Cool	unpolar	-
+Cool	wordcase	#1-1
+Cool	wordcase	(Cool:D $:: *%_)
 Cool	words	(Cool:D $:: *%_)
 Cool	words	(Cool:D $:: $limit, *%_)
+CurrentThreadScheduler	POPULATE	-
+CurrentThreadScheduler	cue	-
+CurrentThreadScheduler	handle_uncaught	-
+CurrentThreadScheduler	loads	-
+CurrentThreadScheduler	uncaught_handler	-
 Date	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Date	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Date	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -970,12 +1444,17 @@ Date	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Date	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Date	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Date	ACCEPTS	(Date:D $:: DateTime:D $dt, *%_ --> Bool)
+Date	Date	-
+Date	DateTime	#1-1
 Date	DateTime	(Date:U $:: *%_)
 Date	DateTime	(Date:D $:: *%_)
+Date	IO	-
 Date	Int	(Mu:U \v:: *%_)
 Date	Int	(Date:D $:: *%_ --> Int:D)
+Date	MOVE-DAYS	-
 Date	Numeric	(Mu:U \v:: *%_)
 Date	Numeric	(Date:D $:: *%_ --> Int:D)
+Date	POPULATE	-
 Date	Real	(Mu:U \v:: *%_)
 Date	Real	(Date:D $:: *%_ --> Int:D)
 Date	Str	(Mu:U \v:: *%_)
@@ -984,28 +1463,55 @@ Date	Str	(Dateish:D $:: *%_ --> Str:D)
 Date	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Date	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Date	WHICH	(Date:D $:: *%_ --> ValueObjAt:D)
+Date	clone	-
+Date	day	-
+Date	day-of-month	-
+Date	day-of-week	-
+Date	day-of-year	-
+Date	daycount	-
 Date	days-in-month	(Dateish $:: Int:D $year, Int:D $month, *%_ --> Int:D)
 Date	days-in-month	(Dateish:D $:: *%_ --> Int:D)
 Date	days-in-year	(Dateish $:: Int:D $year, *%_ --> Int:D)
 Date	days-in-year	(Dateish:D $:: *%_ --> Int:D)
+Date	dd-mm-yyyy	-
 Date	earlier	(Dateish:D $:: *%unit --> Dateish:D)
 Date	earlier	(Dateish:D $:: @pairs, *%_)
+Date	first-date-in-month	-
+Date	formatter	-
 Date	gist	(Mu:U $:: *%_)
 Date	gist	(Mu:D $:: *%_)
 Date	gist	(Dateish:D $:: *%_ --> Str:D)
+Date	is-leap-year	-
+Date	last-date-in-month	-
 Date	later	(Dateish:D $:: *%unit --> Dateish:D)
 Date	later	(Dateish:D $:: @pairs, *%_)
+Date	mm-dd	-
+Date	mm-dd-yyyy	-
+Date	month	-
+Date	move-by-unit	-
 Date	new	(Date $:: Int(Any) $year, Int(Any) $month, $day is copy, *%_ --> Date:D)
 Date	new	(Date $:: Int(Any) :$year!, Int(Any) :$month = 1, :$day is copy = 1, *%_ --> Date:D)
 Date	new	(Date $:: Str:D $Date, *%_ --> Date:D)
 Date	new	(Date $:: Dateish:D $d, *%_ --> Date:D)
 Date	new	(Date $:: Instant $i, *%_ --> Date:D)
 Date	new	(Dateish $:: *%_)
+Date	new-from-daycount	#2-2
 Date	new-from-daycount	(Date:U $:: $daycount, *%_ --> Date:D)
 Date	new-from-daycount	(Date:D $:: $daycount, *%_ --> Date:D)
+Date	pred	-
 Date	raku	(Mu:U $:: *%_)
 Date	raku	(Mu:D $:: *%_)
 Date	raku	(Date:D $:: *%_ --> Str:D)
+Date	succ	-
+Date	today	-
+Date	truncated-to	-
+Date	week	-
+Date	week-number	-
+Date	week-year	-
+Date	weekday-of-month	-
+Date	year	-
+Date	yyyy-mm	-
+Date	yyyy-mm-dd	-
 DateTime	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 DateTime	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 DateTime	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1013,10 +1519,15 @@ DateTime	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 DateTime	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 DateTime	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 DateTime	ACCEPTS	(DateTime:D $:: DateTime:D \topic, *%_)
+DateTime	Date	#1-1
 DateTime	Date	(DateTime:D $:: *%_ --> Date:D)
 DateTime	Date	(DateTime:U $:: *%_ --> Date:U)
+DateTime	DateTime	-
+DateTime	IO	-
+DateTime	Instant	-
 DateTime	Numeric	(Mu:U \v:: *%_)
 DateTime	Numeric	(DateTime:D $:: *%_ --> Instant:D)
+DateTime	POPULATE	-
 DateTime	Real	(Mu:U \v:: *%_)
 DateTime	Real	(DateTime:D $:: *%_ --> Instant:D)
 DateTime	Str	(Mu:U \v:: *%_)
@@ -1025,17 +1536,38 @@ DateTime	Str	(Dateish:D $:: *%_ --> Str:D)
 DateTime	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 DateTime	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 DateTime	WHICH	(DateTime:D $:: *%_)
+DateTime	clone	-
+DateTime	day	-
+DateTime	day-fraction	-
+DateTime	day-of-month	-
+DateTime	day-of-week	-
+DateTime	day-of-year	-
+DateTime	daycount	-
 DateTime	days-in-month	(Dateish $:: Int:D $year, Int:D $month, *%_ --> Int:D)
 DateTime	days-in-month	(Dateish:D $:: *%_ --> Int:D)
 DateTime	days-in-year	(Dateish $:: Int:D $year, *%_ --> Int:D)
 DateTime	days-in-year	(Dateish:D $:: *%_ --> Int:D)
+DateTime	dd-mm-yyyy	-
 DateTime	earlier	(Dateish:D $:: *%unit --> Dateish:D)
 DateTime	earlier	(Dateish:D $:: @pairs, *%_)
+DateTime	formatter	-
 DateTime	gist	(Mu:U $:: *%_)
 DateTime	gist	(Mu:D $:: *%_)
 DateTime	gist	(Dateish:D $:: *%_ --> Str:D)
+DateTime	hh-mm-ss	-
+DateTime	hour	-
+DateTime	in-timezone	-
+DateTime	is-leap-year	-
+DateTime	julian-date	-
 DateTime	later	(Dateish:D $:: *%unit --> Dateish:D)
 DateTime	later	(Dateish:D $:: @pairs, *%_)
+DateTime	local	-
+DateTime	minute	-
+DateTime	mm-dd	-
+DateTime	mm-dd-yyyy	-
+DateTime	modified-julian-date	-
+DateTime	month	-
+DateTime	move-by-unit	-
 DateTime	new	(DateTime $:: $y, $mo, $d, $h, $mi, $s, :$timezone = 0, :&formatter, *%_ --> DateTime:D)
 DateTime	new	(DateTime $:: :$year!, :$month = 1, :$day = 1, :$hour = 0, :$minute = 0, :$second = 0, :$timezone = 0, :&formatter, *%_ --> DateTime:D)
 DateTime	new	(DateTime $:: Date:D :$date!, *%_ --> DateTime:D)
@@ -1044,19 +1576,57 @@ DateTime	new	(DateTime $:: Allomorph:D $epoch, |c)
 DateTime	new	(DateTime $:: Numeric:D $epoch is copy, :$timezone = 0, :&formatter, *%_ --> DateTime:D)
 DateTime	new	(DateTime $:: Str:D $iso8601, :timezone($given-timezone), :&formatter, *%_ --> DateTime:D)
 DateTime	new	(Dateish $:: *%_)
+DateTime	now	-
+DateTime	offset	-
+DateTime	offset-in-hours	-
+DateTime	offset-in-minutes	-
 DateTime	posix	(DateTime:D $:: $ignore-timezone, :$real, *%_ --> Real:D)
 DateTime	posix	(DateTime:D $:: :$real, *%_ --> Real:D)
 DateTime	raku	(Mu:U $:: *%_)
 DateTime	raku	(Mu:D $:: *%_)
 DateTime	raku	(DateTime:D $:: *%_ --> Str:D)
+DateTime	second	-
+DateTime	timezone	-
+DateTime	truncated-to	-
+DateTime	utc	-
+DateTime	week	-
+DateTime	week-number	-
+DateTime	week-year	-
+DateTime	weekday-of-month	-
+DateTime	whole-second	-
+DateTime	year	-
+DateTime	yyyy-mm	-
+DateTime	yyyy-mm-dd	-
+Deprecation	DEPRECATIONS	-
+Deprecation	POPULATE	-
 Deprecation	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Deprecation	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Deprecation	WHICH	(Deprecation:D $:: *%_ --> ValueObjAt:D)
+Deprecation	alternative	-
+Deprecation	callsites	-
+Deprecation	file	-
+Deprecation	from	-
+Deprecation	name	-
+Deprecation	package	-
+Deprecation	removed	-
 Deprecation	report	(Deprecation:U $:: *%_)
 Deprecation	report	(Deprecation:D $:: *%_)
+Deprecation	type	-
+Distro	POPULATE	-
+Distro	Str	-
+Distro	TWEAK	-
+Distro	auth	-
+Distro	cur-sep	-
+Distro	desc	-
 Distro	gist	(Mu:U $:: *%_)
 Distro	gist	(Mu:D $:: *%_)
 Distro	gist	(Systemic:D $:: *%_ --> Str:D)
+Distro	is-win	-
+Distro	name	-
+Distro	path-sep	-
+Distro	release	-
+Distro	signature	-
+Distro	version	-
 Duration	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Duration	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Duration	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1064,15 +1634,23 @@ Duration	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Duration	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Duration	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Duration	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Duration	Bool	#1-1
 Duration	Bool	(Mu:U $:: *%_ --> Bool::False)
 Duration	Bool	(Mu:D $:: *%_)
 Duration	Bool	(Numeric:D $:: *%_)
+Duration	Bridge	-
+Duration	Complex	-
 Duration	DUMP	(Mu:U $:: *%_)
 Duration	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 Duration	DUMP	(Numeric:D $:: *%_)
+Duration	FatRat	-
+Duration	Int	-
+Duration	Num	-
 Duration	Numeric	(Mu:U \v:: *%_)
 Duration	Numeric	(Numeric:D $:: *%_)
 Duration	Numeric	(Numeric:U $:: *%_)
+Duration	POPULATE	-
+Duration	Rat	-
 Duration	Real	(Mu:U \v:: *%_)
 Duration	Real	(Cool $:: *%_)
 Duration	Real	(Real:D $:: *%_)
@@ -1081,29 +1659,75 @@ Duration	Str	(Mu:U \v:: *%_)
 Duration	Str	(Mu:D $:: *%_)
 Duration	Str	(Duration:D $:: *%_ --> Str:D)
 Duration	Str	(Real:D $:: *%_)
+Duration	abs	-
+Duration	acos	-
+Duration	acosec	-
+Duration	acosech	-
+Duration	acosh	-
+Duration	acotan	-
+Duration	acotanh	-
+Duration	asec	-
+Duration	asech	-
+Duration	asin	-
+Duration	asinh	-
+Duration	atan	-
 Duration	atan2	(Duration $:: Real $x = 1e0, *%_)
 Duration	atan2	(Duration $:: Cool $x = 1e0, *%_)
+Duration	atanh	-
+Duration	base	-
+Duration	ceiling	-
+Duration	cis	-
+Duration	conj	-
+Duration	cos	-
+Duration	cosec	-
+Duration	cosech	-
+Duration	cosh	-
+Duration	cotan	-
+Duration	cotanh	-
 Duration	exp	(Real:D $:: *%_)
 Duration	exp	(Numeric:D $:: $base, *%_)
+Duration	floor	-
+Duration	from-posix-nanos	-
 Duration	gist	(Mu:U $:: *%_)
 Duration	gist	(Mu:D $:: *%_)
 Duration	gist	(Numeric:D $:: *%_)
+Duration	isNaN	-
 Duration	log	(Real:D $:: *%_)
 Duration	log	(Real:D $:: Real $base, *%_)
 Duration	log	(Numeric:D $:: Cool $base, *%_)
 Duration	log	(Numeric:D $:: Numeric $base, *%_)
+Duration	log10	-
+Duration	log2	-
+Duration	narrow	-
 Duration	new	(Mu $:: *%attrinit)
 Duration	new	(Mu $:: $, *@, *%_)
 Duration	new	(Duration $:: Rat:D \tai, *%_ --> Duration:D)
 Duration	new	(Duration $:: Num:D \value, *%_)
 Duration	new	(Duration $:: \value, *%_ --> Duration:D)
+Duration	polymod	-
+Duration	pred	-
 Duration	raku	(Mu:U $:: *%_)
 Duration	raku	(Mu:D $:: *%_)
 Duration	raku	(Duration:D $:: *%_ --> Str:D)
+Duration	rand	-
+Duration	roots	-
 Duration	round	(Real:D $:: *%_)
 Duration	round	(Real:D $:: Real(Any) $scale, *%_)
+Duration	sec	-
+Duration	sech	-
+Duration	sign	-
+Duration	sin	-
+Duration	sinh	-
+Duration	sqrt	#1-1
 Duration	sqrt	(Cool:D $:: *%_)
 Duration	sqrt	(Real:D $:: *%_)
+Duration	succ	-
+Duration	tai	-
+Duration	tan	-
+Duration	tanh	-
+Duration	to-nanos	-
+Duration	truncate	-
+Duration	unpolar	-
 Endian	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Endian	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Endian	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1113,6 +1737,10 @@ Endian	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Endian	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 Endian	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 Endian	ACCEPTS	(Endian:D $:: Endian:D $v, *%_)
+Endian	CALL-ME	#2-2
+Endian	CALL-ME	(Endian $:: Mu \val, *%_)
+Endian	COERCE	#2-2
+Endian	COERCE	(Endian $:: Mu \val, *%_)
 Endian	Int	(Mu:U \v:: *%_)
 Endian	Int	(Cool $:: *%_)
 Endian	Int	(Endian:D $:: *%_)
@@ -1136,21 +1764,27 @@ Endian	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Endian	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Endian	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 Endian	WHICH	(Endian:D $:: *%_ --> ValueObjAt:D)
+Endian	clone	-
+Endian	enums	-
 Endian	gist	(Mu:U $:: *%_)
 Endian	gist	(Mu:D $:: *%_)
 Endian	gist	(Numeric:D $:: *%_)
 Endian	gist	(Endian:D $:: *%_)
+Endian	key	-
 Endian	kv	(Enumeration $:: *%_)
 Endian	kv	(Bool $:: *%_)
 Endian	kv	(Any:U $:: *%_)
 Endian	kv	(Any:D $:: *%_)
 Endian	kv	(Endian:D $:: *%_)
+Endian	new	-
+Endian	pair	-
 Endian	pick	($:: *%_)
 Endian	pick	($:: $n, *%_)
 Endian	pick	($:: HyperWhatever, *%_)
 Endian	pick	(Endian:U $:: *%_)
 Endian	pick	(Endian:U $:: \n, *%_)
 Endian	pick	(Endian:D $:: *@pos, *%_)
+Endian	pred	-
 Endian	raku	(Mu:U $:: *%_)
 Endian	raku	(Mu:D $:: *%_)
 Endian	raku	(Int:D $:: *%_ --> Str:D)
@@ -1160,27 +1794,65 @@ Endian	roll	($:: $n, *%_)
 Endian	roll	(Endian:U $:: *%_)
 Endian	roll	(Endian:U $:: \n, *%_)
 Endian	roll	(Endian:D $:: *@pos, *%_)
+Endian	succ	-
+Endian	value	-
+Exception	Failure	-
+Exception	POPULATE	-
 Exception	Str	(Mu:U \v:: *%_)
 Exception	Str	(Mu:D $:: *%_)
 Exception	Str	(Exception:D $:: *%_)
+Exception	UPGRADE-RAT	-
+Exception	backtrace	-
+Exception	die	-
+Exception	fail	-
 Exception	gist	(Mu:U $:: *%_)
 Exception	gist	(Mu:D $:: *%_)
 Exception	gist	(Exception:D $:: *%_)
+Exception	is-compile-time	-
+Exception	message	-
+Exception	reset-backtrace	-
+Exception	resume	-
+Exception	rethrow	-
+Exception	throw	-
+Exception	vault-backtrace	-
+Failure	AT-KEY	-
+Failure	AT-POS	-
+Failure	Bag	-
+Failure	BagHash	-
+Failure	Bool	#1-1
 Failure	Bool	(Mu:U $:: *%_ --> Bool::False)
 Failure	Bool	(Mu:D $:: *%_)
 Failure	Bool	(Failure:D $:: *%_ --> Bool::False)
+Failure	CALL-ME	-
+Failure	Capture	-
+Failure	DESTROY	-
+Failure	FALLBACK	-
+Failure	Failure	-
+Failure	Int	-
+Failure	Mix	-
+Failure	MixHash	-
+Failure	Num	-
+Failure	Numeric	-
+Failure	POPULATE	-
+Failure	STORE	-
+Failure	Set	-
+Failure	SetHash	-
 Failure	Str	(Mu:U \v:: *%_)
 Failure	Str	(Mu:D $:: *%_)
 Failure	Str	(Nil $:: *%_ --> "")
 Failure	Str	(Failure:D $:: *%_)
+Failure	UPGRADE-RAT	-
+Failure	backtrace	-
 Failure	defined	(Mu:U $:: *%_ --> Bool::False)
 Failure	defined	(Mu:D $:: *%_ --> Bool::True)
 Failure	defined	(Failure:D $:: *%_ --> Bool::False)
+Failure	exception	-
 Failure	gist	(Mu:U $:: *%_)
 Failure	gist	(Mu:D $:: *%_)
 Failure	gist	(Nil $:: *%_ --> "Nil")
 Failure	gist	(Failure:D $:: *%_)
 Failure	gist	(Failure:U $:: *%_)
+Failure	handled	-
 Failure	iterator	(Mu $:: *%_)
 Failure	iterator	($:: *%_)
 Failure	iterator	(Nil $:: *%_)
@@ -1188,6 +1860,7 @@ Failure	iterator	(Failure:D $:: *%_)
 Failure	list	(Any:U $:: *%_)
 Failure	list	(Any:D \SELF:: *%_)
 Failure	list	(Failure:D $:: *%_)
+Failure	mess	-
 Failure	new	(Mu $:: *%attrinit)
 Failure	new	(Mu $:: $, *@, *%_)
 Failure	new	(Nil $:: *@, *%_ --> Nil)
@@ -1201,6 +1874,8 @@ Failure	raku	(Mu:D $:: *%_)
 Failure	raku	(Nil $:: *%_ --> "Nil")
 Failure	raku	(Failure:D $:: *%_)
 Failure	raku	(Failure:U $:: *%_)
+Failure	self	-
+Failure	sink	-
 FatRat	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 FatRat	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 FatRat	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1208,16 +1883,25 @@ FatRat	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 FatRat	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 FatRat	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 FatRat	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+FatRat	Bool	#1-1
 FatRat	Bool	(Mu:U $:: *%_ --> Bool::False)
 FatRat	Bool	(Mu:D $:: *%_)
 FatRat	Bool	(FatRat:D $:: *%_)
 FatRat	Bool	(Numeric:D $:: *%_)
+FatRat	Bridge	-
+FatRat	Complex	-
 FatRat	DUMP	(Mu:U $:: *%_)
 FatRat	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 FatRat	DUMP	(Numeric:D $:: *%_)
+FatRat	FatRat	-
+FatRat	Int	-
+FatRat	Num	-
 FatRat	Numeric	(Mu:U \v:: *%_)
 FatRat	Numeric	(Numeric:D $:: *%_)
 FatRat	Numeric	(Numeric:U $:: *%_)
+FatRat	POPULATE	-
+FatRat	Range	-
+FatRat	Rat	-
 FatRat	Real	(Mu:U \v:: *%_)
 FatRat	Real	(Cool $:: *%_)
 FatRat	Real	(Real:D $:: *%_)
@@ -1226,32 +1910,82 @@ FatRat	Str	(Mu:U \v:: *%_)
 FatRat	Str	(Mu:D $:: *%_)
 FatRat	Str	(FatRat:D $:: *%_ --> Str:D)
 FatRat	Str	(Real:D $:: *%_)
+FatRat	UPGRADE-RAT	-
 FatRat	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 FatRat	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 FatRat	WHICH	(Rational:D $:: *%_ --> ValueObjAt:D)
+FatRat	abs	-
+FatRat	acos	-
+FatRat	acosec	-
+FatRat	acosech	-
+FatRat	acosh	-
+FatRat	acotan	-
+FatRat	acotanh	-
+FatRat	asec	-
+FatRat	asech	-
+FatRat	asin	-
+FatRat	asinh	-
+FatRat	atan	-
 FatRat	atan2	(FatRat $:: Real $x = 1e0, *%_)
 FatRat	atan2	(FatRat $:: Cool $x = 1e0, *%_)
+FatRat	atanh	-
 FatRat	base	(Rational:D $:: Int:D $base, *%_ --> Str:D)
 FatRat	base	(Rational:D $:: Int:D $base, Whatever, *%_ --> Str:D)
 FatRat	base	(Rational:D $:: Int:D $base, Int(Any) $digits, Bool:D :$no-trailing-zeroes = Bool::False, *%_ --> Str:D)
+FatRat	base-repeating	-
+FatRat	ceiling	-
+FatRat	cis	-
+FatRat	conj	-
+FatRat	cos	-
+FatRat	cosec	-
+FatRat	cosech	-
+FatRat	cosh	-
+FatRat	cotan	-
+FatRat	cotanh	-
+FatRat	denominator	-
 FatRat	exp	(Real:D $:: *%_)
 FatRat	exp	(Numeric:D $:: $base, *%_)
+FatRat	floor	-
 FatRat	gist	(Mu:U $:: *%_)
 FatRat	gist	(Mu:D $:: *%_)
 FatRat	gist	(Numeric:D $:: *%_)
+FatRat	is-prime	-
+FatRat	isNaN	-
 FatRat	log	(Real:D $:: *%_)
 FatRat	log	(Real:D $:: Real $base, *%_)
 FatRat	log	(Numeric:D $:: Cool $base, *%_)
 FatRat	log	(Numeric:D $:: Numeric $base, *%_)
+FatRat	log10	-
+FatRat	log2	-
+FatRat	narrow	-
+FatRat	new	-
+FatRat	norm	-
+FatRat	nude	-
+FatRat	numerator	-
+FatRat	polymod	-
+FatRat	pred	-
 FatRat	raku	(Mu:U $:: *%_)
 FatRat	raku	(Mu:D $:: *%_)
 FatRat	raku	(FatRat:D $:: *%_ --> Str:D)
 FatRat	raku	(Rational:D $:: *%_ --> Str:D)
+FatRat	rand	-
+FatRat	roots	-
 FatRat	round	(FatRat:D $:: *%_ --> Int:D)
 FatRat	round	(Real:D $:: *%_)
 FatRat	round	(Real:D $:: Real(Any) $scale, *%_)
+FatRat	sec	-
+FatRat	sech	-
+FatRat	sign	-
+FatRat	sin	-
+FatRat	sinh	-
+FatRat	sqrt	#1-1
 FatRat	sqrt	(Cool:D $:: *%_)
 FatRat	sqrt	(Real:D $:: *%_)
+FatRat	succ	-
+FatRat	tan	-
+FatRat	tanh	-
+FatRat	truncate	-
+FatRat	unpolar	-
 FileChangeEvent	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 FileChangeEvent	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 FileChangeEvent	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1261,6 +1995,10 @@ FileChangeEvent	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 FileChangeEvent	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 FileChangeEvent	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 FileChangeEvent	ACCEPTS	(FileChangeEvent:D $:: FileChangeEvent:D $v, *%_)
+FileChangeEvent	CALL-ME	#2-2
+FileChangeEvent	CALL-ME	(FileChangeEvent $:: Mu \val, *%_)
+FileChangeEvent	COERCE	#2-2
+FileChangeEvent	COERCE	(FileChangeEvent $:: Mu \val, *%_)
 FileChangeEvent	Int	(Mu:U \v:: *%_)
 FileChangeEvent	Int	(Cool $:: *%_)
 FileChangeEvent	Int	(FileChangeEvent:D $:: *%_)
@@ -1284,21 +2022,27 @@ FileChangeEvent	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 FileChangeEvent	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 FileChangeEvent	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 FileChangeEvent	WHICH	(FileChangeEvent:D $:: *%_ --> ValueObjAt:D)
+FileChangeEvent	clone	-
+FileChangeEvent	enums	-
 FileChangeEvent	gist	(Mu:U $:: *%_)
 FileChangeEvent	gist	(Mu:D $:: *%_)
 FileChangeEvent	gist	(Numeric:D $:: *%_)
 FileChangeEvent	gist	(FileChangeEvent:D $:: *%_)
+FileChangeEvent	key	-
 FileChangeEvent	kv	(Enumeration $:: *%_)
 FileChangeEvent	kv	(Bool $:: *%_)
 FileChangeEvent	kv	(Any:U $:: *%_)
 FileChangeEvent	kv	(Any:D $:: *%_)
 FileChangeEvent	kv	(FileChangeEvent:D $:: *%_)
+FileChangeEvent	new	-
+FileChangeEvent	pair	-
 FileChangeEvent	pick	($:: *%_)
 FileChangeEvent	pick	($:: $n, *%_)
 FileChangeEvent	pick	($:: HyperWhatever, *%_)
 FileChangeEvent	pick	(FileChangeEvent:U $:: *%_)
 FileChangeEvent	pick	(FileChangeEvent:U $:: \n, *%_)
 FileChangeEvent	pick	(FileChangeEvent:D $:: *@pos, *%_)
+FileChangeEvent	pred	-
 FileChangeEvent	raku	(Mu:U $:: *%_)
 FileChangeEvent	raku	(Mu:D $:: *%_)
 FileChangeEvent	raku	(Int:D $:: *%_ --> Str:D)
@@ -1308,6 +2052,22 @@ FileChangeEvent	roll	($:: $n, *%_)
 FileChangeEvent	roll	(FileChangeEvent:U $:: *%_)
 FileChangeEvent	roll	(FileChangeEvent:U $:: \n, *%_)
 FileChangeEvent	roll	(FileChangeEvent:D $:: *@pos, *%_)
+FileChangeEvent	succ	-
+FileChangeEvent	value	-
+ForeignCode	Capture	-
+ForeignCode	POPULATE	-
+ForeignCode	arity	-
+ForeignCode	count	-
+ForeignCode	has-loop-phasers	-
+ForeignCode	has-phasers	-
+ForeignCode	name	-
+ForeignCode	of	-
+ForeignCode	returns	-
+ForeignCode	signature	-
+Grammar	POPULATE	-
+Grammar	parse	-
+Grammar	parsefile	-
+Grammar	subparse	-
 Hash	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
 Hash	ASSIGN-KEY	(Map:D $:: \key, Mu \new, *%_)
 Hash	ASSIGN-KEY	(Hash:D $:: Str:D $key, Mu \assignval, *%_)
@@ -1332,6 +2092,7 @@ Hash	Hash	($:: *%_)
 Hash	Hash	(Map:U $:: *%_)
 Hash	Hash	(Map:D $:: *%_ --> Hash:D)
 Hash	Hash	(Hash $:: *%_)
+Hash	INSTANTIATE-GENERIC	#2-2
 Hash	INSTANTIATE-GENERIC	(Mu:U $:: TypeEnv:D, *%_)
 Hash	INSTANTIATE-GENERIC	(Mu:D $:: TypeEnv:D, *%_)
 Hash	INSTANTIATE-GENERIC	(Hash:D $:: TypeEnv:D \type-environment, *%_)
@@ -1340,6 +2101,7 @@ Hash	Map	(Map $:: *%_)
 Hash	Map	(Hash:U $:: *%_)
 Hash	Map	(Hash:D $:: :view($)!, *%_)
 Hash	Map	(Hash:D $:: *%_)
+Hash	POPULATE	-
 Hash	STORE	(Hash:D $:: \to_store, *%_)
 Hash	STORE	(Hash:D $:: \keys, \values, *%_)
 Hash	STORE_AT_KEY	(Hash $:: Str:D $key, Mu \value, *%_ --> Nil)
@@ -1348,9 +2110,13 @@ Hash	Str	(Mu:U \v:: *%_)
 Hash	Str	(Mu:D $:: *%_)
 Hash	Str	(Map:D $:: *%_ --> Str:D)
 Hash	Str	(Hash:D $:: *%_ --> Str:D)
+Hash	TEMP-LET-GET-HANDLE	-
+Hash	TEMP-LET-LOCALIZE	-
+Hash	TEMP-LET-RESTORE	-
 Hash	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Hash	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Hash	WHICH	(Hash:D $:: *%_ --> ObjAt:D)
+Hash	append	-
 Hash	categorize-list	(Hash $:: &test, \list, :&as, *%_)
 Hash	categorize-list	(Hash $:: %test, |c)
 Hash	categorize-list	(Hash $:: @test, |c)
@@ -1363,30 +2129,74 @@ Hash	clone	(Mu:U $:: *%_)
 Hash	clone	(Mu:D $:: *%twiddles)
 Hash	clone	(Map:D $:: *%_)
 Hash	clone	(Hash:D $:: *%_)
+Hash	default	-
+Hash	dynamic	-
 Hash	gist	(Mu:U $:: *%_)
 Hash	gist	(Mu:D $:: *%_)
 Hash	gist	(Map:D $:: *%_ --> Str:D)
 Hash	gist	(Hash:D $:: *%_)
+Hash	is-generic	#1-1
 Hash	is-generic	(Hash:U $:: *%_)
 Hash	is-generic	(Hash:D $:: *%_)
+Hash	keyof	-
+Hash	name	-
+Hash	of	#1-1
 Hash	of	(Hash:U $:: *%_)
 Hash	of	(Hash:D $:: *%_)
+Hash	push	-
 Hash	raku	(Mu:U $:: *%_)
 Hash	raku	(Mu:D $:: *%_)
 Hash	raku	(Map:D \SELF:: *%_ --> Str:D)
 Hash	raku	(Hash:D \SELF:: *%_)
+Hashray	ASSIGN-KEY	-
+Hashray	ASSIGN-POS	-
+Hashray	AT-KEY	-
+Hashray	AT-POS	-
+Hashray	Array	-
+Hashray	BIND-KEY	-
+Hashray	BIND-POS	-
 Hashray	Bag	($:: *%_ --> Bag:D)
 Hashray	Bag	(Iterable:D $:: *%_)
 Hashray	BagHash	($:: *%_ --> BagHash:D)
 Hashray	BagHash	(Iterable:D $:: *%_)
+Hashray	DELETE-KEY	-
+Hashray	DELETE-POS	-
+Hashray	EXISTS-KEY	-
+Hashray	EXISTS-POS	-
+Hashray	Hash	-
+Hashray	List	-
+Hashray	Map	-
 Hashray	Mix	($:: *%_ --> Mix:D)
 Hashray	Mix	(Iterable:D $:: *%_)
 Hashray	MixHash	($:: *%_ --> MixHash:D)
 Hashray	MixHash	(Iterable:D $:: *%_)
+Hashray	POPULATE	-
 Hashray	Set	($:: *%_ --> Set:D)
 Hashray	Set	(Iterable:D $:: *%_)
 Hashray	SetHash	($:: *%_ --> SetHash:D)
 Hashray	SetHash	(Iterable:D $:: *%_)
+Hashray	anti-pairs	-
+Hashray	flat	-
+Hashray	hyper	-
+Hashray	item	-
+Hashray	iterator	-
+Hashray	keys	-
+Hashray	kv	-
+Hashray	lazy	-
+Hashray	lazy-if	-
+Hashray	pairs	-
+Hashray	pop	-
+Hashray	push	-
+Hashray	race	-
+Hashray	shift	-
+Hashray	slice	-
+Hashray	splice	-
+Hashray	unshift	-
+Hashray	values	-
+Hyper	POPULATE	-
+Hyper	assigns	-
+Hyper	dwim-left	-
+Hyper	dwim-right	-
 Hyper	infix	(Hyper $:: \left, \right, *%_)
 Hyper	infix	(Hyper $:: Associative:D \left, Associative:D \right, *%_ --> Associative:D)
 Hyper	infix	(Hyper $:: Associative:D \left, List:D \right, *%_)
@@ -1397,6 +2207,13 @@ Hyper	infix	(Hyper $:: Positional:D \left, \right, *%_ --> Positional:D)
 Hyper	infix	(Hyper $:: \left, Positional:D \right, *%_ --> Positional:D)
 Hyper	infix	(Hyper $:: Iterable:D \left, Iterable:D \right, *%_ --> Iterable:D)
 Hyper	infix	(Hyper $:: \object, *%_)
+Hyper	name	-
+Hyper	new	-
+Hyper	operator	-
+HyperConfiguration	POPULATE	-
+HyperConfiguration	TWEAK	-
+HyperConfiguration	batch	-
+HyperConfiguration	degree	-
 HyperSeq	AT-POS	(Any:U $SELF: is rw: Int:D \pos, *%_)
 HyperSeq	AT-POS	(Any:U \SELF:: Int:D \pos, *%_)
 HyperSeq	AT-POS	(Any:U $:: Num:D \pos, *%_)
@@ -1412,6 +2229,7 @@ HyperSeq	AT-POS	(HyperSeq:D $:: uint $idx, *%_)
 HyperSeq	AT-POS	(HyperSeq:D $:: Int:D $idx, *%_)
 HyperSeq	Array	($:: *%_)
 HyperSeq	Array	(HyperSeq:D $:: *%_)
+HyperSeq	BUILD	-
 HyperSeq	Bag	($:: *%_ --> Bag:D)
 HyperSeq	Bag	(Iterable:D $:: *%_)
 HyperSeq	BagHash	($:: *%_ --> BagHash:D)
@@ -1433,6 +2251,8 @@ HyperSeq	Mix	($:: *%_ --> Mix:D)
 HyperSeq	Mix	(Iterable:D $:: *%_)
 HyperSeq	MixHash	($:: *%_ --> MixHash:D)
 HyperSeq	MixHash	(Iterable:D $:: *%_)
+HyperSeq	Numeric	-
+HyperSeq	POPULATE	-
 HyperSeq	Set	($:: *%_ --> Set:D)
 HyperSeq	Set	(Iterable:D $:: *%_)
 HyperSeq	SetHash	($:: *%_ --> SetHash:D)
@@ -1445,16 +2265,31 @@ HyperSeq	Str	(HyperSeq:D $:: *%_)
 HyperSeq	Stringy	(Mu:U \v:: *%_)
 HyperSeq	Stringy	(Mu:D $:: *%_)
 HyperSeq	Stringy	(HyperSeq:D $:: *%_)
+HyperSeq	cache	-
+HyperSeq	configuration	-
 HyperSeq	eager	($:: *%_)
 HyperSeq	eager	(HyperSeq:D $:: *%_)
+HyperSeq	flat	-
+HyperSeq	fmt	(Sequence:D $:: |c)
 HyperSeq	gist	(Mu:U $:: *%_)
 HyperSeq	gist	(Mu:D $:: *%_)
 HyperSeq	gist	(HyperSeq:D $:: *%_)
+HyperSeq	grep	-
+HyperSeq	hyper	-
+HyperSeq	invert	-
+HyperSeq	is-lazy	-
+HyperSeq	item	-
+HyperSeq	iterator	-
+HyperSeq	lazy	-
+HyperSeq	lazy-if	-
 HyperSeq	list	(Any:U $:: *%_)
 HyperSeq	list	(Any:D \SELF:: *%_)
 HyperSeq	list	(HyperSeq:D $:: *%_)
+HyperSeq	map	-
+HyperSeq	race	-
 HyperSeq	serial	($:: *%_)
 HyperSeq	serial	(HyperSeq:D $:: *%_)
+HyperSeq	sink	-
 HyperWhatever	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 HyperWhatever	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 HyperWhatever	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1462,6 +2297,8 @@ HyperWhatever	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 HyperWhatever	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 HyperWhatever	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 HyperWhatever	ACCEPTS	(HyperWhatever:D $:: $, *%_ --> Bool::True)
+HyperWhatever	Capture	-
+HyperWhatever	POPULATE	-
 HyperWhatever	new	(Mu $:: *%attrinit)
 HyperWhatever	new	(Mu $:: $, *@, *%_)
 HyperWhatever	new	(HyperWhatever $:: *%_)
@@ -1475,17 +2312,27 @@ Instant	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Instant	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Instant	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Instant	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Instant	Bool	#1-1
 Instant	Bool	(Mu:U $:: *%_ --> Bool::False)
 Instant	Bool	(Mu:D $:: *%_)
 Instant	Bool	(Numeric:D $:: *%_)
+Instant	Bridge	-
+Instant	Complex	-
 Instant	DUMP	(Mu:U $:: *%_)
 Instant	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 Instant	DUMP	(Numeric:D $:: *%_)
+Instant	Date	-
 Instant	DateTime	(Instant:U $:: *%_)
 Instant	DateTime	(Instant:D $:: *%_)
+Instant	FatRat	-
+Instant	Instant	-
+Instant	Int	-
+Instant	Num	-
 Instant	Numeric	(Mu:U \v:: *%_)
 Instant	Numeric	(Numeric:D $:: *%_)
 Instant	Numeric	(Numeric:U $:: *%_)
+Instant	POPULATE	-
+Instant	Rat	-
 Instant	Real	(Mu:U \v:: *%_)
 Instant	Real	(Cool $:: *%_)
 Instant	Real	(Real:D $:: *%_)
@@ -1494,26 +2341,74 @@ Instant	Str	(Mu:U \v:: *%_)
 Instant	Str	(Mu:D $:: *%_)
 Instant	Str	(Instant:D $:: *%_ --> Str:D)
 Instant	Str	(Real:D $:: *%_)
+Instant	abs	-
+Instant	acos	-
+Instant	acosec	-
+Instant	acosech	-
+Instant	acosh	-
+Instant	acotan	-
+Instant	acotanh	-
+Instant	asec	-
+Instant	asech	-
+Instant	asin	-
+Instant	asinh	-
+Instant	atan	-
 Instant	atan2	(Instant $:: Real $x = 1e0, *%_)
 Instant	atan2	(Instant $:: Cool $x = 1e0, *%_)
+Instant	atanh	-
+Instant	base	-
+Instant	ceiling	-
+Instant	cis	-
+Instant	conj	-
+Instant	cos	-
+Instant	cosec	-
+Instant	cosech	-
+Instant	cosh	-
+Instant	cotan	-
+Instant	cotanh	-
 Instant	exp	(Real:D $:: *%_)
 Instant	exp	(Numeric:D $:: $base, *%_)
+Instant	floor	-
 Instant	from-posix	(Instant $:: $posix, *%_ --> Instant:D)
 Instant	from-posix	(Instant $:: $posix, Bool $prefer-leap-second, *%_ --> Instant:D)
+Instant	from-posix-nanos	-
 Instant	gist	(Mu:U $:: *%_)
 Instant	gist	(Mu:D $:: *%_)
 Instant	gist	(Numeric:D $:: *%_)
+Instant	isNaN	-
 Instant	log	(Real:D $:: *%_)
 Instant	log	(Real:D $:: Real $base, *%_)
 Instant	log	(Numeric:D $:: Cool $base, *%_)
 Instant	log	(Numeric:D $:: Numeric $base, *%_)
+Instant	log10	-
+Instant	log2	-
+Instant	narrow	-
+Instant	new	-
+Instant	polymod	-
+Instant	pred	-
 Instant	raku	(Mu:U $:: *%_)
 Instant	raku	(Mu:D $:: *%_)
 Instant	raku	(Instant:D $:: *%_ --> Str:D)
+Instant	rand	-
+Instant	roots	-
 Instant	round	(Real:D $:: *%_)
 Instant	round	(Real:D $:: Real(Any) $scale, *%_)
+Instant	sec	-
+Instant	sech	-
+Instant	sign	-
+Instant	sin	-
+Instant	sinh	-
+Instant	sqrt	#1-1
 Instant	sqrt	(Cool:D $:: *%_)
 Instant	sqrt	(Real:D $:: *%_)
+Instant	succ	-
+Instant	tai	-
+Instant	tan	-
+Instant	tanh	-
+Instant	to-nanos	-
+Instant	to-posix	-
+Instant	truncate	-
+Instant	unpolar	-
 Int	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Int	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Int	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1522,16 +2417,26 @@ Int	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Int	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Int	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 Int	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Int	Bool	#1-1
 Int	Bool	(Mu:U $:: *%_ --> Bool::False)
 Int	Bool	(Mu:D $:: *%_)
 Int	Bool	(Int:D $:: *%_ --> Bool)
 Int	Bool	(Numeric:D $:: *%_)
+Int	Bridge	-
+Int	Capture	-
+Int	Complex	-
 Int	DUMP	(Mu:U $:: *%_)
 Int	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 Int	DUMP	(Numeric:D $:: *%_)
+Int	FatRat	-
+Int	Int	-
+Int	Num	-
 Int	Numeric	(Mu:U \v:: *%_)
 Int	Numeric	(Numeric:D $:: *%_)
 Int	Numeric	(Numeric:U $:: *%_)
+Int	POPULATE	-
+Int	Range	-
+Int	Rat	-
 Int	Real	(Mu:U \v:: *%_)
 Int	Real	(Cool $:: *%_)
 Int	Real	(Real:D $:: *%_)
@@ -1545,50 +2450,115 @@ Int	Str	(Real:D $:: *%_)
 Int	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Int	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Int	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
+Int	abs	-
+Int	acos	-
+Int	acosec	-
+Int	acosech	-
+Int	acosh	-
+Int	acotan	-
+Int	acotanh	-
+Int	asec	-
+Int	asech	-
+Int	asin	-
+Int	asinh	-
+Int	atan	-
 Int	atan2	(Int $:: Real $x = 1e0, *%_)
 Int	atan2	(Int $:: Cool $x = 1e0, *%_)
+Int	atanh	-
 Int	base	(Int:D $:: Int:D $base, *%_ --> Str:D)
 Int	base	(Int:D $:: Int(Cool) $base, Whatever, *%_ --> Str:D)
 Int	base	(Int:D $:: Int(Cool) $base, Int:D $digits = 0, *%_ --> Str:D)
 Int	base	(Int:D $:: "camel", *%_ --> Str:D)
 Int	base	(Int:D $:: "beer", *%_ --> Str:D)
+Int	bits	-
+Int	byte	-
+Int	ceiling	-
+Int	chr	#1-1
 Int	chr	(Cool:D $:: *%_)
 Int	chr	(Int:D $:: *%_ --> Str:D)
+Int	cis	-
+Int	conj	-
+Int	cos	-
+Int	cosec	-
+Int	cosech	-
+Int	cosh	-
+Int	cotan	-
+Int	cotanh	-
 Int	exp	(Real:D $:: *%_)
 Int	exp	(Numeric:D $:: $base, *%_)
+Int	expmod	-
+Int	floor	-
 Int	gist	(Mu:U $:: *%_)
 Int	gist	(Mu:D $:: *%_)
 Int	gist	(Numeric:D $:: *%_)
+Int	int	-
+Int	int16	-
+Int	int32	-
+Int	int64	-
+Int	int8	-
+Int	is-prime	-
+Int	isNaN	-
 Int	log	(Real:D $:: *%_)
 Int	log	(Real:D $:: Real $base, *%_)
 Int	log	(Numeric:D $:: Cool $base, *%_)
 Int	log	(Numeric:D $:: Numeric $base, *%_)
+Int	log10	-
+Int	log2	-
+Int	lsb	-
+Int	msb	-
+Int	narrow	-
 Int	new	(Int $:: Any:U $type, *%_)
 Int	new	(Int $:: Any:D \value, *%_ --> Int:D)
 Int	new	(Int $:: int \value, *%_ --> Int:D)
 Int	new	(Int $:: Int:D \value = 0, *%_ --> Int:D)
+Int	polymod	-
+Int	power-down	-
+Int	power-up	-
+Int	pred	-
 Int	raku	(Mu:U $:: *%_)
 Int	raku	(Mu:D $:: *%_)
 Int	raku	(Int:D $:: *%_ --> Str:D)
+Int	rand	-
+Int	roots	-
 Int	round	(Int:D $:: *%_)
 Int	round	(Int:D $:: Real(Cool) $scale, *%_ --> Real:D)
 Int	round	(Real:D $:: *%_)
 Int	round	(Real:D $:: Real(Any) $scale, *%_)
+Int	sec	-
+Int	sech	-
+Int	sign	-
+Int	sin	-
+Int	sinh	-
+Int	sqrt	#1-1
 Int	sqrt	(Cool:D $:: *%_)
 Int	sqrt	(Int:D $:: *%_ --> Num:D)
 Int	sqrt	(Real:D $:: *%_)
+Int	succ	-
+Int	tan	-
+Int	tanh	-
+Int	truncate	-
+Int	uint	-
+Int	uint16	-
+Int	uint32	-
+Int	uint64	-
+Int	uint8	-
+Int	unimatch	#2-3
 Int	unimatch	(Cool:D $:: Str:D $pvalname, *%_ --> Bool)
 Int	unimatch	(Cool:D $:: Str:D $pvalname, Str:D $propname, *%_ --> Bool)
 Int	unimatch	(Int:D $:: Str:D $pvalname, *%_ --> Bool)
 Int	unimatch	(Int:D $:: Str:D $pvalname, Str:D $propname, *%_ --> Bool)
+Int	uniname	#1-1
 Int	uniname	(Cool:D $:: *%_ --> Str:D)
 Int	uniname	(Int:D $:: *%_ --> Str:D)
+Int	uniprop	#1-2
 Int	uniprop	(Cool:D $:: *%_)
 Int	uniprop	(Cool:D $:: Str:D $propname, *%_)
 Int	uniprop	(Int:D $:: *%_)
 Int	uniprop	(Int:D $:: Str:D $propname, *%_)
+Int	unival	#1-1
 Int	unival	(Cool:D $:: *%_)
 Int	unival	(Int:D $:: *%_)
+Int	unpolar	-
 IntStr	Int	(Mu:U \v:: *%_)
 IntStr	Int	(Cool $:: *%_)
 IntStr	Int	(IntStr:D $:: *%_)
@@ -1596,25 +2566,40 @@ IntStr	Numeric	(Mu:U \v:: *%_)
 IntStr	Numeric	(Str:D $:: Bool :$fail-or-nil, *%_ --> Numeric:D)
 IntStr	Numeric	(IntStr:U $:: *%_)
 IntStr	Numeric	(IntStr:D $:: *%_)
+IntStr	POPULATE	-
 IntStr	Real	(Mu:U \v:: *%_)
 IntStr	Real	(Cool $:: *%_)
 IntStr	Real	(Real:D $:: *%_)
 IntStr	Real	(Real:U $:: *%_)
 IntStr	Real	(IntStr:U $:: *%_)
 IntStr	Real	(IntStr:D $:: *%_)
+IntStr	new	-
 IterationBuffer	AT-POS	(IterationBuffer:D $:: int $pos, *%_)
 IterationBuffer	AT-POS	(IterationBuffer:D $:: Int:D $pos, *%_)
 IterationBuffer	BIND-POS	(IterationBuffer:D $:: int $pos, Mu \value, *%_)
 IterationBuffer	BIND-POS	(IterationBuffer:D $:: Int:D $pos, Mu \value, *%_)
+IterationBuffer	List	-
+IterationBuffer	POPULATE	-
+IterationBuffer	Seq	-
+IterationBuffer	Slip	-
+IterationBuffer	append	-
+IterationBuffer	clear	-
 IterationBuffer	elems	(Any:U $:: *%_ --> 1)
 IterationBuffer	elems	(Any:D $:: *%_)
 IterationBuffer	elems	(IterationBuffer:D $:: *%_)
+IterationBuffer	iterator	-
 IterationBuffer	new	(Mu $:: *%attrinit)
 IterationBuffer	new	(Mu $:: $, *@, *%_)
 IterationBuffer	new	(IterationBuffer:U $:: Iterable:D \iterable, *%_)
+IterationBuffer	prepend	-
+IterationBuffer	push	-
 IterationBuffer	raku	(Mu:U $:: *%_)
 IterationBuffer	raku	(Mu:D $:: *%_)
 IterationBuffer	raku	(IterationBuffer:D $:: *%_)
+IterationBuffer	unshift	-
+JSONException	POPULATE	-
+JSONException	message	-
+JSONException	text	-
 Junction	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Junction	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Junction	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1622,20 +2607,26 @@ Junction	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Junction	ACCEPTS	(Junction:U $:: Junction:D, *%_ --> Bool::True)
 Junction	ACCEPTS	(Junction:D \SELF:: Junction:D \topic, *%_)
 Junction	ACCEPTS	(Junction:D $:: Mu \topic, *%_)
+Junction	AUTOTHREAD	-
 Junction	BOOLIFY-ACCEPTS	(Junction $:: Junction:U, $negate?, *%_)
 Junction	BOOLIFY-ACCEPTS	(Junction $:: Mu \matcher, $negate?, *%_)
+Junction	Bool	#1-1
 Junction	Bool	(Mu:U $:: *%_ --> Bool::False)
 Junction	Bool	(Mu:D $:: *%_)
 Junction	Bool	(Junction:D $:: *%_)
+Junction	CALL-ME	-
+Junction	INFIX-TWO	-
 Junction	Int	(Mu:U \v:: *%_)
 Junction	Int	(Junction:D $:: *%_)
 Junction	Numeric	(Mu:U \v:: *%_)
 Junction	Numeric	(Junction:D $:: *%_)
+Junction	POPULATE	-
 Junction	Real	(Mu:U \v:: *%_)
 Junction	Real	(Junction:D $:: *%_)
 Junction	Str	(Mu:U \v:: *%_)
 Junction	Str	(Mu:D $:: *%_)
 Junction	Str	(Junction:D $:: *%_)
+Junction	THREAD	-
 Junction	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Junction	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Junction	WHICH	(Junction:D $:: *%_ --> ValueObjAt:D)
@@ -1647,6 +2638,7 @@ Junction	gist	(Mu:D $:: *%_)
 Junction	gist	(Junction:D $:: *%_)
 Junction	iterator	(Mu $:: *%_)
 Junction	iterator	(Junction:D $:: *%_)
+Junction	map	(Mu \SELF:: &code;; :$label, :$item, *%_)
 Junction	new	(Junction $:: \values, Str :$type!, *%_)
 Junction	new	(Junction $:: Str:D \type, \values, *%_)
 Junction	put	(Mu $:: *%_)
@@ -1656,33 +2648,68 @@ Junction	put	(Junction $:: *%_)
 Junction	raku	(Mu:U $:: *%_)
 Junction	raku	(Mu:D $:: *%_)
 Junction	raku	(Junction:D $:: *%_)
+Junction	sink	-
+Kernel	POPULATE	-
+Kernel	Str	-
+Kernel	arch	-
+Kernel	archname	-
+Kernel	auth	-
+Kernel	bits	-
+Kernel	cpu-cores	-
+Kernel	cpu-cores-but-one	-
+Kernel	cpu-usage	-
+Kernel	desc	-
+Kernel	endian	-
+Kernel	free-memory	-
 Kernel	gist	(Mu:U $:: *%_)
 Kernel	gist	(Mu:D $:: *%_)
 Kernel	gist	(Systemic:D $:: *%_ --> Str:D)
+Kernel	hardware	-
+Kernel	hostname	-
+Kernel	name	-
 Kernel	raku	(Mu:U $:: *%_)
 Kernel	raku	(Mu:D $:: *%_)
 Kernel	raku	(Kernel:D $:: *%_)
+Kernel	release	-
 Kernel	signal	(Kernel:D $:: Str:D $signal, *%_ --> Int:D)
 Kernel	signal	(Kernel:D $:: Signal:D \signal, *%_ --> Int:D)
 Kernel	signal	(Kernel:D $:: Int:D \signal, *%_ --> Int:D)
+Kernel	signals	-
+Kernel	signature	-
+Kernel	total-memory	-
+Kernel	version	-
+Label	Int	-
+Label	POPULATE	-
 Label	Str	(Mu:U \v:: *%_)
 Label	Str	(Mu:D $:: *%_)
 Label	Str	(Label:D $:: *%_)
+Label	file	-
 Label	gist	(Mu:U $:: *%_)
 Label	gist	(Mu:D $:: *%_)
 Label	gist	(Label:D $:: *%_)
+Label	goto	-
+Label	last	-
+Label	leave	-
+Label	line	-
+Label	name	-
+Label	new	-
+Label	next	-
+Label	redo	-
 LanguageRevision	Int	(Mu:U \v:: *%_)
 LanguageRevision	Int	(LanguageRevision:D $:: *%_)
 LanguageRevision	Numeric	(Mu:U \v:: *%_)
 LanguageRevision	Numeric	(LanguageRevision:D $:: *%_)
+LanguageRevision	POPULATE	-
 LanguageRevision	Real	(Mu:U \v:: *%_)
 LanguageRevision	Real	(LanguageRevision:D $:: *%_)
 LanguageRevision	Str	(Mu:U \v:: *%_)
 LanguageRevision	Str	(Mu:D $:: *%_)
 LanguageRevision	Str	(LanguageRevision:D $:: *%_)
+LanguageRevision	Version	-
 LanguageRevision	gist	(Mu:U $:: *%_)
 LanguageRevision	gist	(Mu:D $:: *%_)
 LanguageRevision	gist	(LanguageRevision:D $:: *%_)
+LanguageRevision	p6rev	-
 List	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 List	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 List	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1692,6 +2719,7 @@ List	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 List	ACCEPTS	(List:D $:: Iterable:U, *%_ --> Bool::False)
 List	ACCEPTS	(List:D $:: Iterable:D $topic, *%_ --> Bool)
 List	ACCEPTS	(List:D $:: $topic, *%_)
+List	ASSIGN-POS	-
 List	AT-POS	(Any:U $SELF: is rw: Int:D \pos, *%_)
 List	AT-POS	(Any:U \SELF:: Int:D \pos, *%_)
 List	AT-POS	(Any:U $:: Num:D \pos, *%_)
@@ -1707,13 +2735,16 @@ List	AT-POS	(List:D $:: uint $pos, *%_)
 List	AT-POS	(List:D $:: Int:D $pos, *%_)
 List	Array	($:: *%_)
 List	Array	(List:D $:: *%_ --> Array:D)
+List	BIND-POS	-
 List	Bag	($:: *%_ --> Bag:D)
 List	Bag	(Iterable:D $:: *%_)
 List	BagHash	($:: *%_ --> BagHash:D)
 List	BagHash	(Iterable:D $:: *%_)
+List	Bool	#1-1
 List	Bool	(Mu:U $:: *%_ --> Bool::False)
 List	Bool	(Mu:D $:: *%_)
 List	Bool	(List:D $:: *%_ --> Bool)
+List	Capture	-
 List	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
 List	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
 List	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
@@ -1725,6 +2756,8 @@ List	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 List	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 List	EXISTS-POS	(List:D $:: uint $pos, *%_ --> Bool)
 List	EXISTS-POS	(List:D $:: Int:D $pos, *%_ --> Bool)
+List	FLATTENABLE_HASH	-
+List	FLATTENABLE_LIST	-
 List	Int	(Mu:U \v:: *%_)
 List	Int	(Cool $:: *%_)
 List	Int	(List:D $:: *%_ --> Int:D)
@@ -1736,6 +2769,7 @@ List	MixHash	($:: *%_ --> MixHash:D)
 List	MixHash	(Iterable:D $:: *%_)
 List	Numeric	(Mu:U \v:: *%_)
 List	Numeric	(List:D $:: *%_ --> Int:D)
+List	POPULATE	-
 List	STORE	(List:D $:: Iterable:D \iterable, :INITIALIZE($)!, *%_ --> List:D)
 List	STORE	(List:D $:: Mu \item, :INITIALIZE($)!, *%_ --> List:D)
 List	STORE	(List:D $:: Iterable:D \iterable, *%_ --> List:D)
@@ -1756,21 +2790,30 @@ List	antipairs	(Bool $:: *%_)
 List	antipairs	(Any:U $:: *%_)
 List	antipairs	(Any:D $:: *%_)
 List	antipairs	(List:D $:: *%_ --> Seq:D)
+List	append	-
+List	chrs	#1-1
 List	chrs	(Cool:D $:: *%_)
 List	chrs	(List:D $:: *%_ --> Str:D)
 List	combinations	(List $:: *%_ --> Seq:D)
 List	combinations	(List $:: Int(Any) $of, *%_ --> Seq:D)
 List	combinations	(List $:: Range:D $ofrange, *%_ --> Seq:D)
+List	eager	-
 List	elems	(Any:U $:: *%_ --> 1)
 List	elems	(Any:D $:: *%_)
 List	elems	(List:D $:: *%_)
 List	end	(Any:U $:: *%_ --> 0)
 List	end	(Any:D $:: *%_)
 List	end	(List:D $:: *%_ --> Int:D)
+List	flat	-
 List	fmt	(Cool $:: Str(Cool) $format = "\%s", *%_)
 List	fmt	(List:D $:: *%_ --> Str:D)
 List	fmt	(List:D $:: Str(Cool) $format, *%_ --> Str:D)
 List	fmt	(List:D $:: Str(Cool) $format, $separator, *%_ --> Str:D)
+List	from	-
+List	from-iterator	-
+List	from-slurpy	-
+List	from-slurpy-flat	-
+List	from-slurpy-onearg	-
 List	gist	(Mu:U $:: *%_)
 List	gist	(Mu:D $:: *%_)
 List	gist	(List:D $:: *%_ --> Str:D)
@@ -1779,6 +2822,7 @@ List	head	(Any:D $:: *%_)
 List	head	(Any:D $:: Callable:D $w, *%_)
 List	head	(Any:D $:: $n, *%_)
 List	head	(List:D $:: *%_)
+List	hyper	-
 List	invert	(Enumeration $:: *%_)
 List	invert	(Bool $:: *%_)
 List	invert	(Any:U $:: *%_)
@@ -1786,9 +2830,11 @@ List	invert	(Any:D $:: *%_)
 List	invert	(List:D $:: *%_ --> Seq:D)
 List	is-lazy	(Mu $:: *%_ --> Bool::False)
 List	is-lazy	(List:D $:: *%_ --> Bool)
+List	item	-
 List	iterator	(Mu $:: *%_)
 List	iterator	($:: *%_)
 List	iterator	(List:D $:: *%_ --> Iterator:D)
+List	join	-
 List	keys	(Enumeration $:: *%_)
 List	keys	(Bool $:: *%_)
 List	keys	(Any:U $:: *%_)
@@ -1799,32 +2845,47 @@ List	kv	(Bool $:: *%_)
 List	kv	(Any:U $:: *%_)
 List	kv	(Any:D $:: *%_)
 List	kv	(List:D $:: *%_ --> Seq:D)
+List	lazy	-
+List	lazy-if	-
 List	list	(Any:U $:: *%_)
 List	list	(Any:D \SELF:: *%_)
 List	list	(List:D $:: *%_)
+List	new	-
+List	of	-
 List	pairs	(Enumeration $:: *%_)
 List	pairs	(Bool $:: *%_)
 List	pairs	(Any:U $:: *%_)
 List	pairs	(Any:D $:: *%_)
 List	pairs	(List:D $:: *%_ --> Seq:D)
+List	permutations	(List $:: *%_ --> Seq:D)
 List	pick	($:: *%_)
 List	pick	($:: $n, *%_)
 List	pick	($:: HyperWhatever, *%_)
 List	pick	(List:D $:: *%_)
 List	pick	(List:D $:: Callable:D $calculate, *%_)
 List	pick	(List:D $:: $number, *%_)
+List	pop	-
+List	prepend	-
+List	push	-
+List	race	-
 List	raku	(Mu:U $:: *%_)
 List	raku	(Mu:D $:: *%_)
 List	raku	(List:D \SELF:: *%_ --> Str:D)
+List	reification-target	-
+List	reverse	-
 List	roll	(List:D $:: *%_)
 List	roll	(List:D $:: Whatever, *%_)
 List	roll	(List:D $:: $number, *%_)
+List	rotate	-
+List	shift	-
+List	sink	-
 List	sort	(Any:U $:: |c)
 List	sort	(Any:D $:: *%_)
 List	sort	(Any:D $:: &by, *%_)
 List	sort	(List:D $:: *%_ --> Seq:D)
 List	sort	(List:D $:: &by?, :$k!, *%_)
 List	sort	(List:D $:: &by, *%_ --> Seq:D)
+List	sum	#1-1
 List	sum	(Any:D $:: *%_)
 List	sum	(List:D $:: *%_)
 List	tail	(Any:U $:: |c)
@@ -1832,11 +2893,20 @@ List	tail	(Any:D $:: *%_)
 List	tail	(Any:D $:: $n, *%_)
 List	tail	(List:D $:: *%_)
 List	tail	(List:D $:: $n, *%_ --> Seq:D)
+List	to	-
+List	unshift	-
 List	values	(Enumeration $:: *%_)
 List	values	(Bool $:: *%_)
 List	values	(Any:U $:: *%_)
 List	values	(Any:D $:: *%_)
 List	values	(List:D $:: *%_ --> Seq:D)
+Lock	POPULATE	-
+Lock	condition	-
+Lock	lock	-
+Lock	new	-
+Lock	protect	(Lock:D $:: &code, *%_)
+Lock	unlock	-
+Macro	POPULATE	-
 Map	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Map	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Map	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1860,19 +2930,25 @@ Map	Bag	(Iterable:D $:: *%_)
 Map	BagHash	($:: *%_ --> BagHash:D)
 Map	BagHash	(Map:D $:: *%_ --> BagHash:D)
 Map	BagHash	(Iterable:D $:: *%_)
+Map	Bool	#1-1
 Map	Bool	(Mu:U $:: *%_ --> Bool::False)
 Map	Bool	(Mu:D $:: *%_)
 Map	Bool	(Map:D $:: *%_ --> Bool)
+Map	Capture	-
 Map	EXISTS-KEY	(Any:U $:: $, *%_ --> Bool::False)
 Map	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
 Map	EXISTS-KEY	(Map:D $:: Str:D $key, *%_ --> Bool)
 Map	EXISTS-KEY	(Map:D $:: \key, *%_ --> Bool)
+Map	FLATTENABLE_HASH	-
+Map	FLATTENABLE_LIST	-
 Map	Hash	($:: *%_)
 Map	Hash	(Map:U $:: *%_)
 Map	Hash	(Map:D $:: *%_ --> Hash:D)
 Map	Int	(Mu:U \v:: *%_)
 Map	Int	(Cool $:: *%_)
 Map	Int	(Map:D $:: *%_ --> Int:D)
+Map	IterationBuffer	-
+Map	List	-
 Map	Map	($:: *%_)
 Map	Map	(Map $:: *%_)
 Map	Mix	($:: *%_ --> Mix:D)
@@ -1883,6 +2959,8 @@ Map	MixHash	(Map:D $:: *%_ --> MixHash:D)
 Map	MixHash	(Iterable:D $:: *%_)
 Map	Numeric	(Mu:U \v:: *%_)
 Map	Numeric	(Map:D $:: *%_ --> Int:D)
+Map	POPULATE	-
+Map	PUSH_FROM_MAP	-
 Map	STORE	(Map:D $:: Map:D \map, :INITIALIZE($)!, :DECONT($)!, *%_ --> Map:D)
 Map	STORE	(Map:D $:: Map:D \map, :INITIALIZE($)!, *%_ --> Map:D)
 Map	STORE	(Map:D $:: Iterator:D $iterator, :INITIALIZE($)!, :DECONT($)!, *%_ --> Map:D)
@@ -1921,16 +2999,19 @@ Map	contains	(Map:D $:: \needle, *%_)
 Map	elems	(Any:U $:: *%_ --> 1)
 Map	elems	(Any:D $:: *%_)
 Map	elems	(Map:D $:: *%_)
+Map	flat	-
 Map	fmt	(Cool $:: Str(Cool) $format = "\%s", *%_)
 Map	fmt	(Map:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_ --> Str:D)
 Map	gist	(Mu:U $:: *%_)
 Map	gist	(Mu:D $:: *%_)
 Map	gist	(Map:D $:: *%_ --> Str:D)
+Map	hash	-
 Map	head	(Any:U $:: |c)
 Map	head	(Any:D $:: *%_)
 Map	head	(Any:D $:: Callable:D $w, *%_)
 Map	head	(Any:D $:: $n, *%_)
 Map	head	(Map:D $:: *%_)
+Map	hyper	-
 Map	index	(List:D $:: Cool:D $needle, *%_)
 Map	index	(Cool:D $:: Cool:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)
 Map	index	(Cool:D $:: Cool:D $needle, :m(:$ignoremark)!, *%_ --> Int:D)
@@ -1944,9 +3025,11 @@ Map	invert	(Bool $:: *%_)
 Map	invert	(Any:U $:: *%_)
 Map	invert	(Any:D $:: *%_)
 Map	invert	(Map:D $:: *%_ --> Seq:D)
+Map	item	-
 Map	iterator	(Mu $:: *%_)
 Map	iterator	($:: *%_)
 Map	iterator	(Map:D $:: *%_ --> Iterator:D)
+Map	keyof	-
 Map	keys	(Enumeration $:: *%_)
 Map	keys	(Bool $:: *%_)
 Map	keys	(Any:U $:: *%_)
@@ -1957,6 +3040,8 @@ Map	kv	(Bool $:: *%_)
 Map	kv	(Any:U $:: *%_)
 Map	kv	(Any:D $:: *%_)
 Map	kv	(Map:D $:: *%_ --> Seq:D)
+Map	lazy	-
+Map	lazy-if	-
 Map	list	(Any:U $:: *%_)
 Map	list	(Any:D \SELF:: *%_)
 Map	list	(Map:D $:: *%_ --> List:D)
@@ -1964,6 +3049,7 @@ Map	new	(Mu $:: *%attrinit)
 Map	new	(Mu $:: $, *@, *%_)
 Map	new	(Map $:: *%_ --> Map:D)
 Map	new	(Map $:: *@args, *%_ --> Map:D)
+Map	of	-
 Map	pairs	(Enumeration $:: *%_)
 Map	pairs	(Bool $:: *%_)
 Map	pairs	(Any:U $:: *%_)
@@ -1973,6 +3059,7 @@ Map	pick	($:: *%_)
 Map	pick	($:: $n, *%_)
 Map	pick	($:: HyperWhatever, *%_)
 Map	pick	(Map:D $:: *%_)
+Map	race	-
 Map	raku	(Mu:U $:: *%_)
 Map	raku	(Mu:D $:: *%_)
 Map	raku	(Map:D \SELF:: *%_ --> Str:D)
@@ -1986,11 +3073,51 @@ Map	sort	(Any:U $:: |c)
 Map	sort	(Any:D $:: *%_)
 Map	sort	(Any:D $:: &by, *%_)
 Map	sort	(Map:D $:: *%_ --> Seq:D)
+Map	store-odd-number	-
 Map	values	(Enumeration $:: *%_)
 Map	values	(Bool $:: *%_)
 Map	values	(Any:U $:: *%_)
 Map	values	(Any:D $:: *%_)
 Map	values	(Map:D $:: *%_ --> Seq:D)
+Match	!BACKREF	-
+Match	!BACKREF-LATEST-CAPTURE	-
+Match	!DELEGATE_ACCEPTS	-
+Match	!DYNQUANT_LIMITS	-
+Match	!LITERAL	-
+Match	!alt	-
+Match	!alt_nfa	-
+Match	!braid	-
+Match	!clear_highwater	-
+Match	!clone_match_at	-
+Match	!cursor_capture	-
+Match	!cursor_fail	-
+Match	!cursor_init	-
+Match	!cursor_more	-
+Match	!cursor_next	-
+Match	!cursor_pass	-
+Match	!cursor_pass_no_reduce	-
+Match	!cursor_pass_quick	-
+Match	!cursor_pos	-
+Match	!cursor_push_cstack	-
+Match	!cursor_start	-
+Match	!cursor_start_all	-
+Match	!cursor_start_cur	-
+Match	!cursor_start_fail	-
+Match	!cursor_start_subcapture	-
+Match	!dba	-
+Match	!dump_str	-
+Match	!fresh_highexpect	-
+Match	!highexpect	-
+Match	!highwater	-
+Match	!precompute_nfas	-
+Match	!protoregex	-
+Match	!protoregex_nfa	-
+Match	!protoregex_table	-
+Match	!reduce	-
+Match	!reduce_with_match	-
+Match	!set_highexpect	-
+Match	!shared	-
+Match	!shared_type	-
 Match	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Match	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Match	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -1998,8 +3125,20 @@ Match	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Match	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Match	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Match	ACCEPTS	(Match:D $:: Mu, *%_)
+Match	BUILD	-
 Match	Bool	(Match:U $:: *%_ --> Bool::False)
 Match	Bool	(Match:D $:: *%_)
+Match	CALL_SUBRULE	-
+Match	CURSOR	-
+Match	CURSOR_CAPTURE_MARKERS	-
+Match	CURSOR_MORE	-
+Match	CURSOR_NEXT	-
+Match	CURSOR_OVERLAP	-
+Match	DELEGATE-ACCEPTS	-
+Match	DYNQUANT_LIMITS	-
+Match	FAILGOAL	-
+Match	INDMETHOD	-
+Match	INDRULE	-
 Match	INTERPOLATE	(Match $:: Callable:D \var, $, $, $, $, $, *%_)
 Match	INTERPOLATE	(Match $:: Iterable:D \var, int \im, int \monkey, int \s, $, \context, *%_)
 Match	INTERPOLATE	(Match $:: Associative:D \var, int \im, $, $, $, \context, *%_)
@@ -2010,23 +3149,93 @@ Match	INTERPOLATE	(Match $:: Mu:U \var, $, $, $, $, $, *%_)
 Match	INTERPOLATE_ASSERTION	(Match $:: Associative:D, $, $, $, $, $, *%_)
 Match	INTERPOLATE_ASSERTION	(Match $:: Iterable:D \var, int \im, int \monkey, int \s, $, \context, *%_)
 Match	INTERPOLATE_ASSERTION	(Match $:: Mu:D \var, int \im, int \monkey, $, $, \context, *%_)
+Match	Int	-
+Match	MATCH	-
+Match	Num	-
 Match	Numeric	(Mu:U \v:: *%_)
 Match	Numeric	(Capture:D $:: *%_)
 Match	Numeric	(Match:D $:: *%_)
+Match	OTHERGRAMMAR	-
+Match	POPULATE	-
+Match	PRECURSOR	-
+Match	RECURSE	-
+Match	STR	-
+Match	Str	-
 Match	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Match	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Match	WHICH	(Capture:D $:: *%_ --> ValueObjAt:D)
 Match	WHICH	(Match:D $:: *%_ --> ObjAt:D)
+Match	actions	-
+Match	after	-
+Match	after_scan	-
+Match	alnum	-
+Match	alpha	-
+Match	ast	-
+Match	at	-
+Match	before	-
+Match	blank	-
+Match	braid	-
+Match	caps	-
+Match	chars	-
+Match	check_LANG_oopsies	-
+Match	check_PACKAGE_oopsies	-
+Match	chunks	-
+Match	clone	-
+Match	clone_braid_from	-
+Match	cntrl	-
+Match	define_slang	-
+Match	digit	-
+Match	dump	-
+Match	from	-
 Match	gist	(Mu:U $:: *%_)
 Match	gist	(Mu:D $:: *%_)
 Match	gist	(Capture:D $:: *%_)
 Match	gist	(Match:D $:: $d = 0, *%_)
+Match	grammar	-
+Match	graph	-
+Match	how	-
+Match	ident	-
+Match	know_how	-
+Match	lower	-
+Match	made	-
+Match	make	-
 Match	not	(Match:U $:: *%_ --> Bool::True)
 Match	not	(Match:D $:: *%_)
+Match	orig	-
+Match	package	-
+Match	pos	-
+Match	postmatch	-
+Match	pragma	-
+Match	prematch	-
+Match	print	-
+Match	prune	-
+Match	punct	-
 Match	raku	(Mu:U $:: *%_)
 Match	raku	(Mu:D $:: *%_)
 Match	raku	(Capture:D $:: *%_)
 Match	raku	(Match:D $:: *%_ --> Str:D)
+Match	refine_slang	-
+Match	replace-with	-
+Match	same	-
+Match	set_actions	-
+Match	set_braid	-
+Match	set_braid_from	-
+Match	set_how	-
+Match	set_package	-
+Match	set_pragma	-
+Match	slang_actions	-
+Match	slang_grammar	-
+Match	slangs	-
+Match	snapshot_braid	-
+Match	space	-
+Match	switch_to_slang	-
+Match	target	-
+Match	to	-
+Match	upper	-
+Match	wb	-
+Match	ws	-
+Match	ww	-
+Match	xdigit	-
 Method	gist	(Mu:U $:: *%_)
 Method	gist	(Mu:D $:: *%_)
 Method	gist	(Routine:D $:: *%_)
@@ -2046,15 +3255,18 @@ Mix	AT-KEY	(Any:D $:: $key, *%_)
 Mix	AT-KEY	(Any:U \SELF:: \key, *%_)
 Mix	AT-KEY	(Baggy:D $:: \k, *%_)
 Mix	AT-KEY	(QuantHash:U \SELF:: $key, *%_)
+Mix	ATTRIBUTE-new	-
 Mix	Bag	($:: *%_ --> Bag:D)
 Mix	Bag	(Baggy:D $:: *%_)
 Mix	BagHash	($:: *%_ --> BagHash:D)
 Mix	BagHash	(Baggy:D $:: *%_)
 Mix	Baggy	(Mix:U $:: *%_)
 Mix	Baggy	(Mix:D $:: *%_)
+Mix	Bool	#1-1
 Mix	Bool	(Mu:U $:: *%_ --> Bool::False)
 Mix	Bool	(Mu:D $:: *%_)
 Mix	Bool	(Baggy:D $:: *%_ --> Bool)
+Mix	Capture	-
 Mix	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
 Mix	DELETE-KEY	(Any:D $:: $, *%_)
 Mix	DELETE-KEY	(QuantHash:D $:: \k, *%_)
@@ -2064,6 +3276,8 @@ Mix	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
 Mix	Hash	($:: *%_)
 Mix	Hash	(Mixy:D $:: *%_ --> Hash:D)
 Mix	Hash	(Baggy:D $:: *%_ --> Hash:D)
+Mix	Int	-
+Mix	Map	-
 Mix	Mix	($:: *%_ --> Mix:D)
 Mix	Mix	(Mix:D $:: *%_)
 Mix	Mix	(Baggy:D $:: *%_)
@@ -2072,6 +3286,12 @@ Mix	MixHash	(Mix:D $:: *%_)
 Mix	MixHash	(Baggy:D $:: *%_)
 Mix	Mixy	(Mix:U $:: *%_)
 Mix	Mixy	(Mix:D $:: *%_)
+Mix	Num	-
+Mix	Numeric	-
+Mix	OBJECTIFIER	-
+Mix	POPULATE	-
+Mix	RAW-HASH	-
+Mix	Real	-
 Mix	SETUP	(Mix:U $:: \elems, *%_)
 Mix	SETUP	(QuantHash:U $:: *%_)
 Mix	SETUP	(QuantHash:U $:: \elems, *%_)
@@ -2093,6 +3313,7 @@ Mix	Str	(Baggy:D $:: *%_ --> Str:D)
 Mix	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Mix	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Mix	WHICH	(Mix:D $:: *%_ --> ValueObjAt:D)
+Mix	WHICHIFY	-
 Mix	antipairs	(Enumeration $:: *%_)
 Mix	antipairs	(Bool $:: *%_)
 Mix	antipairs	(Any:U $:: *%_)
@@ -2110,9 +3331,11 @@ Mix	deepmap	(Associative:D $:: &op, *%_)
 Mix	deepmap	($:: &op, *%_)
 Mix	deepmap	(Mixy:D $:: &mapper, *%_)
 Mix	deepmap	(Baggy:D $:: &mapper, *%_)
+Mix	default	-
 Mix	elems	(Any:U $:: *%_ --> 1)
 Mix	elems	(Any:D $:: *%_)
 Mix	elems	(Baggy:D $:: *%_)
+Mix	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
 Mix	gist	(Mu:U $:: *%_)
 Mix	gist	(Mu:D $:: *%_)
 Mix	gist	(Mix:D $:: *%_ --> Str:D)
@@ -2136,6 +3359,7 @@ Mix	invert	(Baggy:D $:: *%_)
 Mix	iterator	(Mu $:: *%_)
 Mix	iterator	($:: *%_)
 Mix	iterator	(Baggy:D $:: *%_)
+Mix	keyof	-
 Mix	keys	(Enumeration $:: *%_)
 Mix	keys	(Bool $:: *%_)
 Mix	keys	(Any:U $:: *%_)
@@ -2156,6 +3380,8 @@ Mix	new	(Mu $:: $, *@, *%_)
 Mix	new	(Baggy $:: \value, *%_ --> Baggy:D)
 Mix	new	(Baggy $:: **@args, *%_)
 Mix	new	(QuantHash $:: *%_)
+Mix	new-from-pairs	-
+Mix	of	-
 Mix	pairs	(Enumeration $:: *%_)
 Mix	pairs	(Bool $:: *%_)
 Mix	pairs	(Any:U $:: *%_)
@@ -2184,6 +3410,7 @@ Mix	roll	(Baggy:D $:: *%_)
 Mix	roll	(Baggy:D $:: Whatever, *%_)
 Mix	roll	(Baggy:D $:: Callable:D $calculate, *%_)
 Mix	roll	(Baggy:D $:: \count, *%_)
+Mix	total	-
 Mix	values	(Enumeration $:: *%_)
 Mix	values	(Bool $:: *%_)
 Mix	values	(Any:U $:: *%_)
@@ -2212,9 +3439,11 @@ MixHash	BagHash	($:: *%_ --> BagHash:D)
 MixHash	BagHash	(Baggy:D $:: *%_)
 MixHash	Baggy	(MixHash:U $:: *%_)
 MixHash	Baggy	(MixHash:D $:: *%_)
+MixHash	Bool	#1-1
 MixHash	Bool	(Mu:U $:: *%_ --> Bool::False)
 MixHash	Bool	(Mu:D $:: *%_)
 MixHash	Bool	(Baggy:D $:: *%_ --> Bool)
+MixHash	Capture	-
 MixHash	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
 MixHash	DELETE-KEY	(Any:D $:: $, *%_)
 MixHash	DELETE-KEY	(MixHash:D $:: \k, *%_)
@@ -2225,6 +3454,8 @@ MixHash	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
 MixHash	Hash	($:: *%_)
 MixHash	Hash	(Mixy:D $:: *%_ --> Hash:D)
 MixHash	Hash	(Baggy:D $:: *%_ --> Hash:D)
+MixHash	Int	-
+MixHash	Map	-
 MixHash	Mix	($:: *%_ --> Mix:D)
 MixHash	Mix	(MixHash:D $:: :view($)!, *%_)
 MixHash	Mix	(MixHash:D $:: *%_)
@@ -2234,6 +3465,12 @@ MixHash	MixHash	(MixHash:D $:: *%_)
 MixHash	MixHash	(Baggy:D $:: *%_)
 MixHash	Mixy	(MixHash:U $:: *%_)
 MixHash	Mixy	(MixHash:D $:: *%_)
+MixHash	Num	-
+MixHash	Numeric	-
+MixHash	OBJECTIFIER	-
+MixHash	POPULATE	-
+MixHash	RAW-HASH	-
+MixHash	Real	-
 MixHash	SETUP	(QuantHash:U $:: *%_)
 MixHash	SETUP	(QuantHash:U $:: \elems, *%_)
 MixHash	SETUP	(QuantHash:D $:: \elems, *%_)
@@ -2251,6 +3488,7 @@ MixHash	Setty	(MixHash:D $:: *%_)
 MixHash	Str	(Mu:U \v:: *%_)
 MixHash	Str	(Mu:D $:: *%_)
 MixHash	Str	(Baggy:D $:: *%_ --> Str:D)
+MixHash	WHICHIFY	-
 MixHash	antipairs	(Enumeration $:: *%_)
 MixHash	antipairs	(Bool $:: *%_)
 MixHash	antipairs	(Any:U $:: *%_)
@@ -2264,14 +3502,17 @@ MixHash	classify-list	(MixHash $:: &test, \list, *%_)
 MixHash	classify-list	(MixHash $:: %test, |c)
 MixHash	classify-list	(MixHash $:: @test, |c)
 MixHash	classify-list	(MixHash $:: &test, **@list, |c)
+MixHash	clone	-
 MixHash	deepmap	(Associative:D $:: &op, *%_)
 MixHash	deepmap	($:: &op, *%_)
 MixHash	deepmap	(MixHash:D $:: &mapper, *%_)
 MixHash	deepmap	(Mixy:D $:: &mapper, *%_)
 MixHash	deepmap	(Baggy:D $:: &mapper, *%_)
+MixHash	default	-
 MixHash	elems	(Any:U $:: *%_ --> 1)
 MixHash	elems	(Any:D $:: *%_)
 MixHash	elems	(Baggy:D $:: *%_)
+MixHash	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
 MixHash	gist	(Mu:U $:: *%_)
 MixHash	gist	(Mu:D $:: *%_)
 MixHash	gist	(MixHash:D $:: *%_ --> Str:D)
@@ -2294,6 +3535,7 @@ MixHash	iterator	(Mu $:: *%_)
 MixHash	iterator	($:: *%_)
 MixHash	iterator	(MixHash:D $:: *%_)
 MixHash	iterator	(Baggy:D $:: *%_)
+MixHash	keyof	-
 MixHash	keys	(Enumeration $:: *%_)
 MixHash	keys	(Bool $:: *%_)
 MixHash	keys	(Any:U $:: *%_)
@@ -2315,6 +3557,8 @@ MixHash	new	(Mu $:: $, *@, *%_)
 MixHash	new	(Baggy $:: \value, *%_ --> Baggy:D)
 MixHash	new	(Baggy $:: **@args, *%_)
 MixHash	new	(QuantHash $:: *%_)
+MixHash	new-from-pairs	-
+MixHash	of	-
 MixHash	pairs	(Enumeration $:: *%_)
 MixHash	pairs	(Bool $:: *%_)
 MixHash	pairs	(Any:U $:: *%_)
@@ -2343,6 +3587,7 @@ MixHash	roll	(Baggy:D $:: *%_)
 MixHash	roll	(Baggy:D $:: Whatever, *%_)
 MixHash	roll	(Baggy:D $:: Callable:D $calculate, *%_)
 MixHash	roll	(Baggy:D $:: \count, *%_)
+MixHash	total	-
 MixHash	values	(Enumeration $:: *%_)
 MixHash	values	(Bool $:: *%_)
 MixHash	values	(Any:U $:: *%_)
@@ -2353,38 +3598,100 @@ Mu	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Mu	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Mu	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
 Mu	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Mu	BUILDALL	-
+Mu	BUILD_LEAST_DERIVED	-
+Mu	Bool	#1-1
 Mu	Bool	(Mu:U $:: *%_ --> Bool::False)
 Mu	Bool	(Mu:D $:: *%_)
+Mu	CREATE	-
+Mu	Capture	-
+Mu	DEFINITE	-
 Mu	DUMP	(Mu:U $:: *%_)
 Mu	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
+Mu	DUMP-OBJECT-ATTRS	-
+Mu	DUMP-PIECES	-
+Mu	HOW	-
+Mu	INSTANTIATE-GENERIC	#2-2
 Mu	INSTANTIATE-GENERIC	(Mu:U $:: TypeEnv:D, *%_)
 Mu	INSTANTIATE-GENERIC	(Mu:D $:: TypeEnv:D, *%_)
+Mu	Int	(Mu:U \v:: *%_)
+Mu	Numeric	(Mu:U \v:: *%_)
+Mu	POPULATE	-
+Mu	REPR	-
+Mu	Real	(Mu:U \v:: *%_)
 Mu	Str	(Mu:U \v:: *%_)
 Mu	Str	(Mu:D $:: *%_)
 Mu	Stringy	(Mu:U \v:: *%_)
 Mu	Stringy	(Mu:D $:: *%_)
+Mu	VAR	-
 Mu	WALK	(Mu $:: :$name!, :$canonical, :$ascendant, :$descendant, :$preorder, :$breadth, :$super, :$omit, :$include, :$roles, :$submethods = Bool::True, :$methods = Bool::True, *%_ --> WalkList)
 Mu	WALK	(Mu $:: Str:D $name, *%n --> WalkList)
+Mu	WHAT	-
+Mu	WHERE	-
 Mu	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Mu	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
+Mu	WHO	-
+Mu	WHY	(Mu $:: *%_)
+Mu	bless	-
+Mu	can	-
 Mu	clone	(Mu:U $:: *%_)
 Mu	clone	(Mu:D $:: *%twiddles)
 Mu	defined	(Mu:U $:: *%_ --> Bool::False)
 Mu	defined	(Mu:D $:: *%_ --> Bool::True)
+Mu	dispatch:<!>	-
+Mu	dispatch:<.*>	-
+Mu	dispatch:<.+>	-
+Mu	dispatch:<.=>	-
+Mu	dispatch:<.?>	-
+Mu	dispatch:<::>	-
+Mu	dispatch:<hyper>	-
+Mu	dispatch:<var>	-
+Mu	does	-
+Mu	emit	-
 Mu	gist	(Mu:U $:: *%_)
 Mu	gist	(Mu:D $:: *%_)
+Mu	gistseen	-
+Mu	is-generic	-
+Mu	is-lazy	(Mu $:: *%_ --> Bool::False)
 Mu	isa	(Mu \SELF:: Mu $type, *%_ --> Bool)
 Mu	isa	(Mu \SELF:: Str:D $name, *%_ --> Bool)
+Mu	item	-
+Mu	iterator	(Mu $:: *%_)
 Mu	new	(Mu $:: *%attrinit)
 Mu	new	(Mu $:: $, *@, *%_)
+Mu	not	-
+Mu	note	(Mu $:: *%_)
+Mu	perl	(Mu \SELF:: |c)
+Mu	perlseen	-
+Mu	print	(Mu $:: *%_)
 Mu	put	(Mu $:: *%_)
 Mu	put	(Mu $:: \x, *%_)
 Mu	put	(Mu $:: |)
 Mu	raku	(Mu:U $:: *%_)
 Mu	raku	(Mu:D $:: *%_)
+Mu	rakuseen	-
+Mu	return	-
+Mu	return-rw	-
 Mu	say	(Mu $:: *%_)
 Mu	say	(Mu $:: \x, *%_)
 Mu	say	(Mu $:: |)
+Mu	self	-
+Mu	set_why	-
+Mu	sink	-
+Mu	so	-
+Mu	take	-
+NFC	NFC	-
+NFC	POPULATE	-
+NFC	new	-
+NFD	NFD	-
+NFD	POPULATE	-
+NFD	new	-
+NFKC	NFKC	-
+NFKC	POPULATE	-
+NFKC	new	-
+NFKD	NFKD	-
+NFKD	POPULATE	-
+NFKD	new	-
 Num	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Num	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Num	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2392,16 +3699,26 @@ Num	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Num	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Num	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Num	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Num	Bool	#1-1
 Num	Bool	(Mu:U $:: *%_ --> Bool::False)
 Num	Bool	(Mu:D $:: *%_)
 Num	Bool	(Num:D $:: *%_)
 Num	Bool	(Numeric:D $:: *%_)
+Num	Bridge	-
+Num	Capture	-
+Num	Complex	-
 Num	DUMP	(Mu:U $:: *%_)
 Num	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 Num	DUMP	(Numeric:D $:: *%_)
+Num	FatRat	-
+Num	Int	-
+Num	Num	-
 Num	Numeric	(Mu:U \v:: *%_)
 Num	Numeric	(Numeric:D $:: *%_)
 Num	Numeric	(Numeric:U $:: *%_)
+Num	POPULATE	-
+Num	Range	-
+Num	Rat	-
 Num	Real	(Mu:U \v:: *%_)
 Num	Real	(Cool $:: *%_)
 Num	Real	(Real:D $:: *%_)
@@ -2410,38 +3727,85 @@ Num	Str	(Mu:U \v:: *%_)
 Num	Str	(Mu:D $:: *%_)
 Num	Str	(Num:D $:: *%_)
 Num	Str	(Real:D $:: *%_)
+Num	UPGRADE-RAT	-
 Num	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Num	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Num	WHICH	(Num:D $:: *%_ --> ValueObjAt:D)
+Num	abs	-
+Num	acos	(Num:D $:: *%_)
+Num	acosec	-
+Num	acosech	(Num:D $:: *%_)
+Num	acosh	(Num:D $:: *%_)
+Num	acotan	-
+Num	acotanh	(Num:D $:: *%_)
+Num	asec	(Num:D $:: *%_)
+Num	asech	(Num:D $:: *%_)
+Num	asin	(Num:D $:: *%_)
+Num	asinh	(Num:D $:: *%_)
+Num	atan	(Num:D $:: *%_)
 Num	atan2	(Num:D $:: Num:D $x = 1e0, *%_)
 Num	atan2	(Num $:: Real $x = 1e0, *%_)
 Num	atan2	(Num $:: Cool $x = 1e0, *%_)
 Num	atanh	(1e0: *%_)
 Num	atanh	(Num:D $:: *%_)
+Num	base	-
+Num	bits	-
+Num	ceiling	-
+Num	cis	-
+Num	conj	-
+Num	cos	(Num:D $:: *%_)
+Num	cosec	-
+Num	cosech	(Num:D $:: *%_)
+Num	cosh	(Num:D $:: *%_)
+Num	cotan	-
+Num	cotanh	(Num:D $:: *%_)
+Num	divzero	-
 Num	exp	(Num:D $:: *%_)
 Num	exp	(Real:D $:: *%_)
 Num	exp	(Numeric:D $:: $base, *%_)
+Num	floor	-
 Num	gist	(Mu:U $:: *%_)
 Num	gist	(Mu:D $:: *%_)
 Num	gist	(Numeric:D $:: *%_)
+Num	is-prime	-
+Num	isNaN	-
 Num	log	(Num:D $:: *%_)
 Num	log	(Num:D $:: Num \base, *%_)
 Num	log	(Real:D $:: *%_)
 Num	log	(Real:D $:: Real $base, *%_)
 Num	log	(Numeric:D $:: Cool $base, *%_)
 Num	log	(Numeric:D $:: Numeric $base, *%_)
+Num	log10	-
+Num	log2	-
+Num	modzero	-
+Num	narrow	-
 Num	new	(Mu $:: *%attrinit)
 Num	new	(Mu $:: $, *@, *%_)
 Num	new	(Num $:: *%_)
 Num	new	(Num $:: $n, *%_)
+Num	polymod	-
+Num	pred	-
 Num	raku	(Mu:U $:: *%_)
 Num	raku	(Mu:D $:: *%_)
 Num	raku	(Num:D $:: *%_)
+Num	rand	-
+Num	roots	-
 Num	round	(Real:D $:: *%_)
 Num	round	(Real:D $:: Real(Any) $scale, *%_)
+Num	sec	(Num:D $:: *%_)
+Num	sech	(Num:D $:: *%_)
+Num	sign	-
+Num	sin	(Num:D $:: *%_)
+Num	sinh	(Num:D $:: *%_)
+Num	sqrt	#1-1
 Num	sqrt	(Cool:D $:: *%_)
 Num	sqrt	(Num:D $:: *%_)
 Num	sqrt	(Real:D $:: *%_)
+Num	succ	-
+Num	tan	(Num:D $:: *%_)
+Num	tanh	(Num:D $:: *%_)
+Num	truncate	-
+Num	unpolar	-
 NumStr	Int	(Mu:U \v:: *%_)
 NumStr	Int	(Cool $:: *%_)
 NumStr	Int	(NumStr:D $:: *%_)
@@ -2449,12 +3813,15 @@ NumStr	Numeric	(Mu:U \v:: *%_)
 NumStr	Numeric	(Str:D $:: Bool :$fail-or-nil, *%_ --> Numeric:D)
 NumStr	Numeric	(NumStr:U $:: *%_ --> 0e0)
 NumStr	Numeric	(NumStr:D $:: *%_)
+NumStr	POPULATE	-
 NumStr	Real	(Mu:U \v:: *%_)
 NumStr	Real	(Cool $:: *%_)
 NumStr	Real	(Real:D $:: *%_)
 NumStr	Real	(Real:U $:: *%_)
 NumStr	Real	(NumStr:U $:: *%_ --> 0e0)
 NumStr	Real	(NumStr:D $:: *%_)
+NumStr	new	-
+ObjAt	POPULATE	-
 ObjAt	Str	(Mu:U \v:: *%_)
 ObjAt	Str	(Mu:D $:: *%_)
 ObjAt	Str	(ObjAt:D $:: *%_)
@@ -2464,14 +3831,68 @@ ObjAt	WHICH	(ObjAt:D $:: *%_ --> ObjAt:D)
 ObjAt	gist	(Mu:U $:: *%_)
 ObjAt	gist	(Mu:D $:: *%_)
 ObjAt	gist	(ObjAt:D $:: *%_)
+ObjAt	new	-
 ObjAt	raku	(Mu:U $:: *%_)
 ObjAt	raku	(Mu:D $:: *%_)
 ObjAt	raku	(ObjAt:D $:: *%_)
+Operator	POPULATE	-
+Operator	apply-operator-trait	-
+Operator	assoc	-
+Operator	associative	-
+Operator	equiv	-
+Operator	iffy	-
+Operator	looser	-
+Operator	prec	-
+Operator	precedence	-
+Operator	properties	-
+Operator	reducer	-
 Operator	set-properties	(Operator:D $:: *%_)
 Operator	set-properties	(Operator:D $:: OperatorProperties:D $properties, *%_)
+Operator	thunky	-
+Operator	tighter	-
 OperatorProperties	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 OperatorProperties	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 OperatorProperties	WHICH	(OperatorProperties:D $:: *%_ --> ValueObjAt:D)
+OperatorProperties	adverb	-
+OperatorProperties	associative	-
+OperatorProperties	associative-reversed	-
+OperatorProperties	bracket-closer-for-opener	-
+OperatorProperties	bracket-closers	-
+OperatorProperties	bracket-opener-for-closer	-
+OperatorProperties	bracket-openers	-
+OperatorProperties	chain	-
+OperatorProperties	circumfix	-
+OperatorProperties	dba	-
+OperatorProperties	diffy	-
+OperatorProperties	equiv	-
+OperatorProperties	fiddly	-
+OperatorProperties	iffy	-
+OperatorProperties	infix	-
+OperatorProperties	is-reserved-operator	-
+OperatorProperties	known-category	-
+OperatorProperties	looser	-
+OperatorProperties	new	-
+OperatorProperties	new-compat	-
+OperatorProperties	next-term	-
+OperatorProperties	not-reducible	-
+OperatorProperties	postcircumfix	-
+OperatorProperties	postfix	-
+OperatorProperties	prec	-
+OperatorProperties	precedence	-
+OperatorProperties	prefix	-
+OperatorProperties	produce	-
+OperatorProperties	properties-for-group	-
+OperatorProperties	raku	-
+OperatorProperties	reducer	-
+OperatorProperties	reducer-name	-
+OperatorProperties	reserved-operator-hint	-
+OperatorProperties	reserved-operators-lookup	-
+OperatorProperties	short-circuit	-
+OperatorProperties	sub-or-precedence	-
+OperatorProperties	sub-precedence	-
+OperatorProperties	ternary	-
+OperatorProperties	thunky	-
+OperatorProperties	tighter	-
 Order	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Order	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Order	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2481,6 +3902,10 @@ Order	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Order	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 Order	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 Order	ACCEPTS	(Order:D $:: Order:D $v, *%_)
+Order	CALL-ME	#2-2
+Order	CALL-ME	(Order $:: Mu \val, *%_)
+Order	COERCE	#2-2
+Order	COERCE	(Order $:: Mu \val, *%_)
 Order	Int	(Mu:U \v:: *%_)
 Order	Int	(Cool $:: *%_)
 Order	Int	(Order:D $:: *%_)
@@ -2504,21 +3929,27 @@ Order	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Order	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Order	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 Order	WHICH	(Order:D $:: *%_ --> ValueObjAt:D)
+Order	clone	-
+Order	enums	-
 Order	gist	(Mu:U $:: *%_)
 Order	gist	(Mu:D $:: *%_)
 Order	gist	(Numeric:D $:: *%_)
 Order	gist	(Order:D $:: *%_)
+Order	key	-
 Order	kv	(Enumeration $:: *%_)
 Order	kv	(Bool $:: *%_)
 Order	kv	(Any:U $:: *%_)
 Order	kv	(Any:D $:: *%_)
 Order	kv	(Order:D $:: *%_)
+Order	new	-
+Order	pair	-
 Order	pick	($:: *%_)
 Order	pick	($:: $n, *%_)
 Order	pick	($:: HyperWhatever, *%_)
 Order	pick	(Order:U $:: *%_)
 Order	pick	(Order:U $:: \n, *%_)
 Order	pick	(Order:D $:: *@pos, *%_)
+Order	pred	-
 Order	raku	(Mu:U $:: *%_)
 Order	raku	(Mu:D $:: *%_)
 Order	raku	(Int:D $:: *%_ --> Str:D)
@@ -2528,6 +3959,8 @@ Order	roll	($:: $n, *%_)
 Order	roll	(Order:U $:: *%_)
 Order	roll	(Order:U $:: \n, *%_)
 Order	roll	(Order:D $:: *@pos, *%_)
+Order	succ	-
+Order	value	-
 Pair	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Pair	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Pair	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2540,15 +3973,23 @@ Pair	ACCEPTS	(Pair:D $:: Mu $other, *%_)
 Pair	AT-KEY	(Any:D $:: $key, *%_)
 Pair	AT-KEY	(Any:U \SELF:: \key, *%_)
 Pair	AT-KEY	(Pair:D $:: $key, *%_)
+Pair	Capture	-
 Pair	EXISTS-KEY	(Any:U $:: $, *%_ --> Bool::False)
 Pair	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
 Pair	EXISTS-KEY	(Pair:D $:: $key, *%_)
+Pair	FLATTENABLE_HASH	-
+Pair	FLATTENABLE_LIST	-
+Pair	POPULATE	-
+Pair	Pair	-
 Pair	Str	(Mu:U \v:: *%_)
 Pair	Str	(Mu:D $:: *%_)
 Pair	Str	(Pair:D $:: *%_)
 Pair	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Pair	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Pair	WHICH	(Pair:D $:: *%_ --> ObjAt:D)
+Pair	abs-value	-
+Pair	add-value	-
+Pair	antipair	-
 Pair	antipairs	(Enumeration $:: *%_)
 Pair	antipairs	(Bool $:: *%_)
 Pair	antipairs	(Any:U $:: *%_)
@@ -2557,6 +3998,8 @@ Pair	antipairs	(Pair:D $:: *%_)
 Pair	clone	(Mu:U $:: *%_)
 Pair	clone	(Mu:D $:: *%twiddles)
 Pair	clone	(Pair:D $:: *%_)
+Pair	fmt	(Pair:D $:: Cool:D $format = "\%s\t\%s", *%_ --> Str:D)
+Pair	freeze	-
 Pair	gist	(Mu:U $:: *%_)
 Pair	gist	(Mu:D $:: *%_)
 Pair	gist	(Pair:D $:: *%_)
@@ -2565,6 +4008,9 @@ Pair	invert	(Bool $:: *%_)
 Pair	invert	(Any:U $:: *%_)
 Pair	invert	(Any:D $:: *%_)
 Pair	invert	(Pair:D $:: *%_)
+Pair	iterator	-
+Pair	key	-
+Pair	keyof	-
 Pair	keys	(Enumeration $:: *%_)
 Pair	keys	(Bool $:: *%_)
 Pair	keys	(Any:U $:: *%_)
@@ -2578,6 +4024,7 @@ Pair	kv	(Pair:D $:: *%_)
 Pair	new	(Pair $:: Str:D $key, Mu \value, *%_)
 Pair	new	(Pair $:: Mu \key, Mu \value, *%_)
 Pair	new	(Pair $:: Mu :$key!, Mu :$value!, *%_)
+Pair	of	-
 Pair	pairs	(Enumeration $:: *%_)
 Pair	pairs	(Bool $:: *%_)
 Pair	pairs	(Any:U $:: *%_)
@@ -2586,11 +4033,13 @@ Pair	pairs	(Pair:D $:: *%_)
 Pair	raku	(Mu:U $:: *%_)
 Pair	raku	(Mu:D $:: *%_)
 Pair	raku	(Pair:D $:: :$arglist = Bool::False, *%_)
+Pair	value	-
 Pair	values	(Enumeration $:: *%_)
 Pair	values	(Bool $:: *%_)
 Pair	values	(Any:U $:: *%_)
 Pair	values	(Any:D $:: *%_)
 Pair	values	(Pair:D $:: *%_)
+Parameter	<anon>	-
 Parameter	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Parameter	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Parameter	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2598,27 +4047,98 @@ Parameter	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Parameter	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Parameter	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Parameter	ACCEPTS	(Parameter:D $:: Parameter:D \other, *%_ --> Bool)
+Parameter	BUILD	-
+Parameter	POPULATE	-
+Parameter	capture	-
+Parameter	coerce_type	-
+Parameter	constraint_list	-
+Parameter	constraints	-
+Parameter	copy	-
+Parameter	default	-
+Parameter	invocant	-
+Parameter	is-item	-
+Parameter	modifier	-
+Parameter	multi-invocant	-
+Parameter	name	-
+Parameter	named	-
+Parameter	named_names	-
+Parameter	nominal_type	-
+Parameter	of	-
+Parameter	onearg	-
+Parameter	optional	-
+Parameter	positional	-
+Parameter	prefix	-
 Parameter	raku	(Mu:U $:: *%_)
 Parameter	raku	(Mu:D $:: *%_)
 Parameter	raku	(Parameter:D $:: Mu:U :$elide-type = Any, *%_ --> Str:D)
+Parameter	raw	-
+Parameter	readonly	-
+Parameter	rw	-
+Parameter	set_default	-
+Parameter	set_why	-
+Parameter	sigil	-
+Parameter	signature_constraint	-
+Parameter	slurpy	-
+Parameter	sub_signature	-
+Parameter	suffix	-
+Parameter	twigil	-
+Parameter	type	-
+Parameter	type_captures	-
+Parameter	untyped	-
+Parameter	usage-name	-
+Perl	POPULATE	-
+Perl	new	-
+Proc	BUILD	-
+Proc	Bool	#1-1
 Proc	Bool	(Mu:U $:: *%_ --> Bool::False)
 Proc	Bool	(Mu:D $:: *%_)
 Proc	Bool	(Proc:D $:: *%_)
 Proc	Numeric	(Mu:U \v:: *%_)
 Proc	Numeric	(Proc:D $:: *%_)
+Proc	POPULATE	-
+Proc	command	-
+Proc	err	-
+Proc	exitcode	-
+Proc	in	-
+Proc	os-error	-
+Proc	out	-
+Proc	pid	-
+Proc	shell	-
+Proc	signal	-
+Proc	sink	-
+Proc	spawn	-
+Promise	BUILD	-
+Promise	Bool	#1-1
 Promise	Bool	(Mu:U $:: *%_ --> Bool::False)
 Promise	Bool	(Mu:D $:: *%_)
 Promise	Bool	(Promise:D $:: *%_)
+Promise	POPULATE	-
 Promise	Supply	($:: *%_)
 Promise	Supply	(Promise:D $:: *%_)
+Promise	allof	-
+Promise	andthen	-
+Promise	anyof	-
+Promise	at	-
 Promise	break	(Promise:D $:: *%_)
 Promise	break	(Promise:D $:: \result, *%_)
 Promise	broken	(Promise:U $:: *%_)
 Promise	broken	(Promise:U $:: Mu \exception, *%_)
+Promise	cause	-
+Promise	get-await-handle	-
+Promise	in	-
 Promise	keep	(Promise:D $:: *%_)
 Promise	keep	(Promise:D $:: Mu \result, *%_)
 Promise	kept	(Promise:U $:: *%_)
 Promise	kept	(Promise:U $:: Mu \result, *%_)
+Promise	new	-
+Promise	orelse	-
+Promise	result	-
+Promise	scheduler	-
+Promise	sink	-
+Promise	start	-
+Promise	status	-
+Promise	then	-
+Promise	vow	-
 PromiseStatus	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 PromiseStatus	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 PromiseStatus	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2628,6 +4148,10 @@ PromiseStatus	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 PromiseStatus	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 PromiseStatus	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 PromiseStatus	ACCEPTS	(PromiseStatus:D $:: PromiseStatus:D $v, *%_)
+PromiseStatus	CALL-ME	#2-2
+PromiseStatus	CALL-ME	(PromiseStatus $:: Mu \val, *%_)
+PromiseStatus	COERCE	#2-2
+PromiseStatus	COERCE	(PromiseStatus $:: Mu \val, *%_)
 PromiseStatus	Int	(Mu:U \v:: *%_)
 PromiseStatus	Int	(Cool $:: *%_)
 PromiseStatus	Int	(PromiseStatus:D $:: *%_)
@@ -2651,21 +4175,27 @@ PromiseStatus	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 PromiseStatus	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 PromiseStatus	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 PromiseStatus	WHICH	(PromiseStatus:D $:: *%_ --> ValueObjAt:D)
+PromiseStatus	clone	-
+PromiseStatus	enums	-
 PromiseStatus	gist	(Mu:U $:: *%_)
 PromiseStatus	gist	(Mu:D $:: *%_)
 PromiseStatus	gist	(Numeric:D $:: *%_)
 PromiseStatus	gist	(PromiseStatus:D $:: *%_)
+PromiseStatus	key	-
 PromiseStatus	kv	(Enumeration $:: *%_)
 PromiseStatus	kv	(Bool $:: *%_)
 PromiseStatus	kv	(Any:U $:: *%_)
 PromiseStatus	kv	(Any:D $:: *%_)
 PromiseStatus	kv	(PromiseStatus:D $:: *%_)
+PromiseStatus	new	-
+PromiseStatus	pair	-
 PromiseStatus	pick	($:: *%_)
 PromiseStatus	pick	($:: $n, *%_)
 PromiseStatus	pick	($:: HyperWhatever, *%_)
 PromiseStatus	pick	(PromiseStatus:U $:: *%_)
 PromiseStatus	pick	(PromiseStatus:U $:: \n, *%_)
 PromiseStatus	pick	(PromiseStatus:D $:: *@pos, *%_)
+PromiseStatus	pred	-
 PromiseStatus	raku	(Mu:U $:: *%_)
 PromiseStatus	raku	(Mu:D $:: *%_)
 PromiseStatus	raku	(Int:D $:: *%_ --> Str:D)
@@ -2675,6 +4205,8 @@ PromiseStatus	roll	($:: $n, *%_)
 PromiseStatus	roll	(PromiseStatus:U $:: *%_)
 PromiseStatus	roll	(PromiseStatus:U $:: \n, *%_)
 PromiseStatus	roll	(PromiseStatus:D $:: *@pos, *%_)
+PromiseStatus	succ	-
+PromiseStatus	value	-
 ProtocolFamily	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 ProtocolFamily	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 ProtocolFamily	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2684,6 +4216,10 @@ ProtocolFamily	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 ProtocolFamily	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 ProtocolFamily	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 ProtocolFamily	ACCEPTS	(ProtocolFamily:D $:: ProtocolFamily:D $v, *%_)
+ProtocolFamily	CALL-ME	#2-2
+ProtocolFamily	CALL-ME	(ProtocolFamily $:: Mu \val, *%_)
+ProtocolFamily	COERCE	#2-2
+ProtocolFamily	COERCE	(ProtocolFamily $:: Mu \val, *%_)
 ProtocolFamily	Int	(Mu:U \v:: *%_)
 ProtocolFamily	Int	(Cool $:: *%_)
 ProtocolFamily	Int	(ProtocolFamily:D $:: *%_)
@@ -2707,21 +4243,27 @@ ProtocolFamily	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 ProtocolFamily	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 ProtocolFamily	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 ProtocolFamily	WHICH	(ProtocolFamily:D $:: *%_ --> ValueObjAt:D)
+ProtocolFamily	clone	-
+ProtocolFamily	enums	-
 ProtocolFamily	gist	(Mu:U $:: *%_)
 ProtocolFamily	gist	(Mu:D $:: *%_)
 ProtocolFamily	gist	(Numeric:D $:: *%_)
 ProtocolFamily	gist	(ProtocolFamily:D $:: *%_)
+ProtocolFamily	key	-
 ProtocolFamily	kv	(Enumeration $:: *%_)
 ProtocolFamily	kv	(Bool $:: *%_)
 ProtocolFamily	kv	(Any:U $:: *%_)
 ProtocolFamily	kv	(Any:D $:: *%_)
 ProtocolFamily	kv	(ProtocolFamily:D $:: *%_)
+ProtocolFamily	new	-
+ProtocolFamily	pair	-
 ProtocolFamily	pick	($:: *%_)
 ProtocolFamily	pick	($:: $n, *%_)
 ProtocolFamily	pick	($:: HyperWhatever, *%_)
 ProtocolFamily	pick	(ProtocolFamily:U $:: *%_)
 ProtocolFamily	pick	(ProtocolFamily:U $:: \n, *%_)
 ProtocolFamily	pick	(ProtocolFamily:D $:: *@pos, *%_)
+ProtocolFamily	pred	-
 ProtocolFamily	raku	(Mu:U $:: *%_)
 ProtocolFamily	raku	(Mu:D $:: *%_)
 ProtocolFamily	raku	(Int:D $:: *%_ --> Str:D)
@@ -2731,6 +4273,8 @@ ProtocolFamily	roll	($:: $n, *%_)
 ProtocolFamily	roll	(ProtocolFamily:U $:: *%_)
 ProtocolFamily	roll	(ProtocolFamily:U $:: \n, *%_)
 ProtocolFamily	roll	(ProtocolFamily:D $:: *@pos, *%_)
+ProtocolFamily	succ	-
+ProtocolFamily	value	-
 ProtocolType	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 ProtocolType	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 ProtocolType	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2740,6 +4284,10 @@ ProtocolType	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 ProtocolType	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 ProtocolType	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 ProtocolType	ACCEPTS	(ProtocolType:D $:: ProtocolType:D $v, *%_)
+ProtocolType	CALL-ME	#2-2
+ProtocolType	CALL-ME	(ProtocolType $:: Mu \val, *%_)
+ProtocolType	COERCE	#2-2
+ProtocolType	COERCE	(ProtocolType $:: Mu \val, *%_)
 ProtocolType	Int	(Mu:U \v:: *%_)
 ProtocolType	Int	(Cool $:: *%_)
 ProtocolType	Int	(ProtocolType:D $:: *%_)
@@ -2763,21 +4311,27 @@ ProtocolType	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 ProtocolType	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 ProtocolType	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 ProtocolType	WHICH	(ProtocolType:D $:: *%_ --> ValueObjAt:D)
+ProtocolType	clone	-
+ProtocolType	enums	-
 ProtocolType	gist	(Mu:U $:: *%_)
 ProtocolType	gist	(Mu:D $:: *%_)
 ProtocolType	gist	(Numeric:D $:: *%_)
 ProtocolType	gist	(ProtocolType:D $:: *%_)
+ProtocolType	key	-
 ProtocolType	kv	(Enumeration $:: *%_)
 ProtocolType	kv	(Bool $:: *%_)
 ProtocolType	kv	(Any:U $:: *%_)
 ProtocolType	kv	(Any:D $:: *%_)
 ProtocolType	kv	(ProtocolType:D $:: *%_)
+ProtocolType	new	-
+ProtocolType	pair	-
 ProtocolType	pick	($:: *%_)
 ProtocolType	pick	($:: $n, *%_)
 ProtocolType	pick	($:: HyperWhatever, *%_)
 ProtocolType	pick	(ProtocolType:U $:: *%_)
 ProtocolType	pick	(ProtocolType:U $:: \n, *%_)
 ProtocolType	pick	(ProtocolType:D $:: *@pos, *%_)
+ProtocolType	pred	-
 ProtocolType	raku	(Mu:U $:: *%_)
 ProtocolType	raku	(Mu:D $:: *%_)
 ProtocolType	raku	(Int:D $:: *%_ --> Str:D)
@@ -2787,6 +4341,9 @@ ProtocolType	roll	($:: $n, *%_)
 ProtocolType	roll	(ProtocolType:U $:: *%_)
 ProtocolType	roll	(ProtocolType:U $:: \n, *%_)
 ProtocolType	roll	(ProtocolType:D $:: *@pos, *%_)
+ProtocolType	succ	-
+ProtocolType	value	-
+Proxy	<anon>	-
 PseudoStash	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
 PseudoStash	ASSIGN-KEY	(Map:D $:: \key, Mu \new, *%_)
 PseudoStash	ASSIGN-KEY	(PseudoStash:D $:: Str(Any) $key, Mu \value, *%_)
@@ -2795,6 +4352,10 @@ PseudoStash	AT-KEY	(Any:U \SELF:: \key, *%_)
 PseudoStash	AT-KEY	(Map:D $:: Str:D $key, *%_)
 PseudoStash	AT-KEY	(Map:D $:: \key, *%_)
 PseudoStash	AT-KEY	(PseudoStash:D $:: Str(Any) $key, *%_)
+PseudoStash	BEGIN-TIME-DECLARATION	-
+PseudoStash	BIND-KEY	-
+PseudoStash	EXISTS-KEY	-
+PseudoStash	POPULATE	-
 PseudoStash	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 PseudoStash	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 PseudoStash	WHICH	(PseudoStash:D $:: *%_ --> ObjAt:D)
@@ -2802,6 +4363,30 @@ PseudoStash	elems	(Any:U $:: *%_ --> 1)
 PseudoStash	elems	(Any:D $:: *%_)
 PseudoStash	elems	(Map:D $:: *%_)
 PseudoStash	elems	(PseudoStash:D $:: :$implementation-detail, *%_)
+PseudoStash	keys	-
+PseudoStash	kv	-
+PseudoStash	new	-
+PseudoStash	new-from-ctx	-
+PseudoStash	pairs	-
+PseudoStash	sort	-
+PseudoStash	values	-
+REPL	POPULATE	-
+REPL	compiler	-
+REPL	completions-for-line	-
+REPL	ctxsave	-
+REPL	extract-last-word	-
+REPL	history-file	-
+REPL	init	-
+REPL	input-incomplete	-
+REPL	input-toplevel-control	-
+REPL	interactive_prompt	-
+REPL	new	-
+REPL	new-repl-eval	-
+REPL	repl-eval	-
+REPL	repl-loop	-
+REPL	repl-print	-
+REPL	teardown	-
+REPL	update-completions	-
 RaceSeq	AT-POS	(Any:U $SELF: is rw: Int:D \pos, *%_)
 RaceSeq	AT-POS	(Any:U \SELF:: Int:D \pos, *%_)
 RaceSeq	AT-POS	(Any:U $:: Num:D \pos, *%_)
@@ -2817,6 +4402,7 @@ RaceSeq	AT-POS	(RaceSeq:D $:: uint $idx, *%_)
 RaceSeq	AT-POS	(RaceSeq:D $:: Int:D $idx, *%_)
 RaceSeq	Array	($:: *%_)
 RaceSeq	Array	(RaceSeq:D $:: *%_)
+RaceSeq	BUILD	-
 RaceSeq	Bag	($:: *%_ --> Bag:D)
 RaceSeq	Bag	(Iterable:D $:: *%_)
 RaceSeq	BagHash	($:: *%_ --> BagHash:D)
@@ -2838,6 +4424,8 @@ RaceSeq	Mix	($:: *%_ --> Mix:D)
 RaceSeq	Mix	(Iterable:D $:: *%_)
 RaceSeq	MixHash	($:: *%_ --> MixHash:D)
 RaceSeq	MixHash	(Iterable:D $:: *%_)
+RaceSeq	Numeric	-
+RaceSeq	POPULATE	-
 RaceSeq	Set	($:: *%_ --> Set:D)
 RaceSeq	Set	(Iterable:D $:: *%_)
 RaceSeq	SetHash	($:: *%_ --> SetHash:D)
@@ -2850,19 +4438,47 @@ RaceSeq	Str	(RaceSeq:D $:: *%_)
 RaceSeq	Stringy	(Mu:U \v:: *%_)
 RaceSeq	Stringy	(Mu:D $:: *%_)
 RaceSeq	Stringy	(RaceSeq:D $:: *%_)
+RaceSeq	cache	-
+RaceSeq	configuration	-
 RaceSeq	eager	($:: *%_)
 RaceSeq	eager	(RaceSeq:D $:: *%_)
+RaceSeq	flat	-
+RaceSeq	fmt	(Sequence:D $:: |c)
 RaceSeq	gist	(Mu:U $:: *%_)
 RaceSeq	gist	(Mu:D $:: *%_)
 RaceSeq	gist	(RaceSeq:D $:: *%_)
+RaceSeq	grep	-
+RaceSeq	hyper	-
+RaceSeq	invert	-
+RaceSeq	is-lazy	-
+RaceSeq	item	-
+RaceSeq	iterator	-
+RaceSeq	lazy	-
+RaceSeq	lazy-if	-
 RaceSeq	list	(Any:U $:: *%_)
 RaceSeq	list	(Any:D \SELF:: *%_)
 RaceSeq	list	(RaceSeq:D $:: *%_)
+RaceSeq	map	-
+RaceSeq	race	-
 RaceSeq	serial	($:: *%_)
 RaceSeq	serial	(RaceSeq:D $:: *%_)
+RaceSeq	sink	-
+Raku	DISTROnames	-
+Raku	KERNELnames	-
+Raku	POPULATE	-
+Raku	Str	-
+Raku	TWEAK	-
+Raku	VMnames	-
+Raku	auth	-
+Raku	compiler	-
+Raku	desc	-
 Raku	gist	(Mu:U $:: *%_)
 Raku	gist	(Mu:D $:: *%_)
 Raku	gist	(Systemic:D $:: *%_ --> Str:D)
+Raku	legacy	-
+Raku	name	-
+Raku	signature	-
+Raku	version	-
 Range	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Range	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Range	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -2875,6 +4491,7 @@ Range	ACCEPTS	(Range:D $:: Complex:D \got, *%_)
 Range	ACCEPTS	(Range:D $:: Range:D \topic, *%_)
 Range	ACCEPTS	(Range:D $:: \topic, *%_)
 Range	ACCEPTS	(Range:D $:: Mu \topic, *%_)
+Range	ASSIGN-POS	-
 Range	AT-POS	(Any:U $SELF: is rw: Int:D \pos, *%_)
 Range	AT-POS	(Any:U \SELF:: Int:D \pos, *%_)
 Range	AT-POS	(Any:U $:: Num:D \pos, *%_)
@@ -2892,9 +4509,11 @@ Range	Bag	($:: *%_ --> Bag:D)
 Range	Bag	(Iterable:D $:: *%_)
 Range	BagHash	($:: *%_ --> BagHash:D)
 Range	BagHash	(Iterable:D $:: *%_)
+Range	Bool	#1-1
 Range	Bool	(Mu:U $:: *%_ --> Bool::False)
 Range	Bool	(Mu:D $:: *%_)
 Range	Bool	(Range:D $:: *%_ --> Bool::True)
+Range	Capture	-
 Range	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
 Range	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
 Range	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
@@ -2906,12 +4525,14 @@ Range	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 Range	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 Range	EXISTS-POS	(Range:D $:: uint $pos, *%_)
 Range	EXISTS-POS	(Range:D $:: Int:D $pos, *%_)
+Range	Inf-Inf	-
 Range	Mix	($:: *%_ --> Mix:D)
 Range	Mix	(Iterable:D $:: *%_)
 Range	MixHash	($:: *%_ --> MixHash:D)
 Range	MixHash	(Iterable:D $:: *%_)
 Range	Numeric	(Mu:U \v:: *%_)
 Range	Numeric	(Range:D $:: *%_)
+Range	POPULATE	-
 Range	Set	($:: *%_ --> Set:D)
 Range	Set	(Iterable:D $:: *%_)
 Range	SetHash	($:: *%_ --> SetHash:D)
@@ -2922,6 +4543,8 @@ Range	Str	(Range:D $:: *%_)
 Range	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Range	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Range	WHICH	(Range:D $:: *%_ --> ValueObjAt:D)
+Range	append	-
+Range	bounds	-
 Range	contains	(List:D $:: Cool:D \needle, *%_)
 Range	contains	(Cool:D $:: Cool:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Bool)
 Range	contains	(Cool:D $:: Cool:D $needle, :m(:$ignoremark)!, *%_ --> Bool)
@@ -2935,6 +4558,15 @@ Range	contains	(Range:D $:: \needle, *%_)
 Range	elems	(Any:U $:: *%_ --> 1)
 Range	elems	(Any:D $:: *%_)
 Range	elems	(Range:D $:: *%_)
+Range	ended-by	-
+Range	excludes-max	-
+Range	excludes-min	-
+Range	first	-
+Range	flat	-
+Range	fmt	-
+Range	generic-string-sequence	(Range $:: *%_)
+Range	hyper	-
+Range	in-range	-
 Range	index	(List:D $:: Cool:D $needle, *%_)
 Range	index	(Cool:D $:: Cool:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Int:D)
 Range	index	(Cool:D $:: Cool:D $needle, :m(:$ignoremark)!, *%_ --> Int:D)
@@ -2943,10 +4575,16 @@ Range	index	(Cool:D $:: Cool:D $needle, Cool:D $pos, :i(:$ignorecase)!, :m(:$ign
 Range	index	(Cool:D $:: Cool:D $needle, Cool:D $pos, :m(:$ignoremark)!, *%_ --> Int:D)
 Range	index	(Cool:D $:: Cool:D $needle, Cool:D $pos, *%_ --> Int:D)
 Range	index	(Range:D $:: \needle, *%_)
+Range	infinite	-
 Range	int-bounds	(Range $:: $from is rw, $to is rw, *%_ --> Bool)
 Range	int-bounds	(Range $:: *%_)
+Range	is-int	-
 Range	is-lazy	(Mu $:: *%_ --> Bool::False)
 Range	is-lazy	(Range:D $:: *%_)
+Range	item	-
+Range	iterator	-
+Range	lazy	-
+Range	lazy-if	-
 Range	list	(Any:U $:: *%_)
 Range	list	(Any:D \SELF:: *%_)
 Range	list	(Range:D $:: *%_)
@@ -2980,20 +4618,30 @@ Range	new	(Range $:: Match:D \min, \max, :$excludes-min, :$excludes-max, *%_)
 Range	new	(Range $:: \min, \max, :$excludes-min, :$excludes-max!, *%_)
 Range	new	(Range $:: \min, \max, :$excludes-min!, :$excludes-max, *%_)
 Range	new	(Range $:: \min, \max, *%_)
+Range	of	-
 Range	pick	($:: *%_)
 Range	pick	($:: $n, *%_)
 Range	pick	($:: HyperWhatever, *%_)
 Range	pick	(Range $:: *%_)
 Range	pick	(Range $:: Whatever, *%_)
 Range	pick	(Range $:: Int(Cool) $todo, *%_)
+Range	pop	-
+Range	prepend	-
+Range	push	-
+Range	race	-
 Range	raku	(Mu:U $:: *%_)
 Range	raku	(Mu:D $:: *%_)
 Range	raku	(Range:D $:: *%_)
+Range	rand	-
+Range	reverse	-
 Range	roll	(Range:D $:: Whatever, *%_)
 Range	roll	(Range:D $:: *%_)
 Range	roll	(Range $:: Int(Cool) $todo, *%_)
+Range	shift	-
+Range	sum	#1-1
 Range	sum	(Any:D $:: *%_)
 Range	sum	(Range:D $:: *%_)
+Range	unshift	-
 Rat	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Rat	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Rat	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -3001,16 +4649,25 @@ Rat	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Rat	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Rat	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Rat	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Rat	Bool	#1-1
 Rat	Bool	(Mu:U $:: *%_ --> Bool::False)
 Rat	Bool	(Mu:D $:: *%_)
 Rat	Bool	(Rat:D $:: *%_)
 Rat	Bool	(Numeric:D $:: *%_)
+Rat	Bridge	-
+Rat	Complex	-
 Rat	DUMP	(Mu:U $:: *%_)
 Rat	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 Rat	DUMP	(Numeric:D $:: *%_)
+Rat	FatRat	-
+Rat	Int	-
+Rat	Num	-
 Rat	Numeric	(Mu:U \v:: *%_)
 Rat	Numeric	(Numeric:D $:: *%_)
 Rat	Numeric	(Numeric:U $:: *%_)
+Rat	POPULATE	-
+Rat	Range	-
+Rat	Rat	-
 Rat	Real	(Mu:U \v:: *%_)
 Rat	Real	(Cool $:: *%_)
 Rat	Real	(Real:D $:: *%_)
@@ -3022,29 +4679,79 @@ Rat	Str	(Real:D $:: *%_)
 Rat	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Rat	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Rat	WHICH	(Rational:D $:: *%_ --> ValueObjAt:D)
+Rat	abs	-
+Rat	acos	-
+Rat	acosec	-
+Rat	acosech	-
+Rat	acosh	-
+Rat	acotan	-
+Rat	acotanh	-
+Rat	asec	-
+Rat	asech	-
+Rat	asin	-
+Rat	asinh	-
+Rat	atan	-
 Rat	atan2	(Rat $:: Real $x = 1e0, *%_)
 Rat	atan2	(Rat $:: Cool $x = 1e0, *%_)
+Rat	atanh	-
 Rat	base	(Rational:D $:: Int:D $base, *%_ --> Str:D)
 Rat	base	(Rational:D $:: Int:D $base, Whatever, *%_ --> Str:D)
 Rat	base	(Rational:D $:: Int:D $base, Int(Any) $digits, Bool:D :$no-trailing-zeroes = Bool::False, *%_ --> Str:D)
+Rat	base-repeating	-
+Rat	ceiling	-
+Rat	cis	-
+Rat	conj	-
+Rat	cos	-
+Rat	cosec	-
+Rat	cosech	-
+Rat	cosh	-
+Rat	cotan	-
+Rat	cotanh	-
+Rat	denominator	-
 Rat	exp	(Real:D $:: *%_)
 Rat	exp	(Numeric:D $:: $base, *%_)
+Rat	floor	-
 Rat	gist	(Mu:U $:: *%_)
 Rat	gist	(Mu:D $:: *%_)
 Rat	gist	(Numeric:D $:: *%_)
+Rat	is-prime	-
+Rat	isNaN	-
 Rat	log	(Real:D $:: *%_)
 Rat	log	(Real:D $:: Real $base, *%_)
 Rat	log	(Numeric:D $:: Cool $base, *%_)
 Rat	log	(Numeric:D $:: Numeric $base, *%_)
+Rat	log10	-
+Rat	log2	-
+Rat	narrow	-
+Rat	new	-
+Rat	norm	-
+Rat	nude	-
+Rat	numerator	-
+Rat	polymod	-
+Rat	pred	-
 Rat	raku	(Mu:U $:: *%_)
 Rat	raku	(Mu:D $:: *%_)
 Rat	raku	(Rat:D $:: *%_ --> Str:D)
 Rat	raku	(Rational:D $:: *%_ --> Str:D)
+Rat	rand	-
+Rat	roots	-
 Rat	round	(Rat:D $:: *%_ --> Int:D)
 Rat	round	(Real:D $:: *%_)
 Rat	round	(Real:D $:: Real(Any) $scale, *%_)
+Rat	sec	-
+Rat	sech	-
+Rat	sign	-
+Rat	sin	-
+Rat	sinh	-
+Rat	sqrt	#1-1
 Rat	sqrt	(Cool:D $:: *%_)
 Rat	sqrt	(Real:D $:: *%_)
+Rat	succ	-
+Rat	tan	-
+Rat	tanh	-
+Rat	truncate	-
+Rat	unpolar	-
+RatStr	Capture	-
 RatStr	Int	(Mu:U \v:: *%_)
 RatStr	Int	(Cool $:: *%_)
 RatStr	Int	(RatStr:D $:: *%_)
@@ -3052,21 +4759,29 @@ RatStr	Numeric	(Mu:U \v:: *%_)
 RatStr	Numeric	(Str:D $:: Bool :$fail-or-nil, *%_ --> Numeric:D)
 RatStr	Numeric	(RatStr:U $:: *%_ --> 0.0)
 RatStr	Numeric	(RatStr:D $:: *%_)
+RatStr	POPULATE	-
+RatStr	Rat	-
 RatStr	Real	(Mu:U \v:: *%_)
 RatStr	Real	(Cool $:: *%_)
 RatStr	Real	(Real:D $:: *%_)
 RatStr	Real	(Real:U $:: *%_)
 RatStr	Real	(RatStr:U $:: *%_ --> 0.0)
 RatStr	Real	(RatStr:D $:: *%_)
+RatStr	new	-
+Regex	<anon>	-
 Regex	ACCEPTS	(Regex:D $:: Mu:U \a, *%_)
 Regex	ACCEPTS	(Regex:U $:: \topic, *%_)
 Regex	ACCEPTS	(Regex:D \SELF:: \topic, *%_)
 Regex	ACCEPTS	(Regex:D \SELF:: Uni:D \uni, *%_)
 Regex	ACCEPTS	(Regex:D \SELF:: @a, *%_)
 Regex	ACCEPTS	(Regex:D \SELF:: %h, *%_)
+Regex	Bool	#1-1
 Regex	Bool	(Mu:U $:: *%_ --> Bool::False)
 Regex	Bool	(Mu:D $:: *%_)
 Regex	Bool	(Regex:D $:: *%_)
+Regex	HAS-CAPTURE-MARKERS	-
+Regex	POPULATE	-
+Regex	clone	-
 Regex	gist	(Mu:U $:: *%_)
 Regex	gist	(Mu:D $:: *%_)
 Regex	gist	(Routine:D $:: *%_)
@@ -3077,18 +4792,50 @@ Regex	raku	(Mu:D $:: *%_)
 Regex	raku	(Block:D $:: *%_)
 Regex	raku	(Routine:D $:: *%_)
 Regex	raku	(Regex:D $:: *%_)
+Routine	<anon>	-
+Routine	IS-SETTING-ONLY	-
+Routine	POPULATE	-
+Routine	apply-operator-trait	-
+Routine	assoc	-
+Routine	associative	-
+Routine	candidates	-
 Routine	cando	(Routine $:: Capture:D $c, *%_)
 Routine	cando	(Routine $:: |c)
+Routine	equiv	-
 Routine	gist	(Mu:U $:: *%_)
 Routine	gist	(Mu:D $:: *%_)
 Routine	gist	(Routine:D $:: *%_)
+Routine	iffy	-
+Routine	is-wrapped	-
+Routine	iterator	-
+Routine	leave	-
+Routine	looser	-
+Routine	multi	-
+Routine	op_props	-
+Routine	package	-
+Routine	prec	-
+Routine	precedence	-
 Routine	raku	(Mu:U $:: *%_)
 Routine	raku	(Mu:D $:: *%_)
 Routine	raku	(Block:D $:: *%_)
 Routine	raku	(Routine:D $:: *%_)
+Routine	reducer	-
+Routine	set_op_props	-
+Routine	soft	-
+Routine	thunky	-
+Routine	tighter	-
+Routine	unwrap	-
+Routine	wrap	-
+Scalar	<anon>	-
+Scalar	POPULATE	-
 Scalar	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Scalar	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Scalar	WHICH	(Scalar:D \SELF:: *%_ --> ObjAt:D)
+Scalar	default	-
+Scalar	dynamic	-
+Scalar	name	-
+Scalar	new	-
+Scalar	of	#1-1
 Scalar	of	(Scalar:U $:: *%_)
 Scalar	of	(Scalar:D $:: *%_)
 SeekType	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
@@ -3100,6 +4847,10 @@ SeekType	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 SeekType	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 SeekType	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 SeekType	ACCEPTS	(SeekType:D $:: SeekType:D $v, *%_)
+SeekType	CALL-ME	#2-2
+SeekType	CALL-ME	(SeekType $:: Mu \val, *%_)
+SeekType	COERCE	#2-2
+SeekType	COERCE	(SeekType $:: Mu \val, *%_)
 SeekType	Int	(Mu:U \v:: *%_)
 SeekType	Int	(Cool $:: *%_)
 SeekType	Int	(SeekType:D $:: *%_)
@@ -3123,21 +4874,27 @@ SeekType	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 SeekType	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 SeekType	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 SeekType	WHICH	(SeekType:D $:: *%_ --> ValueObjAt:D)
+SeekType	clone	-
+SeekType	enums	-
 SeekType	gist	(Mu:U $:: *%_)
 SeekType	gist	(Mu:D $:: *%_)
 SeekType	gist	(Numeric:D $:: *%_)
 SeekType	gist	(SeekType:D $:: *%_)
+SeekType	key	-
 SeekType	kv	(Enumeration $:: *%_)
 SeekType	kv	(Bool $:: *%_)
 SeekType	kv	(Any:U $:: *%_)
 SeekType	kv	(Any:D $:: *%_)
 SeekType	kv	(SeekType:D $:: *%_)
+SeekType	new	-
+SeekType	pair	-
 SeekType	pick	($:: *%_)
 SeekType	pick	($:: $n, *%_)
 SeekType	pick	($:: HyperWhatever, *%_)
 SeekType	pick	(SeekType:U $:: *%_)
 SeekType	pick	(SeekType:U $:: \n, *%_)
 SeekType	pick	(SeekType:D $:: *@pos, *%_)
+SeekType	pred	-
 SeekType	raku	(Mu:U $:: *%_)
 SeekType	raku	(Mu:D $:: *%_)
 SeekType	raku	(Int:D $:: *%_ --> Str:D)
@@ -3147,6 +4904,13 @@ SeekType	roll	($:: $n, *%_)
 SeekType	roll	(SeekType:U $:: *%_)
 SeekType	roll	(SeekType:U $:: \n, *%_)
 SeekType	roll	(SeekType:D $:: *@pos, *%_)
+SeekType	succ	-
+SeekType	value	-
+Semaphore	POPULATE	-
+Semaphore	acquire	-
+Semaphore	new	-
+Semaphore	release	-
+Semaphore	try_acquire	-
 Seq	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Seq	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Seq	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -3173,6 +4937,8 @@ Seq	Bag	($:: *%_ --> Bag:D)
 Seq	Bag	(Iterable:D $:: *%_)
 Seq	BagHash	($:: *%_ --> BagHash:D)
 Seq	BagHash	(Iterable:D $:: *%_)
+Seq	Bool	-
+Seq	Capture	-
 Seq	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
 Seq	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
 Seq	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
@@ -3184,12 +4950,15 @@ Seq	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 Seq	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 Seq	EXISTS-POS	(Seq:D $:: uint $idx, *%_)
 Seq	EXISTS-POS	(Seq:D $:: Int:D $idx, *%_)
+Seq	Int	-
 Seq	List	($:: *%_)
 Seq	List	(Seq:D $:: *%_)
 Seq	Mix	($:: *%_ --> Mix:D)
 Seq	Mix	(Iterable:D $:: *%_)
 Seq	MixHash	($:: *%_ --> MixHash:D)
 Seq	MixHash	(Iterable:D $:: *%_)
+Seq	Numeric	-
+Seq	POPULATE	-
 Seq	Seq	($:: *%_)
 Seq	Seq	(Seq:D $:: *%_)
 Seq	Set	($:: *%_ --> Set:D)
@@ -3204,11 +4973,14 @@ Seq	Str	(Seq:D $:: *%_)
 Seq	Stringy	(Mu:U \v:: *%_)
 Seq	Stringy	(Mu:D $:: *%_)
 Seq	Stringy	(Seq:D $:: *%_)
+Seq	cache	-
 Seq	eager	($:: *%_)
 Seq	eager	(Seq:D $:: *%_)
 Seq	elems	(Any:U $:: *%_ --> 1)
 Seq	elems	(Any:D $:: *%_)
 Seq	elems	(Seq:D $:: *%_)
+Seq	end	-
+Seq	flat	-
 Seq	fmt	(Cool $:: Str(Cool) $format = "\%s", *%_)
 Seq	fmt	(Sequence:D $:: |c)
 Seq	from-loop	(Seq $:: &body, :$label, :$fire-last = 0, *%_)
@@ -3225,16 +4997,26 @@ Seq	head	(Any:D $:: $n, *%_)
 Seq	head	(Seq:D $:: Whatever, *%_)
 Seq	head	(Seq:D $:: Inf, *%_)
 Seq	head	(Seq:D $:: Int:D $head, *%_)
+Seq	hyper	-
 Seq	is-lazy	(Mu $:: *%_ --> Bool::False)
 Seq	is-lazy	(Seq:D $:: *%_)
+Seq	item	-
+Seq	iterator	-
+Seq	join	-
+Seq	lazy	-
+Seq	lazy-if	-
 Seq	list	(Any:U $:: *%_)
 Seq	list	(Any:D \SELF:: *%_)
 Seq	list	(Seq:D $:: *%_)
 Seq	new	(Seq $:: Iterator:D $iter, *%_)
 Seq	new	(Seq $:: *%_)
+Seq	race	-
 Seq	raku	(Mu:U $:: *%_)
 Seq	raku	(Mu:D $:: *%_)
 Seq	raku	(Seq:D \SELF:: *%_)
+Seq	reverse	-
+Seq	rotate	-
+Seq	sink	-
 Seq	slice	(Any:D $:: *@indices, *%_ --> Seq:D)
 Seq	slice	(Seq:D $:: Iterable:D \iterable, *%_ --> Seq:D)
 Seq	slice	(Seq:D $:: *@indices, *%_ --> Seq:D)
@@ -3257,15 +5039,18 @@ Set	AT-KEY	(Any:D $:: $key, *%_)
 Set	AT-KEY	(Any:U \SELF:: \key, *%_)
 Set	AT-KEY	(Set:D $:: Mu \k, *%_)
 Set	AT-KEY	(QuantHash:U \SELF:: $key, *%_)
+Set	ATTRIBUTE-new	-
 Set	Bag	($:: *%_ --> Bag:D)
 Set	Bag	(Setty:D $:: *%_)
 Set	BagHash	($:: *%_ --> BagHash:D)
 Set	BagHash	(Setty:D $:: *%_)
 Set	Baggy	(Set:U $:: *%_)
 Set	Baggy	(Set:D $:: *%_)
+Set	Bool	#1-1
 Set	Bool	(Mu:U $:: *%_ --> Bool::False)
 Set	Bool	(Mu:D $:: *%_)
 Set	Bool	(Setty:D $:: *%_ --> Bool)
+Set	Capture	-
 Set	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
 Set	DELETE-KEY	(Any:D $:: $, *%_)
 Set	DELETE-KEY	(QuantHash:D $:: \k, *%_)
@@ -3274,12 +5059,20 @@ Set	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
 Set	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
 Set	Hash	($:: *%_)
 Set	Hash	(Setty:D $:: *%_ --> Hash:D)
+Set	Int	-
+Set	Map	-
 Set	Mix	($:: *%_ --> Mix:D)
 Set	Mix	(Setty:D $:: *%_)
 Set	MixHash	($:: *%_ --> MixHash:D)
 Set	MixHash	(Setty:D $:: *%_)
 Set	Mixy	(Set:U $:: *%_)
 Set	Mixy	(Set:D $:: *%_)
+Set	Num	-
+Set	Numeric	-
+Set	OBJECTIFIER	-
+Set	POPULATE	-
+Set	RAW-HASH	-
+Set	Real	-
 Set	SETUP	(Set:U $:: \elems, *%_)
 Set	SETUP	(QuantHash:U $:: *%_)
 Set	SETUP	(QuantHash:U $:: \elems, *%_)
@@ -3299,6 +5092,7 @@ Set	Str	(Setty:D $:: *%_ --> Str:D)
 Set	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Set	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Set	WHICH	(Set:D $:: *%_ --> ValueObjAt:D)
+Set	WHICHIFY	-
 Set	antipairs	(Enumeration $:: *%_)
 Set	antipairs	(Bool $:: *%_)
 Set	antipairs	(Any:U $:: *%_)
@@ -3307,15 +5101,21 @@ Set	antipairs	(Setty:D $:: *%_)
 Set	deepmap	(Associative:D $:: &op, *%_)
 Set	deepmap	($:: &op, *%_)
 Set	deepmap	(Set:D $:: &mapper, *%_)
+Set	default	-
 Set	elems	(Any:U $:: *%_ --> 1)
 Set	elems	(Any:D $:: *%_)
 Set	elems	(Setty:D $:: *%_)
+Set	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
 Set	gist	(Mu:U $:: *%_)
 Set	gist	(Mu:D $:: *%_)
 Set	gist	(Set:D $:: *%_ --> Str:D)
+Set	grab	(Set:D $:: $count?, *%_)
+Set	grabpairs	(Set:D $:: $count?, *%_)
 Set	hash	(Any:U $:: *%_)
 Set	hash	(Any:D $:: *%_)
 Set	hash	(Setty:D $:: *%_ --> Hash:D)
+Set	iterator	-
+Set	keyof	-
 Set	keys	(Enumeration $:: *%_)
 Set	keys	(Bool $:: *%_)
 Set	keys	(Any:U $:: *%_)
@@ -3338,6 +5138,8 @@ Set	new	(Mu $:: $, *@, *%_)
 Set	new	(Setty $:: \value, *%_ --> Setty:D)
 Set	new	(Setty $:: **@args, *%_ --> Setty:D)
 Set	new	(QuantHash $:: *%_)
+Set	new-from-pairs	-
+Set	of	-
 Set	pairs	(Enumeration $:: *%_)
 Set	pairs	(Bool $:: *%_)
 Set	pairs	(Any:U $:: *%_)
@@ -3361,6 +5163,7 @@ Set	roll	(Setty:D $:: *%_)
 Set	roll	(Setty:D $:: Callable:D $calculate, *%_)
 Set	roll	(Setty:D $:: Whatever, *%_)
 Set	roll	(Setty:D $:: $count, *%_)
+Set	total	-
 Set	values	(Enumeration $:: *%_)
 Set	values	(Bool $:: *%_)
 Set	values	(Any:U $:: *%_)
@@ -3388,9 +5191,11 @@ SetHash	BagHash	($:: *%_ --> BagHash:D)
 SetHash	BagHash	(Setty:D $:: *%_)
 SetHash	Baggy	(SetHash:U $:: *%_)
 SetHash	Baggy	(SetHash:D $:: *%_)
+SetHash	Bool	#1-1
 SetHash	Bool	(Mu:U $:: *%_ --> Bool::False)
 SetHash	Bool	(Mu:D $:: *%_)
 SetHash	Bool	(Setty:D $:: *%_ --> Bool)
+SetHash	Capture	-
 SetHash	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
 SetHash	DELETE-KEY	(Any:D $:: $, *%_)
 SetHash	DELETE-KEY	(SetHash:D $:: \k, *%_ --> Bool)
@@ -3400,12 +5205,20 @@ SetHash	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
 SetHash	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
 SetHash	Hash	($:: *%_)
 SetHash	Hash	(Setty:D $:: *%_ --> Hash:D)
+SetHash	Int	-
+SetHash	Map	-
 SetHash	Mix	($:: *%_ --> Mix:D)
 SetHash	Mix	(Setty:D $:: *%_)
 SetHash	MixHash	($:: *%_ --> MixHash:D)
 SetHash	MixHash	(Setty:D $:: *%_)
 SetHash	Mixy	(SetHash:U $:: *%_)
 SetHash	Mixy	(SetHash:D $:: *%_)
+SetHash	Num	-
+SetHash	Numeric	-
+SetHash	OBJECTIFIER	-
+SetHash	POPULATE	-
+SetHash	RAW-HASH	-
+SetHash	Real	-
 SetHash	SETUP	(QuantHash:U $:: *%_)
 SetHash	SETUP	(QuantHash:U $:: \elems, *%_)
 SetHash	SETUP	(QuantHash:D $:: \elems, *%_)
@@ -3422,17 +5235,21 @@ SetHash	Setty	(SetHash:D $:: *%_)
 SetHash	Str	(Mu:U \v:: *%_)
 SetHash	Str	(Mu:D $:: *%_)
 SetHash	Str	(Setty:D $:: *%_ --> Str:D)
+SetHash	WHICHIFY	-
 SetHash	antipairs	(Enumeration $:: *%_)
 SetHash	antipairs	(Bool $:: *%_)
 SetHash	antipairs	(Any:U $:: *%_)
 SetHash	antipairs	(Any:D $:: *%_)
 SetHash	antipairs	(Setty:D $:: *%_)
+SetHash	clone	-
 SetHash	deepmap	(Associative:D $:: &op, *%_)
 SetHash	deepmap	($:: &op, *%_)
 SetHash	deepmap	(SetHash:D $:: &mapper, *%_)
+SetHash	default	-
 SetHash	elems	(Any:U $:: *%_ --> 1)
 SetHash	elems	(Any:D $:: *%_)
 SetHash	elems	(Setty:D $:: *%_)
+SetHash	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
 SetHash	gist	(Mu:U $:: *%_)
 SetHash	gist	(Mu:D $:: *%_)
 SetHash	gist	(SetHash:D $:: *%_ --> Str:D)
@@ -3447,6 +5264,8 @@ SetHash	grabpairs	(SetHash:D $:: $count, *%_)
 SetHash	hash	(Any:U $:: *%_)
 SetHash	hash	(Any:D $:: *%_)
 SetHash	hash	(Setty:D $:: *%_ --> Hash:D)
+SetHash	iterator	-
+SetHash	keyof	-
 SetHash	keys	(Enumeration $:: *%_)
 SetHash	keys	(Bool $:: *%_)
 SetHash	keys	(Any:U $:: *%_)
@@ -3469,6 +5288,8 @@ SetHash	new	(Mu $:: $, *@, *%_)
 SetHash	new	(Setty $:: \value, *%_ --> Setty:D)
 SetHash	new	(Setty $:: **@args, *%_ --> Setty:D)
 SetHash	new	(QuantHash $:: *%_)
+SetHash	new-from-pairs	-
+SetHash	of	-
 SetHash	pairs	(Enumeration $:: *%_)
 SetHash	pairs	(Bool $:: *%_)
 SetHash	pairs	(Any:U $:: *%_)
@@ -3492,6 +5313,9 @@ SetHash	roll	(Setty:D $:: *%_)
 SetHash	roll	(Setty:D $:: Callable:D $calculate, *%_)
 SetHash	roll	(Setty:D $:: Whatever, *%_)
 SetHash	roll	(Setty:D $:: $count, *%_)
+SetHash	set	-
+SetHash	total	-
+SetHash	unset	-
 SetHash	values	(Enumeration $:: *%_)
 SetHash	values	(Bool $:: *%_)
 SetHash	values	(Any:U $:: *%_)
@@ -3506,8 +5330,11 @@ Signal	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Signal	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 Signal	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 Signal	ACCEPTS	(Signal:D $:: Signal:D $v, *%_)
+Signal	CALL-ME	#2-2
 Signal	CALL-ME	(Signal $:: Mu \val, *%_)
 Signal	CALL-ME	(Signal $:: Int(Any) $signum, *%_)
+Signal	COERCE	#2-2
+Signal	COERCE	(Signal $:: Mu \val, *%_)
 Signal	Int	(Mu:U \v:: *%_)
 Signal	Int	(Cool $:: *%_)
 Signal	Int	(Signal:D $:: *%_)
@@ -3531,21 +5358,27 @@ Signal	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Signal	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Signal	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 Signal	WHICH	(Signal:D $:: *%_ --> ValueObjAt:D)
+Signal	clone	-
+Signal	enums	-
 Signal	gist	(Mu:U $:: *%_)
 Signal	gist	(Mu:D $:: *%_)
 Signal	gist	(Numeric:D $:: *%_)
 Signal	gist	(Signal:D $:: *%_)
+Signal	key	-
 Signal	kv	(Enumeration $:: *%_)
 Signal	kv	(Bool $:: *%_)
 Signal	kv	(Any:U $:: *%_)
 Signal	kv	(Any:D $:: *%_)
 Signal	kv	(Signal:D $:: *%_)
+Signal	new	-
+Signal	pair	-
 Signal	pick	($:: *%_)
 Signal	pick	($:: $n, *%_)
 Signal	pick	($:: HyperWhatever, *%_)
 Signal	pick	(Signal:U $:: *%_)
 Signal	pick	(Signal:U $:: \n, *%_)
 Signal	pick	(Signal:D $:: *@pos, *%_)
+Signal	pred	-
 Signal	raku	(Mu:U $:: *%_)
 Signal	raku	(Mu:D $:: *%_)
 Signal	raku	(Int:D $:: *%_ --> Str:D)
@@ -3555,6 +5388,9 @@ Signal	roll	($:: $n, *%_)
 Signal	roll	(Signal:U $:: *%_)
 Signal	roll	(Signal:U $:: \n, *%_)
 Signal	roll	(Signal:D $:: *@pos, *%_)
+Signal	succ	-
+Signal	value	-
+Signature	<anon>	-
 Signature	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Signature	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Signature	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -3564,21 +5400,31 @@ Signature	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Signature	ACCEPTS	(Signature:D $:: Mu \topic, *%_)
 Signature	ACCEPTS	(Signature:D $:: Capture $topic, *%_)
 Signature	ACCEPTS	(Signature:D $:: Signature:D $topic, *%_)
+Signature	Capture	-
+Signature	POPULATE	-
+Signature	arity	-
+Signature	count	-
 Signature	gist	(Mu:U $:: *%_)
 Signature	gist	(Mu:D $:: *%_)
 Signature	gist	(Signature:D $:: *%_)
 Signature	new	(Mu $:: *%attrinit)
 Signature	new	(Mu $:: $, *@, *%_)
 Signature	new	(Signature:U $:: :@params, Mu :$returns, Int :$arity, Num :$count, *%_)
+Signature	params	-
 Signature	raku	(Mu:U $:: *%_)
 Signature	raku	(Mu:D $:: *%_)
 Signature	raku	(Signature:D $:: *%_)
+Slang	POPULATE	-
+Slang	actions	-
 Slang	gist	(Mu:U $:: *%_)
 Slang	gist	(Mu:D $:: *%_)
 Slang	gist	(Slang:D $:: *%_)
+Slang	grammar	-
+Slang	parse	-
 Slip	List	($:: *%_)
 Slip	List	(List:D $:: *%_)
 Slip	List	(Slip:D $:: *%_ --> List:D)
+Slip	POPULATE	-
 Slip	Slip	($:: *%_)
 Slip	Slip	(List:D $:: *%_ --> Slip:D)
 Slip	Slip	(Slip:D $:: *%_)
@@ -3616,6 +5462,7 @@ Slip	head	(Any:D $:: $n, *%_)
 Slip	head	(List:D $:: *%_)
 Slip	head	(Slip:D $:: *%_)
 Slip	head	(Slip:D $:: $, *%_)
+Slip	join	-
 Slip	map	($:: Hash:D \hash, *%_)
 Slip	map	($:: Iterable:D \iterable, *%_)
 Slip	map	($:: |c)
@@ -3693,6 +5540,10 @@ SocketType	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 SocketType	ACCEPTS	(Int:D $:: Int:D $other, *%_ --> Bool)
 SocketType	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
 SocketType	ACCEPTS	(SocketType:D $:: SocketType:D $v, *%_)
+SocketType	CALL-ME	#2-2
+SocketType	CALL-ME	(SocketType $:: Mu \val, *%_)
+SocketType	COERCE	#2-2
+SocketType	COERCE	(SocketType $:: Mu \val, *%_)
 SocketType	Int	(Mu:U \v:: *%_)
 SocketType	Int	(Cool $:: *%_)
 SocketType	Int	(SocketType:D $:: *%_)
@@ -3716,21 +5567,27 @@ SocketType	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 SocketType	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 SocketType	WHICH	(Int:D $:: *%_ --> ValueObjAt:D)
 SocketType	WHICH	(SocketType:D $:: *%_ --> ValueObjAt:D)
+SocketType	clone	-
+SocketType	enums	-
 SocketType	gist	(Mu:U $:: *%_)
 SocketType	gist	(Mu:D $:: *%_)
 SocketType	gist	(Numeric:D $:: *%_)
 SocketType	gist	(SocketType:D $:: *%_)
+SocketType	key	-
 SocketType	kv	(Enumeration $:: *%_)
 SocketType	kv	(Bool $:: *%_)
 SocketType	kv	(Any:U $:: *%_)
 SocketType	kv	(Any:D $:: *%_)
 SocketType	kv	(SocketType:D $:: *%_)
+SocketType	new	-
+SocketType	pair	-
 SocketType	pick	($:: *%_)
 SocketType	pick	($:: $n, *%_)
 SocketType	pick	($:: HyperWhatever, *%_)
 SocketType	pick	(SocketType:U $:: *%_)
 SocketType	pick	(SocketType:U $:: \n, *%_)
 SocketType	pick	(SocketType:D $:: *@pos, *%_)
+SocketType	pred	-
 SocketType	raku	(Mu:U $:: *%_)
 SocketType	raku	(Mu:D $:: *%_)
 SocketType	raku	(Int:D $:: *%_ --> Str:D)
@@ -3740,6 +5597,9 @@ SocketType	roll	($:: $n, *%_)
 SocketType	roll	(SocketType:U $:: *%_)
 SocketType	roll	(SocketType:U $:: \n, *%_)
 SocketType	roll	(SocketType:D $:: *@pos, *%_)
+SocketType	succ	-
+SocketType	value	-
+Stash	ASSIGN-KEY	#3-3
 Stash	ASSIGN-KEY	(Stash:D $:: Str:D $key, Mu \assignval, *%_)
 Stash	ASSIGN-KEY	(Stash:D $:: \key, Mu \assignval, *%_)
 Stash	AT-KEY	(Any:D $:: $key, *%_)
@@ -3752,21 +5612,26 @@ Stash	AT-KEY	(Stash:D $:: Str:D $key, *%_)
 Stash	AT-KEY	(Stash:D $:: Str(Any) $key, :$global_fallback!, *%_)
 Stash	BIND-KEY	(Stash:D $:: Str:D $key, Mu \bindval, *%_)
 Stash	BIND-KEY	(Stash:D $:: \key, Mu \bindval, *%_)
+Stash	POPULATE	-
 Stash	Str	(Mu:U \v:: *%_)
 Stash	Str	(Mu:D $:: *%_)
 Stash	Str	(Map:D $:: *%_ --> Str:D)
 Stash	Str	(Hash:D $:: *%_ --> Str:D)
 Stash	Str	(Stash:D $:: *%_)
+Stash	VIVIFY-KEY	-
+Stash	clone	-
 Stash	gist	(Mu:U $:: *%_)
 Stash	gist	(Mu:D $:: *%_)
 Stash	gist	(Map:D $:: *%_ --> Str:D)
 Stash	gist	(Hash:D $:: *%_)
 Stash	gist	(Stash:D $:: *%_)
+Stash	merge-symbols	-
 Stash	new	(Mu $:: *%attrinit)
 Stash	new	(Mu $:: $, *@, *%_)
 Stash	new	(Map $:: *%_ --> Map:D)
 Stash	new	(Map $:: *@args, *%_ --> Map:D)
 Stash	new	(Stash $:: *%_ --> Stash:D)
+Stash	package_at_key	-
 Str	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Str	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Str	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -3775,39 +5640,56 @@ Str	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Str	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Str	ACCEPTS	(Str:D $:: Str:D $other, *%_ --> Bool)
 Str	ACCEPTS	(Str:D $:: Any:D \other, *%_ --> Bool)
+Str	BUILD	-
+Str	Bool	#1-1
 Str	Bool	(Mu:U $:: *%_ --> Bool::False)
 Str	Bool	(Mu:D $:: *%_)
 Str	Bool	(Str:D $:: *%_ --> Bool)
+Str	COERCE	(Str $:: Mu \s, *%_)
+Str	Capture	-
 Str	DUMP	(Mu:U $:: *%_)
 Str	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
 Str	DUMP	(Str:D $:: *%_ --> Str:D)
+Str	Date	-
+Str	DateTime	-
 Str	IO	(Cool:D $:: *%_)
 Str	IO	(Cool:U $:: *%_)
 Str	IO	(Str:D $:: *%_)
+Str	Int	-
+Str	NFC	#1-1
 Str	NFC	(Cool:D $:: *%_)
 Str	NFC	(Str:D $:: *%_)
+Str	NFD	#1-1
 Str	NFD	(Cool:D $:: *%_)
 Str	NFD	(Str:D $:: *%_)
+Str	NFKC	#1-1
 Str	NFKC	(Cool:D $:: *%_)
 Str	NFKC	(Str:D $:: *%_)
+Str	NFKD	#1-1
 Str	NFKD	(Cool:D $:: *%_)
 Str	NFKD	(Str:D $:: *%_)
+Str	Num	-
 Str	Numeric	(Mu:U \v:: *%_)
 Str	Numeric	(Str:D $:: Bool :$fail-or-nil, *%_ --> Numeric:D)
+Str	POPULATE	-
 Str	Str	(Mu:U \v:: *%_)
 Str	Str	(Mu:D $:: *%_)
 Str	Str	(Str:D $:: *%_)
 Str	Stringy	(Mu:U \v:: *%_)
 Str	Stringy	(Mu:D $:: *%_)
 Str	Stringy	(Str:D $:: *%_)
+Str	Version	-
 Str	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Str	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Str	WHICH	(Str:D $:: *%_ --> ValueObjAt:D)
 Str	WHY	(Mu $:: *%_)
 Str	WHY	("Life, the Universe and Everything": *%_ --> 42)
+Str	WORDS_AUTODEREF	-
+Str	chars	#1-1
 Str	chars	(Cool:D $:: *%_ --> Int:D)
 Str	chars	(Str:D $:: *%_ --> Int:D)
 Str	chars	(Str:U $:: *%_ --> Int:D)
+Str	chomp	#1-2
 Str	chomp	(Cool:D $:: *%_)
 Str	chomp	(Cool:D $:: Cool:D $needle, *%_)
 Str	chomp	(Str:D $:: *%_ --> Str:D)
@@ -3817,6 +5699,7 @@ Str	chop	(Cool:D $:: Int(Any) $n, *%_)
 Str	chop	(Str:D $:: *%_ --> Str:D)
 Str	chop	(Str:D $:: Int:D $chopping, *%_ --> Str:D)
 Str	chop	(Str:D $:: $chopping, *%_ --> Str:D)
+Str	codes	#1-1
 Str	codes	(Cool:D $:: *%_ --> Int:D)
 Str	codes	(Str:D $:: *%_ --> Int:D)
 Str	codes	(Str:U $:: *%_ --> Int:D)
@@ -3852,6 +5735,7 @@ Str	contains	(Str:D $:: Str:D $needle, Int:D $pos, :i(:$ignorecase)!, :m(:$ignor
 Str	contains	(Str:D $:: Str:D $needle, Int:D $pos, :m(:$ignoremark)!, *%_ --> Bool)
 Str	contains	(Str:D $:: Str:D $needle, Int:D $pos, *%_ --> Bool)
 Str	contains	(Str:D $:: Regex:D $needle, Int:D $pos, *%_ --> Bool)
+Str	encode	#1-2
 Str	encode	(Cool:D $:: |c)
 Str	encode	(Str $:: Str:D $encoding = "utf8", :$replacement, Bool(Any) :$translate-nl = Bool::False, :$strict, *%_ --> Blob:D)
 Str	ends-with	(Cool:D $:: Cool:D $suffix, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Bool)
@@ -3860,15 +5744,18 @@ Str	ends-with	(Cool:D $:: Cool:D $suffix, *%_ --> Bool)
 Str	ends-with	(Str:D $:: Str:D $needle, :i(:$ignorecase)!, :m(:$ignoremark), *%_ --> Bool)
 Str	ends-with	(Str:D $:: Str:D $needle, :m(:$ignoremark)!, *%_ --> Bool)
 Str	ends-with	(Str:D $:: Str:D $needle, *%_ --> Bool)
+Str	fc	#1-1
 Str	fc	(Cool:D $:: *%_)
 Str	fc	(Str:D $:: *%_ --> Str:D)
 Str	fc	(Str:U $:: *%_ --> Str:D)
+Str	flip	#1-1
 Str	flip	(Cool:D $:: *%_)
 Str	flip	(Str:D $:: *%_ --> Str:D)
 Str	flip	(Str:U $:: *%_ --> Str:D)
 Str	gist	(Mu:U $:: *%_)
 Str	gist	(Mu:D $:: *%_)
 Str	gist	(Str:D $:: *%_)
+Str	indent	#2-2
 Str	indent	(Cool:D $:: $steps, *%_)
 Str	indent	(Str:D $:: Int(Any) $steps where { ... }, *%_)
 Str	indent	(Str $:: Int(Any) $steps where { ... }, *%_)
@@ -3900,9 +5787,12 @@ Str	indices	(Str:D $:: Str:D $needle, :i(:$ignorecase), :m(:$ignoremark), :$over
 Str	indices	(Str:D $:: Str:D $needle, Int:D $pos, :i(:$ignorecase), :m(:$ignoremark), :$overlap, *%_)
 Str	indices	(Str:D $:: Str:D $needle, :$overlap, *%_)
 Str	indices	(Str:D $:: Str:D $needle, Int:D $pos, :$overlap, *%_)
+Str	is-whitespace	-
+Str	lc	#1-1
 Str	lc	(Cool:D $:: *%_)
 Str	lc	(Str:D $:: *%_ --> Str:D)
 Str	lc	(Str:U $:: *%_ --> Str:D)
+Str	leading-whitespace	-
 Str	lines	(Cool:D $:: *%_)
 Str	lines	(Cool:D $:: :$count!, *%_)
 Str	lines	(Cool:D $:: $limit, *%_)
@@ -3925,13 +5815,18 @@ Str	match	(Str $:: Regex:D $pattern, :$th!, *%_)
 Str	match	(Str $:: Regex:D $pattern, :$nth!, *%_)
 Str	match	(Str $:: Regex:D $pattern, :$as!, *%_)
 Str	match	(Str $:: Regex:D $pattern, *%_)
+Str	naive-word-wrapper	-
+Str	no-zero-arg	-
+Str	ord	#1-1
 Str	ord	(Cool:D $:: *%_ --> Int:D)
 Str	ord	(Str:D $:: *%_ --> Int:D)
+Str	ords	#1-1
 Str	ords	(Cool:D $:: *%_)
 Str	ords	(Str:D $:: *%_ --> Seq:D)
 Str	parse-base	(Str:D $:: Int:D $radix, *%_ --> Numeric:D)
 Str	parse-base	(Str:D $:: "camel", *%_ --> Int:D)
 Str	parse-base	(Str:D $:: "beer", *%_ --> Int:D)
+Str	pred	-
 Str	raku	(Mu:U $:: *%_)
 Str	raku	(Mu:D $:: *%_)
 Str	raku	(Str:D $:: *%_ --> Str:D)
@@ -3941,10 +5836,13 @@ Str	rindex	(Cool:D $:: Cool:D $needle, Cool:D $pos, *%_ --> Int:D)
 Str	rindex	(Str:D $:: Str:D $needle, *%_ --> Int:D)
 Str	rindex	(Str:D $:: Str:D $needle, Int:D $pos, *%_ --> Int:D)
 Str	rindex	(Str:D $:: @needles, *%_ --> Int:D)
+Str	samecase	#2-2
 Str	samecase	(Cool:D $:: Cool:D $pattern, *%_)
 Str	samecase	(Str:D $:: Str:D $pattern, *%_ --> Str:D)
+Str	samemark	#2-2
 Str	samemark	(Cool:D $:: Cool:D $pattern, *%_)
 Str	samemark	(Str:D $:: Str:D $pattern, *%_ --> Str:D)
+Str	samespace	#2-2
 Str	samespace	(Cool:D $:: Cool:D $pattern, *%_)
 Str	samespace	(Str:D $:: Str:D $pattern, *%_)
 Str	split	(Str:D $:: Regex:D $needle, $limit, :$end!, *%_ --> Seq:D)
@@ -3962,6 +5860,7 @@ Str	starts-with	(Str:D $:: Str:D $needle, *%_ --> Bool)
 Str	subst	(Cool:D $:: $original, $replacement = "", *%options)
 Str	subst	(Str:D $:: Str:D $original, Str:D $final = "", *%options)
 Str	subst	(Str:D $:: $matcher, $replacement = "", *%options)
+Str	subst-mutate	(Str:D $self: is rw: Any:D $matcher, $replacement, :ii(:$samecase), :ss(:$samespace), :mm(:$samemark), *%options)
 Str	substr	(Cool:D $:: *%_)
 Str	substr	(Cool:D $:: \from, *%_)
 Str	substr	(Cool:D $:: \from, \chars, *%_)
@@ -3994,47 +5893,64 @@ Str	substr-rw	(Str:D $container: is rw: Callable:D $code, $want?, *%_)
 Str	substr-rw	(Str:D $container: is rw: Int(Any) $start, *%_)
 Str	substr-rw	(Str:D $container: is rw: Int(Any) $start, Whatever, *%_)
 Str	substr-rw	(Str:D $container: is rw: Int(Any) $start, Any:D $want, *%_)
+Str	succ	-
+Str	tc	#1-1
 Str	tc	(Cool:D $:: *%_)
 Str	tc	(Str:D $:: *%_ --> Str:D)
 Str	tc	(Str:U $:: *%_ --> Str:D)
+Str	tclc	#1-1
 Str	tclc	(Cool:D $:: *%_)
 Str	tclc	(Str:D $:: *%_ --> Str:D)
 Str	tclc	(Str:U $:: *%_ --> Str:D)
+Str	trailing-whitespace	-
 Str	trans	(Cool:D $:: |c)
 Str	trans	(Str:D $:: *%_ --> Str:D)
 Str	trans	(Str:D $:: Pair:D $what, *%_ --> Str:D)
 Str	trans	(Str:D $:: *@specs, *%_ --> Str:D)
 Str	trans	(Str:D $:: @specs, *%_ --> Str:D)
+Str	trim	#1-1
 Str	trim	(Cool:D $:: *%_)
 Str	trim	(Str:D $:: *%_ --> Str:D)
+Str	trim-leading	#1-1
 Str	trim-leading	(Cool:D $:: *%_)
 Str	trim-leading	(Str:D $:: *%_ --> Str:D)
+Str	trim-trailing	#1-1
 Str	trim-trailing	(Cool:D $:: *%_)
 Str	trim-trailing	(Str:D $:: *%_ --> Str:D)
+Str	uc	#1-1
 Str	uc	(Cool:D $:: *%_)
 Str	uc	(Str:D $:: *%_ --> Str:D)
 Str	uc	(Str:U $:: *%_ --> Str:D)
+Str	unimatch	#2-3
 Str	unimatch	(Cool:D $:: Str:D $pvalname, *%_ --> Bool)
 Str	unimatch	(Cool:D $:: Str:D $pvalname, Str:D $propname, *%_ --> Bool)
 Str	unimatch	(Str:D $:: Str:D $pvalname, *%_ --> Bool)
 Str	unimatch	(Str:D $:: Str:D $pvalname, Str:D $propname, *%_ --> Bool)
+Str	uniname	#1-1
 Str	uniname	(Cool:D $:: *%_ --> Str:D)
 Str	uniname	(Str:D $:: *%_ --> Str:D)
+Str	uninames	#1-1
 Str	uninames	(Cool:D $:: *%_ --> Seq:D)
 Str	uninames	(Str:D $:: *%_)
+Str	uniparse	#1-1
 Str	uniparse	(Cool:D $:: *%_ --> Str:D)
 Str	uniparse	(Str:D $:: *%_ --> Str:D)
+Str	uniprop	#1-2
 Str	uniprop	(Cool:D $:: *%_)
 Str	uniprop	(Cool:D $:: Str:D $propname, *%_)
 Str	uniprop	(Str:D $:: *%_)
 Str	uniprop	(Str:D $:: Str:D $propname, *%_)
+Str	uniprops	#1-2
 Str	uniprops	(Cool:D $:: *%_)
 Str	uniprops	(Cool:D $:: Str:D $propname, *%_)
 Str	uniprops	(Str:D $:: Str:D $propname = "General_Category", *%_)
+Str	unival	#1-1
 Str	unival	(Cool:D $:: *%_)
 Str	unival	(Str:D $:: *%_)
+Str	univals	#1-1
 Str	univals	(Cool:D $:: *%_)
 Str	univals	(Str:D $:: *%_)
+Str	wordcase	#1-1
 Str	wordcase	(Cool:D $:: *%_)
 Str	wordcase	(Str:D $:: :&filter, Mu :$where = Bool::True, *%_ --> Str:D)
 Str	words	(Cool:D $:: *%_)
@@ -4048,17 +5964,41 @@ StrDistance	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 StrDistance	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 StrDistance	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 StrDistance	ACCEPTS	(StrDistance:D $:: Mu \a, *%_)
+StrDistance	Bool	-
 StrDistance	Int	(Mu:U \v:: *%_)
 StrDistance	Int	(Cool $:: *%_)
 StrDistance	Int	(StrDistance:D $:: *%_)
+StrDistance	Numeric	-
+StrDistance	POPULATE	-
+StrDistance	Str	-
+StrDistance	after	-
+StrDistance	before	-
+Sub+{is-DEPRECATED}	DEPRECATED	-
+Sub+{is-nodal}	nodal	-
+Sub+{is-pure}	is-pure	-
 Submethod	gist	(Mu:U $:: *%_)
 Submethod	gist	(Mu:D $:: *%_)
 Submethod	gist	(Routine:D $:: *%_)
 Submethod	gist	(Submethod:D $:: *%_)
+Supplier	POPULATE	-
+Supplier	Supply	-
+Supplier	done	-
+Supplier	emit	-
+Supplier	quit	#2-2
 Supplier	quit	(Supplier:D $:: Exception $ex, *%_)
 Supplier	quit	(Supplier:D $:: Str(Any) $message, *%_)
+Supplier	unsanitized-supply	-
+Supply	BUILD	-
+Supply	Capture	-
+Supply	Channel	-
+Supply	POPULATE	-
+Supply	Promise	-
+Supply	Seq	-
 Supply	Supply	($:: *%_)
 Supply	Supply	(Supply:D $:: *%_)
+Supply	Tappable	-
+Supply	act	-
+Supply	batch	-
 Supply	categorize	(Supply:D $:: &mapper, *%_)
 Supply	categorize	(Supply:D $:: %mapper, *%_)
 Supply	categorize	(Supply:D $:: @mapper, *%_)
@@ -4073,12 +6013,21 @@ Supply	comb	(Supply:D $:: Str:D $the-needle, *%_)
 Supply	comb	(Supply:D $:: Regex:D $matcher, :$match!, |c)
 Supply	comb	(Supply:D $:: Regex:D $matcher, *%_)
 Supply	comb	(Supply:D $:: \the-thing, \the-limit, *%_)
+Supply	decode	-
+Supply	delayed	-
+Supply	do	-
 Supply	elems	(Any:U $:: *%_ --> 1)
 Supply	elems	(Any:D $:: *%_)
 Supply	elems	(Supply:D $:: *%_)
 Supply	elems	(Supply:D $:: $seconds, *%_)
+Supply	encode	-
+Supply	first	-
 Supply	flat	($:: *%_)
 Supply	flat	(Supply:D $:: *%_)
+Supply	from-list	-
+Supply	get-await-handle	-
+Supply	grab	-
+Supply	grep	-
 Supply	head	(Any:U $:: |c)
 Supply	head	(Any:D $:: *%_)
 Supply	head	(Any:D $:: Callable:D $w, *%_)
@@ -4086,6 +6035,7 @@ Supply	head	(Any:D $:: $n, *%_)
 Supply	head	(Supply:D $:: *%_)
 Supply	head	(Supply:D $:: Callable:D $limit, *%_)
 Supply	head	(Supply:D $:: \limit, *%_)
+Supply	interval	-
 Supply	iterator	(Mu $:: *%_)
 Supply	iterator	($:: *%_)
 Supply	iterator	(Supply:D $:: *%_)
@@ -4094,8 +6044,19 @@ Supply	lines	(Supply:D $:: *%_)
 Supply	list	(Any:U $:: *%_)
 Supply	list	(Any:D \SELF:: *%_)
 Supply	list	(Supply:D $:: *%_)
+Supply	live	-
+Supply	map	-
+Supply	max	-
+Supply	merge	-
+Supply	migrate	-
+Supply	min	-
+Supply	minmax	-
 Supply	new	(Supply $:: *%_)
 Supply	new	(Supply $:: Tappable $tappable, *%_)
+Supply	on-close	-
+Supply	on-demand	-
+Supply	produce	-
+Supply	reduce	-
 Supply	repeated	($:: *%_)
 Supply	repeated	($:: :&as!, :&with!, *%_)
 Supply	repeated	($:: :&as!, *%_)
@@ -4104,10 +6065,18 @@ Supply	repeated	(Supply:D $:: *%_)
 Supply	repeated	(Supply:D $:: :&as!, :&with!, *%_)
 Supply	repeated	(Supply:D $:: :&as!, *%_)
 Supply	repeated	(Supply:D $:: :&with!, *%_)
+Supply	reverse	-
+Supply	rotate	-
 Supply	rotor	(Any:D $:: Int:D $batch, :$partial, *%_)
 Supply	rotor	(Any:D $:: +@cycle, :$partial, *%_)
 Supply	rotor	(Supply:D $:: Int:D $batch, :$partial, *%_)
 Supply	rotor	(Supply:D $:: *@cycle, :$partial, *%_)
+Supply	sanitize	-
+Supply	schedule-on	-
+Supply	serial	-
+Supply	serialize	-
+Supply	share	-
+Supply	skip	-
 Supply	sort	(Any:U $:: |c)
 Supply	sort	(Any:D $:: *%_)
 Supply	sort	(Any:D $:: &by, *%_)
@@ -4121,12 +6090,15 @@ Supply	squish	(Supply:D $:: *%_)
 Supply	squish	(Supply:D $:: :&as!, :&with!, *%_)
 Supply	squish	(Supply:D $:: :&as!, *%_)
 Supply	squish	(Supply:D $:: :&with!, *%_)
+Supply	stable	-
+Supply	start	-
 Supply	tail	(Any:U $:: |c)
 Supply	tail	(Any:D $:: *%_)
 Supply	tail	(Any:D $:: $n, *%_)
 Supply	tail	(Supply:D $:: *%_)
 Supply	tail	(Supply:D $:: Callable:D $limit, *%_)
 Supply	tail	(Supply:D $:: \limit, *%_)
+Supply	tap	-
 Supply	throttle	(Supply:D $:: Int(Any) $elems, Real(Any) $seconds, Real(Any) $delay = 0, :$scheduler = Code.new, :$control, :$status, :$bleed, :$vent-at, *%_)
 Supply	throttle	(Supply:D $:: Int(Any) $elems, Callable:D $process, Real(Any) $delay = 0, :$scheduler = Code.new, :$control, :$status, :$bleed, :$vent-at, *%_)
 Supply	unique	($:: *%_)
@@ -4135,29 +6107,59 @@ Supply	unique	($:: :&as!, *%_)
 Supply	unique	($:: :&with!, *%_)
 Supply	unique	(Supply:D $:: :&as, :&with, :$expires!, *%_)
 Supply	unique	(Supply:D $:: :&as, :&with, *%_)
+Supply	wait	-
+Supply	words	-
+Supply	zip	-
+Supply	zip-latest	-
+Tap	BUILD	-
+Tap	POPULATE	-
+Tap	close	-
 Tap	new	(Mu $:: *%attrinit)
 Tap	new	(Mu $:: $, *@, *%_)
 Tap	new	(Tap $:: *%_ --> Tap:D)
 Tap	new	(Tap $:: &on-close, *%_ --> Tap:D)
+Thread	BUILD	-
 Thread	Numeric	(Mu:U \v:: *%_)
 Thread	Numeric	(Thread:D $:: *%_)
+Thread	POPULATE	-
 Thread	Str	(Mu:U \v:: *%_)
 Thread	Str	(Mu:D $:: *%_)
 Thread	Str	(Thread:D $:: *%_)
+Thread	app_lifetime	-
+Thread	finish	-
 Thread	gist	(Mu:U $:: *%_)
 Thread	gist	(Mu:D $:: *%_)
 Thread	gist	(Thread:D $:: *%_)
+Thread	id	-
+Thread	is-initial-thread	-
+Thread	join	-
+Thread	name	-
+Thread	run	-
+Thread	start	-
+Thread	usage	-
+Thread	yield	-
+ThreadPoolScheduler	POPULATE	-
 ThreadPoolScheduler	cue	(ThreadPoolScheduler $:: &code, :$every!, :$times = 1, *%_)
 ThreadPoolScheduler	cue	(ThreadPoolScheduler $:: &code, :$times!, *%_)
 ThreadPoolScheduler	cue	(ThreadPoolScheduler $:: &code, :$at!, *%_)
 ThreadPoolScheduler	cue	(ThreadPoolScheduler $:: &code, :$in!, *%_)
 ThreadPoolScheduler	cue	(ThreadPoolScheduler $:: &code, :&catch!, *%_ --> Nil)
 ThreadPoolScheduler	cue	(ThreadPoolScheduler $:: &code, *%_ --> Nil)
+ThreadPoolScheduler	handle_uncaught	-
+ThreadPoolScheduler	loads	-
+ThreadPoolScheduler	max_threads	-
+ThreadPoolScheduler	new	-
+ThreadPoolScheduler	queue	-
+ThreadPoolScheduler	uncaught_handler	-
 ThreadPoolScheduler	usage	(ThreadPoolScheduler:U $:: *%_)
 ThreadPoolScheduler	usage	(ThreadPoolScheduler:D $:: *%_)
+TypeEnv	DESTROY	-
+TypeEnv	POPULATE	-
 TypeEnv	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 TypeEnv	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 TypeEnv	WHICH	(TypeEnv:D $:: *%_)
+TypeEnv	cache	-
+TypeEnv	instantiate	#2-2
 TypeEnv	instantiate	(TypeEnv:D $:: ContainerDescriptor:D \descriptor, *%_)
 TypeEnv	instantiate	(TypeEnv:D $:: Attribute:D \attr, *%_)
 TypeEnv	instantiate	(TypeEnv:D $:: Scalar:D \container, *%_)
@@ -4165,6 +6167,9 @@ TypeEnv	instantiate	(TypeEnv:D $:: Signature:D \sign, *%_)
 TypeEnv	instantiate	(TypeEnv:D $:: Parameter:D \param, *%_)
 TypeEnv	instantiate	(TypeEnv:D $:: Code:D \code, *%_)
 TypeEnv	instantiate	(TypeEnv:D $:: Mu \obj, *%_)
+TypeEnv	new	-
+TypeEnv	new-from-ctx	-
+TypeEnv	primary	-
 Uni	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Uni	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Uni	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -4185,6 +6190,7 @@ Uni	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
 Uni	AT-POS	(Any:D \SELF:: **@indices, *%_)
 Uni	AT-POS	(Uni:D $:: uint $pos, *%_)
 Uni	AT-POS	(Uni:D $:: Int:D $pos, *%_)
+Uni	Bool	#1-1
 Uni	Bool	(Mu:U $:: *%_ --> Bool::False)
 Uni	Bool	(Mu:D $:: *%_)
 Uni	Bool	(Uni:D $:: *%_)
@@ -4199,32 +6205,72 @@ Uni	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 Uni	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 Uni	EXISTS-POS	(Uni:D $:: uint $pos, *%_)
 Uni	EXISTS-POS	(Uni:D $:: Int:D $pos, *%_)
+Uni	Int	-
+Uni	NFC	-
+Uni	NFD	-
+Uni	NFKC	-
+Uni	NFKD	-
+Uni	Numeric	-
+Uni	POPULATE	-
 Uni	Str	(Mu:U \v:: *%_)
 Uni	Str	(Mu:D $:: *%_)
 Uni	Str	(Uni:D $:: *%_)
+Uni	Uni	-
+Uni	codes	-
 Uni	elems	(Any:U $:: *%_ --> 1)
 Uni	elems	(Any:D $:: *%_)
 Uni	elems	(Uni:D $:: *%_)
+Uni	encode	-
 Uni	gist	(Mu:U $:: *%_)
 Uni	gist	(Mu:D $:: *%_)
 Uni	gist	(Uni:D $:: *%_)
+Uni	list	-
 Uni	new	(Mu $:: *%attrinit)
 Uni	new	(Mu $:: $, *@, *%_)
 Uni	new	(Uni $:: *%_)
 Uni	new	(Uni $:: *@codes, *%_)
 Uni	new	(Uni $:: array[uint32] \codepoints, *%_)
+Uni	of	-
 Uni	raku	(Mu:U $:: *%_)
 Uni	raku	(Mu:D $:: *%_)
 Uni	raku	(Uni:D $:: *%_)
 Unicode	NFG	(Unicode:U $:: *%_)
 Unicode	NFG	(Unicode:D $:: *%_)
+Unicode	POPULATE	-
 Unicode	version	(Unicode:U $:: *%_)
 Unicode	version	(Unicode:D $:: *%_)
+VM	POPULATE	-
+VM	Str	-
+VM	TWEAK	-
+VM	auth	-
+VM	config	-
+VM	desc	-
 VM	gist	(Mu:U $:: *%_)
 VM	gist	(Mu:D $:: *%_)
 VM	gist	(Systemic:D $:: *%_ --> Str:D)
+VM	name	-
 VM	osname	(VM:U $:: *%_)
 VM	osname	(VM:D $:: *%_)
+VM	own-up	-
+VM	platform-library-name	-
+VM	precomp-ext	-
+VM	precomp-target	-
+VM	prefix	-
+VM	remote-debugging	-
+VM	request-garbage-collection	-
+VM	signature	-
+VM	version	-
+ValueObjAt	POPULATE	-
+Variable	POPULATE	-
+Variable	block	-
+Variable	implicit-lexical-usage	-
+Variable	name	-
+Variable	native	-
+Variable	scope	-
+Variable	slash	-
+Variable	throw	-
+Variable	var	-
+Variable	willdo	-
 Version	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Version	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Version	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -4232,15 +6278,19 @@ Version	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Version	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Version	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Version	ACCEPTS	(Version:D $:: Version:D $other, *%_)
+Version	Capture	-
+Version	POPULATE	-
 Version	Str	(Mu:U \v:: *%_)
 Version	Str	(Mu:D $:: *%_)
 Version	Str	(Version:D $:: *%_)
+Version	Version	-
 Version	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
 Version	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
 Version	WHICH	(Version:D $:: *%_ --> ValueObjAt:D)
 Version	gist	(Mu:U $:: *%_)
 Version	gist	(Mu:D $:: *%_)
 Version	gist	(Version:D $:: *%_)
+Version	minus	-
 Version	new	(Mu $:: *%attrinit)
 Version	new	(Mu $:: $, *@, *%_)
 Version	new	(Version $:: *%_)
@@ -4253,11 +6303,21 @@ Version	new	(Version $:: "*", *%_)
 Version	new	(Version $:: Whatever, *%_)
 Version	new	(Version $:: @parts, Str:D $string, Int(Any) $plus = 0, $?, *%_)
 Version	new	(Version $:: Str(Any) $s, *%_)
+Version	parts	-
+Version	plus	-
 Version	raku	(Mu:U $:: *%_)
 Version	raku	(Mu:D $:: *%_)
 Version	raku	(Version:D $:: *%_)
+Version	whatever	-
+WalkList	CALL-ME	-
+WalkList	POPULATE	-
+WalkList	invocant	-
 WalkList	invoke	(WalkList:D $:: Capture:D $args, *%_ --> Seq:D)
 WalkList	invoke	(WalkList:D $:: |c --> Seq:D)
+WalkList	is-quiet	-
+WalkList	quiet	-
+WalkList	reverse	-
+WalkList	set_invocant	-
 Whatever	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Whatever	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Whatever	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -4265,6 +6325,8 @@ Whatever	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
 Whatever	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 Whatever	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 Whatever	ACCEPTS	(Whatever:D $:: Mu, *%_ --> Bool::True)
+Whatever	Capture	-
+Whatever	POPULATE	-
 Whatever	Str	(Mu:U \v:: *%_)
 Whatever	Str	(Mu:D $:: *%_)
 Whatever	Str	(Whatever:D $:: *%_ --> "*")
@@ -4279,20 +6341,26 @@ WhateverCode	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
 WhateverCode	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
 WhateverCode	ACCEPTS	(Code:D $self:: Mu $topic is raw, *%_)
 WhateverCode	ACCEPTS	(WhateverCode:D $:: \value, *%_)
+WhateverCode	POPULATE	-
 WhateverCode	POSITIONS	(WhateverCode:D $:: Failure:D \failure, *%_)
 WhateverCode	POSITIONS	(WhateverCode:D $self:: \list, *%_)
+WhateverCode	has-loop-phasers	-
+WhateverCode	has-phasers	-
 WhateverCode	raku	(Mu:U $:: *%_)
 WhateverCode	raku	(Mu:D $:: *%_)
 WhateverCode	raku	(WhateverCode:D $:: *%_)
 array	ASSIGN-POS	(Any:U \SELF:: \pos, Mu \assignee, *%_)
 array	ASSIGN-POS	(Any:D $:: Any:U \pos, Mu \assignee, *%_)
+array	BIND-POS	-
 array	Bag	($:: *%_ --> Bag:D)
 array	Bag	(Iterable:D $:: *%_)
 array	BagHash	($:: *%_ --> BagHash:D)
 array	BagHash	(Iterable:D $:: *%_)
+array	Bool	#1-1
 array	Bool	(Mu:U $:: *%_ --> Bool::False)
 array	Bool	(Mu:D $:: *%_)
 array	Bool	(array:D $:: *%_)
+array	DELETE-POS	-
 array	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
 array	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
 array	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
@@ -4304,12 +6372,18 @@ array	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 array	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 array	EXISTS-POS	(array:D $:: int $idx, *%_)
 array	EXISTS-POS	(array:D $:: Int:D $idx, *%_)
+array	FLATTENABLE_HASH	-
+array	FLATTENABLE_LIST	-
+array	Int	(array:D $:: *%_)
 array	Mix	($:: *%_ --> Mix:D)
 array	Mix	(Iterable:D $:: *%_)
 array	MixHash	($:: *%_ --> MixHash:D)
 array	MixHash	(Iterable:D $:: *%_)
 array	Numeric	(Mu:U \v:: *%_)
 array	Numeric	(array:D $:: *%_)
+array	POPULATE	-
+array	Real	(array:D $:: *%_)
+array	STORE	(array:D $:: *@values, *%_)
 array	Set	($:: *%_ --> Set:D)
 array	Set	(Iterable:D $:: *%_)
 array	SetHash	($:: *%_ --> SetHash:D)
@@ -4319,12 +6393,14 @@ array	Str	(Mu:D $:: *%_)
 array	Str	(array:D $:: *%_)
 array	append	(Any:U \SELF:: |values)
 array	append	(array:D $:: *@values, *%_)
+array	eager	-
 array	elems	(Any:U $:: *%_ --> 1)
 array	elems	(Any:D $:: *%_)
 array	elems	(array:D $:: *%_)
 array	end	(Any:U $:: *%_ --> 0)
 array	end	(Any:D $:: *%_)
 array	end	(array:D $:: *%_)
+array	flat	-
 array	gist	(Mu:U $:: *%_)
 array	gist	(Mu:D $:: *%_)
 array	gist	(array:D $:: *%_)
@@ -4334,6 +6410,12 @@ array	head	(Any:D $:: Callable:D $w, *%_)
 array	head	(Any:D $:: $n, *%_)
 array	head	(array:D $:: Int:D $n, *%_)
 array	head	(array:D $:: Callable:D $calculator, *%_)
+array	hyper	-
+array	item	-
+array	iterator	-
+array	lazy	-
+array	lazy-if	-
+array	list	-
 array	new	(Mu $:: *%attrinit)
 array	new	(Mu $:: $, *@, *%_)
 array	new	(array $:: *%_)
@@ -4342,10 +6424,13 @@ array	new	(array $:: **@v, *%_)
 array	new	(array $:: :$shape!, *%_)
 array	new	(array $:: @v, :$shape!, *%_)
 array	new	(array $:: **@v, :$shape!, *%_)
+array	of	-
+array	out_of_range	-
 array	prepend	(Any:U \SELF:: |values)
 array	prepend	(array:D $:: *@values, *%_)
 array	push	(Any:U \SELF:: |values)
 array	push	(array:D $:: **@values, *%_)
+array	race	-
 array	raku	(Mu:U $:: *%_)
 array	raku	(Mu:D $:: *%_)
 array	raku	(array:D $:: *%_)
@@ -4353,6 +6438,8 @@ array	set-shape	(array $:: Whatever, *%_)
 array	set-shape	(array $:: Range:D $range, *%_)
 array	set-shape	(array $:: \shape, *%_)
 array	set-shape	(array $:: List:D \shape, *%_)
+array	shape	-
+array	sink	-
 array	tail	(Any:U $:: |c)
 array	tail	(Any:D $:: *%_)
 array	tail	(Any:D $:: $n, *%_)
@@ -4380,9 +6467,13 @@ utf16	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
 utf16	AT-POS	(Any:D \SELF:: **@indices, *%_)
 utf16	AT-POS	(UnsignedBlob:D $:: uint $pos, *%_)
 utf16	AT-POS	(UnsignedBlob:D $:: Int:D $pos, *%_)
+utf16	Bool	#1-1
 utf16	Bool	(Mu:U $:: *%_ --> Bool::False)
 utf16	Bool	(Mu:D $:: *%_)
 utf16	Bool	(Blob:D $:: *%_)
+utf16	Buf	-
+utf16	COMPARE	-
+utf16	Capture	-
 utf16	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
 utf16	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
 utf16	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
@@ -4394,6 +6485,10 @@ utf16	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 utf16	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 utf16	EXISTS-POS	(Blob:D $:: int \pos, *%_)
 utf16	EXISTS-POS	(Blob:D $:: Int:D \pos, *%_)
+utf16	Int	-
+utf16	Numeric	-
+utf16	POPULATE	-
+utf16	SAME	-
 utf16	STORE	(Blob:D $:: Iterable:D \iterable, :$INITIALIZE, *%_)
 utf16	STORE	(Blob:D $:: Any:D \non-iterable, :$INITIALIZE, *%_)
 utf16	Str	(Mu:U \v:: *%_)
@@ -4414,15 +6509,22 @@ utf16	allocate	(Blob:U $:: Int:D $elements, int @values, *%_)
 utf16	allocate	(Blob:U $:: Int:D $elements, Blob:D $blob, *%_)
 utf16	allocate	(Blob:U $:: Int:D $elements, @values, *%_)
 utf16	allocate	(utf16:U $:: Int:D $elements, int $value, *%_)
+utf16	bytes	-
+utf16	chars	-
+utf16	codes	-
+utf16	contents	-
 utf16	decode	(Blob:D $:: $encoding = Code.new, *%_)
 utf16	decode	(Blob:D $:: $encoding, Str :$replacement!, Bool:D :$strict = Bool::False, *%_)
 utf16	decode	(Blob:D $:: $encoding, Bool:D :$strict = Bool::False, *%_)
+utf16	decode-with-valid-encoding	-
 utf16	elems	(Any:U $:: *%_ --> 1)
 utf16	elems	(Any:D $:: *%_)
 utf16	elems	(Blob:D $:: *%_)
+utf16	encoding	-
 utf16	gist	(Mu:U $:: *%_)
 utf16	gist	(Mu:D $:: *%_)
 utf16	gist	(Blob:D $:: *%_)
+utf16	join	-
 utf16	list	(Any:U $:: *%_)
 utf16	list	(Any:D \SELF:: *%_)
 utf16	list	(UnsignedBlob:D $:: *%_)
@@ -4433,9 +6535,25 @@ utf16	new	(Blob $:: Blob:D $blob, *%_)
 utf16	new	(Blob $:: int @values, *%_)
 utf16	new	(Blob $:: @values, *%_)
 utf16	new	(Blob $:: *@values, *%_)
+utf16	of	-
 utf16	raku	(Mu:U $:: *%_)
 utf16	raku	(Mu:D $:: *%_)
 utf16	raku	(Blob:D $:: *%_)
+utf16	read-bits	-
+utf16	read-int128	-
+utf16	read-int16	-
+utf16	read-int32	-
+utf16	read-int64	-
+utf16	read-int8	-
+utf16	read-num32	-
+utf16	read-num64	-
+utf16	read-ubits	-
+utf16	read-uint128	-
+utf16	read-uint16	-
+utf16	read-uint32	-
+utf16	read-uint64	-
+utf16	read-uint8	-
+utf16	reverse	-
 utf16	subbuf	(Blob:D $:: Range:D $fromto, *%_)
 utf16	subbuf	(Blob:D $:: Int:D $From, *%_)
 utf16	subbuf	(Blob:D $:: &From, *%_)
@@ -4467,9 +6585,13 @@ utf32	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
 utf32	AT-POS	(Any:D \SELF:: **@indices, *%_)
 utf32	AT-POS	(UnsignedBlob:D $:: uint $pos, *%_)
 utf32	AT-POS	(UnsignedBlob:D $:: Int:D $pos, *%_)
+utf32	Bool	#1-1
 utf32	Bool	(Mu:U $:: *%_ --> Bool::False)
 utf32	Bool	(Mu:D $:: *%_)
 utf32	Bool	(Blob:D $:: *%_)
+utf32	Buf	-
+utf32	COMPARE	-
+utf32	Capture	-
 utf32	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
 utf32	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
 utf32	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
@@ -4481,6 +6603,10 @@ utf32	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 utf32	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 utf32	EXISTS-POS	(Blob:D $:: int \pos, *%_)
 utf32	EXISTS-POS	(Blob:D $:: Int:D \pos, *%_)
+utf32	Int	-
+utf32	Numeric	-
+utf32	POPULATE	-
+utf32	SAME	-
 utf32	STORE	(Blob:D $:: Iterable:D \iterable, :$INITIALIZE, *%_)
 utf32	STORE	(Blob:D $:: Any:D \non-iterable, :$INITIALIZE, *%_)
 utf32	Str	(Mu:U \v:: *%_)
@@ -4501,15 +6627,22 @@ utf32	allocate	(Blob:U $:: Int:D $elements, int @values, *%_)
 utf32	allocate	(Blob:U $:: Int:D $elements, Blob:D $blob, *%_)
 utf32	allocate	(Blob:U $:: Int:D $elements, @values, *%_)
 utf32	allocate	(utf32:U $:: Int:D $elements, int $value, *%_)
+utf32	bytes	-
+utf32	chars	-
+utf32	codes	-
+utf32	contents	-
 utf32	decode	(Blob:D $:: $encoding = Code.new, *%_)
 utf32	decode	(Blob:D $:: $encoding, Str :$replacement!, Bool:D :$strict = Bool::False, *%_)
 utf32	decode	(Blob:D $:: $encoding, Bool:D :$strict = Bool::False, *%_)
+utf32	decode-with-valid-encoding	-
 utf32	elems	(Any:U $:: *%_ --> 1)
 utf32	elems	(Any:D $:: *%_)
 utf32	elems	(Blob:D $:: *%_)
+utf32	encoding	-
 utf32	gist	(Mu:U $:: *%_)
 utf32	gist	(Mu:D $:: *%_)
 utf32	gist	(Blob:D $:: *%_)
+utf32	join	-
 utf32	list	(Any:U $:: *%_)
 utf32	list	(Any:D \SELF:: *%_)
 utf32	list	(UnsignedBlob:D $:: *%_)
@@ -4520,9 +6653,25 @@ utf32	new	(Blob $:: Blob:D $blob, *%_)
 utf32	new	(Blob $:: int @values, *%_)
 utf32	new	(Blob $:: @values, *%_)
 utf32	new	(Blob $:: *@values, *%_)
+utf32	of	-
 utf32	raku	(Mu:U $:: *%_)
 utf32	raku	(Mu:D $:: *%_)
 utf32	raku	(Blob:D $:: *%_)
+utf32	read-bits	-
+utf32	read-int128	-
+utf32	read-int16	-
+utf32	read-int32	-
+utf32	read-int64	-
+utf32	read-int8	-
+utf32	read-num32	-
+utf32	read-num64	-
+utf32	read-ubits	-
+utf32	read-uint128	-
+utf32	read-uint16	-
+utf32	read-uint32	-
+utf32	read-uint64	-
+utf32	read-uint8	-
+utf32	reverse	-
 utf32	subbuf	(Blob:D $:: Range:D $fromto, *%_)
 utf32	subbuf	(Blob:D $:: Int:D $From, *%_)
 utf32	subbuf	(Blob:D $:: &From, *%_)
@@ -4554,9 +6703,13 @@ utf8	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
 utf8	AT-POS	(Any:D \SELF:: **@indices, *%_)
 utf8	AT-POS	(UnsignedBlob:D $:: uint $pos, *%_)
 utf8	AT-POS	(UnsignedBlob:D $:: Int:D $pos, *%_)
+utf8	Bool	#1-1
 utf8	Bool	(Mu:U $:: *%_ --> Bool::False)
 utf8	Bool	(Mu:D $:: *%_)
 utf8	Bool	(Blob:D $:: *%_)
+utf8	Buf	-
+utf8	COMPARE	-
+utf8	Capture	-
 utf8	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
 utf8	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
 utf8	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
@@ -4568,6 +6721,10 @@ utf8	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
 utf8	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
 utf8	EXISTS-POS	(Blob:D $:: int \pos, *%_)
 utf8	EXISTS-POS	(Blob:D $:: Int:D \pos, *%_)
+utf8	Int	-
+utf8	Numeric	-
+utf8	POPULATE	-
+utf8	SAME	-
 utf8	STORE	(Blob:D $:: Iterable:D \iterable, :$INITIALIZE, *%_)
 utf8	STORE	(Blob:D $:: Any:D \non-iterable, :$INITIALIZE, *%_)
 utf8	Str	(Mu:U \v:: *%_)
@@ -4588,15 +6745,22 @@ utf8	allocate	(Blob:U $:: Int:D $elements, int @values, *%_)
 utf8	allocate	(Blob:U $:: Int:D $elements, Blob:D $blob, *%_)
 utf8	allocate	(Blob:U $:: Int:D $elements, @values, *%_)
 utf8	allocate	(utf8:U $:: Int:D $elements, int $value, *%_)
+utf8	bytes	-
+utf8	chars	-
+utf8	codes	-
+utf8	contents	-
 utf8	decode	(Blob:D $:: $encoding = Code.new, *%_)
 utf8	decode	(Blob:D $:: $encoding, Str :$replacement!, Bool:D :$strict = Bool::False, *%_)
 utf8	decode	(Blob:D $:: $encoding, Bool:D :$strict = Bool::False, *%_)
+utf8	decode-with-valid-encoding	-
 utf8	elems	(Any:U $:: *%_ --> 1)
 utf8	elems	(Any:D $:: *%_)
 utf8	elems	(Blob:D $:: *%_)
+utf8	encoding	-
 utf8	gist	(Mu:U $:: *%_)
 utf8	gist	(Mu:D $:: *%_)
 utf8	gist	(Blob:D $:: *%_)
+utf8	join	-
 utf8	list	(Any:U $:: *%_)
 utf8	list	(Any:D \SELF:: *%_)
 utf8	list	(UnsignedBlob:D $:: *%_)
@@ -4607,9 +6771,25 @@ utf8	new	(Blob $:: Blob:D $blob, *%_)
 utf8	new	(Blob $:: int @values, *%_)
 utf8	new	(Blob $:: @values, *%_)
 utf8	new	(Blob $:: *@values, *%_)
+utf8	of	-
 utf8	raku	(Mu:U $:: *%_)
 utf8	raku	(Mu:D $:: *%_)
 utf8	raku	(Blob:D $:: *%_)
+utf8	read-bits	-
+utf8	read-int128	-
+utf8	read-int16	-
+utf8	read-int32	-
+utf8	read-int64	-
+utf8	read-int8	-
+utf8	read-num32	-
+utf8	read-num64	-
+utf8	read-ubits	-
+utf8	read-uint128	-
+utf8	read-uint16	-
+utf8	read-uint32	-
+utf8	read-uint64	-
+utf8	read-uint8	-
+utf8	reverse	-
 utf8	subbuf	(Blob:D $:: Range:D $fromto, *%_)
 utf8	subbuf	(Blob:D $:: Int:D $From, *%_)
 utf8	subbuf	(Blob:D $:: &From, *%_)

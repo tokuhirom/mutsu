@@ -206,6 +206,18 @@ pub(crate) fn max_row_arity(receiver: Receiver, method: Symbol) -> Option<usize>
         .find(|&arity| resolve(receiver, method, arity).is_some())
 }
 
+/// The fewest and the most positional arguments the rows `receiver` reaches
+/// for `method` take (7 for a slurpy row), when it reaches any.
+// Cost: O(a * log e), a = 8 arities, e = entries of the method's name.
+pub(crate) fn row_arity_range(receiver: Receiver, method: Symbol) -> Option<(usize, usize)> {
+    let min = (0..8).find(|&arity| resolve(receiver, method, arity).is_some())?;
+    let max = (min..8)
+        .rev()
+        .find(|&arity| resolve(receiver, method, arity).is_some())
+        .unwrap_or(min);
+    Some((min, max))
+}
+
 /// The row a receiver dispatches `method` to when called with `arity`
 /// positional arguments, if the table has one.
 // Cost: O(log e), e = entries of the method's name (a memo read, two bit

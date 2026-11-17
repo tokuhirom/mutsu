@@ -2395,7 +2395,8 @@ impl Interpreter {
                     )));
                 }
                 // A built-in method the receiver has, called with more
-                // positionals than any candidate takes, fails to bind.
+                // positionals than any candidate takes, fails to bind, with
+                // the error rakudo's proto/candidates raise for it.
                 if let Some(receiver) = crate::builtins::method_table::Receiver::of(&target)
                     && let Some(max) = crate::builtins::method_table::max_row_arity(
                         receiver,
@@ -2404,13 +2405,17 @@ impl Interpreter {
                     // Named arguments arrive as pairs and bind no positional.
                     && args.iter().filter(|arg| !arg.is_string_pair_value()).count() > max
                 {
-                    let expected = max + 1;
+                    if let Some(err) =
+                        super::methods_signature_errors::builtin_multi_arity_mismatch(
+                            &target, method, &args,
+                        )
+                    {
+                        return Err(err);
+                    }
                     let got = args.iter().filter(|arg| !arg.is_string_pair_value()).count();
-                    return Err(RuntimeError::new(format!(
-                        "Too many positionals passed; expected {expected} argument{} but got {}",
-                        if expected == 1 { "" } else { "s" },
-                        got + 1
-                    )));
+                    return Err(RuntimeError::new(
+                        super::types::arity_message::too_many_positionals(max + 1, max + 1, got + 1),
+                    ));
                 }
                 // `Any`'s `invert` (`self.list.invert`) reaches a `Capture` and a
                 // `Version`, which have no row of their own for it.
@@ -2447,6 +2452,31 @@ impl Interpreter {
                         method,
                         args,
                     );
+                }
+                // A built-in method the receiver has, called with fewer
+                // positionals than any candidate takes (`5.base`).
+                if let Some(receiver) = crate::builtins::method_table::Receiver::of(&target)
+                    && let Some((min, max)) = crate::builtins::method_table::row_arity_range(
+                        receiver,
+                        Symbol::intern(method),
+                    )
+                    && args.iter().filter(|arg| !arg.is_string_pair_value()).count() < min
+                {
+                    if let Some(err) =
+                        super::methods_signature_errors::builtin_multi_arity_mismatch(
+                            &target, method, &args,
+                        )
+                    {
+                        return Err(err);
+                    }
+                    let got = args.iter().filter(|arg| !arg.is_string_pair_value()).count();
+                    return Err(RuntimeError::new(
+                        super::types::arity_message::too_few_positionals(
+                            min + 1,
+                            (max < 7).then_some(max + 1),
+                            got + 1,
+                        ),
+                    ));
                 }
                 // Rakudo words a `Str` invocant's miss `for string 'abc'`.
                 let text = match target.view() {

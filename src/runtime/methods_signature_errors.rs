@@ -268,6 +268,59 @@ fn declared_class_name(name: &str) -> &str {
     name.split('\u{0}').next().unwrap_or(name)
 }
 
+/// The type a built-in method call's invocant reports in a NoMatch message
+/// and looks its candidates up under: `what_type_name`, except that a list
+/// value names `List`/`Seq` as `.^name` does rather than `Array`.
+// Cost: O(1).
+pub(crate) fn builtin_receiver_type_name(target: &Value) -> String {
+    match target.view() {
+        crate::value::ValueView::Array(..) | crate::value::ValueView::LazyList(_) => {
+            crate::runtime::value_type_name(target).to_string()
+        }
+        _ => crate::value::what_type_name(target),
+    }
+}
+
+/// The error a built-in method call on `target` raises when no candidate of
+/// `method` takes its number of positionals, as rakudo reports it: a multi
+/// whose proto binds the call raises `X::Multi::NoMatch` listing its
+/// candidates, while a bounded proto (`proto method chars(*%)`) fails its own
+/// bind ("Too many positionals passed"). `None` when rakudo's method is an
+/// only method or unknown: the caller words that from its own rows. `args`
+/// are the call's arguments; named ones arrive as pairs and bind no
+/// positional.
+// Cost: O(n + a + c), n = arguments, a = the ancestry length of the
+// invocant's type, c = candidate signatures of the method.
+pub(crate) fn builtin_multi_arity_mismatch(
+    target: &Value,
+    method_name: &str,
+    args: &[Value],
+) -> Option<RuntimeError> {
+    use crate::runtime::types::arity_message::{too_few_positionals, too_many_positionals};
+    let type_name = builtin_receiver_type_name(target);
+    let type_name = declared_class_name(&type_name);
+    super::builtin_method_sigs::candidate_signatures(type_name, method_name)?;
+    // The invocant counts as a positional in rakudo's wording.
+    let got = args.iter().filter(|arg| !arg.is_string_pair_value()).count() + 1;
+    if let Some((required, max)) =
+        super::builtin_method_sigs::proto_positional_bounds(type_name, method_name)
+    {
+        if got > max {
+            return Some(RuntimeError::new(too_many_positionals(required, max, got)));
+        }
+        if got < required {
+            return Some(RuntimeError::new(too_few_positionals(required, Some(max), got)));
+        }
+    }
+    let call = super::Interpreter::multi_call_profile(method_name, args);
+    let profile = call
+        .strip_prefix(method_name)
+        .and_then(|rest| rest.strip_prefix('('))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or("");
+    Some(make_builtin_method_no_match_error(target, method_name, profile))
+}
+
 /// The `X::Multi::NoMatch` a built-in multi method raises for a call with
 /// `args` on `target`, listing rakudo's candidates from the generated table
 /// (`builtin_method_sigs.tsv`). `profile` is the argument types as the message
@@ -284,7 +337,7 @@ pub(crate) fn make_builtin_method_no_match_error(
     );
     make_multi_no_match_error_detailed(
         method_name,
-        &crate::value::what_type_name(target),
+        &builtin_receiver_type_name(target),
         concrete,
         profile,
         &[],
