@@ -652,6 +652,29 @@ impl Interpreter {
     }
 
     fn parse_named_regex_lookup_spec_uncached(name: &str) -> NamedRegexLookupSpec {
+        // An aliased match-time `$var` (`regex_alias_var_call`): a silent call
+        // of the variable's value, renamed by the alias on its token.
+        if let Some((case, var)) = super::regex_alias_var_call::parse_interp_call_text(name) {
+            let lookup_name = var.to_string();
+            let lookup_sym = crate::symbol::Symbol::intern(&lookup_name);
+            return NamedRegexLookupSpec {
+                silent: true,
+                token_lookup: true,
+                silent_marker_sym: crate::symbol::Symbol::intern(&format!(
+                    "{}{}",
+                    crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+                    lookup_name
+                )),
+                action_sym: lookup_sym,
+                lookup_sym,
+                lookup_name,
+                capture_sym: None,
+                capture_name: None,
+                arg_exprs: Vec::new(),
+                alias_replaces_original: false,
+                interp_call: Some(case),
+            };
+        }
         let mut raw = name.trim();
         let mut silent = false;
         if let Some(stripped) = raw.strip_prefix('.') {
@@ -711,6 +734,7 @@ impl Interpreter {
                         capture_name: Some(lhs.to_string()),
                         arg_exprs: Vec::new(),
                         alias_replaces_original: true,
+                        interp_call: None,
                     };
                 } else if let Some(stripped) = rhs.strip_prefix('.') {
                     // <name=.subrule> — call .subrule (non-capturing), capture under name
@@ -751,6 +775,7 @@ impl Interpreter {
             capture_name,
             arg_exprs,
             alias_replaces_original,
+            interp_call: None,
         }
     }
 

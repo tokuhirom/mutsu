@@ -236,24 +236,34 @@ thread_local! {
     /// inside a quantified group: `[ $indent $new-indent … ]+ % <.line-break>`).
     static ENCLOSING_REGEX_VARS: RefCell<std::collections::HashSet<String>> =
         RefCell::new(std::collections::HashSet::new());
+    /// The subset of [`ENCLOSING_REGEX_VARS`] an in-regex `:my`/`:let`
+    /// declared: their values live in the match's `regex_vars`, not in the
+    /// env a rule's parameters and a pattern's hoisted scalars are bound in.
+    static ENCLOSING_REGEX_MY_VARS: RefCell<std::collections::HashSet<String>> =
+        RefCell::new(std::collections::HashSet::new());
 }
 
 /// Restores [`ENCLOSING_REGEX_VARS`] to its entry state, so a sub-pattern's own
 /// declarations do not leak back out to the pattern that contains it.
-pub(crate) struct EnclosingRegexVarsGuard(std::collections::HashSet<String>);
+pub(crate) struct EnclosingRegexVarsGuard(
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+);
 
 impl EnclosingRegexVarsGuard {
     /// Snapshot the enclosing declarations; the returned set is what a nested
     /// parse should start its own `declared_regex_vars` from.
     pub(crate) fn enter() -> (Self, std::collections::HashSet<String>) {
         let snapshot = ENCLOSING_REGEX_VARS.with(|s| s.borrow().clone());
-        (Self(snapshot.clone()), snapshot)
+        let my_snapshot = ENCLOSING_REGEX_MY_VARS.with(|s| s.borrow().clone());
+        (Self(snapshot.clone(), my_snapshot), snapshot)
     }
 }
 
 impl Drop for EnclosingRegexVarsGuard {
     fn drop(&mut self) {
         ENCLOSING_REGEX_VARS.with(|s| *s.borrow_mut() = std::mem::take(&mut self.0));
+        ENCLOSING_REGEX_MY_VARS.with(|s| *s.borrow_mut() = std::mem::take(&mut self.1));
     }
 }
 
@@ -287,6 +297,21 @@ pub(crate) fn declare_enclosing_regex_var(name: &str) {
     ENCLOSING_REGEX_VARS.with(|s| {
         s.borrow_mut().insert(name.to_string());
     });
+}
+
+/// Publish a scalar an in-regex `:my`/`:let` declares (see
+/// [`ENCLOSING_REGEX_MY_VARS`]).
+pub(crate) fn declare_enclosing_regex_my_var(name: &str) {
+    declare_enclosing_regex_var(name);
+    ENCLOSING_REGEX_MY_VARS.with(|s| {
+        s.borrow_mut().insert(name.to_string());
+    });
+}
+
+/// Is `name` a scalar an in-regex `:my`/`:let` of a pattern still being
+/// parsed declared, whose value lives in the match's `regex_vars`?
+pub(crate) fn is_enclosing_regex_my_var(name: &str) -> bool {
+    ENCLOSING_REGEX_MY_VARS.with(|s| s.borrow().contains(name))
 }
 
 /// Was `name` declared by a `:my`/`:let` in an enclosing pattern still being
@@ -856,6 +881,10 @@ pub(crate) struct NamedRegexLookupSpec {
     /// When true, the alias replaces the original capture name (dot-call alias).
     /// `<foo=.alpha>` sets this to true; `<foo=alpha>` leaves it false.
     pub(crate) alias_replaces_original: bool,
+    /// An aliased match-time `$var` atom (`$<a>=$var`) lowered to a call of
+    /// the variable's value, with the case flags its literal matches under
+    /// (see `regex_alias_var_call`); `None` for every written call.
+    pub(crate) interp_call: Option<super::regex_alias_var_call::InterpCallCase>,
 }
 
 /// The rule name an action is dispatched under for a call spelled

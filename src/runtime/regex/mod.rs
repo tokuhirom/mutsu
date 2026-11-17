@@ -13,6 +13,7 @@ mod regex_code_atom;
 pub(in crate::runtime) mod regex_code_interp;
 pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;
+pub(crate) mod regex_alias_var_call;
 pub(crate) mod regex_late_scalars;
 pub(crate) mod regex_rule_params;
 mod regex_eval;

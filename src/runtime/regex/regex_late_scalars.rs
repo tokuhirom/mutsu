@@ -17,7 +17,8 @@
 
 /// The plain scalar names the pattern `text` writes, in order of first use, and
 /// whether it contains a code block. A name a `=` follows is an alias
-/// (`$x=ATOM`, dropped by the interpolation pre-pass) and is left out.
+/// (`$x=ATOM`, dropped by the interpolation pre-pass) and is left out, as is
+/// that alias's atom.
 // Cost: O(n), n = the text's length.
 pub(crate) fn scalars_in_pattern(text: &str) -> (Vec<String>, bool) {
     let (names, saw_block) = scan_scalars(text);
@@ -104,15 +105,32 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
                     i = j;
                     continue;
                 }
-                // The atom of an alias (`$<a>=$re`) files a capture of its own,
-                // which the interpolation atom does not.
+                // The atom of a variable alias (`$x=$re`) is dropped and an
+                // in-angle `<a=$re>` is a call of its own, so neither is read
+                // as an interpolation. The atom of a sigil alias (`$<a>=$re`,
+                // `$0=$re`) is: the parser lowers it to a call of the value
+                // (`regex_alias_var_call`).
                 let mut b = i;
                 while b > 0 && chars[b - 1].is_whitespace() {
                     b -= 1;
                 }
                 if b > 0 && chars[b - 1] == '=' && !matches!(chars.get(b.wrapping_sub(2)), Some('=' | '!' | '<')) {
-                    i = j;
-                    continue;
+                    let mut a = b - 1;
+                    while a > 0 && chars[a - 1].is_whitespace() {
+                        a -= 1;
+                    }
+                    let sigil_alias = a > 0
+                        && (chars[a - 1] == '>' || {
+                            let mut d = a;
+                            while d > 0 && chars[d - 1].is_ascii_digit() {
+                                d -= 1;
+                            }
+                            d < a && d > 0 && chars[d - 1] == '$'
+                        });
+                    if !sigil_alias {
+                        i = j;
+                        continue;
+                    }
                 }
                 match names.iter_mut().find(|(n, _)| *n == name) {
                     // Written after a block anywhere: late.
@@ -189,6 +207,9 @@ mod tests {
         assert_eq!(scalars_in_pattern("$a { 1 } $b").0, ["a", "b"]);
         assert_eq!(scalars_in_pattern("$a $b").0, ["a", "b"]);
         assert!(scalars_in_pattern("$a=$b").0.is_empty());
+        assert!(scalars_in_pattern("<a=$b>").0.is_empty());
+        assert_eq!(scalars_in_pattern("$<a>=$b").0, ["b"]);
+        assert_eq!(scalars_in_pattern("$0 = $b").0, ["b"]);
         assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
         assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
     }
