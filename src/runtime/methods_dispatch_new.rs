@@ -637,6 +637,7 @@ impl Interpreter {
                     build_override: None,
                     seed: val.clone(),
                     default_is_seed: attr.default_is_seed,
+                    plan_index: Some(i),
                 });
             }
             // What no initializer wrote is the slot's seed: an attribute with
@@ -874,6 +875,7 @@ impl Interpreter {
                     &inv,
                     &deferred_defaults,
                     &build_writes,
+                    Some(&plan),
                 )?;
             }
         }

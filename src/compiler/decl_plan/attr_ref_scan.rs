@@ -44,7 +44,11 @@ impl<'ast> crate::ast_visit::Visit<'ast> for AttrRefScan {
             Expr::Call { name, .. } if matches!(name.resolve().as_str(), "EVAL" | "EVALFILE") => {
                 self.may_read = true;
             }
+            // A CORE term keyword (`Nil`, `False`) in a compunit that imported
+            // through a `sub EXPORT` hook: the folded constant or a term the
+            // hook installed, i.e. a constant or a call (#17361).
             Expr::Literal(_)
+            | Expr::ShadowableTermKeyword { .. }
             | Expr::BareWord(_)
             | Expr::Call { .. }
             | Expr::MethodCall { .. }
@@ -93,6 +97,19 @@ mod tests {
         )));
         assert!(!may_read_attributes(&default_of(
             "class A { has $.n = now }"
+        )));
+    }
+
+    #[test]
+    fn shadowable_term_keywords_read_no_attribute() {
+        let term = |name: &str, value| Expr::ShadowableTermKeyword {
+            name: crate::symbol::Symbol::intern(name),
+            value,
+        };
+        assert!(!may_read_attributes(&term("Nil", crate::value::Value::NIL)));
+        assert!(!may_read_attributes(&term(
+            "False",
+            crate::value::Value::FALSE
         )));
     }
 

@@ -1279,6 +1279,14 @@ pub(crate) struct NativeCtorPlan {
     /// object is immutable, so the memo is exact for as long as this plan
     /// lives (it is dropped at every class-shape mutation).
     pub(crate) seed_defaults: Box<[std::sync::OnceLock<Value>]>,
+    /// Per attribute (same order as `class_attrs`): the seed a `$` attribute
+    /// holds while its initializer waits for BUILD (`seed_attr_value`), once
+    /// computed. A `$` seed is a type object or a native zero -- immutable --
+    /// and a function of the class shape this plan lives for, so it is
+    /// computed once instead of per construction. Not filled for a
+    /// parameterized constraint, whose seed may come from a user
+    /// `^parameterize`.
+    pub(crate) deferred_seeds: Box<[std::sync::OnceLock<Value>]>,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute

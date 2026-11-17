@@ -684,8 +684,12 @@ impl Interpreter {
                     "Hash" | "Map" | "Array" | "List" | "Set" | "Bag" | "Mix" | "SetHash" | "BagHash" | "MixHash"
                 )
             });
+        let deferred_seeds = (0..class_attrs.len())
+            .map(|_| std::sync::OnceLock::new())
+            .collect();
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             seed_defaults,
+            deferred_seeds,
             alias_attributes,
             eligible,
             eligible_when_user_new_declines,
