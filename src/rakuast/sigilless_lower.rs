@@ -106,6 +106,12 @@ pub(super) fn build_sigilless_bind_stmt(
     }
     let binds_a_container = match &expr {
         Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. } => true,
+        // A routine call's result is the routine's to decide: an `is raw` or
+        // `is rw` routine returning its `is rw` parameter hands back the
+        // caller's container (`my \r = g($x); r = 5` writes `$x`), any other
+        // return is a value. The run-time verdict of the bind source tells
+        // the two apart (#17678).
+        Expr::Call { .. } => true,
         Expr::Grouped(inner) => {
             matches!(
                 inner.as_ref(),
