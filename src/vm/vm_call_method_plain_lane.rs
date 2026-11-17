@@ -253,19 +253,27 @@ impl Interpreter {
         };
         if arity == 0 {
             self.refresh_method_caches_for_generation();
-            if !self
-                .caches
-                .plain_method_lane
-                .contains(&(class_name, method_sym, Vec::new()))
-            {
+            let key = (class_name, method_sym, Vec::new());
+            if !self.caches.plain_method_lane.contains(&key) {
                 return None;
             }
+            let plan = self.method_call_plan_for_hit(&key);
             let target = self.stack.pop()?;
             // What the stretch leaves behind for a call without arguments.
             self.caches.ctor_lane_candidate = None;
             self.caches.plain_method_lane_candidate = None;
             self.pending_call_arg_source_slots.clear();
             self.set_pending_call_arg_sources(None);
+            if let Some(plan) = plan {
+                return Some(self.run_method_call_plan(
+                    code,
+                    target_name,
+                    target,
+                    method_sym,
+                    &plan,
+                    Vec::new(),
+                ));
+            }
             return Some(self.run_plain_method_lane(
                 code,
                 target_name,
@@ -289,9 +297,13 @@ impl Interpreter {
         let args = self.stack.split_off(target_idx + 1);
         self.refresh_method_caches_for_generation();
         let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
+        let mut plan = None;
         let hit = self.multi_arg_type_keys_into_with_named(&args, &mut arg_keys) && {
             let key = (class_name, method_sym, arg_keys);
             let hit = self.caches.plain_method_lane.contains(&key);
+            if hit {
+                plan = self.method_call_plan_for_hit(&key);
+            }
             arg_keys = key.2;
             hit
         };
@@ -308,6 +320,16 @@ impl Interpreter {
         self.set_pending_call_arg_sources_shared(decoded.map(|(names, _)| names));
         if let Err(e) = self.reify_map_grep_seq_args(&args) {
             return Some(Err(e));
+        }
+        if let Some(plan) = plan {
+            return Some(self.run_method_call_plan(
+                code,
+                target_name,
+                target,
+                method_sym,
+                &plan,
+                args,
+            ));
         }
         Some(self.run_plain_method_lane(code, target_name, target, method, method_sym, args))
     }
@@ -366,6 +388,9 @@ impl Interpreter {
             return;
         }
         self.refresh_method_caches_for_generation();
+        // The tail this note runs in records its plan for the new key too
+        // (ADR-15737 D1, `install_method_call_plan`, right after this).
+        self.want_method_call_plan(&key);
         self.caches.plain_method_lane.insert(key);
     }
 

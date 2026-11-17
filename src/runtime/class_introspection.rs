@@ -735,6 +735,9 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
+                if !class_def.alias_attributes.is_empty() {
+                    crate::vm::vm_method_call_attrs::note_alias_meta_written();
+                }
                 for attr_name in &class_def.alias_attributes {
                     attrs.insert(
                         MetaNs::AttrAlias.owned_key_for_str(attr_name),

@@ -7,10 +7,27 @@
 //! on every call (it was ~500 instructions of a ~14,000-instruction `$o.m()`).
 
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX;
 use crate::gc::Gc;
 use crate::value::{AttrMap, InstanceAttrs};
+
+/// Whether any instance has ever been given sigilless-alias metadata (an
+/// `__mutsu_attr_alias::` key, written for a twigil-less `has $x` by the two
+/// constructors that build such an instance, which call
+/// [`note_alias_meta_written`]). Until one is, no attribute map can hold the
+/// key, so [`CallAttrs::has_alias_meta`] answers without scanning one. The
+/// flag is monotonic and process-wide (an instance can cross threads), so an
+/// over-set only ever costs the scan.
+static ALIAS_META_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// Record that an instance is about to carry sigilless-alias metadata.
+// Cost: O(1).
+#[inline]
+pub(crate) fn note_alias_meta_written() {
+    ALIAS_META_SEEN.store(true, Ordering::Relaxed);
+}
 
 /// Where a method call's receiver attributes come from.
 #[derive(Clone, Copy)]
@@ -36,8 +53,12 @@ impl<'a> CallAttrs<'a> {
     }
 
     /// Whether any sigilless-attribute alias metadata key is present.
-    // Cost: O(a), a = attribute count; no allocation.
+    // Cost: O(1) until any instance carries alias metadata
+    // (`ALIAS_META_SEEN`); then O(a), a = attribute count; no allocation.
     pub(crate) fn has_alias_meta(self) -> bool {
+        if !ALIAS_META_SEEN.load(Ordering::Relaxed) {
+            return false;
+        }
         let has = |m: &AttrMap| m.keys().any(|k| k.starts_with(ATTR_ALIAS_META_PREFIX));
         match self {
             CallAttrs::Empty => false,

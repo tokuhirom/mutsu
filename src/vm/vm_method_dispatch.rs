@@ -2,6 +2,8 @@ use super::vm_method_call_attrs::CallAttrs;
 use super::*;
 use crate::meta_ns::MetaNs;
 use crate::value::AttrMap;
+use crate::vm::vm_method_fast_gate::MethodFastGate;
+use crate::vm::vm_method_frame_plan::LocalInit;
 
 pub(crate) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
@@ -161,306 +163,30 @@ impl Interpreter {
         // This runs before the fast-path decision below: the fast binder reads
         // the attributes off `self`'s cell and must see the re-read fields too.
         self.seed_cstruct_fields_for_method(receiver_class_name, Some(&base));
-        // Pre-compute whether we can skip the expensive env merge on exit.
-        // `is raw` is included alongside `is rw`: an `is raw` param bound to an
-        // lvalue argument also writes back to the caller (`bind_function_args_values`
-        // adds it to `rw_bindings`), and that writeback lives only on the merge
-        // path — so a raw-param method must not take the fast path / skip the merge
-        // (mirrors how the sub dispatch treats rw and raw alike).
-        // A sigilless `\p` is implicitly raw and aliases the caller's container
-        // exactly like `is raw`, so it must keep the full binder path too — see
-        // [`ParamDef::binds_caller_container`]. Skipping the binder for it is
-        // what made `method set(\p) { $!s := p }` bind a value copy, so a later
-        // `$!s = v` never reached the caller's variable.
-        let has_rw_params = method_def
-            .param_defs
-            .iter()
-            .any(|pd| pd.binds_caller_container() || pd.is_does_target())
-            // A sigilless parameter given a value binds as a read-only term
-            // on the fast path below (`vm_call_light_sigilless.rs`).
-            && !self.method_sigilless_args_light(method_def, &args);
-        if has_rw_params {
+        let gate = self.method_fast_gate(method_def, cc, owner_class, &base, attributes, &args);
+        if gate.has_rw_params {
             self.publish_rw_arg_cells_by_source();
         }
-        // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
-        // container by alias (Raku readonly-container semantics): `.push`,
-        // element assign, and whole-container `=` all propagate to the caller.
-        // mutsu realizes this via the same exit-time writeback as `is rw`
-        // (`bind_function_args_values` adds it to `rw_bindings`,
-        // `apply_rw_bindings_to_env`/the merge writes it back). That writeback
-        // lives only on the full path's `else` (merge) branch — so a method with
-        // such a param must NOT take the fast path, and must NOT be allowed to
-        // `can_skip_merge` (a `.push` mutation is not a static env write, so
-        // `cc.has_env_writes` can be false while the container still changed).
-        // Subs already route through their writeback; only the method fast path
-        // dropped this. Excludes slurpy/named/`is copy`/attr-twigil params.
-        //
-        // A plain `@x`/`%x` (`FastParamCheck::light_aggregate_sigil`) handed an
-        // untyped Array/Hash is the exception: assignment to a mutsu container
-        // stores in place, so binding the caller's container itself already
-        // propagates every one of those mutations, and the fast binder does
-        // that (`method_aggregate_args_light`).
-        let light_aggregates = Self::method_aggregate_args_light(method_def, &args);
-        let has_aliasable_container_params = !light_aggregates
-            && method_def.param_defs.iter().any(|pd| {
-                !pd.is_invocant
-                    && !pd.slurpy
-                    && !pd.double_slurpy
-                    && !pd.named
-                    && !pd.traits.iter().any(|t| t == "copy")
-                    && pd.sub_signature.is_none()
-                    && pd.name.len() > 1
-                    && (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                    && !pd.name[1..].starts_with(['!', '.'])
-            });
-        // Slice 2d (method follow-up): an array/hash variable passed into a
-        // plain readonly scalar `$` param shares the caller's container in Raku
-        // (`method m($n) { $n.push }` mutates the caller's `@z`). The promotion
-        // + rw-writeback lives only on the slow `bind_function_args_values`
-        // path, so such a call must avoid the fast path and the merge skip —
-        // mirroring how `has_aliasable_container_params` handles `@`/`%` params.
-        let shares_scalar_container =
-            self.method_shares_container_into_scalar_param(method_def, &args);
-        // `cc.has_calls` (not just `has_env_writes`): a body that calls a CLOSURE
-        // (`my $f = { $*x = 1 }; $f()` — `CallOnValue`/`CallOnCodeVar`) or any other
-        // call op NOT listed in `has_env_writes` (CallDefined) can
-        // write a captured-outer lexical, dynamic var, or global into this frame's
-        // env. Skipping the merge would silently drop that write (e.g. a grammar
-        // action `method delim { my $f = { $*L = '<' }; $f() }` — the dynamic-var
-        // change is lost). The closure dispatch already gates on
-        // `has_calls || has_env_writes` (vm_closure_dispatch.rs); the method fast
-        // path dropped `has_calls`. #3658.
-        let can_skip_merge = !has_rw_params
-            && !has_aliasable_container_params
-            && !shares_scalar_container
-            && !cc.has_env_writes
-            && !cc.has_calls;
-
-        // Whether any sigilless-attribute alias metadata is present. Computed
-        // once: the fast-path gate below needs it, and the merge path's
-        // `is_method_local` predicate uses it to skip the per-env-key
-        // `attr_alias_local` scan over ALL attributes (O(env keys x attrs) on
-        // every full-path method exit) in the overwhelmingly common no-alias
-        // case.
-        let has_attr_aliases = attributes.has_alias_meta();
-
-        // Fast path: bypass env entirely and populate locals directly from
-        // source data. Avoids the ~12μs Arc::make_mut deep clone that the
-        // first env_mut() call triggers.
-        if !has_rw_params && !has_aliasable_container_params && !shares_scalar_container {
-            // A body that cannot see a role's parameters, its statics or the
-            // class a `::?CLASS` invocant captured (`cc.ignores_role_context`),
-            // over parameters typed with built-in types only, has nothing to
-            // bind for them: the call keeps the fast path (#16215).
-            let role_blind = cc.ignores_role_context()
-                && method_def.param_defs.iter().all(|pd| {
-                    pd.is_invocant
-                        || (pd.type_capture.is_none()
-                            && pd.type_constraint.as_deref().is_none_or(|tc| {
-                                let base = tc
-                                    .strip_suffix(":D")
-                                    .or_else(|| tc.strip_suffix(":U"))
-                                    .unwrap_or(tc);
-                                crate::runtime::utils::is_known_type_constraint(base)
-                            }))
-                });
-            let has_invocant_constraint = method_def.param_defs.iter().any(|pd| {
-                pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
-            }) && !Self::fast_invocant_constraints_trivial(
+        let MethodFastGate {
+            can_skip_merge,
+            has_attr_aliases,
+            ..
+        } = gate;
+        if gate.fast {
+            // The fast binder below checks the parameter types itself;
+            // hand it this call's #10986 trust.
+            self.pending_skip_constraint_recheck = skip_constraint_recheck;
+            return self.call_compiled_method_fast(
+                receiver_class_name,
+                owner_sym,
+                method_sym,
                 method_def,
-                &base,
-                owner_class,
-                role_blind,
+                cc,
+                args,
+                base,
+                compiled_fns,
+                can_skip_merge,
             );
-            // A `::T` type capture has to be BOUND before the body runs, and the
-            // fast path has no binder step that does it. It used to be kept out
-            // by accident: the capture lived in `type_constraint`, so either
-            // `has_invocant_constraint` or the fast path's own nominal type check
-            // (which `::T` could never satisfy) bounced the call. Now that the
-            // capture is a field of its own, the gate has to name it (#7984).
-            let has_type_capture = method_def.param_defs.iter().any(|pd| {
-                pd.captured_type_name().is_some()
-                    && !(pd.captures_class_fixture() && pd.is_invocant && role_blind)
-            });
-            // Role composition bindings do not keep a call off the fast path:
-            // the fast binder installs them too (`install_method_role_bindings`,
-            // #17331).
-            // Classify arguments the way the slow binder does
-            // (`bind_function_args_values`): a string-keyed `Pair` (after VarRef
-            // unwrap) is a named argument; everything else is positional. Two
-            // shapes always keep the full path: a non-string-keyed `ValuePair`
-            // (the main binder treats it as positional but the legacy
-            // placeholder path as named — ambiguous), and an internal
-            // `__mutsu_*` Pair (the slow path filters it before binding).
-            let mut positional_arg_count = 0usize;
-            let mut has_named_args = false;
-            let mut has_unmodeled_pair_arg = false;
-            for a in &args {
-                let u = a.unwrap_varref();
-                if u.is_string_pair_value() {
-                    has_named_args = true;
-                    if let ValueView::Pair(key, _) = u.view()
-                        && key.starts_with("__mutsu_")
-                    {
-                        has_unmodeled_pair_arg = true;
-                    }
-                } else if u.is_any_pair_value() || a.is_any_pair_value() {
-                    has_unmodeled_pair_arg = true;
-                } else {
-                    positional_arg_count += 1;
-                }
-            }
-            // S6 (bench-ctor): simple named/attributive params now bind on the
-            // fast path (`named_param_fast_eligible` — plain readonly scalar
-            // `:$x`, attributive `:$!x`/`:@!a`/`:%!h` via the live attribute
-            // cell). Everything else named-shaped bails via this predicate.
-            let base_is_instance = matches!(base.view(), ValueView::Instance { .. });
-            let named_params_fast_ok = method_def.param_defs.iter().enumerate().all(|(idx, pd)| {
-                if pd.is_invocant || !pd.named {
-                    return true;
-                }
-                Self::named_param_fast_eligible(
-                    pd,
-                    &args,
-                    base_is_instance,
-                    method_def.named_fast(idx),
-                )
-            });
-            // A named `@`/`%`-container argument bound to a plain named scalar
-            // param shares the caller's container (slow-path ContainerRef
-            // promotion + exit writeback) — keep such calls on the full path
-            // (mirrors the sub side's named-share gate).
-            // A `Mu`-only named argument (`:x(Mu)`) fails an untyped `:$x`'s
-            // implicit `Any` (#10878): the full binder raises that, so such a
-            // call keeps the full path.
-            let named_mu_only_arg = has_named_args
-                && args.iter().any(|a| match a.unwrap_varref().view() {
-                    ValueView::Pair(_, v) => !self.light_arg_is_any(v),
-                    _ => false,
-                });
-            let named_container_share = has_named_args
-                && self.method_shares_container_into_named_scalar_param(method_def, &args);
-            // Every named argument must have somewhere to land: a named slurpy
-            // (`*%_` — implicit, or explicit) absorbing leftovers, or an
-            // eligible named param consuming its key. An `is hidden` class's
-            // methods get NO implicit `*%_` (`effective_method_param_defs`),
-            // and the slow binder rejects an unexpected named argument for
-            // them (roast S12-class/interface-consistency.t test 5:
-            // `Bar.new.m1(1, :x)` must die) — the fast path must not silently
-            // drop it, so such calls keep the full path.
-            let named_args_all_land = !has_named_args
-                || method_def
-                    .param_defs
-                    .iter()
-                    .any(|pd| pd.slurpy && pd.name.starts_with('%'))
-                || args.iter().all(|a| match a.unwrap_varref().view() {
-                    ValueView::Pair(k, _) => method_def.param_defs.iter().any(|pd| {
-                        pd.named && Self::named_param_fast_match_key(pd) == Some(k.as_str())
-                    }),
-                    _ => true,
-                });
-            let has_complex_params = method_def.param_defs.iter().any(|pd| {
-                if pd.is_invocant {
-                    return false;
-                }
-                // Allow the implicit %_ slurpy that every method gets
-                if pd.slurpy && pd.name == "%_" {
-                    return false;
-                }
-                // Named params are vetted by `named_params_fast_ok` above.
-                if pd.named {
-                    return false;
-                }
-                // A POSITIONAL attributive parameter (`$!x`/`@!a`) binds straight
-                // to an attribute, i.e. it mutates `self` — so it is not
-                // read-only and must take the full path (which mirrors it into
-                // the shared cell and writes it back). The read-only fast path
-                // drops the write. (NAMED attributive params write the live cell
-                // on the fast path now — see `named_param_fast_eligible`.)
-                if Self::attr_twigil_base(&pd.name).is_some() {
-                    return true;
-                }
-                pd.slurpy
-                    || pd.double_slurpy
-                    || pd.where_constraint.is_some()
-                    || pd.sub_signature.is_some()
-                    || pd.outer_sub_signature.is_some()
-                    || pd.code_signature.is_some()
-                    || pd
-                        .type_constraint
-                        .as_ref()
-                        .is_some_and(|tc| tc.contains('('))
-            });
-            // If a default expr needs evaluation and args are missing, fall back
-            // (named-param defaults are handled by `named_param_fast_eligible`;
-            // only positional params consume positional args here).
-            let needs_default_eval = {
-                let mut pos = 0;
-                method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
-                        return false;
-                    }
-                    let result = pos >= positional_arg_count && pd.default.is_some();
-                    pos += 1;
-                    result
-                })
-            };
-            // A required positional left unfilled (`method m($x){}; X.()`) must die
-            // with too-few-positionals; the fast path would silently bind it to Nil.
-            // Route such calls to the full path, which validates arity.
-            let has_missing_required = {
-                let mut pos = 0;
-                method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant || pd.slurpy || pd.double_slurpy || pd.named {
-                        return false;
-                    }
-                    let missing =
-                        pos >= positional_arg_count && pd.default.is_none() && !pd.optional_marker;
-                    pos += 1;
-                    missing
-                })
-            };
-            // Count positional params to check for arg count mismatch
-            let positional_count = method_def
-                .param_defs
-                .iter()
-                .filter(|pd| !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && !pd.named)
-                .count();
-            let has_arg_mismatch = positional_arg_count > positional_count;
-
-            if !has_unmodeled_pair_arg
-                && named_params_fast_ok
-                && named_args_all_land
-                && !named_container_share
-                && !named_mu_only_arg
-                && !has_missing_required
-                && !has_invocant_constraint
-                && !has_type_capture
-                && !has_attr_aliases
-                && !has_complex_params
-                && !needs_default_eval
-                && !has_arg_mismatch
-                && !Self::method_binds_seq_into_array_param(method_def, &args)
-                // A `Proxy` without a subclass cell has no attribute store to
-                // read; a subclass instance's lives in the same kind of cell
-                // an ordinary instance carries (`self_instance_attrs`).
-                && !matches!(base.view(), ValueView::Proxy { subclass: None, .. })
-            {
-                // The fast binder below checks the parameter types itself;
-                // hand it this call's #10986 trust.
-                self.pending_skip_constraint_recheck = skip_constraint_recheck;
-                return self.call_compiled_method_fast(
-                    receiver_class_name,
-                    owner_sym,
-                    method_sym,
-                    method_def,
-                    cc,
-                    args,
-                    base,
-                    compiled_fns,
-                    can_skip_merge,
-                );
-            }
         }
 
         // Only the full binder below reads the attributes as a map (#8880).
@@ -1937,7 +1663,7 @@ impl Interpreter {
     /// smiley, a coercion or any other type keeps the full binder (which
     /// also raises the concreteness / type-check errors).
     // Cost: O(i), i = the method's invocant parameters (one).
-    fn fast_invocant_constraints_trivial(
+    pub(super) fn fast_invocant_constraints_trivial(
         method_def: &crate::runtime::MethodDef,
         base: &Value,
         owner_class: &str,
@@ -2275,15 +2001,18 @@ impl Interpreter {
                 saved
             });
 
-        // Compute role context without touching env
-        let role_context: Option<String> = if owner_is_role {
-            Some(owner_class.to_string())
+        // Compute role context without touching env. A role owner is its own
+        // context (already interned); a method composed from a role into a
+        // class carries its role's name, interned once here for both the
+        // `?ROLE` slot and the routine frame below.
+        let role_context: Option<Symbol> = if owner_is_role {
+            Some(owner_sym)
         } else {
             method_def
                 .original_role
-                .as_ref()
-                .or(method_def.role_origin.as_ref())
-                .cloned()
+                .as_deref()
+                .or(method_def.role_origin.as_deref())
+                .map(Symbol::intern)
         };
 
         // Build param name → arg value mapping (skip invocant). Positional
@@ -2850,11 +2579,16 @@ impl Interpreter {
             } else {
                 None
             };
-            let attr_get = |key: &str| -> Option<Value> {
-                let bare = key.rsplit('\0').next().unwrap_or(key);
-                let role_key = role_state
-                    .as_ref()
-                    .map(|state| state.role_attribute_key(owner_class, bare));
+            // ADR-15737 D1: every slot's source was decided once per method
+            // (`vm_method_frame_plan`); this loop only fetches it.
+            let attr_get = |key: Symbol| -> Option<Value> {
+                // A role's own state (a mixin carrying the role) keys the
+                // attribute by the role's identity first.
+                let role_key = role_state.as_ref().map(|state| {
+                    let bare = key.as_str();
+                    let bare = bare.rsplit('\0').next().unwrap_or(bare);
+                    state.role_attribute_key(owner_class, bare)
+                });
                 role_key
                     .and_then(|key| attrs_guard.as_ref().and_then(|g| g.get(key).cloned()))
                     .or_else(|| attrs_guard.as_ref().and_then(|g| g.get(key).cloned()))
@@ -2864,61 +2598,45 @@ impl Interpreter {
                             .and_then(|g| g.get(key).cloned())
                     })
             };
-            for (i, local_name) in cc.locals.iter().enumerate() {
-                self.locals[i] = match local_name.as_str() {
-                    "self" | "__ANON_STATE#" => base.clone(),
-                    "?CLASS" => class_val.clone(),
-                    "?ROLE" => {
-                        if let Some(ref role_name) = role_context {
-                            Value::package(crate::symbol::Symbol::intern(role_name))
+            let plan = method_def.frame_plan(owner_sym, cc);
+            // The binder pushes one value per parameter on every call the
+            // fast path takes, in parameter order, which is what a
+            // `LocalInit::Param` index counts; anything else falls back to
+            // the by-name search the plan replaced.
+            let params_by_index = param_values.len() == method_def.params.len();
+            for (i, init) in plan.locals.iter().enumerate() {
+                self.locals[i] = match *init {
+                    LocalInit::Invocant => base.clone(),
+                    LocalInit::Class => class_val.clone(),
+                    LocalInit::Role => role_context.map_or(Value::NIL, Value::package),
+                    LocalInit::Nil => Value::NIL,
+                    LocalInit::Param(idx) => {
+                        if params_by_index {
+                            param_values[idx as usize].2.clone()
                         } else {
-                            Value::NIL
+                            let name = cc.locals[i].as_str();
+                            param_values
+                                .iter()
+                                .find(|(n, _, _)| *n == name)
+                                .map_or(Value::NIL, |(_, _, val)| val.clone())
                         }
                     }
-                    "!" => Value::NIL,
-                    name => {
-                        // Check params first (handles $_ invocant binding too)
-                        if let Some((_, _, val)) = param_values.iter().find(|(n, _, _)| *n == name)
-                        {
-                            val.clone()
-                        } else if name == "_" {
-                            any_val.clone()
-                        }
-                        // Private attribute: !attr_name
-                        else if let Some(attr_name) = name.strip_prefix('!') {
-                            let qualified_key = crate::qualified::qualified_attr_key(
-                                owner_sym,
-                                crate::symbol::Symbol::intern(attr_name),
-                            );
-                            attr_get(qualified_key.as_str())
-                                .or_else(|| attr_get(attr_name))
-                                .unwrap_or(Value::NIL)
-                        }
-                        // Public attribute: .attr_name
-                        else if let Some(attr_name) = name.strip_prefix('.') {
-                            attr_get(attr_name).unwrap_or(Value::NIL)
-                        }
-                        // Array/hash attributes: @!name, @.name, %!name, %.name
-                        else if ((name.starts_with("@!") || name.starts_with("@."))
-                            || (name.starts_with("%!") || name.starts_with("%.")))
-                            && name.len() > 2
-                        {
-                            // A private declaration colliding with a public one
-                            // of another sigil lives under `<sigil>bare`.
-                            let sigil_key = format!("{}{}", &name[..1], &name[2..]);
-                            attr_get(&sigil_key)
-                                .or_else(|| attr_get(&name[2..]))
-                                .unwrap_or(Value::NIL)
-                        }
-                        // Outer env (read-only, no deep clone)
-                        else if let Some(val) =
-                            cc.local_sym(i).and_then(|sym| self.env().get_sym(sym))
-                        {
-                            val.clone()
-                        } else {
-                            Value::NIL
-                        }
-                    }
+                    LocalInit::Topic => any_val.clone(),
+                    LocalInit::AttrPrivate { qualified, bare } => attr_get(qualified)
+                        .or_else(|| attr_get(bare))
+                        .unwrap_or(Value::NIL),
+                    LocalInit::AttrPublic { bare } => attr_get(bare).unwrap_or(Value::NIL),
+                    // A private declaration colliding with a public one of
+                    // another sigil lives under `<sigil>bare`.
+                    LocalInit::AttrAggregate { sigil_key, bare } => attr_get(sigil_key)
+                        .or_else(|| attr_get(bare))
+                        .unwrap_or(Value::NIL),
+                    // Outer env (read-only, no deep clone)
+                    LocalInit::Outer => cc
+                        .local_sym(i)
+                        .and_then(|sym| self.env().get_sym(sym))
+                        .cloned()
+                        .unwrap_or(Value::NIL),
                 };
             }
         }
@@ -2990,7 +2708,7 @@ impl Interpreter {
             crate::runtime::routine_stack::FrameFixtures {
                 invocant: Some(base.clone()),
                 class: Some(class_val),
-                role: role_context.as_deref().map(crate::symbol::Symbol::intern),
+                role: role_context,
             },
         );
 
