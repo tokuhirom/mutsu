@@ -190,7 +190,7 @@ impl Interpreter {
                             };
                             out.push_str(&ch);
                         }
-                        Ok(crate::builtins::nfc(out))
+                        Ok(crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(out)))
                     } else {
                         let mut bytes = Vec::new();
                         stdin
@@ -282,7 +282,7 @@ impl Interpreter {
                         Ok(if is_c8 {
                             out
                         } else {
-                            crate::builtins::nfc(out)
+                            crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(out))
                         })
                     } else if encoding == "utf8-c8" {
                         let mut bytes = Vec::new();
@@ -312,7 +312,7 @@ impl Interpreter {
                             };
                             out.push_str(&ch);
                         }
-                        Ok(crate::builtins::nfc(out))
+                        Ok(crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(out)))
                     } else {
                         let mut bytes = Vec::new();
                         sock.read_to_end(&mut bytes)
@@ -383,7 +383,7 @@ impl Interpreter {
             // `\r\n` is a single grapheme cluster, so the requested cluster count
             // is preserved when the text-mode decode normalizes it to "\n".
             Ok(Some(crate::runtime::utils::translate_nl_in(
-                crate::builtins::nfc(out),
+                crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(out)),
             )))
         })
     }

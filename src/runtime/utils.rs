@@ -203,7 +203,10 @@ pub(crate) fn translate_nl_in(s: String) -> String {
 pub(crate) fn decode_text_content(s: String) -> String {
     // NFC like every other decode (ADR-0118 §2.4): rakudo's strings are NFG,
     // so a slurped file and a `.decode`d Blob of the same bytes are equal.
-    crate::builtins::nfc(translate_nl_in(strip_utf8_bom(s)))
+    // A literal U+10FFFD is escaped, as every decoder does (ADR-17800).
+    crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(translate_nl_in(
+        strip_utf8_bom(s),
+    )))
 }
 
 /// Normalize Buf/Blob type aliases to canonical form.

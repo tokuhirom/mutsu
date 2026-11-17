@@ -253,11 +253,13 @@ impl Interpreter {
         // lossy UTF-8 (an IO handle opened with an unrecognised name).
         if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
             let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
-            return Ok(crate::builtins::nfc(decoded.into_owned()));
+            return Ok(crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(
+                decoded.into_owned(),
+            )));
         }
-        Ok(crate::builtins::nfc(
+        Ok(crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(
             String::from_utf8_lossy(bytes).into_owned(),
-        ))
+        )))
     }
 
     /// Decode bytes with an optional replacement string for unmappable/invalid
@@ -274,8 +276,17 @@ impl Interpreter {
         let Some(repl) = replacement else {
             return self.decode_with_encoding(bytes, encoding_name);
         };
+        let c8 = self
+            .find_encoding(encoding_name)
+            .map_or(encoding_name, |e| e.name.as_str())
+            .eq_ignore_ascii_case("utf8-c8");
+        // utf8-c8 escapes its own valid codepoints beside its synthetics;
+        // every other decode escapes a literal U+10FFFD here (ADR-17800).
         self.decode_with_replacement(bytes, encoding_name, repl)
-            .map(crate::builtins::nfc)
+            .map(|s| {
+                let s = crate::builtins::nfc(s);
+                if c8 { s } else { crate::grapheme_break::escape_literal_marker_owned(s) }
+            })
     }
 
     /// The lenient half of [`Self::decode_with_encoding_and_replacement`]:

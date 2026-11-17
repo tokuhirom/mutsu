@@ -116,7 +116,11 @@ fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 /// `Str.codes`: the number of codepoints.
 // Cost: O(n), n = bytes of the invocant.
 pub(crate) fn codes(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(with_str(target, |s| Value::int(s.chars().count() as i64)))
+    Ok(with_str(target, |s| {
+        // A doubled marker is one literal U+10FFFD (ADR-17800).
+        let escaped = s.matches("\u{10FFFD}\u{10FFFD}").count();
+        Value::int((s.chars().count() - escaped) as i64)
+    }))
 }
 
 /// `Str.ord`: the first codepoint, or `Nil` for the empty string.

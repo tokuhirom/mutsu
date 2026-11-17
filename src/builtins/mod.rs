@@ -205,7 +205,8 @@ pub(crate) fn decode_utf8_handle_text_owned(bytes: Vec<u8>) -> Result<String, Ru
             if s.starts_with('\u{FEFF}') {
                 s.drain(..'\u{FEFF}'.len_utf8());
             }
-            Ok(nfc(s))
+            // The stream decoder escapes a literal U+10FFFD (ADR-17800).
+            Ok(crate::grapheme_break::escape_literal_marker_owned(nfc(s)))
         }
         Err(err) => decode_utf8_handle_text(err.as_bytes()),
     }

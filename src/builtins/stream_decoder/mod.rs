@@ -225,12 +225,14 @@ impl StreamDecoder<'_> {
     /// Decode one unit into the pending text and release what became final.
     /// `false` when no whole unit is buffered.
     fn decode_one(&mut self) -> Result<bool, RuntimeError> {
+        let from = self.q.pending.len();
         match self
             .cfg
             .codec
             .decode_unit(self.bytes, &mut self.q.pending)?
         {
             Some(n) => {
+                self.escape_decoded(from);
                 self.bytes.drop_front(n);
                 self.release(false);
                 Ok(true)
@@ -242,7 +244,9 @@ impl StreamDecoder<'_> {
     /// Decode every whole unit buffered.
     fn decode_all(&mut self) -> Result<(), RuntimeError> {
         // What decoded before an error stays decoded.
+        let from = self.q.pending.len();
         let (taken, err) = self.cfg.codec.decode_run(self.bytes, &mut self.q.pending);
+        self.escape_decoded(from);
         self.bytes.drop_front(taken);
         self.release(false);
         err.map_or(Ok(()), Err)
@@ -256,6 +260,16 @@ impl StreamDecoder<'_> {
         }
         self.release(true);
         Ok(())
+    }
+
+    /// Escape a literal `U+10FFFD` among the codepoints just decoded onto the
+    /// pending text (ADR-17800), before the grapheme hold reads it. utf8-c8
+    /// escapes its valid codepoints itself, beside the synthetics it makes.
+    // Cost: O(n), n = bytes just decoded.
+    fn escape_decoded(&mut self, from: usize) {
+        if self.cfg.codec != Codec::Utf8C8 {
+            crate::grapheme_break::escape_literal_marker_from(&mut self.q.pending, from);
+        }
     }
 
     /// Move the pending text that is final (all of it when `flush`) to the
