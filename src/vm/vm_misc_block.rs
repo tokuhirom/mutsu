@@ -33,7 +33,11 @@ impl Interpreter {
         current_value: Option<Value>,
     ) -> bool {
         match body_result {
-            Ok(()) => runtime::types::value_is_defined(&current_value.unwrap_or(Value::NIL)),
+            // A block that yields its tail's container (`do { ...; $x }`)
+            // keeps it on the stack through these sections: its value decides.
+            Ok(()) => runtime::types::value_is_defined(
+                &current_value.map_or(Value::NIL, |v| v.deref_container()),
+            ),
             Err(e) if !Self::is_exceptional_block_exit(e) => {
                 runtime::types::value_is_defined(&e.return_value.clone().unwrap_or(Value::NIL))
             }

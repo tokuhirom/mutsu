@@ -5761,6 +5761,7 @@ impl Compiler {
             }
         }
         self.code.patch_block_enter_end(idx);
+        let mut raw_tail = false;
         let body_stmts: Vec<&Stmt> = stmts
             .iter()
             .filter(|s| !(has_enter && Self::is_bare_enter_hoistable_decl(s)))
@@ -5821,6 +5822,25 @@ impl Compiler {
             for (i, s) in body_stmts.iter().enumerate() {
                 if Some(i) == last_value_idx {
                     match mode {
+                        // A block that yields its tail (`do { ...; $x }`, an
+                        // EVAL'd unit) yields the tail's container, read after
+                        // the LEAVE/KEEP/UNDO phasers ran: a phaser that
+                        // changes `$x` changes the block's value (#17894). The
+                        // container rides the stack through those sections and
+                        // is decontainerized after them, at the end of this
+                        // function.
+                        PhaserBlockResult::Push
+                            if let Some((name, slot)) = self.phaser_tail_scalar_slot(s) =>
+                        {
+                            // The slot is promoted to a shared cell, so a
+                            // phaser's write lands in the container pushed here.
+                            let name_idx = self.code.add_constant(Value::str(name));
+                            self.code.emit(OpCode::GetScalarContainer {
+                                name_idx,
+                                local_idx: Some(slot),
+                            });
+                            raw_tail = true;
+                        }
                         // `Discard` leaves the value on the stack too (see the
                         // trailing `Pop` at the end of this function) so the
                         // LEAVE/KEEP/UNDO/POST sections below can still see it.
@@ -5930,5 +5950,22 @@ impl Compiler {
         if matches!(mode, PhaserBlockResult::Discard) {
             self.code.emit(OpCode::Pop);
         }
+        if raw_tail {
+            self.code.emit(OpCode::DerefContainer);
+        }
+    }
+
+    /// The local slot of a phaser block's tail statement when that tail is a
+    /// plain `$` variable of this frame (`do { ...; $x }`), whose container the
+    /// block hands on past its LEAVE phasers.
+    // Cost: O(1).
+    fn phaser_tail_scalar_slot(&self, stmt: &Stmt) -> Option<(String, u32)> {
+        let Stmt::Expr(Expr::Var(name)) = stmt else {
+            return None;
+        };
+        if name.starts_with(['@', '%', '&', '!', '.', '*', '?', '^', '~', '=']) || name == "_" {
+            return None;
+        }
+        self.local_map.get(name).map(|&slot| (name.clone(), slot))
     }
 }
