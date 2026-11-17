@@ -1195,6 +1195,18 @@ impl Interpreter {
             plan.multi,
             plan.source_line,
         );
+        // A `my regex` in a routine or block closes over its frame (#17872).
+        if let Some(pattern) = crate::runtime::regex::regex_token_closure::rule_body_pattern(body) {
+            let slots: Vec<(Symbol, u32)> = code
+                .locals
+                .iter()
+                .enumerate()
+                .map(|(slot, local)| (Symbol::intern(local), slot as u32))
+                .collect();
+            let key =
+                crate::qualified::qualified(self.current_package_sym(), Symbol::intern(&name));
+            self.capture_token_env(code, key, &[pattern], &slots);
+        }
         // `token foo is export` installs a Regex under `&foo`, exactly like a
         // `sub foo is export` installs a Sub, so it is recorded in the same
         // export table and `use`-ing the module imports it by name.

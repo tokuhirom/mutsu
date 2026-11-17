@@ -384,6 +384,7 @@ impl Registry {
             our_scoped_functions: _,
             proto_functions: _,
             token_defs: _,
+            token_captures: _,
             proto_subs: _,
             proto_gen: _,
             proto_tokens: _,

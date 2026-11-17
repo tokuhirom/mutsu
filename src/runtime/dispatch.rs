@@ -399,6 +399,9 @@ impl Interpreter {
             return Err(Self::reject_args_for_empty_sig(arg_values));
         }
         let saved_env = self.env.clone();
+        // The rule's body is rendered in the scope it was declared in
+        // (`regex_token_closure`), wherever the resolution runs from.
+        self.install_token_def_capture(def);
         let saved_readonly = self.enter_readonly_frame();
         let rw_bindings = match self.bind_function_args_values_with_argspec(
             &def.param_defs,

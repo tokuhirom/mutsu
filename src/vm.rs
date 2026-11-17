@@ -408,6 +408,7 @@ mod vm_react_supply_helpers;
 mod vm_reduction_concat_single;
 mod vm_regex_bool;
 mod vm_register_ops;
+mod vm_token_capture;
 mod vm_register_proto_ops;
 mod vm_register_sub_ops;
 mod vm_resume_op_raise;

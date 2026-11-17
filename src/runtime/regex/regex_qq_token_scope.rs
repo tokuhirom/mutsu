@@ -108,6 +108,8 @@ impl Interpreter {
         pkg: Symbol,
         prior: Option<SavedDynParams>,
     ) -> Option<SavedDynParams> {
+        // The rule's declaring scope comes first: a thunk reads it too.
+        let prior = self.install_subrule_token_capture(name, pkg, prior);
         if !ANY_TOKEN_QQ_THUNK.load(Ordering::Relaxed) {
             return prior;
         }

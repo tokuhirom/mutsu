@@ -27,6 +27,7 @@ mod regex_interpolate;
 mod regex_left_call_graph;
 mod regex_lexical_ref;
 mod regex_lookbehind_flip;
+pub(crate) mod regex_token_closure;
 mod regex_lookbehind;
 mod regex_lr_seed;
 mod regex_lr_state;
