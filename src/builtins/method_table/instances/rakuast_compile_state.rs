@@ -4,8 +4,9 @@
 //! `attach-compile-time`; the hooks are in `rakuast_phases`). The handles are
 //! opaque objects of rakudo's class names.
 
-use super::super::{Handler, MethodRow, RowFlags};
+use super::super::{Handler, MethodRow, Named, RowFlags};
 use super::rakuast_visit::native_node;
+use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// `$*CU.context.^name`.
@@ -106,9 +107,26 @@ fn implicit_constant_name(target: &Value, _args: &[Value]) -> Result<Value, Runt
     Ok(named_field(target, "name").unwrap_or(Value::NIL))
 }
 
-// Cost: O(f).
-fn implicit_constant_value(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(named_field(target, "value").unwrap_or(Value::NIL))
+/// `Implicit::Constant.value` (and its `compile-time-value`): the value it
+/// was built with, or, for the family the resolver derives for a scope's
+/// `multi` candidates of an outer routine name, that family (#17826).
+// Cost: O(f), or as `check_time_family` for a derived family.
+pub(super) fn implicit_constant_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if let Some(value) = named_field(target, "value") {
+        return Some(Ok(value));
+    }
+    let base = native_node(target)?;
+    if let ValueView::RakuAst(node) = base.view()
+        && let Some(family) = super::rakuast_check_time_routine::check_time_family(interp, node)
+    {
+        return Some(family);
+    }
+    Some(Ok(Value::NIL))
 }
 
 // Cost: O(f).
@@ -191,5 +209,12 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     implicit_constant_row("name", implicit_constant_name),
     implicit_constant_row("scope", implicit_constant_scope),
-    implicit_constant_row("value", implicit_constant_value),
+    MethodRow {
+        owner: "RakuAST::VarDeclaration::Implicit::Constant",
+        name: "value",
+        arity: 0,
+        handler: Handler::Interp(implicit_constant_value),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
 ];

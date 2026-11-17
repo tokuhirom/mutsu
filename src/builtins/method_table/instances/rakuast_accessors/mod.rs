@@ -122,6 +122,30 @@ pub(in super::super) fn compiled_value(
     sub_value(interp, &target, args, named)
 }
 
+/// The one `value` row of a plain RakuAST node: its `value` field, or the
+/// family a derived `VarDeclaration::Implicit::Constant` stands for, built at
+/// CHECK time (#17826).
+// Cost: O(d + f), d = payload wrappers, f = fields scanned; as
+// `check_time_family` for a derived family.
+fn node_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if let Some(value) = read(target, "value", args) {
+        return Some(value);
+    }
+    let native = native_node(target)?;
+    let ValueView::RakuAst(node) = native.view() else {
+        return None;
+    };
+    if node.class != crate::rakuast::RakuAstClass::VarDeclarationImplicitConstant {
+        return None;
+    }
+    super::rakuast_compile_state::implicit_constant_value(interp, target, args, named)
+}
+
 // Cost: O(d + n), d = payload wrappers, n = parameter node size.
 fn meta_object(
     interp: &mut Interpreter,
@@ -149,39 +173,43 @@ mod tests {
         }))
     }
 
-    #[test]
-    fn rakuast_accessor_entry_caches_rows_not_field_values() {
-        let method = Symbol::intern("value");
-        for expected in [7, 9, 7] {
-            assert!(matches!(pure_answer(&literal(expected), method),
-                Some(Ok(value)) if value == Value::int(expected)));
-        }
-        let name = Value::rakuast(Box::new(RakuAstNode {
+    fn lexical(name: &str) -> Value {
+        Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::VarLexical,
             origin: Default::default(),
             fields: vec![RakuAstField {
                 name: None,
-                value: RakuAstFieldValue::Node(Value::str_from("$x")),
+                value: RakuAstFieldValue::Node(Value::str_from(name)),
             }],
-        }));
+        }))
+    }
+
+    #[test]
+    fn rakuast_accessor_entry_caches_rows_not_field_values() {
+        let method = Symbol::intern("name");
+        for expected in ["$x", "$y", "$x"] {
+            assert!(matches!(pure_answer(&lexical(expected), method),
+                Some(Ok(value)) if value == Value::str_from(expected)));
+        }
+        // `value` is an interpreter row (a derived `Implicit::Constant` builds
+        // its family, #17826): the pure entry declines it, every time.
         for _ in 0..2 {
-            assert!(pure_answer(&name, method).is_none());
-            assert!(matches!(pure_answer(&name, Symbol::intern("name")),
-                Some(Ok(value)) if value == Value::str_from("$x")));
+            assert!(pure_answer(&literal(7), Symbol::intern("value")).is_none());
+            assert!(pure_answer(&literal(7), method).is_none());
         }
     }
 
     #[test]
     fn rakuast_accessor_entry_reads_subclass_payloads() {
         let instance = Value::make_instance(
-            Symbol::intern("CustomLiteral"),
+            Symbol::intern("CustomLexical"),
             crate::value::AttrMap::new(),
         );
         if let ValueView::Instance { attributes, .. } = instance.view() {
-            attributes.set_rakuast_base(literal(13));
+            attributes.set_rakuast_base(lexical("$z"));
         }
-        assert!(matches!(pure_answer(&instance, Symbol::intern("value")),
-            Some(Ok(value)) if value == Value::int(13)));
+        assert!(matches!(pure_answer(&instance, Symbol::intern("name")),
+            Some(Ok(value)) if value == Value::str_from("$z")));
     }
 
     #[test]

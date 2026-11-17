@@ -130,8 +130,79 @@ pub(super) fn check_time_dispatcher(
             Err(err) => return Some(Err(err)),
         }
     }
-    let ValueView::Sub(first) = built.first()?.view() else {
+    if built.is_empty() {
         return None;
+    }
+    Some(Ok(family_with_candidates(interp, None, name, built)))
+}
+
+/// The CHECK-time value of a derived family: the proto rakudo derives for a
+/// scope's `multi` candidates of a name the outer scope or the setting already
+/// has a dispatcher for (a `VarDeclaration::Implicit::Constant` resolution,
+/// #17826). It holds the outer family's candidates, then the scope's own, each
+/// built from its node as [`check_time_routine`] builds one. `None` for any
+/// other node, or when a candidate cannot be built here.
+// Cost: O(o + c * n), o = candidates of the outer family, c = the scope's
+// candidates, n = the size of each declaration compiled.
+pub(super) fn check_time_family(
+    interp: &mut Interpreter,
+    node: &RakuAstNode,
+) -> Option<Result<Value, RuntimeError>> {
+    let (outer, candidates) = crate::rakuast::derived_family_parts(node)?;
+    let name = node.fields.iter().find_map(|field| match &field.value {
+        crate::rakuast::RakuAstFieldValue::Node(value) if field.name == Some("name") => {
+            Some(value.to_string_value())
+        }
+        _ => None,
+    })?;
+    let name = name.strip_prefix('&').unwrap_or(&name).to_string();
+    let mut built = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        let ValueView::RakuAst(candidate) = candidate.view() else {
+            return None;
+        };
+        match check_time_routine(interp, candidate, &name)? {
+            Ok(routine) => built.push(routine),
+            Err(err) => return Some(Err(err)),
+        }
+    }
+    let family = if outer.is_nil() {
+        None
+    } else {
+        match super::rakuast_lookup_values::resolution_value(interp, &outer)? {
+            Ok(family) => Some(family),
+            Err(err) => return Some(Err(err)),
+        }
+    };
+    Some(Ok(family_with_candidates(interp, family, &name, built)))
+}
+
+/// `family` (the outer dispatcher of `name`, if any) with the `built`
+/// candidates added after its own. An outer family that holds its candidates
+/// (a user `multi`'s dispatcher) gets them added; otherwise (none, or a
+/// setting routine that dispatches by itself) the value is a dispatcher over
+/// `built`, falling back to the setting's operator as mutsu's run-time family
+/// of a block-local operator candidate does.
+// Cost: O(o + c), o = candidates of the outer family, c = built candidates.
+fn family_with_candidates(
+    interp: &Interpreter,
+    family: Option<Value>,
+    name: &str,
+    built: Vec<Value>,
+) -> Value {
+    if let Some(family) = &family
+        && let ValueView::Sub(data) = family.view()
+        && data.env.contains_key("__mutsu_multi_dispatch_candidates")
+    {
+        return built.iter().fold(family.clone(), |family, candidate| {
+            interp.dispatcher_containing(family, candidate)
+        });
+    }
+    let Some(first) = built.first() else {
+        return family.unwrap_or(Value::NIL);
+    };
+    let ValueView::Sub(first) = first.view() else {
+        return family.unwrap_or(Value::NIL);
     };
     let mut dispatcher = crate::value::SubData::clone(&first);
     dispatcher.env.insert(
@@ -145,7 +216,12 @@ pub(super) fn check_time_dispatcher(
         "__mutsu_multi_dispatch_name".to_string(),
         Value::str(name.to_string()),
     );
-    Some(Ok(Value::sub_value(crate::gc::Gc::new(dispatcher))))
+    let dispatcher = Value::sub_value(crate::gc::Gc::new(dispatcher));
+    if family.is_some() {
+        Interpreter::with_builtin_operator_fallback(dispatcher)
+    } else {
+        dispatcher
+    }
 }
 
 /// The `multiness` a routine declaration node spells (`multi`, `proto`).

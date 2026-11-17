@@ -52,6 +52,8 @@ def artifacts(data):
                 expression = f'interp_row!("{owner}", "{name}", compiled_value)'
             elif name == "meta-object":
                 expression = f'interp_row!("{owner}", "{name}", meta_object)'
+            elif name == "value":
+                expression = f'interp_row!("{owner}", "{name}", node_value)'
             else:
                 expression = f'row!("{owner}", "{name}")'
             lines.append(f"    {expression},")
