@@ -35,6 +35,11 @@ pub(crate) struct MixinRecipe {
     /// (`share_body_static_scalar`), so an adopting thread binds the same
     /// containers instead of running the role bodies a second time (#12825).
     pub(crate) body_lexicals: Vec<(String, crate::value::Value)>,
+    /// The `role_id` of each role in `roles` when the type was composed
+    /// (`None` for a role with no registered definition). A role redeclared
+    /// under the same name (`{ role R {...} } { role R {...} }`) has a new
+    /// id, so a `C+{R}` composed from the old one is not reused for it.
+    pub(crate) role_ids: Vec<Option<u64>>,
 }
 
 /// What a parametric-role pun class is made of: the role and its type
@@ -71,6 +76,15 @@ impl PublishedMixins {
     pub(crate) fn publish(&self, name: &str, recipe: MixinRecipe) {
         let mut recipes = self.recipes.write().unwrap_or_else(|e| e.into_inner());
         recipes.entry(name.to_string()).or_insert(recipe);
+        self.any.store(true, Ordering::Release);
+    }
+
+    /// Replace `name`'s recipe: the type was composed again from redeclared
+    /// roles (see [`MixinRecipe::role_ids`]).
+    // Cost: O(n) expected, n = name.len() (hash + one write-locked insert).
+    pub(crate) fn republish(&self, name: &str, recipe: MixinRecipe) {
+        let mut recipes = self.recipes.write().unwrap_or_else(|e| e.into_inner());
+        recipes.insert(name.to_string(), recipe);
         self.any.store(true, Ordering::Release);
     }
 

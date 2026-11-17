@@ -117,16 +117,19 @@ impl Interpreter {
         // how Rakudo names it) instead of re-composing everything side by side:
         // successive `does` calls are legal even when the roles declare the same
         // method (the later one wins), whereas one composition of both would be
-        // X::Role::Composition::Conflict.
-        let already = self
-            .registry()
-            .class_composed_roles
-            .get(base_class)
-            .cloned();
+        // X::Role::Composition::Conflict. A role the base already does gets a
+        // level of its own too (`D does R; D.new but R` is `D+{R}`, and
+        // `$o does R; $o does R` is `C+{R}+{R}`, as in Rakudo, #17890).
+        // A role's own pun (`R.^pun`, the class named `R`) already is that
+        // role: mixing it into its pun again adds nothing.
+        let root = base_class.split("+{").next().unwrap_or(base_class);
+        // A parametric role's pun is named `Box\0default[Any]` / `Box[Int]`.
+        let root = root.split(['[', '\0']).next().unwrap_or(root);
+        let is_pun_root = self.registry().roles.contains_key(root);
         let mut fresh: Vec<String> = Vec::new();
         let mut fresh_args: Vec<Option<Vec<Value>>> = Vec::new();
         for (i, role) in new_roles.iter().enumerate() {
-            if already.as_ref().is_some_and(|c| c.contains(role)) {
+            if is_pun_root && role == root {
                 continue;
             }
             fresh.push(role.clone());
@@ -136,7 +139,18 @@ impl Interpreter {
             return Ok(base_class.to_string());
         }
         let name = format!("{}+{{{}}}", base_class, fresh.join(","));
-        if self.registry().classes.contains_key(&name) {
+        let role_ids: Vec<Option<u64>> = fresh
+            .iter()
+            .map(|role| self.registry().roles.get(role).map(|r| r.role_id))
+            .collect();
+        let recomposed = self.registry().classes.contains_key(&name);
+        if recomposed
+            && self
+                .types
+                .published_mixins
+                .lookup(&name)
+                .is_none_or(|recipe| recipe.role_ids == role_ids)
+        {
             return Ok(name);
         }
         // `register_class_decl` walks a single `parents` list and uses
@@ -203,15 +217,18 @@ impl Interpreter {
             .get(&name)
             .map(|store| store.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default();
-        self.types.published_mixins.publish(
-            &name,
-            crate::runtime::published_mixins::MixinRecipe {
-                base: base_class.to_string(),
-                roles: fresh,
-                role_args: fresh_args,
-                body_lexicals,
-            },
-        );
+        let recipe = crate::runtime::published_mixins::MixinRecipe {
+            base: base_class.to_string(),
+            roles: fresh,
+            role_args: fresh_args,
+            body_lexicals,
+            role_ids,
+        };
+        if recomposed {
+            self.types.published_mixins.republish(&name, recipe);
+        } else {
+            self.types.published_mixins.publish(&name, recipe);
+        }
         Ok(name)
     }
 

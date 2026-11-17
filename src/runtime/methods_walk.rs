@@ -34,6 +34,21 @@ use crate::value::Value;
 use std::collections::HashSet;
 
 impl Interpreter {
+    /// The receiver class and mixed-in roles of an object reblessed into a
+    /// mixin type (`$obj does R`, `$obj but R`: `C+{R}`, stacked
+    /// `C+{A}+{B}`), as WALK sees a mixin: the roles, latest first, then the
+    /// base class chain. Any other class is its own receiver with no roles.
+    // Cost: O(l * r), l = stacked mixin levels, r = roles per level.
+    fn mixin_class_walk_receiver(&self, class_name: String) -> (String, Vec<String>) {
+        let mut base = class_name;
+        let mut roles = Vec::new();
+        while let Some(recipe) = self.types.published_mixins.lookup(&base) {
+            roles.extend(recipe.roles);
+            base = recipe.base;
+        }
+        (base, roles)
+    }
+
     pub(crate) fn try_walk_method(
         &mut self,
         target: &Value,
@@ -48,8 +63,9 @@ impl Interpreter {
         // for `.^methods()`. See `todo/deep/adr0019-e5-e7-entry-routing.md`
         // "E7 step 7".
         let (receiver_class_name, mixin_role_names): (String, Vec<String>) = match target.view() {
-            ValueView::Instance { class_name, .. } => (class_name.resolve(), Vec::new()),
-            ValueView::Package(name) => (name.resolve(), Vec::new()),
+            ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
+                self.mixin_class_walk_receiver(class_name.resolve())
+            }
             ValueView::Mixin(_, mixins) => {
                 let roles: Vec<String> = mixins
                     .keys()

@@ -185,22 +185,27 @@ impl Interpreter {
                         .cloned()
                         .filter(|roles| !roles.is_empty())
                         .unwrap_or_else(|| self.catalog_roles(entry));
+                    // Rakudo lists a role once at each MRO level that composes
+                    // it: `D does R; ($d but R).^mro(:roles)` is
+                    // `D+{R},R,D,R,Any,Mu` (#17890).
+                    let mut level_seen: HashSet<String> = HashSet::new();
                     for role_name in &composed {
                         let base_role = role_name
                             .split_once('[')
                             .map(|(b, _)| b)
                             .unwrap_or(role_name.as_str());
-                        if seen.insert(base_role.to_string()) {
+                        if level_seen.insert(base_role.to_string()) {
                             result.push(Value::package(Symbol::intern(base_role)));
                             // Add role's sub-roles (from `does` inside the role)
                             self.add_role_parents_to_mro(
                                 base_role,
                                 &base_mro,
                                 &mut result,
-                                &mut seen,
+                                &mut level_seen,
                             );
                         }
                     }
+                    seen.extend(level_seen);
                 }
             }
         }
