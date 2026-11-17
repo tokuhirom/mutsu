@@ -1,6 +1,8 @@
 mod attribute_decl;
 mod class_body_free_vars;
 mod proto_decl;
+mod reflective_names;
+use reflective_names::{names_package_member_prefix, pseudo_stash_names_enclosing_scope};
 mod role_body_outer_refs;
 
 pub(crate) use attribute_decl::{AttrDeclChunks, CompiledAttrDecl};
@@ -10493,13 +10495,22 @@ impl CompiledCode {
     /// that cannot be a variable: no sigil, pushed by the op right before it.
     // Cost: O(m), m = bytes of the constant name.
     fn indirect_lookup_names_type(&self, ip: usize) -> bool {
-        let Some(OpCode::LoadConst(idx)) = ip.checked_sub(1).and_then(|p| self.ops.get(p)) else {
-            return false;
+        let const_str = |idx: u32| match self.constants.get(idx as usize).map(Value::view) {
+            Some(ValueView::Str(name)) => Some(name),
+            _ => None,
         };
-        matches!(
-            self.constants.get(*idx as usize).map(Value::view),
-            Some(ValueView::Str(name)) if !name.is_empty() && !name.starts_with(['$', '@', '%', '&'])
-        )
+        match ip.checked_sub(1).and_then(|p| self.ops.get(p)) {
+            Some(OpCode::LoadConst(idx)) => const_str(*idx)
+                .is_some_and(|name| !name.is_empty() && !name.starts_with(['$', '@', '%', '&'])),
+            // `::("VERS::$_")`: an interpolation whose first part is a constant
+            // package prefix names a member of that package, never a lexical
+            // (#17998).
+            Some(OpCode::StringConcat(n)) => self
+                .string_concat_first_const(ip - 1, *n as usize)
+                .and_then(const_str)
+                .is_some_and(|prefix| names_package_member_prefix(&prefix)),
+            _ => false,
+        }
     }
 
     /// Whether this body is a straight line of local reads and `nqp::` ops
@@ -10651,6 +10662,24 @@ impl CompiledCode {
                     ) =>
                 {
                     false
+                }
+                // `UNIT::`, `MY::`, `OUTER::`, `OUR::`, `CORE::`, a package's
+                // `Foo::` ... name a scope that lexically encloses the code (or
+                // a package, which holds no frame's lexical): like `EVAL`, they
+                // reach no unrelated routine's frame, so they mark this chunk
+                // -- and, through `static_name_lookup`, the code declaring it
+                // -- without the process-wide latch. One `UNIT::` read in
+                // String::Utils' `sub EXPORT` latched it and put every `my`
+                // declaration of every program loading the module on the
+                // env-mirroring path (#17998).
+                OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx)
+                    if matches!(
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if pseudo_stash_names_enclosing_scope(name.as_str())
+                    ) =>
+                {
+                    is_eval = true;
+                    true
                 }
                 OpCode::GetCallerVar { .. }
                 | OpCode::GetCallersVar { .. }
