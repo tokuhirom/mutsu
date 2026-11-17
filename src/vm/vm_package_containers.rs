@@ -152,4 +152,13 @@ impl Interpreter {
         let key = self.package_container_key(name);
         self.set_our_var(key, val);
     }
+
+    /// Whether `name` (a sub's free variable, as `code.locals` spells it) is the
+    /// lexical alias an `our` declaration of the frame running `code` installs.
+    // Cost: O(o), o = `our` declarations of `code`.
+    pub(super) fn our_alias_of_frame(code: &CompiledCode, name: &str) -> bool {
+        code.our_locals
+            .iter()
+            .any(|(slot, _)| code.locals.get(*slot).is_some_and(|n| n == name))
+    }
 }
