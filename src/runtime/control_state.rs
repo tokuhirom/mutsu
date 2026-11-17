@@ -134,6 +134,22 @@ pub(crate) struct ControlState {
     /// hid, and the defs to put back when it closes. Depth-aligned with
     /// `check_phaser_depth`.
     pub(crate) begin_time_hidden: Vec<Vec<(Symbol, Option<Arc<FunctionDef>>)>>,
+    /// Bumped every time a resume-safe `CONTROL` handler run INLINE at a warn
+    /// raise site (`try_control_inline`) writes one of the installing frame's
+    /// lexicals into `env`.
+    ///
+    /// That write is an outward mutation made *without* a call opcode, which is
+    /// exactly the invariant a leaf closure's return path relies on when it
+    /// skips the caller-writeback env scan (`needs_caller_writeback` in
+    /// `call_compiled_closure_with_topic`: "no calls were made, so nothing the
+    /// caller cares about can have changed"). A closure like `warns-like`'s
+    /// `{ 'x' x Int }` makes no calls at all — the warning comes straight out of
+    /// an arithmetic opcode — so without this the handler's `$did-warn = True`
+    /// is discarded with the frame's env (`roast/S03-operators/repeat.t` test
+    /// 56). A closure call reads the generation on entry; when it moved, the
+    /// return path runs the scan and does not narrow its END-phaser refresh to
+    /// the names the frame itself wrote.
+    pub(crate) inline_env_write_gen: u64,
 }
 
 impl ControlState {

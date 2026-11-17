@@ -174,9 +174,8 @@ impl Interpreter {
                 self.record_runtime_name_write(name);
                 // This env write happened without a call opcode, so a leaf closure
                 // between the raise site and the installing frame would otherwise
-                // drop it on return. See `inline_control_env_writes`.
-                self.inline_control_env_writes
-                    .push(crate::symbol::Symbol::intern(name));
+                // drop it on return. See `ControlState::inline_env_write_gen`.
+                self.control.inline_env_write_gen += 1;
             }
         }
     }
