@@ -112,7 +112,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // Immediate stdout so the thread's output lands in real chronological
         // order relative to the main thread's direct writes.
-        let mut thread_interp = self.clone_for_thread();
+        let mut thread_interp = self.clone_for_thread_for_block(&block);
         thread_interp.set_immediate_stdout(true);
         let mutsu_tid = thread_id as i64;
         // Use the large user-code stack (matches `start {}` / Promise / Supply

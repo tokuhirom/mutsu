@@ -281,7 +281,7 @@ impl Interpreter {
                     && let Some(sid) = Self::resolve_tap_channel_supply_id(&attrs)
                     && let Some(rx) = take_supply_channel(sid)
                 {
-                    let thread_interp = self.clone_for_thread();
+                    let thread_interp = self.clone_for_thread_for_block(&tap_cb);
                     let cb = tap_cb.clone();
                     let delay = delay_seconds;
                     let done = done_cb.clone();
@@ -897,7 +897,7 @@ impl Interpreter {
                                     1 => done_chain.pop(),
                                     _ => Some(Self::make_supply_done_chain(done_chain)),
                                 };
-                                let driver = self.clone_for_thread();
+                                let driver = self.clone_for_thread_for_block(&body_cb);
                                 let body_cb = body_cb.clone();
                                 let close_flag = rx.close_flag();
                                 let close_id = register_act_loop_close(close_flag.clone());
@@ -1727,7 +1727,7 @@ impl Interpreter {
                     // the emitting thread is exactly the deadlock class this
                     // defers away.
                     delay_seconds = 0.0;
-                    let thread_interp = self.clone_for_thread();
+                    let thread_interp = self.clone_for_thread_for_block(&tap_cb);
                     // No close flag: `Tap.close` drops the pump's sender
                     // (`drop_scheduled_pump`), so the act loop observes the
                     // disconnect and retires.

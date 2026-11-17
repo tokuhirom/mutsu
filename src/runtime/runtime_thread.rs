@@ -3,6 +3,15 @@ use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
+    /// [`Self::clone_for_thread`] for a spawn that runs a known block or
+    /// callback (`start { ... }`, `Promise.start`, `Thread.start`, a `tap` or
+    /// scheduler callback). The block reaches its lexicals through its own
+    /// captures (ADR-16595), so the clone is the plain one; the block names
+    /// the spawn's work at the call site.
+    pub(crate) fn clone_for_thread_for_block(&mut self, _block: &Value) -> Self {
+        self.spawn_clone()
+    }
+
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// The child reaches the parent's lexicals through the cells and objects its

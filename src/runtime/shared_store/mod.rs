@@ -40,6 +40,7 @@ fn is_internal_key(key: &str) -> bool {
 /// Whether `key` names a plain user lexical (`x`, `@a`, `%h`, `&f`) rather
 /// than a dynamic (`*x`, `@*x`), an attribute alias (`!x`), a twigil'd or
 /// special variable, a qualified name or a runtime-internal `__mutsu_*` key.
+/// (The invocant binding is a lexical too: no thread reaches it by name.)
 ///
 /// ADR-16595: such a name is never in the store. Code on another thread
 /// reaches a lexical through the cell its capture holds, a spawn publishes
@@ -54,9 +55,8 @@ pub(crate) fn is_user_lexical_key(key: &str) -> bool {
         return false;
     };
     (first.is_alphabetic() || (first == '_' && bare.len() > 1 && !bare.starts_with("__")))
-        && !bare.contains("::")
+        && !crate::qualified::is_qualified_str(bare)
         && !bare.contains(['*', '!', '?', '.', '^', '='])
-        && bare != "self"
 }
 
 /// The ADR-16595 invariant at every store insertion: debug builds stop at a
