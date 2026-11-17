@@ -348,6 +348,30 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
 /// Register the subs and packages `node`'s own scope declares, before its
 /// statements are walked (they are visible from the start of the scope).
 // Cost: O(size of the scope's statements, not counting nested scopes).
+/// Whether a dispatcher of routine `name` (`&name` = `key`) is visible from
+/// outside the innermost scope: an outer scope's declaration, or the
+/// setting's routine or operator. A `multi` declared under such a name
+/// adds a candidate rather than implying a `proto` of its own.
+// Cost: O(d), d = scope depth.
+fn outer_dispatcher(name: &str, key: &str, scopes: &Scopes) -> bool {
+    let depth = scopes.scopes.len();
+    if scopes.scopes[..depth.saturating_sub(1)]
+        .iter()
+        .any(|scope| scope.contains_key(key))
+    {
+        return true;
+    }
+    if crate::builtin_functions::is_builtin_function(name) {
+        return true;
+    }
+    match name.split_once(":<") {
+        Some(("infix", op)) => crate::compiled_operator::is_builtin_infix(op.trim_end_matches('>')),
+        // Any other operator category: assume the setting has one.
+        Some(_) => true,
+        None => false,
+    }
+}
+
 fn hoist(node: &RakuAstNode, scopes: &mut Scopes) {
     for field in &node.fields {
         match &field.value {
@@ -402,9 +426,32 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
     if let Some(name) = super::declared_routines::declared_by(held)
         && held.class == C::Sub
     {
-        let mut stub = RakuAstNode::clone(held);
-        stub.fields.retain(|f| f.name != Some("body"));
-        scopes.declare(format!("&{name}"), Value::rakuast(Box::new(stub)));
+        let key = format!("&{name}");
+        let is_multi = super::lower::leaf_str(held, "multiness").is_ok_and(|m| m == "multi");
+        // A `multi` name resolves to its dispatcher, as in rakudo: the explicit
+        // `proto` of the scope, or the one the first candidate implies (a
+        // `Sub` whose `multiness` is `proto`, whose `compile-time-value` is
+        // the dispatcher with every candidate). A later candidate never
+        // replaces it; an explicit `proto` replaces an implied one. A name an
+        // outer scope or the setting already has a dispatcher for
+        // implies none: the candidate itself is the resolution
+        // (`multi infix:<+>` in a block).
+        let has_dispatcher = is_multi
+            && scopes
+                .scopes
+                .last()
+                .is_some_and(|scope| scope.contains_key(&key));
+        let implies_proto = is_multi && !has_dispatcher && !outer_dispatcher(&name, &key, scopes);
+        if !has_dispatcher {
+            let mut stub = RakuAstNode::clone(held);
+            stub.fields.retain(|f| f.name != Some("body"));
+            if implies_proto
+                && let Some(field) = stub.fields.iter_mut().find(|f| f.name == Some("multiness"))
+            {
+                field.value = RakuAstFieldValue::Node(Value::str("proto".to_string()));
+            }
+            scopes.declare(key, Value::rakuast(Box::new(stub)));
+        }
     } else if matches!(
         held.class,
         C::Class | C::Role | C::Grammar | C::Module | C::Package

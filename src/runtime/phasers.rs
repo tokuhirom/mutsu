@@ -406,9 +406,12 @@ fn reorder_at_level(
             continue;
         }
 
+        // A `proto` goes with its candidates, in source order: left behind, it
+        // would be registered after the hoisted `multi`s and start an empty
+        // candidate list ("Routine does not have any candidates").
         if is_top
             && last_check_idx.is_some()
-            && matches!(&stmt, Stmt::SubDecl { .. })
+            && matches!(&stmt, Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. })
         {
             early_subs.push(stmt);
             continue;
