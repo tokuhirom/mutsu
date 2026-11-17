@@ -199,11 +199,6 @@ impl Interpreter {
         {
             return result;
         }
-        // Native `.sort` over a plain array with no/simple comparator (lever A).
-        if !lever_a_blocked && let Some(result) = self.try_native_sort(native_target, method, &args)
-        {
-            return result;
-        }
         // Native `.min` / `.max` over a plain list, including `:by` blocks.
         if !lever_a_blocked
             && let Some(result) = self.try_native_extrema(native_target, method, &args)
