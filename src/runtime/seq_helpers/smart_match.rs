@@ -568,7 +568,7 @@ impl Interpreter {
                 if !matches!(left.view(), ValueView::Junction { .. })
                     && !(matches!(right.view(), ValueView::Package(_))
                         && self.registry().roles.contains_key(class_name.as_str()))
-                    && self.has_user_method(&class_name.resolve(), "ACCEPTS")
+                    && self.has_user_method_of(class_name, crate::symbol::wk::accepts_method())
                     && match self.user_accepts_applies(&class_name.resolve(), right, left) {
                         Ok(applies) => applies,
                         Err(e) => {

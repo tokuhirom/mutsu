@@ -68,19 +68,19 @@ impl Interpreter {
     /// The enum type name a receiver stands for, when that enum composes roles.
     fn enum_receiver_with_roles(&self, target: &Value) -> Option<String> {
         let name = match target.view() {
-            ValueView::Enum { enum_type, .. } => enum_type.resolve(),
-            ValueView::Package(name) => name.resolve(),
+            ValueView::Enum { enum_type, .. } => enum_type.as_str(),
+            ValueView::Package(name) => name.as_str(),
             _ => return None,
         };
-        if !self.registry().enum_types.contains_key(&name) {
+        if !self.registry().enum_types.contains_key(name) {
             return None;
         }
         let has_roles = self
             .registry()
             .class_composed_roles
-            .get(&name)
+            .get(name)
             .is_some_and(|roles| !roles.is_empty());
-        has_roles.then_some(name)
+        has_roles.then(|| name.to_string())
     }
 
     /// Does the enum this receiver belongs to compose a role supplying

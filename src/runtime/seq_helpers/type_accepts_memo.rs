@@ -22,6 +22,13 @@
 //!   the name is bound in scope to nothing but that very type object
 //!   (`type_name_binding`; a constant or term of the name shadows it).
 //!
+//! A built-in scalar (`Str`, `Int`, `Bool`, ...) checked against a nominal
+//! type is remembered the same way, keyed by its built-in type: a plain scalar
+//! has no MRO or roles of its own, so for a type whose answer does not read the
+//! value (not a native type, `UInt`, a subset or an enum) the built-in type
+//! decides it (#17876). SBOM::CycloneDX's `Map` tests every attribute value
+//! with `~~ Positional`, `~~ Str:D`, `~~ Enumify`, ...
+//!
 //! Every registry write may change an MRO or a composition, so the table is
 //! dropped whenever the registry's write generation moves.
 
@@ -33,10 +40,14 @@ impl Interpreter {
     /// Whether `left` matches the type object named `type_name`
     /// (`left ~~ type_name`). See [`Self::type_object_accepts_uncached`] for
     /// the rules; this front answers a repeat check of a user-class instance
-    /// against a nominal user type from the memo described in the module docs.
+    /// or a built-in scalar against a nominal type from the memo described in
+    /// the module docs.
     // Cost: O(1) expected on a memo hit (two hash probes and a scope lookup
     // of the name); a miss is the O(d) check, d = MRO length.
     pub(crate) fn type_object_accepts(&mut self, left: &Value, type_name: Symbol) -> bool {
+        if let Some(kind) = Self::builtin_scalar_kind(left) {
+            return self.scalar_type_object_accepts(left, kind, type_name);
+        }
         let Some((class, _)) = self.instance_nominal_memo_key(left, type_name.as_str(), false)
         else {
             return self.type_object_accepts_uncached(left, type_name);
@@ -44,6 +55,49 @@ impl Interpreter {
         self.memoized_instance_type_check((class, type_name, MemoCheck::Accepts), |vm| {
             vm.type_object_accepts_uncached(left, type_name)
         })
+    }
+
+    /// [`Self::type_object_accepts`] for a built-in scalar of type `kind`
+    /// (#17876). A key in the memo was admitted under the current registry
+    /// generation, and admission reads only the registry and the static core
+    /// tables, so a hit re-asks only the scope-dependent half: whether the
+    /// name still means its own type here.
+    // Cost: O(1) expected on a hit (one memo probe, one capture lookup and one
+    // scope lookup of the name); a miss is the full check.
+    fn scalar_type_object_accepts(&mut self, left: &Value, kind: Symbol, type_name: Symbol) -> bool {
+        let ty = type_name.as_str();
+        let base = ty.strip_suffix(":D").unwrap_or(ty);
+        if !Self::scalar_memo_name_shape(base) {
+            return self.type_object_accepts_uncached(left, type_name);
+        }
+        // A user class may be named like a built-in (`class Str`), so a
+        // scalar's answer lives under its own check kind.
+        let key = (kind, type_name, MemoCheck::ScalarAccepts);
+        let admitted = match self.remembered_type_check(&key) {
+            Some(hit) => {
+                if self.type_name_names_itself(base) {
+                    return hit;
+                }
+                false
+            }
+            None => self.scalar_memo_type_admissible(base) && self.type_name_names_itself(base),
+        };
+        if !admitted {
+            return self.type_object_accepts_uncached(left, type_name);
+        }
+        self.memoized_instance_type_check(key, |vm| {
+            vm.type_object_accepts_uncached(left, type_name)
+        })
+    }
+
+    /// The memo's answer for `key` under the current registry generation.
+    // Cost: O(1) expected.
+    fn remembered_type_check(&self, key: &(Symbol, Symbol, MemoCheck)) -> Option<bool> {
+        let memo = &self.caches.instance_type_accepts;
+        if memo.0 != self.registry_write_generation() {
+            return None;
+        }
+        memo.1.get(key).copied()
     }
 
     /// The memo key for `type_matches_value(constraint, value)` (a parameter,
@@ -132,16 +186,72 @@ impl Interpreter {
                 return None;
             }
         }
-        if self.try_resolved_type_capture_name(ty).is_some() {
+        if !self.type_name_names_itself(ty) {
             return None;
         }
-        // A lexical type declaration binds its own name to its type object;
-        // anything else bound under the name (a constant, a term) shadows it.
-        match self.type_name_binding(ty) {
-            None => {}
-            Some(bound) if matches!(bound.view(), ValueView::Package(p) if p == ty) => {}
-            Some(_) => return None,
-        }
         Some((class_name, ty))
+    }
+
+    /// The built-in type of a plain scalar receiver whose nominal type checks
+    /// the memo may answer, else `None` (#17876). A plain scalar has no MRO or
+    /// roles of its own: whether it matches a nominal class or role is decided
+    /// by its built-in type alone.
+    // Cost: O(1).
+    fn builtin_scalar_kind(left: &Value) -> Option<Symbol> {
+        use crate::symbol::wk;
+        Some(match left.view() {
+            ValueView::Int(_) | ValueView::BigInt(_) => wk::int_type(),
+            ValueView::Num(_) => wk::num_type(),
+            ValueView::Str(_) => wk::str_type(),
+            ValueView::Bool(_) => wk::bool_type(),
+            ValueView::Rat(..) => wk::rat_type(),
+            ValueView::FatRat(..) => wk::fat_rat(),
+            ValueView::Complex(..) => wk::complex_type(),
+            _ => return None,
+        })
+    }
+
+    /// Whether the spelling `base` (a type name with any `:D` removed) can
+    /// name a type the scalar memo admits: not a native type (`int8`, `uint`,
+    /// `num32`, `str`, ... -- all spelled lowercase), not `UInt`, and not a
+    /// smiley, parameterization or lexical-site key. A `:D` smiley is admitted
+    /// by the caller (a scalar is definite) and kept in the key.
+    // Cost: O(n) in the name's length.
+    fn scalar_memo_name_shape(base: &str) -> bool {
+        base.starts_with(|c: char| c.is_ascii_uppercase())
+            && base != "UInt"
+            && !base.contains(['[', ':', '\0'])
+    }
+
+    /// Whether the registry and the core tables make `base` a nominal type
+    /// whose answer for a built-in scalar reads nothing but the scalar's
+    /// type: a core role, a core class of the catalog, or a registered class
+    /// or role -- never a subset or an enum. Stable for one registry write
+    /// generation.
+    // Cost: up to six hash probes.
+    fn scalar_memo_type_admissible(&self, base: &str) -> bool {
+        let registry = self.registry();
+        if registry.subsets.contains_key(base) || registry.enum_types.contains_key(base) {
+            return false;
+        }
+        registry.classes.contains_key(base)
+            || registry.roles.contains_key(base)
+            || crate::runtime::types::is_builtin_role_name(base)
+            || crate::builtin_types::catalog::builtin_type_info(base).is_some()
+    }
+
+    /// Whether the type name `ty` means that very type here: no type capture
+    /// or package alias resolves it, and the name is bound in scope to
+    /// nothing but its own type object (a lexical type declaration binds its
+    /// name to its type object; a constant or term of the name shadows it).
+    // Cost: one capture lookup and one scope lookup of the name.
+    fn type_name_names_itself(&self, ty: &str) -> bool {
+        if self.try_resolved_type_capture_name(ty).is_some() {
+            return false;
+        }
+        match self.type_name_binding(ty) {
+            None => true,
+            Some(bound) => matches!(bound.view(), ValueView::Package(p) if p == ty),
+        }
     }
 }

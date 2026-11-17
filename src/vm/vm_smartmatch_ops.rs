@@ -17,8 +17,7 @@ impl Interpreter {
         let ValueView::Package(type_name) = right.view() else {
             return None;
         };
-        let type_name = type_name.resolve();
-        let (base, smiley) = crate::runtime::types::strip_type_smiley(&type_name);
+        let (base, smiley) = crate::runtime::types::strip_type_smiley(type_name.as_str());
         let is_native = crate::runtime::native_types::is_native_int_type(base)
             || matches!(base, "num" | "num32" | "num64" | "str")
             // A `native` declaration (upstream `NativeCall::Types::size_t`).
@@ -36,8 +35,7 @@ impl Interpreter {
         // is its own native type: only a *value* needs the declared container
         // to tell `my int $x` from a boxed `5`.
         if let ValueView::Package(left_name) = left.view() {
-            let left_name = left_name.resolve();
-            let (left_base, _) = crate::runtime::types::strip_type_smiley(&left_name);
+            let (left_base, _) = crate::runtime::types::strip_type_smiley(left_name.as_str());
             if left_base == base {
                 return Some(true);
             }

@@ -277,6 +277,17 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::has_user_method_sym`] for a class already held as a symbol: no
+    /// re-lookup of its name.
+    // Cost: as `has_user_method_sym`.
+    pub(crate) fn has_user_method_of(
+        &mut self,
+        class: crate::symbol::Symbol,
+        name_sym: crate::symbol::Symbol,
+    ) -> bool {
+        self.has_user_method_memo(class, name_sym)
+    }
+
     /// The MRO walk behind [`Self::has_user_method_sym`], unmemoized.
     // Cost: O(d), d = MRO depth.
     pub(super) fn has_user_method_uncached(
