@@ -640,9 +640,15 @@ pub(crate) fn parse_fragment_spelled(
     // regex code block parsed in the middle of a module with an unresolved
     // `use` then turned every later undeclared type name into a gobbled block.
     let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
+    // A fragment is part of the enclosing unit: a `BEGIN` before it still
+    // precedes the unit's later `use`s, and one inside it does too.
+    let effect_was_seen = stmt::simple::unit_compile_time_effect_seen();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     let result = parse_program_spelled(input);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
+    if effect_was_seen {
+        stmt::simple::note_unit_compile_time_effect();
+    }
     if type_index_was_incomplete {
         stmt::simple::note_type_index_incomplete();
     }

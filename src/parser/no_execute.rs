@@ -1,16 +1,17 @@
 //! The non-executing parse mode (#11212).
 //!
-//! Two parse-time probes run a `use`d module's mainline to learn how the rest
-//! of the unit parses: the dynamic `EXPORT::*` probe (#9500,
-//! `runtime::parse_time_exports`) and slang activation (ADR-0026,
-//! `runtime::slang_activation`). A caller that promises not to execute the
-//! program — `--dump-ast`, `--dump-bytecode`, and the analysis API behind the
-//! language server (ADR-0065 D4) — parses under a [`NoExecuteGuard`], and both
-//! probes are skipped while it is held.
+//! A compiling parse runs code while it parses: a `use` loads its module in
+//! the program's interpreter when the parser reaches it (ADR-17558,
+//! `crate::compile_time_loader`), and slang activation (ADR-0026,
+//! `runtime::slang_activation`) runs a slang module's mainline. A caller that
+//! promises not to execute the program — `--dump-ast`, `--dump-bytecode`, and
+//! the analysis API behind the language server (ADR-0065 D4) — parses under a
+//! [`NoExecuteGuard`], and neither runs while it is held.
 //!
 //! The parse is then degraded, never wrong in a way that runs code: a module's
-//! computed export names fall back to what the static export scan found, and a
-//! slang-activating `use` leaves the unit in the ordinary grammar.
+//! exports come from the static export scan alone (names it computes while it
+//! loads are unknown), and a slang-activating `use` leaves the unit in the
+//! ordinary grammar.
 
 use std::cell::Cell;
 

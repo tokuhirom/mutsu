@@ -7,7 +7,7 @@ use Test;
 # a child process so the order of its output is visible; every expectation is
 # what rakudo prints.
 
-plan 6;
+plan 8;
 
 sub run-code(Str $code) {
     my $proc = run $*EXECUTABLE, '-I', 't/lib', '-e', $code, :out, :err;
@@ -55,4 +55,27 @@ sub run-code(Str $code) {
         use LoadsAtParseTime;
         CODE
     is %r<out>, "begin\nLoadsAtParseTime loaded\n", 'a BEGIN before the use runs first';
+}
+
+{
+    # A module's own `BEGIN` and `multi` are its compile-time effects, not the
+    # importer's: a later `use` still loads when the parser reaches it.
+    my %r = run-code(q:to/CODE/);
+        use LoadsWithOwnBegin;
+        use LoadsAtParseTime;
+        my $x = ;
+        CODE
+    is %r<out>, "LoadsWithOwnBegin loaded\nLoadsAtParseTime loaded\n",
+        'a module with its own BEGIN does not hold back the next use';
+}
+
+{
+    # ...and the importer's own `BEGIN` still precedes every later module.
+    my %r = run-code(q:to/CODE/);
+        BEGIN say "begin";
+        use LoadsWithOwnBegin;
+        use LoadsAtParseTime;
+        CODE
+    is %r<out>, "begin\nLoadsWithOwnBegin loaded\nLoadsAtParseTime loaded\n",
+        'a BEGIN before a module with its own BEGIN still runs first';
 }

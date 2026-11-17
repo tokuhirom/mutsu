@@ -19,7 +19,6 @@ src/parser/stmt/class/role_decl.rs                       1
 src/parser/stmt/control/given_when.rs                    1
 src/parser/stmt/decl/constant_subset.rs                  2
 src/parser/stmt/simple/module_exports.rs                 1
-src/parser/stmt/simple/module_exports/dynamic_stash.rs   1
 src/parser/stmt/simple/slang_use.rs                      4
 src/rakuast/mod.rs                                       1
 src/value/mod.rs                                         3

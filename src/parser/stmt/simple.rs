@@ -84,8 +84,9 @@ pub(in crate::parser) use compile_consts::{
     finish_block_anon_states, is_test_assertion_callable, lookup_compile_time_constant,
     mark_current_scope_routine_body, mark_current_scope_self_available, pop_scope,
     prepend_anon_state_decls, push_scope, record_anon_state_name, register_compile_time_constant,
-    register_use_exports, restore_worries, self_available, set_trace_pragma, suppress_worries,
-    trace_pragma_active, truncate_current_scope_anon_states, worries_suppressed,
+    register_loaded_use_exports, register_use_exports, restore_worries, self_available,
+    set_trace_pragma, suppress_worries, trace_pragma_active, truncate_current_scope_anon_states,
+    worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabulary};
@@ -97,7 +98,6 @@ pub(crate) use module_exports::exported_vars::{
     ExportedVar, scanned_exported_vars, scanned_exported_vars_complete,
 };
 pub(crate) use module_exports::module_declared_types;
-pub(crate) use module_exports::register_module_exports_with_tags;
 pub(crate) use module_exports::{CanonicalScans, canonical_export_scans};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, module_imports_through_hook, note_type_index_incomplete,
@@ -105,6 +105,7 @@ pub(in crate::parser) use module_exports::{
     register_module_type_names, scanned_module_value_terms, source_declares_export_hook,
     type_index_is_complete,
 };
+pub(crate) use module_exports::{register_loaded_unit_facts, register_module_exports_with_tags};
 /// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
 /// `constant` may be a type alias the parser cannot see through (#11706).
 pub(crate) use pragma_preseed::is_imported_value_term;

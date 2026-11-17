@@ -16,7 +16,6 @@ mod ops_reduction;
 mod ops_set;
 pub(crate) mod our_scoped_restore;
 mod output_sink;
-pub(crate) mod parse_time_exports;
 pub(crate) mod phasers;
 mod promise_errors;
 pub(crate) mod quanthash_store;

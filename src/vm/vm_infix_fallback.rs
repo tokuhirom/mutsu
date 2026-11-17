@@ -175,6 +175,17 @@ impl Interpreter {
                 self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[1].clone()))?;
             return self.eqv_values(left, right);
         }
+        // `x` coerces its operands through their methods (the count by
+        // `.Int`, the string by `.Str`), which the pure reduction table below
+        // cannot call: a unit with its own `infix:<x>` candidate compiles the
+        // operator to this route, and `$obj x 2` must still be the built-in's.
+        if name == "x" && call_args.len() >= 2 {
+            let mut operands = Vec::with_capacity(call_args.len());
+            for arg in call_args {
+                operands.push(self.fetch_proxy_for_store(Self::unwrap_operand_value(arg.clone()))?);
+            }
+            return self.call_repeat_infix("x", &operands);
+        }
         if call_args.len() >= 2 {
             // `apply_reduction_op` is always a NATIVE reduction (`+`, `mod`,
             // junctions, ...) — never a call that could bind an `is rw`
