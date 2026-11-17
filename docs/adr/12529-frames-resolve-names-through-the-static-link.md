@@ -1741,6 +1741,21 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    it does in a mainline routine. Pinned by
    `t/modules/module-routine-closure-reads-routine-lexical-over-file-lexical.t`.
 
+   **Slice 52 done** (`fix/17508-our-lexical-alias-rebind`, #17508): an
+   `our` declaration's lexical alias is a lexical of its frame. ADR-0024's
+   mainline capture took only `my` names, so a sub's `%g := $x` of an
+   `our %g` went down the by-name path, which rebound the package variable;
+   the declaring frame's slot kept the old container. The capture now takes
+   an `our` alias too (`our_alias_of_frame`; never hoist-seeded, since its
+   container is the package's), so the rebind seats the new container in
+   the binding cell the frame and every sub read, and `%OUR::g` keeps its
+   own, as in rakudo. Two by-name paths that treated the bare env key as
+   the package variable now ask the package store: `$OUR::x = v` stores
+   through the package cell (it replaced the bare entry with a plain value,
+   so the alias never saw it), and `@OUR::a` / `%OUR::h` read the package
+   before the bare alias. Pinned by
+   `t/modules/our-lexical-alias-rebound-in-sub.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
