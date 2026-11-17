@@ -2547,6 +2547,15 @@ pub(crate) enum OpCode {
     /// and to drop compiler temporaries; see also `SinkPop` for the
     /// statement-level sink that also calls a user `sink` method.
     Pop,
+    /// The right-hand side of a list-assigning declaration
+    /// (`my ($a, $b) = EXPR`): pops `EXPR`'s value and pushes the list the
+    /// declaration's staging array is assigned from. One level of itemization
+    /// is removed (an itemized Array or List iterates as its elements, as
+    /// Rakudo's `List.STORE` does); any other value passes through. The
+    /// single-argument form of the `__mutsu_list_assign_rhs` helper, which the
+    /// compiler emits as this op instead of a by-name call
+    /// (`Interpreter::list_assign_rhs_value` is the one implementation).
+    ListAssignRhs,
     /// Mark a sunk `start` promise for Raku's deferred unhandled-exception
     /// diagnostic, then let the following `SinkPop` discard its value.
     MarkPromiseSink,

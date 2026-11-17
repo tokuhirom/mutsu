@@ -4841,6 +4841,12 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            // Cost: O(1) (see `Interpreter::list_assign_rhs_value`).
+            OpCode::ListAssignRhs => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                self.stack.push(Self::list_assign_rhs_value(&val));
+                *ip += 1;
+            }
             // Cost: O(1) for an Array/List/Range; O(e) for a Seq or Hash operand
             // (copied / turned into pairs), O(k) for a lazy list forced here, e/k
             // = elements.
