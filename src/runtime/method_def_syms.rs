@@ -23,6 +23,8 @@ pub(crate) struct MethodDefSyms {
     param_def_names: OnceLock<Box<[Symbol]>>,
     source_file: OnceLock<Option<Symbol>>,
     named_fast: OnceLock<Box<[Option<NamedFast>]>>,
+    /// Memo of [`super::MethodDef::has_container_params`].
+    container_params: OnceLock<bool>,
     /// `role_param_bindings`' names interned, with the very bindings list
     /// they were interned from: the composer replaces that list on cloned
     /// defs (whose `syms` came along), so a reader checks it still holds the
@@ -119,6 +121,19 @@ impl super::MethodDef {
             .get_or_init(|| self.param_defs.iter().map(NamedFast::of_param).collect())
             .get(i)
             .and_then(Option::as_ref)
+    }
+
+    /// Whether a non-invocant parameter binds the caller's container
+    /// (`is raw`, `is rw`, sigilless): the method fast binder then promotes
+    /// its admitted arguments first (`vm_method_container_params`).
+    // Cost: O(1) after the first call; O(p) once, p = number of parameters.
+    #[inline]
+    pub(crate) fn has_container_params(&self) -> bool {
+        *self.syms.container_params.get_or_init(|| {
+            self.param_defs
+                .iter()
+                .any(|pd| !pd.is_invocant && pd.binds_caller_container())
+        })
     }
 
     /// `source_file`, interned.

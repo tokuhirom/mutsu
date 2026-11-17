@@ -173,6 +173,13 @@ impl Interpreter {
             ..
         } = gate;
         if gate.fast {
+            // A container parameter's caller variable becomes its shared cell
+            // while the caller's frame is still current
+            // (`vm_method_container_params`).
+            let mut args = args;
+            if method_def.has_container_params() {
+                self.promote_method_container_args(method_def, &mut args);
+            }
             // The fast binder below checks the parameter types itself;
             // hand it this call's #10986 trust.
             self.pending_skip_constraint_recheck = skip_constraint_recheck;
@@ -2052,6 +2059,9 @@ impl Interpreter {
         // (name, is-readonly) for a sigilless raw invocant, applied once the
         // param values are installed below.
         let mut raw_invocant_readonly: Option<(&str, bool)> = None;
+        // `is raw` parameters bound to a value: immutable once the frame's
+        // readonly marks are applied below.
+        let mut raw_readonly_params: Vec<Symbol> = Vec::new();
         let mut arg_idx = 0;
         let param_syms = method_def.param_syms();
         let param_storage = method_def.param_storage_names();
@@ -2183,12 +2193,24 @@ impl Interpreter {
             }
             if arg_idx < args.len() {
                 let mut val = args[arg_idx].clone();
-                // A sigilless parameter reaches this binder only with a value
-                // argument (`method_sigilless_args_light`): a read-only term,
-                // marked the way the general binder marks it.
-                if pd.is_some_and(|pd| pd.sigilless) {
-                    val = crate::runtime::types::unwrap_varref_value(val);
-                    self.mark_light_sigilless_param(binding_sym, false);
+                // A container parameter (`is raw`, sigilless) reaches this
+                // binder only as the gate admitted it
+                // (`method_container_args_light`) and the promotion rewrote it
+                // (`promote_method_container_args`): a shared cell or a Proxy
+                // aliases the caller's container, anything else is a
+                // read-only term, marked the way the general binder marks it.
+                // Its type was checked at admission.
+                if let Some(pd) = pd.filter(|pd| pd.binds_caller_container()) {
+                    let val = crate::runtime::types::unwrap_varref_value(val);
+                    let writable = val.is_container_ref() || val.is_proxy_value();
+                    if pd.sigilless {
+                        self.mark_light_sigilless_param(binding_sym, writable);
+                    } else if !writable {
+                        raw_readonly_params.push(binding_sym);
+                    }
+                    param_values.push((binding_name, binding_sym, val));
+                    arg_idx += 1;
+                    continue;
                 }
                 // A plain `@x`/`%x` binds the caller's container itself
                 // (admitted per call by `method_aggregate_args_light`),
@@ -2546,6 +2568,9 @@ impl Interpreter {
         // dies). The slow path does this in `bind_function_args_values`; the fast
         // path binds params directly, so mark `$` scalar params read-only here.
         self.mark_fast_method_params_readonly(method_def);
+        for sym in raw_readonly_params {
+            self.mark_readonly_sym_with(sym, crate::ast::ReadonlyKind::Immutable);
+        }
 
         crate::alloc_scope_end!(_sc_loc_cap);
         crate::alloc_scope_named!(_sc_loc_init, "mfast:loc:init");

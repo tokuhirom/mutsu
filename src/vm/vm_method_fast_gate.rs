@@ -52,9 +52,10 @@ impl Interpreter {
             .param_defs
             .iter()
             .any(|pd| pd.binds_caller_container() || pd.is_does_target())
-            // A sigilless parameter given a value binds as a read-only term
-            // on the fast path below (`vm_call_light_sigilless.rs`).
-            && !self.method_sigilless_args_light(method_def, args);
+            // A sigilless or `is raw` parameter whose argument is a value, a
+            // shared cell, a Proxy or a promotable caller variable binds on
+            // the fast path below (`vm_method_container_params.rs`).
+            && !self.method_container_args_light(method_def, cc, args);
         // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
         // container by alias (Raku readonly-container semantics): `.push`,
         // element assign, and whole-container `=` all propagate to the caller.

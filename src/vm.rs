@@ -321,6 +321,7 @@ pub(crate) mod vm_meta_ops;
 pub(crate) mod vm_method_body_package;
 pub(crate) mod vm_method_call_attrs;
 pub(crate) mod vm_method_call_plan;
+pub(crate) mod vm_method_container_params;
 pub(crate) mod vm_method_dispatch;
 pub(crate) mod vm_method_fast_gate;
 mod vm_method_finalize;
