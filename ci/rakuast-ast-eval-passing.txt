@@ -5987,6 +5987,7 @@ t/oo/trait/enum-trait-arg-and-trait-mod-call.t
 t/oo/trait/eval-class-trait-die-not-installed.t
 t/oo/trait/eval-load-cached-trait.t
 t/oo/trait/eval-trait-mod-default-redispatch.t
+t/oo/trait/eval-unit-var-trait-leave.t
 t/oo/trait/handles-container-attr-writeback.t
 t/oo/trait/handles-delegation-on-but-mixin.t
 t/oo/trait/handles-dynamic-list.t
@@ -6046,6 +6047,7 @@ t/oo/trait/user-trait-mod-does-not-consume-every-trait.t
 t/oo/trait/variable-custom-traits.t
 t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
+t/oo/trait/variable-trait-block-add-phaser.t
 t/oo/trait/variable-trait-dunder-name.t
 t/oo/trait/variable-trait-object-mixin.t
 t/oo/trait/variable-trait-owning-code-object.t
