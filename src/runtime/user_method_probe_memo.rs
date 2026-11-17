@@ -36,6 +36,7 @@ pub(crate) struct UserMethodProbeMemo {
     is_native_method: FxHashMap<(Symbol, Symbol), bool>,
     method_or_accessor: FxHashMap<(Symbol, Symbol), Option<UserMethodOrAccessor>>,
     public_accessor_owner: FxHashMap<(Symbol, Symbol), Option<Symbol>>,
+    has_public_accessor: FxHashMap<(Symbol, Symbol), bool>,
     method_candidate_levels: FxHashMap<(Symbol, Symbol), Arc<[u32]>>,
     all_outranked_by_builtin: FxHashMap<(Symbol, Symbol), bool>,
     method_return_fast: FxHashMap<(Symbol, Symbol), Option<(FastParamType, Symbol)>>,
@@ -107,6 +108,14 @@ impl ProbeTable for MethodReturnFast {
     }
 }
 
+struct HasPublicAccessor;
+impl ProbeTable for HasPublicAccessor {
+    type Answer = bool;
+    fn table(memo: &mut UserMethodProbeMemo) -> &mut FxHashMap<(Symbol, Symbol), bool> {
+        &mut memo.has_public_accessor
+    }
+}
+
 struct PublicAccessorOwner;
 impl ProbeTable for PublicAccessorOwner {
     type Answer = Option<Symbol>;
@@ -145,6 +154,7 @@ impl Interpreter {
             memo.is_native_method.clear();
             memo.method_or_accessor.clear();
             memo.public_accessor_owner.clear();
+            memo.has_public_accessor.clear();
             memo.method_candidate_levels.clear();
             memo.all_outranked_by_builtin.clear();
             memo.method_return_fast.clear();
@@ -176,6 +186,14 @@ impl Interpreter {
     pub(crate) fn has_user_method_memo(&mut self, class: Symbol, method: Symbol) -> bool {
         self.probe_memo::<HasUserMethod>(class, method, |this| {
             this.has_user_method_uncached(class.as_str(), method)
+        })
+    }
+
+    /// [`Self::has_public_accessor`], memoized per `(class, method)`.
+    // Cost: O(1) on a hit; a miss costs one MRO walk, O(d), d = MRO depth.
+    pub(crate) fn has_public_accessor_memo(&mut self, class: Symbol, method: Symbol) -> bool {
+        self.probe_memo::<HasPublicAccessor>(class, method, |this| {
+            this.has_public_accessor(class.as_str(), method.as_str())
         })
     }
 

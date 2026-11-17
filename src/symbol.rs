@@ -936,6 +936,9 @@ pub(crate) mod wk {
         order => "Order";
         order_less => "Less";
         order_same => "Same";
+        /// The `WHICH` method name, probed on every `===` operand that is an
+        /// instance (`runtime/which_identity.rs`).
+        which_method => "WHICH";
         order_more => "More";
         /// The builtin a subscript's value adverbs (`:k`/`:v`/`:kv`/`:p`) lower to
         /// (`ast::SUBSCRIPT_ADVERB_FN`).
