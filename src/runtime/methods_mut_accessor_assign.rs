@@ -102,7 +102,7 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "rw-proxy-signal",
                 );
-                return Some(Err(super::methods_signature_errors::make_multi_no_match_error(
+                return Some(Err(super::methods_signature_errors::multi_no_match_signal(
                     method,
                 )));
             } else {
@@ -116,7 +116,7 @@ impl Interpreter {
                         "callmethodmutwithvalues",
                         "rw-proxy-signal",
                     );
-                    return Some(Err(super::methods_signature_errors::make_multi_no_match_error(
+                    return Some(Err(super::methods_signature_errors::multi_no_match_signal(
                         method,
                     )));
                 }

@@ -45,8 +45,8 @@ impl Interpreter {
         // X::Multi::NoMatch (roast .../multi-no-match.t).
         if args.len() != 1 || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..))
         {
-            return Err(crate::runtime::methods_signature_errors::make_multi_no_match_error(
-                "protect",
+            return Err(crate::runtime::methods_signature_errors::builtin_type_no_match(
+                "Lock", true, "protect", args,
             ));
         }
         let (_, lock) = lock_of(attributes, "protect")?;

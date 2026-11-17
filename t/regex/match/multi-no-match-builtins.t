@@ -25,7 +25,11 @@ throws-like { Proc::Async.new }, X::Multi::NoMatch,
 
 throws-like ｢"".subst｣, X::Multi::NoMatch, '.subst with no arguments throws';
 
-throws-like { $*OUT.printf }, X::Multi::NoMatch, '.printf with no format throws';
+# Not a NoMatch: `IO::Handle.printf` is `(IO::Handle:D $: |c)`, and the
+# routine `printf($format, *@args)` it calls reports the missing format.
+throws-like { $*OUT.printf }, Exception,
+    message => /'Too few positionals passed; expected at least 1 arguments but got only 0'/,
+    '.printf with no format throws';
 
 throws-like { "".match: Nil }, X::Multi::NoMatch,
     '.match with a Nil matcher throws';

@@ -451,6 +451,8 @@ Array	unshift	(Any:U \SELF:: |values)
 Array	unshift	(Array:D $:: Slip \value, *%_ --> Array:D)
 Array	unshift	(Array:D $:: \value, *%_ --> Array:D)
 Array	unshift	(Array:D $:: **@values is raw, *%_ --> Array:D)
+Associative	keyof	-
+Associative	of	-
 Attribute	<anon>	-
 Attribute	POPULATE	-
 Attribute	Str	(Mu:U \v:: *%_)
@@ -851,6 +853,256 @@ BagHash	values	(Any:U $:: *%_)
 BagHash	values	(Any:D $:: *%_)
 BagHash	values	(BagHash:D $:: *%_)
 BagHash	values	(Baggy:D $:: *%_)
+Baggy	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Baggy	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Baggy	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Baggy	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Baggy	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Baggy	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Baggy	ACCEPTS	(Baggy:U $:: \other, *%_ --> Bool)
+Baggy	ACCEPTS	(Baggy:D $:: Baggy:D \other, *%_ --> Bool)
+Baggy	ACCEPTS	(Baggy:D $:: \other, *%_ --> Bool)
+Baggy	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
+Baggy	ASSIGN-KEY	(QuantHash:D $:: \k, \v, *%_)
+Baggy	AT-KEY	(Any:D $:: $key, *%_)
+Baggy	AT-KEY	(Any:U \SELF:: \key, *%_)
+Baggy	AT-KEY	(Baggy:D $:: \k, *%_)
+Baggy	AT-KEY	(QuantHash:U \SELF:: $key, *%_)
+Baggy	Bool	#1-1
+Baggy	Bool	(Mu:U $:: *%_ --> Bool::False)
+Baggy	Bool	(Mu:D $:: *%_)
+Baggy	Bool	(Baggy:D $:: *%_ --> Bool)
+Baggy	Capture	-
+Baggy	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
+Baggy	DELETE-KEY	(Any:D $:: $, *%_)
+Baggy	DELETE-KEY	(QuantHash:D $:: \k, *%_)
+Baggy	EXISTS-KEY	(Any:U $:: $, *%_ --> Bool::False)
+Baggy	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
+Baggy	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
+Baggy	Hash	($:: *%_)
+Baggy	Hash	(Baggy:D $:: *%_ --> Hash:D)
+Baggy	Int	-
+Baggy	Map	-
+Baggy	Mix	($:: *%_ --> Mix:D)
+Baggy	Mix	(Baggy:D $:: *%_)
+Baggy	MixHash	($:: *%_ --> MixHash:D)
+Baggy	MixHash	(Baggy:D $:: *%_)
+Baggy	Num	-
+Baggy	Numeric	-
+Baggy	OBJECTIFIER	-
+Baggy	RAW-HASH	-
+Baggy	Real	-
+Baggy	SETUP	(QuantHash:U $:: *%_)
+Baggy	SETUP	(QuantHash:U $:: \elems, *%_)
+Baggy	SETUP	(QuantHash:D $:: \elems, *%_)
+Baggy	STORE	(QuantHash:D $:: |)
+Baggy	Set	($:: *%_ --> Set:D)
+Baggy	Set	(Baggy:D $:: *%_)
+Baggy	SetHash	($:: *%_ --> SetHash:D)
+Baggy	SetHash	(Baggy:D $:: *%_)
+Baggy	Str	(Mu:U \v:: *%_)
+Baggy	Str	(Mu:D $:: *%_)
+Baggy	Str	(Baggy:D $:: *%_ --> Str:D)
+Baggy	WHICHIFY	-
+Baggy	antipairs	(Enumeration $:: *%_)
+Baggy	antipairs	(Bool $:: *%_)
+Baggy	antipairs	(Any:U $:: *%_)
+Baggy	antipairs	(Any:D $:: *%_)
+Baggy	antipairs	(Baggy:D $:: *%_)
+Baggy	categorize-list	(Baggy $:: &test, \list, *%_)
+Baggy	categorize-list	(Baggy $:: %test, |c)
+Baggy	categorize-list	(Baggy $:: @test, |c)
+Baggy	categorize-list	(Baggy $:: &test, **@list, |c)
+Baggy	classify-list	(Baggy $:: &test, \list, *%_)
+Baggy	classify-list	(Baggy $:: %test, |c)
+Baggy	classify-list	(Baggy $:: @test, |c)
+Baggy	classify-list	(Baggy $:: &test, **@list, |c)
+Baggy	deepmap	(Associative:D $:: &op, *%_)
+Baggy	deepmap	($:: &op, *%_)
+Baggy	deepmap	(Baggy:D $:: &mapper, *%_)
+Baggy	default	-
+Baggy	elems	(Any:U $:: *%_ --> 1)
+Baggy	elems	(Any:D $:: *%_)
+Baggy	elems	(Baggy:D $:: *%_)
+Baggy	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
+Baggy	grab	(Baggy:D $:: |c)
+Baggy	grabpairs	(Baggy:D $:: *%_)
+Baggy	grabpairs	(Baggy:D $:: Callable:D $calculate, *%_)
+Baggy	grabpairs	(Baggy:D $:: Whatever, *%_)
+Baggy	grabpairs	(Baggy:D $:: \count, *%_)
+Baggy	hash	(Any:U $:: *%_)
+Baggy	hash	(Any:D $:: *%_)
+Baggy	hash	(Baggy:D $:: *%_ --> Hash:D)
+Baggy	invert	(Enumeration $:: *%_)
+Baggy	invert	(Bool $:: *%_)
+Baggy	invert	(Any:U $:: *%_)
+Baggy	invert	(Any:D $:: *%_)
+Baggy	invert	(Baggy:D $:: *%_)
+Baggy	iterator	(Mu $:: *%_)
+Baggy	iterator	($:: *%_)
+Baggy	iterator	(Baggy:D $:: *%_)
+Baggy	keyof	-
+Baggy	keys	(Enumeration $:: *%_)
+Baggy	keys	(Bool $:: *%_)
+Baggy	keys	(Any:U $:: *%_)
+Baggy	keys	(Any:D $:: *%_)
+Baggy	keys	(Baggy:D $:: *%_)
+Baggy	kv	(Enumeration $:: *%_)
+Baggy	kv	(Bool $:: *%_)
+Baggy	kv	(Any:U $:: *%_)
+Baggy	kv	(Any:D $:: *%_)
+Baggy	kv	(Baggy:D $:: *%_)
+Baggy	kxxv	(Baggy:D $:: *%_)
+Baggy	list	(Any:U $:: *%_)
+Baggy	list	(Any:D \SELF:: *%_)
+Baggy	list	(QuantHash:D $:: *%_)
+Baggy	new	(Mu $:: *%attrinit)
+Baggy	new	(Mu $:: $, *@, *%_)
+Baggy	new	(Baggy $:: \value, *%_ --> Baggy:D)
+Baggy	new	(Baggy $:: **@args, *%_)
+Baggy	new	(QuantHash $:: *%_)
+Baggy	new-from-pairs	-
+Baggy	of	-
+Baggy	pairs	(Enumeration $:: *%_)
+Baggy	pairs	(Bool $:: *%_)
+Baggy	pairs	(Any:U $:: *%_)
+Baggy	pairs	(Any:D $:: *%_)
+Baggy	pairs	(QuantHash:D $:: *%_)
+Baggy	pick	($:: *%_)
+Baggy	pick	($:: $n, *%_)
+Baggy	pick	($:: HyperWhatever, *%_)
+Baggy	pick	(Baggy:D $:: *%_)
+Baggy	pick	(Baggy:D $:: Callable:D $calculate, *%_)
+Baggy	pick	(Baggy:D $:: Whatever, *%_)
+Baggy	pick	(Baggy:D $:: \count, *%_)
+Baggy	pickpairs	(Baggy:D $:: *%_)
+Baggy	pickpairs	(Baggy:D $:: Callable:D $calculate, *%_)
+Baggy	pickpairs	(Baggy:D $:: Whatever, *%_)
+Baggy	pickpairs	(Baggy:D $:: \count, *%_)
+Baggy	roll	(Baggy:D $:: *%_)
+Baggy	roll	(Baggy:D $:: Whatever, *%_)
+Baggy	roll	(Baggy:D $:: Callable:D $calculate, *%_)
+Baggy	roll	(Baggy:D $:: \count, *%_)
+Baggy	values	(Enumeration $:: *%_)
+Baggy	values	(Bool $:: *%_)
+Baggy	values	(Any:U $:: *%_)
+Baggy	values	(Any:D $:: *%_)
+Baggy	values	(Baggy:D $:: *%_)
+Blob	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Blob	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Blob	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Blob	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Blob	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Blob	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Blob	ACCEPTS	(Blob:D $:: Blob:D \Other, *%_)
+Blob	AT-POS	(Any:U $SELF: is rw: Int:D \pos, *%_)
+Blob	AT-POS	(Any:U \SELF:: Int:D \pos, *%_)
+Blob	AT-POS	(Any:U $:: Num:D \pos, *%_)
+Blob	AT-POS	(Any:U $:: Any:D \pos, *%_)
+Blob	AT-POS	(Any:D $:: Int:D \pos, *%_)
+Blob	AT-POS	(Any:D \SELF:: Num:D \pos, *%_)
+Blob	AT-POS	(Any:D \SELF:: Any:D \pos, *%_)
+Blob	AT-POS	($:: Any:U \pos, *%_)
+Blob	AT-POS	(Any:D \SELF:: \one, \two, *%_)
+Blob	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
+Blob	AT-POS	(Any:D \SELF:: **@indices, *%_)
+Blob	AT-POS	(UnsignedBlob:D $:: uint $pos, *%_)
+Blob	AT-POS	(UnsignedBlob:D $:: Int:D $pos, *%_)
+Blob	Bool	#1-1
+Blob	Bool	(Mu:U $:: *%_ --> Bool::False)
+Blob	Bool	(Mu:D $:: *%_)
+Blob	Bool	(Blob:D $:: *%_)
+Blob	Buf	-
+Blob	COMPARE	-
+Blob	Capture	-
+Blob	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
+Blob	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
+Blob	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
+Blob	EXISTS-POS	(Any:D $:: Num:D \pos, *%_ --> Bool)
+Blob	EXISTS-POS	(Any:D $:: Any:D \pos, *%_ --> Bool)
+Blob	EXISTS-POS	(Any:D $:: Any:U \pos, *%_)
+Blob	EXISTS-POS	(Any:D $:: \one, \two, *%_ --> Bool)
+Blob	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
+Blob	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
+Blob	EXISTS-POS	(Blob:D $:: int \pos, *%_)
+Blob	EXISTS-POS	(Blob:D $:: Int:D \pos, *%_)
+Blob	Int	-
+Blob	Numeric	-
+Blob	SAME	-
+Blob	STORE	(Blob:D $:: Iterable:D \iterable, :$INITIALIZE, *%_)
+Blob	STORE	(Blob:D $:: Any:D \non-iterable, :$INITIALIZE, *%_)
+Blob	Str	(Mu:U \v:: *%_)
+Blob	Str	(Mu:D $:: *%_)
+Blob	Str	(Blob:D $:: *%_)
+Blob	Stringy	(Mu:U \v:: *%_)
+Blob	Stringy	(Mu:D $:: *%_)
+Blob	Stringy	(Blob:D $:: *%_)
+Blob	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
+Blob	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
+Blob	WHICH	(Blob:D $:: *%_ --> ValueObjAt:D)
+Blob	allocate	(Blob:U $:: Int:D $elements, *%_)
+Blob	allocate	(Blob:U $:: Int:D $elements, Int:D \value, *%_)
+Blob	allocate	(Blob:U $:: Int:D $elements, Mu:D $got, *%_)
+Blob	allocate	(Blob:U $:: Int:D $elements, int @values, *%_)
+Blob	allocate	(Blob:U $:: Int:D $elements, Blob:D $blob, *%_)
+Blob	allocate	(Blob:U $:: Int:D $elements, @values, *%_)
+Blob	allocate	(Blob:U $:: Int:D $elements, int $value, *%_)
+Blob	bytes	-
+Blob	chars	-
+Blob	codes	-
+Blob	contents	-
+Blob	decode	(Blob:D $:: $encoding = Code.new, *%_)
+Blob	decode	(Blob:D $:: $encoding, Str :$replacement!, Bool:D :$strict = Bool::False, *%_)
+Blob	decode	(Blob:D $:: $encoding, Bool:D :$strict = Bool::False, *%_)
+Blob	decode-with-valid-encoding	-
+Blob	elems	(Any:U $:: *%_ --> 1)
+Blob	elems	(Any:D $:: *%_)
+Blob	elems	(Blob:D $:: *%_)
+Blob	encoding	-
+Blob	gist	(Mu:U $:: *%_)
+Blob	gist	(Mu:D $:: *%_)
+Blob	gist	(Blob:D $:: *%_)
+Blob	join	-
+Blob	list	(Any:U $:: *%_)
+Blob	list	(Any:D \SELF:: *%_)
+Blob	list	(UnsignedBlob:D $:: *%_)
+Blob	new	(Mu $:: *%attrinit)
+Blob	new	(Mu $:: $, *@, *%_)
+Blob	new	(Blob $:: *%_)
+Blob	new	(Blob $:: Blob:D $blob, *%_)
+Blob	new	(Blob $:: int @values, *%_)
+Blob	new	(Blob $:: @values, *%_)
+Blob	new	(Blob $:: *@values, *%_)
+Blob	of	-
+Blob	raku	(Mu:U $:: *%_)
+Blob	raku	(Mu:D $:: *%_)
+Blob	raku	(Blob:D $:: *%_)
+Blob	read-bits	-
+Blob	read-int128	-
+Blob	read-int16	-
+Blob	read-int32	-
+Blob	read-int64	-
+Blob	read-int8	-
+Blob	read-num32	-
+Blob	read-num64	-
+Blob	read-ubits	-
+Blob	read-uint128	-
+Blob	read-uint16	-
+Blob	read-uint32	-
+Blob	read-uint64	-
+Blob	read-uint8	-
+Blob	reverse	-
+Blob	subbuf	(Blob:D $:: Range:D $fromto, *%_)
+Blob	subbuf	(Blob:D $:: Int:D $From, *%_)
+Blob	subbuf	(Blob:D $:: &From, *%_)
+Blob	subbuf	(Blob:D $:: Int:D $From, Int:D $Length, *%_)
+Blob	subbuf	(Blob:D $:: Int:D $From, &End, *%_)
+Blob	subbuf	(Blob:D $:: &From, Int:D $Length, *%_)
+Blob	subbuf	(Blob:D $:: &From, &End, *%_)
+Blob	subbuf	(Blob:D $:: \from, Whatever, *%_)
+Blob	subbuf	(Blob:D $:: \from, Numeric \length, *%_)
+Blob	unpack	(Blob:D $:: Str:D $template, *%_)
+Blob	unpack	(Blob:D $:: @template, *%_)
 Block	<anon>	-
 Block	POPULATE	-
 Block	POSITIONS	(Block:D $:: Failure:D \failure, *%_)
@@ -906,6 +1158,190 @@ Bool	raku	(Bool:U $:: *%_)
 Bool	roll	(Bool:U $:: *%_)
 Bool	roll	(Bool:U $:: $n, *%_)
 Bool	succ	-
+Buf	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Buf	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Buf	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Buf	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Buf	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Buf	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Buf	ACCEPTS	(Blob:D $:: Blob:D \Other, *%_)
+Buf	ASSIGN-POS	(Any:U \SELF:: \pos, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Any:D \SELF:: Int:D \pos, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Any:D \SELF:: Num:D \pos, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Any:D \SELF:: Any:D \pos, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Any:D $:: Any:U \pos, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Any:D \SELF:: \one, \two, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Any:D \SELF:: \one, \two, \three, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Any:D \SELF:: **@indices, *%_)
+Buf	ASSIGN-POS	(Buf::UnsignedBuf:D $:: uint $pos, Mu \assignee, *%_)
+Buf	ASSIGN-POS	(Buf::UnsignedBuf:D $:: Int:D $pos, Mu \assignee, *%_)
+Buf	AT-POS	(Any:U $SELF: is rw: Int:D \pos, *%_)
+Buf	AT-POS	(Any:U \SELF:: Int:D \pos, *%_)
+Buf	AT-POS	(Any:U $:: Num:D \pos, *%_)
+Buf	AT-POS	(Any:U $:: Any:D \pos, *%_)
+Buf	AT-POS	(Any:D $:: Int:D \pos, *%_)
+Buf	AT-POS	(Any:D \SELF:: Num:D \pos, *%_)
+Buf	AT-POS	(Any:D \SELF:: Any:D \pos, *%_)
+Buf	AT-POS	($:: Any:U \pos, *%_)
+Buf	AT-POS	(Any:D \SELF:: \one, \two, *%_)
+Buf	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
+Buf	AT-POS	(Any:D \SELF:: **@indices, *%_)
+Buf	AT-POS	(UnsignedBlob:D $:: uint $pos, *%_)
+Buf	AT-POS	(UnsignedBlob:D $:: Int:D $pos, *%_)
+Buf	AT-POS	(Buf::UnsignedBuf:D $:: uint $pos, *%_)
+Buf	AT-POS	(Buf::UnsignedBuf:D $:: Int:D $pos, *%_)
+Buf	Blob	-
+Buf	Bool	#1-1
+Buf	Bool	(Mu:U $:: *%_ --> Bool::False)
+Buf	Bool	(Mu:D $:: *%_)
+Buf	Bool	(Blob:D $:: *%_)
+Buf	Buf	-
+Buf	COMPARE	-
+Buf	Capture	-
+Buf	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
+Buf	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
+Buf	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
+Buf	EXISTS-POS	(Any:D $:: Num:D \pos, *%_ --> Bool)
+Buf	EXISTS-POS	(Any:D $:: Any:D \pos, *%_ --> Bool)
+Buf	EXISTS-POS	(Any:D $:: Any:U \pos, *%_)
+Buf	EXISTS-POS	(Any:D $:: \one, \two, *%_ --> Bool)
+Buf	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
+Buf	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
+Buf	EXISTS-POS	(Blob:D $:: int \pos, *%_)
+Buf	EXISTS-POS	(Blob:D $:: Int:D \pos, *%_)
+Buf	Int	-
+Buf	Numeric	-
+Buf	SAME	-
+Buf	STORE	(Buf:D $:: Blob:D $blob, *%_)
+Buf	STORE	(Buf:D $:: int @values, *%_)
+Buf	STORE	(Buf:D $:: Iterable:D \iterable, *%_)
+Buf	STORE	(Buf:D $:: Any:D \non-iterable, *%_)
+Buf	STORE	(Blob:D $:: Iterable:D \iterable, :$INITIALIZE, *%_)
+Buf	STORE	(Blob:D $:: Any:D \non-iterable, :$INITIALIZE, *%_)
+Buf	Str	(Mu:U \v:: *%_)
+Buf	Str	(Mu:D $:: *%_)
+Buf	Str	(Blob:D $:: *%_)
+Buf	Stringy	(Mu:U \v:: *%_)
+Buf	Stringy	(Mu:D $:: *%_)
+Buf	Stringy	(Blob:D $:: *%_)
+Buf	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
+Buf	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
+Buf	WHICH	(Buf:D $:: *%_)
+Buf	WHICH	(Blob:D $:: *%_ --> ValueObjAt:D)
+Buf	allocate	(Blob:U $:: Int:D $elements, *%_)
+Buf	allocate	(Blob:U $:: Int:D $elements, Int:D \value, *%_)
+Buf	allocate	(Blob:U $:: Int:D $elements, Mu:D $got, *%_)
+Buf	allocate	(Blob:U $:: Int:D $elements, int @values, *%_)
+Buf	allocate	(Blob:U $:: Int:D $elements, Blob:D $blob, *%_)
+Buf	allocate	(Blob:U $:: Int:D $elements, @values, *%_)
+Buf	allocate	(Buf:U $:: Int:D $elements, int $value, *%_)
+Buf	append	(Buf:D $:: int $got, *%_)
+Buf	append	(Buf:D $:: Int:D $got, *%_)
+Buf	append	(Buf:D $:: Mu:D $got, *%_)
+Buf	append	(Buf:D $:: Blob:D $buf, *%_)
+Buf	append	(Buf:D $:: int @values, *%_)
+Buf	append	(Buf:D $:: @values, *%_)
+Buf	append	(Buf:D $:: *@values, *%_)
+Buf	bytes	-
+Buf	chars	-
+Buf	codes	-
+Buf	contents	-
+Buf	decode	(Blob:D $:: $encoding = Code.new, *%_)
+Buf	decode	(Blob:D $:: $encoding, Str :$replacement!, Bool:D :$strict = Bool::False, *%_)
+Buf	decode	(Blob:D $:: $encoding, Bool:D :$strict = Bool::False, *%_)
+Buf	decode-with-valid-encoding	-
+Buf	elems	(Any:U $:: *%_ --> 1)
+Buf	elems	(Any:D $:: *%_)
+Buf	elems	(Blob:D $:: *%_)
+Buf	encoding	-
+Buf	gist	(Mu:U $:: *%_)
+Buf	gist	(Mu:D $:: *%_)
+Buf	gist	(Blob:D $:: *%_)
+Buf	join	-
+Buf	list	(Any:U $:: *%_)
+Buf	list	(Any:D \SELF:: *%_)
+Buf	list	(UnsignedBlob:D $:: *%_)
+Buf	list	(Buf::UnsignedBuf:D $:: *%_)
+Buf	new	(Mu $:: *%attrinit)
+Buf	new	(Mu $:: $, *@, *%_)
+Buf	new	(Blob $:: *%_)
+Buf	new	(Blob $:: Blob:D $blob, *%_)
+Buf	new	(Blob $:: int @values, *%_)
+Buf	new	(Blob $:: @values, *%_)
+Buf	new	(Blob $:: *@values, *%_)
+Buf	of	-
+Buf	pop	(Buf:D $:: *%_)
+Buf	prepend	(Buf:D $:: int $got, *%_)
+Buf	prepend	(Buf:D $:: Int:D $got, *%_)
+Buf	prepend	(Buf:D $:: Mu:D $got, *%_)
+Buf	prepend	(Buf:D $:: Blob:D $buf, *%_)
+Buf	prepend	(Buf:D $:: int @values, *%_)
+Buf	prepend	(Buf:D $:: @values, *%_)
+Buf	prepend	(Buf:D $:: *@values, *%_)
+Buf	push	(Buf:D $:: int $got, *%_)
+Buf	push	(Buf:D $:: Int:D $got, *%_)
+Buf	push	(Buf:D $:: Mu:D $got, *%_)
+Buf	push	(Buf:D $:: Blob:D $buf, *%_)
+Buf	push	(Buf:D $:: **@values, *%_)
+Buf	raku	(Mu:U $:: *%_)
+Buf	raku	(Mu:D $:: *%_)
+Buf	raku	(Blob:D $:: *%_)
+Buf	read-bits	-
+Buf	read-int128	-
+Buf	read-int16	-
+Buf	read-int32	-
+Buf	read-int64	-
+Buf	read-int8	-
+Buf	read-num32	-
+Buf	read-num64	-
+Buf	read-ubits	-
+Buf	read-uint128	-
+Buf	read-uint16	-
+Buf	read-uint32	-
+Buf	read-uint64	-
+Buf	read-uint8	-
+Buf	reallocate	-
+Buf	reverse	-
+Buf	shift	(Buf:D $:: *%_)
+Buf	splice	(Buf:D \SELF:: *%_)
+Buf	splice	(Buf:D $:: Int:D $offset, $size = Whatever, *%_)
+Buf	splice	(Buf:D $:: Int:D $offset, $size, int $got, *%_)
+Buf	splice	(Buf:D $:: Int:D $offset, $size, Int:D $got, *%_)
+Buf	splice	(Buf:D $:: Int:D $offset, $size, Mu:D $got, *%_)
+Buf	splice	(Buf:D $:: Int:D $offset, $size, Buf:D $buf, *%_)
+Buf	splice	(Buf:D $:: Int:D $offset, $size, int @values, *%_)
+Buf	splice	(Buf:D $:: Int:D $offset, $size, @values, *%_)
+Buf	subbuf	(Blob:D $:: Range:D $fromto, *%_)
+Buf	subbuf	(Blob:D $:: Int:D $From, *%_)
+Buf	subbuf	(Blob:D $:: &From, *%_)
+Buf	subbuf	(Blob:D $:: Int:D $From, Int:D $Length, *%_)
+Buf	subbuf	(Blob:D $:: Int:D $From, &End, *%_)
+Buf	subbuf	(Blob:D $:: &From, Int:D $Length, *%_)
+Buf	subbuf	(Blob:D $:: &From, &End, *%_)
+Buf	subbuf	(Blob:D $:: \from, Whatever, *%_)
+Buf	subbuf	(Blob:D $:: \from, Numeric \length, *%_)
+Buf	subbuf-rw	-
+Buf	unpack	(Blob:D $:: Str:D $template, *%_)
+Buf	unpack	(Blob:D $:: @template, *%_)
+Buf	unshift	(Buf:D $:: int $got, *%_)
+Buf	unshift	(Buf:D $:: Int:D $got, *%_)
+Buf	unshift	(Buf:D $:: Mu:D $got, *%_)
+Buf	unshift	(Buf:D $:: Blob:D $buf, *%_)
+Buf	unshift	(Buf:D $:: **@values, *%_)
+Buf	write-bits	-
+Buf	write-int128	-
+Buf	write-int16	-
+Buf	write-int32	-
+Buf	write-int64	-
+Buf	write-int8	-
+Buf	write-num32	-
+Buf	write-num64	-
+Buf	write-ubits	-
+Buf	write-uint128	-
+Buf	write-uint16	-
+Buf	write-uint32	-
+Buf	write-uint64	-
+Buf	write-uint8	-
 CallFrame	POPULATE	-
 CallFrame	SET-SELF	-
 CallFrame	annotations	-
@@ -920,6 +1356,9 @@ CallFrame	language-revision	-
 CallFrame	line	-
 CallFrame	my	-
 CallFrame	new	-
+Callable	Capture	-
+Callable	of	-
+Callable	returns	-
 Cancellation	BUILD	-
 Cancellation	POPULATE	-
 Cancellation	cancel	-
@@ -1597,6 +2036,42 @@ DateTime	whole-second	-
 DateTime	year	-
 DateTime	yyyy-mm	-
 DateTime	yyyy-mm-dd	-
+Dateish	IO	-
+Dateish	Str	(Mu:U \v:: *%_)
+Dateish	Str	(Mu:D $:: *%_)
+Dateish	Str	(Dateish:D $:: *%_ --> Str:D)
+Dateish	day	-
+Dateish	day-of-month	-
+Dateish	day-of-week	-
+Dateish	day-of-year	-
+Dateish	daycount	-
+Dateish	days-in-month	(Dateish $:: Int:D $year, Int:D $month, *%_ --> Int:D)
+Dateish	days-in-month	(Dateish:D $:: *%_ --> Int:D)
+Dateish	days-in-year	(Dateish $:: Int:D $year, *%_ --> Int:D)
+Dateish	days-in-year	(Dateish:D $:: *%_ --> Int:D)
+Dateish	dd-mm-yyyy	-
+Dateish	earlier	(Dateish:D $:: *%unit --> Dateish:D)
+Dateish	earlier	(Dateish:D $:: @pairs, *%_)
+Dateish	formatter	-
+Dateish	gist	(Mu:U $:: *%_)
+Dateish	gist	(Mu:D $:: *%_)
+Dateish	gist	(Dateish:D $:: *%_ --> Str:D)
+Dateish	is-leap-year	-
+Dateish	later	(Dateish:D $:: *%unit --> Dateish:D)
+Dateish	later	(Dateish:D $:: @pairs, *%_)
+Dateish	mm-dd	-
+Dateish	mm-dd-yyyy	-
+Dateish	month	-
+Dateish	new	(Mu $:: *%attrinit)
+Dateish	new	(Mu $:: $, *@, *%_)
+Dateish	new	(Dateish $:: *%_)
+Dateish	week	-
+Dateish	week-number	-
+Dateish	week-year	-
+Dateish	weekday-of-month	-
+Dateish	year	-
+Dateish	yyyy-mm	-
+Dateish	yyyy-mm-dd	-
 Deprecation	DEPRECATIONS	-
 Deprecation	POPULATE	-
 Deprecation	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
@@ -1796,6 +2271,56 @@ Endian	roll	(Endian:U $:: \n, *%_)
 Endian	roll	(Endian:D $:: *@pos, *%_)
 Endian	succ	-
 Endian	value	-
+Enumeration	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Enumeration	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Enumeration	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Enumeration	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Enumeration	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Enumeration	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Enumeration	ACCEPTS	(Enumeration:D $:: Enumeration:D $v, *%_)
+Enumeration	CALL-ME	#2-2
+Enumeration	CALL-ME	(Enumeration $:: Mu \val, *%_)
+Enumeration	COERCE	#2-2
+Enumeration	COERCE	(Enumeration $:: Mu \val, *%_)
+Enumeration	Int	(Mu:U \v:: *%_)
+Enumeration	Int	(Enumeration:D $:: *%_)
+Enumeration	Numeric	(Mu:U \v:: *%_)
+Enumeration	Numeric	(Enumeration:D $:: *%_)
+Enumeration	Real	(Mu:U \v:: *%_)
+Enumeration	Real	(Enumeration:D $:: *%_)
+Enumeration	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
+Enumeration	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
+Enumeration	WHICH	(Enumeration:D $:: *%_ --> ValueObjAt:D)
+Enumeration	clone	-
+Enumeration	enums	-
+Enumeration	gist	(Mu:U $:: *%_)
+Enumeration	gist	(Mu:D $:: *%_)
+Enumeration	gist	(Enumeration:D $:: *%_)
+Enumeration	key	-
+Enumeration	kv	(Enumeration $:: *%_)
+Enumeration	kv	(Bool $:: *%_)
+Enumeration	kv	(Any:U $:: *%_)
+Enumeration	kv	(Any:D $:: *%_)
+Enumeration	kv	(Enumeration:D $:: *%_)
+Enumeration	new	-
+Enumeration	pair	-
+Enumeration	pick	($:: *%_)
+Enumeration	pick	($:: $n, *%_)
+Enumeration	pick	($:: HyperWhatever, *%_)
+Enumeration	pick	(Enumeration:U $:: *%_)
+Enumeration	pick	(Enumeration:U $:: \n, *%_)
+Enumeration	pick	(Enumeration:D $:: *@pos, *%_)
+Enumeration	pred	-
+Enumeration	raku	(Mu:U $:: *%_)
+Enumeration	raku	(Mu:D $:: *%_)
+Enumeration	raku	(Enumeration:D $self:: *%_)
+Enumeration	roll	($:: *%_)
+Enumeration	roll	($:: $n, *%_)
+Enumeration	roll	(Enumeration:U $:: *%_)
+Enumeration	roll	(Enumeration:U $:: \n, *%_)
+Enumeration	roll	(Enumeration:D $:: *@pos, *%_)
+Enumeration	succ	-
+Enumeration	value	-
 Exception	Failure	-
 Exception	POPULATE	-
 Exception	Str	(Mu:U \v:: *%_)
@@ -2068,6 +2593,7 @@ Grammar	POPULATE	-
 Grammar	parse	-
 Grammar	parsefile	-
 Grammar	subparse	-
+HardRoutine	soft	-
 Hash	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
 Hash	ASSIGN-KEY	(Map:D $:: \key, Mu \new, *%_)
 Hash	ASSIGN-KEY	(Hash:D $:: Str:D $key, Mu \assignval, *%_)
@@ -2574,6 +3100,24 @@ IntStr	Real	(Real:U $:: *%_)
 IntStr	Real	(IntStr:U $:: *%_)
 IntStr	Real	(IntStr:D $:: *%_)
 IntStr	new	-
+Iterable	Bag	($:: *%_ --> Bag:D)
+Iterable	Bag	(Iterable:D $:: *%_)
+Iterable	BagHash	($:: *%_ --> BagHash:D)
+Iterable	BagHash	(Iterable:D $:: *%_)
+Iterable	Mix	($:: *%_ --> Mix:D)
+Iterable	Mix	(Iterable:D $:: *%_)
+Iterable	MixHash	($:: *%_ --> MixHash:D)
+Iterable	MixHash	(Iterable:D $:: *%_)
+Iterable	Set	($:: *%_ --> Set:D)
+Iterable	Set	(Iterable:D $:: *%_)
+Iterable	SetHash	($:: *%_ --> SetHash:D)
+Iterable	SetHash	(Iterable:D $:: *%_)
+Iterable	flat	-
+Iterable	hyper	-
+Iterable	item	-
+Iterable	lazy	-
+Iterable	lazy-if	-
+Iterable	race	-
 IterationBuffer	AT-POS	(IterationBuffer:D $:: int $pos, *%_)
 IterationBuffer	AT-POS	(IterationBuffer:D $:: Int:D $pos, *%_)
 IterationBuffer	BIND-POS	(IterationBuffer:D $:: int $pos, Mu \value, *%_)
@@ -3594,6 +4138,157 @@ MixHash	values	(Any:U $:: *%_)
 MixHash	values	(Any:D $:: *%_)
 MixHash	values	(MixHash:D $:: *%_)
 MixHash	values	(Baggy:D $:: *%_)
+Mixy	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Mixy	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Mixy	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Mixy	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Mixy	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Mixy	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Mixy	ACCEPTS	(Baggy:U $:: \other, *%_ --> Bool)
+Mixy	ACCEPTS	(Baggy:D $:: Baggy:D \other, *%_ --> Bool)
+Mixy	ACCEPTS	(Baggy:D $:: \other, *%_ --> Bool)
+Mixy	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
+Mixy	ASSIGN-KEY	(QuantHash:D $:: \k, \v, *%_)
+Mixy	AT-KEY	(Any:D $:: $key, *%_)
+Mixy	AT-KEY	(Any:U \SELF:: \key, *%_)
+Mixy	AT-KEY	(Baggy:D $:: \k, *%_)
+Mixy	AT-KEY	(QuantHash:U \SELF:: $key, *%_)
+Mixy	Bag	($:: *%_ --> Bag:D)
+Mixy	Bag	(Baggy:D $:: *%_)
+Mixy	BagHash	($:: *%_ --> BagHash:D)
+Mixy	BagHash	(Baggy:D $:: *%_)
+Mixy	Bool	#1-1
+Mixy	Bool	(Mu:U $:: *%_ --> Bool::False)
+Mixy	Bool	(Mu:D $:: *%_)
+Mixy	Bool	(Baggy:D $:: *%_ --> Bool)
+Mixy	Capture	-
+Mixy	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
+Mixy	DELETE-KEY	(Any:D $:: $, *%_)
+Mixy	DELETE-KEY	(QuantHash:D $:: \k, *%_)
+Mixy	EXISTS-KEY	(Any:U $:: $, *%_ --> Bool::False)
+Mixy	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
+Mixy	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
+Mixy	Hash	($:: *%_)
+Mixy	Hash	(Mixy:D $:: *%_ --> Hash:D)
+Mixy	Hash	(Baggy:D $:: *%_ --> Hash:D)
+Mixy	Int	-
+Mixy	Map	-
+Mixy	Mix	($:: *%_ --> Mix:D)
+Mixy	Mix	(Baggy:D $:: *%_)
+Mixy	MixHash	($:: *%_ --> MixHash:D)
+Mixy	MixHash	(Baggy:D $:: *%_)
+Mixy	Num	-
+Mixy	Numeric	-
+Mixy	OBJECTIFIER	-
+Mixy	RAW-HASH	-
+Mixy	Real	-
+Mixy	SETUP	(QuantHash:U $:: *%_)
+Mixy	SETUP	(QuantHash:U $:: \elems, *%_)
+Mixy	SETUP	(QuantHash:D $:: \elems, *%_)
+Mixy	STORE	(QuantHash:D $:: |)
+Mixy	Set	($:: *%_ --> Set:D)
+Mixy	Set	(Mixy:D $:: *%_)
+Mixy	Set	(Baggy:D $:: *%_)
+Mixy	SetHash	($:: *%_ --> SetHash:D)
+Mixy	SetHash	(Mixy:D $:: *%_)
+Mixy	SetHash	(Baggy:D $:: *%_)
+Mixy	Str	(Mu:U \v:: *%_)
+Mixy	Str	(Mu:D $:: *%_)
+Mixy	Str	(Baggy:D $:: *%_ --> Str:D)
+Mixy	WHICHIFY	-
+Mixy	antipairs	(Enumeration $:: *%_)
+Mixy	antipairs	(Bool $:: *%_)
+Mixy	antipairs	(Any:U $:: *%_)
+Mixy	antipairs	(Any:D $:: *%_)
+Mixy	antipairs	(Baggy:D $:: *%_)
+Mixy	categorize-list	(Mixy $:: &test, \list, *%_)
+Mixy	categorize-list	(Mixy $:: %test, |c)
+Mixy	categorize-list	(Mixy $:: @test, |c)
+Mixy	categorize-list	(Mixy $:: &test, **@list, |c)
+Mixy	classify-list	(Mixy $:: &test, \list, *%_)
+Mixy	classify-list	(Mixy $:: %test, |c)
+Mixy	classify-list	(Mixy $:: @test, |c)
+Mixy	classify-list	(Mixy $:: &test, **@list, |c)
+Mixy	deepmap	(Associative:D $:: &op, *%_)
+Mixy	deepmap	($:: &op, *%_)
+Mixy	deepmap	(Mixy:D $:: &mapper, *%_)
+Mixy	deepmap	(Baggy:D $:: &mapper, *%_)
+Mixy	default	-
+Mixy	elems	(Any:U $:: *%_ --> 1)
+Mixy	elems	(Any:D $:: *%_)
+Mixy	elems	(Baggy:D $:: *%_)
+Mixy	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
+Mixy	grab	(Mixy:D $:: $count?, *%_)
+Mixy	grab	(Baggy:D $:: |c)
+Mixy	grabpairs	(Baggy:D $:: *%_)
+Mixy	grabpairs	(Baggy:D $:: Callable:D $calculate, *%_)
+Mixy	grabpairs	(Baggy:D $:: Whatever, *%_)
+Mixy	grabpairs	(Baggy:D $:: \count, *%_)
+Mixy	hash	(Any:U $:: *%_)
+Mixy	hash	(Any:D $:: *%_)
+Mixy	hash	(Mixy:D $:: *%_ --> Hash:D)
+Mixy	hash	(Baggy:D $:: *%_ --> Hash:D)
+Mixy	invert	(Enumeration $:: *%_)
+Mixy	invert	(Bool $:: *%_)
+Mixy	invert	(Any:U $:: *%_)
+Mixy	invert	(Any:D $:: *%_)
+Mixy	invert	(Baggy:D $:: *%_)
+Mixy	iterator	(Mu $:: *%_)
+Mixy	iterator	($:: *%_)
+Mixy	iterator	(Baggy:D $:: *%_)
+Mixy	keyof	-
+Mixy	keys	(Enumeration $:: *%_)
+Mixy	keys	(Bool $:: *%_)
+Mixy	keys	(Any:U $:: *%_)
+Mixy	keys	(Any:D $:: *%_)
+Mixy	keys	(Baggy:D $:: *%_)
+Mixy	kv	(Enumeration $:: *%_)
+Mixy	kv	(Bool $:: *%_)
+Mixy	kv	(Any:U $:: *%_)
+Mixy	kv	(Any:D $:: *%_)
+Mixy	kv	(Baggy:D $:: *%_)
+Mixy	kxxv	(Mixy:D $:: *%_)
+Mixy	kxxv	(Baggy:D $:: *%_)
+Mixy	list	(Any:U $:: *%_)
+Mixy	list	(Any:D \SELF:: *%_)
+Mixy	list	(QuantHash:D $:: *%_)
+Mixy	new	(Mu $:: *%attrinit)
+Mixy	new	(Mu $:: $, *@, *%_)
+Mixy	new	(Baggy $:: \value, *%_ --> Baggy:D)
+Mixy	new	(Baggy $:: **@args, *%_)
+Mixy	new	(QuantHash $:: *%_)
+Mixy	new-from-pairs	-
+Mixy	of	-
+Mixy	pairs	(Enumeration $:: *%_)
+Mixy	pairs	(Bool $:: *%_)
+Mixy	pairs	(Any:U $:: *%_)
+Mixy	pairs	(Any:D $:: *%_)
+Mixy	pairs	(QuantHash:D $:: *%_)
+Mixy	pick	($:: *%_)
+Mixy	pick	($:: $n, *%_)
+Mixy	pick	($:: HyperWhatever, *%_)
+Mixy	pick	(Mixy:D $:: $count?, *%_)
+Mixy	pick	(Baggy:D $:: *%_)
+Mixy	pick	(Baggy:D $:: Callable:D $calculate, *%_)
+Mixy	pick	(Baggy:D $:: Whatever, *%_)
+Mixy	pick	(Baggy:D $:: \count, *%_)
+Mixy	pickpairs	(Baggy:D $:: *%_)
+Mixy	pickpairs	(Baggy:D $:: Callable:D $calculate, *%_)
+Mixy	pickpairs	(Baggy:D $:: Whatever, *%_)
+Mixy	pickpairs	(Baggy:D $:: \count, *%_)
+Mixy	roll	(Mixy:D $:: *%_)
+Mixy	roll	(Mixy:D $:: Whatever, *%_)
+Mixy	roll	(Mixy:D $:: Callable:D $calculate, *%_)
+Mixy	roll	(Mixy:D $:: $count, *%_)
+Mixy	roll	(Baggy:D $:: *%_)
+Mixy	roll	(Baggy:D $:: Whatever, *%_)
+Mixy	roll	(Baggy:D $:: Callable:D $calculate, *%_)
+Mixy	roll	(Baggy:D $:: \count, *%_)
+Mixy	values	(Enumeration $:: *%_)
+Mixy	values	(Bool $:: *%_)
+Mixy	values	(Any:U $:: *%_)
+Mixy	values	(Any:D $:: *%_)
+Mixy	values	(Baggy:D $:: *%_)
 Mu	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Mu	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Mu	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -3821,6 +4516,41 @@ NumStr	Real	(Real:U $:: *%_)
 NumStr	Real	(NumStr:U $:: *%_ --> 0e0)
 NumStr	Real	(NumStr:D $:: *%_)
 NumStr	new	-
+Numeric	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Numeric	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Numeric	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Numeric	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Numeric	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Numeric	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Numeric	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Numeric	Bool	#1-1
+Numeric	Bool	(Mu:U $:: *%_ --> Bool::False)
+Numeric	Bool	(Mu:D $:: *%_)
+Numeric	Bool	(Numeric:D $:: *%_)
+Numeric	DUMP	(Mu:U $:: *%_)
+Numeric	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
+Numeric	DUMP	(Numeric:D $:: *%_)
+Numeric	FatRat	-
+Numeric	Numeric	(Mu:U \v:: *%_)
+Numeric	Numeric	(Numeric:D $:: *%_)
+Numeric	Numeric	(Numeric:U $:: *%_)
+Numeric	exp	(Numeric:D $:: $base, *%_)
+Numeric	gist	(Mu:U $:: *%_)
+Numeric	gist	(Mu:D $:: *%_)
+Numeric	gist	(Numeric:D $:: *%_)
+Numeric	log	(Numeric:D $:: Cool $base, *%_)
+Numeric	log	(Numeric:D $:: Numeric $base, *%_)
+Numeric	log10	-
+Numeric	log2	-
+Numeric	pred	-
+Numeric	roots	-
+Numeric	succ	-
+NumericEnumeration	Str	(Mu:U \v:: *%_)
+NumericEnumeration	Str	(Mu:D $:: *%_)
+NumericEnumeration	Str	(NumericEnumeration:D $:: *%_)
+NumericStringyEnumeration	Str	(Mu:U \v:: *%_)
+NumericStringyEnumeration	Str	(Mu:D $:: *%_)
+NumericStringyEnumeration	Str	(NumericStringyEnumeration:D $:: *%_)
 ObjAt	POPULATE	-
 ObjAt	Str	(Mu:U \v:: *%_)
 ObjAt	Str	(Mu:D $:: *%_)
@@ -4088,6 +4818,12 @@ Parameter	untyped	-
 Parameter	usage-name	-
 Perl	POPULATE	-
 Perl	new	-
+Positional	of	-
+PositionalBindFailover	cache	-
+PositionalBindFailover	iterator	-
+PositionalBindFailover	list	(Any:U $:: *%_)
+PositionalBindFailover	list	(Any:D \SELF:: *%_)
+PositionalBindFailover	list	(PositionalBindFailover:D $:: *%_)
 Proc	BUILD	-
 Proc	Bool	#1-1
 Proc	Bool	(Mu:U $:: *%_ --> Bool::False)
@@ -4370,6 +5106,42 @@ PseudoStash	new-from-ctx	-
 PseudoStash	pairs	-
 PseudoStash	sort	-
 PseudoStash	values	-
+QuantHash	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
+QuantHash	ASSIGN-KEY	(QuantHash:D $:: \k, \v, *%_)
+QuantHash	AT-KEY	(Any:D $:: $key, *%_)
+QuantHash	AT-KEY	(Any:U \SELF:: \key, *%_)
+QuantHash	AT-KEY	(QuantHash:U \SELF:: $key, *%_)
+QuantHash	Capture	-
+QuantHash	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
+QuantHash	DELETE-KEY	(Any:D $:: $, *%_)
+QuantHash	DELETE-KEY	(QuantHash:D $:: \k, *%_)
+QuantHash	EXISTS-KEY	(Any:U $:: $, *%_ --> Bool::False)
+QuantHash	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
+QuantHash	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
+QuantHash	Int	-
+QuantHash	Num	-
+QuantHash	Numeric	-
+QuantHash	OBJECTIFIER	-
+QuantHash	Real	-
+QuantHash	SETUP	(QuantHash:U $:: *%_)
+QuantHash	SETUP	(QuantHash:U $:: \elems, *%_)
+QuantHash	SETUP	(QuantHash:D $:: \elems, *%_)
+QuantHash	STORE	(QuantHash:D $:: |)
+QuantHash	WHICHIFY	-
+QuantHash	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
+QuantHash	keyof	-
+QuantHash	list	(Any:U $:: *%_)
+QuantHash	list	(Any:D \SELF:: *%_)
+QuantHash	list	(QuantHash:D $:: *%_)
+QuantHash	new	(Mu $:: *%attrinit)
+QuantHash	new	(Mu $:: $, *@, *%_)
+QuantHash	new	(QuantHash $:: *%_)
+QuantHash	of	-
+QuantHash	pairs	(Enumeration $:: *%_)
+QuantHash	pairs	(Bool $:: *%_)
+QuantHash	pairs	(Any:U $:: *%_)
+QuantHash	pairs	(Any:D $:: *%_)
+QuantHash	pairs	(QuantHash:D $:: *%_)
 REPL	POPULATE	-
 REPL	compiler	-
 REPL	completions-for-line	-
@@ -4768,6 +5540,194 @@ RatStr	Real	(Real:U $:: *%_)
 RatStr	Real	(RatStr:U $:: *%_ --> 0.0)
 RatStr	Real	(RatStr:D $:: *%_)
 RatStr	new	-
+Rational	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Rational	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Rational	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Rational	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Rational	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Rational	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Rational	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Rational	Bool	#1-1
+Rational	Bool	(Mu:U $:: *%_ --> Bool::False)
+Rational	Bool	(Mu:D $:: *%_)
+Rational	Bool	(Rational:D $:: *%_)
+Rational	Bool	(Numeric:D $:: *%_)
+Rational	Bridge	-
+Rational	Complex	-
+Rational	DUMP	(Mu:U $:: *%_)
+Rational	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
+Rational	DUMP	(Numeric:D $:: *%_)
+Rational	FatRat	-
+Rational	Int	-
+Rational	Num	-
+Rational	Numeric	(Mu:U \v:: *%_)
+Rational	Numeric	(Numeric:D $:: *%_)
+Rational	Numeric	(Numeric:U $:: *%_)
+Rational	Range	-
+Rational	Rat	-
+Rational	Real	(Mu:U \v:: *%_)
+Rational	Real	(Real:D $:: *%_)
+Rational	Real	(Real:U $:: *%_)
+Rational	Str	(Mu:U \v:: *%_)
+Rational	Str	(Mu:D $:: *%_)
+Rational	Str	(Rational:D $:: *%_ --> Str:D)
+Rational	Str	(Real:D $:: *%_)
+Rational	WHICH	(Mu:U $:: *%_ --> ValueObjAt:D)
+Rational	WHICH	(Mu:D $:: *%_ --> ObjAt:D)
+Rational	WHICH	(Rational:D $:: *%_ --> ValueObjAt:D)
+Rational	abs	-
+Rational	acos	-
+Rational	acosec	-
+Rational	acosech	-
+Rational	acosh	-
+Rational	acotan	-
+Rational	acotanh	-
+Rational	asec	-
+Rational	asech	-
+Rational	asin	-
+Rational	asinh	-
+Rational	atan	-
+Rational	atan2	(Rational $:: Real $x = 1e0, *%_)
+Rational	atan2	(Rational $:: Cool $x = 1e0, *%_)
+Rational	atanh	-
+Rational	base	(Rational:D $:: Int:D $base, *%_ --> Str:D)
+Rational	base	(Rational:D $:: Int:D $base, Whatever, *%_ --> Str:D)
+Rational	base	(Rational:D $:: Int:D $base, Int(Any) $digits, Bool:D :$no-trailing-zeroes = Bool::False, *%_ --> Str:D)
+Rational	base-repeating	-
+Rational	ceiling	-
+Rational	cis	-
+Rational	conj	-
+Rational	cos	-
+Rational	cosec	-
+Rational	cosech	-
+Rational	cosh	-
+Rational	cotan	-
+Rational	cotanh	-
+Rational	denominator	-
+Rational	exp	(Real:D $:: *%_)
+Rational	exp	(Numeric:D $:: $base, *%_)
+Rational	floor	-
+Rational	gist	(Mu:U $:: *%_)
+Rational	gist	(Mu:D $:: *%_)
+Rational	gist	(Numeric:D $:: *%_)
+Rational	is-prime	-
+Rational	isNaN	-
+Rational	log	(Real:D $:: *%_)
+Rational	log	(Real:D $:: Real $base, *%_)
+Rational	log	(Numeric:D $:: Cool $base, *%_)
+Rational	log	(Numeric:D $:: Numeric $base, *%_)
+Rational	log10	-
+Rational	log2	-
+Rational	narrow	-
+Rational	new	-
+Rational	norm	-
+Rational	nude	-
+Rational	numerator	-
+Rational	polymod	-
+Rational	pred	-
+Rational	raku	(Mu:U $:: *%_)
+Rational	raku	(Mu:D $:: *%_)
+Rational	raku	(Rational:D $:: *%_ --> Str:D)
+Rational	rand	-
+Rational	roots	-
+Rational	round	(Rational:D $:: *%_ --> Int:D)
+Rational	round	(Real:D $:: *%_)
+Rational	round	(Real:D $:: Real(Any) $scale, *%_)
+Rational	sec	-
+Rational	sech	-
+Rational	sign	-
+Rational	sin	-
+Rational	sinh	-
+Rational	sqrt	(Real:D $:: *%_)
+Rational	succ	-
+Rational	tan	-
+Rational	tanh	-
+Rational	truncate	-
+Rational	unpolar	-
+Real	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Real	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Real	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Real	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Real	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Real	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Real	ACCEPTS	(Numeric:D $:: Any:D \a, *%_)
+Real	Bool	#1-1
+Real	Bool	(Mu:U $:: *%_ --> Bool::False)
+Real	Bool	(Mu:D $:: *%_)
+Real	Bool	(Numeric:D $:: *%_)
+Real	Bridge	-
+Real	Complex	-
+Real	DUMP	(Mu:U $:: *%_)
+Real	DUMP	(Mu:D $:: :$indent-step = 4, :%ctx, *%_)
+Real	DUMP	(Numeric:D $:: *%_)
+Real	FatRat	-
+Real	Int	-
+Real	Num	-
+Real	Numeric	(Mu:U \v:: *%_)
+Real	Numeric	(Numeric:D $:: *%_)
+Real	Numeric	(Numeric:U $:: *%_)
+Real	Rat	-
+Real	Real	(Mu:U \v:: *%_)
+Real	Real	(Real:D $:: *%_)
+Real	Real	(Real:U $:: *%_)
+Real	Str	(Mu:U \v:: *%_)
+Real	Str	(Mu:D $:: *%_)
+Real	Str	(Real:D $:: *%_)
+Real	abs	-
+Real	acos	-
+Real	acosec	-
+Real	acosech	-
+Real	acosh	-
+Real	acotan	-
+Real	acotanh	-
+Real	asec	-
+Real	asech	-
+Real	asin	-
+Real	asinh	-
+Real	atan	-
+Real	atan2	(Real $:: Real $x = 1e0, *%_)
+Real	atan2	(Real $:: Cool $x = 1e0, *%_)
+Real	atanh	-
+Real	base	-
+Real	ceiling	-
+Real	cis	-
+Real	conj	-
+Real	cos	-
+Real	cosec	-
+Real	cosech	-
+Real	cosh	-
+Real	cotan	-
+Real	cotanh	-
+Real	exp	(Real:D $:: *%_)
+Real	exp	(Numeric:D $:: $base, *%_)
+Real	floor	-
+Real	gist	(Mu:U $:: *%_)
+Real	gist	(Mu:D $:: *%_)
+Real	gist	(Numeric:D $:: *%_)
+Real	isNaN	-
+Real	log	(Real:D $:: *%_)
+Real	log	(Real:D $:: Real $base, *%_)
+Real	log	(Numeric:D $:: Cool $base, *%_)
+Real	log	(Numeric:D $:: Numeric $base, *%_)
+Real	log10	-
+Real	log2	-
+Real	polymod	-
+Real	pred	-
+Real	rand	-
+Real	roots	-
+Real	round	(Real:D $:: *%_)
+Real	round	(Real:D $:: Real(Any) $scale, *%_)
+Real	sec	-
+Real	sech	-
+Real	sign	-
+Real	sin	-
+Real	sinh	-
+Real	sqrt	(Real:D $:: *%_)
+Real	succ	-
+Real	tan	-
+Real	tanh	-
+Real	truncate	-
+Real	unpolar	-
 Regex	<anon>	-
 Regex	ACCEPTS	(Regex:D $:: Mu:U \a, *%_)
 Regex	ACCEPTS	(Regex:U $:: \topic, *%_)
@@ -5024,6 +5984,54 @@ Seq	sort	(Any:U $:: |c)
 Seq	sort	(Any:D $:: *%_)
 Seq	sort	(Any:D $:: &by, *%_)
 Seq	sort	(Seq:D $:: |c)
+Sequence	AT-POS	(Any:U $SELF: is rw: Int:D \pos, *%_)
+Sequence	AT-POS	(Any:U \SELF:: Int:D \pos, *%_)
+Sequence	AT-POS	(Any:U $:: Num:D \pos, *%_)
+Sequence	AT-POS	(Any:U $:: Any:D \pos, *%_)
+Sequence	AT-POS	(Any:D $:: Int:D \pos, *%_)
+Sequence	AT-POS	(Any:D \SELF:: Num:D \pos, *%_)
+Sequence	AT-POS	(Any:D \SELF:: Any:D \pos, *%_)
+Sequence	AT-POS	($:: Any:U \pos, *%_)
+Sequence	AT-POS	(Any:D \SELF:: \one, \two, *%_)
+Sequence	AT-POS	(Any:D \SELF:: \one, \two, \three, *%_)
+Sequence	AT-POS	(Any:D \SELF:: **@indices, *%_)
+Sequence	AT-POS	(Sequence:D $:: uint $idx, *%_)
+Sequence	AT-POS	(Sequence:D $:: Int:D $idx, *%_)
+Sequence	Array	($:: *%_)
+Sequence	Array	(Sequence:D $:: *%_)
+Sequence	EXISTS-POS	(Any:U $:: Any:D, *%_ --> Bool::False)
+Sequence	EXISTS-POS	(Any:U $:: Any:U $pos, *%_)
+Sequence	EXISTS-POS	(Any:D $:: Int:D \pos, *%_ --> Bool)
+Sequence	EXISTS-POS	(Any:D $:: Num:D \pos, *%_ --> Bool)
+Sequence	EXISTS-POS	(Any:D $:: Any:D \pos, *%_ --> Bool)
+Sequence	EXISTS-POS	(Any:D $:: Any:U \pos, *%_)
+Sequence	EXISTS-POS	(Any:D $:: \one, \two, *%_ --> Bool)
+Sequence	EXISTS-POS	(Any:D $:: \one, \two, \three, *%_ --> Bool)
+Sequence	EXISTS-POS	(Any:D $:: **@indices, *%_ --> Bool)
+Sequence	EXISTS-POS	(Sequence:D $:: uint $idx, *%_)
+Sequence	EXISTS-POS	(Sequence:D $:: Int:D $idx, *%_)
+Sequence	List	($:: *%_)
+Sequence	List	(Sequence:D $:: *%_)
+Sequence	Numeric	-
+Sequence	Slip	($:: *%_)
+Sequence	Slip	(Sequence:D $:: *%_)
+Sequence	Str	(Mu:U \v:: *%_)
+Sequence	Str	(Mu:D $:: *%_)
+Sequence	Str	(Sequence:D $:: *%_)
+Sequence	Stringy	(Mu:U \v:: *%_)
+Sequence	Stringy	(Mu:D $:: *%_)
+Sequence	Stringy	(Sequence:D $:: *%_)
+Sequence	cache	-
+Sequence	eager	($:: *%_)
+Sequence	eager	(Sequence:D $:: *%_)
+Sequence	fmt	(Sequence:D $:: |c)
+Sequence	gist	(Mu:U $:: *%_)
+Sequence	gist	(Mu:D $:: *%_)
+Sequence	gist	(Sequence:D $:: *%_)
+Sequence	iterator	-
+Sequence	list	(Any:U $:: *%_)
+Sequence	list	(Any:D \SELF:: *%_)
+Sequence	list	(Sequence:D $:: *%_)
 Set	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Set	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Set	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -5321,6 +6329,110 @@ SetHash	values	(Bool $:: *%_)
 SetHash	values	(Any:U $:: *%_)
 SetHash	values	(Any:D $:: *%_)
 SetHash	values	(SetHash:D $:: *%_)
+Setty	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
+Setty	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
+Setty	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
+Setty	ACCEPTS	(Mu:D $:: Mu:D \topic, *%_)
+Setty	ACCEPTS	(Any:D $:: Mu:U, *%_ --> Bool::False)
+Setty	ACCEPTS	(Any:D $:: Mu:D \topic, *%_)
+Setty	ACCEPTS	(Setty:U $:: \other, *%_ --> Bool)
+Setty	ACCEPTS	(Setty:D $:: Setty:D \other, *%_ --> Bool)
+Setty	ACCEPTS	(Setty:D $:: \other, *%_ --> Bool)
+Setty	ASSIGN-KEY	(\SELF:: \key, Mu \assignee, *%_)
+Setty	ASSIGN-KEY	(QuantHash:D $:: \k, \v, *%_)
+Setty	AT-KEY	(Any:D $:: $key, *%_)
+Setty	AT-KEY	(Any:U \SELF:: \key, *%_)
+Setty	AT-KEY	(QuantHash:U \SELF:: $key, *%_)
+Setty	Bag	($:: *%_ --> Bag:D)
+Setty	Bag	(Setty:D $:: *%_)
+Setty	BagHash	($:: *%_ --> BagHash:D)
+Setty	BagHash	(Setty:D $:: *%_)
+Setty	Bool	#1-1
+Setty	Bool	(Mu:U $:: *%_ --> Bool::False)
+Setty	Bool	(Mu:D $:: *%_)
+Setty	Bool	(Setty:D $:: *%_ --> Bool)
+Setty	Capture	-
+Setty	DELETE-KEY	(Any:U $:: $, *%_ --> Nil)
+Setty	DELETE-KEY	(Any:D $:: $, *%_)
+Setty	DELETE-KEY	(QuantHash:D $:: \k, *%_)
+Setty	EXISTS-KEY	(Any:U $:: $, *%_ --> Bool::False)
+Setty	EXISTS-KEY	(Any:D $:: $, *%_ --> Bool::False)
+Setty	EXISTS-KEY	(QuantHash:D $:: \k, *%_ --> Bool)
+Setty	Hash	($:: *%_)
+Setty	Hash	(Setty:D $:: *%_ --> Hash:D)
+Setty	Int	-
+Setty	Map	-
+Setty	Mix	($:: *%_ --> Mix:D)
+Setty	Mix	(Setty:D $:: *%_)
+Setty	MixHash	($:: *%_ --> MixHash:D)
+Setty	MixHash	(Setty:D $:: *%_)
+Setty	Num	-
+Setty	Numeric	-
+Setty	OBJECTIFIER	-
+Setty	RAW-HASH	-
+Setty	Real	-
+Setty	SETUP	(QuantHash:U $:: *%_)
+Setty	SETUP	(QuantHash:U $:: \elems, *%_)
+Setty	SETUP	(QuantHash:D $:: \elems, *%_)
+Setty	STORE	(QuantHash:D $:: |)
+Setty	Str	(Mu:U \v:: *%_)
+Setty	Str	(Mu:D $:: *%_)
+Setty	Str	(Setty:D $:: *%_ --> Str:D)
+Setty	WHICHIFY	-
+Setty	antipairs	(Enumeration $:: *%_)
+Setty	antipairs	(Bool $:: *%_)
+Setty	antipairs	(Any:U $:: *%_)
+Setty	antipairs	(Any:D $:: *%_)
+Setty	antipairs	(Setty:D $:: *%_)
+Setty	default	-
+Setty	elems	(Any:U $:: *%_ --> 1)
+Setty	elems	(Any:D $:: *%_)
+Setty	elems	(Setty:D $:: *%_)
+Setty	fmt	(QuantHash:D $:: Str:D $format = "\%s\t\%s", $sep = "\n", *%_)
+Setty	hash	(Any:U $:: *%_)
+Setty	hash	(Any:D $:: *%_)
+Setty	hash	(Setty:D $:: *%_ --> Hash:D)
+Setty	keyof	-
+Setty	keys	(Enumeration $:: *%_)
+Setty	keys	(Bool $:: *%_)
+Setty	keys	(Any:U $:: *%_)
+Setty	keys	(Any:D $:: *%_)
+Setty	keys	(Setty:D $:: *%_)
+Setty	list	(Any:U $:: *%_)
+Setty	list	(Any:D \SELF:: *%_)
+Setty	list	(QuantHash:D $:: *%_)
+Setty	maxpairs	(Any:D $:: &by = Code.new, *%_)
+Setty	maxpairs	(Setty:D $:: *%_)
+Setty	minpairs	(Any:D $:: &by = Code.new, *%_)
+Setty	minpairs	(Setty:D $:: *%_)
+Setty	new	(Mu $:: *%attrinit)
+Setty	new	(Mu $:: $, *@, *%_)
+Setty	new	(Setty $:: \value, *%_ --> Setty:D)
+Setty	new	(Setty $:: **@args, *%_ --> Setty:D)
+Setty	new	(QuantHash $:: *%_)
+Setty	new-from-pairs	-
+Setty	of	-
+Setty	pairs	(Enumeration $:: *%_)
+Setty	pairs	(Bool $:: *%_)
+Setty	pairs	(Any:U $:: *%_)
+Setty	pairs	(Any:D $:: *%_)
+Setty	pairs	(QuantHash:D $:: *%_)
+Setty	pick	($:: *%_)
+Setty	pick	($:: $n, *%_)
+Setty	pick	($:: HyperWhatever, *%_)
+Setty	pick	(Setty:D $:: *%_)
+Setty	pick	(Setty:D $:: Callable:D $calculate, *%_)
+Setty	pick	(Setty:D $:: Whatever, *%_)
+Setty	pick	(Setty:D $:: $count, *%_)
+Setty	pickpairs	(Setty:D $:: *%_)
+Setty	pickpairs	(Setty:D $:: Callable:D $calculate, *%_)
+Setty	pickpairs	(Setty:D $:: Whatever, *%_)
+Setty	pickpairs	(Setty:D $:: \count, *%_)
+Setty	roll	(Setty:D $:: *%_)
+Setty	roll	(Setty:D $:: Callable:D $calculate, *%_)
+Setty	roll	(Setty:D $:: Whatever, *%_)
+Setty	roll	(Setty:D $:: $count, *%_)
+Setty	total	-
 Signal	ACCEPTS	(Mu:U $:: Mu \topic, *%_)
 Signal	ACCEPTS	(Mu:U \SELF:: Junction:D \topic, *%_)
 Signal	ACCEPTS	(Mu:D $:: Mu:U \topic, *%_)
@@ -5599,6 +6711,7 @@ SocketType	roll	(SocketType:U $:: \n, *%_)
 SocketType	roll	(SocketType:D $:: *@pos, *%_)
 SocketType	succ	-
 SocketType	value	-
+SoftRoutine	soft	-
 Stash	ASSIGN-KEY	#3-3
 Stash	ASSIGN-KEY	(Stash:D $:: Str:D $key, Mu \assignval, *%_)
 Stash	ASSIGN-KEY	(Stash:D $:: \key, Mu \assignval, *%_)
@@ -5973,6 +7086,9 @@ StrDistance	POPULATE	-
 StrDistance	Str	-
 StrDistance	after	-
 StrDistance	before	-
+StringyEnumeration	Str	(Mu:U \v:: *%_)
+StringyEnumeration	Str	(Mu:D $:: *%_)
+StringyEnumeration	Str	(StringyEnumeration:D $:: *%_)
 Sub+{is-DEPRECATED}	DEPRECATED	-
 Sub+{is-nodal}	nodal	-
 Sub+{is-pure}	is-pure	-
@@ -6111,6 +7227,15 @@ Supply	wait	-
 Supply	words	-
 Supply	zip	-
 Supply	zip-latest	-
+Systemic	Str	-
+Systemic	auth	-
+Systemic	desc	-
+Systemic	gist	(Mu:U $:: *%_)
+Systemic	gist	(Mu:D $:: *%_)
+Systemic	gist	(Systemic:D $:: *%_ --> Str:D)
+Systemic	name	-
+Systemic	signature	-
+Systemic	version	-
 Tap	BUILD	-
 Tap	POPULATE	-
 Tap	close	-

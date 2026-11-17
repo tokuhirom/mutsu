@@ -341,7 +341,16 @@ impl Interpreter {
                 // `cue` is a multi over `&code`: a non-Callable (an empty
                 // `{ }` is a Hash, #12801) matches no candidate.
                 if !self.type_matches_value("Callable", &callback) {
-                    return Err(crate::runtime::methods_signature_errors::make_multi_no_match_error("cue"));
+                    return Err(crate::runtime::methods_signature_errors::builtin_type_no_match(
+                        if is_current_thread {
+                            "CurrentThreadScheduler"
+                        } else {
+                            "ThreadPoolScheduler"
+                        },
+                        true,
+                        "cue",
+                        &args,
+                    ));
                 }
                 let times_explicit = Self::scheduler_times_arg(&args)?;
                 let delay = Self::scheduler_delay(&args)?;

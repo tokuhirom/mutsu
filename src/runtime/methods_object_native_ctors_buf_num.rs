@@ -211,8 +211,10 @@ impl Interpreter {
         // silently taking the first.
         let positional: Vec<&Value> = args.iter().filter(|a| !a.is_string_pair_value()).collect();
         if positional.len() > 1 {
-            return Err(super::methods_signature_errors::make_multi_no_match_error(
+            return Err(super::methods_signature_errors::builtin_method_no_match(
+                &Value::package(Symbol::intern("Int")),
                 "new",
+                args,
             ));
         }
         if matches!(
@@ -321,8 +323,10 @@ impl Interpreter {
         } else if positional.is_empty() && named_key.is_some() && named_value.is_some() {
             (named_key.unwrap(), named_value.unwrap())
         } else {
-            return Err(super::methods_signature_errors::make_multi_no_match_error(
+            return Err(super::methods_signature_errors::builtin_method_no_match(
+                &Value::package(Symbol::intern("Pair")),
                 "new",
+                args,
             ));
         };
         // ADR-0021 I2: `Pair.new(...)` is a data constructor, not

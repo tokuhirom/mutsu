@@ -252,7 +252,9 @@ fn batch_elems(
 ) -> Option<Result<Value, RuntimeError>> {
     let Some(elems) = named.get("elems") else {
         return Some(Err(
-            crate::runtime::methods_signature_errors::make_multi_no_match_error("batch"),
+            crate::runtime::methods_signature_errors::builtin_method_no_match(
+                target, "batch", _args,
+            ),
         ));
     };
     batch(target, &[Value::pair("elems".to_string(), elems.clone())])

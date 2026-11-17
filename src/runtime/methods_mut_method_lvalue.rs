@@ -34,9 +34,15 @@ impl Interpreter {
     /// error must match what a plain non-assignment call to it raises
     /// (X::Method::NotFound) rather than X::Multi::NoMatch, which belongs to
     /// a real multi whose signatures just didn't match this call's args.
-    fn rw_method_lvalue_missing_error(&mut self, class_name: &str, method: &str) -> RuntimeError {
+    fn rw_method_lvalue_missing_error(
+        &mut self,
+        target: &Value,
+        class_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> RuntimeError {
         if self.class_has_user_method(class_name, method) {
-            super::methods_signature_errors::make_multi_no_match_error(method)
+            self.user_method_no_match(target, class_name, method, args)
         } else {
             super::methods_signature_errors::make_method_not_found_error(method, class_name, false)
         }
@@ -1737,9 +1743,19 @@ impl Interpreter {
                     }
                 }
             }
-            return Err(self.rw_method_lvalue_missing_error(&class_name.resolve(), method));
+            return Err(self.rw_method_lvalue_missing_error(
+                &target,
+                &class_name.resolve(),
+                method,
+                &method_args,
+            ));
         } else {
-            return Err(self.rw_method_lvalue_missing_error(&class_name.resolve(), method));
+            return Err(self.rw_method_lvalue_missing_error(
+                &target,
+                &class_name.resolve(),
+                method,
+                &method_args,
+            ));
         };
         // `is raw` container-accessor return (`method AT-KEY($k) is raw {
         // %!hash.AT-KEY($k) }`): assigning through it (`$obj.AT-KEY($k) = $v`,

@@ -447,7 +447,7 @@ impl Interpreter {
         // call none of them accepts falls through to the value's dispatch
         // (`$driver but LiteralSQL` adding one `translate` candidate).
         let mut role_candidates_all_multi = true;
-        for role_name in role_names {
+        for role_name in &role_names {
             // Only what the call reads, copied out of the borrowed def: the
             // whole `RoleDef` (every method) cost ~19k Ir per call (#16215).
             // The candidates themselves are cloned only when the winner memo
@@ -458,7 +458,7 @@ impl Interpreter {
             // value's own method must answer (`$attr does R` where
             // `R` stubs `method package`).
             let Some((role_id, role_attrs, bodies, sole_non_multi)) = self
-                .with_mixin_role_def(mixins, &role_name, |role| {
+                .with_mixin_role_def(mixins, role_name, |role| {
                     role.methods.get(lookup_name).map(|overloads| {
                         let live: Vec<&MethodDef> = overloads
                             .iter()
@@ -509,7 +509,7 @@ impl Interpreter {
             } else {
                 self.registry()
                 .role_candidates
-                .get(&role_name)
+                .get(role_name)
                 .and_then(|candidates| {
                     candidates
                         .iter()
@@ -579,7 +579,7 @@ impl Interpreter {
                     MixinCallSite {
                         target,
                         inner,
-                        role_name: &role_name,
+                        role_name,
                         role_id,
                         method: lookup_name,
                         private: is_private_call,
@@ -595,7 +595,7 @@ impl Interpreter {
             let mut memo_key = fast_key;
             if memoized.is_none() {
                 overloads_miss = self
-                    .with_mixin_role_def(mixins, &role_name, |role| {
+                    .with_mixin_role_def(mixins, role_name, |role| {
                         role.methods.get(lookup_name).cloned().unwrap_or_default()
                     })
                     .unwrap_or_default();
@@ -609,7 +609,7 @@ impl Interpreter {
                         MixinCallSite {
                             target,
                             inner,
-                            role_name: &role_name,
+                            role_name,
                             role_id,
                             method: lookup_name,
                             private: is_private_call,
@@ -641,14 +641,14 @@ impl Interpreter {
                             // because this filter never looked at the invocant at all.
                             sole_private
                                 || self.method_args_match_for_invocant(
-                                    &role_name,
+                                    role_name,
                                     def,
                                     &args,
                                     None,
                                     Some(target),
                                 )
                         });
-                    let owner = Symbol::intern(&role_name);
+                    let owner = Symbol::intern(role_name);
                     let matching: Vec<(Symbol, MethodDef)> =
                         matching.into_iter().map(|def| (owner, def)).collect();
                     let rivals: Vec<(Symbol, Rival)> = rivals
@@ -657,7 +657,7 @@ impl Interpreter {
                         .map(|def| (owner, Rival::owned(def)))
                         .collect();
                     let winner = self.pick_method_winner(
-                        &[Symbol::intern(&role_name)],
+                        &[Symbol::intern(role_name)],
                         &args,
                         Some(target),
                         matching,
@@ -771,11 +771,11 @@ impl Interpreter {
                 // caller closure's own capture (upstream NativeCall, #11203).
                 let mut static_packages = vec![def.lexical_package.resolve()];
                 if let Some(ValueView::Array(type_args, _)) = mixins
-                    .get(MetaNs::RoleTypeargs.str_key_for_str(&role_name))
+                    .get(MetaNs::RoleTypeargs.str_key_for_str(role_name))
                     .map(Value::view)
                 {
                     let (_, punned_name) =
-                        Self::parametric_role_pun_name(&role_name, type_args.as_slice());
+                        Self::parametric_role_pun_name(role_name, type_args.as_slice());
                     static_packages.push(punned_name);
                 }
                 for package in &static_packages {
@@ -807,7 +807,7 @@ impl Interpreter {
                 _ => (None, AttrMap::new()),
             };
             for attr_name in &role_attrs {
-                if let Some(value) = mixins.role_attribute(&role_name, attr_name) {
+                if let Some(value) = mixins.role_attribute(role_name, attr_name) {
                     method_attrs.insert(attr_name.clone(), value);
                 }
             }
@@ -923,8 +923,8 @@ impl Interpreter {
                 .map(|pending| pending.cell.clone())
                 .unwrap_or_else(|| target.clone());
             let method_result = self.run_resolved_method_compiled_or_treewalk(
-                &role_name,
-                &role_name,
+                role_name,
+                role_name,
                 lookup_name,
                 def,
                 method_attrs,
@@ -951,10 +951,10 @@ impl Interpreter {
             // owner-selected store. Role attributes go to the Mixin-owned
             // cell; class attributes go to the wrapped instance cell. This
             // updates every binding in scope that holds the same store.
-            if self.is_role(&role_name) {
+            if self.is_role(role_name) {
                 self.commit_mixin_role_method_attrs(
                     mixins,
-                    &role_name,
+                    role_name,
                     &role_attrs,
                     inner_cell.as_ref(),
                     updated,
@@ -970,8 +970,30 @@ impl Interpreter {
             && (!role_candidates_all_multi
                 || self.collect_can_methods(inner, method).is_empty())
         {
+            // rakudo lists the roles' candidates on the mixin type
+            // (`(Int+{R} $:: Int $x, *%_)`).
+            let type_name = crate::value::what_type_name(target);
+            let mut sigs = Vec::new();
+            for role_name in &role_names {
+                let role_sigs = self.with_mixin_role_def(mixins, role_name, |role| {
+                    role.methods
+                        .get(lookup_name)
+                        .map(|overloads| {
+                            overloads
+                                .iter()
+                                .filter(|def| !Self::is_runtime_stub_method_def(def))
+                                .map(|def| Self::format_method_def_signature(def, &type_name))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                });
+                sigs.extend(role_sigs.unwrap_or_default());
+            }
+            let profile = self.format_call_arg_profile(&args);
             return Some(Err(
-                super::methods_signature_errors::make_multi_no_match_error(method),
+                super::methods_signature_errors::make_multi_no_match_error_detailed(
+                    method, &type_name, true, &profile, &sigs,
+                ),
             ));
         }
         if method == "Str"

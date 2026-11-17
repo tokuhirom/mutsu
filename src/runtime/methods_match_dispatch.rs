@@ -109,8 +109,8 @@ impl Interpreter {
             // resolves to no `.match` candidate — Rakudo throws X::Multi::NoMatch
             // rather than hanging (roast .../multi-no-match.t).
             ValueView::Nil | ValueView::Package(_) => {
-                return Err(super::methods_signature_errors::make_multi_no_match_error(
-                    "match",
+                return Err(super::methods_signature_errors::builtin_method_no_match(
+                    &target, "match", args,
                 ));
             }
             // Any other *defined* matcher (an Int, a list, ...) is coerced to its
