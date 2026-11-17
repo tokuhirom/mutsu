@@ -70,11 +70,82 @@ pub(super) fn check_time_routine(
     };
     let mut routine = crate::value::SubData::clone(&data);
     routine.name = Symbol::intern(name);
-    routine.package = Symbol::intern("GLOBAL");
+    // The unit's own package: a `unit module X` file declares its
+    // routines in `X`, as the restarted unit's copy does (#17886).
+    routine.package = Symbol::intern(unit_package().as_deref().unwrap_or("GLOBAL"));
     routine.source_file = crate::unit_source_file::current().map(|file| file.resolve().to_string());
     routine.source_line = line;
     routine.source_file_sym_cache = Default::default();
     Some(Ok(Value::sub_value(crate::gc::Gc::new(routine))))
+}
+
+/// The package the active unit declares with a `unit` package declarator
+/// (`unit module X;`), whose body is the rest of the unit.
+// Cost: O(s), s = top-level statements of the unit (the declarator is first).
+fn unit_package() -> Option<String> {
+    let node_of = |value: &Value| match value.view() {
+        ValueView::RakuAst(node) => Some(node.clone()),
+        _ => None,
+    };
+    crate::unit_source_text::with_active_cu(|cu| {
+        let cu = node_of(cu)?;
+        let list = node_of(&crate::rakuast::node_accessor(&cu, "statement-list")?)?;
+        let statements = crate::rakuast::node_accessor(&list, "statements")?;
+        let ValueView::Array(items, _) = statements.view() else {
+            return None;
+        };
+        items.iter().find_map(|statement| {
+            let statement = node_of(statement)?;
+            let declarator = node_of(&crate::rakuast::node_accessor(&statement, "expression")?)?;
+            let scope = crate::rakuast::node_accessor(&declarator, "scope")?;
+            if scope.to_string_value() != "unit" {
+                return None;
+            }
+            let name = node_of(&crate::rakuast::node_accessor(&declarator, "name")?)?;
+            Some(crate::rakuast::node_accessor(&name, "canonicalize")?.to_string_value())
+        })
+    })
+}
+
+/// The dispatcher a scope's `proto` stub stands for at CHECK time, when its
+/// scope (a nested block) has not run and installed it: a dispatcher over the
+/// scope's candidates, each built from its node as [`check_time_routine`]
+/// builds one (#17826). rakudo answers the scope's dispatcher there
+/// (`is_dispatcher` True, its candidates). `None` when the stub carries no
+/// candidates or one cannot be built here.
+// Cost: O(c * n), c = candidates, n = the size of each declaration compiled.
+pub(super) fn check_time_dispatcher(
+    interp: &mut Interpreter,
+    node: &RakuAstNode,
+    name: &str,
+) -> Option<Result<Value, RuntimeError>> {
+    let candidates = crate::rakuast::dispatcher_stub_candidates(node)?;
+    let mut built = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        let ValueView::RakuAst(candidate) = candidate.view() else {
+            return None;
+        };
+        match check_time_routine(interp, candidate, name)? {
+            Ok(routine) => built.push(routine),
+            Err(err) => return Some(Err(err)),
+        }
+    }
+    let ValueView::Sub(first) = built.first()?.view() else {
+        return None;
+    };
+    let mut dispatcher = crate::value::SubData::clone(&first);
+    dispatcher.env.insert(
+        "__mutsu_multi_dispatch_candidates".to_string(),
+        Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(built)),
+            crate::value::ArrayKind::List,
+        ),
+    );
+    dispatcher.env.insert(
+        "__mutsu_multi_dispatch_name".to_string(),
+        Value::str(name.to_string()),
+    );
+    Some(Ok(Value::sub_value(crate::gc::Gc::new(dispatcher))))
 }
 
 /// The `multiness` a routine declaration node spells (`multi`, `proto`).

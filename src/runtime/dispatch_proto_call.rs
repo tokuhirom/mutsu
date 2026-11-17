@@ -511,9 +511,10 @@ impl Interpreter {
                         format!(":{}({})", key, type_name)
                     }
                     _ => {
+                        // `Nil` is a type object too (`match(Str:D: Nil:U)`).
                         let smiley = if matches!(
                             arg.view(),
-                            ValueView::Package(_) | ValueView::ParametricRole { .. }
+                            ValueView::Package(_) | ValueView::ParametricRole { .. } | ValueView::Nil
                         ) {
                             ":U"
                         } else {

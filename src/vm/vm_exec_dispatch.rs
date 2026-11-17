@@ -4308,6 +4308,7 @@ impl Interpreter {
                 lhs_is_literal,
                 rhs_pure_regex,
                 rhs_is_bare_topic,
+                rhs_numeric_literal,
             } => {
                 self.sync_source_line(code, *ip);
                 // A routine whose `$/` is a (readonly) parameter -- the
@@ -4329,6 +4330,7 @@ impl Interpreter {
                     *lhs_is_literal,
                     *rhs_pure_regex,
                     *rhs_is_bare_topic,
+                    *rhs_numeric_literal,
                     compiled_fns,
                 );
                 if let Some(slash) = saved_slash {
@@ -5880,8 +5882,9 @@ impl Interpreter {
             OpCode::IndexInvocantRef {
                 is_positional,
                 vivify,
+                slice_cells,
             } => {
-                self.exec_index_invocant_ref_op(*is_positional, *vivify)?;
+                self.exec_index_invocant_ref_op(*is_positional, *vivify, *slice_cells)?;
                 *ip += 1;
             }
             // Cost: O(1) (element cell for a single index), otherwise as Index.
@@ -7903,6 +7906,14 @@ impl Interpreter {
                 crate::unit_source_text::end_compile_phase();
                 let (sorries, worries) = crate::unit_diagnostics::take();
                 self.report_compile_diagnostics(sorries, worries)?;
+                if let Some(cu) = &rewritten
+                    && crate::unit_source_text::request_module_restart(cu)
+                {
+                    // A module's load restarts from the tree (`run_modules`),
+                    // in the module's own env and package: its mainline ends.
+                    *ip = code.ops.len();
+                    return Ok(());
+                }
                 if let Some(cu) = rewritten {
                     // In rakudo the rewritten tree is what gets compiled, and no
                     // mainline statement has run yet: run the tree in place of

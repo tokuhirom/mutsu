@@ -98,7 +98,7 @@ fn condition(target: &Value, _: &[Value]) -> Answer {
 fn wait(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_>) -> Answer {
     if args.len() > 1 {
         return Some(Err(
-            crate::runtime::methods_signature_errors::make_multi_no_match_error("wait"),
+            crate::runtime::methods_signature_errors::builtin_method_no_match(target, "wait", args),
         ));
     }
     Some(interp.condition_wait(&attrs(target)?, args.first().cloned()))

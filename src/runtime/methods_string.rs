@@ -203,7 +203,7 @@ impl Interpreter {
         // with no replacement is still valid: replacement defaults to "".)
         let pattern = positional
             .first()
-            .ok_or_else(|| super::methods_signature_errors::make_multi_no_match_error("subst"))?;
+            .ok_or_else(|| super::methods_signature_errors::builtin_method_no_match(&target, "subst", args))?;
         // A named regex/token passed as a value (`&Named`, or a hash slot holding
         // it) is a `Routine` with `is_regex`. Normalize it to a `Regex` value
         // built from its source so the regex-pattern branch below drives the

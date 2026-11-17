@@ -883,6 +883,12 @@ impl Interpreter {
             }
             // Backslash escape: \x
             '\\' if chars.len() > 1 => 2,
+            // A value the interpolation pre-pass spliced in (`$*sep`): the
+            // whole span between its marks is the one atom it replaced.
+            c if c == Self::NON_DECLARATIVE_INTERP_MARK => chars[1..]
+                .iter()
+                .position(|&m| m == Self::NON_DECLARATIVE_INTERP_MARK)
+                .map_or(chars.len(), |close| close + 2),
             // A variable (`$sep`, `$*sep`, `$kebab-name`): one interpolation
             // atom, read at match time, not the `$` end anchor followed by a
             // name.

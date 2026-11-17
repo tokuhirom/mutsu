@@ -511,6 +511,17 @@ impl Interpreter {
             .or_else(|| self.env().get("_").cloned())
             .unwrap_or(Value::NIL);
 
+        // `when 2` numifies the topic as `~~ 2` does (#16750); `when *` arrives
+        // as `Num(Inf)` and is not a literal number.
+        if matcher_kind == WhenMatcherKind::Literal
+            && match cond_val.view() {
+                ValueView::Int(_) | ValueView::BigInt(_) => true,
+                ValueView::Num(n) => n.is_finite(),
+                _ => false,
+            }
+        {
+            self.numeric_literal_topic_check(&topic_snapshot)?;
+        }
         // Num(Inf) represents Whatever (*) which always matches in `when *`
         let matches = if matches!(cond_val.view(), ValueView::Num(v) if v.is_infinite() && v.is_sign_positive())
         {

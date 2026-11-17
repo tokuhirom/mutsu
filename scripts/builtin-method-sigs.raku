@@ -19,10 +19,19 @@ my %seen;
 my %groups;
 for CORE::.keys.sort -> $name {
     my $t = CORE::{$name};
-    next unless $t.HOW ~~ Metamodel::ClassHOW | Metamodel::ParametricRoleHOW | Metamodel::EnumHOW;
+    next unless $t.HOW ~~ Metamodel::ClassHOW | Metamodel::ParametricRoleHOW
+        | Metamodel::ParametricRoleGroupHOW | Metamodel::EnumHOW;
     my $tn = $t.^name;
     next if $tn.contains(any('<', '[', '::', '(')) || %seen{$tn}++;
-    for $t.^methods(:local) -> $m {
+    # A role's own method table holds its protos without their candidates;
+    # the pun composes them (`Buf.allocate` lists Blob's and Buf's).
+    # A role with stubbed methods cannot be punned (`Awaitable`): skip it.
+    my $mt = $t;
+    if $t.HOW ~~ Metamodel::ParametricRoleHOW | Metamodel::ParametricRoleGroupHOW {
+        $mt = try $t.^pun;
+        next if $!;
+    }
+    for $mt.^methods(:local) -> $m {
         unless $m.?is_dispatcher {
             %groups{$tn}{$m.name} = ['-'] unless %groups{$tn}{$m.name};
             next;

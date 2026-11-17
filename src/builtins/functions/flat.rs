@@ -90,11 +90,8 @@ pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<Result<String, Runt
     {
         return Some(Err(err));
     }
-    Some(Ok(items
-        .iter()
-        .map(|v| v.to_str_context())
-        .collect::<Vec<_>>()
-        .join(sep)))
+    let parts: Vec<String> = items.iter().map(|v| v.to_str_context()).collect();
+    Some(Ok(crate::builtins::str_prim::join(&parts, sep)))
 }
 
 /// If a (already fully flattened) list of items contains a `Junction`

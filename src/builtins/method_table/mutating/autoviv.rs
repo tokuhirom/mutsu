@@ -19,7 +19,7 @@
 
 use crate::builtins::method_table::{Handler, MethodRow, Named, ReceiverPlace, RowFlags};
 use crate::runtime::Interpreter;
-use crate::runtime::methods_signature_errors::{make_multi_no_match_error, make_x_immutable_error};
+use crate::runtime::methods_signature_errors::{builtin_method_no_match, make_x_immutable_error};
 use crate::value::{RuntimeError, Value, ValueView};
 
 type Answer = Option<Result<Value, RuntimeError>>;
@@ -155,7 +155,9 @@ fn grow(
         | ValueView::Str(_)
         | ValueView::Bool(_)
         | ValueView::Rat(..)
-        | ValueView::Complex(..) => return Some(Err(make_multi_no_match_error(method))),
+        | ValueView::Complex(..) => {
+            return Some(Err(builtin_method_no_match(value, method, args)));
+        }
         _ => return None,
     }
     if place.receiver_cell().is_some() {

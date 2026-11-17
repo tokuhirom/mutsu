@@ -374,8 +374,12 @@ impl Interpreter {
                         // matches no candidate (roast .../multi-no-match.t).
                         if args.is_empty() {
                             return Some(Err(
-                                crate::runtime::methods_signature_errors::make_multi_no_match_error(
-                                    "printf",
+                                // As `io_handle_printf`: the routine `printf`
+                                // reports the missing format.
+                                RuntimeError::new(
+                                    crate::runtime::types::arity_message::too_few_positionals(
+                                        1, None, 0,
+                                    ),
                                 ),
                             ));
                         }

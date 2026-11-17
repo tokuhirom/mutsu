@@ -377,3 +377,17 @@ worktrees; they touch disjoint files except `src/opcode.rs` (1, 2).
   window). Decide from slice 1's numbers; do not pre-build it.
 - Whether the ADR-0010 lineage store survives slice 5 for internal keys only,
   or those keys move to their own typed homes (`state` cells, atomics).
+
+  **Decided (#17837, 2026-11-17):** the store survives, for what is not a
+  lexical: `@*x`/`%*x` dynamics, attribute aliases, `state` cells and the
+  internal `__mutsu_*` keys (atomic lanes, dirty markers). A user lexical is
+  excluded structurally: `shared_store::is_user_lexical_key` answers a read
+  under such a key as absent without touching a lineage, a store insertion
+  under one is a `debug_assert!`, and `set_shared_var_sym`'s write mirror skips
+  it. Measured before the change with an env-gated oracle over every `t/` file
+  and the roast whitelist on a release build: zero insertions under a user
+  lexical key, only read probes (which always missed). Moving the remaining
+  keys to typed homes is not needed for correctness and is left to whoever
+  next finds the store in a profile. The ADR-12204 S1 capture oracle
+  (`MUTSU_SPAWN_CAPTURE_CHECK`) is deleted with it: no spawn records captures
+  any more.

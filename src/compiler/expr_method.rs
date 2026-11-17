@@ -895,6 +895,7 @@ impl Compiler {
         self.mark_trailing_index_as_invocant_ref(
             target,
             crate::builtins::method_table::vivifies_undefined_receiver(name.resolve().as_str()),
+            Self::method_iterates_receiver_elements(name.resolve().as_str()),
         );
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
@@ -1072,7 +1073,7 @@ impl Compiler {
         // The subscript-receiver producer applies to the dynamic spelling too:
         // the method name is a runtime value, so rawness is even less knowable
         // here than for a literal name.
-        self.mark_trailing_index_as_invocant_ref(target, true);
+        self.mark_trailing_index_as_invocant_ref(target, true, false);
         self.compile_expr(name_expr);
         let arity = args.len() as u32;
         // ADR-0054 S3: bake `|EXPR` positions before compiling the args

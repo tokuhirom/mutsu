@@ -46,6 +46,12 @@ pub(crate) struct Unit {
     /// tree that differs from it at the end of the CHECK phase was rewritten
     /// by a CHECK phaser or check closure (#17501).
     check_baseline: Option<u64>,
+    /// The unit is a module file being loaded (`mark_module_unit`): a `$*CU`
+    /// its CHECK phase rewrote restarts the module's load from that tree
+    /// (`request_module_restart`), not an EVAL inside the module.
+    module_file: bool,
+    /// The rewritten tree the module's load restarts from (#17886).
+    restart_tree: Option<Value>,
 }
 
 thread_local! {
@@ -75,6 +81,8 @@ impl UnitSourceTextGuard {
                 late_imports: std::collections::HashSet::new(),
                 rewritten: false,
                 check_baseline: None,
+                module_file: false,
+                restart_tree: None,
             });
         });
         Self
@@ -427,6 +435,50 @@ pub(crate) fn is_late_import(name: &str) -> bool {
         active_index(&units)
             .and_then(|i| units.get(i))
             .is_some_and(|unit| unit.late_imports.contains(name))
+    })
+}
+
+/// The innermost unit is a module file being loaded.
+// Cost: O(1).
+pub(crate) fn mark_module_unit() {
+    UNITS.with(|units| {
+        if let Some(unit) = units.borrow_mut().last_mut() {
+            unit.module_file = true;
+        }
+    });
+}
+
+/// When the innermost unit is a module file, hand it the tree its CHECK phase
+/// rewrote: the loader restarts the module from it once the first run's
+/// mainline has stopped (`take_module_restart`). False for any other unit,
+/// which restarts in place.
+// Cost: O(1).
+pub(crate) fn request_module_restart(cu: &Value) -> bool {
+    UNITS.with(|units| {
+        let mut units = units.borrow_mut();
+        match units.last_mut() {
+            Some(unit) if unit.module_file => {
+                unit.restart_tree = Some(cu.clone());
+                true
+            }
+            _ => false,
+        }
+    })
+}
+
+/// The tree a module's load restarts from, if its CHECK phase rewrote `$*CU`.
+/// The unit compiles again, as the restart of a rewritten unit: its BEGIN and
+/// CHECK phasers do not run a second time (`active_unit_is_rewritten`).
+// Cost: O(1).
+pub(crate) fn take_module_restart() -> Option<Value> {
+    UNITS.with(|units| {
+        let mut units = units.borrow_mut();
+        let unit = units.last_mut()?;
+        let tree = unit.restart_tree.take()?;
+        unit.rewritten = true;
+        unit.compiled = false;
+        unit.tree = Some(tree.clone());
+        Some(tree)
     })
 }
 

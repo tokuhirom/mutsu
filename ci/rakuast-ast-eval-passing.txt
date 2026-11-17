@@ -5987,6 +5987,7 @@ t/oo/trait/enum-trait-arg-and-trait-mod-call.t
 t/oo/trait/eval-class-trait-die-not-installed.t
 t/oo/trait/eval-load-cached-trait.t
 t/oo/trait/eval-trait-mod-default-redispatch.t
+t/oo/trait/eval-unit-var-trait-leave.t
 t/oo/trait/handles-container-attr-writeback.t
 t/oo/trait/handles-delegation-on-but-mixin.t
 t/oo/trait/handles-dynamic-list.t
@@ -6046,6 +6047,7 @@ t/oo/trait/user-trait-mod-does-not-consume-every-trait.t
 t/oo/trait/variable-custom-traits.t
 t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
+t/oo/trait/variable-trait-block-add-phaser.t
 t/oo/trait/variable-trait-dunder-name.t
 t/oo/trait/variable-trait-object-mixin.t
 t/oo/trait/variable-trait-owning-code-object.t
@@ -7568,7 +7570,6 @@ t/routines/call/sleep-listop-expression.t
 t/routines/call/slip-array-element-capture.t
 t/routines/call/spawn-aggregate-cell-capture-callbacks.t
 t/routines/call/spawn-aggregate-cell-capture.t
-t/routines/call/spawn-capture-check-oracle.t
 t/routines/call/start-worker-redeclared-captured-lexical-keeps-spawner.t
 t/routines/call/statement-call-sinks-its-value.t
 t/routines/call/tail-bare-block-when-succeed.t

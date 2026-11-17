@@ -844,6 +844,7 @@ impl Interpreter {
                     // has only its parent's methods yet: the value's base type
                     // (`my &AT-KEY := ::?CLASS.^find_method('AT-KEY')` in a
                     // role mixed into a Hash is `Hash`'s, not the role's own).
+                    let saved_constants = self.save_role_body_constant_bindings(&ops);
                     let class_scope = self.begin_class_scope(Symbol::intern(&base_type));
                     let body_result = self
                         .run_role_body_for_composition(
@@ -859,6 +860,7 @@ impl Interpreter {
                     self.end_scoped_fixtures(class_scope);
                     body_result?;
                     self.persist_role_body_lexicals(role_name, &declared);
+                    self.restore_role_body_constant_bindings(saved_constants);
                     self.run_role_body_block(
                         role_name,
                         Value::package(Symbol::intern(&base_type)),

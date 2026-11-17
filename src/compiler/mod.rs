@@ -5255,14 +5255,10 @@ impl Compiler {
         }
     }
 
-    /// Whether `stmts` holds a written `LEAVE` / `KEEP` / `UNDO` phaser.
-    ///
-    /// The replay phasers a unit-level variable trait queues
-    /// (`begin_prologue::lift_unit_var_traits`) are not counted: a unit that
-    /// only has those keeps the plain path.
-    // TODO: run a unit-level variable trait's LEAVE replay when an EVAL'd unit
-    // ends; the phaser-scope path loses the unit's tail value after a
-    // `trait_mod:<does>` mixin there (t/lang/eval-unit-builtin-prelude-by-names.t).
+    /// Whether `stmts` holds a `LEAVE` / `KEEP` / `UNDO` phaser: a written one,
+    /// or the replay a unit-level variable trait queues
+    /// (`begin_prologue::lift_unit_var_traits`), whose phasers
+    /// `Variable.block.add_phaser` filed run when an EVAL'd unit ends (#17202).
     // Cost: O(n), n = statements.
     fn has_exit_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
@@ -5270,9 +5266,8 @@ impl Compiler {
                 s,
                 Stmt::Phaser {
                     kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
-                    body,
                     ..
-                } if !matches!(body.as_slice(), [Stmt::VarTrait { .. }])
+                }
             )
         })
     }
@@ -5408,7 +5403,16 @@ impl Compiler {
             for stmt in &stmts[..split] {
                 self.compile_stmt(stmt);
             }
-            self.compile_phaser_block_scope(&stmts[split..], PhaserBlockResult::ReturnViaTopic);
+            // An EVAL'd unit returns its tail value on the VM stack
+            // (`unit_tail_on_stack`), not through the topic: routing it through
+            // `$_` left whatever else the stack held as the unit's value
+            // (#17202: a lifted variable trait's replayed exit phasers).
+            let mode = if self.in_eval_unit && self.unit_tail_on_stack {
+                PhaserBlockResult::Push
+            } else {
+                PhaserBlockResult::ReturnViaTopic
+            };
+            self.compile_phaser_block_scope(&stmts[split..], mode);
         } else {
             // The statement whose value the unit evaluates to. Not simply the
             // last one: reordering hoists a declaration (`constant X = 5`)

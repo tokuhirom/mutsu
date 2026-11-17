@@ -156,7 +156,7 @@ pub(crate) fn make_x_immutable_error(method_name: &str, typename: &str) -> Runti
 ///
 /// (Two spaces before "Is", as rakudo prints it.) This is what a method the
 /// invocant's type simply does not have produces, as distinct from
-/// [`make_multi_no_match_error`]'s "none of these signatures matches", which is
+/// [`builtin_method_no_match`]'s "none of these signatures matches", which is
 /// for a routine that HAS candidates and none of them bound.
 ///
 /// The signature lists the invocant first and then each argument, each rendered
@@ -211,15 +211,78 @@ pub(crate) fn make_no_match_error_with_message(msg: String) -> RuntimeError {
     err
 }
 
-/// Create a structured X::Multi::NoMatch error.
-pub(crate) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
-    let msg = format!("No matching candidates for method: {}", method_name);
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
-    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-    let mut err = RuntimeError::new(msg);
-    err.exception = Some(Box::new(ex));
-    err
+/// An `X::Multi::NoMatch` used only as an internal signal between dispatch
+/// layers, which catch it and never show it (an `is rw` accessor assignment
+/// handing over to the Proxy path; a user `new` falling back to the default
+/// constructor, where formatting the candidates per call cost #9494). Any
+/// error a user can see is built with [`builtin_method_no_match`] or
+/// `Interpreter::user_method_no_match` instead.
+// Cost: O(1).
+pub(crate) fn multi_no_match_signal(method_name: &str) -> RuntimeError {
+    make_no_match_error_with_message(format!(
+        "Cannot resolve caller {method_name}; none of these signatures matches"
+    ))
+}
+
+/// The `X::Multi::NoMatch` of a built-in method whose candidates bind the
+/// invocant `is rw`, called on a value that is not a container
+/// (`"a".subst-mutate(...)`): rakudo's dispatcher says the candidates "match
+/// the type but require mutable arguments".
+// Cost: as [`builtin_method_no_match`].
+pub(crate) fn builtin_method_needs_mutable(
+    target: &Value,
+    method_name: &str,
+    args: &[Value],
+) -> RuntimeError {
+    let call = super::Interpreter::multi_call_profile(method_name, args);
+    let profile = call
+        .strip_prefix(method_name)
+        .and_then(|rest| rest.strip_prefix('('))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or("");
+    let type_name = builtin_receiver_type_name(target);
+    let type_name = declared_class_name(&type_name);
+    let lines = super::builtin_method_sigs::candidate_lines(type_name, method_name);
+    make_no_match_error_with_message(format!(
+        "Cannot resolve caller {method_name}({type_name}:D: {profile}); the following candidates\nmatch the type but require mutable arguments:{lines}"
+    ))
+}
+
+/// [`builtin_method_no_match`] for a receiver known only by its type name
+/// and definedness (a native handle's attribute map, a scheduler).
+// Cost: as [`builtin_method_no_match`].
+pub(crate) fn builtin_type_no_match(
+    type_name: &str,
+    concrete: bool,
+    method_name: &str,
+    args: &[Value],
+) -> RuntimeError {
+    let call = super::Interpreter::multi_call_profile(method_name, args);
+    let profile = call
+        .strip_prefix(method_name)
+        .and_then(|rest| rest.strip_prefix('('))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or("");
+    make_multi_no_match_error_detailed(method_name, type_name, concrete, profile, &[])
+}
+
+/// The `X::Multi::NoMatch` a built-in multi method raises for a call of
+/// `method_name` with `args` on `target`: rakudo's `Cannot resolve caller`
+/// header with the call profile, and its candidates from the generated table.
+// Cost: O(n + a + c), n = arguments, a = the ancestry length of the
+// invocant's type, c = candidate signatures of the method.
+pub(crate) fn builtin_method_no_match(
+    target: &Value,
+    method_name: &str,
+    args: &[Value],
+) -> RuntimeError {
+    let call = super::Interpreter::multi_call_profile(method_name, args);
+    let profile = call
+        .strip_prefix(method_name)
+        .and_then(|rest| rest.strip_prefix('('))
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or("");
+    make_builtin_method_no_match_error(target, method_name, profile)
 }
 
 /// Build an `X::Multi::Ambiguous` error naming the dispatch target and the
@@ -312,13 +375,7 @@ pub(crate) fn builtin_multi_arity_mismatch(
             return Some(RuntimeError::new(too_few_positionals(required, Some(max), got)));
         }
     }
-    let call = super::Interpreter::multi_call_profile(method_name, args);
-    let profile = call
-        .strip_prefix(method_name)
-        .and_then(|rest| rest.strip_prefix('('))
-        .and_then(|rest| rest.strip_suffix(')'))
-        .unwrap_or("");
-    Some(make_builtin_method_no_match_error(target, method_name, profile))
+    Some(builtin_method_no_match(target, method_name, args))
 }
 
 /// Whether rakudo's type of `target` declares `method_name` at all: a call
@@ -398,4 +455,36 @@ pub(crate) fn make_multi_no_match_error_detailed(
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
+}
+
+impl super::Interpreter {
+    /// The `X::Multi::NoMatch` a call of a user class's multi method raises
+    /// when no candidate binds `args`: rakudo's header with the call profile
+    /// and the class's candidate signatures (the built-in table's when the
+    /// class declares none).
+    // Cost: O(n + m), n = arguments, m = candidates across the class's MRO.
+    pub(crate) fn user_method_no_match(
+        &mut self,
+        target: &Value,
+        class_name: &str,
+        method_name: &str,
+        args: &[Value],
+    ) -> RuntimeError {
+        let sigs = self.format_method_candidate_signatures(class_name, method_name, None);
+        let profile = self.format_call_arg_profile(args);
+        let concrete = !matches!(
+            target.view(),
+            crate::value::ValueView::Package(_) | crate::value::ValueView::ParametricRole { .. }
+        );
+        if sigs.is_empty() {
+            // A proto with no candidates at all (`proto method new(|) {*}`).
+            let smiley = if concrete { ":D" } else { ":U" };
+            let sep = if profile.is_empty() { "" } else { ", " };
+            return make_no_match_error_with_message(format!(
+                "Cannot resolve caller {method_name}({}{smiley}{sep}{profile}); Routine does not have any candidates.  Is only the proto defined?",
+                declared_class_name(class_name),
+            ));
+        }
+        make_multi_no_match_error_detailed(method_name, class_name, concrete, &profile, &sigs)
+    }
 }

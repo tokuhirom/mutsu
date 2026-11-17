@@ -1,6 +1,9 @@
 use Test;
 
-plan 5;
+# The capture oracle these tests once consulted is gone (ADR-16595, #17837):
+# no user lexical can reach the lineage store, so only the results remain.
+
+plan 1;
 
 # ADR-12204 S2 step 2: `Thread.start`'s body and a `Proc::Async` reader tap
 # callback are the capture sources of the threads that run them, so an `@`/`%`
@@ -18,19 +21,13 @@ await $proc.start;
 say @ran.raku, ' ', %got.raku, ' ', @lines.join("\n").lines.sort.join(",");
 RAKU
 
-sub run-with(Str $level) {
+sub run-with() {
     my %env = %*ENV;
-    %env<MUTSU_SPAWN_CAPTURE_CHECK> = $level if $level.defined;
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err, :env(%env);
     (out => $p.out.slurp(:close).trim, err => $p.err.slurp(:close).trim).Map
 }
 
 my $expect = '[1] {:t(1)} a,b';
-my %off = run-with(Str);
+my %off = run-with();
 is %off<out>, $expect, "writes reach the parent";
 
-my %on = run-with("all");
-is %on<out>, $expect, "oracle on: output unchanged";
-like %on<err>, /'cell-captured @ran'/, "Thread.start body cell-captures @ran";
-like %on<err>, /'cell-captured @lines'/, "the Proc::Async tap callback cell-captures @lines";
-unlike %on<err>, /'cell-captured-lane-write'/, "no lane write for a cell-captured name";

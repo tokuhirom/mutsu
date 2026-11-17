@@ -467,6 +467,15 @@ pub(super) fn sub_value(
     {
         return Some(result);
     }
+    // A nested scope's `proto` (written, or the one its first `multi`
+    // implies) is not installed before its scope runs: the dispatcher over
+    // the scope's candidates (#17826).
+    if !matches!(routine.view(), ValueView::Sub(_))
+        && let Some(dispatcher) =
+            super::rakuast_check_time_routine::check_time_dispatcher(interp, node, &name)
+    {
+        return Some(dispatcher);
+    }
     // A `multi sub` is its own candidate of the dispatcher, as in rakudo.
     if is_multi
         && let Some(candidate) = super::rakuast_check_time_routine::declared_candidate(

@@ -1082,6 +1082,7 @@ impl Compiler {
             rhs_pure_regex,
             // The RHS is the regex constant, not the topic.
             rhs_is_bare_topic: false,
+            rhs_numeric_literal: false,
         });
         self.compile_match_regex_rhs_value(v);
         self.code.patch_smart_match_rhs_end(sm_idx);
@@ -1130,6 +1131,7 @@ impl Compiler {
             // Carries a `:pos`/`:continue` adverb, so never a "plain" regex.
             rhs_pure_regex: false,
             rhs_is_bare_topic: false,
+            rhs_numeric_literal: false,
         });
         self.compile_regex_value_with_dynamic_adverbs(v, pos_expr, continue_expr);
         self.code.patch_smart_match_rhs_end(sm_idx);

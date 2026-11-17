@@ -589,71 +589,82 @@ impl Interpreter {
                 if def.is_private || (def.is_my && is_ancestor) {
                     continue;
                 }
-                let mut parts = Vec::new();
-                for pd in def.param_defs.iter() {
-                    if pd.is_invocant {
-                        continue;
-                    }
-                    // Skip the implicit `*%_` slurpy named param; we append it
-                    // explicitly at the end of every candidate signature. Not
-                    // gated on `pd.named`: `implicit_method_named_slurpy_param`
-                    // (method_signature_shared.rs) sets `named: false` on this
-                    // param even though its `%`-sigiled name makes it a named
-                    // slurpy, so requiring `pd.named` here let it fall through
-                    // to the normal per-param rendering and produced a
-                    // duplicate `Any *%_, *%_` tail.
-                    if (pd.slurpy || pd.double_slurpy)
-                        && (pd.name == "%_" || pd.name == "_" || pd.name.is_empty())
-                    {
-                        continue;
-                    }
-                    let sigil_prefix = if pd.slurpy || pd.double_slurpy {
-                        "*"
-                    } else {
-                        ""
-                    };
-                    let name = if pd.name.is_empty() {
-                        String::new()
-                    } else if pd.name.starts_with('$')
-                        || pd.name.starts_with('@')
-                        || pd.name.starts_with('%')
-                    {
-                        format!("{}{}", sigil_prefix, pd.name)
-                    } else {
-                        format!("{}${}", sigil_prefix, pd.name)
-                    };
-                    // A named param renders as `:$name` (dropping the
-                    // redundant `Any` type raku's own gist omits for an
-                    // untyped named param), with a trailing `!` when
-                    // required and none when optional — e.g. `:$x!`,
-                    // `Int :$y!`. A positional param keeps the existing
-                    // `{type} $name` shape.
-                    parts.push(if pd.named {
-                        let bang = if pd.required { "!" } else { "" };
-                        match pd.type_constraint.as_deref() {
-                            Some(ty) => format!("{ty} :{name}{bang}"),
-                            None => format!(":{name}{bang}"),
-                        }
-                    } else {
-                        let ty = pd.type_constraint.as_deref().unwrap_or("Any");
-                        format!("{ty} {name}")
-                    });
-                }
-                let invocant_pd = def.param_defs.iter().find(|pd| pd.is_invocant);
-                let inv_type = invocant_pd
-                    .and_then(|pd| pd.type_constraint.as_deref())
-                    .unwrap_or(receiver_class_name);
-                let inv_name = invocant_pd.map(|pd| pd.name.as_str()).unwrap_or("");
-                let mut sig = format!("({} ${}:: ", inv_type, inv_name);
-                sig.push_str(&parts.join(", "));
-                if !parts.is_empty() {
-                    sig.push_str(", ");
-                }
-                sig.push_str("*%_)");
-                sigs.push(sig);
+                sigs.push(Self::format_method_def_signature(def, receiver_class_name));
             }
         }
         sigs
+    }
+
+    /// One candidate's signature as `X::Multi::NoMatch` lists it:
+    /// `(Inv $:: Int $x, *%_)`, the invocant typed `receiver` unless the
+    /// candidate declares its own.
+    // Cost: O(p), p = the candidate's parameters.
+    pub(crate) fn format_method_def_signature(
+        def: &MethodDef,
+        receiver_class_name: &str,
+    ) -> String {
+        let mut parts = Vec::new();
+        for pd in def.param_defs.iter() {
+            if pd.is_invocant {
+                continue;
+            }
+            // Skip the implicit `*%_` slurpy named param; we append it
+            // explicitly at the end of every candidate signature. Not
+            // gated on `pd.named`: `implicit_method_named_slurpy_param`
+            // (method_signature_shared.rs) sets `named: false` on this
+            // param even though its `%`-sigiled name makes it a named
+            // slurpy, so requiring `pd.named` here let it fall through
+            // to the normal per-param rendering and produced a
+            // duplicate `Any *%_, *%_` tail.
+            if (pd.slurpy || pd.double_slurpy)
+                && (pd.name == "%_" || pd.name == "_" || pd.name.is_empty())
+            {
+                continue;
+            }
+            let sigil_prefix = if pd.slurpy || pd.double_slurpy {
+                "*"
+            } else {
+                ""
+            };
+            let name = if pd.name.is_empty() {
+                String::new()
+            } else if pd.name.starts_with('$')
+                || pd.name.starts_with('@')
+                || pd.name.starts_with('%')
+            {
+                format!("{}{}", sigil_prefix, pd.name)
+            } else {
+                format!("{}${}", sigil_prefix, pd.name)
+            };
+            // A named param renders as `:$name` (dropping the
+            // redundant `Any` type raku's own gist omits for an
+            // untyped named param), with a trailing `!` when
+            // required and none when optional — e.g. `:$x!`,
+            // `Int :$y!`. A positional param keeps the existing
+            // `{type} $name` shape.
+            parts.push(if pd.named {
+                let bang = if pd.required { "!" } else { "" };
+                match pd.type_constraint.as_deref() {
+                    Some(ty) => format!("{ty} :{name}{bang}"),
+                    None => format!(":{name}{bang}"),
+                }
+            } else {
+                let ty = pd.type_constraint.as_deref().unwrap_or("Any");
+                format!("{ty} {name}")
+            });
+        }
+        let invocant_pd = def.param_defs.iter().find(|pd| pd.is_invocant);
+        let inv_type = invocant_pd
+            .and_then(|pd| pd.type_constraint.as_deref())
+            .unwrap_or(receiver_class_name);
+        let inv_name = invocant_pd.map(|pd| pd.name.as_str()).unwrap_or("");
+        let mut sig = format!("({} ${}:: ", inv_type, inv_name);
+        sig.push_str(&parts.join(", "));
+        if !parts.is_empty() {
+            sig.push_str(", ");
+        }
+        sig.push_str("*%_)");
+        sig
     }
 }
 

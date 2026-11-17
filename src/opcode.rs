@@ -2101,6 +2101,13 @@ pub(crate) enum OpCode {
         /// parentheses really does answer `True` there — so the check is on the
         /// syntactic shape, not on whether the RHS happens to read the topic.
         rhs_is_bare_topic: bool,
+        /// True when the RHS is written as an `Int` or `Num` literal (`~~ 2`,
+        /// `~~ -2`, `~~ 2e0`). Rakudo compiles that match as a numeric
+        /// comparison against the topic's `.Numeric(:fail-or-nil)`, so a
+        /// topic with no defined `Numeric` (a `Block`, a `Pair`, a plain
+        /// object) dies and a `Failure` topic throws, where the same match
+        /// against a variable answers `False` (#16750).
+        rhs_numeric_literal: bool,
     },
     /// Scalarize a multi-match regex result: Nil -> 0, Positional -> elems, Match -> 1.
     ScalarizeRegexMatchResult,
@@ -3132,7 +3139,17 @@ pub(crate) enum OpCode {
     /// is only known at run time): the producer then also hands out a missing
     /// element's deferred location, with no raw-invocant callee needed, and
     /// `CallMethod` stores the fresh container into it (ADR-13823).
-    IndexInvocantRef { is_positional: bool, vivify: bool },
+    ///
+    /// `slice_cells` is set when the method is one that hands the receiver's
+    /// elements to the caller or to a callback (`map`, `grep`, `first`, `kv`,
+    /// ...): a slice receiver (`@a[0..1].map({ $_ = 6 })`) is then the `List`
+    /// of the selected elements' own cells, as Rakudo's slice is a `List` of
+    /// the Array's Scalars, so a write through `$_` reaches the Array (#17401).
+    IndexInvocantRef {
+        is_positional: bool,
+        vivify: bool,
+        slice_cells: bool,
+    },
     /// ADR-0067's subscript-ARGUMENT producer: the twin of
     /// [`Self::IndexInvocantRef`] one position over. `$b(@a[0])`,
     /// `$obj.m(@a[0])` and `&g(@a[0])` must hand the element's own container to

@@ -1434,7 +1434,12 @@ impl Compiler {
     /// to `IndexElemAutoviv` instead and is left alone: it hands back the
     /// element's shared node for in-place mutation, which is a different
     /// contract from replacing the element.
-    pub(super) fn mark_trailing_index_as_invocant_ref(&mut self, target: &Expr, vivify: bool) {
+    pub(super) fn mark_trailing_index_as_invocant_ref(
+        &mut self,
+        target: &Expr,
+        vivify: bool,
+        slice_cells: bool,
+    ) {
         if !matches!(target, Expr::Index { .. }) {
             return;
         }
@@ -1444,8 +1449,29 @@ impl Compiler {
             *last = OpCode::IndexInvocantRef {
                 is_positional,
                 vivify,
+                slice_cells,
             };
         }
+    }
+
+    /// Whether `method` hands its receiver's elements to the caller or to a
+    /// callback, so a slice receiver must be the `List` of the elements' own
+    /// cells for a write through `$_` (or a `kv` value) to reach the source
+    /// (see `OpCode::IndexInvocantRef::slice_cells`).
+    // Cost: O(1).
+    pub(super) fn method_iterates_receiver_elements(method: &str) -> bool {
+        matches!(
+            method,
+            "map"
+                | "grep"
+                | "first"
+                | "deepmap"
+                | "duckmap"
+                | "nodemap"
+                | "kv"
+                | "pairs"
+                | "values"
+        )
     }
 
     /// True when `arg` is a subscript selecting by a bare `*` / `**`

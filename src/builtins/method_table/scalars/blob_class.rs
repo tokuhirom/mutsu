@@ -52,7 +52,9 @@ pub(super) static ROWS: &[MethodRow] = &{
 fn allocate(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let ValueView::Package(name) = target.view() else {
         return Some(Err(
-            crate::runtime::methods_signature_errors::make_multi_no_match_error("allocate"),
+            crate::runtime::methods_signature_errors::builtin_method_no_match(
+                target, "allocate", args,
+            ),
         ));
     };
     Some(Interpreter::buf_allocate(name, args))

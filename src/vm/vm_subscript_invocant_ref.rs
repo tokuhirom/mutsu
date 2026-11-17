@@ -45,6 +45,7 @@ impl Interpreter {
         &mut self,
         is_positional: bool,
         vivify: bool,
+        slice_cells: bool,
     ) -> Result<(), RuntimeError> {
         // A Junction key threads the whole load over its values: every addressed
         // element is vivified to an `Array` and the call autothreads over a
@@ -63,7 +64,7 @@ impl Interpreter {
             for v in values.iter() {
                 self.stack.push(container.clone());
                 self.stack.push(v.clone());
-                self.exec_index_invocant_ref_op(is_positional, true)?;
+                self.exec_index_invocant_ref_op(is_positional, true, false)?;
                 let element = self.stack.pop().unwrap_or(Value::NIL);
                 elems.push(self.vivify_element_array(element)?);
             }
@@ -103,6 +104,16 @@ impl Interpreter {
             // so this is hygiene rather than a reachable bug today.)
             self.dispatch.skip_postcircumfix_overload = false;
             self.stack.push(cell);
+            return Ok(());
+        }
+        // A slice receiver of a method that hands out its elements is the
+        // `List` of the selected elements' own cells (#17401).
+        if slice_cells
+            && is_positional
+            && let Some(cells) = self.take_subscript_slice_cells(is_positional)
+        {
+            self.dispatch.skip_postcircumfix_overload = false;
+            self.stack.push(cells);
             return Ok(());
         }
         self.exec_index_op_with_positional(is_positional)?;

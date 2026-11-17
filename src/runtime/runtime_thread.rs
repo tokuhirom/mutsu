@@ -3,63 +3,12 @@ use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
-    /// ADR-12204 S2: whether the `@`/`%` lexical `name` (with sigil) is held in
-    /// a shared `ContainerRef` cell by the spawning frame (the capture oracle's
-    /// "cell-captured" set). Attributes, dynamics, qualified and
-    /// compiler-internal names are not such a lexical.
-    // Cost: O(1) expected, one hash lookup.
-    fn aggregate_cell_captured(&self, name: &str) -> bool {
-        if !Self::transient_lane_candidate(name) || name.contains("__") {
-            return false;
-        }
-        self.env.get(name).is_some_and(|v| {
-            matches!(
-                v.view(),
-                ValueView::ContainerRef(_)
-            ) && matches!(v.deref_container().view(), ValueView::Array(..) | ValueView::Hash(..))
-        })
-    }
-
-    /// Whether `key` is a plain-lexical `@`/`%` name the ADR-0039 §8.6
-    /// transient-lane rule applies to. Twigil'd, dynamic and attribute
-    /// containers (`@!x`, `@*y`, `%?RESOURCES`) are not plain lexicals and keep
-    /// their existing lifetimes — `@*x`/`%*x` in particular depend on a durable
-    /// name-lane entry for their cross-thread propagation (see the
-    /// aggregate-dynamic carve-out in the seeding loop). The anonymous
-    /// container slot names and `::`-qualified names are excluded for the same
-    /// reason `collect_unit_lexical_names` excludes them.
-    pub(crate) fn transient_lane_candidate(key: &str) -> bool {
-        Self::is_plain_lexical_name(key)
-            && !key.contains("__ANON")
-            && !crate::qualified::is_qualified_str(key)
-    }
-
-    /// [`Self::clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
-    /// `Promise.start`, `Thread.start`). The block only feeds the ADR-12204
-    /// capture oracle: no plain user lexical is published by the spawn.
-    pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
-        if crate::runtime::shared_store::capture_check::enabled() {
-            // ADR-12204 S1: the aggregates this spawn's block names.
-            if let ValueView::Sub(data) = block.view()
-                && let Some(cc) = data.compiled_code.as_ref()
-            {
-                let names: Vec<String> = cc
-                    .free_var_syms
-                    .iter()
-                    .chain(cc.free_var_writes.iter())
-                    .chain(cc.free_var_container_writes.iter())
-                    .map(|sym| sym.resolve())
-                    .filter(|name| name.starts_with(['@', '%']))
-                    .collect();
-                let cells: Vec<String> = names
-                    .iter()
-                    .filter(|name| self.aggregate_cell_captured(name))
-                    .cloned()
-                    .collect();
-                crate::runtime::shared_store::capture_check::record_spawn_captures(&names);
-                crate::runtime::shared_store::capture_check::record_cell_captures(&cells);
-            }
-        }
+    /// [`Self::clone_for_thread`] for a spawn that runs a known block or
+    /// callback (`start { ... }`, `Promise.start`, `Thread.start`, a `tap` or
+    /// scheduler callback). The block reaches its lexicals through its own
+    /// captures (ADR-16595), so the clone is the plain one; the block names
+    /// the spawn's work at the call site.
+    pub(crate) fn clone_for_thread_for_block(&mut self, _block: &Value) -> Self {
         self.spawn_clone()
     }
 
@@ -83,9 +32,6 @@ impl Interpreter {
 
     /// The workhorse behind every thread clone.
     fn spawn_clone(&mut self) -> Self {
-        // ADR-12204 S1 oracle: the lane writes below seed the spawner's
-        // lexicals; they are not uses of the names.
-        let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();
         // A worker has no mainline callframe of its own. Preserve the spawning
         // source location separately so an anonymous callback can still expose
         // a useful bottom backtrace frame without duplicating a located entry

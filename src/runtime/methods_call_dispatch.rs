@@ -1,4 +1,3 @@
-use super::methods_signature_errors::make_multi_no_match_error;
 use super::*;
 use crate::builtins::method_table::receiver_step::{Step, Why};
 use crate::meta_ns::MetaNs;
@@ -174,7 +173,9 @@ impl Interpreter {
             ));
         }
         if super::any_cool_method_gate::fmt_has_no_candidate(&target, method) {
-            return Err(make_multi_no_match_error(method));
+            return Err(super::methods_signature_errors::builtin_method_no_match(
+                &target, method, &args,
+            ));
         }
         // A buffer is not a `Cool` either (#13313): the by-name text
         // dispatchers would stringify it (`Buf.new(1).contains(1)`).

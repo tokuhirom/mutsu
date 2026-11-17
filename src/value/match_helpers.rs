@@ -133,6 +133,15 @@ fn write_match_raku(attributes: &AttrMap, out: &mut String, esc: &mut EscapedOri
         }
     }
 
+    // `.made` (`make`'s value), as Rakudo's `Match.raku` lists it last.
+    if let Some(made) = attributes.get("ast")
+        && !made.is_nil()
+    {
+        out.push_str(", :made(");
+        write_value_raku(made, out, esc);
+        out.push(')');
+    }
+
     out.push(')');
 }
 
