@@ -48,7 +48,9 @@ pub(super) fn scalar(value: i64) -> Result<char, String> {
 }
 
 /// Parse the tail of `\x` or `\o`, rejecting an entire malformed escape
-/// before its caller appends any of its codepoints.
+/// before its caller appends any of its codepoints. The codepoints are pushed
+/// raw: a literal `U+10FFFD` is escaped once, for the whole literal, by
+/// `literal_str` (ADR-17800).
 // Cost: O(n), n = source consumed by the escape.
 pub(super) fn numeric_escape(rest: &str, kind: char) -> Result<(&str, String), String> {
     let radix = if kind == 'x' { 16 } else { 8 };
@@ -58,10 +60,7 @@ pub(super) fn numeric_escape(rest: &str, kind: char) -> Result<(&str, String), S
             .find(']')
             .ok_or_else(|| format!("Missing closing bracket for \\{kind}["))?;
         for digits in inner[..end].split(',') {
-            crate::grapheme_break::push_codepoint(
-                &mut text,
-                codepoint(digits.trim(), radix, kind)?,
-            );
+            text.push(codepoint(digits.trim(), radix, kind)?);
         }
         Ok((&inner[end + 1..], text))
     } else {
@@ -75,7 +74,7 @@ pub(super) fn numeric_escape(rest: &str, kind: char) -> Result<(&str, String), S
             }
             end = index + ch.len_utf8();
         }
-        crate::grapheme_break::push_codepoint(&mut text, codepoint(&rest[..end], radix, kind)?);
+        text.push(codepoint(&rest[..end], radix, kind)?);
         Ok((&rest[end..], text))
     }
 }
