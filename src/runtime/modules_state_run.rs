@@ -7,6 +7,7 @@ pub(crate) mod io_state;
 pub(crate) mod lexical_state;
 pub(crate) mod lexical_import_hooks;
 pub(crate) mod lexical_imports;
+pub(crate) mod lexical_import_family_merge;
 pub(crate) mod lexical_import_replay;
 pub(crate) mod unit_env_imports;
 pub(crate) mod module_state;
