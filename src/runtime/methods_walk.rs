@@ -39,7 +39,7 @@ impl Interpreter {
     /// `C+{A}+{B}`), as WALK sees a mixin: the roles, latest first, then the
     /// base class chain. Any other class is its own receiver with no roles.
     // Cost: O(l * r), l = stacked mixin levels, r = roles per level.
-    fn mixin_class_walk_receiver(&self, class_name: String) -> (String, Vec<String>) {
+    pub(crate) fn mixin_class_walk_receiver(&self, class_name: String) -> (String, Vec<String>) {
         let mut base = class_name;
         let mut roles = Vec::new();
         while let Some(recipe) = self.types.published_mixins.lookup(&base) {

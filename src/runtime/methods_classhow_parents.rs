@@ -245,7 +245,20 @@ impl Interpreter {
             .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "transitive" && !v.truthy()));
         let mut roles = match typed_container_roles(&class_name, local, non_transitive, is_instance) {
             Some(roles) => roles,
-            None => self.collect_roles_for_class(&class_name, local, non_transitive, is_instance),
+            None => {
+                // An object reblessed into a mixin type (`$o does A`: `C+{A}`)
+                // lists its mixed-in roles, most recent first, ahead of the
+                // base class's own, without deduping them (#17890), as the
+                // `but` wrapper below does.
+                let (root, mut mixed) = if local || non_transitive {
+                    (class_name.clone(), Vec::new())
+                } else {
+                    self.mixin_class_walk_receiver(class_name.clone())
+                };
+                let mut base = self.collect_roles_for_class(&root, local, non_transitive, is_instance);
+                mixed.append(&mut base);
+                mixed
+            }
         };
         // A `but`-mixed value's own roles come FIRST, most-recently-applied
         // first, ahead of whatever the base type composes:

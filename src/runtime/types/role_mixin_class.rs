@@ -609,8 +609,36 @@ impl Interpreter {
                     let attr_name = &attr.name;
                     let default_expr = &attr.default;
                     let sigil = &attr.sigil;
-                    if attributes.contains_key(attr_name.as_str()) {
-                        continue;
+                    // An attribute of the same name a class below the mixin
+                    // declares is a separate attribute (#17890): as for a
+                    // subclass shadowing its parent's, each declaring class
+                    // keeps its own copy under `Class\0name`, and the bare key
+                    // -- what the mixin type's accessor reads -- becomes the
+                    // role's. Otherwise an existing value stays.
+                    let shadowing: Vec<String> = if attributes.contains_key(attr_name.as_str()) {
+                        let declaring: Vec<String> = self
+                            .per_class_attrs_shared(mixin_class)
+                            .iter()
+                            .filter(|(owner, a)| a.name == *attr_name && owner != mixin_class)
+                            .map(|(owner, _)| owner.clone())
+                            .collect();
+                        if declaring.is_empty() {
+                            continue;
+                        }
+                        declaring
+                    } else {
+                        Vec::new()
+                    };
+                    if !shadowing.is_empty() {
+                        let current = attributes.as_map().get(attr_name.as_str()).cloned();
+                        if let Some(current) = current {
+                            for owner in &shadowing {
+                                let key = format!("{owner}\0{attr_name}");
+                                if !attributes.contains_key(key.as_str()) {
+                                    attributes.insert(key.as_str(), current.clone());
+                                }
+                            }
+                        }
                     }
                     let value = match default_expr {
                         Some(arg) => self.eval_decl_trait_arg(arg)?,
@@ -620,6 +648,10 @@ impl Interpreter {
                             _ => Value::NIL,
                         },
                     };
+                    if !shadowing.is_empty() {
+                        let key = format!("{mixin_class}\0{attr_name}");
+                        attributes.insert(key.as_str(), value.clone());
+                    }
                     attributes.insert(attr_name.as_str(), value);
                 }
                 if let Some(saved) = saved_env {
