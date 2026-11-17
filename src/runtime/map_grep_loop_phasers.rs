@@ -78,9 +78,6 @@ impl Interpreter {
         data: &crate::value::SubData,
         kind: PhaserKind,
     ) -> Result<(), RuntimeError> {
-        if kind == PhaserKind::First && !self.take_closure_first_flag(data) {
-            return Ok(());
-        }
         for (index, stmt) in data.body.iter().enumerate() {
             let Stmt::Phaser {
                 kind: phaser_kind,
@@ -105,9 +102,9 @@ impl Interpreter {
     /// as a one-shot block called with `args`. A loop that binds through the
     /// full binder restores the call-local environment after every call, so
     /// the phaser binds the block's signature itself (a destructuring
-    /// sub-signature included) to the chunk it belongs to: the first for
-    /// `FIRST`, the final one for `LAST`. Captured lexicals keep their closure
-    /// semantics.
+    /// sub-signature included) to the chunk it belongs to: the final one for
+    /// `LAST`. Captured lexicals keep their closure semantics. (`FIRST` runs
+    /// in the callback's own body, see [`Self::take_running_clone_first_flag`].)
     // Cost: O(s) to scan the block's s top-level statements, plus one call
     // per matching phaser.
     pub(crate) fn call_block_loop_phasers(
@@ -116,9 +113,6 @@ impl Interpreter {
         kind: PhaserKind,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
-        if kind == PhaserKind::First && !self.take_closure_first_flag(data) {
-            return Ok(());
-        }
         for stmt in data.body.iter() {
             let Stmt::Phaser {
                 kind: phaser_kind,
@@ -139,49 +133,21 @@ impl Interpreter {
         Ok(())
     }
 
-    /// The `FIRST` phasers of a `.map` / `.grep` callback `func`, run before
-    /// its first call on `first`, the first source element, by a loop that
-    /// calls the callback one element at a time (a lazy pipe). A callback that
-    /// is not a block has none.
-    // Cost: as [`Self::call_block_loop_phasers`]; O(1) for a non-block.
-    pub(crate) fn run_callback_first_phasers(
-        &mut self,
-        func: &Value,
-        first: &Value,
-    ) -> Result<(), RuntimeError> {
-        match func.view() {
-            ValueView::Sub(data) => {
-                self.call_block_loop_phasers(&data, PhaserKind::First, vec![first.clone()])
-            }
-            _ => Ok(()),
-        }
-    }
-
-    /// Take the `FIRST` flag of the closure clone `data`: `true` the first
-    /// time any loop calls this clone, `false` ever after. Rakudo's `FIRST`
-    /// belongs to the code object -- a fresh clone sets the flag, its first
-    /// call takes it (`p6takefirstflag`) -- so a block a variable holds fires
-    /// its `FIRST` once however many `.map`s call it, while a block literal
-    /// re-created on each pass of an enclosing loop fires once per pass
-    /// (#17673). The flag lives in the shared `once` store under the clone's
-    /// state scope, as a `once` block's result does. A block without a
-    /// `FIRST` phaser takes nothing.
-    // Cost: O(s) to scan the block's s top-level statements; a block with a
-    // `FIRST` adds one keyed store probe, O(k), k = key length.
-    fn take_closure_first_flag(&self, data: &crate::value::SubData) -> bool {
-        let has_first = data.body.iter().any(|stmt| {
-            matches!(
-                stmt,
-                Stmt::Phaser {
-                    kind: PhaserKind::First,
-                    ..
-                }
-            )
-        });
-        if !has_first {
-            return false;
-        }
-        let key = format!("FIRST#{}", self.sub_state_scope_id(data));
+    /// [`OpCode::FirstPhaser`](crate::opcode::OpCode::FirstPhaser): take the
+    /// `FIRST` flag of the closure clone whose body is running -- `true` the
+    /// first time that clone runs, `false` ever after. Rakudo's `FIRST`
+    /// belongs to the code object: a fresh clone sets the flag and its first
+    /// call takes it (`p6takefirstflag`), whoever makes the call, so a block a
+    /// variable holds fires its `FIRST` once however many `.map`s or direct
+    /// calls run it, while a block literal re-created on each pass of an
+    /// enclosing loop fires once per pass (#17673, #17945). The clone is the
+    /// running state scope (the one its `state` variables live in, which a
+    /// `.map` loop sets to the callback's clone too); the flag lives in the
+    /// shared `once` store, as a `once` block's result does.
+    // Cost: one keyed store probe, O(k), k = key length.
+    pub(crate) fn take_running_clone_first_flag(&self) -> bool {
+        let scope = self.lexicals.state_scope_id.get();
+        let key = format!("FIRST#{scope:?}");
         let store = self.once_store();
         match store.claim(&key) {
             crate::runtime::once_store::OnceClaim::Cached(_) => false,

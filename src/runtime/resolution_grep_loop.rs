@@ -253,15 +253,9 @@ impl Interpreter {
                     list_items = feed.window(1);
                 }
                 let mut matched = Vec::new();
-                if let Some(first) = list_items.first()
-                    && slot.take_first_phaser(true)
-                {
-                    self.call_block_loop_phasers(
-                        &data,
-                        crate::ast::PhaserKind::First,
-                        vec![first.clone()],
-                    )?;
-                }
+                // The callback's `FIRST` runs in its own body, on the first call of
+                // this clone (#17945); the slot only records that the loop started.
+                slot.take_first_phaser(!list_items.is_empty());
                 for (i, item) in list_items.iter().enumerate() {
                     *consumed = consumed_base + i + 1;
                     let callable = Value::sub_value(data.clone());
@@ -388,9 +382,9 @@ impl Interpreter {
                 // Seq; Rakudo runs no LAST for one.
                 let has_first = !list_items.is_empty()
                     || feed.as_ref().is_some_and(|feed| feed.fetch(0).is_some());
-                if slot.take_first_phaser(has_first) {
-                    vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
-                }
+                // The callback's `FIRST` runs in its own body, on the first call of
+                // this clone (#17945); the slot only records that the loop started.
+                slot.take_first_phaser(has_first);
                 let mut i = 0usize;
                 let mut stop = false;
                 loop {

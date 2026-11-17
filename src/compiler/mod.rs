@@ -5374,6 +5374,11 @@ impl Compiler {
                 name_idx: global_idx,
             });
         }
+        // A block body compiled as its own chunk (a `.map`/`.grep` callback)
+        // runs its `FIRST` phasers at entry, as a closure body does.
+        if self.top_level_is_block_body {
+            self.emit_first_phasers(stmts, true);
+        }
         // If the top-level body contains a CATCH or CONTROL block, wrap in
         // an implicit try so the phaser can observe exceptions / control
         // signals from the surrounding statements.
@@ -5715,6 +5720,7 @@ impl Compiler {
                 self.compile_stmt(s);
             }
         }
+        self.emit_first_phasers(stmts, false);
         for (i, s) in stmts.iter().enumerate() {
             if let Stmt::Phaser {
                 kind: PhaserKind::Enter,
@@ -5774,7 +5780,8 @@ impl Compiler {
                             | PhaserKind::Keep
                             | PhaserKind::Undo
                             | PhaserKind::Pre
-                            | PhaserKind::Post,
+                            | PhaserKind::Post
+                            | PhaserKind::First,
                         ..
                     }
                 )

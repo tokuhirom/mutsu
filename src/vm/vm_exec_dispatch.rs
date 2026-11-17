@@ -7676,6 +7676,14 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_once_expr_op(code, *body_end, ip, compiled_fns)?;
             }
+            // Cost: O(1) (a hashed once-store claim keyed by the clone's state scope) plus the body on first run.
+            OpCode::FirstPhaser { body_end } => {
+                if !self.take_running_clone_first_flag() {
+                    *ip = *body_end as usize;
+                } else {
+                    *ip += 1;
+                }
+            }
             // Cost: O(1) (a hashed once-store claim keyed by a formatted site key) plus the body on first run.
             OpCode::BeginOnceExpr { body_end, site_id } => {
                 self.sync_source_line(code, *ip);

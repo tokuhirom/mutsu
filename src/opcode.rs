@@ -3007,6 +3007,13 @@ pub(crate) enum OpCode {
     /// own `once`. An error in the body abandons the claim, so a later execution
     /// runs it again.
     OnceExpr { body_end: u32 },
+    /// A block's `FIRST` phasers, compiled inline as `[ip+1, body_end)` at the
+    /// block's entry: they run on the first call of each closure clone and are
+    /// skipped ever after (rakudo's `p6takefirstflag`). The flag is the one a
+    /// `.map`/`.grep` loop takes for the same clone
+    /// (`Interpreter::take_closure_first_flag`), keyed by the running clone's
+    /// state scope. Stack: unchanged (#17945).
+    FirstPhaser { body_end: u32 },
     /// A `BEGIN <expr>` whose value the phaser lifter could not hoist out of its
     /// enclosing routine (module bodies are not lifted at all — see
     /// `compile_expr_phaser`). The body still runs at most once: the result is
@@ -12832,7 +12839,7 @@ impl CompiledCode {
     }
 
     pub(crate) fn emit(&mut self, op: OpCode) -> usize {
-        if matches!(op, OpCode::OnceExpr { .. }) {
+        if matches!(op, OpCode::OnceExpr { .. } | OpCode::FirstPhaser { .. }) {
             self.has_once = true;
         }
         if !self.uses_samewith
@@ -13331,6 +13338,7 @@ impl CompiledCode {
             OpCode::PackageScope { body_end, .. } => *body_end = target,
             OpCode::DoBlockExpr { body_end, .. } => *body_end = target,
             OpCode::OnceExpr { body_end, .. } => *body_end = target,
+            OpCode::FirstPhaser { body_end } => *body_end = target,
             OpCode::BeginOnceExpr { body_end, .. } => *body_end = target,
             OpCode::DoGivenExpr { body_end, .. } => *body_end = target,
             OpCode::ReactScope { body_end, .. } => *body_end = target,
