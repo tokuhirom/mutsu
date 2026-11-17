@@ -1746,7 +1746,7 @@ impl Interpreter {
                 // the stack, so discard it after routing.
                 // A sigilless name bound to an object with a user `STORE`
                 // (`CheckReadOnly` marked it) takes the same route (#9551).
-                let sigilless_store = self.pending_sigilless_store.as_deref() == Some(&*name);
+                let sigilless_store = self.sigilless_store_context().get();
                 if (sigilless_store
                     || (!raw_mode
                         && !is_bind_ctx
@@ -1760,6 +1760,8 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // The mark belongs to this store alone.
+                self.sigilless_store_context().set(false);
                 // Reject private attribute twigil (!) assignment when no self is available
                 {
                     let bare = name.trim_start_matches(['$', '@', '%', '&']);

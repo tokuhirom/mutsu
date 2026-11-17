@@ -47,6 +47,7 @@ pub(crate) mod bit {
     pub(crate) const DECL_TYPECHECKED: u16 = 1 << 9;
     pub(crate) const SHAPED_DECL: u16 = 1 << 10;
     pub(crate) const TRAIT_INIT: u16 = 1 << 11;
+    pub(crate) const SIGILLESS_STORE: u16 = 1 << 12;
 }
 
 /// The whole mark-context flag family in one allocation.
@@ -103,7 +104,8 @@ impl MarkContextState {
         | bit::VARDECL
         | bit::DECL_TYPECHECKED
         | bit::SHAPED_DECL
-        | bit::TRAIT_INIT;
+        | bit::TRAIT_INIT
+        | bit::SIGILLESS_STORE;
 
     /// Whether *no* store-flavour mark is pending: the next store is a plain
     /// `=` into an already-declared variable, with no bind, rebind, `constant`,
@@ -360,6 +362,16 @@ impl crate::runtime::Interpreter {
         MarkFlag::new(&self.mark_ctx.flags, bit::TRAIT_INIT)
     }
 
+    /// Set by `CheckReadOnly` when the assignment it guards is to a readonly
+    /// sigilless term (or `constant`) bound to an object with a user `STORE`,
+    /// or to a mutable aggregate: the store right after it assigns *through*
+    /// the bound value instead of refusing. `CheckReadOnly` is emitted after
+    /// the RHS, immediately before that store.
+    #[inline]
+    pub(crate) fn sigilless_store_context(&self) -> MarkFlag<'_> {
+        MarkFlag::new(&self.mark_ctx.flags, bit::SIGILLESS_STORE)
+    }
+
     /// The one non-`Copy` member of the family — see
     /// `MarkContextState::share_source`.
     #[inline]
@@ -407,6 +419,7 @@ mod tests {
             bit::DECL_TYPECHECKED,
             bit::SHAPED_DECL,
             bit::TRAIT_INIT,
+            bit::SIGILLESS_STORE,
         ];
         let mut seen: u16 = 0;
         for b in all {

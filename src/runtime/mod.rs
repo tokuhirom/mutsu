@@ -2161,10 +2161,6 @@ pub struct Interpreter {
     pub(crate) args_scratch_pool: Vec<Vec<Value>>,
     block_stack: Vec<CodeFrame>,
     block_scope_depth: usize,
-    /// A sigilless name (`my \foo = Obj.new`) whose assignment `CheckReadOnly`
-    /// let through because the bound object has a user `STORE`: the store that
-    /// follows routes through `STORE` instead of rebinding the name (#9551).
-    pub(crate) pending_sigilless_store: Option<String>,
     /// Sigilless parameter names (`\attr`, `my \x`) of the routine whose body is
     /// about to be compiled by the interpret path (`compile_block_value_opts`).
     /// The multi/user-sub fallback runs a body via a *fresh* `Compiler`, which

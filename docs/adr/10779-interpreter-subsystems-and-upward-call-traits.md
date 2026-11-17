@@ -304,3 +304,7 @@ these preconditions:
   `where` clause's exception (`Result<bool, RuntimeError>`) and method resolution returns
   `MethodResolved`, the method twin of `Resolved`; the dispatch funnels raise it, probes drop
   it. The backstop `exec_one` ran after every op is gone with the field.
+- D3, `pending_sigilless_store` (2026-11-17): one field fewer. `CheckReadOnly` moved after the
+  RHS, immediately before the store it guards (rakudo's evaluation order), so its "assign
+  through the bound value" verdict is the mark-context bit `SIGILLESS_STORE` that store
+  consumes. The name the field carried only told stores apart; adjacency does that now.

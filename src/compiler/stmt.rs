@@ -2653,9 +2653,8 @@ impl Compiler {
                 // SetGlobal performs its own readonly_vars check, so the extra
                 // CheckReadOnly op (which allocates a `__mutsu_sigilless_readonly::`
                 // lookup key on every assignment) is pure overhead here.
-                if !matches!(op, AssignOp::Bind) && effective_name != "__ANON_STATE#" {
-                    self.code.emit(OpCode::CheckReadOnly(name_idx));
-                }
+                let check_read_only =
+                    !matches!(op, AssignOp::Bind) && effective_name != "__ANON_STATE#";
                 if matches!(op, AssignOp::Bind) {
                     // `$a := my $z = 2` binds `$a` to `$z`'s container.
                     // Evaluated as an expression the declaration yields only
@@ -2790,18 +2789,30 @@ impl Compiler {
                     // Fuse `$local ~= rhs` into one instruction that reads the
                     // slot AFTER the RHS and appends in place (#8695). It
                     // performs its own store, so nothing is left to emit.
-                    if self.try_compile_fused_concat_assign_local(effective_name, execution_expr) {
+                    let check = check_read_only.then_some(name_idx);
+                    if self.try_compile_fused_concat_assign_local(
+                        effective_name,
+                        execution_expr,
+                        check,
+                    ) {
                         return;
                     }
                     // Fuse `$x OP= rhs` (parsed as `$x = $x OP rhs`) into an
                     // atomic RMW for plain env-named scalars (Track C). The fused
                     // op leaves the result on the stack; statement context wants
                     // nothing, so discard it.
-                    if self.try_compile_fused_compound_assign(effective_name, execution_expr) {
+                    if self.try_compile_fused_compound_assign(effective_name, execution_expr, check)
+                    {
                         self.code.emit(OpCode::Pop);
                         return;
                     }
                     self.compile_assignment_rhs_for_target(effective_name, execution_expr);
+                    // After the RHS, as rakudo assigns: `$ro = f()` runs `f`
+                    // before the assignment dies. Right before the store, so the
+                    // `SIGILLESS_STORE` mark it may set is that store's.
+                    if check_read_only {
+                        self.code.emit(OpCode::CheckReadOnly(name_idx));
+                    }
                 }
                 // An assignment whose target is a sigilless binding (`-> \v`
                 // loop-param bind stmts — `build_for_bind_stmts` strips the

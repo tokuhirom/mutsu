@@ -139,7 +139,6 @@ impl Interpreter {
             topic_state: self.topic_state.fork_for_thread(),
             async_state: self.async_state.fork_for_thread(),
             block_scope_depth: self.block_scope_depth,
-            pending_sigilless_store: None,
             regex_state: self.regex_state.fork_for_thread(),
             caches: self.caches.fork_for_thread(),
             pending_eval_sigilless: Vec::new(),

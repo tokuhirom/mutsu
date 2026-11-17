@@ -118,11 +118,13 @@ impl Compiler {
     /// `MetaAssignIdentity::EmptyStr`) and the literal `$s = $s ~ rhs` are
     /// fused (#9141). The wrapper is what makes an undefined LHS seed `''`
     /// instead of warning, so the opcode's flag records which of the two the
-    /// general path has to reproduce.
+    /// general path has to reproduce. `check_read_only` is the target's
+    /// `CheckReadOnly` name constant, emitted after the RHS.
     pub(super) fn try_compile_fused_concat_assign_local(
         &mut self,
         name: &str,
         expr: &Expr,
+        check_read_only: Option<u32>,
     ) -> bool {
         // A private scalar attribute (`$!buf`, slot `!buf`) fuses too, inside a
         // method (where `self` is a direct local and `compile_expr_var` reads
@@ -172,6 +174,10 @@ impl Compiler {
         // The RHS compiles exactly as the unfused `Binary` path compiles it (a
         // call-arg compile would itemize / escape-box a scalar operand).
         self.compile_expr(right);
+        // After the RHS, as for the unfused assignment.
+        if let Some(name_idx) = check_read_only {
+            self.code.emit(OpCode::CheckReadOnly(name_idx));
+        }
         self.emit_lex_import_builtin_op(&OpCode::Concat);
         self.code.emit(OpCode::ConcatAssignLocal(slot, seed));
         true
@@ -185,7 +191,14 @@ impl Compiler {
     /// cell (Track C), mirroring the slice-1 `++`/`--` path. Local slots and a
     /// literal `$x = $x + y` are deliberately NOT fused: own locals are ~never
     /// shared cells, and fusing them regressed a hot 3M-iter loop.
-    pub(super) fn try_compile_fused_compound_assign(&mut self, name: &str, expr: &Expr) -> bool {
+    /// `check_read_only` is the target's `CheckReadOnly` name constant, emitted
+    /// after the RHS as for the unfused assignment.
+    pub(super) fn try_compile_fused_compound_assign(
+        &mut self,
+        name: &str,
+        expr: &Expr,
+        check_read_only: Option<u32>,
+    ) -> bool {
         if self.local_map.contains_key(name)
             || self
                 .native_int_operand_signedness(&Expr::Var(name.to_string()))
@@ -227,6 +240,9 @@ impl Compiler {
         // unfused `$x = $x OP rhs` would take); a call-arg compile can itemize /
         // escape-box the operand, which is wrong for a scalar binary operand.
         self.compile_expr(right);
+        if let Some(check_idx) = check_read_only {
+            self.code.emit(OpCode::CheckReadOnly(check_idx));
+        }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         self.emit_lex_import_builtin_compound(compound_op);
         self.code.emit(OpCode::AtomicCompoundVar {
