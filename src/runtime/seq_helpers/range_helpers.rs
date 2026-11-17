@@ -272,7 +272,15 @@ impl Interpreter {
             }
         }
 
-        let v = val.to_f64();
+        // `Range.ACCEPTS` compares a list's or hash's `.Numeric`, its element
+        // count, the one numification `coerce_to_numeric` gives every numeric
+        // operator (#17915). (A QuantHash takes rakudo's own path, not this.)
+        let v = match val.view() {
+            ValueView::Array(..) | ValueView::Seq(..) | ValueView::Hash(..) => {
+                crate::value::radix_numeric::coerce_to_numeric(val.clone()).to_f64()
+            }
+            _ => val.to_f64(),
+        };
         let min_ok = if r_es { v > r_min } else { v >= r_min };
         let max_ok = if r_ee { v < r_max } else { v <= r_max };
         min_ok && max_ok

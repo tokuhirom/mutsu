@@ -68,7 +68,7 @@ fn needs_interpreter_lhs(v: &Value) -> bool {
 /// True when `v` is a numeric matcher for smart-match purposes — a bare numeric
 /// type or a numeric allomorph/mixin (`<5>`, `<5.0>`, `42 but Role`). Used to
 /// decide whether an allomorph LHS should compare by its numeric base.
-fn is_numericish_matcher(v: &Value) -> bool {
+pub(crate) fn is_numericish_matcher(v: &Value) -> bool {
     match v.view() {
         ValueView::Int(_)
         | ValueView::BigInt(_)
@@ -82,27 +82,41 @@ fn is_numericish_matcher(v: &Value) -> bool {
     }
 }
 
-/// `Positional ~~ Numeric`: a list or buffer smart-matched against a number
-/// compares numerically (`@a == $n`), and its numeric value is its element
-/// count — so `[1,2,3] ~~ 3` and `blob8.new(0 xx 32) ~~ 32` are True (the
-/// latter is the EC dist's `blob8 $seed where b div 8` constraint). `None`
-/// when `left` is not an Array/Buf or `right` is not a plain number.
-/// Shared by the VM's `pure_smart_match` and the interpreter's `smart_match`.
-// Cost: O(1), the element count is stored.
+/// `Iterable ~~ Numeric`: `Numeric.ACCEPTS` compares `topic == self`, so a
+/// list, a buffer, a hash, a QuantHash or a Seq smart-matched against a number
+/// numifies through its own `.Numeric` -- the element count of a list, hash,
+/// Set or Seq, the total weight of a Bag or Mix -- which is
+/// [`crate::value::radix_numeric::coerce_to_numeric`], the one numification the numeric
+/// operators use (#17915). `[1,2,3] ~~ 3`, `set(1,2) ~~ 2` and
+/// `blob8.new(0 xx 32) ~~ 32` (the EC dist's `blob8 $seed where b div 8`
+/// constraint) are True. `None` when `left` is none of these or `right` is not
+/// a plain number. Shared by the VM's `pure_smart_match` and the interpreter's
+/// `smart_match`.
+// Cost: O(1) for a list, hash, Set or Seq whose count is stored; O(k) for a
+// Bag/Mix total, k = keys.
 pub(crate) fn positional_numeric_smart_match(left: &Value, right: &Value) -> Option<bool> {
     if !is_numericish_matcher(right) || matches!(right.view(), ValueView::Mixin(..)) {
         return None;
     }
-    let elems = match left.view() {
-        ValueView::Array(a, _) => a.items().len(),
+    let numeric = match left.view() {
+        ValueView::Array(..)
+        | ValueView::Hash(..)
+        | ValueView::Set(..)
+        | ValueView::Bag(..)
+        | ValueView::Mix(..) => crate::value::radix_numeric::coerce_to_numeric(left.clone()),
+        // A Seq whose elements are already there (a deferred source is left
+        // to the interpreter, which can pull it).
+        ValueView::Seq(body) if !body.needs_touch() => {
+            crate::value::radix_numeric::coerce_to_numeric(left.clone())
+        }
         ValueView::Instance { attributes, .. }
             if crate::value::value_buf::has_buf_elems(&attributes) =>
         {
-            crate::value::value_buf::buf_len_or_zero(&attributes)
+            Value::int(crate::value::value_buf::buf_len_or_zero(&attributes) as i64)
         }
         _ => return None,
     };
-    pure_smart_match(&Value::int(elems as i64), right)
+    pure_smart_match(&numeric, right)
 }
 
 /// `IO::Path ~~ :e/:d/:f/:l/:r/:w/:x/:rw/:rwx/:s/:z` file-test result (and
