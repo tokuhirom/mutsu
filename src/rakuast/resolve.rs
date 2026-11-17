@@ -402,9 +402,28 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
     if let Some(name) = super::declared_routines::declared_by(held)
         && held.class == C::Sub
     {
-        let mut stub = RakuAstNode::clone(held);
-        stub.fields.retain(|f| f.name != Some("body"));
-        scopes.declare(format!("&{name}"), Value::rakuast(Box::new(stub)));
+        let key = format!("&{name}");
+        let is_multi = super::lower::leaf_str(held, "multiness").is_ok_and(|m| m == "multi");
+        // A `multi` name resolves to its dispatcher, as in rakudo: the explicit
+        // `proto` of the scope, or the one the first candidate implies (a
+        // `Sub` whose `multiness` is `proto`, whose `compile-time-value` is
+        // the dispatcher with every candidate). A later candidate never
+        // replaces it; an explicit `proto` replaces an implied one.
+        let has_dispatcher = is_multi
+            && scopes
+                .scopes
+                .last()
+                .is_some_and(|scope| scope.contains_key(&key));
+        if !has_dispatcher {
+            let mut stub = RakuAstNode::clone(held);
+            stub.fields.retain(|f| f.name != Some("body"));
+            if is_multi
+                && let Some(field) = stub.fields.iter_mut().find(|f| f.name == Some("multiness"))
+            {
+                field.value = RakuAstFieldValue::Node(Value::str("proto".to_string()));
+            }
+            scopes.declare(key, Value::rakuast(Box::new(stub)));
+        }
     } else if matches!(
         held.class,
         C::Class | C::Role | C::Grammar | C::Module | C::Package
