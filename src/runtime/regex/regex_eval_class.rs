@@ -258,7 +258,7 @@ impl Interpreter {
         text: &str,
         limit: usize,
     ) -> Vec<(usize, usize, RegexCaptures)> {
-        let parsed = match self.parse_regex(pattern) {
+        let parsed = match self.parse_regex_for_match(pattern) {
             Some(p) => p,
             None => return Vec::new(),
         };
@@ -317,7 +317,7 @@ impl Interpreter {
         text: &str,
         limit: usize,
     ) -> Vec<(usize, usize)> {
-        let parsed = match self.parse_regex(pattern) {
+        let parsed = match self.parse_regex_for_match(pattern) {
             Some(p) => p,
             None => return Vec::new(),
         };

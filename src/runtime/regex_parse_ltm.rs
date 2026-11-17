@@ -1672,7 +1672,7 @@ impl Interpreter {
             _ => return None,
         };
         let Some(tree) = value.regex_source_tree() else {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         };
         // Array interpolation is retained in the source tree for RakuAST,
         // but the established parser resolves its elements at match time.
@@ -1695,7 +1695,7 @@ impl Interpreter {
         // `parse_regex` keys such a plan by the values it read
         // (`regex_value_keyed_parse`), so a rebound lexical re-parses.
         if tree.contains_regex_value_interpolation() {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         }
         let interpolation_names = tree.interpolation_names();
         // The direct tree plan's VarInterp atom intentionally handles the
@@ -1732,7 +1732,7 @@ impl Interpreter {
                     })
             })
         {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         }
         // Include the tree fingerprint in the existing plan-cache key. This
         // keeps the cache honest if a future parser creates two source trees
@@ -1761,7 +1761,7 @@ impl Interpreter {
         // through `parse_regex`, whose caches key by the interpolated text.
         let Some(parsed) = lower_static_execution_tree(&pattern, tree).map(std::sync::Arc::new)
         else {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         };
         REGEX_PARSE_CACHE.with(|c| {
             c.borrow_mut()
