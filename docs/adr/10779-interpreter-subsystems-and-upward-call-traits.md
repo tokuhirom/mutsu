@@ -289,3 +289,8 @@ these preconditions:
   next op takes this form; one whose consumer is some later store stays in the mark-context
   word (`SHAPED_DECL`). `rw_param_rebinds` is refiled as `frame`: it is saved and restored
   with each VM call frame.
+- D3, dead carrier channels (2026-11-17): 90 → 85 fields. Five side channels had lost one end
+  and had nothing left to convert: `pending_supply_block_body`, `pending_supply_emitter_sym`,
+  `pending_supply_authoritative_free_vars` and `pending_eval_rw_tail` had no writer (the
+  carrier only took, restored and cleared them), and `last_block_my_declared` had no reader.
+  They went with the carrier's `CarrierPostCompile` mutation and its compile-cache key fields.

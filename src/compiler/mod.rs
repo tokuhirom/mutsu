@@ -2403,14 +2403,6 @@ impl Compiler {
     /// Run `f` with the escaping-position flag set to `escaping`, restoring the
     /// previous value afterward. Used to mark which syntactic positions cause a
     /// closure created within them to escape its frame (see `escaping_position`).
-    /// ADR-0059 Slice 2: mark this compiler as compiling an `is rw`/`is raw`
-    /// routine body, whose bare tail compiles to the container it denotes.
-    /// Used by the interpreter's carrier recompile of a `SubData` body, which
-    /// builds its own fresh `Compiler` (`compile_block_value_opts`).
-    pub(crate) fn set_rw_tail(&mut self, rw_tail: bool) {
-        self.rw_tail = rw_tail;
-    }
-
     pub(super) fn with_escape<R>(&mut self, escaping: bool, f: impl FnOnce(&mut Self) -> R) -> R {
         let saved = self.escaping_position;
         self.escaping_position = escaping;
