@@ -868,7 +868,7 @@ impl Interpreter {
             })
     }
 
-    pub(super) fn get_cwd_path(&self) -> PathBuf {
+    pub(crate) fn get_cwd_path(&self) -> PathBuf {
         if let Some(cwd) = self.get_dynamic_string("$*CWD") {
             return PathBuf::from(cwd);
         }

@@ -341,7 +341,7 @@ impl Interpreter {
         // doubling the entry and chaining `$*REPO` twice. A path merely present
         // deeper in the chain is still promoted — `use lib` outranks `-I` and
         // `MUTSULIB`.
-        let path = Self::strip_file_repo_spec(path);
+        let path = self.absolute_lib_spec(Self::strip_file_repo_spec(path));
         if self.lib_path_is_front(&path) {
             return Ok(());
         }
@@ -350,6 +350,31 @@ impl Interpreter {
         // takes precedence over `-I`, `MUTSULIB` and the installed repositories.
         self.prepend_lib_path(path);
         Ok(())
+    }
+
+    /// A relative `use lib` directory, made absolute against `$*CWD` as
+    /// rakudo's `CompUnit::RepositoryRegistry.repository-for-spec` does
+    /// (`use lib "lib"` puts `file#$*CWD/lib` on the chain). Left relative, the
+    /// directory named both ways -- `-I /abs/lib` on the command line and `use
+    /// lib 'lib'` in the test, the common distribution layout -- resolved one
+    /// module file under two paths: a slang activation, which searches the
+    /// command-line chain, and the unit itself loaded it twice, and the two
+    /// loads overwrote each other's precompiled entry on every run (Qwiratry,
+    /// #17690). A spec naming a repository kind (`inst#...`) and a path under
+    /// a `chroot` are kept as written.
+    // Cost: O(n), n = length of the path.
+    pub(crate) fn absolute_lib_spec(&self, path: String) -> String {
+        let pb = std::path::Path::new(&path);
+        if path.contains('#') || pb.is_absolute() || self.io.chroot_root.is_some() {
+            return path;
+        }
+        let joined = self.get_cwd_path().join(pb);
+        // `./lib` and `lib/` name the directory `lib` does.
+        let clean: std::path::PathBuf = joined
+            .components()
+            .filter(|c| !matches!(c, std::path::Component::CurDir))
+            .collect();
+        clean.to_string_lossy().into_owned()
     }
 
     /// A `file#PATH` repository spec names the same CompUnit::Repository::FileSystem

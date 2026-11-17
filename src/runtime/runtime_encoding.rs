@@ -925,7 +925,10 @@ impl Interpreter {
     /// explicit path *behind* the installed modules — the exact inversion of
     /// what `-I` is for. Paths added here keep their relative order.
     pub fn add_lib_path(&mut self, path: String) {
-        let path = Self::strip_file_repo_spec(path);
+        // Absolute, as `use lib` makes it (`absolute_lib_spec`): one directory
+        // named relatively on one path and absolutely on another is one
+        // repository (#17690).
+        let path = self.absolute_lib_spec(Self::strip_file_repo_spec(path));
         if path.is_empty() {
             return;
         }
