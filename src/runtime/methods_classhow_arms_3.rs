@@ -62,6 +62,7 @@ impl Interpreter {
             let owner = self.mop_receiver_owner(target);
             let name = Symbol::intern(&method_name);
             let registry = self.registry();
+            let routines = self.routines();
             // `is_my` also represents a `submethod` in the canonical
             // table.  Submethods are declarations for this probe, while
             // lexical `my method`s never enter that table at all.
@@ -78,7 +79,7 @@ impl Interpreter {
                 .classes
                 .get(&owner)
                 .is_some_and(|class_def| class_def.native_methods.contains(&method_name));
-            let grammar_token = registry.token_defs.contains_key(&Symbol::intern(
+            let grammar_token = routines.token_defs.contains_key(&Symbol::intern(
                 crate::qualified::qualified_text(&owner, &method_name).as_str(),
             ));
 

@@ -2980,7 +2980,7 @@ mod tests {
             .unwrap();
         assert_eq!(output, "42\n");
         let key = Symbol::intern("GLOBAL::compiled-adapter");
-        let registry = interp.registry();
+        let registry = interp.routines();
         let def = registry
             .functions
             .get(&key)
@@ -2996,7 +2996,7 @@ mod tests {
             .unwrap();
         assert_eq!(output, "42\n");
         let key = Symbol::intern("GLOBAL::normalized");
-        let registry = interp.registry();
+        let registry = interp.routines();
         let def = registry
             .functions
             .get(&key)
@@ -3022,7 +3022,7 @@ mod tests {
             .unwrap();
         assert_eq!(output, "42\n");
         let def = {
-            let registry = interp.registry();
+            let registry = interp.routines();
             let def = registry
                 .functions
                 .get(&Symbol::intern("GLOBAL::code-object-twice"))

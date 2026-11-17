@@ -475,9 +475,9 @@ impl Interpreter {
         let has_local = |this: &Self, pkg: &str| {
             let pkg_sym = Symbol::intern(pkg);
             let proto_key = crate::qualified::qualified(pkg_sym, Symbol::intern(name));
-            this.registry().proto_subs_contains(proto_key.as_str())
+            this.routines().proto_subs_contains(proto_key.as_str())
                 || this
-                    .registry()
+                    .routines()
                     .has_multi_function(Some(&base_keys), &[pkg_sym], name)
         };
         // Local candidates only at each level — has_proto/has_multi_candidates
@@ -508,9 +508,9 @@ impl Interpreter {
         }
         if found.is_empty() {
             let global = [Symbol::intern("GLOBAL")];
-            if self.registry().has_proto("GLOBAL", name)
+            if self.routines().has_proto("GLOBAL", name)
                 || self
-                    .registry()
+                    .routines()
                     .has_multi_candidates(Some(&base_keys), &global, name)
             {
                 found.push(current);

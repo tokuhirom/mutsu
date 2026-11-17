@@ -70,10 +70,10 @@ fn an_unqualified_key_is_refilled_without_a_pass() {
     // An unqualified key of `alpha`, announced as every write is.
     let def = {
         let alpha = i.fn_keys_for_base("alpha");
-        i.registry().functions.get(&alpha[0]).cloned().unwrap()
+        i.routines().functions.get(&alpha[0]).cloned().unwrap()
     };
     let bare = Symbol::intern("alpha");
-    i.registry_mut().functions_mut().insert(bare, def);
+    i.routines_mut().functions_mut().insert(bare, def);
     i.invalidate_fn_resolution_for_keys([bare]);
     let beta = i.fn_keys_for_base("beta");
     i.invalidate_fn_resolution_for_keys([beta[0]]);
@@ -92,7 +92,7 @@ fn an_unqualified_key_is_refilled_without_a_pass() {
     assert_eq!(&*i.fn_keys_for_base("beta"), &*beta);
 
     // A recorded key that is gone again is not listed.
-    i.registry_mut().functions_mut().remove(&bare);
+    i.routines_mut().functions_mut().remove(&bare);
     i.invalidate_fn_resolution_for_keys([bare]);
     assert!(!i.fn_keys_for_base("alpha").contains(&bare));
 }
@@ -146,13 +146,13 @@ fn a_functions_map_write_that_missed_its_invalidation_fails_the_audit() {
 
     let existing = i.fn_keys_for_base("alpha")[0];
     let def = i
-        .registry()
+        .routines()
         .functions
         .get(&existing)
         .cloned()
         .expect("alpha is registered");
     let extra = Symbol::intern("GLOBAL::alpha/9");
-    i.registry_mut().functions_mut().insert(extra, def);
+    i.routines_mut().functions_mut().insert(extra, def);
 
     i.fn_base_name_registered("alpha");
 }

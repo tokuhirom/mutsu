@@ -19,11 +19,12 @@ impl Interpreter {
     // intern the file name once found.
     pub(crate) fn rule_def_file_sym(&self, pkg: Symbol, name: &str) -> Option<Symbol> {
         let reg = self.registry();
+        let routines = self.routines();
         let mro = reg.class_mro_readonly(&pkg.resolve());
         let packages = std::iter::once(pkg).chain(mro.iter().flat_map(|m| m.iter().copied()));
         for package in packages {
             let key = crate::runtime::dispatch_key::qualified_intern(&package.resolve(), name);
-            if let Some(defs) = reg.token_defs.get(&key) {
+            if let Some(defs) = routines.token_defs.get(&key) {
                 return defs
                     .first()?
                     .source_file

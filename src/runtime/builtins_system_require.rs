@@ -167,7 +167,7 @@ impl Interpreter {
         self.check_undeclared_routines_mainline(&stmts)?;
         let saved_package = self.current_package();
         let before_function_keys: std::collections::HashSet<Symbol> =
-            self.registry().functions.keys().copied().collect();
+            self.routines().functions.keys().copied().collect();
         let before_env_keys: std::collections::HashSet<Symbol> = self.env.keys().copied().collect();
         let before_class_keys: std::collections::HashSet<String> =
             self.registry().classes.keys().cloned().collect();
@@ -207,7 +207,7 @@ impl Interpreter {
                 .values()
                 .any(|m| m.contains_key("MAIN"));
             Self::remove_leaked_main_routines(
-                self.registry_mut().functions_mut(),
+                self.routines_mut().functions_mut(),
                 &before_function_keys,
                 main_exported,
             );
@@ -258,7 +258,7 @@ impl Interpreter {
         {
             let pkg_sym = Symbol::intern(pkg);
             let mut fn_aliases: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
-            for (name, def) in self.registry().functions.iter() {
+            for (name, def) in self.routines().functions.iter() {
                 if before_function_keys.contains(name) {
                     continue;
                 }
@@ -267,12 +267,12 @@ impl Interpreter {
                     continue;
                 }
                 let alias_sym = crate::qualified::qualified(pkg_sym, tail);
-                if !self.registry().functions.contains_key(&alias_sym) {
+                if !self.routines().functions.contains_key(&alias_sym) {
                     fn_aliases.push((alias_sym, def.clone()));
                 }
             }
             for (alias, def) in fn_aliases {
-                self.registry_mut().functions_mut().insert(alias, def);
+                self.routines_mut().functions_mut().insert(alias, def);
             }
             // Invalidate name-keyed resolution caches.
             self.invalidate_fn_resolution();
@@ -357,7 +357,7 @@ impl Interpreter {
             let prefix = format!("{pkg}::MAIN");
             // Collect `Pkg::MAIN`, `Pkg::MAIN/<arity>`, `Pkg::MAIN/<...>:<sig>`.
             let to_promote: Vec<(String, std::sync::Arc<FunctionDef>)> = self
-                .registry()
+                .routines()
                 .functions
                 .iter()
                 .filter(|(k, _)| {
@@ -369,7 +369,7 @@ impl Interpreter {
             for (key, def) in to_promote {
                 let global_key = key.replacen(&format!("{pkg}::"), "GLOBAL::", 1);
                 let gsym = Symbol::intern(&global_key);
-                self.registry_mut()
+                self.routines_mut()
                     .functions_mut()
                     .entry(gsym)
                     .or_insert(def);
@@ -437,7 +437,7 @@ impl Interpreter {
     /// restoring them afterward achieves both at once.
     pub(crate) fn hide_toplevel_global_routines(&mut self) -> HiddenToplevelRoutines {
         let keys: Vec<Symbol> = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .filter(|k| {
@@ -456,7 +456,7 @@ impl Interpreter {
             .collect();
         let mut functions = Vec::with_capacity(keys.len());
         for k in keys {
-            if let Some(v) = self.registry_mut().functions_mut().remove(&k) {
+            if let Some(v) = self.routines_mut().functions_mut().remove(&k) {
                 functions.push((k, v));
             }
         }
@@ -497,7 +497,7 @@ impl Interpreter {
         let HiddenToplevelRoutines { functions, amp_env } = hidden;
         if !functions.is_empty() {
             for (k, v) in functions {
-                self.registry_mut().functions_mut().insert(k, v);
+                self.routines_mut().functions_mut().insert(k, v);
             }
             self.invalidate_fn_resolution();
         }
@@ -598,7 +598,7 @@ impl Interpreter {
             // (`multi crypt(...) is export` of Crypt::Libcrypt).
             let candidate_prefix = format!("{}/", source.as_str());
             if self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .any(|k| k.resolve().starts_with(&candidate_prefix))
@@ -606,7 +606,7 @@ impl Interpreter {
                 // The listed name denotes the whole family: bind a dispatcher
                 // over its candidates, not the (absent) single routine.
                 let candidates: Vec<_> = self
-                    .registry()
+                    .routines()
                     .functions
                     .iter()
                     .filter(|(k, _)| k.resolve().starts_with(&candidate_prefix))
@@ -622,7 +622,7 @@ impl Interpreter {
             // A package-less module declares its routines in GLOBAL.
             let global = Symbol::intern(&format!("GLOBAL::{name}"));
             return self
-                .registry()
+                .routines()
                 .functions
                 .contains_key(&global)
                 .then(|| (self.resolve_code_var(name), RequiredKey::Routine));
@@ -667,7 +667,7 @@ impl Interpreter {
             return Some((value, RequiredKey::EnumKey));
         }
         if let Some(value) = self.env.get_sym(source_single).cloned() {
-            if self.registry().functions.contains_key(&source_single)
+            if self.routines().functions.contains_key(&source_single)
                 && matches!(value.view(), ValueView::Int(_))
             {
                 return None;
@@ -729,7 +729,7 @@ impl Interpreter {
         let target_single = format!("GLOBAL::{name}");
         let target_prefix = format!("GLOBAL::{name}/");
         let function_entries: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = self
-            .registry()
+            .routines()
             .functions
             .iter()
             .filter_map(|(k, v)| {
@@ -747,7 +747,7 @@ impl Interpreter {
             })
             .collect();
         for (k, v) in function_entries {
-            self.registry_mut().functions_mut().insert(k, v);
+            self.routines_mut().functions_mut().insert(k, v);
         }
         // Invalidate name-keyed resolution caches.
         self.invalidate_fn_resolution();

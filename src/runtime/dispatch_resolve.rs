@@ -91,7 +91,7 @@ impl Interpreter {
     // Cost: O(1) with no proto registered; else O(p), p = enclosing packages.
     fn candidate_search_packages(&self, name: &str) -> crate::runtime::BareNamePackages {
         let pkgs = self.bare_name_packages_syms();
-        let registry = self.registry();
+        let registry = self.routines();
         if registry.proto_functions.is_empty() {
             return pkgs;
         }
@@ -217,7 +217,7 @@ impl Interpreter {
     }
 
     pub(super) fn collect_fn_keys_for_base(&self, base: &str) -> std::sync::Arc<[Symbol]> {
-        let registry = self.registry();
+        let registry = self.routines();
         crate::vm::vm_stats::record_fn_keys_base_scan(registry.functions.len());
         registry
             .functions
@@ -312,11 +312,11 @@ impl Interpreter {
     ) -> Option<Arc<FunctionDef>> {
         if crate::qualified::is_qualified_str(name) {
             let multi_key = format!("{}/{}", name, arity);
-            if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_key)) {
+            if let Some(def) = self.routines().functions.get(&Symbol::intern(&multi_key)) {
                 return Some(def.clone());
             }
             return self
-                .registry()
+                .routines()
                 .functions
                 .get(&Symbol::intern(name))
                 .cloned();
@@ -324,7 +324,7 @@ impl Interpreter {
         // Try multi-dispatch with arity first, innermost package outwards.
         for pkg in self.bare_name_packages() {
             let multi_key = format!("{}::{}/{}", pkg, name, arity);
-            if let Some(def) = self.registry().functions.get(&Symbol::intern(&multi_key)) {
+            if let Some(def) = self.routines().functions.get(&Symbol::intern(&multi_key)) {
                 return Some(def.clone());
             }
         }
@@ -342,7 +342,7 @@ impl Interpreter {
     // Cost: O(c * p), c = candidates of the family, p = parameters.
     fn multi_proxy_slots(&mut self, name: &str, arity: usize) -> Option<Vec<bool>> {
         let keys = self.fn_keys_for_base_sym(name, Symbol::intern(name));
-        let registry = self.registry();
+        let registry = self.routines();
         let mut typed = vec![false; arity];
         for key in keys.iter() {
             let Some(def) = registry.functions.get(key) else {
@@ -508,7 +508,7 @@ impl Interpreter {
                 return Ok(None);
             }
             if let Some(def) = self
-                .registry()
+                .routines()
                 .functions
                 .get(&Symbol::intern(name))
                 .cloned()
@@ -525,7 +525,7 @@ impl Interpreter {
             }
             // Visibility was decided by the gate at the top of this branch.
             if let Some(def) = self
-                .registry()
+                .routines()
                 .functions
                 .get(&Symbol::intern(name))
                 .cloned()
@@ -553,7 +553,7 @@ impl Interpreter {
                     };
                 if prefix_visible {
                     let qualified = crate::qualified::qualified(cur, name_sym);
-                    if let Some(def) = self.registry().functions.get(&qualified).cloned() {
+                    if let Some(def) = self.routines().functions.get(&qualified).cloned() {
                         return Ok(Some(def));
                     }
                     let q_prefix = format!("{qualified}/{arity}:");
@@ -562,7 +562,7 @@ impl Interpreter {
                     let q_untyped_m_prefix = format!("{}__m", q_untyped_key);
                     let q_base_keys = self.fn_keys_for_base(qualified.as_str());
                     let mut q_candidates: Vec<(String, Arc<FunctionDef>)> = {
-                        let registry = self.registry();
+                        let registry = self.routines();
                         q_base_keys
                             .iter()
                             .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
@@ -637,7 +637,7 @@ impl Interpreter {
             for pkg in search_pkgs.iter() {
                 if let Some((qkey, def)) = dispatch_key::qualified_lookup(pkg.as_str(), name)
                     .filter(|&key| self.module_routine_visible_here(key))
-                    .and_then(|key| Some((key, self.registry().functions.get(&key).cloned()?)))
+                    .and_then(|key| Some((key, self.routines().functions.get(&key).cloned()?)))
                     .and_then(|(key, def)| Some((key, self.visible_operator_def(name, def)?)))
                 {
                     // A compunit-scoped name's key carries the executing
@@ -691,7 +691,7 @@ impl Interpreter {
             .collect();
         for prefix_base in typed_prefixes {
             let candidates: Vec<FunctionDef> = self
-                .registry()
+                .routines()
                 .functions
                 .iter()
                 .filter(|(key, _)| key.as_str().starts_with(&prefix_base))
@@ -713,7 +713,7 @@ impl Interpreter {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
             let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
-                .registry()
+                .routines()
                 .functions
                 .iter()
                 .filter(|(k, _)| **k == key_sym || k.as_str().starts_with(&m_prefix))
@@ -747,7 +747,7 @@ impl Interpreter {
             .map(|pkg| format!("{}::{}/", pkg, name))
             .collect();
         let mut slurpy_candidates: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
+            .routines()
             .functions
             .iter()
             .filter(|(k, def)| {
@@ -879,7 +879,7 @@ mod base_name_tests {
         let base = i.caches.fn_resolve_gen;
         assert_eq!(
             base,
-            i.registry().functions_version(),
+            i.routines().functions_version(),
             "the interpreter's generation mirrors the map's own stamp"
         );
 
@@ -893,12 +893,12 @@ mod base_name_tests {
         // generation.
         let snapshot = i.snapshot_routine_registry();
         let def = i
-            .registry()
+            .routines()
             .functions
             .get(&Symbol::intern("GLOBAL::alpha"))
             .cloned()
             .expect("alpha is registered");
-        i.registry_mut()
+        i.routines_mut()
             .functions_mut()
             .insert(Symbol::intern("GLOBAL::inner"), def);
         i.invalidate_fn_resolution_for_keys([Symbol::intern("GLOBAL::inner")]);
@@ -913,7 +913,7 @@ mod base_name_tests {
             "the pre-excursion generation is live again"
         );
         assert!(
-            !i.registry()
+            !i.routines()
                 .functions
                 .contains_key(&Symbol::intern("GLOBAL::inner")),
             "and it names the pre-excursion content"

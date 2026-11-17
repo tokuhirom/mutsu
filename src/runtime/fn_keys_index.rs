@@ -101,7 +101,7 @@ impl Interpreter {
         };
         // The version is read BEFORE the scan: a write racing in between
         // leaves a memo under the older version, which just audits again.
-        let version = self.registry().functions_version();
+        let version = self.routines().functions_version();
         if self
             .dispatch
             .fn_keys_index
@@ -241,8 +241,7 @@ impl Interpreter {
     fn fn_keys_from_tail_index(&mut self, base: &'static str) -> Option<Arc<[Symbol]>> {
         let keys = self.tail_index_keys(base)?;
         // Drop the recorded unqualified keys that are no longer registered.
-        let registry =
-            crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry");
+        let registry = crate::runtime::routine_tables::RoutinesReadGuard::new(&self.types.routines);
         let index = &mut self.dispatch.fn_keys_index;
         if let Some(unqualified) = index.unqualified_by_base.get_mut(base) {
             unqualified.retain(|key| registry.functions.contains_key(key));
@@ -260,7 +259,7 @@ impl Interpreter {
         if !crate::qualified_tail_index::lists_every_name_ending_in(base) {
             return None;
         }
-        let registry = self.registry();
+        let registry = self.routines();
         let mut keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
             .into_iter()
             .filter(|key| {
@@ -292,7 +291,7 @@ impl Interpreter {
             }
         }
         {
-            let registry = self.registry();
+            let registry = self.routines();
             crate::vm::vm_stats::record_fn_keys_base_scan(registry.functions.len());
             for key in registry.functions.keys() {
                 let base = function_key_base_name(key.as_str());

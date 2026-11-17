@@ -262,8 +262,6 @@ impl Registry {
             who_overrides,
             frozen_dispatchers,
             // Routine-local declarations and per-unit pragmas: not type state.
-            routine_local_subs: _,
-            routine_local_subsets: _,
             monkey_eval_units: _,
             method_entries,
             method_value_prototypes,
@@ -377,18 +375,6 @@ impl Registry {
             // Subs, tokens and their protos are package-scoped routines, not
             // a type's state: `new_type` and the MOP calls on its result
             // never install one.
-            functions: _,
-            fn_transitions: _,
-            our_scoped_restore_memo: _,
-            module_functions_present: _,
-            our_scoped_functions: _,
-            proto_functions: _,
-            token_defs: _,
-            token_captures: _,
-            proto_subs: _,
-            proto_gen: _,
-            proto_tokens: _,
-            proto_token_params: _,
             has_proto_methods,
             proto_method_names,
             // A compile cache, refilled on demand.

@@ -177,7 +177,7 @@ impl Interpreter {
         }
         if is_my && self.enclosing_routine_exists() {
             let depth = self.routine_stack.len();
-            self.registry_mut()
+            self.routines_mut()
                 .routine_local_subsets
                 .insert(name.to_string(), (def.clone(), depth));
         }

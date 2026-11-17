@@ -22,7 +22,7 @@ impl Interpreter {
             }
             _ => target_key,
         };
-        let mut registry = self.registry_mut();
+        let mut registry = self.routines_mut();
         let funcs = registry.functions_mut();
         let mut idx = 0usize;
         loop {
@@ -69,7 +69,7 @@ impl Interpreter {
             .collect();
         let target = crate::qualified::qualified(Symbol::intern(target_pkg), name_sym);
         let keys = self.fn_keys_for_base(name);
-        let registry = self.registry();
+        let registry = self.routines();
         keys.iter()
             .filter_map(|key| {
                 let key_str = key.as_str();
@@ -180,7 +180,7 @@ impl Interpreter {
                 .iter()
                 .find_map(|pkg| {
                     let def = self
-                        .registry()
+                        .routines()
                         .functions
                         .get(&Symbol::intern(
                             crate::qualified::qualified_text(pkg, name).as_str(),
@@ -202,10 +202,10 @@ impl Interpreter {
                 self.import_multi_candidate_merged(&target_key, def.clone()).0
             } else {
                 let key = Symbol::intern(&target_key);
-                self.registry_mut().functions_mut().insert(key, def.clone());
+                self.routines_mut().functions_mut().insert(key, def.clone());
                 key
             };
-            std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+            std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                 .insert(installed_key, def);
             crate::runtime::cow_table_mut(&mut self.module.module_registered_functions)
                 .insert(installed_key);
@@ -425,7 +425,7 @@ impl Interpreter {
             let source_single = crate::qualified::qualified_text(&current_pkg, resolved_name)
                 .as_str()
                 .to_string();
-            self.registry()
+            self.routines()
                 .functions
                 .get(&Symbol::intern(&source_single))
                 .cloned()
@@ -448,13 +448,13 @@ impl Interpreter {
                 self.import_multi_candidate_merged(&target_key, def.clone()).0
             } else {
                 let key = Symbol::intern(&target_key);
-                self.registry_mut()
+                self.routines_mut()
                     .functions_mut()
                     .entry(key)
                     .or_insert_with(|| def.clone());
                 key
             };
-            std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+            std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                 .insert(installed_key, def);
             crate::runtime::cow_table_mut(&mut self.module.module_registered_functions)
                 .insert(installed_key);
@@ -493,10 +493,10 @@ impl Interpreter {
         let proto_key = crate::qualified::qualified(Symbol::intern(&current_pkg), name_sym);
         // Hoist the clone to a `let` so the read guard drops before the
         // registry_mut write below (read->write on the same lock deadlocks).
-        let proto_def = self.registry().proto_functions.get(&proto_key).cloned();
+        let proto_def = self.routines().proto_functions.get(&proto_key).cloned();
         if let Some(def) = proto_def {
             let target = crate::qualified::qualified(Symbol::intern(&module), name_sym);
-            self.registry_mut()
+            self.routines_mut()
                 .proto_functions_mut()
                 .entry(target)
                 .or_insert(def);
@@ -516,7 +516,7 @@ impl Interpreter {
             Symbol::intern(name),
         );
         let fq_name = fq_name.as_str();
-        self.registry().proto_subs_contains(fq_name)
+        self.routines().proto_subs_contains(fq_name)
             && self.types.our_scoped_package_items.contains(fq_name)
     }
 
@@ -547,39 +547,39 @@ impl Interpreter {
         };
         let in_scope = visible_before.is_some();
         let target_sym = Symbol::intern(target_single);
-        let mut keys = self.registry().functions.family_keys(target_single);
-        if self.registry().functions.contains_key(&target_sym) {
+        let mut keys = self.routines().functions.family_keys(target_single);
+        if self.routines().functions.contains_key(&target_sym) {
             keys.push(target_sym);
         }
         let mut removed_keys: Vec<Symbol> = Vec::new();
         // The block's own declarations are not the enclosing family.
         keys.retain(|key| {
             visible_before.is_none_or(|before| {
-                self.registry()
+                self.routines()
                     .functions
                     .get(key)
                     .is_some_and(|def| def.decl_order < before)
             })
         });
         for key in keys {
-            let removed = self.registry_mut().functions_mut().remove(&key);
+            let removed = self.routines_mut().functions_mut().remove(&key);
             if let Some(def) = removed {
                 self.log_import_write(crate::runtime::ImportWrite::Function(key, Some(def)));
                 removed_keys.push(key);
             }
         }
-        let proto = self.registry_mut().proto_functions_mut().remove(&target_sym);
+        let proto = self.routines_mut().proto_functions_mut().remove(&target_sym);
         if let Some(def) = proto {
             self.log_import_write(crate::runtime::ImportWrite::Proto(target_sym, Some(def)));
         }
-        if self.registry().proto_subs_contains(target_single) {
+        if self.routines().proto_subs_contains(target_single) {
             self.log_import_write(crate::runtime::ImportWrite::ProtoSub(
                 target_single.to_string(),
                 true,
             ));
         }
         // Replace the old proto marker along with its candidate family.
-        self.registry_mut()
+        self.routines_mut()
             .proto_subs_retain(|key| key != target_single);
         if !in_scope && !removed_keys.is_empty() {
             // A top-level import has no scope to restore: the family is gone
@@ -1153,7 +1153,7 @@ impl Interpreter {
             // Each family below is listed through `FunctionTable::family_keys`,
             // not by scanning every registry key once per exported name
             // (#11756).
-            let source_family = self.registry().functions.family_keys(source_single);
+            let source_family = self.routines().functions.family_keys(source_single);
             // An exported method is represented by synthetic arity-qualified
             // candidates.  A class may also contain a same-named plain sub;
             // that plain sub occupies `source_single` but is not the method's
@@ -1161,18 +1161,18 @@ impl Interpreter {
             // importing scope, otherwise the exact plain sub steals the
             // export simply because it sorts first in this lookup.
             let exported_method_candidates = self
-                .registry()
+                .routines()
                 .functions
                 .get(&source_single_sym)
                 .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
                 && source_family.iter().any(|key| {
-                    self.registry().functions.get(key).is_some_and(|def| {
+                    self.routines().functions.get(key).is_some_and(|def| {
                         def.declarator == crate::ast::RoutineDeclarator::Method
                     })
                 });
             let bare_file_multi = bare_file_module
                 && !self
-                    .registry()
+                    .routines()
                     .functions
                     .family_keys(&format!("{module}::EXPORT::ALL::{name}"))
                     .is_empty();
@@ -1180,18 +1180,18 @@ impl Interpreter {
             // Whether the source declared a real `proto` (as opposed to a bare
             // file whose `is export` multis merely form a family).
             let imported_real_proto = self
-                .registry()
+                .routines()
                 .proto_functions
                 .contains_key(&source_single_sym)
                 || (unit_global_subs.contains_key(&name)
                     && self
-                        .registry()
+                        .routines()
                         .proto_functions
                         .contains_key(&Symbol::intern(&global_single)));
             let imported_proto = imported_real_proto || bare_file_multi;
             let global_family_present = bare_file_module
                 && !self
-                    .registry()
+                    .routines()
                     .functions
                     .family_keys(&global_single)
                     .is_empty();
@@ -1203,7 +1203,7 @@ impl Interpreter {
             // package-qualified proto merely because the source has one.
             let mut function_entries: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
             if !exported_method_candidates
-                && let Some(def) = self.registry().functions.get(&source_single_sym)
+                && let Some(def) = self.routines().functions.get(&source_single_sym)
             {
                 function_entries.push((Symbol::intern(&target_single), def.clone()));
             }
@@ -1222,13 +1222,13 @@ impl Interpreter {
             // is imported.
             if function_entries.is_empty() && unit_global_subs.contains_key(&name) {
                 if let Some(def) = self
-                    .registry()
+                    .routines()
                     .functions
                     .get(&Symbol::intern(&global_single))
                 {
                     function_entries.push((Symbol::intern(&target_single), def.clone()));
                 }
-                let global_family = self.registry().functions.family_keys(&global_single);
+                let global_family = self.routines().functions.family_keys(&global_single);
                 self.rebase_family_entries(
                     &global_single,
                     &global_family,
@@ -1255,7 +1255,7 @@ impl Interpreter {
                 // Core's `trait_mod:<is>` candidate, so `is aliased-by` was an
                 // unknown trait).
                 let own_alias = format!("{module}::EXPORT::ALL::{name}");
-                let own_family = self.registry().functions.family_keys(&own_alias);
+                let own_family = self.routines().functions.family_keys(&own_alias);
                 let mut own_entries: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
                 self.rebase_family_entries(&own_alias, &own_family, &target_single, &mut own_entries);
                 for (key, def) in own_entries {
@@ -1280,14 +1280,14 @@ impl Interpreter {
                     format!("EXPORT::ALL::{name}"),
                 ] {
                     if let Some(def) = self
-                        .registry()
+                        .routines()
                         .functions
                         .get(&Symbol::intern(&alias))
                         .cloned()
                     {
                         function_entries.push((Symbol::intern(&target_single), def));
                     }
-                    let alias_family = self.registry().functions.family_keys(&alias);
+                    let alias_family = self.routines().functions.family_keys(&alias);
                     self.rebase_family_entries(
                         &alias,
                         &alias_family,
@@ -1300,14 +1300,14 @@ impl Interpreter {
                 }
             }
             let proto_def = self
-                .registry()
+                .routines()
                 .proto_functions
                 .get(&source_single_sym)
                 .cloned()
                 .or_else(|| {
                     (unit_global_subs.contains_key(&name) || bare_file_module)
                         .then(|| {
-                            self.registry()
+                            self.routines()
                                 .proto_functions
                                 .get(&Symbol::intern(&global_single))
                                 .cloned()
@@ -1434,9 +1434,9 @@ impl Interpreter {
                     }
                     installed_keys.push(key);
                 } else {
-                    let prior = self.registry().functions.get(&k).cloned();
+                    let prior = self.routines().functions.get(&k).cloned();
                     self.log_import_write(crate::runtime::ImportWrite::Function(k, prior));
-                    self.registry_mut().functions_mut().insert(k, v);
+                    self.routines_mut().functions_mut().insert(k, v);
                     installed_keys.push(k);
                 }
             }
@@ -1454,13 +1454,13 @@ impl Interpreter {
                 .into_iter()
                 .flatten()
                 .filter(|_| !family_bound_lexically)
-                .filter_map(|k| self.registry().proto_functions.get(&k).cloned())
+                .filter_map(|k| self.routines().proto_functions.get(&k).cloned())
                 .map(|v| (Symbol::intern(&target_single), v))
                 .collect();
             for (k, v) in proto_entries {
-                let prior = self.registry().proto_functions.get(&k).cloned();
+                let prior = self.routines().proto_functions.get(&k).cloned();
                 self.log_import_write(crate::runtime::ImportWrite::Proto(k, prior));
-                self.registry_mut().proto_functions_mut().insert(k, v);
+                self.routines_mut().proto_functions_mut().insert(k, v);
             }
             // `has_proto` consults the `proto_subs` name set, not just
             // `proto_functions`, so an imported proto has to be recorded there
@@ -1474,14 +1474,14 @@ impl Interpreter {
             let records_proto_name = imported_real_proto
                 || (bare_file_multi && !name.starts_with("infix:<"));
             if records_proto_name && !family_bound_lexically {
-                let was_present = self.registry().proto_subs_contains(&target_single);
+                let was_present = self.routines().proto_subs_contains(&target_single);
                 if !was_present {
                     self.log_import_write(crate::runtime::ImportWrite::ProtoSub(
                         target_single.clone(),
                         false,
                     ));
                 }
-                self.registry_mut().proto_subs_insert(target_single.clone());
+                self.routines_mut().proto_subs_insert(target_single.clone());
                 self.record_imported_exported_proto(target_pkg, &name, symbol_tags.iter().cloned());
             }
 
@@ -1499,7 +1499,7 @@ impl Interpreter {
                 .and_then(|m| m.get(&name))
                 .cloned()
             {
-                std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)
+                std::sync::Arc::make_mut(&mut self.routines_mut().token_defs)
                     .insert(Symbol::intern(&target_single), defs);
                 crate::runtime::regex_parse::TOKEN_DEFS_GEN
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);

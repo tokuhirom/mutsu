@@ -91,10 +91,11 @@ impl Interpreter {
     // `Arc` clones and lengths otherwise.
     pub(crate) fn import_effect_probe(&self) -> ImportEffectProbe {
         let reg = self.registry();
+        let routines = self.routines();
         ImportEffectProbe {
-            functions: reg.functions.len(),
-            proto_functions: std::sync::Arc::as_ptr(&reg.proto_functions) as usize,
-            proto_subs: std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize,
+            functions: routines.functions.len(),
+            proto_functions: std::sync::Arc::as_ptr(&routines.proto_functions) as usize,
+            proto_subs: std::sync::Arc::as_ptr(&routines.proto_subs_snapshot()) as usize,
             classes_shared: reg.classes.clone(),
             env_aliases: Arc::clone(&self.module.unit_env_imports),
             type_aliases: Arc::clone(&self.types.package_type_aliases),
@@ -164,6 +165,7 @@ impl Interpreter {
             return None;
         }
         let reg = self.registry();
+        let routines = self.routines();
         // The registry functions the import wrote -- a multi candidate the
         // registry keeps -- are the whole growth of the function table; any
         // other registry write (a proto, a `proto_subs` marker) is not replayed.
@@ -174,7 +176,7 @@ impl Interpreter {
             for write in top.import_writes.iter().skip(probe.import_writes_before) {
                 match write {
                     crate::runtime::ImportWrite::Function(key, prior) => {
-                        let Some(def) = reg.functions.get(key) else {
+                        let Some(def) = routines.functions.get(key) else {
                             only_function_writes = false;
                             break;
                         };
@@ -190,9 +192,9 @@ impl Interpreter {
         }
         let routines_same = !probe.had_export_args
             && only_function_writes
-            && reg.functions.len() == probe.functions + added
-            && std::sync::Arc::as_ptr(&reg.proto_functions) as usize == probe.proto_functions
-            && std::sync::Arc::as_ptr(&reg.proto_subs_snapshot()) as usize == probe.proto_subs;
+            && routines.functions.len() == probe.functions + added
+            && std::sync::Arc::as_ptr(&routines.proto_functions) as usize == probe.proto_functions
+            && std::sync::Arc::as_ptr(&routines.proto_subs_snapshot()) as usize == probe.proto_subs;
         let classes_same = probe.classes_shared.shares_with(&reg.classes);
         let pragmas_same = probe.pragmas
             == (
@@ -302,9 +304,9 @@ impl Interpreter {
         if !replay.function_writes.is_empty() {
             let mut keys = Vec::with_capacity(replay.function_writes.len());
             for (key, def) in &replay.function_writes {
-                let prior = self.registry().functions.get(key).cloned();
+                let prior = self.routines().functions.get(key).cloned();
                 self.log_import_write(crate::runtime::ImportWrite::Function(*key, prior));
-                self.registry_mut()
+                self.routines_mut()
                     .functions_mut()
                     .insert(*key, Arc::clone(def));
                 keys.push(*key);

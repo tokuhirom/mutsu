@@ -826,7 +826,7 @@ impl Interpreter {
                 .module_routine_providers
                 .is_empty();
         self.bare_name_packages_syms().iter().any(|pkg| {
-            self.registry().has_declared_function(pkg.as_str(), name)
+            self.routines().has_declared_function(pkg.as_str(), name)
                 && (!gate || {
                     let key = dispatch_key::qualified_intern(pkg.as_str(), name);
                     self.prelude_visible_here(key) && self.module_routine_visible_here(key)
@@ -861,7 +861,7 @@ impl Interpreter {
                 let keys = self.fn_keys_for_base(name);
                 let packages = self.bare_name_packages_syms();
                 let found = self
-                    .registry()
+                    .routines()
                     .has_multi_function(Some(&keys), &packages, name);
                 self.caches.multi_fn_cache.insert(generation, key, found);
                 base_keys = Some(keys);
@@ -889,7 +889,7 @@ impl Interpreter {
         // interned has no keys.
         let base_keys = self.peek_fn_keys_for_base(name);
         let base_keys = base_keys.as_deref();
-        self.registry().has_multi_function(base_keys, &packages, name)
+        self.routines().has_multi_function(base_keys, &packages, name)
             && (!self.operator_has_import_scope(name)
                 || self.any_visible_candidate_of(base_keys, &packages, name))
     }

@@ -204,7 +204,7 @@ impl Interpreter {
         // registered" further down) still sees a hoisted sub as newly
         // registered when the walk reaches its normal position.
         let saved_functions_keys: HashSet<String> = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .map(|k| k.resolve())
@@ -358,7 +358,7 @@ impl Interpreter {
                         .to_string();
                     let multi_prefix = format!("{fq}/");
                     let registered = {
-                        let registry = self.registry();
+                        let registry = self.routines();
                         registry.functions.keys().any(|k| {
                             let ks = k.resolve();
                             (ks == fq || ks.starts_with(&multi_prefix))
@@ -394,7 +394,7 @@ impl Interpreter {
                     // (#8883).
                     let prefix = format!("{}::", cx.name);
                     let new_keys: Vec<String> = {
-                        let registry = self.registry();
+                        let registry = self.routines();
                         registry
                             .functions
                             .keys()

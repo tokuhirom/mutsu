@@ -2251,7 +2251,7 @@ impl Interpreter {
         let composed_def =
             if call_me_override.is_none() && crate::value::RoutineCell::any_composed() {
                 if crate::qualified::is_qualified(name_sym) {
-                    self.registry().function_def(name_sym)
+                    self.routines().function_def(name_sym)
                 } else if !self.has_multi_candidates_cached_sym(name_sym) {
                     self.resolve_function(name)
                 } else {

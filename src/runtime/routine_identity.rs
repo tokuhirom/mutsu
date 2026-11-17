@@ -163,7 +163,7 @@ impl Interpreter {
             return None;
         }
         let def = if crate::qualified::is_qualified_str(name) {
-            self.registry().function_def(Symbol::intern(name))
+            self.routines().function_def(Symbol::intern(name))
         } else {
             self.resolve_function(name)
         }?;

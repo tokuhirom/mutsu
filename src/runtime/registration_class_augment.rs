@@ -444,7 +444,7 @@ impl Interpreter {
                             body_facts_cache: std::sync::OnceLock::new(),
                             routine_cell: method_cell.clone(),
                         };
-                        self.registry_mut().functions_mut().insert(
+                        self.routines_mut().functions_mut().insert(
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );
@@ -482,7 +482,7 @@ impl Interpreter {
                             body_facts_cache: std::sync::OnceLock::new(),
                             routine_cell: method_cell.clone(),
                         };
-                        self.registry_mut().functions_mut().insert(
+                        self.routines_mut().functions_mut().insert(
                             Symbol::intern(&resolved_method_name),
                             std::sync::Arc::new(func_def.clone()),
                         );
@@ -490,7 +490,7 @@ impl Interpreter {
                             crate::qualified::qualified_text(name, &resolved_method_name)
                                 .as_str()
                                 .to_string();
-                        self.registry_mut().functions_mut().insert(
+                        self.routines_mut().functions_mut().insert(
                             Symbol::intern(&qualified_name),
                             std::sync::Arc::new(func_def),
                         );

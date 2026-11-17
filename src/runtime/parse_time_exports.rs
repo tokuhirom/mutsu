@@ -125,7 +125,7 @@ impl Interpreter {
         crate::op_prec::split_op_name(name)?;
         let keys = self.fn_keys_for_base(name);
         keys.iter().find_map(|key| {
-            self.registry()
+            self.routines()
                 .functions
                 .get(key)
                 .and_then(|def| def.op_prec.clone())

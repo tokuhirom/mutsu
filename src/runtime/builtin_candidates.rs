@@ -44,7 +44,7 @@ impl Interpreter {
         let declared = self.routine_candidate_defs(package, name);
         if declared.is_empty()
             || !declared.iter().all(|(_, is_multi)| *is_multi)
-            || self.registry().has_proto(package, name)
+            || self.routines().has_proto(package, name)
         {
             return Vec::new();
         }

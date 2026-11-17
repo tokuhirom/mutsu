@@ -1009,7 +1009,7 @@ impl Interpreter {
                 // signature-adapted compiled body; fall back to the raw plan
                 // shape when the lookup misses.
                 let installed = self
-                    .registry()
+                    .routines()
                     .functions
                     .get(&crate::qualified::qualified(
                         self.current_package_sym(),
@@ -1033,11 +1033,11 @@ impl Interpreter {
                     // every call and the next type lookup rebuilt them from
                     // every class key (ParaSeq's `BlockMapper.run`, #17337).
                     // An unchanged entry is not rewritten at all.
-                    if self.registry().routine_local_subs.get(&key)
+                    if self.routines().routine_local_subs.get(&key)
                         != Some(&(def.decl_order, depth))
                     {
-                        self.registry_mut()
-                            .routine_tables_mut()
+                        self.routines_mut()
+                            .deref_mut_tables()
                             .routine_local_subs
                             .insert(key, (def.decl_order, depth));
                     }
@@ -1219,7 +1219,7 @@ impl Interpreter {
             let tags = plan.export_tags.clone();
             let key =
                 crate::qualified::qualified(self.current_package_sym(), Symbol::intern(&name));
-            let defs = self.registry().token_defs.get(&key).cloned();
+            let defs = self.routines().token_defs.get(&key).cloned();
             if let Some(defs) = defs {
                 self.record_exported_token_defs(&name, defs);
             }

@@ -127,7 +127,7 @@ impl Interpreter {
         let registered = self.exec_register_sub_op_in_registry(code, plan_idx, compiled_fns);
         let def = registered.map(|()| {
             let key = crate::qualified::qualified(self.current_package_sym(), r.name);
-            self.registry().functions.get(&key).cloned()
+            self.routines().functions.get(&key).cloned()
         });
         self.restore_routine_registry(snapshot);
         let def = def?;

@@ -52,7 +52,7 @@ impl Interpreter {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        candidates.extend(self.registry().functions.keys().map(|s| s.resolve()));
+        candidates.extend(self.routines().functions.keys().map(|s| s.resolve()));
         // Phasers are suggested for a case-typo'd routine name (`begin` →
         // "Did you mean 'BEGIN'?"), matching rakudo.
         candidates.extend(
@@ -75,7 +75,7 @@ impl Interpreter {
         extra: &HashSet<String>,
     ) -> Vec<String> {
         let mut candidates = Self::static_routine_candidates(extra);
-        candidates.extend(self.registry().functions.keys().map(|s| s.resolve()));
+        candidates.extend(self.routines().functions.keys().map(|s| s.resolve()));
         Self::suggest_from_candidates(name, &candidates)
     }
 

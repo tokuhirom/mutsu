@@ -297,7 +297,7 @@ impl Interpreter {
                 .chain(std::iter::once(Symbol::intern("GLOBAL")))
                 .find_map(|pkg| {
                     let def = self
-                        .registry()
+                        .routines()
                         .function_def(crate::qualified::qualified(pkg, name_sym))?;
                     (self.unit_of_declaring_file(def.source_file.as_deref()) == unit)
                         .then(|| self.sub_value_from_function_def((*def).clone()))
