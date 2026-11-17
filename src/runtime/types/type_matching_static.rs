@@ -4,7 +4,7 @@ use crate::runtime::utils::{has_bracket, split_once_bracket};
 
 impl Interpreter {
     /// A sized Blob/Buf constraint checks the buffer's type, never its contents.
-    /// Plain `Buf` has the Blob[uint8] role but not the Buf[uint8] role.
+    /// Plain `Buf` has the `Blob[uint8]` role but not the `Buf[uint8]` role.
     // Cost: O(n), n = class and type-argument name lengths.
     pub(crate) fn parametric_blob_buf_instance_matches(
         base: &str,
