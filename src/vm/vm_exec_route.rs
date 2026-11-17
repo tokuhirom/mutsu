@@ -118,7 +118,7 @@ impl Interpreter {
             | OpCode::NumNeNative(..)
             | OpCode::PublicRwAttrContainerRef(..)
             | OpCode::ResolveAttrRwCandidate(..)
-            | OpCode::StashVarDeclInit
+            | OpCode::StashVarDeclInit { .. }
             | OpCode::WrapScalar
             | OpCode::WrapTypedContainer(..)
             | OpCode::WrapVarRef { .. } => self.exec_ops_group_04(code, ip, compiled_fns),

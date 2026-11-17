@@ -1534,6 +1534,20 @@ impl Compiler {
                     shadows_by_name,
                 });
                 let has_explicit_initializer = *has_initializer;
+                // `my @a is SomeType = RHS` / `my %h is SomeType = RHS`: if
+                // SomeType turns out to be a custom container (a class or role
+                // with its own `STORE`), Raku feeds the RHS *as written* to
+                // `STORE` — `= 'x'` passes `'x'`, `= 'x','y'` passes the List.
+                // `SetLocal` coerces both into a 1-/2-element Array, so the
+                // non-`state` store keeps the raw value on the stack for the
+                // first type-named trait's `ApplyVarTrait`, which the trait loop
+                // below always emits.
+                let stash_raw_init = !*is_state
+                    && has_explicit_initializer
+                    && (name.starts_with('@') || name.starts_with('%'))
+                    && custom_traits
+                        .iter()
+                        .any(|(t, _)| Self::is_type_named_trait(t));
                 let preapply_container_default = has_default_trait
                     && has_explicit_initializer
                     && name.starts_with('@')
@@ -2149,17 +2163,22 @@ impl Compiler {
                         // instead (below): the global must hold the container the
                         // default-aware store filled, not a second copy of the raw
                         // initializer list.
-                        if *is_our
+                        let our_dup = *is_our
                             && !is_constant
                             && !preapply_container_default
-                            && !our_typed_aggregate
-                        {
-                            if name.starts_with('@') {
-                                // A lazy initializer is flagged once, so the local
-                                // slot and the package store share one lazy list.
-                                let idx = self.code.add_constant(Value::str(name.clone()));
-                                self.code.emit(OpCode::ShareLazyArrayInit { name_idx: idx });
-                            }
+                            && !our_typed_aggregate;
+                        if our_dup && name.starts_with('@') {
+                            // A lazy initializer is flagged once, so the local
+                            // slot and the package store share one lazy list.
+                            let idx = self.code.add_constant(Value::str(name.clone()));
+                            self.code.emit(OpCode::ShareLazyArrayInit { name_idx: idx });
+                        }
+                        // Below the package store's copy, so `SetGlobalRaw`
+                        // consumes that one and the raw value waits for its trait.
+                        if stash_raw_init {
+                            self.code.emit(OpCode::StashVarDeclInit { keep_raw: true });
+                        }
+                        if our_dup {
                             self.code.emit(OpCode::Dup);
                         }
                         // A sigilless bind (`my \x := EXPR`) settles its
@@ -2228,21 +2247,6 @@ impl Compiler {
                         }
                         if scalar_bind_decont {
                             self.code.emit(OpCode::MarkScalarBindContext);
-                        }
-                        // `my @a is SomeType = RHS` / `my %h is SomeType = RHS`:
-                        // if SomeType turns out to be a custom container (a class
-                        // or role with its own `STORE`), Raku feeds the RHS *as
-                        // written* to `STORE` — `= 'x'` passes `'x'`, `= 'x','y'`
-                        // passes the List. The `SetLocal` below coerces both into
-                        // a 1-/2-element Array, so stash the raw value first; only
-                        // `ApplyVarTrait`'s custom-container branches read it.
-                        if has_explicit_initializer
-                            && (name.starts_with('@') || name.starts_with('%'))
-                            && custom_traits.iter().any(|(t, _)| {
-                                t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-                            })
-                        {
-                            self.code.emit(OpCode::StashVarDeclInit);
                         }
                         self.code.emit(OpCode::SetLocal(slot));
                         // A `constant` that shadows an outer constant of the same name
@@ -2324,6 +2328,8 @@ impl Compiler {
                         scalar,
                     });
                 }
+                // The trait that takes the raw initializer the store left below.
+                let mut raw_init_pending = stash_raw_init;
                 for (trait_name, trait_arg) in custom_traits {
                     // Skip internal markers (not real traits).
                     if trait_name.starts_with("__") {
@@ -2428,11 +2434,14 @@ impl Compiler {
                     }
                     let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
                     self.code.poison_declared_constraint(name);
+                    let raw_init = raw_init_pending && Self::is_type_named_trait(trait_name);
+                    raw_init_pending &= !raw_init;
                     self.code.emit(OpCode::ApplyVarTrait {
                         name_idx,
                         trait_name_idx,
                         has_arg: trait_arg.is_some(),
                         slot: self.local_map.get(name.as_str()).copied(),
+                        raw_init,
                     });
                 }
                 // Deferred type constraint registration after traits are applied

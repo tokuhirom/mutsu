@@ -46,6 +46,7 @@ pub(crate) mod bit {
     pub(crate) const VARDECL: u16 = 1 << 8;
     pub(crate) const DECL_TYPECHECKED: u16 = 1 << 9;
     pub(crate) const SHAPED_DECL: u16 = 1 << 10;
+    pub(crate) const TRAIT_INIT: u16 = 1 << 11;
 }
 
 /// The whole mark-context flag family in one allocation.
@@ -101,7 +102,8 @@ impl MarkContextState {
         | bit::EXPLICIT_INITIALIZER
         | bit::VARDECL
         | bit::DECL_TYPECHECKED
-        | bit::SHAPED_DECL;
+        | bit::SHAPED_DECL
+        | bit::TRAIT_INIT;
 
     /// Whether *no* store-flavour mark is pending: the next store is a plain
     /// `=` into an already-declared variable, with no bind, rebind, `constant`,
@@ -125,7 +127,8 @@ impl MarkContextState {
         const ALLOWED: u16 = bit::VARDECL
             | bit::EXPLICIT_INITIALIZER
             | bit::DECL_TYPECHECKED
-            | bit::ARRAY_SHARE;
+            | bit::ARRAY_SHARE
+            | bit::TRAIT_INIT;
         let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
         pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
     }
@@ -137,7 +140,8 @@ impl MarkContextState {
         const ALLOWED: u16 = bit::VARDECL
             | bit::EXPLICIT_INITIALIZER
             | bit::DECL_TYPECHECKED
-            | bit::CONSTANT;
+            | bit::CONSTANT
+            | bit::TRAIT_INIT;
         let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
         pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
     }
@@ -151,7 +155,8 @@ impl MarkContextState {
             | bit::EXPLICIT_INITIALIZER
             | bit::DECL_TYPECHECKED
             | bit::CONSTANT
-            | bit::BIND;
+            | bit::BIND
+            | bit::TRAIT_INIT;
         let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
         pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
     }
@@ -228,6 +233,10 @@ impl MarkFlags {
     #[inline]
     pub(crate) fn shaped_decl(self) -> bool {
         self.0 & bit::SHAPED_DECL != 0
+    }
+    #[inline]
+    pub(crate) fn trait_init(self) -> bool {
+        self.0 & bit::TRAIT_INIT != 0
     }
 }
 
@@ -341,6 +350,16 @@ impl crate::runtime::Interpreter {
         MarkFlag::new(&self.mark_ctx.flags, bit::SHAPED_DECL)
     }
 
+    /// Set by `StashVarDeclInit` just before the store of an `@`/`%`
+    /// declaration whose type-named `is` trait (`ApplyVarTrait`) is handed the
+    /// initializer as written. The store leaves the declaration's container
+    /// questions (the QuantHash bind marker, the bound type constraint) to that
+    /// trait instead of settling them itself.
+    #[inline]
+    pub(crate) fn trait_init_context(&self) -> MarkFlag<'_> {
+        MarkFlag::new(&self.mark_ctx.flags, bit::TRAIT_INIT)
+    }
+
     /// The one non-`Copy` member of the family — see
     /// `MarkContextState::share_source`.
     #[inline]
@@ -387,6 +406,7 @@ mod tests {
             bit::VARDECL,
             bit::DECL_TYPECHECKED,
             bit::SHAPED_DECL,
+            bit::TRAIT_INIT,
         ];
         let mut seen: u16 = 0;
         for b in all {

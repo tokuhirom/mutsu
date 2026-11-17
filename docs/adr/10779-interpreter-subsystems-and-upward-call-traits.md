@@ -294,3 +294,9 @@ these preconditions:
   `pending_supply_authoritative_free_vars` and `pending_eval_rw_tail` had no writer (the
   carrier only took, restored and cleared them), and `last_block_my_declared` had no reader.
   They went with the carrier's `CarrierPostCompile` mutation and its compile-cache key fields.
+- D3, `vardecl_init_raw` (2026-11-17): 85 → 84 fields. Its consumer is a later op, not the
+  store, so it became two things: the raw initializer stays on the stack for the one
+  `ApplyVarTrait { raw_init: true }` the compiler names (`StashVarDeclInit { keep_raw }`
+  duplicates it below the store's operand), and the store's "a trait takes the raw value"
+  question is the mark-context bit `TRAIT_INIT`. A compiler-named consumer cannot leave a
+  stale value for an unrelated declaration, which the field could.
