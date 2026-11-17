@@ -6876,6 +6876,8 @@ impl Interpreter {
                 let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
                 if !lexically_in_routine {
                     err.control = None;
+                } else if err.is_fail() {
+                    err.set_fail_in_routine_body();
                 }
                 // A direct CATCH sees the fail-site Backtrace. A soft Failure
                 // moves it off the exception in fail_error_to_failure_value.

@@ -154,6 +154,10 @@ pub struct RuntimeErrorCold {
     pub return_target_callable_id: Option<u64>,
     /// The lexical routine whose boundary converts `fail` to a Failure.
     pub fail_target_callable_id: Option<u64>,
+    /// The `fail` keyword raised this signal in code lexically inside a
+    /// routine (`OpCode::Fail`): it returns from that routine, so a CATCH
+    /// between the two lets it through (`vm_try_catch_ops`).
+    pub fail_in_routine_body: bool,
     /// The return signal came from the `.return` method rather than the
     /// `return` routine. Only the method form checks the enclosing routine's
     /// definite return value at run time (rakudo's `Mu.return` →
@@ -338,6 +342,9 @@ impl RuntimeError {
     pub fn fail_target_callable_id(&self) -> Option<u64> {
         self.cold.as_ref().and_then(|c| c.fail_target_callable_id)
     }
+    pub fn fail_in_routine_body(&self) -> bool {
+        self.cold.as_ref().is_some_and(|c| c.fail_in_routine_body)
+    }
     pub fn fail_passes_frame(&self, callable_id: Option<u64>) -> bool {
         self.fail_target_callable_id()
             .is_some_and(|target| Some(target) != callable_id)
@@ -434,6 +441,9 @@ impl RuntimeError {
     }
     pub(crate) fn set_return_target_callable_id(&mut self, v: Option<u64>) {
         self.cold_mut().return_target_callable_id = v;
+    }
+    pub(crate) fn set_fail_in_routine_body(&mut self) {
+        self.cold_mut().fail_in_routine_body = true;
     }
     pub(crate) fn set_fail_target_callable_id(&mut self, v: Option<u64>) {
         self.cold_mut().fail_target_callable_id = v;
