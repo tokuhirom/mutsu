@@ -39,10 +39,10 @@ pub(crate) struct IoState {
     /// See [`TapState`] — extracted out of this struct so its ownership can later
     /// move (lever B). Access only through `self.tap`'s methods.
     pub(crate) tap: TapState,
-    /// Open IO handles (files/sockets/listeners) shared between the VM and the
-    /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned
-    /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
-    pub(crate) io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
+    /// Open IO handles (files/sockets/listeners): the one process-wide table,
+    /// shared by every thread's interpreter (ADR-17216 §2.4; see the
+    /// [`io_handles`] module docs).
+    pub(crate) io_handles: Arc<io_handles::IoHandleTable>,
     pub(crate) program_path: Option<String>,
     /// [`Self::program_path`] interned, set with it (`set_program_path`), so
     /// the per-call unit lookup (`unit_of_source_sym`) compares two symbols
@@ -76,10 +76,7 @@ impl IoState {
             warn_suppression_boundaries: Vec::new(),
             surfaced_parse_warnings: std::collections::HashSet::new(),
             tap: TapState::default(),
-            io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
-                map: HashMap::new(),
-                next_id: 1,
-            })),
+            io_handles: Arc::new(io_handles::IoHandleTable::default()),
             program_path: None,
             program_path_sym: None,
             test_assertion_line_stack: Vec::new(),
@@ -91,47 +88,9 @@ impl IoState {
     }
 
     /// The spawned thread's copy: it writes through the parent's shared
-    /// stdout/stderr buffers, gets its own snapshot of the open handles the
-    /// spawned code can reach (`referenced_handle_ids`) and starts the
-    /// per-run warning and assertion-line state fresh.
-    pub(crate) fn fork_for_thread(
-        &mut self,
-        referenced_handle_ids: &std::collections::HashSet<usize>,
-    ) -> Self {
-        let mut cloned_handles = HashMap::new();
-        let handles_guard = io_handles::IoHandlesReadGuard::new(&self.io_handles, "io_handles");
-        for (id, handle) in &handles_guard.map {
-            if handle.closed || !referenced_handle_ids.contains(id) {
-                continue;
-            }
-            let cloned = IoHandleState {
-                target: handle.target,
-                mode: handle.mode,
-                path: handle.path.clone(),
-                line_separators: handle.line_separators.clone(),
-                line_chomp: handle.line_chomp,
-                encoding: handle.encoding.clone(),
-                file: handle.file.as_ref().and_then(|f| f.try_clone().ok()),
-                socket: handle.socket.as_ref().and_then(|s| s.try_clone().ok()),
-                listener: handle.listener.as_ref().and_then(|l| l.try_clone().ok()),
-                closed: handle.closed,
-                out_buffer_capacity: handle.out_buffer_capacity,
-                out_buffer_pending: handle.out_buffer_pending.clone(),
-                bin: handle.bin,
-                nl_out: handle.nl_out.clone(),
-                bytes_written: handle.bytes_written,
-                read_attempted: handle.read_attempted,
-                stream_hit_eof: handle.stream_hit_eof,
-                utf16_bom_written: handle.utf16_bom_written,
-                utf16_detected_be: handle.utf16_detected_be,
-                pending_words: handle.pending_words.clone(),
-                close_on_exhaust: handle.close_on_exhaust,
-                seq_reader: handle.seq_reader.as_ref().and_then(|r| r.try_clone()),
-            };
-            cloned_handles.insert(*id, cloned);
-        }
-        let cloned_next_handle_id = handles_guard.next_id;
-        drop(handles_guard);
+    /// stdout/stderr buffers, shares the process-wide handle table (ADR-17216
+    /// §2.4) and starts the per-run warning and assertion-line state fresh.
+    pub(crate) fn fork_for_thread(&mut self) -> Self {
         // Thread clones write through the parent's shared stdout/stderr buffers
         // so concurrent output interleaves in real chronological order.
         let thread_output_sink = {
@@ -176,10 +135,7 @@ impl IoState {
             warn_suppression_boundaries: Vec::new(),
             surfaced_parse_warnings: std::collections::HashSet::new(),
             tap: self.tap.clone_for_thread(),
-            io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {
-                map: cloned_handles,
-                next_id: cloned_next_handle_id,
-            })),
+            io_handles: Arc::clone(&self.io_handles),
             program_path: self.program_path.clone(),
             program_path_sym: self.program_path_sym,
             test_assertion_line_stack: Vec::new(),

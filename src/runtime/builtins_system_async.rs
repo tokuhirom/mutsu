@@ -327,21 +327,6 @@ impl Interpreter {
                     let (result, output, stderr) = shared.wait();
                     self.emit_output(&output);
                     self.output_sink_mut().stderr_output.push_str(&stderr);
-                    if let Some(payload) = shared.take_thread_payload()
-                        && let Ok(payload) = payload.downcast::<ThreadPromisePayload>()
-                    {
-                        let ThreadPromisePayload {
-                            new_handles,
-                            next_handle_id,
-                        } = *payload;
-                        let mut table = self.io_handles_mut();
-                        for (id, state) in new_handles {
-                            table.map.entry(id).or_insert(state);
-                        }
-                        if next_handle_id > table.next_id {
-                            table.next_id = next_handle_id;
-                        }
-                    }
                     if shared.status() == "Broken" {
                         self.sync_shared_vars_to_env();
                         // Raku wraps the broken Promise's cause in X::Await::Died.

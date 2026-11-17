@@ -86,9 +86,8 @@ impl Interpreter {
         if let Some(id) = Self::handle_id_from_value(target_val)
             && self
                 .io_handles()
-                .map
-                .get(&id)
-                .is_some_and(|state| state.target != IoHandleTarget::File)
+                .with(id, |state| state.target != IoHandleTarget::File)
+                .unwrap_or(false)
         {
             self.apply_open_options_in_place(target_val, args)?;
             return Ok(target_val.clone());

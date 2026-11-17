@@ -1,13 +1,13 @@
 //! Shared reentrancy-detecting `RwLock` guard infrastructure (debug-only).
 //!
-//! Several pieces of execution state that the VM and the tree-walking
-//! `Interpreter` share during the decoupling transition live behind
-//! `Arc<RwLock<…>>` scaffolding — the declaration [`Registry`](super::Registry)
-//! (PLAN.md ②) and the IO handle table
-//! ([`IoHandleTable`](super::io_handles::IoHandleTable), PLAN.md ③). Both are
-//! per-thread snapshots (a fresh `Arc` is cloned in `clone_for_thread`), so the
-//! lock never contends *across* threads; it exists only so the VM and the
-//! Interpreter can reach the data as peers *within* one thread, ping-ponging.
+//! Several world tables live behind `Arc<RwLock<…>>` — the declaration
+//! [`Registry`](super::Registry) and the IO handle table
+//! ([`IoHandleTable`](super::io_handles::IoHandleTable), whose map and every
+//! handle have their own lock). The IO handle table is shared live by every
+//! thread (ADR-17216 §2.4), so its locks do contend across threads; the
+//! registry is still a per-thread copy-on-write snapshot until ADR-17216's
+//! slice 2 shares it. Either way, a thread must never re-acquire a lock it
+//! already holds.
 //!
 //! `RwLock` is not reentrant, so the discipline (see each owner's module docs)
 //! is: never hold a read/write guard across a call that re-enters execution and
@@ -136,7 +136,11 @@ impl<'a, T> ReentrantReadGuard<'a, T> {
         reentry_check::enter_read(lock_id, _name);
         // Acquire only after the reentry check, so a would-be deadlock panics
         // instead of hanging on the blocking `.read()`.
-        let inner = lock.read().unwrap();
+        // A poisoned lock means a thread panicked while holding it (a worker's
+        // panic is turned into a broken Promise by `guard_worker_panic`). Every
+        // table behind these guards stays memory-safe through any one Rust
+        // operation, so the other threads keep using it (ADR-17216 §2.6).
+        let inner = lock.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         Self {
             inner,
             #[cfg(debug_assertions)]
@@ -174,7 +178,9 @@ impl<'a, T> ReentrantWriteGuard<'a, T> {
         let lock_id = lock as *const _ as usize;
         #[cfg(debug_assertions)]
         reentry_check::enter_write(lock_id, _name);
-        let inner = lock.write().unwrap();
+        let inner = lock
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Self {
             inner,
             #[cfg(debug_assertions)]

@@ -102,7 +102,6 @@ impl SharedPromise {
                     output: String::new(),
                     stderr_output: String::new(),
                     class_name,
-                    thread_payload: None,
                     waiters: Vec::new(),
                     wake_next: 0,
                     wake_granted: 0,
@@ -132,7 +131,6 @@ impl SharedPromise {
                     output: String::new(),
                     stderr_output: String::new(),
                     class_name: Symbol::intern("Promise"),
-                    thread_payload: None,
                     waiters: Vec::new(),
                     wake_next: 0,
                     wake_granted: 0,
@@ -231,21 +229,6 @@ impl SharedPromise {
 
     pub(crate) fn id(&self) -> usize {
         crate::gc::Gc::as_ptr(&self.inner) as usize
-    }
-
-    /// Store an opaque payload to be handed off to whoever awaits the
-    /// promise. Must be called before `keep`/`break_with` so the awaiter
-    /// can observe it via `take_thread_payload`.
-    pub(crate) fn set_thread_payload(&self, payload: Box<dyn std::any::Any + Send>) {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        state.thread_payload = Some(payload);
-    }
-
-    pub(crate) fn take_thread_payload(&self) -> Option<Box<dyn std::any::Any + Send>> {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        state.thread_payload.take()
     }
 
     pub(crate) fn result_blocking(&self) -> Value {

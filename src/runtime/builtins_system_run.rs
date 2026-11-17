@@ -456,11 +456,11 @@ impl Interpreter {
         handle_id: usize,
         want_merge_copy: bool,
     ) -> Result<(std::fs::File, Option<std::fs::File>), RuntimeError> {
-        let table = self.io_handles();
-        let state = table
-            .map
-            .get(&handle_id)
+        let handle = self
+            .io_handles()
+            .get(handle_id)
             .ok_or_else(|| RuntimeError::new("Invalid IO::Handle for :out/:err"))?;
+        let state = io_handles::read(&handle);
         let file = state
             .file
             .as_ref()

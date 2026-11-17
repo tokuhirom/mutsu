@@ -1484,14 +1484,6 @@ impl std::io::Read for SocketStream {
 }
 
 impl SocketStream {
-    fn try_clone(&self) -> std::io::Result<Self> {
-        match self {
-            SocketStream::Tcp(s) => Ok(SocketStream::Tcp(s.try_clone()?)),
-            #[cfg(unix)]
-            SocketStream::Unix(s) => Ok(SocketStream::Unix(s.try_clone()?)),
-        }
-    }
-
     pub(crate) fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
         match self {
             SocketStream::Tcp(s) => s.set_nonblocking(nonblocking),
@@ -1559,14 +1551,6 @@ impl SocketListener {
             SocketListener::Unix(l) => Ok(SocketListener::Unix(l.try_clone()?)),
         }
     }
-}
-
-/// Opaque payload attached to a `SharedPromise` so that a worker thread
-/// can hand newly-opened IO handles back to the awaiting interpreter.
-#[derive(Debug)]
-pub(crate) struct ThreadPromisePayload {
-    pub(crate) new_handles: Vec<(usize, IoHandleState)>,
-    pub(crate) next_handle_id: usize,
 }
 
 #[derive(Debug)]

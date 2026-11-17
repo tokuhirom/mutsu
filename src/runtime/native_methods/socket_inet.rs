@@ -18,11 +18,11 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn inet_getpeername(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
         let id = inet_handle(attributes)?;
-        let table = self.io_handles();
-        let state = table
-            .map
-            .get(&id)
+        let handle = self
+            .io_handles()
+            .get(id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let state = io_handles::read(&handle);
         if state.closed {
             return Err(RuntimeError::new("Socket is closed"));
         }
@@ -41,11 +41,12 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn inet_close(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
         let id = inet_handle(attributes)?;
-        let mut table = self.io_handles_mut();
-        let state = table
-            .map
-            .get_mut(&id)
+        let handle = self
+            .io_handles()
+            .get(id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let mut guard = io_handles::write(&handle);
+        let state = &mut *guard;
         state.closed = true;
         state.socket = None;
         state.listener = None;
@@ -59,11 +60,12 @@ impl Interpreter {
         let id = inet_handle(attributes)?;
         // Take listener out temporarily to avoid borrow issues
         let listener = {
-            let mut table = self.io_handles_mut();
-            let state = table
-                .map
-                .get_mut(&id)
+            let handle = self
+                .io_handles()
+                .get(id)
                 .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+            let mut guard = io_handles::write(&handle);
+            let state = &mut *guard;
             state.listener.as_ref().and_then(|l| l.try_clone().ok())
         };
         let listener =
@@ -117,11 +119,12 @@ impl Interpreter {
         if newline {
             data.push('\n');
         }
-        let mut table = self.io_handles_mut();
-        let state = table
-            .map
-            .get_mut(&id)
+        let handle = self
+            .io_handles()
+            .get(id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let mut guard = io_handles::write(&handle);
+        let state = &mut *guard;
         if let Some(ref mut stream) = state.socket {
             use std::io::Write;
             stream
@@ -147,11 +150,12 @@ impl Interpreter {
         } else {
             return Err(RuntimeError::new("write expects a Buf argument"));
         };
-        let mut table = self.io_handles_mut();
-        let state = table
-            .map
-            .get_mut(&id)
+        let handle = self
+            .io_handles()
+            .get(id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let mut guard = io_handles::write(&handle);
+        let state = &mut *guard;
         if let Some(ref mut stream) = state.socket {
             use std::io::Write;
             stream
@@ -223,11 +227,11 @@ impl Interpreter {
     pub(crate) fn inet_nl_in(&mut self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
         // Getter for nl-in
         let id = inet_handle(attributes)?;
-        let table = self.io_handles();
-        let state = table
-            .map
-            .get(&id)
+        let handle = self
+            .io_handles()
+            .get(id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let state = io_handles::read(&handle);
         let seps: Vec<Value> = state
             .line_separators
             .iter()

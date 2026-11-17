@@ -153,11 +153,10 @@ pub(crate) struct TypeState {
     // embedded in their backing data structs (ArrayData/HashData/SetData/
     // BagData/MixData) — no side tables.
     /// Type metadata for instance values keyed by stable instance id. Lifted
-    /// behind `Arc<RwLock>` (the same shared-handle playbook used for
-    /// `current_package` / `io_handles`) so the VM and Interpreter can reach it
-    /// as peers and CP-3 can fold it by handle transfer rather than ownership
-    /// reasoning. Like those handles it is a *per-thread snapshot*, not
-    /// live-shared: `clone_for_thread` shares the inner `Arc` (O(1); see the
+    /// behind `Arc<RwLock>` so the VM and Interpreter can reach it as peers and
+    /// CP-3 can fold it by handle transfer rather than ownership reasoning. It
+    /// is a *per-thread snapshot*, not live-shared (ADR-17216 §6 leaves open
+    /// whether it is world state): `clone_for_thread` shares the inner `Arc` (O(1); see the
     /// `registry` field's copy-on-write doc, docs/per-task-clone-slimming.md
     /// slice 4) into a fresh outer `Arc<RwLock<...>>`, so the lock never
     /// contends across threads and the first write on either side after a

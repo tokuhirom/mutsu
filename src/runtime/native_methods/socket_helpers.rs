@@ -36,11 +36,12 @@ impl Interpreter {
         bin_mode: bool,
     ) -> Result<Value, RuntimeError> {
         use std::io::Read;
-        let mut table = self.io_handles_mut();
-        let state = table
-            .map
-            .get_mut(&handle_id)
+        let handle = self
+            .io_handles()
+            .get(handle_id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let mut guard = io_handles::write(&handle);
+        let state = &mut *guard;
         let stream = state
             .socket
             .as_mut()
@@ -151,11 +152,12 @@ impl Interpreter {
         nbytes: usize,
     ) -> Result<Value, RuntimeError> {
         use std::io::Read;
-        let mut table = self.io_handles_mut();
-        let state = table
-            .map
-            .get_mut(&handle_id)
+        let handle = self
+            .io_handles()
+            .get(handle_id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let mut guard = io_handles::write(&handle);
+        let state = &mut *guard;
         let stream = state
             .socket
             .as_mut()
@@ -183,19 +185,20 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         use std::io::Read;
         let separators = {
-            let table = self.io_handles();
-            let state = table
-                .map
-                .get(&handle_id)
+            let handle = self
+                .io_handles()
+                .get(handle_id)
                 .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+            let state = io_handles::read(&handle);
             state.line_separators.clone()
         };
 
-        let mut table = self.io_handles_mut();
-        let state = table
-            .map
-            .get_mut(&handle_id)
+        let handle = self
+            .io_handles()
+            .get(handle_id)
             .ok_or_else(|| RuntimeError::new("Invalid socket handle"))?;
+        let mut guard = io_handles::write(&handle);
+        let state = &mut *guard;
         let stream = state
             .socket
             .as_mut()

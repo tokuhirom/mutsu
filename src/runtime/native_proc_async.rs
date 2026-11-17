@@ -1492,10 +1492,10 @@ impl Interpreter {
         let Some(handle_id) = Self::handle_id_from_value(value) else {
             return Ok(None);
         };
-        let mut table = self.io_handles_mut();
-        let Some(state) = table.map.get_mut(&handle_id) else {
+        let Some(handle) = self.io_handles().get(handle_id) else {
             return Err(RuntimeError::new("Invalid IO::Handle"));
         };
+        let mut state = io_handles::write(&handle);
         let Some(file) = state.file.as_mut() else {
             return Ok(None);
         };
@@ -1515,10 +1515,10 @@ impl Interpreter {
         let Some(handle_id) = Self::handle_id_from_value(value) else {
             return Ok(None);
         };
-        let mut table = self.io_handles_mut();
-        let Some(state) = table.map.get_mut(&handle_id) else {
+        let Some(handle) = self.io_handles().get(handle_id) else {
             return Err(RuntimeError::new("Invalid IO::Handle"));
         };
+        let mut state = io_handles::write(&handle);
         let Some(file) = state.file.as_mut() else {
             return Ok(None);
         };
