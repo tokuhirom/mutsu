@@ -3477,7 +3477,16 @@ impl Interpreter {
                                         derived: Default::default(),
                                     }
                                 } else {
-                                    let Some(parsed) = self.parse_regex_with_mode(&inner, mode)
+                                    // The body is a nested nibbler: `:ratchet`
+                                    // in force here holds inside it too, as in
+                                    // rakudo (`rx:r/<?after ^^ \s*>/` does not
+                                    // backtrack into the `\s*`).
+                                    let body = if ratchet {
+                                        std::borrow::Cow::Owned(format!(":ratchet {inner}"))
+                                    } else {
+                                        std::borrow::Cow::Borrowed(inner.as_str())
+                                    };
+                                    let Some(parsed) = self.parse_regex_with_mode(&body, mode)
                                     else {
                                         continue;
                                     };

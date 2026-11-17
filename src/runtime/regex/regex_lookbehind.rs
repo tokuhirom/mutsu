@@ -147,6 +147,12 @@ impl Interpreter {
     }
 }
 
+/// The start of the grapheme cluster that ends at `pos` (`0` at the start).
+// Cost: O(m), m = the cluster's length.
+pub(super) fn step_back_one_grapheme(chars: &[char], pos: usize) -> usize {
+    step_back_graphemes(chars, pos, 1)
+}
+
 /// Walk `count` grapheme clusters back from `pos`, mirroring
 /// [`super::regex_helpers::grapheme_end`]'s notion of a cluster: `\r\n` is one,
 /// and a cluster extends over the combining marks that follow its base.
