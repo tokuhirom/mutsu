@@ -16,6 +16,7 @@ mod coercion;
 mod coercion_bind;
 pub(crate) use coercion_bind::CoercionBindError;
 mod meta_parameterized;
+pub(crate) use meta_parameterized::split_parameterization;
 pub(crate) mod metamodel_how_roles;
 mod native_backed_class;
 mod object_hash_key;
