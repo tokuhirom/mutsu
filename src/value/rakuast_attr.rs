@@ -21,7 +21,9 @@ impl Value {
     // Cost: as [`crate::rakuast::attr_bind::bind_attribute`].
     pub(crate) fn rakuast_bind_attribute(&self, attr: &str, value: Value) -> bool {
         self.0
-            .with_rakuast_inplace(|node| crate::rakuast::attr_bind::bind_attribute(node, attr, value))
+            .with_rakuast_inplace(|node| {
+                crate::rakuast::attr_bind::bind_attribute(node, attr, value)
+            })
             .unwrap_or(false)
     }
 }

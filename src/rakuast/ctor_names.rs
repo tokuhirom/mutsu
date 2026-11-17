@@ -72,5 +72,9 @@ pub(super) fn declares(class_name: &str, name: &str) -> bool {
 /// table's own `'static` spelling: the attribute it initializes (#17327).
 // Cost: O(n), n = named parameters of the class.
 pub(super) fn declared_name(class_name: &str, name: &str) -> Option<&'static str> {
-    TABLE.get(class_name)?.iter().copied().find(|declared| *declared == name)
+    TABLE
+        .get(class_name)?
+        .iter()
+        .copied()
+        .find(|declared| *declared == name)
 }
