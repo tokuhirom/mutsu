@@ -801,9 +801,8 @@ pub(super) fn embed_declaration(target: &mut Value, type_node: Option<&Value>) {
     // The constructor's own order (`type` first), which the field lookups of a
     // declaration read. An untyped parameter's implicit `Type::Setting` (`Any`)
     // is the parameter's alone: its declaration has no type, as in rakudo.
-    let explicit = type_node.filter(|ty| {
-        !matches!(ty.view(), ValueView::RakuAst(ty) if ty.class == C::TypeSetting)
-    });
+    let explicit = type_node
+        .filter(|ty| !matches!(ty.view(), ValueView::RakuAst(ty) if ty.class == C::TypeSetting));
     if let Some(ty) = explicit {
         fields.insert(0, super::view::leaf_field(Some("type"), ty.clone()));
     }

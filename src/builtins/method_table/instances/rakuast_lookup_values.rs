@@ -57,7 +57,10 @@ fn resolution_value(
 /// The resolution `target`'s lookup node carries, or the "not resolved" error
 /// rakudo raises for it (`what` names the lookup in the message).
 // Cost: O(f), f = fields of the node.
-fn resolution_of(target: &Value, what: impl FnOnce(&Value) -> String) -> Result<Value, RuntimeError> {
+fn resolution_of(
+    target: &Value,
+    what: impl FnOnce(&Value) -> String,
+) -> Result<Value, RuntimeError> {
     let resolution = match target.view() {
         ValueView::RakuAst(node) => crate::rakuast::node_accessor(node, "resolution"),
         _ => None,
@@ -68,10 +71,7 @@ fn resolution_of(target: &Value, what: impl FnOnce(&Value) -> String) -> Result<
             ValueView::RakuAst(node) => node.class.printed_name(),
             _ => "RakuAST::Node",
         };
-        return Err(RuntimeError::new(format!(
-            "{} Type: {class}",
-            what(target)
-        )));
+        return Err(RuntimeError::new(format!("{} Type: {class}", what(target))));
     }
     Ok(resolution)
 }
@@ -137,7 +137,9 @@ fn maybe_value(
     if let Some(answer) = lookup_value(interp, &target) {
         return Some(answer);
     }
-    Some(Ok(crate::rakuast::literal_queries::literal_compile_time_value(node)))
+    Some(Ok(
+        crate::rakuast::literal_queries::literal_compile_time_value(node),
+    ))
 }
 
 macro_rules! lookup_row {
@@ -162,12 +164,24 @@ pub(super) static ROWS: &[MethodRow] = &[
         "compile-time-value",
         compiled_value
     ),
-    lookup_row!("RakuAST::Type::Simple", "maybe-compile-time-value", maybe_value),
+    lookup_row!(
+        "RakuAST::Type::Simple",
+        "maybe-compile-time-value",
+        maybe_value
+    ),
     lookup_row!(
         "RakuAST::Type::Setting",
         "compile-time-value",
         compiled_value
     ),
-    lookup_row!("RakuAST::Type::Setting", "maybe-compile-time-value", maybe_value),
-    lookup_row!("RakuAST::Var::Lexical", "maybe-compile-time-value", maybe_value),
+    lookup_row!(
+        "RakuAST::Type::Setting",
+        "maybe-compile-time-value",
+        maybe_value
+    ),
+    lookup_row!(
+        "RakuAST::Var::Lexical",
+        "maybe-compile-time-value",
+        maybe_value
+    ),
 ];
