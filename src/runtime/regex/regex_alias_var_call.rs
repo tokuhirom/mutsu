@@ -18,7 +18,8 @@
 //! parser lowers an aliased match-time `$var` to a call atom spelled with
 //! [`INTERP_CALL_MARK`]: its lookup spec reads the variable when the call is
 //! made and matches a `Regex` value as itself and any other value as the
-//! literal the interpolation would have matched ([`interp_call_value`]).
+//! literal the interpolation would have matched
+//! ([`Interpreter::interp_call_value`]).
 
 use super::super::*;
 
