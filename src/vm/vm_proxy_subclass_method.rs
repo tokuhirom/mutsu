@@ -14,8 +14,8 @@
 //! The direct call is the cascade's answer exactly when nothing in front of it
 //! can claim the call: no built-in method of that name exists for the subclass
 //! (so no built-in candidate outranks the user's, and no native fork applies),
-//! the name is not one of the subclass's attribute accessors (those are read
-//! from the Proxy's own attribute store), no method is wrapped, and no user
+//! the name is not one of the subclass's public attribute accessors (those are
+//! read from the Proxy's own attribute store), no method is wrapped, and no user
 //! `^find_method` intercepts dispatch.
 
 use crate::runtime::Interpreter;
@@ -44,7 +44,11 @@ impl Interpreter {
         };
         let class_sym = *class_sym;
         let method = method_sym.as_str();
-        if attrs.as_map().contains_key(method)
+        // Only a *public* attribute of that name has an accessor that could
+        // answer instead: a private `$!is-set` next to `method is-set` (Mooish's
+        // `AttrProxy`) leaves the method the only candidate.
+        if (attrs.as_map().contains_key(method)
+            && self.has_public_accessor(class_sym.as_str(), method))
             || self.has_any_wrap_chains()
             || crate::runtime::find_method_intercept::any_user_find_method()
         {
