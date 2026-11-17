@@ -1323,6 +1323,12 @@ impl Interpreter {
             }
         }
 
+        // A Method/Submethod object invokes its own candidate without the
+        // instance cascade in front of `CALL-ME` (method_object_call.rs).
+        if let Some(result) = self.try_call_method_object_value(&target, &args) {
+            return result;
+        }
+
         // Instance or Package (type object): CALL-ME -- try compiled method path first
         if matches!(
             target.view(),

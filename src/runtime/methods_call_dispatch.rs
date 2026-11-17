@@ -1057,44 +1057,10 @@ impl Interpreter {
             return result;
         }
 
-        // Qualified coercion to a universal base (self.Mu::Str, self.Any::gist):
-        // route to the built-in default, bypassing the receiver's own override.
-        // Must precede the instance/non-instance qualified dispatchers, which would
-        // otherwise recurse (type object) or reject it as "not inherited" (instance).
-        if let Some(result) = self.dispatch_universal_base_coercion(&target, method, &args) {
+        // Qualified calls (`self.Mu::Str`, `$o.Parent::m`): see
+        // `dispatch_qualified_call` (method_object_call.rs).
+        if let Some(result) = self.dispatch_qualified_call(&target, method, &args) {
             return result;
-        }
-
-        // A qualified call defers along the QUALIFIER's own chain, never the
-        // receiver's (#11592): `self.Q::m` with a `callsame` reaches Q's parent,
-        // and a role's method (`self.R::m`) has nothing to defer to.
-        if !method.starts_with('!')
-            && let Some((qualifier, actual)) =
-                super::methods_qualified::split_method_qualifier_last(method)
-        {
-            let qualifier = self.lexical_env_remap_name(qualifier);
-            let qualifier_is_role = self.is_role(&qualifier);
-            let pushed = if qualifier_is_role {
-                self.push_qualified_method_dispatch_frame(&qualifier, &args, target.clone())
-            } else {
-                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone(), None)?
-            };
-            let result = self.dispatch_qualified_method(&target, method, &args);
-            if pushed {
-                self.pop_method_dispatch();
-            }
-            // `push_method_dispatch_frame` always pushes the samewith context
-            // (the frame itself is only built when a deferral builtin is named
-            // anywhere, `pushed`), so it is taken back whether or not a frame
-            // went on. A role's qualified frame pushes none. Left behind, a
-            // later `samewith` re-dispatched the qualified method (`Eq.new`
-            // after `self.Mu::new`) instead of its own routine.
-            if !qualifier_is_role {
-                self.pop_method_samewith_context();
-            }
-            if let Some(result) = result {
-                return result;
-            }
         }
 
         // Proxy subclass method dispatch

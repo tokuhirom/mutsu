@@ -44,6 +44,22 @@ impl Interpreter {
         };
         let class_sym = *class_sym;
         let method = method_sym.as_str();
+        // A private method (`$proxy.VAR!SET-SELF(%h)`, AttrX::Mooish's
+        // `AttrProxy.new`): no arm of the interpreter cascade in front of
+        // `dispatch_private_method_on_proxy_subclass` answers a `!`-name on a
+        // Proxy subclass's `.VAR` object -- built-in rows and accessors never
+        // carry one -- so the cascade's own private arm is the answer, reached
+        // here without walking the ~60 receiver/name probes in front of it.
+        // The arm resolves the private method, applies the trust rules and
+        // runs it with the Proxy as `self`, exactly as the cascade does.
+        if method.starts_with('!') {
+            if self.has_any_wrap_chains()
+                || crate::runtime::find_method_intercept::any_user_find_method()
+            {
+                return None;
+            }
+            return self.dispatch_private_method_on_proxy_subclass(target, method, args);
+        }
         // Only a *public* attribute of that name has an accessor that could
         // answer instead: a private `$!is-set` next to `method is-set` (Mooish's
         // `AttrProxy`) leaves the method the only candidate.

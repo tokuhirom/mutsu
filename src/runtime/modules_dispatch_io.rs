@@ -97,3 +97,4 @@ mod method_dispatch_lazy;
 mod nextcallee_chain;
 pub(crate) mod method_dispatch_lazy_tail;
 mod method_object_bound;
+mod method_object_call;
