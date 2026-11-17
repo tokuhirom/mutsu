@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 
 pub(crate) mod capture_check;
+pub(crate) mod lexical_check;
 
 // Lineage-store maps are String-keyed and hit on every spawn's seeding loop;
 // use FxHash instead of SipHash (variable names are program identifiers, not
@@ -230,6 +231,9 @@ impl SharedStore {
     /// Read a name: this lineage first, then up the chain. An internal key
     /// resolves at the root instead (see `is_internal_key`).
     pub(crate) fn get(&self, key: &str) -> Option<Value> {
+        if lexical_check::enabled() {
+            lexical_check::note(key, "get");
+        }
         if is_internal_key(key) {
             return self.scope_for(key).own_get(key);
         }
@@ -260,6 +264,9 @@ impl SharedStore {
     pub(crate) fn set(&self, key: &str, value: Value) {
         if capture_check::enabled() {
             capture_check::note_lane_access(key, "set");
+        }
+        if lexical_check::enabled() {
+            lexical_check::note(key, "set");
         }
         note_inserted_key(key);
         let target = self.owner_of(key).unwrap_or_else(|| self.scope_for(key));
@@ -298,6 +305,9 @@ impl SharedStore {
         if self.contains_key(key) {
             return false;
         }
+        if lexical_check::enabled() {
+            lexical_check::note(key, "seed");
+        }
         note_inserted_key(key);
         self.scope_for(key)
             .own
@@ -314,6 +324,9 @@ impl SharedStore {
     /// seeded into the spawning lineage by `clone_for_thread` *before* the child
     /// starts, so children resolve them through the chain and never re-init.
     pub(crate) fn get_or_init_cell(&self, key: &str, make: impl FnOnce() -> Value) -> Value {
+        if lexical_check::enabled() {
+            lexical_check::note(key, "init-cell");
+        }
         if let Some(existing) = self.get(key)
             && existing.is_container_ref()
         {
@@ -357,6 +370,9 @@ impl SharedStore {
     ) -> Option<R> {
         if capture_check::enabled() {
             capture_check::note_lane_access(key, "mut");
+        }
+        if lexical_check::enabled() {
+            lexical_check::note(key, "mut");
         }
         let target = self.owner_of(key)?;
         let mut guard = target.own.write().unwrap();
