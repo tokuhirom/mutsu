@@ -145,7 +145,7 @@ impl TierB {
         )
     }
 
-    fn stack_cap(&self, b: &mut FunctionBuilder) -> CVal {
+    pub(super) fn stack_cap(&self, b: &mut FunctionBuilder) -> CVal {
         b.ins().load(
             types::I64,
             Self::mf(),
