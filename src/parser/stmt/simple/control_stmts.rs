@@ -264,10 +264,11 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = opt_char(rest, ';');
         // `die`/`fail` with no argument should reuse current `$!` when present.
         // A later runtime fallback handles Nil -> default text.
+        let error = crate::ast::spelled::implicit_error();
         let stmt = if is_fail {
-            Stmt::Fail(Expr::Var("!".to_string()))
+            Stmt::Fail(error)
         } else {
-            Stmt::Die(Expr::Var("!".to_string()))
+            Stmt::Die(error)
         };
         return parse_statement_modifier(rest, stmt);
     }
