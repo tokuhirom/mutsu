@@ -5880,8 +5880,9 @@ impl Interpreter {
             OpCode::IndexInvocantRef {
                 is_positional,
                 vivify,
+                slice_cells,
             } => {
-                self.exec_index_invocant_ref_op(*is_positional, *vivify)?;
+                self.exec_index_invocant_ref_op(*is_positional, *vivify, *slice_cells)?;
                 *ip += 1;
             }
             // Cost: O(1) (element cell for a single index), otherwise as Index.
