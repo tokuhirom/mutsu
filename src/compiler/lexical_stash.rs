@@ -152,6 +152,31 @@ impl Compiler {
         true
     }
 
+    /// Emit `CORE::<key>`: the setting's entry under `key` (a `&name`
+    /// routine), or Nil.
+    // Cost: one keyed pseudo-stash read.
+    pub(crate) fn emit_core_stash_read(&mut self, key: &str) {
+        self.compile_subscript_index(&Expr::Literal(Value::str(key.to_string())));
+        let name_idx = self.code.add_constant(Value::str("CORE::".to_string()));
+        self.code.emit(OpCode::GetPseudoStashKeyed(name_idx));
+    }
+
+    /// With the value of a lexical lookup of the routine `key` (`&name`) on
+    /// the stack, replace a Nil by the setting's routine of that name: the
+    /// lexical scopes `LEXICAL::` and `OUTERS::` see end in CORE.
+    // Cost: O(1) when found; otherwise one keyed pseudo-stash read.
+    pub(crate) fn emit_core_routine_fallback(&mut self, key: &str) {
+        self.code.emit(OpCode::Dup);
+        let found = self.code.emit(OpCode::JumpIfNotNil(0));
+        self.code.emit(OpCode::Pop);
+        self.code.emit(OpCode::Pop);
+        self.emit_core_stash_read(key);
+        let end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(found);
+        self.code.emit(OpCode::Pop);
+        self.code.patch_jump(end);
+    }
+
     /// The key a pseudo-stash lists the scope-frame entry `var_name` under.
     fn lexical_stash_display_name(var_name: &str) -> String {
         if let Some(term) = crate::runtime::term_names::term_spelling(var_name) {
