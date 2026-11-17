@@ -968,7 +968,7 @@ impl Interpreter {
             // inside the original body — re-enters the chain like Raku does.
             let skip_chain_once = self.dispatch.wrap_skip_once.take() == Some(data.id);
             if !skip_chain_once
-                && let Some(chain) = self.dispatch.wrap_chains.get(&data.id).cloned()
+                && let Some(chain) = self.wrap_chain_of(data.id)
                 && !chain.is_empty()
                 // A nextcallee-returned wrappee is a direct code body: it
                 // must not re-enter the wrapper chain.

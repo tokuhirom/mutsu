@@ -42,17 +42,18 @@ impl Interpreter {
             .get("sub-id")
             .and_then(|v| v.as_int().map(|i| i as u64));
         if let (Some(sub_id), Some(handle_id)) = (sub_id, handle_id) {
-            let mut removed = false;
-            if let Some(chain) =
-                crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).get_mut(&sub_id)
-            {
+            let removed = self.dispatch.wraps.write(|wraps| {
+                let Some(chain) = wraps.chains.get_mut(&sub_id) else {
+                    return false;
+                };
                 let before = chain.len();
                 chain.retain(|(hid, _)| *hid != handle_id);
-                removed = chain.len() != before;
+                let removed = chain.len() != before;
                 if chain.is_empty() {
-                    self.cleanup_wrap_name_entries(sub_id);
+                    wraps.cleanup_name_entries(sub_id);
                 }
-            }
+                removed
+            });
             // Invalidate light-call caches so the sub re-resolves (see wrap).
             self.invalidate_fn_resolution();
             // A second `.restore()` on an already-restored handle is a

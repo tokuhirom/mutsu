@@ -84,8 +84,10 @@ impl Interpreter {
                 if !wrappers.is_empty()
                     && let ValueView::Sub(data) = val.view()
                 {
-                    std::sync::Arc::make_mut(&mut self.dispatch.wrap_chains)
-                        .insert(data.id, wrappers.to_vec());
+                    let wrappers = wrappers.to_vec();
+                    self.dispatch
+                        .wraps
+                        .write(|wraps| wraps.chains.insert(data.id, wrappers));
                 }
             }
             // The value of a `multi` term is that candidate (see

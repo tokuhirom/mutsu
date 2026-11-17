@@ -177,6 +177,9 @@ impl Interpreter {
         // redirection is preserved and a later write on either side promotes
         // into that side's overlay only.
         cloned.hoist_builtin_dynamics();
+        // The child's resolution memos start empty, so they are current for
+        // the shared `.wrap` tables as they stand (ADR-17216 §2.3).
+        cloned.caches.wraps_gen_seen = cloned.dispatch.wraps.generation();
         cloned.bootstrap_hll_syms();
         cloned
     }

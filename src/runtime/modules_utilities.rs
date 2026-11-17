@@ -10,6 +10,8 @@ mod plain_fn_resolve_memo;
 mod proto_resolve_memo;
 pub(crate) use proto_resolve_memo::ProtoResolveMemo;
 pub(crate) mod registry_gen;
+/// A world table shared live by every thread (ADR-17216).
+pub(crate) mod world_cell;
 /// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
 pub(crate) mod stack_id;
 pub(crate) mod unbounded_range;

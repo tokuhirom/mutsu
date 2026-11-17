@@ -681,13 +681,6 @@ impl Interpreter {
         }
     }
 
-    /// Clean up wrap_sub_names and wrap_name_to_sub when a sub's wrap chain becomes empty.
-    pub(crate) fn cleanup_wrap_name_entries(&mut self, sub_id: u64) {
-        if let Some(name) = self.dispatch.wrap_sub_names.get(&sub_id).cloned() {
-            self.drop_wrap_name_entries(sub_id, &name);
-        }
-    }
-
     /// Drop named wrap state when a new declaration replaces the routine.
     ///
     /// `&name` creates a fresh `Sub` value, while named calls find the wrap
@@ -700,27 +693,32 @@ impl Interpreter {
     /// routine of a sibling package (`class A { sub nc ... }` next to
     /// `class B { sub nc ... }`) is a different declaration and keeps its own.
     pub(crate) fn clear_wrap_chains_for_name(&mut self, package: Symbol, name: &str) {
-        let sub_ids: Vec<u64> = self
-            .dispatch
-            .wrap_sub_names
-            .iter()
-            .filter_map(|(sub_id, sub_name)| {
-                (sub_name == name && self.wrap_id_is_in_package(*sub_id, package))
-                    .then_some(*sub_id)
-            })
-            .collect();
-        if sub_ids.is_empty() {
+        let cleared = self.dispatch.wraps.write(|wraps| {
+            let sub_ids: Vec<u64> = wraps
+                .sub_names
+                .iter()
+                .filter_map(|(sub_id, sub_name)| {
+                    (sub_name == name && wraps.id_is_in_package(*sub_id, package))
+                        .then_some(*sub_id)
+                })
+                .collect();
+            if sub_ids.is_empty() {
+                return false;
+            }
+            for sub_id in &sub_ids {
+                wraps.chains.remove(sub_id);
+            }
+            for sub_id in sub_ids {
+                wraps.drop_name_entries(sub_id, name);
+            }
+            wraps
+                .callable_ids
+                .remove(&crate::runtime::code_do_attr::wrap_ledger_name(package, name));
+            true
+        });
+        if !cleared {
             return;
         }
-        let wrap_chains = crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains);
-        for sub_id in &sub_ids {
-            wrap_chains.remove(sub_id);
-        }
-        for sub_id in sub_ids {
-            self.drop_wrap_name_entries(sub_id, name);
-        }
-        crate::runtime::cow_table_mut(&mut self.dispatch.wrap_callable_ids)
-            .remove(&crate::runtime::code_do_attr::wrap_ledger_name(package, name));
         self.invalidate_fn_resolution();
     }
 }

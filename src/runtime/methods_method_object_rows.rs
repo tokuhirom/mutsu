@@ -179,8 +179,7 @@ impl Interpreter {
                         am.get("__mutsu_lookup_method").map(Value::view),
                         super::dispatcher_wrap::method_object_wrap_slot(&am),
                     ) {
-                        self.dispatch.wrap_handle_counter += 1;
-                        let handle_id = self.dispatch.wrap_handle_counter;
+                        let handle_id = crate::runtime::dispatch_state::next_wrap_handle_id();
                         let (cls, meth) = (cls.to_string(), meth.to_string());
                         self.registry_mut()
                             .push_method_wrap(&cls, &meth, idx, handle_id, wrapper);

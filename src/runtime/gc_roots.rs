@@ -194,12 +194,18 @@ impl Interpreter {
                 visit_slice(visitor, args);
             }
         }
-        for chain in self.dispatch.wrap_chains.values() {
-            for (_, v) in chain {
-                visitor.visit_value(v);
+        {
+            // The shared wrap tables are a root of every interpreter that
+            // holds them (ADR-17216): visiting them from each is an over-
+            // approximation, never a miss.
+            let wraps = self.dispatch.wraps.read();
+            for chain in wraps.chains.values() {
+                for (_, v) in chain {
+                    visitor.visit_value(v);
+                }
             }
+            visit_map_values(visitor, &wraps.name_to_sub);
         }
-        visit_map_values(visitor, &self.dispatch.wrap_name_to_sub);
         for frame in &self.dispatch.wrap_dispatch_stack {
             visit_slice(visitor, &frame.remaining);
             visit_slice(visitor, &frame.args);
