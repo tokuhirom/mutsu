@@ -27,6 +27,10 @@ impl Interpreter {
                 self.exec_register_sub_op(code, plan_idx, compiled_fns)
             }
             Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
+                // The whole registration -- the site-reuse check, the method
+                // table, a failure's rollback -- is one step against the world
+                // registry (`runtime::world_decl_lock`).
+                let _decl = crate::runtime::world_decl_lock::enter();
                 // Copy-on-write snapshot: the classes this declaration adds are
                 // the keys missing from it if the declaration dies.
                 let classes_before = self.registry().classes.clone();
@@ -48,6 +52,7 @@ impl Interpreter {
                 }
             }
             Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
+                let _decl = crate::runtime::world_decl_lock::enter();
                 match self.exec_register_role_op(code, plan_idx, compiled_fns) {
                     Ok(()) => {
                         let plan = &code.role_decl_plans[plan_idx as usize];
