@@ -69,7 +69,9 @@ impl Interpreter {
             pd.traits.len() == 1
                 && pd.traits[0] == "raw"
                 && !pd.name.is_empty()
-                && !pd.name.starts_with(['@', '%', '&', '!', '.', '*', '?', '^', ':'])
+                && !pd
+                    .name
+                    .starts_with(['@', '%', '&', '!', '.', '*', '?', '^', ':'])
                 && !pd.named
                 && !pd.slurpy
                 && !pd.double_slurpy
