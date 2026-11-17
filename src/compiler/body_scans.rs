@@ -477,27 +477,27 @@ pub(super) fn expr_declares_bound_var(expr: &Expr) -> bool {
 }
 
 /// Finds what keeps a single `for` parameter from a local slot of its own
-/// (`compile_for_construct`): a declaration of the same name anywhere in the
-/// body (a nested block's `my` shares a same-named slot in the default build,
-/// where the by-name binding gave it its own scope), or a routine declaration
-/// or `use` (an `our sub` closes over the parameter by name).
-struct LoopParamSlotHazard<'n> {
-    name: &'n str,
+/// (`compile_for_construct`): an `our` routine or a proto declared in the body
+/// (it is registered to outlive the body, and `RegisterSub` persists the
+/// by-name binding it closes over, `escaping_our_env_params`), or a `use`.
+/// A same-named `my` in the body shadows the parameter's slot in a slot of
+/// its own, and a lexical `sub` captures it like any local.
+struct LoopParamSlotHazard {
     found: bool,
 }
 
-impl<'ast> Visit<'ast> for LoopParamSlotHazard<'_> {
+impl<'ast> Visit<'ast> for LoopParamSlotHazard {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
         match stmt {
-            Stmt::VarDecl { name, .. }
-                if name == self.name || name.strip_prefix('$') == Some(self.name) =>
-            {
-                self.found = true
+            Stmt::SubDecl {
+                scope: crate::ast::SubScope::Our,
+                ..
             }
-            Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. } | Stmt::Use { .. } => self.found = true,
+            | Stmt::ProtoDecl { .. }
+            | Stmt::Use { .. } => self.found = true,
             _ => walk_stmt(self, stmt),
         }
     }
@@ -509,11 +509,11 @@ impl<'ast> Visit<'ast> for LoopParamSlotHazard<'_> {
     }
 }
 
-/// Whether a loop body declares `name` again at any depth, or declares a
-/// routine or imports (see [`LoopParamSlotHazard`]).
+/// Whether a loop body declares an `our` routine or a proto, or imports, at
+/// any depth (see [`LoopParamSlotHazard`]).
 // Cost: O(n), n = size of `stmts`.
-pub(super) fn loop_param_slot_hazard(stmts: &[Stmt], name: &str) -> bool {
-    let mut scan = LoopParamSlotHazard { name, found: false };
+pub(super) fn loop_param_slot_hazard(stmts: &[Stmt]) -> bool {
+    let mut scan = LoopParamSlotHazard { found: false };
     walk_stmts(&mut scan, stmts);
     scan.found
 }

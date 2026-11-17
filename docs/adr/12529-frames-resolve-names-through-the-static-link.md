@@ -1756,6 +1756,19 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    before the bare alias. Pinned by
    `t/modules/our-lexical-alias-rebound-in-sub.t`.
 
+   **Slice 53 done** (`refactor/12529-loop-param-always-slot`): a single
+   pointy `for` parameter keeps the local slot #17530 gave it when the body
+   re-declares the name in a nested block or declares a lexical `sub`. Those
+   were two of `loop_param_slot_hazard`'s cases, which fell back to the
+   by-name binding (and so to `name_bound_by_loop_param`'s special reads):
+   the parameter was allocated but not *declared* in a scope, so a nested
+   `my` reused its slot and restored over it on exit. It is now declared in
+   the body's scope frame, and a nested `my` takes a shadow slot of its own.
+   What still keeps the by-name binding: an `our` routine or a proto in the
+   body (`RegisterSub` persists the by-name binding an escaping `our` sub
+   closes over, `escaping_our_env_params`) and a `use`. Pinned by
+   `t/routines/signature/for-loop-param-slot-with-nested-decls.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

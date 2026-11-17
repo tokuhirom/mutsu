@@ -341,8 +341,8 @@ impl Compiler {
         // iteration, so a body read is a slot read instead of a by-name scope
         // walk. The slot is retired after the loop (as a multi-parameter loop's
         // fresh names are), so a later read of the name is the enclosing
-        // binding again. A body that declares the name again or declares a
-        // routine keeps the by-name binding (`loop_param_slot_hazard`).
+        // binding again. A body that declares an `our` routine, a proto or a
+        // `use` keeps the by-name binding (`loop_param_slot_hazard`).
         let fresh_single_param = param
             .as_ref()
             .filter(|p| {
@@ -351,7 +351,7 @@ impl Compiler {
                     && !p.starts_with(['@', '%', '&', '\\', '^', '!', '.', '*', '?'])
                     && !p.contains("::")
                     && !self.local_map.contains_key(p.as_str())
-                    && !super::body_scans::loop_param_slot_hazard(&loop_body, p)
+                    && !super::body_scans::loop_param_slot_hazard(&loop_body)
             })
             .cloned();
         if let Some(p) = &fresh_single_param {
@@ -667,6 +667,15 @@ impl Compiler {
         // `&it` binding for the body: a bare `it(...)` call must reach it, not a
         // same-named routine (Test::Describe's exported `it`). The frame is
         // what `amp_binding_in_active_scope` consults.
+        // A single parameter given a slot is the body scope's own declaration:
+        // a nested block's `my` of the name shadows it in a slot of its own
+        // instead of reusing (and on exit restoring over) the parameter's.
+        if let Some(name) = &fresh_single_param {
+            self.pending_scope_frame
+                .get_or_insert_with(Default::default)
+                .entry(name.clone())
+                .or_insert(None);
+        }
         for name in param.iter().chain(params.iter()) {
             if name.starts_with('&') {
                 self.pending_scope_frame
