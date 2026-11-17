@@ -1,4 +1,4 @@
-//! The right-hand side of `andthen` / `orelse`.
+//! The right-hand side of `andthen` / `orelse` / `notandthen`.
 //!
 //! Raku runs the RHS with the LHS as its topic, and *calls* it with the LHS
 //! only when the source wrote a block there: a bare block, a placeholder block
@@ -12,11 +12,11 @@ use super::*;
 
 impl Compiler {
     /// Whether `rhs` is a block literal the operator calls with the LHS.
-    /// A Whatever-curried closure (`5 andthen * + 1`) is called too, as it
-    /// always has been here.
-    // TODO: rakudo curries the whole `andthen` over a `*` RHS
-    // (`5 andthen * + 1` is a WhateverCode, not 6); that needs the currying
-    // pass to treat `andthen`/`orelse` as curryable operators.
+    /// A Whatever-curried closure (`5 andthen * + 1`, `%h andthen *<key>`) is
+    /// called too, as rakudo (RakuAST) does: it is 6, not a WhateverCode. A
+    /// bare `*` is not curried and stays the value `*`. The curried RHS
+    /// reaches here either as the `WhateverCurry` priming marker (ADR-0033)
+    /// or as the closure it expands to.
     // Cost: O(g), g = nesting depth of the parentheses around the RHS.
     pub(super) fn andthen_rhs_is_block_literal(rhs: &Expr) -> bool {
         let mut rhs = rhs;
@@ -25,7 +25,7 @@ impl Compiler {
         }
         match rhs {
             Expr::AnonSub { is_block, .. } => *is_block,
-            Expr::Lambda { .. } => true,
+            Expr::Lambda { .. } | Expr::WhateverCurry(..) => true,
             Expr::AnonSubParams {
                 declarator,
                 is_whatever_code,
