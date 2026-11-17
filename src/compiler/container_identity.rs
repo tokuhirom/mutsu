@@ -33,8 +33,7 @@ impl Compiler {
         // argument, so against a bare value (a literal or type object) or
         // another such parameter `=:=` is value identity (#16959).
         let direct = |e: &Expr| matches!(e.peel_parens(), Expr::Var(n) if self.direct_bound_params.contains(n));
-        let bare_value =
-            |e: &Expr| matches!(e.peel_parens(), Expr::Literal(_) | Expr::BareWord(_));
+        let bare_value = |e: &Expr| matches!(e.peel_parens(), Expr::Literal(_) | Expr::BareWord(_));
         if (direct(left) && (bare_value(right) || direct(right)))
             || (direct(right) && bare_value(left))
         {
@@ -89,8 +88,7 @@ impl Compiler {
             _ => None,
         };
         let left_name = Self::resolve_container_var_name(left).or_else(|| sigilless_name(left));
-        let right_name =
-            Self::resolve_container_var_name(right).or_else(|| sigilless_name(right));
+        let right_name = Self::resolve_container_var_name(right).or_else(|| sigilless_name(right));
         if let (Some(ln), Some(rn)) = (&left_name, &right_name) {
             self.compile_expr(left);
             self.compile_expr(right);
@@ -183,8 +181,7 @@ impl Compiler {
         // `f($a) =:= $b` / `f($a) =:= g($b)` for a Block `f` returning its
         // tail's container: compare the cells, so a scalar variable
         // operand is captured as its cell and a call result is kept raw.
-        let is_call =
-            |e: &Expr| matches!(e.peel_parens(), Expr::Call { .. } | Expr::CallOn { .. });
+        let is_call = |e: &Expr| matches!(e.peel_parens(), Expr::Call { .. } | Expr::CallOn { .. });
         let cell_var = |c: &Self, e: &Expr| match e.peel_parens() {
             Expr::Var(n)
                 if c.local_map.contains_key(n.as_str()) && Self::is_plain_lexical_name(n) =>
@@ -194,9 +191,7 @@ impl Compiler {
             _ => None,
         };
         let (lv, rv) = (cell_var(self, left), cell_var(self, right));
-        if (is_call(left) && (is_call(right) || rv.is_some()))
-            || (is_call(right) && lv.is_some())
-        {
+        if (is_call(left) && (is_call(right) || rv.is_some())) || (is_call(right) && lv.is_some()) {
             flags |= 4;
             for (e, v) in [(left, &lv), (right, &rv)] {
                 self.compile_expr(e);
