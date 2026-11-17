@@ -28,6 +28,7 @@ mod mixin_type_object_class;
 mod minted_type_publication;
 mod role_mixin_class;
 mod roles;
+pub(crate) mod running_package;
 mod signature;
 mod subset_predicate_call;
 mod topic_compare;

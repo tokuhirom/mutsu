@@ -807,50 +807,10 @@ impl Interpreter {
     /// package has to come from the running frame — the method's class first,
     /// then the nearest enclosing named routine (anonymous blocks inherit that
     /// lexical owner), then whatever package is current.
+    // Cost: O(f), as `running_package_candidate_syms`.
     pub(crate) fn running_package_candidates(&self) -> [Option<&str>; 4] {
-        // A called closure compiled in a compunit of its own anchors on that
-        // compunit, not on the routine that happens to be calling it: a block of
-        // the main script handed to a module routine (`cb({ array[..] })`) must
-        // not see the module's file-scope names.
-        //
-        // A module mainline being loaded (a `require` from inside a routine of
-        // another module) is a compunit of its own too: the frames below the
-        // depth its mainline started at belong to whoever triggered the load,
-        // so their packages -- and the aliases those packages imported -- are
-        // not the loaded code's. Rakudo compiles the required unit with only
-        // the setting as its outer scope.
-        let floor = self.module_mainline_routine_floor().unwrap_or(0);
-        let frames = self.routine_stack.get(floor..).unwrap_or_default();
-        let own_block = frames
-            .last()
-            .filter(|frame| frame.is_block && !frame.is_inlined_block && frame.def_file.is_some());
-        let frame = own_block.or_else(|| {
-            frames
-                .iter()
-                .rev()
-                .find(|frame| !frame.is_block)
-                .or_else(|| frames.last())
-        });
-        // The running method's class is the loader's too when no frame of the
-        // loaded code has been pushed yet.
-        let method_class = if floor > 0 && frames.is_empty() {
-            None
-        } else {
-            self.method_class_stack_top_str()
-        };
-        [
-            method_class,
-            self.candidate_scope_lexical_package()
-                .or_else(|| frame.and_then(|frame| frame.lexical_package))
-                .map(|pkg| pkg.as_str()),
-            frame
-                .map(|frame| frame.package)
-                .filter(|pkg| !crate::qualified::is_global_package(*pkg))
-                .map(|pkg| pkg.as_str()),
-            // The atomic `Symbol` mirror of `current_package`, which yields a
-            // `&'static str` instead of cloning the `String` behind the lock.
-            Some(self.current_package_sym().as_str()),
-        ]
+        self.running_package_candidate_syms()
+            .map(|pkg| pkg.map(|pkg| pkg.as_str()))
     }
 
     /// Look `name` up in a per-package table starting from a *known* owner

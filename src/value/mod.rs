@@ -755,7 +755,7 @@ pub(crate) use attr_map::{
 };
 pub(crate) use attr_site::AttrSiteCaches;
 pub(crate) use attr_store_kind::AttrStoreKind;
-pub(crate) use bareword_site::BarewordSiteCaches;
+pub(crate) use bareword_site::{BarewordSiteCaches, SiteContext};
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;
