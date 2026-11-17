@@ -428,6 +428,7 @@ mod vm_sigilless_aggregate_store;
 mod vm_sink_call;
 mod vm_sink_lazy_pipe;
 pub(crate) mod vm_smart_match;
+mod vm_smartmatch_numeric_literal;
 mod vm_smartmatch_ops;
 pub(crate) mod vm_smartmatch_sync;
 mod vm_smartmatch_type_lane;

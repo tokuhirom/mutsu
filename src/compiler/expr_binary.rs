@@ -672,6 +672,7 @@ impl Compiler {
                 // test is on the written shape, so `($_)` is deliberately not
                 // matched here — rakudo answers differently for it.
                 let rhs_is_bare_topic = matches!(right, Expr::Var(n) if n == "_");
+                let rhs_numeric_literal = Self::is_int_or_num_literal(right);
                 self.compile_expr(left);
                 let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                     rhs_end: 0,
@@ -681,6 +682,7 @@ impl Compiler {
                     lhs_is_literal,
                     rhs_pure_regex,
                     rhs_is_bare_topic,
+                    rhs_numeric_literal,
                 });
                 // When RHS is m/regex/, unwrap to the regex value since
                 // SmartMatchExpr already handles the matching against LHS
@@ -1197,6 +1199,7 @@ impl Compiler {
             // This desugar only runs for a DESTRUCTIVE RHS (`s///` / `tr///`),
             // which is never a bare `$_`.
             rhs_is_bare_topic: false,
+            rhs_numeric_literal: false,
         });
         self.compile_expr(right);
         self.code.patch_smart_match_rhs_end(sm_idx);

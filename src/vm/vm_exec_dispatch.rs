@@ -4308,6 +4308,7 @@ impl Interpreter {
                 lhs_is_literal,
                 rhs_pure_regex,
                 rhs_is_bare_topic,
+                rhs_numeric_literal,
             } => {
                 self.sync_source_line(code, *ip);
                 // A routine whose `$/` is a (readonly) parameter -- the
@@ -4329,6 +4330,7 @@ impl Interpreter {
                     *lhs_is_literal,
                     *rhs_pure_regex,
                     *rhs_is_bare_topic,
+                    *rhs_numeric_literal,
                     compiled_fns,
                 );
                 if let Some(slash) = saved_slash {

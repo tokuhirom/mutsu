@@ -1020,6 +1020,29 @@ impl Compiler {
     /// the falsy value a non-matching clause pushes — see [`WhenMatcherKind`]
     /// for the measured Rakudo table and why the runtime value cannot carry
     /// this on its own.
+    /// Whether `expr` is written as an `Int` or `Num` literal, signed or not
+    /// (`2`, `-2`, `2e0`): the RHS shape for which a smartmatch numifies its
+    /// topic (see `OpCode::SmartMatchExpr::rhs_numeric_literal`). A `Rat`
+    /// literal is not one: Rakudo's `Rat.ACCEPTS` answers `False` instead.
+    // Cost: O(1).
+    pub(super) fn is_int_or_num_literal(expr: &Expr) -> bool {
+        match expr {
+            // `Inf`/`NaN` are terms, folded to a `Num` literal: not numbers
+            // written in the source.
+            Expr::Literal(v) => match v.view() {
+                crate::value::ValueView::Int(_) | crate::value::ValueView::BigInt(_) => true,
+                crate::value::ValueView::Num(n) => n.is_finite(),
+                _ => false,
+            },
+            Expr::Unary {
+                op: crate::token_kind::TokenKind::Minus | crate::token_kind::TokenKind::Plus,
+                expr,
+                ..
+            } => matches!(expr.as_ref(), Expr::Literal(_)) && Self::is_int_or_num_literal(expr),
+            _ => false,
+        }
+    }
+
     pub(super) fn when_matcher_kind(cond: &Expr) -> WhenMatcherKind {
         match cond {
             // A `/.../` literal is a Regex *object* the source still has to
