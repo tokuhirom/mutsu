@@ -1879,6 +1879,9 @@ impl Interpreter {
             // `$`-led forms and goes straight to the common atom path, which
             // reads its quantifier.
             let mut backref_atom: Option<RegexAtom> = None;
+            // Set when `backref_atom` is an aliased `$var` lowered to a call
+            // of its value (`regex_alias_var_call`): the alias renames it.
+            let mut alias_var_call = false;
             // $0, $1, ... — either a numbered scalar capture alias (`$0=(...)`)
             // or a backreference to a positional capture group (`$0`).
             if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
@@ -1985,6 +1988,29 @@ impl Interpreter {
                     // rule or block bound it: its value is not the one visible now.
                     if declared_regex_vars.contains(&var_name) || var_name.starts_with('*') {
                         chars = probe;
+                        // Under a sigil alias (`$<a>=$var`) the alias names the
+                        // interpolated pattern's own Match, as rakudo's
+                        // `subrule_alias` renames the interpolation node: a
+                        // call of the variable's value. An in-regex `:my`
+                        // keeps its value in the match's `regex_vars`, which
+                        // a call does not read, so it stays a `VarInterp`.
+                        if pending_named_capture.is_some()
+                            && !pending_named_capture_is_angle_alias
+                            && !super::regex::regex_helpers::is_enclosing_regex_my_var(&var_name)
+                        {
+                            alias_var_call = true;
+                            backref_atom = Some(RegexAtom::Named(
+                                super::regex::regex_alias_var_call::interp_call_text(
+                                    &var_name,
+                                    super::regex::regex_alias_var_call::InterpCallCase {
+                                        ignore_case,
+                                        ignore_mark,
+                                    },
+                                )
+                                .into(),
+                            ));
+                            break 'pre_atom;
+                        }
                         // Through the common atom tail, so a quantifier
                         // (`$q+`, `$r ** 2`) applies to the interpolation.
                         backref_atom = Some(RegexAtom::VarInterp(var_name));
@@ -2254,7 +2280,7 @@ impl Interpreter {
                         // later bare `$name` becomes a match-time interpolation of the
                         // regex-local lexical rather than an outer-scope substitution.
                         for name in scalar_names_in_decl(&decl_code) {
-                            super::regex::regex_helpers::declare_enclosing_regex_var(&name);
+                            super::regex::regex_helpers::declare_enclosing_regex_my_var(&name);
                             declared_regex_vars.insert(name);
                         }
                         super::regex::regex_helpers::note_regex_code_lowered();
@@ -2519,7 +2545,7 @@ impl Interpreter {
             // renames the call itself, so a quantifier after it repeats a
             // capturing call and the alias is a List of per-iteration Matches;
             // see `wrap_named_quant` below.
-            let mut aliased_subrule_call = false;
+            let mut aliased_subrule_call = alias_var_call;
             let atom = if let Some(atom) = backref_atom {
                 atom
             } else {
@@ -5262,6 +5288,14 @@ impl Interpreter {
             // the alias becomes the primary capture and the builtin name becomes secondary.
             // See the `'<'` arm: an aliased negated subrule assertion can never
             // produce a successful match in Rakudo.
+            // A sigil alias on a spliced interpolation (`$<a>=$s`, the value
+            // bracketed by the pre-pass) renames the interpolation, as for a
+            // call: `@<a>=` lists it and a quantifier repeats it.
+            let aliased_subrule_call = aliased_subrule_call
+                || (in_non_declarative_interp
+                    && pending_named_capture.is_some()
+                    && !pending_named_capture_is_angle_alias
+                    && matches!(atom, RegexAtom::Group(_)));
             let mut atom = if aliased_negated_subrule {
                 RegexAtom::Named("!".into())
             } else {

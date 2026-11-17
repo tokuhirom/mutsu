@@ -484,6 +484,12 @@ impl Interpreter {
                             )
                         {
                             out.push_str(&format!("<${name}>"));
+                        } else if !inside_qq
+                            && super::regex::regex_alias_var_call::ends_with_sigil_alias(&out)
+                        {
+                            out.push('[');
+                            Self::push_value_as_regex_pattern(&value, &mut out);
+                            out.push(']');
                         } else {
                             Self::push_value_as_regex_pattern(&value, &mut out);
                         }
@@ -581,6 +587,14 @@ impl Interpreter {
                         )
                     {
                         out.push_str(&format!("<${name}>"));
+                    } else if !inside_qq
+                        && super::regex::regex_alias_var_call::ends_with_sigil_alias(&out)
+                    {
+                        // The alias names the whole value (see
+                        // `ends_with_sigil_alias`).
+                        out.push('[');
+                        Self::push_value_as_regex_pattern(&value, &mut out);
+                        out.push(']');
                     } else {
                         Self::push_value_as_regex_pattern(&value, &mut out);
                     }

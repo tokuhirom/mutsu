@@ -47,7 +47,11 @@ impl Interpreter {
         if spec.lookup_name.starts_with('{') {
             return self.eval_alias_code_regex(&spec.lookup_name);
         }
-        let value = self.lookup_lexical_regex(&spec.lookup_name, !spec.token_lookup)?;
+        let value = self.lookup_lexical_regex(spec)?;
+        // An aliased `$var` names the variable, never a rule.
+        if spec.interp_call.is_some() {
+            return Some(value);
+        }
         self.resolve_token_patterns_static_in_pkg(spec.lookup_name.trim_start_matches('$'), pkg)
             .is_empty()
             .then_some(value)
@@ -59,8 +63,12 @@ impl Interpreter {
     ///
     /// With `str_is_pattern`, a Str value is a pattern, as for `<{ code }>`:
     /// an alias call `<a=$s>` interpolates it (#10673). A `<&$s>` call does
-    /// not -- rakudo refuses to call a Str.
-    fn lookup_lexical_regex(&self, lookup_name: &str, str_is_pattern: bool) -> Option<Value> {
+    /// not -- rakudo refuses to call a Str. An aliased `$var` atom
+    /// (`spec.interp_call`) matches any value, as its interpolation would
+    /// (`Interpreter::interp_call_value`).
+    fn lookup_lexical_regex(&self, spec: &NamedRegexLookupSpec) -> Option<Value> {
+        let lookup_name = spec.lookup_name.as_str();
+        let str_is_pattern = !spec.token_lookup;
         let bare = lookup_name.trim_start_matches(['&', '$']);
         // `$*dyn` is filed under its twigil-ful name (`*dyn`), which the
         // sigil-less scalar key below already spells.
@@ -76,6 +84,18 @@ impl Interpreter {
         } else {
             format!("&{bare}")
         };
+        if let Some(case) = spec.interp_call {
+            // Where the `VarInterp` atom reads it: the scalar's env key, its
+            // sigiled spelling, or an imported `constant`.
+            let value = self
+                .env
+                .get(bare)
+                .or_else(|| self.env.get(lookup_name))
+                .cloned()
+                .or_else(|| self.regex_package_chain_var_fallback(lookup_name))?
+                .into_deref();
+            return Some(Self::interp_call_value(value, case));
+        }
         let value = self.env.get(&key)?.clone().into_deref();
         match value.view() {
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => Some(value),
@@ -148,7 +168,7 @@ impl Interpreter {
     pub(super) fn lexical_regex_is_in_scope(&self, spec: &NamedRegexLookupSpec) -> bool {
         Self::may_name_lexical_regex(spec)
             && self
-                .lookup_lexical_regex(&spec.lookup_name, !spec.token_lookup)
+                .lookup_lexical_regex(spec)
                 .is_some()
     }
 
