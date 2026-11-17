@@ -18,7 +18,7 @@
 //! interpolation, its code blocks and its match-time `$var` atoms all read the
 //! declaring scope's variables, and a write reaches them.
 //!
-//! [`Registry::token_captures`]: crate::runtime::registry::Registry::token_captures
+//! [`Registry::token_captures`]: crate::runtime::routine_tables::RoutineTables::token_captures
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

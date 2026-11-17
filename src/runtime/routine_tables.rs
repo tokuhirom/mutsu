@@ -37,7 +37,7 @@ pub(crate) struct RoutineTables {
     pub(crate) routine_local_subs:
         std::collections::HashMap<crate::symbol::Symbol, (u64, usize)>,
     /// The same for a `my subset` declared inside a routine body: its bare
-    /// name sits in the global [`Registry::subsets`] with the routine-stack
+    /// name sits in the global [`Registry::subsets`](super::registry::Registry::subsets) with the routine-stack
     /// depth it was declared at. Stale once the registered definition is no
     /// longer the recorded `Arc`.
     pub(crate) routine_local_subsets:
@@ -53,7 +53,7 @@ pub(crate) struct RoutineTables {
     /// The *map itself* is behind an `Arc` as well, making it one of the
     /// copy-on-write program tables described on [`Interpreter`](super::Interpreter):
     /// reads go through `Deref` unchanged, while every write goes through
-    /// [`Registry::functions_mut`], which copies only while a snapshot still
+    /// [`RoutineTables::functions_mut`], which copies only while a snapshot still
     /// shares the map. That is what makes the scope snapshots taken *around*
     /// routine and block bodies — `snapshot_routine_registry` (every routine
     /// declaring inner `my sub`s) and `eval_block_value_inner` (every carrier
