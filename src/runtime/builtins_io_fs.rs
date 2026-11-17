@@ -72,9 +72,18 @@ impl Interpreter {
         let requested_path = PathBuf::from(&requested);
         let requested_is_absolute = requested_path.is_absolute();
         let mut entries = Vec::new();
+        // A `:test` runs in the listed path's own `CWD` when it carries one,
+        // else in the caller's `$*CWD` (rakudo's `IO::Path.dir`), never in the
+        // listed directory itself. Built once per listing, not per entry: a
+        // `dir(:test(rx))` over a system library directory has thousands
+        // (#18003).
+        let cwd_val = requested_cwd_opt
+            .as_ref()
+            .filter(|_| test_opt.is_some())
+            .map(|cwd| self.make_io_path_instance(cwd));
         let mut push_entry = |basename: &str| {
             if let Some(test) = &test_opt
-                && !self.dir_test_matches(test, basename, &path_buf)
+                && !self.dir_test_matches(test, basename, cwd_val.as_ref())
             {
                 return;
             }

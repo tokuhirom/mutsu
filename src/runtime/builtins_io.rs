@@ -122,24 +122,31 @@ impl Interpreter {
         (self.resolve_path(&p), p)
     }
 
+    /// Whether `dir`'s `:test` accepts `entry_name`, run with the topic bound
+    /// to the name and, when the listed path carries its own `CWD`
+    /// (`IO::Path.new($p, :CWD($d))`), `$*CWD` bound to that `cwd_val`, as
+    /// rakudo's `IO::Path.dir` does. Without one the test runs in the caller's
+    /// `$*CWD`, not in the listed directory (the documented behaviour: a
+    /// `test => { .IO.d }` sees names relative to `$*CWD`).
+    // Cost: O(1) plus the `test` smartmatch.
     pub(super) fn dir_test_matches(
         &mut self,
         test: &Value,
         entry_name: &str,
-        dir_path: &Path,
+        cwd_val: Option<&Value>,
     ) -> bool {
         if let ValueView::Bool(b) = test.view() {
             return b;
         }
 
-        let saved_cwd = self.env.get("$*CWD").cloned();
-        let saved_cwd_star = self.env.get("*CWD").cloned();
+        let saved_cwd = cwd_val.map(|cwd| {
+            let saved = (self.env.get("$*CWD").cloned(), self.env.get("*CWD").cloned());
+            self.env.insert("$*CWD".to_string(), cwd.clone());
+            self.env.insert("*CWD".to_string(), cwd.clone());
+            saved
+        });
         let saved_topic = self.env.get("_").cloned();
         let saved_dollar_topic = self.env.get("$_").cloned();
-
-        let cwd_val = self.make_io_path_instance(&Self::stringify_path(dir_path));
-        self.env.insert("$*CWD".to_string(), cwd_val.clone());
-        self.env.insert("*CWD".to_string(), cwd_val);
         self.env
             .insert("_".to_string(), Value::str(entry_name.to_string()));
         self.env
@@ -169,15 +176,15 @@ impl Interpreter {
             _ => self.smart_match(&Value::str(entry_name.to_string()), test),
         };
 
-        if let Some(v) = saved_cwd {
-            self.env.insert("$*CWD".to_string(), v);
-        } else {
-            self.env.remove("$*CWD");
-        }
-        if let Some(v) = saved_cwd_star {
-            self.env.insert("*CWD".to_string(), v);
-        } else {
-            self.env.remove("*CWD");
+        if let Some((saved_cwd, saved_cwd_star)) = saved_cwd {
+            match saved_cwd {
+                Some(v) => self.env.insert("$*CWD".to_string(), v),
+                None => self.env.remove("$*CWD"),
+            };
+            match saved_cwd_star {
+                Some(v) => self.env.insert("*CWD".to_string(), v),
+                None => self.env.remove("*CWD"),
+            };
         }
         if let Some(v) = saved_topic {
             self.env.insert("_".to_string(), v);
