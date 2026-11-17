@@ -162,6 +162,11 @@ impl Compiler {
             let slot = self.local_map.get(&var).copied();
             let name_idx = self.code.add_constant(Value::str(var));
             self.code.emit(OpCode::PostIncrement(name_idx, slot));
+        } else if let Expr::Var(name) = expr
+            && self.outer_write_undeclared(name)
+        {
+            // `$OUTER::x++` of a name the outer scope lacks: `Nil` (#17839).
+            self.compile_incdec_nomatch("postfix:<++>", &Expr::Literal(Value::NIL));
         } else if let Expr::Var(name) = expr {
             // `$OUTER::x++` writes the binding `OUTER::` names (#10676, #10827).
             let outer_target = self.outer_write_target(name, false);
@@ -291,6 +296,11 @@ impl Compiler {
             let slot = self.local_map.get(&var).copied();
             let name_idx = self.code.add_constant(Value::str(var));
             self.code.emit(OpCode::PostDecrement(name_idx, slot));
+        } else if let Expr::Var(name) = expr
+            && self.outer_write_undeclared(name)
+        {
+            // `$OUTER::x++` of a name the outer scope lacks: `Nil` (#17839).
+            self.compile_incdec_nomatch("postfix:<-->", &Expr::Literal(Value::NIL));
         } else if let Expr::Var(name) = expr {
             // `$OUTER::x++` writes the binding `OUTER::` names (#10676, #10827).
             let outer_target = self.outer_write_target(name, false);

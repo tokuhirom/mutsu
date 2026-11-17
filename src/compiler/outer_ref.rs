@@ -173,6 +173,24 @@ impl Compiler {
         Some((format!("{sigil}{bare}"), depth))
     }
 
+    /// Whether `name` is a `$OUTER::x` spelling whose target scope, inside
+    /// this compilation's scope chain, does not declare `x`. Such a
+    /// `$OUTER::x` is `Nil`, as a read of it is (`emit_outer_resolution`), so a
+    /// write through it -- an assignment, `++`/`--` -- is a write to `Nil` and
+    /// dies as on rakudo ("Cannot modify an immutable Nil value"), instead of
+    /// storing under the literal spelling (#17839). A scope beyond this
+    /// compilation is the runtime's to resolve, and an `@`/`%`/`&` name is not
+    /// asked here.
+    // Cost: O(d), d = the `OUTER::` depth.
+    pub(super) fn outer_write_undeclared(&self, name: &str) -> bool {
+        let Some((key, depth)) = Self::split_outer_name(name) else {
+            return false;
+        };
+        !key.starts_with(['@', '%', '&'])
+            && lex_scope::resolve_outer(&self.full_scope_chain(), &self.local_map, &key, depth)
+                == lex_scope::OuterResolution::NotDeclared
+    }
+
     /// The name a write through `OUTER::` (`$OUTER::x := $y`, `$OUTER::x = 5`,
     /// `$OUTER::x++`) stores under: the plain name when it denotes the target
     /// binding here, else the key the target's shared cell is published under
@@ -206,6 +224,12 @@ impl Compiler {
                 }
             }
         };
+        // The scope `OUTER::` names does not declare the name: `$OUTER::x`
+        // is `Nil` there, so an assignment through it is an assignment to
+        // `Nil` (see [`Self::outer_write_undeclared`]).
+        if !rebinds && self.outer_write_undeclared(name) {
+            return Some("Nil".to_string());
+        }
         if lex_scope::outer_is_visible_binding(&chain, &key, depth) {
             return Some(key);
         }
