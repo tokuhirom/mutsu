@@ -1066,7 +1066,9 @@ impl Interpreter {
                 // mutation through the binding reaching the source — survives
                 // it.
                 Some(name) if name.starts_with(['@', '%']) => {
-                    item.deref_container().deitemize_for_sigil_bind()
+                    let bound = item.deref_container().deitemize_for_sigil_bind();
+                    self.check_loop_sigil_param(name, &bound)?;
+                    bound
                 }
                 _ => item,
             };
