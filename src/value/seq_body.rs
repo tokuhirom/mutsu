@@ -1249,6 +1249,18 @@ impl SeqBody {
         }
     }
 
+    /// Whether nothing has read this body's [`SeqSource::Pure`] cursor yet:
+    /// its elements are still the source's live ones (a `List.values` /
+    /// `IterationBuffer.Seq` cursor re-reads the live length on every pull,
+    /// so an element pushed before the first consuming read is seen, #17938).
+    // Cost: O(1).
+    pub(crate) fn has_unread_pure_source(&self) -> bool {
+        self.core
+            .pure_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+            && matches!(self.lock_state().source, SeqSource::Pure(_))
+    }
+
     /// Whether [`SeqBody::pull_prefix`] can serve this body a prefix at a
     /// time (a still-unread pure cursor or non-`kv` `IoLines` source).
     // Cost: O(1).
