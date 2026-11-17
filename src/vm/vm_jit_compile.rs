@@ -447,6 +447,22 @@ fn build(
                 let tb = tier_b.as_ref().unwrap();
                 tb.emit_compare(&mut b, NumCmp::Ne, helpers::num_ne as *const () as usize);
             }
+            // Tier B inline stack shape: a refcount-free top word is copied or
+            // dropped in native code, anything else steps the interpreter arm.
+            OpCode::Dup | OpCode::Pop if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                let fb = super::vm_jit_tier_b_stack::StepFallback {
+                    sig: sigs.s_call,
+                    step_fn: helpers::step as *const () as usize,
+                    fnsp,
+                    opidx: i as u32,
+                };
+                if matches!(op, OpCode::Dup) {
+                    tb.emit_dup(&mut b, &fb);
+                } else {
+                    tb.emit_pop(&mut b, &fb);
+                }
+            }
             OpCode::GetLocal(idx) => {
                 if let Some(tb) = &tier_b
                     && get_local_tier_b_eligible(code, *idx as usize)

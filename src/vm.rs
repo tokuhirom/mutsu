@@ -298,6 +298,8 @@ mod vm_jit_tier_b;
 mod vm_jit_tier_b_flow;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b_metaop;
+#[cfg(feature = "jit")]
+mod vm_jit_tier_b_stack;
 mod vm_lazy_front_mutate;
 mod vm_lazy_index_prefix;
 mod vm_lazy_slip;
