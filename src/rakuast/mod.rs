@@ -81,6 +81,7 @@ pub(crate) mod sections;
 pub(crate) mod signature_expand;
 pub(crate) mod statement_insert;
 mod stmt_call;
+mod term_named;
 mod trait_is_constructor;
 pub(crate) mod unit_finish;
 pub(crate) mod var_queries;
@@ -4057,6 +4058,7 @@ fn is_resolvable_lookup(class: RakuAstClass) -> bool {
             | RakuAstClass::TypeSubset
             | RakuAstClass::TermEnum
             | RakuAstClass::TermName
+            | RakuAstClass::TermNamed
             // A package declaration does `Lookup` too, but nothing resolves it.
             | RakuAstClass::Class
             | RakuAstClass::Role

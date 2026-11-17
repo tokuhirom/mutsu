@@ -177,7 +177,9 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Term::Name", "is-resolved"),
     row!("RakuAST::Term::Name", "name"),
     row!("RakuAST::Term::Name", "resolution"),
+    row!("RakuAST::Term::Named", "is-resolved"),
     row!("RakuAST::Term::Named", "name"),
+    row!("RakuAST::Term::Named", "resolution"),
     row!("RakuAST::Term::Reduce", "args"),
     row!("RakuAST::Term::Reduce", "infix"),
     row!("RakuAST::Term::Reduce", "triangle"),
@@ -203,6 +205,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Trait::Will", "block"),
     row!("RakuAST::Trait::Will", "phase"),
     row!("RakuAST::Trait::WillBuild", "IMPL-TRAIT-NAME"),
-    row!("RakuAST::Transliteration", "destructive"),
-    row!("RakuAST::Transliteration", "left"),
 ];
