@@ -16,6 +16,17 @@ fn decimal_digit_value(c: char) -> Option<u32> {
 /// the dotted `.i` method-call syntax, both forms are the postfix *operator*
 /// (`&postfix:<i>`), not a real dispatchable method — `4.i` correctly throws
 /// X::Method::NotFound. Returns the remaining input after the suffix.
+/// The imaginary literal `<number>i` the parser folds to its Complex value,
+/// remembering the number as written (`text`, underscores removed): RakuAST
+/// keeps it under a `Postfix("i")` as the literal it is (`0.0i` a
+/// `RatLiteral`, `3e2i` a `NumLiteral`).
+// Cost: O(t), t = length of the text.
+fn imaginary(text: &str, im: f64) -> Expr {
+    Expr::spelled(Expr::Literal(Value::complex(0.0, im)), || {
+        crate::ast::spelled::Spelling::Imaginary(text.into())
+    })
+}
+
 fn strip_imaginary_suffix(rest: &str) -> Option<&str> {
     let after = rest
         .strip_prefix('i')
@@ -388,7 +399,7 @@ fn integer_impl(input: &str, warn: bool) -> PResult<'_, Expr> {
             let n: f64 = full.parse().unwrap_or(0.0);
             // Check for imaginary suffix
             if let Some(r3) = strip_imaginary_suffix(r2) {
-                return Ok((r3, Expr::Literal(Value::complex(0.0, n))));
+                return Ok((r3, imaginary(&full, n)));
             }
             return Ok((r2, Expr::Literal(Value::num(n))));
         }
@@ -396,7 +407,7 @@ fn integer_impl(input: &str, warn: bool) -> PResult<'_, Expr> {
     // Check for imaginary suffix: 4i / 4\i
     if let Some(r) = strip_imaginary_suffix(rest) {
         let n: i64 = clean.parse().unwrap_or(0);
-        return Ok((r, Expr::Literal(Value::complex(0.0, n as f64))));
+        return Ok((r, imaginary(&clean, n as f64)));
     }
     // Try i64 first, fall back to BigInt for large integers
     if let Ok(n) = clean.parse::<i64>() {
@@ -449,14 +460,14 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
         let full = format!("{}{}", num_str, exp);
         let n: f64 = full.parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
+            return Ok((r, imaginary(&full, n)));
         }
         Ok((rest, Expr::Literal(Value::num(n))))
     } else {
         // Check for imaginary suffix first
         let n: f64 = num_str.parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
+            return Ok((r, imaginary(&num_str, n)));
         }
         // Produce Rat: numerator = int_part * 10^frac_digits + frac_part, denominator = 10^frac_digits
         let frac_digits = frac_clean.len() as u32;
@@ -540,13 +551,13 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
         let full = format!("{}{}", num_str, exp);
         let n: f64 = full.parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
+            return Ok((r, imaginary(&full, n)));
         }
         Ok((rest, Expr::Literal(Value::num(n))))
     } else {
-        let n: f64 = format!("0.{}", frac_clean).parse().unwrap_or(0.0);
+        let n: f64 = num_str.parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
+            return Ok((r, imaginary(&num_str, n)));
         }
         let frac_digits = frac_clean.len() as u32;
         // Same routing rule as the `<int>.<frac>` branch above, and for the

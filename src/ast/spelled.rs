@@ -107,6 +107,10 @@ pub(crate) enum Spelling {
     /// whose `(key, value)` entry keeps no pair node: the colonpair family
     /// (`ColonPair::Number`, `::False`, ...) the entry was written as.
     ColonPairValue(crate::ast::BinaryForm),
+    /// `0.0i`, `3e2i`: an imaginary literal the parser folds to its Complex
+    /// value; the number as written (underscores removed), which RakuAST
+    /// keeps as the literal operand of a `Postfix("i")`.
+    Imaginary(Box<str>),
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),
