@@ -145,21 +145,17 @@ const fn bool_row(name: &'static str, arity: u8, handler: Handler) -> MethodRow 
     }
 }
 
-/// The error a defined `Bool` gets: only `Bool:U` candidates exist.
-fn bool_no_candidate(method: &str) -> RuntimeError {
-    crate::runtime::methods_signature_errors::make_multi_no_match_error(method)
-}
-
 fn bool_pick(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if matches!(target.view(), ValueView::Bool(_)) {
-        return Some(Err(bool_no_candidate("pick")));
+        // A defined `Bool` has only `Bool:U` candidates: the shared error.
+        return sampling::pick(target, args);
     }
     sampling::pick(&bool_values(target), args)
 }
 
 fn bool_roll(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if matches!(target.view(), ValueView::Bool(_)) {
-        return Some(Err(bool_no_candidate("roll")));
+        return sampling::roll(target, args);
     }
     sampling::roll(&bool_values(target), args)
 }

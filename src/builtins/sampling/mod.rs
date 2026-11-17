@@ -167,7 +167,8 @@ fn bool_defined_error(method: &str, arg: Option<&Value>) -> RuntimeError {
     crate::runtime::Interpreter::multi_no_match_exception(
         method,
         format!(
-            "Cannot resolve caller {method}(Bool:D: {arg_desc}); none of these signatures matches:\n    (Bool:U $:: *%_)\n    (Bool:U $:: $n, *%_)"
+            "Cannot resolve caller {method}(Bool:D: {arg_desc}); none of these signatures matches:{}",
+            crate::runtime::builtin_method_sigs::candidate_lines("Bool", method),
         ),
     )
 }

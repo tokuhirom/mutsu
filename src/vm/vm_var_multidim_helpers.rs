@@ -30,7 +30,10 @@ impl Interpreter {
         match index.view() {
             ValueView::Pair(..) | ValueView::ValuePair(..) => Err(RuntimeError::typed_msg(
                 "X::Multi::NoMatch",
-                "Cannot resolve caller Int(Pair:D: ); none of these signatures matches:\n    (Mu:U \\v:: *%_)",
+                format!(
+                    "Cannot resolve caller Int(Pair:D: ); none of these signatures matches:{}",
+                    crate::runtime::builtin_method_sigs::candidate_lines("Pair", "Int"),
+                ),
             )),
             ValueView::Array(items, ..) => {
                 for item in items.iter() {
