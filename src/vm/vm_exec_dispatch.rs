@@ -7905,6 +7905,14 @@ impl Interpreter {
                 crate::unit_source_text::end_compile_phase();
                 let (sorries, worries) = crate::unit_diagnostics::take();
                 self.report_compile_diagnostics(sorries, worries)?;
+                if let Some(cu) = &rewritten
+                    && crate::unit_source_text::request_module_restart(cu)
+                {
+                    // A module's load restarts from the tree (`run_modules`),
+                    // in the module's own env and package: its mainline ends.
+                    *ip = code.ops.len();
+                    return Ok(());
+                }
                 if let Some(cu) = rewritten {
                     // In rakudo the rewritten tree is what gets compiled, and no
                     // mainline statement has run yet: run the tree in place of

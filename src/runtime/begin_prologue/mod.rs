@@ -316,6 +316,35 @@ pub(crate) fn order_unit(stmts: &mut Vec<Stmt>) -> usize {
     prologue_len
 }
 
+/// Mark where a module's compile phase ends (`Stmt::RunCheckCode`): after its
+/// last top-level CHECK phaser, or after its BEGIN prologue when it has none.
+/// The closures `$*CU.add-check-code` queued run there, and a `$*CU` its
+/// CHECK phase rewrote is what the rest of the module runs from, as for the
+/// main unit (`run.rs`) and an EVAL. A module with neither compiles nothing
+/// at CHECK time and gets no marker.
+/// Returns the prologue's length, which grows when the marker lands in it.
+// Cost: O(s), s = top-level statements of the module.
+pub(crate) fn insert_module_run_check_code(stmts: &mut Vec<Stmt>, prologue_len: usize) -> usize {
+    let last_check = stmts.iter().rposition(|stmt| {
+        matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: crate::ast::PhaserKind::Check,
+                ..
+            }
+        )
+    });
+    if let Some(last) = last_check {
+        stmts.insert(last + 1, Stmt::RunCheckCode);
+        if last < prologue_len {
+            return prologue_len + 1;
+        }
+    } else if prologue_len > 0 {
+        stmts.insert(prologue_len, Stmt::RunCheckCode);
+    }
+    prologue_len
+}
+
 /// Separate package-body run-time statements from their declarations without
 /// changing the unit's statement order.
 pub(crate) fn split_package_bodies(stmts: &mut Vec<Stmt>) {

@@ -70,11 +70,41 @@ pub(super) fn check_time_routine(
     };
     let mut routine = crate::value::SubData::clone(&data);
     routine.name = Symbol::intern(name);
-    routine.package = Symbol::intern("GLOBAL");
+    // The unit's own package: a `unit module X` file declares its
+    // routines in `X`, as the restarted unit's copy does (#17886).
+    routine.package = Symbol::intern(unit_package().as_deref().unwrap_or("GLOBAL"));
     routine.source_file = crate::unit_source_file::current().map(|file| file.resolve().to_string());
     routine.source_line = line;
     routine.source_file_sym_cache = Default::default();
     Some(Ok(Value::sub_value(crate::gc::Gc::new(routine))))
+}
+
+/// The package the active unit declares with a `unit` package declarator
+/// (`unit module X;`), whose body is the rest of the unit.
+// Cost: O(s), s = top-level statements of the unit (the declarator is first).
+fn unit_package() -> Option<String> {
+    let node_of = |value: &Value| match value.view() {
+        ValueView::RakuAst(node) => Some(node.clone()),
+        _ => None,
+    };
+    crate::unit_source_text::with_active_cu(|cu| {
+        let cu = node_of(cu)?;
+        let list = node_of(&crate::rakuast::node_accessor(&cu, "statement-list")?)?;
+        let statements = crate::rakuast::node_accessor(&list, "statements")?;
+        let ValueView::Array(items, _) = statements.view() else {
+            return None;
+        };
+        items.iter().find_map(|statement| {
+            let statement = node_of(statement)?;
+            let declarator = node_of(&crate::rakuast::node_accessor(&statement, "expression")?)?;
+            let scope = crate::rakuast::node_accessor(&declarator, "scope")?;
+            if scope.to_string_value() != "unit" {
+                return None;
+            }
+            let name = node_of(&crate::rakuast::node_accessor(&declarator, "name")?)?;
+            Some(crate::rakuast::node_accessor(&name, "canonicalize")?.to_string_value())
+        })
+    })
 }
 
 /// The dispatcher a scope's `proto` stub stands for at CHECK time, when its

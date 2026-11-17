@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 mod complex_real;
+mod module_check_restart;
 mod package_keyed;
 mod published_outer_package;
 mod rw_writeback_slots;
