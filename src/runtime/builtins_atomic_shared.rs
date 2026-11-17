@@ -798,10 +798,16 @@ impl Interpreter {
         self.threads.shared_vars.get(value_key.as_str()?)
     }
 
+    /// The invocant's attribute cell an atomic op on the attribute spelled
+    /// `name` (`!head`, `.count`) works on, and the attribute's key in it:
+    /// the declaring class's qualified key (`Owner\0head`) when the instance
+    /// stores the attribute under it, else the bare name. `None` when `name`
+    /// is not an attribute spelling or the frame has no instance invocant.
+    // Cost: O(1) amortized (the qualified key is memoized per pair).
     pub(super) fn self_attr_cell_target(
         &self,
         name: &str,
-    ) -> Option<(crate::gc::Gc<crate::value::InstanceAttrs>, String)> {
+    ) -> Option<(crate::gc::Gc<crate::value::InstanceAttrs>, Symbol)> {
         let bare = name.strip_prefix('!').or_else(|| name.strip_prefix('.'))?;
         if !bare
             .chars()
@@ -812,19 +818,17 @@ impl Interpreter {
         }
         // An instance's cell, or a `Proxy` subclass instance's (#14259).
         let attrs = Self::self_instance_attrs(&self.frame_invocant()?)?;
-        let key = {
-            let map = attrs.as_map();
-            match self.types.method_class_stack.last() {
-                Some(owner) => {
-                    let qualified = format!("{}\0{}", owner.name, bare);
-                    if map.contains_key(&qualified) {
-                        qualified
-                    } else {
-                        bare.to_string()
-                    }
+        let bare = Symbol::intern(bare);
+        let key = match self.types.method_class_stack.last() {
+            Some(owner) => {
+                let qualified = crate::qualified::qualified_attr_key(owner.name, bare);
+                if attrs.as_map().contains_key(qualified) {
+                    qualified
+                } else {
+                    bare
                 }
-                None => bare.to_string(),
             }
+            None => bare,
         };
         Some((attrs, key))
     }
