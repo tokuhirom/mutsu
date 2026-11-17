@@ -9,7 +9,7 @@ use Test;
 # a warm plan (a new method, a wrap, an augment) and for receivers whose
 # shape the plan must not cover.
 
-plan 19;
+plan 20;
 
 class Counter {
     has $.n = 0;
@@ -103,3 +103,13 @@ class P {
 }
 my $p = P.new;
 is (^3).map({ $p.px }).join(','), '42,42,42', 'a returned Proxy is fetched';
+
+# A sigilless parameter binds by where the argument came from: a literal is a
+# read-only term, a variable is aliased. The two calls share a type key.
+class Sig { method set(\i, $v) { i = $v } }
+my $sg = Sig.new;
+my @ro;
+for ^2 { @ro.push: (try { $sg.set(3, 4); 'ok' }) // 'died' }
+my $sv = 1;
+$sg.set($sv, $_) for 5..6;
+is "{@ro.join(',')} $sv", 'died,died 6', 'a sigilless parameter after a literal call warmed up';

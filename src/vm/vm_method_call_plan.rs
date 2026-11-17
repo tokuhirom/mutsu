@@ -28,13 +28,15 @@
 //!   `resolve_user_method_or_accessor_sym`, `check_method_wrap_chain`) read
 //!   the registry only.
 //! * **The gate** reads the signature, the compiled code, the argument list,
-//!   the receiver and its attribute cell. A plan is installed only for
-//!   arguments whose gate reading is fixed by their type key -- no `Pair`
-//!   (named arguments), no `Array`/`Hash`/`List`/`Seq` (whose container
-//!   sharing depends on the call site's argument sources), no container --
-//!   and only for an ordinary instance receiver, whose only per-instance gate
-//!   input, sigilless-alias metadata on the attribute cell, is re-checked on
-//!   every replay.
+//!   the call site's argument sources, the receiver and its attribute cell. A
+//!   plan is installed only where the gate's reading is fixed by the argument
+//!   type keys: no parameter that may alias the caller's container (sigilless,
+//!   `is rw`, `is raw`, a `does` target, which bind by whether the argument
+//!   came from a variable); no `Pair` argument (named arguments); no
+//!   `Array`/`Hash`/`List`/`Seq` argument (whose container sharing also
+//!   depends on the argument sources); no container. The receiver must be an
+//!   ordinary instance, whose only per-instance gate input, sigilless-alias
+//!   metadata on the attribute cell, is re-checked on every replay.
 //!
 //! The whole plan table is keyed on the registry *write* generation, which
 //! every registry write moves (`registry_mut`), so no plan outlives a
@@ -181,6 +183,14 @@ impl Interpreter {
             || crate::builtins::method_table::native_array_result::retypes(method)
             || def.is_multi
             || def.deprecated_message.is_some()
+            // A parameter that may alias the caller's container (sigilless,
+            // `is rw`, `is raw`, a `does` target) binds by where the argument
+            // came from -- a variable or a value -- which the call site's
+            // argument sources tell and the type key does not.
+            || def
+                .param_defs
+                .iter()
+                .any(|pd| pd.binds_caller_container() || pd.is_does_target())
             || !args.iter().all(plan_arg_kind_ok)
         {
             return None;
