@@ -161,12 +161,8 @@ impl Interpreter {
             return Err(err);
         }
         if let Some(threaded) = crate::builtins::thread_junctions_in_items(&flat_items, &|c| {
-            Value::str(
-                c.iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join(&sep),
-            )
+            let parts: Vec<String> = c.iter().map(|v| v.to_str_context()).collect();
+            Value::str(crate::builtins::str_prim::join(&parts, &sep))
         }) {
             return Ok(threaded);
         }
