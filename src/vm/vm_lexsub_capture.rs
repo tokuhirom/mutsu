@@ -106,7 +106,7 @@ impl Interpreter {
             return None;
         }
         let key = crate::qualified::qualified(self.current_package_sym(), plan.name);
-        let def = self.registry().functions.get(&key)?.clone();
+        let def = self.routines().functions.get(&key)?.clone();
         Some(self.sub_value_from_function_def((*def).clone()))
     }
 

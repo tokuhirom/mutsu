@@ -18,7 +18,7 @@
 //! interpolation, its code blocks and its match-time `$var` atoms all read the
 //! declaring scope's variables, and a write reaches them.
 //!
-//! [`Registry::token_captures`]: crate::runtime::registry::Registry::token_captures
+//! [`Registry::token_captures`]: crate::runtime::routine_tables::RoutineTables::token_captures
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -81,7 +81,7 @@ impl Interpreter {
             return;
         }
         let captured = self
-            .registry()
+            .routines()
             .token_captures
             .get(&crate::qualified::qualified(def.package, def.name))
             .cloned();
@@ -110,7 +110,7 @@ impl Interpreter {
         }
         let defs = self.resolve_token_defs_in_pkg(name, pkg);
         let captured: Vec<(String, Value)> = {
-            let registry = self.registry();
+            let registry = self.routines();
             defs.iter()
                 .filter_map(|def| {
                     registry

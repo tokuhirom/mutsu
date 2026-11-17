@@ -102,7 +102,7 @@ impl Interpreter {
         if crate::qualified::is_qualified_str(name) {
             // Try direct lookup first
             if let Some(def) = self
-                .registry()
+                .routines()
                 .functions
                 .get(&Symbol::intern(name))
                 .cloned()
@@ -127,7 +127,7 @@ impl Interpreter {
                 if prefix_visible {
                     let qualified = self.current_package_qualified(name).to_string();
                     if let Some(def) = self
-                        .registry()
+                        .routines()
                         .functions
                         .get(&Symbol::intern(&qualified))
                         .cloned()
@@ -166,7 +166,7 @@ impl Interpreter {
             let Some(key) = dispatch_key::qualified_lookup(pkg.as_str(), name) else {
                 continue;
             };
-            if let Some(def) = self.registry().functions.get(&key).cloned() {
+            if let Some(def) = self.routines().functions.get(&key).cloned() {
                 // A prelude splice is registered under `GLOBAL::` for every
                 // package to reach, but is lexical to the compunits it was
                 // spliced into — see `prelude_visible_here`.
@@ -219,7 +219,7 @@ impl Interpreter {
                 .get(probe)
                 .is_some_and(|owned| owned.contains_key(name))
                 && let Some(def) = dispatch_key::qualified_lookup(probe, name)
-                    .and_then(|key| self.registry().functions.get(&key).cloned())
+                    .and_then(|key| self.routines().functions.get(&key).cloned())
             {
                 return Some(def);
             }
@@ -256,12 +256,12 @@ impl Interpreter {
         crate::runtime::regex::regex_dynparams::note_token_def_routine_reads(&def.body);
         let def = std::sync::Arc::new(def);
         if multi {
-            std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)
+            std::sync::Arc::make_mut(&mut self.routines_mut().token_defs)
                 .entry(key)
                 .or_default()
                 .push(def);
         } else {
-            std::sync::Arc::make_mut(&mut self.registry_mut().token_defs).insert(key, vec![def]);
+            std::sync::Arc::make_mut(&mut self.routines_mut().token_defs).insert(key, vec![def]);
         }
         // Regex parses may fold token bodies in (parse_combined_class); a new /
         // redefined token must invalidate those cached parses.
@@ -274,7 +274,7 @@ impl Interpreter {
     /// because that is how `token_defs` is keyed, so a scan never re-interns a
     /// key it just read out of the map.
     pub(crate) fn token_key_decl_order_sym(&self, key: Symbol) -> u64 {
-        self.registry()
+        self.routines()
             .token_defs
             .get(&key)
             .and_then(|defs| defs.iter().map(|d| d.decl_order).min())
@@ -315,7 +315,7 @@ impl Interpreter {
 
     fn proto_variant_keys_sorted_uncached(&self, prefix: &str) -> Vec<Symbol> {
         let mut keys: Vec<Symbol> = self
-            .registry()
+            .routines()
             .token_defs
             .keys()
             .copied()
@@ -362,7 +362,7 @@ impl Interpreter {
             .as_str()
             .to_string();
         if !seen.contains(name)
-            && let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key))
+            && let Some(exact) = self.routines().token_defs.get(&Symbol::intern(&exact_key))
         {
             defs.extend(exact.clone());
             seen.insert(name.to_string());
@@ -373,7 +373,7 @@ impl Interpreter {
             if seen.contains(identity) {
                 continue;
             }
-            if let Some(sym_defs) = self.registry().token_defs.get(&key) {
+            if let Some(sym_defs) = self.routines().token_defs.get(&key) {
                 defs.extend(sym_defs.clone());
                 seen.insert(identity.to_string());
             }
@@ -389,11 +389,11 @@ impl Interpreter {
         let exact_key = crate::qualified::qualified_text(scope, name)
             .as_str()
             .to_string();
-        if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key)) {
+        if let Some(exact) = self.routines().token_defs.get(&Symbol::intern(&exact_key)) {
             defs.extend(exact.clone());
         }
         for &key in self.proto_variant_keys_sorted(&exact_key).iter() {
-            if let Some(sym_defs) = self.registry().token_defs.get(&key) {
+            if let Some(sym_defs) = self.routines().token_defs.get(&key) {
                 defs.extend(sym_defs.clone());
             }
         }
@@ -470,18 +470,18 @@ impl Interpreter {
         // Every lookup below reads `token_defs`: a program that declared no
         // token has none to find, so skip the MRO walks and key builds (the
         // `&name` resolution of every plain sub asks, #13049).
-        if self.registry().token_defs.is_empty() {
+        if self.routines().token_defs.is_empty() {
             return None;
         }
         if crate::qualified::is_qualified_str(name) {
             let identity = self.qualified_token_identity(Symbol::intern(name));
             let name = identity.as_str();
             let mut defs = Vec::new();
-            if let Some(exact) = self.registry().token_defs.get(&Symbol::intern(name)) {
+            if let Some(exact) = self.routines().token_defs.get(&Symbol::intern(name)) {
                 defs.extend(exact.clone());
             }
             for &key in self.proto_variant_keys_sorted(name).iter() {
-                if let Some(sym_defs) = self.registry().token_defs.get(&key) {
+                if let Some(sym_defs) = self.routines().token_defs.get(&key) {
                     defs.extend(sym_defs.clone());
                 }
             }
@@ -539,11 +539,11 @@ impl Interpreter {
 
     pub(crate) fn has_proto_token(&self, name: &str) -> bool {
         // Every probe below is into `proto_tokens`.
-        if self.registry().proto_tokens.is_empty() {
+        if self.routines().proto_tokens.is_empty() {
             return false;
         }
         if crate::qualified::is_qualified_str(name) {
-            if self.registry().proto_tokens.contains(name) {
+            if self.routines().proto_tokens.contains(name) {
                 return true;
             }
             // Walk MRO for qualified names
@@ -555,7 +555,7 @@ impl Interpreter {
                     if ancestor == pkg {
                         continue;
                     }
-                    if self.registry().proto_tokens.contains(
+                    if self.routines().proto_tokens.contains(
                         &crate::qualified::qualified_text(&ancestor, token_name)
                             .as_str()
                             .to_string(),
@@ -568,7 +568,7 @@ impl Interpreter {
         }
         // Check current package MRO
         for scope in self.mro_readonly(&self.current_package()) {
-            if self.registry().proto_tokens.contains(
+            if self.routines().proto_tokens.contains(
                 &crate::qualified::qualified_text(&scope, name)
                     .as_str()
                     .to_string(),
@@ -576,7 +576,7 @@ impl Interpreter {
                 return true;
             }
         }
-        self.registry()
+        self.routines()
             .proto_tokens
             .contains(&format!("GLOBAL::{}", name))
     }

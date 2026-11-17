@@ -454,8 +454,15 @@ impl Interpreter {
     pub(crate) fn sub_value_from_multi_candidates(
         &self,
         name: &str,
-        candidates: Vec<std::sync::Arc<crate::runtime::FunctionDef>>,
+        mut candidates: Vec<std::sync::Arc<crate::runtime::FunctionDef>>,
     ) -> Value {
+        // A dispatcher holds its candidates in declaration order, as rakudo's
+        // does: two that tie on narrowness (a role-typed and a class-typed
+        // parameter) go to the one declared first. A gather walks the
+        // registry's map in bucket order, so the captured list ranked them
+        // arbitrarily (Red's `:%column!` pair, #18043). Stable, so rows that
+        // carry no stamp keep the order they came in.
+        candidates.sort_by_key(|def| def.decl_order);
         let mut base_env = self.env.clone();
         // The caller's callable kind belongs to its frame, not to the routine
         // being resolved. Stamp each candidate from its own declarator below.
@@ -872,13 +879,13 @@ impl Interpreter {
                         self.current_package_sym(),
                         Symbol::intern(lookup_name),
                     );
-                    self.registry()
+                    self.routines()
                         .our_scoped_functions
                         .get(&fq)
                         .map(|d| (**d).clone())
                         .or_else(|| {
                             let global_fq = format!("GLOBAL::{}", lookup_name);
-                            self.registry()
+                            self.routines()
                                 .our_scoped_functions
                                 .get(&Symbol::intern(&global_fq))
                                 .map(|d| (**d).clone())
@@ -1095,3 +1102,7 @@ impl Interpreter {
         &name[Self::leading_pseudo_packages(name).0..]
     }
 }
+
+#[cfg(test)]
+#[path = "accessors_resolve_dispatcher_order_tests.rs"]
+mod dispatcher_order_tests;

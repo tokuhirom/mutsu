@@ -373,7 +373,7 @@ impl Interpreter {
         Some(CoreInfixWinsKey {
             name: Symbol::intern(name),
             def: Arc::as_ptr(def) as usize,
-            proto_generation: self.registry().proto_generation(),
+            proto_generation: self.routines().proto_generation(),
             subsets: self.registry().subsets.len(),
             arg_keys,
         })
@@ -414,7 +414,7 @@ impl Interpreter {
         // routine that SHADOWS the core one (rakudo: its candidates are the
         // only ones), so there is no core candidate to tie with. Only a bare
         // `multi infix:<op>` joins the core set.
-        if self.registry().has_proto(def.package.resolve().as_str(), name) || self.has_proto(name) {
+        if self.routines().has_proto(def.package.resolve().as_str(), name) || self.has_proto(name) {
             return CoreInfixVerdict::User;
         }
         let Some(core) = self.narrowest_core_infix_candidate(&shape, left, right) else {

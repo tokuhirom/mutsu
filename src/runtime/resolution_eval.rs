@@ -724,9 +724,9 @@ impl Interpreter {
         // which cost 3% of a grammar-action workload's instructions in
         // `RawTable::clone` alone, all of it thrown away unused by the
         // declaration-free block the guarded restore below describes (#7887).
-        let mut saved_functions = self.registry().functions.clone();
-        let saved_proto_subs = self.registry().proto_subs_snapshot();
-        let saved_proto_functions = self.registry().proto_functions.clone();
+        let mut saved_functions = self.routines().functions.clone();
+        let saved_proto_subs = self.routines().proto_subs_snapshot();
+        let saved_proto_functions = self.routines().proto_functions.clone();
         let saved_operator_assoc = self.dispatch.operator_assoc.clone();
         let saved_user_declared_infix_ops = self.dispatch.user_declared_infix_ops.clone();
         // Sub/proto/operator declarations in block scope are lexical, so the
@@ -936,7 +936,7 @@ impl Interpreter {
             // before the snapshot lands. See `reinstate_module_functions`.
             self.reinstate_module_functions(&mut saved_functions, is_eval_unit);
             {
-                let mut reg = self.registry_mut();
+                let mut reg = self.routines_mut();
                 reg.functions = saved_functions;
                 reg.proto_subs_restore(saved_proto_subs);
                 reg.proto_functions = saved_proto_functions;

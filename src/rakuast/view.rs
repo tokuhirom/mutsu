@@ -2593,9 +2593,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
             Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
             Spelling::RadixNumber => super::radix_number::view_node(names, &spelled.expr),
-            Spelling::ColonPairValue(_) | Spelling::AttributeCall(_) | Spelling::ImplicitError => {
-                view_expr(names, &spelled.expr)
-            }
+            Spelling::ColonPairValue(_)
+            | Spelling::AttributeCall(_)
+            | Spelling::ImplicitError
+            | Spelling::HashPairKey { .. } => view_expr(names, &spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept

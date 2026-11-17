@@ -13,7 +13,7 @@ impl Interpreter {
         let package = self.current_package_sym();
         let method_package = self.method_class_stack_top_str().map(Symbol::intern);
         let mut names = Vec::new();
-        for key in self.registry().functions.keys() {
+        for key in self.routines().functions.keys() {
             if let Some((owner, _)) = split_qualified(*key)
                 && !is_global_package(owner)
                 && !package_ancestors(package).any(|ancestor| ancestor == owner)

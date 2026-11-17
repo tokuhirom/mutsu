@@ -53,7 +53,7 @@ impl Interpreter {
         target: &str,
         out: &mut Vec<(Symbol, Arc<FunctionDef>)>,
     ) {
-        let functions = &self.registry().functions;
+        let functions = &self.routines().functions;
         for key in family_keys {
             let (Some(suffix), Some(def)) =
                 (key.as_str().strip_prefix(family), functions.get(key))

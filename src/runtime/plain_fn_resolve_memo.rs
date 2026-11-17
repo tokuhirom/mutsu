@@ -100,7 +100,7 @@ impl Interpreter {
             self.routine_stack()
                 .last()
                 .and_then(|frame| frame.lexical_package),
-            self.registry().proto_generation(),
+            self.routines().proto_generation(),
             executing_units,
         ))
     }

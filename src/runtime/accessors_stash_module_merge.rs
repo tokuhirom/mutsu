@@ -155,7 +155,7 @@ impl Interpreter {
             return false;
         };
         let units = self.loaded_module_units();
-        let registry = self.registry();
+        let registry = self.routines();
         subs.keys().any(|name| {
             let name = Symbol::intern(name);
             !registry.functions.values().any(|def| {

@@ -299,7 +299,7 @@ impl Interpreter {
             p
         };
         let mut rows: Vec<_> = self
-            .registry()
+            .routines()
             .functions
             .iter()
             .filter(|(key, _)| {

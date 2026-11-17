@@ -651,6 +651,25 @@ impl Interpreter {
         crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry")
     }
 
+    /// Read access to this execution context's routine tables (ADR-17216
+    /// §3.2). Same guard discipline as [`Self::registry`].
+    #[inline]
+    pub(crate) fn routines(&self) -> crate::runtime::routine_tables::RoutinesReadGuard<'_> {
+        crate::runtime::routine_tables::RoutinesReadGuard::new(&self.types.routines)
+    }
+
+    /// Write access to this execution context's routine tables. Moves the
+    /// registry write generation, as a registry write does: memos keyed by it
+    /// cover what the routine tables answer too.
+    #[inline]
+    pub(crate) fn routines_mut(&self) -> crate::runtime::routine_tables::RoutinesWriteGuard<'_> {
+        self.types.registry_write_gen.store(
+            crate::runtime::registry_gen::next_generation(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        crate::runtime::routine_tables::RoutinesWriteGuard::new(&self.types.routines)
+    }
+
     /// Current registry write generation — bumped on every `registry_mut()`
     /// acquisition. Lets callers detect "did anything take a registry write
     /// guard across this call?" (e.g. to invalidate name-keyed resolution

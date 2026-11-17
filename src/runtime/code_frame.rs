@@ -148,7 +148,7 @@ impl Interpreter {
     // Cost: O(1): one registry probe, plus a `SubData` copy when it matches.
     fn with_def_routine_cell(&self, sub_val: Value, l: &LazyRoutineCode) -> Value {
         let key = crate::qualified::qualified(l.package, l.name);
-        let cell = self.registry().functions.get(&key).and_then(|def| {
+        let cell = self.routines().functions.get(&key).and_then(|def| {
             def.compiled_fn()
                 .is_some_and(|cf| {
                     std::sync::Arc::ptr_eq(cf, &l.cf) || cf.fingerprint == l.cf.fingerprint

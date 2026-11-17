@@ -415,7 +415,7 @@ impl Interpreter {
         }
 
         let mut registered_routines = std::collections::HashSet::new();
-        let registry = self.registry();
+        let registry = self.routines();
         let functions: Vec<(Symbol, Arc<FunctionDef>)> = match &candidates {
             Some(names) => names
                 .iter()
@@ -550,7 +550,7 @@ impl Interpreter {
         // empty stash and `::('M::&f')` was a Failure. Its candidates are not
         // stash members in Rakudo either (a bare `multi` is lexical); the proto
         // is the one visible name, and it is visible exactly when it is `our`.
-        let registry = self.registry();
+        let registry = self.routines();
         let proto_functions: Vec<(Symbol, Arc<FunctionDef>)> = match &candidates {
             Some(names) => names
                 .iter()
@@ -825,7 +825,7 @@ impl Interpreter {
         );
         let name_sym = Symbol::intern(name);
         let exact = self
-            .registry()
+            .routines()
             .functions
             .get(&qualified(pkg, name_sym))
             .cloned();
@@ -834,7 +834,7 @@ impl Interpreter {
         let mut candidates: Vec<(Symbol, Arc<FunctionDef>)> = match exact {
             Some(def) => vec![(qualified(pkg, name_sym), def)],
             None => self
-                .registry()
+                .routines()
                 .functions
                 .iter()
                 .filter(|(key, _)| {

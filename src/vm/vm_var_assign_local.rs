@@ -523,7 +523,7 @@ impl Interpreter {
         // next `sub` declaration was rejected as a redeclaration of itself.
         let anchor = self.current_unit;
         let names: std::collections::HashSet<String> = {
-            let registry = self.registry();
+            let registry = self.routines();
             registry
                 .functions
                 .iter()

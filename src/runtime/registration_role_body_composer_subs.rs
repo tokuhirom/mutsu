@@ -76,7 +76,7 @@ impl Interpreter {
             .into_iter()
             .filter(|(_, name)| {
                 !self
-                    .registry()
+                    .routines()
                     .functions
                     .contains_key(&crate::qualified::qualified(package, *name))
             })
@@ -175,9 +175,9 @@ impl Interpreter {
                 let key = Symbol::intern(
                     crate::qualified::qualified_text(package.as_str(), name).as_str(),
                 );
-                let def = self.registry().functions.get(&key).cloned();
+                let def = self.routines().functions.get(&key).cloned();
                 if let Some(def) = def {
-                    std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+                    std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                         .insert(key, def);
                 }
             }

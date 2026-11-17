@@ -87,7 +87,7 @@ impl Interpreter {
             return false;
         }
         let keys = self.fn_keys_for_base_sym(name, name_sym);
-        let registry = self.registry();
+        let registry = self.routines();
         keys.iter().any(|k| {
             registry.functions.get(k).is_some_and(|def| {
                 def.param_defs
@@ -112,7 +112,7 @@ impl Interpreter {
         if keys.is_empty() {
             return false;
         }
-        let registry = self.registry();
+        let registry = self.routines();
         keys.iter().any(|k| {
             registry.functions.get(k).is_some_and(|def| {
                 positional_binds_container_at(

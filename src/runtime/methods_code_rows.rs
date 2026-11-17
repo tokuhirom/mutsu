@@ -384,7 +384,7 @@ impl Interpreter {
         if method == "is-implementation-detail" && args.is_empty() {
             let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
             let is_impl_detail = self
-                .registry()
+                .routines()
                 .functions
                 .get(&key)
                 .is_some_and(|def| def.is_implementation_detail);
@@ -423,7 +423,7 @@ impl Interpreter {
         if method == "is-implementation-detail" && args.is_empty() {
             let key = crate::qualified::qualified(data.package, data.name);
             let is_impl_detail = self
-                .registry()
+                .routines()
                 .functions
                 .get(&key)
                 .is_some_and(|def| def.is_implementation_detail);
@@ -445,7 +445,7 @@ impl Interpreter {
             ValueView::WeakSub(weak) => weak.upgrade()?,
             ValueView::Routine { package, name, .. } => {
                 let key = crate::qualified::qualified(package, name);
-                let is_stub = self.registry().functions.get(&key).is_some_and(|def| def.is_stub);
+                let is_stub = self.routines().functions.get(&key).is_some_and(|def| def.is_stub);
                 return Some(Value::truth(is_stub));
             }
             // A `Method` object (`.^methods`, `.^lookup`) records it as an attribute.
@@ -458,7 +458,7 @@ impl Interpreter {
             let key = crate::qualified::qualified_text(&data.package, &data.name)
                 .as_str()
                 .to_string();
-            if let Some(def) = self.registry().functions.get(&Symbol::intern(&key)) {
+            if let Some(def) = self.routines().functions.get(&Symbol::intern(&key)) {
                 return Some(Value::truth(def.is_stub));
             }
         }

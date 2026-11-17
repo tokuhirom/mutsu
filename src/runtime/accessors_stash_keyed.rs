@@ -343,7 +343,7 @@ impl Interpreter {
         // dispatcher built there has only the bare name. Serve the registered
         // package-qualified routine instead, as the whole-stash path does.
         if sigil == '&' {
-            let registry = self.registry();
+            let registry = self.routines();
             for &name in &candidates {
                 if let Some(def) = registry.functions.get(&name)
                     && self.routine_stash_member(name.as_str(), &package_name, true) == Some(bare)

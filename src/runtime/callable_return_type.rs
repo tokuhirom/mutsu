@@ -27,7 +27,7 @@ impl Interpreter {
         name: crate::symbol::Symbol,
     ) -> Option<String> {
         let key = crate::qualified::qualified(package, name);
-        self.registry()
+        self.routines()
             .proto_functions
             .get(&key)
             .and_then(|proto| proto.return_type.clone())

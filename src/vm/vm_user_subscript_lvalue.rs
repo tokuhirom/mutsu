@@ -152,7 +152,7 @@ impl Interpreter {
     // Cost: O(1) with an unchanged function table; O(f) once per
     // function-table version, f = registered routines.
     fn function_table_has_user_subscript(&self, op_name: &str, is_positional: bool) -> bool {
-        let version = self.registry().functions.version();
+        let version = self.routines().functions.version();
         let (known_bit, answer_bit) = if is_positional {
             (1u8, 2u8)
         } else {
@@ -163,7 +163,7 @@ impl Interpreter {
             return bits & answer_bit != 0;
         }
         let present = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .any(|key| key.as_str().contains(op_name));

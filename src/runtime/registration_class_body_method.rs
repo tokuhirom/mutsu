@@ -431,7 +431,7 @@ impl Interpreter {
                 body_facts_cache: std::sync::OnceLock::new(),
                 routine_cell: Default::default(),
             };
-            self.registry_mut().functions_mut().insert(
+            self.routines_mut().functions_mut().insert(
                 Symbol::intern(&qualified_name),
                 std::sync::Arc::new(func_def),
             );
@@ -498,7 +498,7 @@ impl Interpreter {
                 lexical_sub,
             );
             // Register under the short name (lexical scope)
-            self.registry_mut().functions_mut().insert(
+            self.routines_mut().functions_mut().insert(
                 Symbol::intern(&resolved_method_name),
                 std::sync::Arc::new(func_def.clone()),
             );
@@ -506,7 +506,7 @@ impl Interpreter {
             let qualified_name = crate::qualified::qualified_text(cx.name, &resolved_method_name)
                 .as_str()
                 .to_string();
-            self.registry_mut().functions_mut().insert(
+            self.routines_mut().functions_mut().insert(
                 Symbol::intern(&qualified_name),
                 std::sync::Arc::new(func_def),
             );

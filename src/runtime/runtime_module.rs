@@ -359,10 +359,10 @@ impl Interpreter {
         // The caller has already set `current_package` to the role/class this
         // `use`/`need` statement belongs to (`type_owner`/`base_role_name`).
         let owner_sym = self.current_package_sym();
-        let before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
+        let before: HashSet<Symbol> = self.routines().functions.keys().copied().collect();
         let result = body(self);
         let new_keys: Vec<Symbol> = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .filter(|k| !before.contains(*k))
@@ -417,7 +417,7 @@ impl Interpreter {
     fn drop_foreign_global_main_candidates(&mut self, program_path: Option<Symbol>) -> Vec<Symbol> {
         // The routine table this check last found clean is still the one
         // installed: versions are never reused, so nothing was added since.
-        let version = self.registry().functions.version();
+        let version = self.routines().functions.version();
         if self.module.foreign_main_clean_version == Some(version) {
             return Vec::new();
         }
@@ -425,7 +425,7 @@ impl Interpreter {
         let mut keys = crate::qualified_tail_index::names_in_family("GLOBAL::MAIN");
         keys.push(main);
         let foreign: Vec<Symbol> = {
-            let reg = self.registry();
+            let reg = self.routines();
             keys.into_iter()
                 .filter(|key| {
                     reg.functions.get(key).is_some_and(|def| {
@@ -438,13 +438,13 @@ impl Interpreter {
                 .collect()
         };
         if !foreign.is_empty() {
-            let mut reg = self.registry_mut();
+            let mut reg = self.routines_mut();
             let functions = reg.functions_mut();
             for key in &foreign {
                 functions.remove(key);
             }
         }
-        let version = self.registry().functions.version();
+        let version = self.routines().functions.version();
         self.module.foreign_main_clean_version = Some(version);
         foreign
     }
@@ -472,7 +472,7 @@ impl Interpreter {
         for write in writes.into_iter().rev() {
             match write {
                 ImportWrite::Function(key, prior) => {
-                    let mut registry = self.registry_mut();
+                    let mut registry = self.routines_mut();
                     let functions = registry.functions_mut();
                     match prior {
                         Some(def) => {
@@ -485,7 +485,7 @@ impl Interpreter {
                     changed.push(key);
                 }
                 ImportWrite::Proto(key, prior) => {
-                    let mut registry = self.registry_mut();
+                    let mut registry = self.routines_mut();
                     let protos = registry.proto_functions_mut();
                     match prior {
                         Some(def) => {
@@ -497,7 +497,7 @@ impl Interpreter {
                     }
                 }
                 ImportWrite::ProtoSub(name, was_present) => {
-                    let mut registry = self.registry_mut();
+                    let mut registry = self.routines_mut();
                     if was_present {
                         registry.proto_subs_insert(name);
                     } else {
@@ -799,8 +799,8 @@ impl Interpreter {
         let role_snapshot: HashSet<String> = self.registry().roles.keys().cloned().collect();
         let env_snapshot: HashSet<Symbol> = self.env.keys().copied().collect();
         let package_symbols_before = self.module.module_toplevel.package_symbols.clone();
-        let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
-        let proto_keys_before = std::sync::Arc::clone(&self.registry().proto_functions);
+        let func_keys_before: HashSet<Symbol> = self.routines().functions.keys().copied().collect();
+        let proto_keys_before = std::sync::Arc::clone(&self.routines().proto_functions);
 
         // `Test` and `NativeCall` load rakudo's own `.rakumod` (#7566, #11203),
         // which run their own `is export` declarations.
@@ -1063,12 +1063,12 @@ impl Interpreter {
                     // (Math::Arrow `use ... :constants` after a plain `use`).
                     let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
                     if !func_keys_before.contains(&global_key) {
-                        let removed = self.registry_mut().functions_mut().remove(&global_key);
+                        let removed = self.routines_mut().functions_mut().remove(&global_key);
                         if let Some(def) = removed {
                             let qualified = Symbol::intern(
                                 crate::qualified::qualified_text(module, name).as_str(),
                             );
-                            self.registry_mut()
+                            self.routines_mut()
                                 .functions_mut()
                                 .entry(qualified)
                                 .or_insert(def);
@@ -1077,7 +1077,7 @@ impl Interpreter {
                     // Also rename multi-dispatch variants (`GLOBAL::name/sig`).
                     let prefix = format!("GLOBAL::{}/", name);
                     let multi_keys: Vec<Symbol> = self
-                        .registry()
+                        .routines()
                         .functions
                         .keys()
                         .filter(|k| {
@@ -1089,13 +1089,13 @@ impl Interpreter {
                     // Invalidate name-keyed resolution caches (keys renamed).
                     self.invalidate_fn_resolution();
                     for mk in multi_keys {
-                        let removed = self.registry_mut().functions_mut().remove(&mk);
+                        let removed = self.routines_mut().functions_mut().remove(&mk);
                         if let Some(def) = removed {
                             let suffix = mk.as_str().strip_prefix("GLOBAL::").unwrap().to_string();
                             let qualified = Symbol::intern(
                                 crate::qualified::qualified_text(module, &suffix).as_str(),
                             );
-                            self.registry_mut()
+                            self.routines_mut()
                                 .functions_mut()
                                 .entry(qualified)
                                 .or_insert(def);
@@ -1126,7 +1126,7 @@ impl Interpreter {
                 }
             }
             let non_exported_op_globals: Vec<Symbol> = self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .filter(|k| {
@@ -1147,7 +1147,7 @@ impl Interpreter {
                         // the source routine was not marked `is export` here.
                         base.contains(":<")
                             && !exported_op_names.contains(base)
-                            && !self.registry().our_scoped_functions.contains_key(k)
+                            && !self.routines().our_scoped_functions.contains_key(k)
                     } else {
                         false
                     }
@@ -1155,7 +1155,7 @@ impl Interpreter {
                 .copied()
                 .collect();
             for k in non_exported_op_globals {
-                self.registry_mut().functions_mut().remove(&k);
+                self.routines_mut().functions_mut().remove(&k);
             }
             // Invalidate name-keyed resolution caches.
             self.invalidate_fn_resolution();
@@ -1188,7 +1188,7 @@ impl Interpreter {
                     }
                 }
                 let leaked_globals: Vec<Symbol> = self
-                    .registry()
+                    .routines()
                     .functions
                     .keys()
                     .filter(|k| {
@@ -1206,7 +1206,7 @@ impl Interpreter {
                     .copied()
                     .collect();
                 for k in leaked_globals {
-                    self.registry_mut().functions_mut().remove(&k);
+                    self.routines_mut().functions_mut().remove(&k);
                 }
                 // Invalidate name-keyed resolution caches.
                 self.invalidate_fn_resolution();
@@ -1236,7 +1236,7 @@ impl Interpreter {
             //    scope: `{ use Foo } EVAL('foo()')` still dies
             //    (roast S11-modules/lexical.t).
             let module_funcs: Vec<Symbol> = self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .filter(|k| !func_keys_before.contains(k))

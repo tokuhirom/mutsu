@@ -121,7 +121,7 @@ impl Interpreter {
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         // Include all user-defined operators (infix, prefix, postfix,
         // circumfix, postcircumfix) so the EVAL parser can recognize them.
-        for key in self.registry().functions.keys() {
+        for key in self.routines().functions.keys() {
             let name = crate::qualified::last_segment(*key).as_str();
             if name.starts_with("circumfix:")
                 || name.starts_with("postcircumfix:")

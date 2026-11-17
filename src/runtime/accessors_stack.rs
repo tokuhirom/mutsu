@@ -103,7 +103,7 @@ impl Interpreter {
         // were holding. Keeping `fn_resolve_gen == functions_version()` as a
         // whole-program invariant is also what makes the mirror easy to reason
         // about: there is exactly one name for "which map is installed".
-        self.registry_mut().renew_functions_version();
+        self.routines_mut().renew_functions_version();
         self.sync_fn_resolve_gen();
     }
 
@@ -159,7 +159,7 @@ impl Interpreter {
     /// which already invalidated on whichever install path it took).
     #[track_caller]
     fn sync_fn_resolve_gen(&mut self) {
-        let version = self.registry().functions_version();
+        let version = self.routines().functions_version();
         if self.caches.fn_resolve_gen == version {
             return;
         }

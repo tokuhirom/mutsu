@@ -294,7 +294,7 @@ impl Interpreter {
         out: &mut Vec<(String, Symbol, Option<String>)>,
     ) {
         let exact_key = crate::qualified::qualified(Symbol::intern(scope), Symbol::intern(name));
-        if let Some(defs) = self.registry().token_defs.get(&exact_key) {
+        if let Some(defs) = self.routines().token_defs.get(&exact_key) {
             for def in defs {
                 if let Some(p) = Self::token_pattern_from_def(def) {
                     out.push((p, def.package, None));
@@ -303,7 +303,7 @@ impl Interpreter {
         }
         for &key in self.proto_variant_keys_sorted(exact_key.as_str()).iter() {
             let sym_val = Self::extract_variant_ident(key.as_str());
-            if let Some(defs) = self.registry().token_defs.get(&key) {
+            if let Some(defs) = self.routines().token_defs.get(&key) {
                 for def in defs {
                     if let Some(p) = Self::token_pattern_from_def(def) {
                         out.push((p, def.package, sym_val.clone()));
@@ -367,22 +367,22 @@ impl Interpreter {
         if crate::qualified::is_qualified(name_sym) {
             let identity = self.qualified_token_identity(name_sym);
             let name = identity.as_str();
-            return self.registry().proto_tokens.contains(name)
-                || self.registry().has_proto("", name);
+            return self.routines().proto_tokens.contains(name)
+                || self.routines().has_proto("", name);
         }
         for scope in self.qualified_name_scopes(pkg) {
             for owner in self.mro_readonly(scope.as_str()) {
                 let token_marker =
                     crate::runtime::dispatch_key::with_qualified(&owner, name, |key| {
-                        self.registry().proto_tokens.contains(key)
+                        self.routines().proto_tokens.contains(key)
                     });
-                if token_marker || self.registry().has_proto(&owner, name) {
+                if token_marker || self.routines().has_proto(&owner, name) {
                     return true;
                 }
             }
         }
         crate::runtime::dispatch_key::with_qualified("GLOBAL", name, |key| {
-            self.registry().proto_tokens.contains(key)
+            self.routines().proto_tokens.contains(key)
         })
     }
 

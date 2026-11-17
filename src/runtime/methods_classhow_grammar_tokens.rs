@@ -25,7 +25,7 @@ impl Interpreter {
     // each); `.^methods` is not on a hot path.
     pub(super) fn collect_grammar_token_methods(&self, owner: &str, result: &mut Vec<Value>) {
         let owner_sym = Symbol::intern(owner);
-        let registry = self.registry();
+        let registry = self.routines();
         let mut entries: Vec<TokenEntry> = Vec::new();
         for (key, defs) in registry.token_defs.iter() {
             let Some(name) = Self::grammar_token_member(*key, owner_sym) else {

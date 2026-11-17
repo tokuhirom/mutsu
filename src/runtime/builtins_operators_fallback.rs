@@ -1327,7 +1327,7 @@ impl Interpreter {
             // to is shared with the caller (`EVAL q[package P { our sub f {} }];
             // P::f()`), so the persistent our-scoped table answers.
             let our_def = self
-                .registry()
+                .routines()
                 .our_scoped_functions
                 .get(&Symbol::intern(name))
                 .cloned();

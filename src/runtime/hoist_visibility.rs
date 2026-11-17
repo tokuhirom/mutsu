@@ -66,7 +66,7 @@ impl Interpreter {
         if !multi {
             return vec![single_sym];
         }
-        let mut keys = self.registry().functions.family_keys(single_sym.as_str());
+        let mut keys = self.routines().functions.family_keys(single_sym.as_str());
         keys.push(single_sym);
         keys
     }
@@ -79,7 +79,7 @@ impl Interpreter {
         multi: bool,
     ) -> Vec<(Symbol, Arc<FunctionDef>)> {
         let keys = self.routine_registry_keys(name, multi);
-        let registry = self.registry();
+        let registry = self.routines();
         keys.into_iter()
             .filter_map(|k| registry.functions.get(&k).map(|def| (k, def.clone())))
             .collect()
@@ -96,7 +96,7 @@ impl Interpreter {
     ) {
         let mut entries: HoistedDeclRecord = Vec::new();
         for key in self.routine_registry_keys(name, multi) {
-            let installed = self.registry().functions.get(&key).cloned();
+            let installed = self.routines().functions.get(&key).cloned();
             let displaced = before
                 .iter()
                 .find(|(k, _)| *k == key)
@@ -117,7 +117,7 @@ impl Interpreter {
         // A key present before but gone after is a displacement too (a plain
         // `sub` lexically shadowing a `multi` family clears its candidate keys).
         for (key, def) in before {
-            if entries.iter().any(|e| e.key == key) || self.registry().functions.contains_key(&key)
+            if entries.iter().any(|e| e.key == key) || self.routines().functions.contains_key(&key)
             {
                 continue;
             }
@@ -166,7 +166,7 @@ impl Interpreter {
             .collect();
         let mut undo: RegistryUndo = Vec::new();
         for entry in records.into_iter().flatten() {
-            let live = self.registry().functions.get(&entry.key).cloned();
+            let live = self.routines().functions.get(&entry.key).cloned();
             // Staleness guard: only roll back a key the hoist still owns.
             let still_owned = match (&live, &entry.installed) {
                 (Some(a), Some(b)) => Arc::ptr_eq(a, b),
@@ -203,10 +203,10 @@ impl Interpreter {
     fn apply_registry_entry(&mut self, key: Symbol, def: Option<Arc<FunctionDef>>) {
         match def {
             Some(def) => {
-                self.registry_mut().functions_mut().insert(key, def);
+                self.routines_mut().functions_mut().insert(key, def);
             }
             None => {
-                self.registry_mut().functions_mut().remove(&key);
+                self.routines_mut().functions_mut().remove(&key);
             }
         }
     }

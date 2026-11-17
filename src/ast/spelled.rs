@@ -128,6 +128,14 @@ pub(crate) enum Spelling {
     /// `:5($n)`: a radix conversion the parser runs as `UNBASE(5, $n)`, which
     /// RakuAST keeps as a `Term::RadixNumber`.
     RadixNumber,
+    /// An entry of a hash literal whose key was not written as a bare
+    /// identifier (`"a" => 1`, `1 => 2`): the key as written and the pair's
+    /// form. The entry itself keeps only the key's string, while RakuAST keeps
+    /// the `ApplyInfix` over the written key.
+    HashPairKey {
+        key: Box<Expr>,
+        form: crate::ast::BinaryForm,
+    },
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),

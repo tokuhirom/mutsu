@@ -680,7 +680,7 @@ mod tests {
             .preregister_top_level_subs(&stmts)
             .expect("preregister");
         let key = Symbol::intern(&format!("{}::add", interp.current_package()));
-        let registry = interp.registry();
+        let registry = interp.routines();
         let def = registry
             .functions
             .get(&key)

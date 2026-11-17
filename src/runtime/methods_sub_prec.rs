@@ -74,7 +74,7 @@ impl Interpreter {
         }
         let key = crate::qualified::qualified(package, name);
         if let Some(prec) = self
-            .registry()
+            .routines()
             .functions
             .get(&key)
             .and_then(|def| def.op_prec.clone())
@@ -83,7 +83,7 @@ impl Interpreter {
         }
         let keys = self.fn_keys_for_base(&name.resolve());
         keys.iter().find_map(|key| {
-            self.registry()
+            self.routines()
                 .functions
                 .get(key)
                 .filter(|def| def.package == package && def.name == name)

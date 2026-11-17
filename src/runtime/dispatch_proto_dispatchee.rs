@@ -139,7 +139,7 @@ impl Interpreter {
         let single = single.as_str();
         let multi_prefix = format!("{single}/");
         let defs: Vec<_> = self
-            .registry()
+            .routines()
             .functions
             .iter()
             .filter(|(k, _)| {

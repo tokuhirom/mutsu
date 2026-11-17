@@ -25,7 +25,7 @@ impl Interpreter {
     ) -> Vec<(String, Arc<FunctionDef>)> {
         let prefix = format!("{}/", name);
         let base_keys = self.fn_keys_for_base(name);
-        let registry = self.registry();
+        let registry = self.routines();
         let mut candidates: Vec<(String, Arc<FunctionDef>)> = base_keys
             .iter()
             .filter_map(|k| registry.functions.get(k).map(|def| (k.as_str(), def)))
@@ -114,7 +114,7 @@ impl Interpreter {
         });
         let generation = (
             self.caches.fn_resolve_gen,
-            self.registry().proto_generation(),
+            self.routines().proto_generation(),
         );
         if self.caches.multi_dispatch_candidates_memo_gen != generation {
             self.caches.multi_dispatch_candidates_memo.clear();
@@ -164,7 +164,7 @@ impl Interpreter {
             // itself is never materialized either — `key_is_candidate_of`
             // compares the three pieces in place (#8300).
             let pkg = pkg.as_str();
-            let registry = self.registry();
+            let registry = self.routines();
             let candidates: Vec<(String, Arc<FunctionDef>)> = match keys {
                 Some(keys) => keys
                     .iter()

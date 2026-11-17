@@ -265,13 +265,13 @@ impl Interpreter {
                 arity,
                 type_sig.join(",")
             );
-            self.registry_mut()
+            self.routines_mut()
                 .functions_mut()
                 .entry(Symbol::intern(&typed_fq))
                 .or_insert_with(|| arc.clone());
         }
         let fq = format!("{}::{}/{}", class_name, op_name, arity);
-        self.registry_mut()
+        self.routines_mut()
             .functions_mut()
             .entry(Symbol::intern(&fq))
             .or_insert(arc);

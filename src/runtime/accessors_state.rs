@@ -399,7 +399,7 @@ impl Interpreter {
             // Only multi candidates answer the name here: the call reaches
             // the wrapped routine only if it is one of them.
             None if self.has_multi_function_unindexed(name) => {
-                self.registry()
+                self.routines()
                     .has_multi_function(None, &[wrapped.package], name)
             }
             // Nothing registered answers `name` here. When `name` is also a

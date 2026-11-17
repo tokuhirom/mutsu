@@ -28,7 +28,7 @@ impl Interpreter {
         let exact_global = format!("GLOBAL::{name}");
         let prefix_global = format!("GLOBAL::{name}/");
         let mut candidates = Vec::new();
-        let registry = self.registry();
+        let registry = self.routines();
         for (key, def) in registry.functions.iter() {
             let key_s = key.resolve();
             // A plain (non-multi) sub is registered only under the exact

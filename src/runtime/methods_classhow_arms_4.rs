@@ -98,7 +98,7 @@ impl Interpreter {
                     &package.resolve(),
                     &name.resolve(),
                 );
-                let Some(source_defs) = self.registry().token_defs.get(&source_key).cloned()
+                let Some(source_defs) = self.routines().token_defs.get(&source_key).cloned()
                 else {
                     return Ok(Value::NIL);
                 };
@@ -114,7 +114,7 @@ impl Interpreter {
                         std::sync::Arc::new(def)
                     })
                     .collect();
-                std::sync::Arc::make_mut(&mut self.registry_mut().token_defs)
+                std::sync::Arc::make_mut(&mut self.routines_mut().token_defs)
                     .insert(target_key, target_defs);
                 crate::runtime::regex_parse::TOKEN_DEFS_GEN
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
