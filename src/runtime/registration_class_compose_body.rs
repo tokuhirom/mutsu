@@ -681,13 +681,9 @@ impl Interpreter {
                 } if role_arg_values.is_empty() => Some((base_role_name.to_string(), name.clone())),
                 _ => None,
             };
-            let reused = constant_key
-                .as_ref()
-                .and_then(|key| self.registry().role_evaluated_constants.get(key).cloned());
-            if let Some(bindings) = reused {
-                for (env_key, value) in bindings {
-                    self.env.insert(env_key, value);
-                }
+            if let Some((role, name)) = &constant_key
+                && self.reuse_role_evaluated_constant(role, name)
+            {
                 continue;
             }
             // A sub-level `proto` declares one routine per role: registered
@@ -852,16 +848,9 @@ impl Interpreter {
                 self.registry_mut().role_registered_sub_protos.insert(key);
             }
             if r.is_ok()
-                && let Some(key) = constant_key
+                && let Some((role, name)) = constant_key
             {
-                let term_key = format!("{}{}", crate::term_names::TERM_PREFIX, key.1);
-                let bindings: Vec<(String, Value)> = [key.1.clone(), term_key]
-                    .into_iter()
-                    .filter_map(|k| self.env.get(&k).cloned().map(|v| (k, v)))
-                    .collect();
-                if !bindings.is_empty() {
-                    self.registry_mut().role_evaluated_constants.insert(key, bindings);
-                }
+                self.record_role_evaluated_constant(&role, &name);
             }
             if r.is_ok()
                 && let (Some(package), Some(name)) =

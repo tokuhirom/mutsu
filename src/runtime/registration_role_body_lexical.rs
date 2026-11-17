@@ -308,6 +308,19 @@ impl Interpreter {
                 self.set_current_package(saved_package);
                 return Err(error);
             }
+            // A non-parametric role's lexical `my constant` is initialised
+            // here, once (#16255): record the binding so a composition reuses
+            // it instead of running the initializer again.
+            if !parameterized
+                && let Stmt::VarDecl {
+                    name,
+                    constant: Some(_),
+                    is_our: false,
+                    ..
+                } = &op.raw
+            {
+                self.record_role_evaluated_constant(role_name, name);
+            }
             if matches!(op.kind, crate::opcode::DeferredBodyOpKind::TypeDecl) {
                 Self::collect_role_body_declared_names(
                     std::slice::from_ref(op),
@@ -340,6 +353,46 @@ impl Interpreter {
         self.restore_role_type_bindings(saved_types);
         self.set_current_package(saved_package);
         Ok(())
+    }
+
+    /// Record the env bindings a role body's lexical `my constant` `name` just
+    /// left (its own name and its term key), so every later composition of
+    /// `role` puts them back instead of running the initializer again
+    /// (`Registry::role_evaluated_constants`, #16255). The first evaluation
+    /// wins: the declaration-time pass when it could run the initializer, the
+    /// first composition otherwise.
+    // Cost: O(1) amortized (two env lookups and one map insert).
+    pub(crate) fn record_role_evaluated_constant(&mut self, role: &str, name: &str) {
+        let term_key = format!("{}{}", crate::term_names::TERM_PREFIX, name);
+        let bindings: Vec<(String, Value)> = [name.to_string(), term_key]
+            .into_iter()
+            .filter_map(|k| self.env.get(&k).cloned().map(|v| (k, v)))
+            .collect();
+        if !bindings.is_empty() {
+            self.registry_mut()
+                .role_evaluated_constants
+                .entry((role.to_string(), name.to_string()))
+                .or_insert(bindings);
+        }
+    }
+
+    /// Put back the bindings [`Self::record_role_evaluated_constant`] recorded
+    /// for `role`'s `my constant` `name`; `false` when none was recorded yet
+    /// (the caller then evaluates the initializer).
+    // Cost: O(1) amortized (one map lookup and two env inserts).
+    pub(crate) fn reuse_role_evaluated_constant(&mut self, role: &str, name: &str) -> bool {
+        let Some(bindings) = self
+            .registry()
+            .role_evaluated_constants
+            .get(&(role.to_string(), name.to_string()))
+            .cloned()
+        else {
+            return false;
+        };
+        for (env_key, value) in bindings {
+            self.env.insert(env_key, value);
+        }
+        true
     }
 }
 

@@ -1653,7 +1653,28 @@ impl Interpreter {
                 this.env.remove("_");
             }
         };
+        // A lexical `my constant` of a non-parametric role is initialised once
+        // per role (#16255), as in the twin `run_composed_role_deferred_body`.
+        let role_is_parametric = self
+            .registry()
+            .role_candidates
+            .get(type_owner)
+            .is_some_and(|cands| cands.iter().any(|c| !c.type_params.is_empty()));
         for op in ops {
+            let constant_name = match &op.raw {
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(_),
+                    is_our: false,
+                    ..
+                } if !role_is_parametric => Some(name.as_str()),
+                _ => None,
+            };
+            if let Some(name) = constant_name
+                && self.reuse_role_evaluated_constant(type_owner, name)
+            {
+                continue;
+            }
             // See the twin in `run_composed_role_deferred_body`: a sub-level
             // `proto` is registered once per role.
             let sub_proto_key = match &op.raw {
@@ -1788,6 +1809,11 @@ impl Interpreter {
                 && let Some(key) = sub_proto_key
             {
                 self.registry_mut().role_registered_sub_protos.insert(key);
+            }
+            if r.is_ok()
+                && let Some(name) = constant_name
+            {
+                self.record_role_evaluated_constant(type_owner, name);
             }
             if let Err(err) = r {
                 if err.control.is_none() {
