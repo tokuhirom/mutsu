@@ -146,9 +146,9 @@ impl Interpreter {
             Some(receiver) => Some(receiver),
             // A grammar cursor answers as a `Match` when its grammar leaves
             // the method to `Match` (`vm_cursor_match_lane`).
-            None if arity == 0 && self.stack[base].is_lazy_match_value() => Some(
-                self.cursor_match_lane_receiver(code.const_sym(name_idx), base)?,
-            ),
+            None if arity == 0 && self.stack[base].is_lazy_match_value() => {
+                Some(self.cursor_match_lane_receiver(code.const_sym(name_idx), base)?)
+            }
             None => None,
         };
         let Some(receiver) = shaped else {
