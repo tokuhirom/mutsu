@@ -188,18 +188,18 @@ impl Interpreter {
         Ok(())
     }
 
-    /// The early form of the lane for the commonest call shape, a method with
-    /// no arguments on an ordinary object: a hit skips the whole stretch of
-    /// opcode-level receiver probes before the lane's own gate, not only the
-    /// prefix after it (~2k of the ~15k instructions of `$o.m()`).
+    /// The early form of the lane for a method call on an ordinary object: a
+    /// hit skips the whole stretch of opcode-level receiver probes before the
+    /// lane's own gate, not only the prefix after it (~2k of the ~15k
+    /// instructions of `$o.m()`, ~3k of a one-argument call).
     ///
     /// The late gate sits after that stretch because several of its probes read
     /// the *instance* rather than the class. Hoisting the gate is sound only
     /// for a call none of them can claim, so this refuses by method name every
     /// probe in the stretch that reads per-instance state, and relies on the
     /// memo for the rest -- those key on the receiver's kind, the method name
-    /// or the arguments, all fixed by the key (a `Seq`, a lazy list, a gather,
-    /// a shaped array or a `Slip` is never an `Instance`):
+    /// or the argument type keys, all fixed by the key (a `Seq`, a lazy list,
+    /// a gather, a shaped array or a `Slip` is never an `Instance`):
     ///
     /// * `message`: the thrown-message attribute of an exception instance;
     /// * `value`: the weight pair of a QuantHash instance;
@@ -213,42 +213,102 @@ impl Interpreter {
     /// method name here**, or a warm lane would skip it for the instances it
     /// would have claimed.
     ///
+    /// The stretch also *transforms* the arguments before the late gate keys
+    /// them. A call whose arguments it would change is refused, so the key
+    /// computed here from the arguments as they stand is the late gate's key:
+    /// a `|` spread at the call site, a `VarRef`, a value `hllize_for_binding`
+    /// rewrites, and the `AT-KEY` family (`coerce_assoc_key_arg` stringifies an
+    /// object key through user code). The two non-probe effects it has on
+    /// arguments that pass are reproduced on a hit: the call's argument sources
+    /// are published, and a deferred `.map`/`.grep` argument is reified.
+    ///
     /// Also refused: any program with a user `^find_method` or a wrapped
     /// method (their probes sit in the stretch and are not covered by the
     /// memo's generation).
-    // Cost: O(1) -- one set probe.
+    // Cost: O(a), a = arguments (a type key each) -- one set probe.
     pub(super) fn try_plain_method_early_lane(
         &mut self,
         code: &CompiledCode,
         target_name: &str,
         method: &str,
         method_sym: crate::symbol::Symbol,
+        arity: usize,
+        arg_sources_idx: Option<u32>,
     ) -> Option<Result<(), RuntimeError>> {
         if self.caches.plain_method_lane.is_empty()
             || Self::early_lane_method_excluded(method)
+            || (arity > 0
+                && matches!(
+                    method,
+                    "AT-KEY" | "EXISTS-KEY" | "DELETE-KEY" | "ASSIGN-KEY" | "BIND-KEY"
+                ))
             || crate::runtime::find_method_intercept::any_user_find_method()
             || self.registry().method_name_ever_wrapped(method)
         {
             return None;
         }
-        let ValueView::Instance { class_name, .. } = self.stack.last()?.view() else {
+        let target_idx = self.stack.len().checked_sub(arity + 1)?;
+        let ValueView::Instance { class_name, .. } = self.stack[target_idx].view() else {
             return None;
         };
+        if arity == 0 {
+            self.refresh_method_caches_for_generation();
+            if !self
+                .caches
+                .plain_method_lane
+                .contains(&(class_name, method_sym, Vec::new()))
+            {
+                return None;
+            }
+            let target = self.stack.pop()?;
+            // What the stretch leaves behind for a call without arguments.
+            self.caches.ctor_lane_candidate = None;
+            self.caches.plain_method_lane_candidate = None;
+            self.pending_call_arg_source_slots.clear();
+            self.set_pending_call_arg_sources(None);
+            return Some(self.run_plain_method_lane(
+                code,
+                target_name,
+                target,
+                method,
+                method_sym,
+                Vec::new(),
+            ));
+        }
+        if self.stack[target_idx + 1..].iter().any(|a| {
+            matches!(a.view(), ValueView::VarRef { .. }) || a.needs_hllize_for_binding()
+        }) {
+            return None;
+        }
+        // The stretch's own decode: `true` means a `|` spread at the call site.
+        let decoded = self.decode_arg_sources_shared(code, arg_sources_idx);
+        if decoded.as_ref().is_some_and(|(_, spread)| *spread) {
+            return None;
+        }
+        let args = self.stack.split_off(target_idx + 1);
         self.refresh_method_caches_for_generation();
-        if !self
-            .caches
-            .plain_method_lane
-            .contains(&(class_name, method_sym, Vec::new()))
-        {
+        let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
+        let hit = self.multi_arg_type_keys_into_with_named(&args, &mut arg_keys) && {
+            let key = (class_name, method_sym, arg_keys);
+            let hit = self.caches.plain_method_lane.contains(&key);
+            arg_keys = key.2;
+            hit
+        };
+        arg_keys.clear();
+        self.caches.plain_method_lane_scratch = arg_keys;
+        if !hit {
+            self.stack.extend(args);
             return None;
         }
         let target = self.stack.pop()?;
-        // What the stretch leaves behind for a call without arguments.
+        // What the stretch leaves behind for a call with these arguments.
         self.caches.ctor_lane_candidate = None;
         self.caches.plain_method_lane_candidate = None;
-        self.pending_call_arg_source_slots.clear();
-        self.set_pending_call_arg_sources(None);
-        Some(self.run_plain_method_lane(code, target_name, target, method, method_sym, Vec::new()))
+        self.set_pending_call_arg_sources_shared(decoded.map(|(names, _)| names));
+        if let Err(e) = self.reify_map_grep_seq_args(&args) {
+            return Some(Err(e));
+        }
+        Some(self.run_plain_method_lane(code, target_name, target, method, method_sym, args))
     }
 
     /// Method names the stretch handles for an instance receiver by reading

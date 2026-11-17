@@ -562,18 +562,18 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
-        // #8880: the plain-method lane's early form for a call without
-        // arguments on an ordinary object (`try_plain_method_early_lane`).
-        if arity == 0
-            && modifier_idx.is_none()
+        // #8880: the plain-method lane's early form for a call on an
+        // ordinary object (`try_plain_method_early_lane`).
+        if modifier_idx.is_none()
             && !Self::quoting_matters(quoted, name.raw)
-            && arg_sources_idx.is_none()
             && !self.accessor_ref_pending
             && let Some(result) = self.try_plain_method_early_lane(
                 code,
                 Self::const_str(code, target_name_idx),
                 name.raw,
                 name.sym,
+                arity as usize,
+                arg_sources_idx,
             )
         {
             return result;
