@@ -10,7 +10,7 @@ impl Interpreter {
     /// [`Self::capture_declared_method_envs`]. Runs on every entry of the
     /// declaring frame (a kept lexical grammar re-captures), replacing the
     /// rule's previous capture.
-    // Cost: O(r * (p + s)), r = the owner's rules, p = a rule's pattern
+    // Cost: O(t + r * (p + s)), t = all registered rules, r = the owner's rules, p = a rule's pattern
     // length, s = the frame's outer lexical slots.
     pub(crate) fn capture_declared_token_envs(
         &mut self,
@@ -21,18 +21,13 @@ impl Interpreter {
         if outer_lexical_slots.is_empty() {
             return;
         }
-        let prefix = format!("{owner}::");
+        let owner_sym = Symbol::intern(owner);
         let rules: Vec<(Symbol, Vec<String>)> = {
             let registry = self.registry();
             registry
                 .token_defs
                 .iter()
-                .filter(|(key, _)| {
-                    key.with_str(|k| {
-                        k.strip_prefix(prefix.as_str())
-                            .is_some_and(|rest| !rest.contains("::"))
-                    })
-                })
+                .filter(|(_, defs)| defs.first().is_some_and(|def| def.package == owner_sym))
                 .map(|(_, defs)| {
                     let key = defs
                         .first()
