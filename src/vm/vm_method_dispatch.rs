@@ -2633,10 +2633,9 @@ impl Interpreter {
                     LocalInit::Invocant => base.clone(),
                     LocalInit::Class => class_val.clone(),
                     LocalInit::Role => role_context.map_or(Value::NIL, Value::package),
-                    LocalInit::Nil => Value::NIL,
-                    LocalInit::Param(_) => {
-                        unreachable!("an unbound parameter slot has a non-parameter plan")
-                    }
+                    // `unbound_param` never plans a parameter, so `Param`
+                    // cannot reach here; it would read as `Nil`.
+                    LocalInit::Nil | LocalInit::Param(_) => Value::NIL,
                     LocalInit::Topic => any_val.clone(),
                     LocalInit::AttrPrivate { qualified, bare } => attr_get(qualified)
                         .or_else(|| attr_get(bare))
