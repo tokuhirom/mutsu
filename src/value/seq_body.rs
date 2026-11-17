@@ -1409,6 +1409,35 @@ pub(crate) fn seq_method_never_touches(method: &str) -> bool {
 /// below). See that call site's comment for the compromise and the two
 /// local tests (`t/seq-array-context-reiterate.t`,
 /// `t/io-handle-lines-words-seq.t`) it reconciles.
+/// Whether rakudo's `Seq.<method>` walks the Seq's iterator with `pull-one`
+/// rather than reifying it as a List (`List.from-iterator`, which calls a
+/// user iterator's own `push-all`). Both produce the same values from an
+/// iterator that honours the protocol; only the methods called differ
+/// (#17628). Measured against rakudo 2026.09 with a counting iterator.
+// Cost: O(1).
+pub(crate) fn seq_method_pulls_one(method: &str) -> bool {
+    matches!(
+        method,
+        "sum"
+            | "join"
+            | "min"
+            | "max"
+            | "minmax"
+            | "gist"
+            | "reduce"
+            | "classify"
+            | "Set"
+            | "SetHash"
+            | "Bag"
+            | "BagHash"
+            | "Mix"
+            | "MixHash"
+            | "Map"
+            | "Hash"
+            | "hash"
+    )
+}
+
 pub(crate) fn seq_method_consumes(method: &str) -> bool {
     matches!(
         method,

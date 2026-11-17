@@ -405,7 +405,7 @@ impl Interpreter {
 
     /// rakudo's `sink`: run the source for side effects and discard.
     pub(crate) fn sink_seq_body(&mut self, body: &Arc<SeqBody>) -> Result<(), RuntimeError> {
-        body.sink(|source, out| self.pull_seq_source(source, out))
+        body.sink(|source, out| self.sink_seq_source(source, out))
     }
 
     /// [`Self::sink_seq_body`] for the `.sink` METHOD — see
@@ -414,7 +414,24 @@ impl Interpreter {
         &mut self,
         body: &Arc<SeqBody>,
     ) -> Result<(), RuntimeError> {
-        body.sink_explicit(|source, out| self.pull_seq_source(source, out))
+        body.sink_explicit(|source, out| self.sink_seq_source(source, out))
+    }
+
+    /// Run a Seq's source for its side effects: a user iterator's own
+    /// `sink-all` (rakudo's `Seq.sink` is `self.iterator.sink-all`, #17628),
+    /// otherwise a pull to the end.
+    // Cost: the user `sink-all`, or the pull of the source.
+    fn sink_seq_source(
+        &mut self,
+        source: &SeqSource,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
+        if let SeqSource::Iterator(iterator) = source
+            && self.sink_all_user_iterator(iterator)?
+        {
+            return Ok(());
+        }
+        self.pull_seq_source(source, out)
     }
 
     /// Reify a not-yet-run `.map`/`.grep` Seq (`SeqSource::MapGrep`,
@@ -1036,15 +1053,27 @@ impl Interpreter {
                 });
             }
         }
+        // Rakudo implements these by iterating with `pull-one`, not by
+        // reifying a List (which calls a user iterator's own `push-all`):
+        // an iterator whose methods have side effects can tell (#17628).
+        let pull_one = crate::value::seq_method_pulls_one(method);
         if crate::value::seq_method_consumes(method) {
-            let (items, outcome) = self.take_seq_body(&body)?;
+            let (items, outcome) = if pull_one {
+                body.take(|source, out| self.pull_seq_source(source, out))?
+            } else {
+                self.take_seq_body(&body)?
+            };
             return Ok(if matches!(outcome, SeqTaken::Taken) {
                 Value::seq(items)
             } else {
                 target
             });
         }
-        self.reify_seq_body(&body)?;
+        if pull_one {
+            body.reify(|source, out| self.pull_seq_source(source, out))?;
+        } else {
+            self.reify_seq_body(&body)?;
+        }
         Ok(target)
     }
 

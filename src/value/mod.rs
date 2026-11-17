@@ -767,7 +767,7 @@ pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
     MapGrepMode, PrefixSource, PullOut, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
-    seq_method_never_touches,
+    seq_method_never_touches, seq_method_pulls_one,
 };
 pub(crate) use type_decl_site::TypeDeclSiteCaches;
 

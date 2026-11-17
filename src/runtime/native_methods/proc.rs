@@ -3,6 +3,70 @@ use crate::runtime::*;
 use super::state::proc_stdin_map;
 use crate::value::AttrMap;
 
+/// The `X::Proc::Unsuccessful` that sinking `val` throws: `val` is a
+/// finished `Proc` whose child exited non-zero or was killed by a signal.
+/// `None` for anything else, including a still-live Proc (`run(:in, ...)`
+/// carries a placeholder exit code of -1 until it is finalized). Shared by
+/// the sink statement (`OpCode::SinkPop`) and the `.sink` method, which
+/// rakudo's `sink` prefix calls.
+// Cost: O(1), plus O(c) to render the message, c = the command's length.
+pub(crate) fn proc_unsuccessful_sink_error(val: &Value) -> Option<RuntimeError> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = val.view()
+    else {
+        return None;
+    };
+    if class_name.as_str() != "Proc" {
+        return None;
+    }
+    let attrs = attributes.as_map();
+    let int_attr = |key: &str| match attrs.get(key).map(Value::view) {
+        Some(ValueView::Int(i)) => i,
+        _ => 0,
+    };
+    let exitcode = int_attr("exitcode");
+    // A signal-killed child reports `exitcode = 0` (see `exit_status_parts`),
+    // so the signal is the only evidence that it was unsuccessful.
+    let signal = int_attr("signal");
+    let is_live = matches!(attrs.get("live").map(Value::view), Some(ValueView::Bool(true)));
+    if (exitcode == 0 && signal == 0) || is_live {
+        return None;
+    }
+    // Rakudo names the program (`$.proc.command[0]`), not the whole command line.
+    let command = attrs
+        .get("command")
+        .and_then(|v| {
+            crate::runtime::utils::value_to_list(v)
+                .first()
+                .map(|p| p.to_string_value())
+        })
+        .unwrap_or_default();
+    // When the command could not be spawned at all (exit code -1), rakudo
+    // reports the underlying OS error in the message.
+    let os_error = attrs
+        .get("os-error")
+        .map(|v| v.to_string_value())
+        .filter(|s| !s.is_empty());
+    let msg = match &os_error {
+        Some(oe) => format!(
+            "The spawned command '{command}' exited unsuccessfully (exit code: {exitcode}, signal: {signal}, OS error = {oe})"
+        ),
+        None => format!(
+            "The spawned command '{command}' exited unsuccessfully (exit code: {exitcode}, signal: {signal})"
+        ),
+    };
+    let mut ex_attrs = std::collections::HashMap::new();
+    ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+    ex_attrs.insert("proc".to_string(), val.clone());
+    let exception = Value::make_instance(Symbol::intern("X::Proc::Unsuccessful"), ex_attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(exception));
+    Some(err)
+}
+
 /// The attribute writes a re-run makes, for `InstanceAttrs::write_keys`.
 pub(crate) type AttrWrites = Vec<(Symbol, Option<Value>)>;
 

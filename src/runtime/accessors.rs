@@ -214,6 +214,42 @@ impl Interpreter {
         err
     }
 
+    /// The error an *unhandled* Failure throws when it explodes (sunk, or
+    /// rendered by `say`): its exception, with the fail site's frames as the
+    /// thrown backtrace. `Ok` for a handled Failure and for any other value.
+    // Cost: O(1), plus O(b) to copy the origin backtrace text, b = its length.
+    pub(crate) fn unhandled_failure_error(v: &Value) -> Result<(), RuntimeError> {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = v.view()
+            && class_name == "Failure"
+        {
+            // The one "is this Failure handled?" answer (`.handled`, method-call
+            // explosion and sinking all ask it): `.so`/`.Bool`/`.handled = True`
+            // record it by instance id, which the `handled` attribute alone misses.
+            if !v.is_failure_handled()
+                && let Some(ex) = attributes.as_map().get("exception").cloned()
+            {
+                let ex = Self::as_exception_value(ex);
+                let mut err = RuntimeError::new(ex.to_string_value());
+                // Keep the Failure's origin separate from its unthrown exception.
+                if let Some(orig) = Self::attach_failure_origin_on_throw(
+                    &ex,
+                    attributes
+                        .as_map()
+                        .get(Self::FAILURE_ORIGIN_BACKTRACE_ATTR),
+                ) {
+                    err.set_failure_original_backtrace(Some(orig));
+                }
+                err.exception = Some(Box::new(ex));
+                return Err(err);
+            }
+        }
+        Ok(())
+    }
+
     /// Keep a Failure's origin off its exception until the Failure is thrown.
     /// At the throw, expose the original frames through `.backtrace`.
     pub(crate) fn attach_failure_origin_on_throw(

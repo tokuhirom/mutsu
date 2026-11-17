@@ -77,6 +77,12 @@ impl Interpreter {
         if let Some(answer) = self.lazy_receiver_pull(target, list, method, args) {
             return Some(answer);
         }
+        // `List.sink` (and so `Array.sink`) is a no-op: sinking a lazy
+        // `@`-array or `.list` must not force it (`my @a = 1..*; sink @a`),
+        // as the bare statement `@a;` does not (#10846). Only a Seq runs.
+        if method == "sink" && (list.in_array_context() || list.in_list_context()) {
+            return Some(Ok(Value::NIL));
+        }
         if !crate::builtins::method_table::lazy_pull::reifies(method)
             // A `.map`/`.grep` on a lazy map/grep pipeline, an infinite
             // sequence/closure spec, OR a gather coroutine appends another lazy

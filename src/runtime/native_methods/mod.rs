@@ -47,7 +47,7 @@ pub(crate) use state::{
     split_supply_chunks_into_lines, supply_channel_is_exclusive, take_supply_channel, whenever_closed_seq,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
-pub(crate) use proc::ProcStream;
+pub(crate) use proc::{ProcStream, proc_unsuccessful_sink_error};
 
 mod descriptor_forward;
 pub(in crate::runtime) use act_loop::ActLoop;

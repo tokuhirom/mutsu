@@ -1759,13 +1759,22 @@ impl Compiler {
                     self.code.emit(OpCode::LoadNil);
                 }
                 _ => {
-                    // sink expr -- evaluate, discard, push Nil
-                    // SinkPop throws unhandled Failures. The explicit `sink`
-                    // statement-prefix always forces its argument (`true`),
-                    // even a bare variable -- unlike an ordinary bare
-                    // statement, `sink $f;` is an explicit sink request.
-                    self.compile_expr(&args[0]);
-                    self.code.emit(OpCode::SinkPop(false, true));
+                    // sink expr -- `expr.sink`, discard, push Nil. The prefix
+                    // is an explicit sink request, as the `.sink` method is:
+                    // a Seq held in a variable runs (`my $s = gather {...};
+                    // sink $s` -- a bare `$s;` statement leaves it alone), a
+                    // user iterator's own `sink-all` is called (#17628), an
+                    // unhandled Failure throws and a user `sink` method runs.
+                    let method_call = Expr::MethodCall {
+                        target: Box::new(args[0].clone()),
+                        name: Symbol::intern("sink"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                        sugar: false,
+                    };
+                    self.compile_expr(&method_call);
+                    self.code.emit(OpCode::Pop);
                     self.code.emit(OpCode::LoadNil);
                 }
             }

@@ -5357,77 +5357,13 @@ impl Interpreter {
                             // Sinking an unsuccessful Proc (non-zero exitcode, or killed
                             // by a signal) throws X::Proc::Unsuccessful
                             if may_explode_failure
-                                && let ValueView::Instance {
-                                    class_name,
-                                    attributes,
-                                    ..
-                                } = val.view()
-                                && class_name.as_str() == "Proc"
+                                && let Some(err) =
+                                    crate::runtime::native_methods::proc_unsuccessful_sink_error(
+                                        &val,
+                                    )
+                                && self.sink_call_may_explode(code, sink_call)
                             {
-                                let exitcode =
-                                    match attributes.as_map().get("exitcode").map(Value::view) {
-                                        Some(ValueView::Int(i)) => i,
-                                        _ => 0,
-                                    };
-                                // A still-"live" Proc (from `run(:in, ...)`)
-                                // carries a placeholder exitcode of -1 until it
-                                // is finalized; sinking it must not throw.
-                                let is_live = matches!(
-                                    attributes.as_map().get("live").map(Value::view),
-                                    Some(ValueView::Bool(true))
-                                );
-                                let signal =
-                                    match attributes.as_map().get("signal").map(Value::view) {
-                                        Some(ValueView::Int(i)) => i,
-                                        _ => 0,
-                                    };
-                                // A signal-killed child reports `exitcode = 0`
-                                // (see `exit_status_parts`), so the signal is
-                                // the only evidence that it was unsuccessful.
-                                if (exitcode != 0 || signal != 0)
-                                    && !is_live
-                                    && self.sink_call_may_explode(code, sink_call)
-                                {
-                                    // Rakudo names the program (`$.proc.command[0]`),
-                                    // not the whole command line.
-                                    let command = attributes
-                                        .as_map()
-                                        .get("command")
-                                        .and_then(|v| {
-                                            crate::runtime::utils::value_to_list(v)
-                                                .first()
-                                                .map(|p| p.to_string_value())
-                                        })
-                                        .unwrap_or_default();
-                                    // When the command could not be spawned at all
-                                    // (exit code -1), rakudo reports the underlying
-                                    // OS error in the message.
-                                    let os_error = attributes
-                                        .as_map()
-                                        .get("os-error")
-                                        .map(|v| v.to_string_value())
-                                        .filter(|s| !s.is_empty());
-                                    let msg = match &os_error {
-                                        Some(oe) => format!(
-                                            "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {}, OS error = {})",
-                                            command, exitcode, signal, oe
-                                        ),
-                                        None => format!(
-                                            "The spawned command '{}' exited unsuccessfully (exit code: {}, signal: {})",
-                                            command, exitcode, signal
-                                        ),
-                                    };
-                                    let mut ex_attrs = std::collections::HashMap::new();
-                                    ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
-                                    ex_attrs.insert("proc".to_string(), val);
-                                    let exception = Value::make_instance(
-                                        crate::symbol::Symbol::intern("X::Proc::Unsuccessful"),
-                                        ex_attrs,
-                                    );
-                                    let mut err = RuntimeError::new(msg);
-                                    err.exception = Some(Box::new(exception));
-                                    return Err(err);
-                                }
+                                return Err(err);
                             }
                         }
                     }
