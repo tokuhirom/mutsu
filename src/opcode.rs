@@ -3139,7 +3139,17 @@ pub(crate) enum OpCode {
     /// is only known at run time): the producer then also hands out a missing
     /// element's deferred location, with no raw-invocant callee needed, and
     /// `CallMethod` stores the fresh container into it (ADR-13823).
-    IndexInvocantRef { is_positional: bool, vivify: bool },
+    ///
+    /// `slice_cells` is set when the method is one that hands the receiver's
+    /// elements to the caller or to a callback (`map`, `grep`, `first`, `kv`,
+    /// ...): a slice receiver (`@a[0..1].map({ $_ = 6 })`) is then the `List`
+    /// of the selected elements' own cells, as Rakudo's slice is a `List` of
+    /// the Array's Scalars, so a write through `$_` reaches the Array (#17401).
+    IndexInvocantRef {
+        is_positional: bool,
+        vivify: bool,
+        slice_cells: bool,
+    },
     /// ADR-0067's subscript-ARGUMENT producer: the twin of
     /// [`Self::IndexInvocantRef`] one position over. `$b(@a[0])`,
     /// `$obj.m(@a[0])` and `&g(@a[0])` must hand the element's own container to
