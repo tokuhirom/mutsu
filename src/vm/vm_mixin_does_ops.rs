@@ -146,7 +146,7 @@ impl Interpreter {
         // TODO: every `but` on an instance should compose a real mixin type;
         // the wrapper path still carries the MRO, `WALK`, per-role attribute
         // storage and `nextsame` of a mixin (t/oo/role/walk-mixin-role.t,
-        // t/oo/class/mixin-mro-parents.t), which the reblessed type lacks.
+        // t/oo/class/mixin-mro-parents.t), which the reblessed type lacks (#17890).
         let parametric = self
             .registry()
             .role_candidates
