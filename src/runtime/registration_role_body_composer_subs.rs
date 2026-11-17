@@ -93,7 +93,11 @@ impl Interpreter {
                 .filter_map(|name| {
                     statics
                         .get(name.as_str())
-                        .filter(|value| value.is_container_ref())
+                        // A scalar's static is its cell; an `@`/`%` static is
+                        // the aggregate itself, whose storage every holder
+                        // shares, so binding it closes the sub over this
+                        // class's own aggregate (#17854).
+                        .filter(|value| value.is_container_ref() || name.starts_with(['@', '%']))
                         .map(|cell| (name.clone(), cell.clone()))
                 })
                 .collect(),

@@ -999,12 +999,10 @@ impl Interpreter {
             // and answered a later, unrelated `$n` -- another class body's
             // static, read from the env ahead of that class's own cell, became
             // a per-thread copy on a worker (ADR-16595 slice 5).
-            // An `@`/`%`/`&` stays: the body's subs still reach such a
-            // lexical through this env binding, which shares the static's
-            // node (TODO(#17854): resolve a role body sub's aggregate through
-            // the composing class's static store, then restore these too).
+            // An `@`/`%` too: the body's subs are declared again per composer,
+            // closed over this class's own aggregate (#17854).
             for (name, saved) in saved_body_bindings {
-                if !bound.contains(&name) && !name.starts_with(['@', '%', '&']) {
+                if !bound.contains(&name) {
                     Self::restore_env_entry(&mut self.env, &name, saved);
                 }
             }
