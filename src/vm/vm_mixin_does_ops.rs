@@ -226,7 +226,7 @@ impl Interpreter {
     // Cost: O(|name|).
     fn mixin_method_name(name: String) -> String {
         if name.contains('\u{0}') {
-            crate::value::display::user_facing_type_name(&name).into_owned()
+            crate::value::user_facing_type_name(&name).into_owned()
         } else {
             name
         }
