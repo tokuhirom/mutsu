@@ -1897,26 +1897,12 @@ impl Interpreter {
                         let expected = self.type_arg_value_from_name(inner);
                         return self.parametric_arg_subtypes(&type_args[0], &expected);
                     }
-                    if let ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = value.view()
-                    {
-                        let class = class_name.resolve();
-                        let class_ok = if base == "Buf" {
-                            crate::runtime::utils::is_buf_like_class(&class)
-                        } else {
-                            // A Blob constraint accepts Buf-like types too (Buf
-                            // does Blob), plus the immutable encoding buffers.
-                            crate::runtime::utils::is_buf_or_blob_class(&class)
-                        };
-                        if !class_ok {
-                            return false;
-                        }
-                        if let Some(items) = crate::value::value_buf::buf_elems(&attributes) {
-                            return items.iter().all(|v| self.type_matches_value(inner, v));
-                        }
+                    if let ValueView::Instance { class_name, .. } = value.view() {
+                        return Self::parametric_blob_buf_instance_matches(
+                            base,
+                            inner,
+                            class_name.as_str(),
+                        );
                     }
                     return false;
                 }

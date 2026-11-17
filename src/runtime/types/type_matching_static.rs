@@ -3,6 +3,36 @@ use super::*;
 use crate::runtime::utils::{has_bracket, split_once_bracket};
 
 impl Interpreter {
+    /// A sized Blob/Buf constraint checks the buffer's type, never its contents.
+    /// Plain `Buf` has the `Blob[uint8]` role but not the `Buf[uint8]` role.
+    // Cost: O(n), n = class and type-argument name lengths.
+    pub(crate) fn parametric_blob_buf_instance_matches(
+        base: &str,
+        inner: &str,
+        class: &str,
+    ) -> bool {
+        let class = match class {
+            "blob8" | "utf8" => "Blob[uint8]",
+            "blob16" | "utf16" => "Blob[uint16]",
+            "blob32" | "utf32" => "Blob[uint32]",
+            "blob64" => "Blob[uint64]",
+            "buf8" => "Buf[uint8]",
+            "buf16" => "Buf[uint16]",
+            "buf32" => "Buf[uint32]",
+            "buf64" => "Buf[uint64]",
+            "Buf" if base == "Blob" => "Buf[uint8]",
+            other => other,
+        };
+        let Some((class_base, class_inner)) = split_once_bracket(class) else {
+            return false;
+        };
+        let Some(class_inner) = class_inner.strip_suffix(']') else {
+            return false;
+        };
+        (class_base == base || (base == "Blob" && class_base == "Buf"))
+            && class_inner == inner
+    }
+
     /// `constraint`, a parameterization (`Box[P]`), with its bare base
     /// replaced by the package alias an import gave it
     /// (`ParamRoleExporter::Box[P]`), when there is one.
