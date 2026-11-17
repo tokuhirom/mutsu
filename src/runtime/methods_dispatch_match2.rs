@@ -626,7 +626,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
         {
             if !args.is_empty() {
                 return Some(self.dispatch_supply_transform(target, method, &args));

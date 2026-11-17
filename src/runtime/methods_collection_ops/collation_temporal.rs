@@ -24,7 +24,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Supply" => {
+            } if crate::value::supply_class::is_supply_class(class_name) => {
                 let values = match attributes.as_map().get("values").map(|v| v.view()) {
                     Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),

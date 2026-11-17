@@ -14,7 +14,7 @@ impl Interpreter {
         let args = flat.as_slice();
         // Validate all args are Supply instances
         for arg in args {
-            if !matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+            if !matches!(arg.view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
             {
                 let mut ex_attrs = HashMap::new();
                 ex_attrs.insert("combinator".to_string(), Value::str("merge".to_string()));
@@ -113,7 +113,7 @@ impl Interpreter {
 
         // Validate all args are Supply instances
         for arg in &supplies {
-            if !matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+            if !matches!(arg.view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
             {
                 let mut ex_attrs = HashMap::new();
                 ex_attrs.insert("combinator".to_string(), Value::str("zip".to_string()));
@@ -776,7 +776,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
         {
             if let Some(ValueView::Int(inner_sid)) =
                 attributes.as_map().get("supplier_id").map(Value::view)
@@ -877,7 +877,7 @@ impl Interpreter {
 
         // Validate all args are Supply instances
         for arg in &supplies {
-            if !matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+            if !matches!(arg.view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
             {
                 let mut ex_attrs = HashMap::new();
                 ex_attrs.insert(

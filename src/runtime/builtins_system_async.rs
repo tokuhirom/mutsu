@@ -240,7 +240,7 @@ impl Interpreter {
     /// the specialized wait/receive paths below.
     fn await_normalize(&mut self, v: Value) -> Result<Value, RuntimeError> {
         if let ValueView::Instance { class_name, .. } = v.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
         {
             return self.call_method_with_values(v, "Promise", vec![]);
         }

@@ -413,7 +413,10 @@ impl Interpreter {
         args: Vec<Value>,
         publish: &mut AttrPublisher<'_>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
-        let dispatch_class = if matches!(
+        // A `Proc::Async::Pipe` is a supply (#16667).
+        let dispatch_class = if class_name == crate::value::supply_class::PROC_ASYNC_PIPE {
+            Some("Supply".to_string())
+        } else if matches!(
             class_name,
             "Promise"
                 | "Channel"
@@ -521,6 +524,9 @@ impl Interpreter {
             && super::class_introspection::io_path_method_takes_arguments(method)
         {
             Some("IO::Path".to_string())
+        } else if class_name == crate::value::supply_class::PROC_ASYNC_PIPE {
+            // A `Proc::Async::Pipe` is a supply (#16667).
+            Some("Supply".to_string())
         } else if matches!(
             class_name,
             "IO::Path"

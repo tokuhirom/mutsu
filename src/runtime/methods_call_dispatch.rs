@@ -2045,7 +2045,7 @@ impl Interpreter {
                 Self::channel_list_coercion(&ch, "List")
                     .and_then(|list| self.list_to_capture(&list)),
             ),
-            ValueView::Instance { class_name, .. } if class_name.resolve() == "Supply" => Some(
+            ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name) => Some(
                 // `.Seq` taps the supply; a live or on-demand supply answers a
                 // lazy pull list, which is drained like `Channel.list` below.
                 self.call_method_with_values(target.clone(), "Seq", vec![])

@@ -251,7 +251,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             }
             if a_name == b_name
                 && (is_stash_class_name(a_name.as_str())
-                    || a_name == "Supply"
+                    || crate::value::supply_class::is_supply_class(a_class)
                     || a_name == "IO::Special")
             {
                 left.eqv(right)

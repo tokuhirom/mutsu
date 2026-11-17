@@ -65,7 +65,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Supply" => attributes.as_map().get(PROMISE_SOURCE).cloned(),
+            } if crate::value::supply_class::is_supply_class(class_name) => attributes.as_map().get(PROMISE_SOURCE).cloned(),
             _ => None,
         }
     }

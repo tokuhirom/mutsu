@@ -149,10 +149,8 @@ fn identity_bucket(value: &Value) -> Option<u64> {
             // another rule than the instance id keep no bucket.
             let name = class_name.as_str();
             if is_stash_class_name(name)
-                || matches!(
-                    name,
-                    "Supply" | "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle"
-                )
+                || crate::value::supply_class::is_supply_class(class_name)
+                || matches!(name, "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle")
                 || (name.starts_with("Perl6::Metamodel::") && name.ends_with("HOW"))
             {
                 return None;

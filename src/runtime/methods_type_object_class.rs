@@ -35,7 +35,7 @@ impl Interpreter {
                         .find(|parent| crate::builtins::method_table::class_method_owner(parent))?
                 }
             }
-            ValueView::Instance { class_name, .. } if class_name == "Supply" => {
+            ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name) => {
                 "Supply".to_string()
             }
             _ => return None,

@@ -518,7 +518,7 @@ impl Interpreter {
                                     attributes,
                                     ..
                                 } = arr[0].view()
-                                && class_name == "Supply"
+                                && crate::value::supply_class::is_supply_class(class_name)
                                 && (attributes.contains_key("supplier_id")
                                     || (attributes.contains_key("on_demand_callback")
                                         && !attributes.contains_key("supply_id"))
@@ -548,7 +548,7 @@ impl Interpreter {
                                 if arr.len() == 5
                                     && matches!(arr[0].view(),
                                         ValueView::Instance { class_name, .. }
-                                            if class_name == "Supply"))
+                                            if crate::value::supply_class::is_supply_class(class_name)))
                         });
                         block_ended = Some(body_ran_done || had_whenever);
                     }
@@ -597,13 +597,13 @@ impl Interpreter {
                                 if arr.len() == 5
                                     && matches!(arr[0].view(),
                                         ValueView::Instance { class_name, .. }
-                                            if class_name == "Supply"))
+                                            if crate::value::supply_class::is_supply_class(class_name)))
                         {
                             continue;
                         }
                         if let ValueView::Array(arr, ..) = item.view()
                             && arr.len() == 5
-                            && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+                            && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
                         {
                             let inner_supply = &arr[0];
                             let mut body_cb = arr[1].clone();

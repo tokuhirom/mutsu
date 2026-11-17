@@ -379,7 +379,9 @@ fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeErro
         // (`method_table::range`).
         _ if target.is_range() => super::range::listify(target, want_array),
         // The `Supply.list` row's implementation (`method_table::supply`).
-        ValueView::Instance { class_name, .. } if class_name == "Supply" => {
+        ValueView::Instance { class_name, .. }
+            if crate::value::supply_class::is_supply_class(class_name) =>
+        {
             super::super::supply::listify(target, want_array)
         }
         ValueView::Instance {
@@ -479,7 +481,7 @@ pub(crate) fn supply(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
     }
     // .Supply on an existing Supply is a noop — return self
     if let ValueView::Instance { class_name, .. } = target.view()
-        && class_name == "Supply"
+        && crate::value::supply_class::is_supply_class(class_name)
     {
         return Some(Ok(target.clone()));
     }

@@ -402,7 +402,11 @@ pub(crate) fn unique(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
         }
         ValueView::Bool(_) => Some(Ok(Value::seq(vec![target.clone()]))),
         ValueView::LazyList(_) => None,
-        ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
+        ValueView::Instance { class_name, .. }
+            if crate::value::supply_class::is_supply_class(class_name) =>
+        {
+            None
+        }
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
         | ValueView::RangeExclStart(..)
