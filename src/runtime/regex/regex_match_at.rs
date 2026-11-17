@@ -31,7 +31,7 @@ impl Interpreter {
         target: &MatchTarget,
         pos: usize,
     ) -> Option<RegexCaptures> {
-        let parsed = self.parse_regex(pattern)?;
+        let parsed = self.parse_regex_for_match(pattern)?;
         let pkg = self.current_package_sym();
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
