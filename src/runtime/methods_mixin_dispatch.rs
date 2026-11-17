@@ -720,7 +720,7 @@ impl Interpreter {
                         memo.clear();
                     }
                     let entry = MixinFrontEntry {
-                        generation: self.types.registry_write_gen.load(std::sync::atomic::Ordering::Relaxed),
+                        generation: self.registry_write_generation(),
                         def: Arc::new(def.clone()),
                         _node: mixins.clone(),
                     };

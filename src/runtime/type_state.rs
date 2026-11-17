@@ -67,17 +67,15 @@ pub(crate) struct TypeState {
     /// ordinary single-role `but`/`does` mints its own group.
     pub(crate) open_role_group: Option<i64>,
     pub(crate) type_metadata: std::sync::Arc<HashMap<String, std::sync::Arc<ValueMap>>>,
-    /// Declaration registry (enums/subsets/... — migrated group-by-group, PLAN.md ②),
-    /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
-    /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
-    ///
-    /// The inner `Arc<Registry>` makes a per-thread spawn an O(1) share instead
-    /// of a deep clone of ~40 maps: `clone_for_thread` clones the `Arc`, and the
-    /// first *write* on either side after the share pays the one deep clone via
-    /// `Arc::make_mut` (see `RegistryWriteGuard::deref_mut`). Each thread still
-    /// gets its own outer `Arc<RwLock<...>>`, so declarations never leak between
-    /// threads — only the initial snapshot is lazily shared.
-    pub(crate) registry: Arc<RwLock<Arc<Registry>>>,
+    /// The declaration registry: classes, roles, enums, subsets, method
+    /// tables -- world state, one per program, shared live by every thread
+    /// (ADR-17216 §2.1-2.3). A spawn shares the slot; a read takes this
+    /// thread's snapshot, a write publishes to every thread. Lock discipline:
+    /// never hold a write guard across user-code re-entry.
+    pub(crate) registry: super::world_cell::WorldCell<Registry>,
+    /// The world registry generation [`Self::registry_write_gen`] was last
+    /// reconciled with (`Interpreter::registry_write_generation`).
+    pub(crate) registry_world_seen: std::sync::atomic::AtomicU64,
     /// This execution context's routine tables (ADR-17216 §3.2): lexical
     /// state, forked copy-on-write per spawn like the registry snapshot.
     pub(crate) routines: Arc<RwLock<Arc<super::routine_tables::RoutineTables>>>,
@@ -313,7 +311,8 @@ impl TypeState {
             build_attr_writes: std::cell::RefCell::new(Vec::new()),
             defining_class: None,
             type_metadata: Default::default(),
-            registry: Arc::new(RwLock::new(Interpreter::shared_builtin_registry())),
+            registry: super::world_cell::WorldCell::from_arc(Interpreter::shared_builtin_registry()),
+            registry_world_seen: std::sync::atomic::AtomicU64::new(0),
             routines: Arc::new(RwLock::new(Arc::default())),
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
             attr_type_constraint_cache: Default::default(),
@@ -371,14 +370,12 @@ impl TypeState {
             build_attr_writes: std::cell::RefCell::new(Vec::new()),
             defining_class: None,
             type_metadata: self.type_metadata.clone(),
-            // O(1) share of the inner `Arc<Registry>` — a fresh outer lock so the
-            // child thread gets an independent snapshot (matches prior per-field
-            // clone semantics: the child sees parent declarations but its own new
-            // ones don't leak back), while the deep clone itself is deferred until
-            // either side's first registry write (`Arc::make_mut` in
-            // `RegistryWriteGuard::deref_mut`). In spawn-heavy loops where neither
-            // side writes the registry, the deep clone (and its drop) never happens.
-            registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
+            // The world registry is shared, never copied (ADR-17216 §2.1).
+            registry: self.registry.share(),
+            registry_world_seen: std::sync::atomic::AtomicU64::new(
+                self.registry_world_seen
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
             routines: Arc::new(RwLock::new(Arc::clone(
                 &crate::runtime::routine_tables::RoutinesReadGuard::new(&self.routines).clone_arc(),
             ))),

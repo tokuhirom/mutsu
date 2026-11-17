@@ -638,17 +638,15 @@ impl Interpreter {
                 .any(|k| qualified_by(k, class_name) || qualified_by(class_name, k))
     }
 
-    /// Read access to the shared declaration [`Registry`]. Returns a temporary
-    /// guard — NEVER `let`-bind it across a call that re-enters user-code
-    /// execution (`eval_block_value`/`run_block_raw`/`call_function`): `RwLock`
-    /// is not reentrant and would deadlock. Use as `self.registry().subsets...`.
-    ///
-    /// In debug builds the returned guard detects a re-entrant lock attempt on
-    /// this thread and panics with a located message instead of deadlocking (see
-    /// [`RegistryReadGuard`](crate::runtime::registry::RegistryReadGuard)).
+    /// Read access to the world declaration [`Registry`] (ADR-17216): this
+    /// thread's snapshot, refreshed when another thread published a write.
+    /// NEVER `let`-bind it across a call that re-enters user-code execution
+    /// (`eval_block_value`/`run_block_raw`/`call_function`): a registry write
+    /// on this thread while it lives would panic. Use as
+    /// `self.registry().subsets...`.
     #[inline]
     pub(crate) fn registry(&self) -> crate::runtime::registry::RegistryReadGuard<'_> {
-        crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry")
+        crate::runtime::registry::RegistryReadGuard::new(&self.types.registry)
     }
 
     /// Read access to this execution context's routine tables (ADR-17216
@@ -670,15 +668,24 @@ impl Interpreter {
         crate::runtime::routine_tables::RoutinesWriteGuard::new(&self.types.routines)
     }
 
-    /// Current registry write generation — bumped on every `registry_mut()`
-    /// acquisition. Lets callers detect "did anything take a registry write
-    /// guard across this call?" (e.g. to invalidate name-keyed resolution
-    /// caches only when the function set could actually have changed).
+    /// Current registry write generation: a value that names the content of
+    /// both the world registry and this thread's routine tables. It moves on
+    /// every `registry_mut()` / `routines_mut()` acquisition here, and when
+    /// another thread published a registry write (ADR-17216 §2.3), so a memo
+    /// keyed by it is invalidated by a declaration on any thread.
+    // Cost: O(1), one or two atomic loads.
     #[inline]
     pub(crate) fn registry_write_generation(&self) -> u64 {
-        self.types
-            .registry_write_gen
-            .load(std::sync::atomic::Ordering::Relaxed)
+        use std::sync::atomic::Ordering;
+        let world = self.types.registry.generation();
+        if world != self.types.registry_world_seen.load(Ordering::Relaxed) {
+            self.types.registry_world_seen.store(world, Ordering::Relaxed);
+            self.types.registry_write_gen.store(
+                crate::runtime::registry_gen::next_generation(),
+                Ordering::Relaxed,
+            );
+        }
+        self.types.registry_write_gen.load(Ordering::Relaxed)
     }
 
     /// Write access to the shared declaration [`Registry`]. Same guard discipline
@@ -692,7 +699,7 @@ impl Interpreter {
             crate::runtime::registry_gen::next_generation(),
             std::sync::atomic::Ordering::Relaxed,
         );
-        crate::runtime::registry::RegistryWriteGuard::new(&self.types.registry, "registry")
+        crate::runtime::registry::RegistryWriteGuard::new(&self.types.registry)
     }
 
     /// The process-wide IO handle table (ADR-17216 §2.4). Look a handle up with

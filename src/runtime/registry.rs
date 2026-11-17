@@ -2161,14 +2161,14 @@ impl Registry {
 ///
 /// [`ReentrantReadGuard`]: crate::runtime::lock_reentry::ReentrantReadGuard
 pub(crate) struct RegistryReadGuard<'a> {
-    inner: crate::runtime::lock_reentry::ReentrantReadGuard<'a, Arc<Registry>>,
+    inner: std::cell::Ref<'a, Registry>,
 }
 
 impl<'a> RegistryReadGuard<'a> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<Arc<Registry>>, name: &'static str) -> Self {
-        Self {
-            inner: crate::runtime::lock_reentry::ReentrantReadGuard::new(lock, name),
-        }
+    /// This thread's snapshot of the world registry (ADR-17216 §2.2): one
+    /// atomic load, and a refresh only after another thread wrote.
+    pub(crate) fn new(cell: &'a crate::runtime::world_cell::WorldCell<Registry>) -> Self {
+        Self { inner: cell.read() }
     }
 }
 
@@ -2180,21 +2180,19 @@ impl std::ops::Deref for RegistryReadGuard<'_> {
     }
 }
 
-/// Write guard for the shared [`Registry`]. Wraps a [`ReentrantWriteGuard`] over
-/// the copy-on-write `Arc<Registry>`; the first mutable deref after a share
-/// pays the one deep clone via `Arc::make_mut` (recorded as
-/// `registry_cow_clones`), then behaves exactly like a plain `&mut Registry`.
-/// See [`crate::runtime::lock_reentry`].
-///
-/// [`ReentrantWriteGuard`]: crate::runtime::lock_reentry::ReentrantWriteGuard
+/// Write guard for the world [`Registry`], shared by every thread (ADR-17216
+/// §2.2). Holds the registry's write lock; the first mutable deref copies the
+/// current version when any thread still holds a snapshot of it (recorded as
+/// `registry_cow_clones`), and dropping a guard that was mutably dereferenced
+/// publishes the result to every thread. See [`crate::runtime::world_cell`].
 pub(crate) struct RegistryWriteGuard<'a> {
-    inner: crate::runtime::lock_reentry::ReentrantWriteGuard<'a, Arc<Registry>>,
+    inner: crate::runtime::world_cell::WorldWriteGuard<'a, Registry>,
 }
 
 impl<'a> RegistryWriteGuard<'a> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<Arc<Registry>>, name: &'static str) -> Self {
+    pub(crate) fn new(cell: &'a crate::runtime::world_cell::WorldCell<Registry>) -> Self {
         Self {
-            inner: crate::runtime::lock_reentry::ReentrantWriteGuard::new(lock, name),
+            inner: cell.write_guard(),
         }
     }
 }
@@ -2210,11 +2208,10 @@ impl std::ops::Deref for RegistryWriteGuard<'_> {
 impl std::ops::DerefMut for RegistryWriteGuard<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Registry {
-        let arc: &mut Arc<Registry> = &mut self.inner;
-        if Arc::strong_count(arc) > 1 {
+        if self.inner.is_shared() {
             crate::vm::vm_stats::record_registry_cow_clone();
         }
-        let registry = Arc::make_mut(arc);
+        let registry: &mut Registry = &mut self.inner;
         // This is the ONLY way to reach a `&mut Registry`, so dropping the
         // derived name caches here is what makes them impossible to
         // desynchronise from the maps they summarise. See
@@ -2521,7 +2518,7 @@ mod tests {
     /// because the guard's `DerefMut` IS the invalidation mechanism.
     #[test]
     fn lexical_type_key_filter_tracks_the_maps_through_the_write_guard() {
-        let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
+        let lock = crate::runtime::world_cell::WorldCell::new(Registry::default());
         let scan = |reg: &Registry, name: &str| {
             let prefix = format!("{name}\u{0}");
             reg.classes
@@ -2535,18 +2532,18 @@ mod tests {
         // Nothing mangled registered yet: the filter declines, and so does the
         // scan it stands in for.
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(!reg.has_lexical_type_key_for("Foo"));
             assert!(!scan(&reg, "Foo"));
         }
 
         // A mangled key added through the guard is visible to the next query.
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types.insert("Foo\u{0}12".to_string(), Vec::new());
         }
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(reg.has_lexical_type_key_for("Foo"));
             assert!(scan(&reg, "Foo"));
             // An UNmangled key is not a lexical type key, and a partial
@@ -2558,11 +2555,11 @@ mod tests {
         // A plain (unmangled) registration does not make the filter answer
         // yes -- the scan would not match it either.
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types.insert("Bare".to_string(), Vec::new());
         }
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(!reg.has_lexical_type_key_for("Bare"));
             assert!(!scan(&reg, "Bare"));
             assert!(reg.has_lexical_type_key_for("Foo"));
@@ -2570,11 +2567,11 @@ mod tests {
 
         // Removal through the guard invalidates too.
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types.remove("Foo\u{0}12");
         }
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(!reg.has_lexical_type_key_for("Foo"));
             assert!(!scan(&reg, "Foo"));
         }
@@ -2586,13 +2583,13 @@ mod tests {
     /// lexical class asks for `Store\u{0}1::Session` (#14143).
     #[test]
     fn lexical_type_key_filter_uses_every_nul_prefix() {
-        let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
+        let lock = crate::runtime::world_cell::WorldCell::new(Registry::default());
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types
                 .insert("Store\u{0}1::Session\u{0}2".to_string(), Vec::new());
         }
-        let reg = RegistryReadGuard::new(&lock, "test");
+        let reg = RegistryReadGuard::new(&lock);
         assert!(reg.has_lexical_type_key_for("Store"));
         assert!(reg.has_lexical_type_key_for("Store\u{0}1::Session"));
         assert!(!reg.has_lexical_type_key_for("Store\u{0}1"));
