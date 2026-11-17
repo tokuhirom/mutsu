@@ -123,6 +123,8 @@ impl Interpreter {
         // A role's own pun (`R.^pun`, the class named `R`) already is that
         // role: mixing it into its pun again adds nothing.
         let root = base_class.split("+{").next().unwrap_or(base_class);
+        // A parametric role's pun is named `Box\0default[Any]` / `Box[Int]`.
+        let root = root.split(['[', '\0']).next().unwrap_or(root);
         let is_pun_root = self.registry().roles.contains_key(root);
         let mut fresh: Vec<String> = Vec::new();
         let mut fresh_args: Vec<Option<Vec<Value>>> = Vec::new();
