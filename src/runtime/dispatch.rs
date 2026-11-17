@@ -457,17 +457,22 @@ impl Interpreter {
         let pending_before = self.pending_local_updates.len();
         // Apply <sym> instantiation for proto token :sym<> variants
         let instantiate_sym = |pat: &str| -> String { Self::instantiate_token_pattern(def, pat) };
+        let param_names: std::collections::HashSet<String> = def
+            .params
+            .iter()
+            .map(|p| p.trim_start_matches(['$', '@', '%', '&', ':', '!', '.', '*']).to_string())
+            .collect();
         let rendered = match result {
             Ok(v) => {
                 if let ValueView::Regex(pat) = v.view() {
                     let pat = instantiate_sym(&pat);
                     Ok(Some(self.bake_bound_params_into_regex_arguments(
-                        &self.interpolate_bound_regex_scalars(&pat), &def.params,
+                        &self.interpolate_bound_regex_params(&pat, &param_names), &def.params,
                     )))
                 } else if let ValueView::Str(s) = v.view() {
                     let s = instantiate_sym(&s);
                     Ok(Some(self.bake_bound_params_into_regex_arguments(
-                        &self.interpolate_bound_regex_scalars(&s), &def.params,
+                        &self.interpolate_bound_regex_params(&s, &param_names), &def.params,
                     )))
                 } else if v.is_nil() {
                     Ok(None)
@@ -480,12 +485,12 @@ impl Interpreter {
                 if let ValueView::Regex(pat) = rv.view() {
                     let pat = instantiate_sym(&pat);
                     Ok(Some(self.bake_bound_params_into_regex_arguments(
-                        &self.interpolate_bound_regex_scalars(&pat), &def.params,
+                        &self.interpolate_bound_regex_params(&pat, &param_names), &def.params,
                     )))
                 } else if let ValueView::Str(s) = rv.view() {
                     let s = instantiate_sym(&s);
                     Ok(Some(self.bake_bound_params_into_regex_arguments(
-                        &self.interpolate_bound_regex_scalars(&s), &def.params,
+                        &self.interpolate_bound_regex_params(&s, &param_names), &def.params,
                     )))
                 } else if rv.is_nil() {
                     Ok(None)

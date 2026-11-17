@@ -218,7 +218,7 @@ impl Interpreter {
         // vanishes from the compiled pattern instead of becoming its declared
         // alternation.
         self.inject_class_body_statics(sub_pkg.as_str());
-        let parsed = self.parse_regex(sub_pat);
+        let parsed = self.parse_regex_for_match(sub_pat);
         if let Some(parsed) = &parsed
             && sub_pat.trim_start().starts_with(":ratchet")
         {
