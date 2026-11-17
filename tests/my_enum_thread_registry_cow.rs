@@ -44,7 +44,10 @@ fn a_routine_my_enum_run_on_threads_copies_no_registry() {
     assert!(ok, "run failed: {err}");
     assert_eq!(out, "(RequestLine)\n");
     assert_eq!(clones(&err, "registry-cow"), 1, "{err}");
-    assert_eq!(clones(&err, "program-table-cow"), 2, "{err}");
+    // The routine tables are their own copy-on-write unit since ADR-17216
+    // slice 2a, so the routine scope's restore no longer copies the program
+    // tables the registry used to carry along (it was 2).
+    assert_eq!(clones(&err, "program-table-cow"), 0, "{err}");
 }
 
 #[test]
