@@ -27,6 +27,27 @@ impl Interpreter {
         self.pending_call_arg_sources = None;
     }
 
+    /// Run `f`, user code started on the runtime's own behalf (a Seq
+    /// source's `push-all`, a deferred `.map` block), with no call-site
+    /// argument names pending, then put the pending ones back.
+    ///
+    /// The VM records a call's argument names before it prepares the
+    /// receiver, and reifying a Seq receiver can run a user method that
+    /// takes arguments. Without this, that method's binder read the outer
+    /// call's names as its own: a sigilless `push-all(\target)` took the
+    /// name of `.categorize(&prefix:<->)`'s argument as the source of
+    /// `target` and wrote the buffer back into `&prefix:<->` (#17935).
+    // Cost: O(1) plus `f`.
+    pub(crate) fn without_pending_call_arg_sources<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let saved = self.pending_call_arg_sources.take();
+        let result = f(self);
+        self.pending_call_arg_sources = saved;
+        result
+    }
+
     pub(crate) fn take_pending_call_arg_sources(&mut self) -> Option<Vec<Option<String>>> {
         self.pending_call_arg_sources
             .take()
