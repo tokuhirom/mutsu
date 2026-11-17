@@ -406,7 +406,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
             for (directive, keyword) in &probed.declarators {
                 match directive.as_str() {
                     "DECLARE" => register_scoped_declare_keyword(module, keyword),
-                    "SUPERSEDE" => register_supersede_keyword(module, keyword),
+                    "SUPERSEDE" => register_scoped_supersede_keyword(module, keyword),
                     _ => {}
                 }
             }
@@ -415,7 +415,7 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
             register_scoped_declare_keyword(module, keyword);
         }
         for keyword in &scan.supersede_keywords {
-            register_supersede_keyword(module, keyword);
+            register_scoped_supersede_keyword(module, keyword);
         }
     } else if module == "JSON::Fast" {
         // Nothing on the module ladder supplies `JSON::Fast`, so the native

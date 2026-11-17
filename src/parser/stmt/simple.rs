@@ -56,7 +56,7 @@ pub(crate) use l10n::{
 };
 pub(crate) use registry::{
     DeclareKeyword, declare_keyword_is_role, declare_keyword_names, register_declare_keyword,
-    register_supersede_keyword, superseded_declarator,
+    register_scoped_supersede_keyword, superseded_declarator,
 };
 pub(crate) use registry::{ExportHowError, take_exporthow_error};
 pub(crate) use registry::{
