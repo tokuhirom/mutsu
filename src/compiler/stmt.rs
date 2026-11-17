@@ -235,6 +235,22 @@ impl Compiler {
         // escapes the creating frame (escape analysis): force a shared cell for
         // the captured-and-mutated locals it closes over.
         self.with_escape(true, |c| c.compile_expr(expr));
+        // A `$` variable assigned an Array slice (`my $s = @a[0..1]`) holds
+        // the `List` of the selected elements' own containers, as rakudo's
+        // slice is a `List` of the Array's Scalars: `$s.map({ $_ = 8 })` then
+        // writes the Array (#17401). Only a subscript written as a list or a
+        // range, never a single index, which stays a plain element read.
+        if !name.starts_with(['@', '%', '&', '\\'])
+            && let Expr::Index {
+                is_positional: true,
+                target,
+                index,
+                ..
+            } = expr
+            && crate::ast::subscript_adverb::subscript_what(target, index) == "slice"
+        {
+            self.mark_trailing_index_as_invocant_ref(expr, false, true);
+        }
         if !name.starts_with('@')
             && !name.starts_with('%')
             && !name.starts_with('&')

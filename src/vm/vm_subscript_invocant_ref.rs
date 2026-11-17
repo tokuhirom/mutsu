@@ -110,7 +110,7 @@ impl Interpreter {
         // `List` of the selected elements' own cells (#17401).
         if slice_cells
             && is_positional
-            && let Some(cells) = self.take_subscript_slice_cells(is_positional)
+            && let Some(cells) = self.take_subscript_slice_cells(is_positional, false)
         {
             self.dispatch.skip_postcircumfix_overload = false;
             self.stack.push(cells);
@@ -225,7 +225,7 @@ impl Interpreter {
         if self.index_arg_callee_binds_container(code, mark)
             && let Some(cell) = self
                 .take_subscript_element_cell(mark.is_positional, true)
-                .or_else(|| self.take_subscript_slice_cells(mark.is_positional))
+                .or_else(|| self.take_subscript_slice_cells(mark.is_positional, true))
         {
             // Scoped to ONE subscript dispatch; consume it here too so producing
             // a cell instead cannot leak the suppression onto the next one.
@@ -522,8 +522,14 @@ impl Interpreter {
     /// finite list of plain indices or keys into a real `Array`/`Hash` (a
     /// `Whatever`, a lazy or junction index and every other shape keep the
     /// ordinary `Index` read).
+    ///
+    /// A slice that is a value rather than an argument (`bound` false: a
+    /// method's receiver, the right side of a `$` assignment) is the plain
+    /// `List` of those cells, as rakudo's slice is a `List` of the Array's
+    /// Scalars: a write through an element reaches the source, and a later
+    /// whole-value assignment to the variable holding it replaces it (#17401).
     // Cost: O(k) amortized, k = selected elements.
-    fn take_subscript_slice_cells(&mut self, is_positional: bool) -> Option<Value> {
+    fn take_subscript_slice_cells(&mut self, is_positional: bool, bound: bool) -> Option<Value> {
         let n = self.stack.len();
         if n < 2 {
             return None;
@@ -553,7 +559,14 @@ impl Interpreter {
         }
         self.stack.pop();
         self.stack.pop();
-        Some(Value::bound_slice_array(cells))
+        Some(if bound {
+            Value::bound_slice_array(cells)
+        } else {
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(cells)),
+                crate::value::ArrayKind::List,
+            )
+        })
     }
 
     /// Arm slice 3b's arrival channel for a `CallMethod` whose receiver is
