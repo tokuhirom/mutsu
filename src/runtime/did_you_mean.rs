@@ -81,6 +81,9 @@ fn declared_by_owner() -> &'static std::collections::HashMap<&'static str, Vec<&
     })
 }
 
+/// Catalog-MRO address -> its candidate names (see [`candidate_names`]).
+type CandidateMemo = std::collections::HashMap<usize, std::sync::Arc<[&'static str]>>;
+
 /// Every public method name a built-in `type_name` answers to: what Rakudo
 /// declares on each class of its MRO and on the roles those classes compose
 /// (its `.^methods(:all)`). A type the catalog does not list (a user class)
@@ -99,9 +102,7 @@ pub(crate) fn candidate_names(type_name: &str) -> std::sync::Arc<[&'static str]>
     // what every object does: the `Any` and `Mu` methods.
     static ANY_MU: [&str; 2] = ["Any", "Mu"];
     let mro: &'static [&'static str] = builtin_type_mro_strs(type_name).unwrap_or(&ANY_MU);
-    static MEMO: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<usize, std::sync::Arc<[&'static str]>>>,
-    > = std::sync::OnceLock::new();
+    static MEMO: std::sync::OnceLock<std::sync::Mutex<CandidateMemo>> = std::sync::OnceLock::new();
     let memo = MEMO.get_or_init(Default::default);
     // The catalog's slices are distinct statics, so the address names the MRO.
     let key = mro.as_ptr() as usize;
