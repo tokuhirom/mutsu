@@ -1435,8 +1435,9 @@ impl Interpreter {
             role_name,
             &role_def.deferred_body,
             decl_file.as_deref(),
+            false,
         )?;
-        self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+        self.run_composed_role_ancestor_bodies(role_name, role_name, false)?;
         self.persist_role_body_lexicals(role_name, &declared);
         Ok(())
     }
@@ -1474,10 +1475,13 @@ impl Interpreter {
 
     /// Composing a role composes the roles it composes, so their bodies run
     /// too — nearest first, the order Rakudo runs them in.
+    ///
+    /// `forward_shell`: see [`Self::run_role_body_for_composition`].
     pub(crate) fn run_composed_role_ancestor_bodies(
         &mut self,
         role_name: &str,
         regex_owner: &str,
+        forward_shell: bool,
     ) -> Result<(), RuntimeError> {
         for ancestor in self.role_ancestor_names(role_name) {
             // An ancestor can be reached through more than one directly
@@ -1508,6 +1512,7 @@ impl Interpreter {
                 regex_owner,
                 &ops,
                 decl_file.as_deref(),
+                forward_shell,
             ) {
                 // A failed role composition must remain retryable. The direct
                 // role path removes its memo key on the same kind of failure.
@@ -1569,6 +1574,7 @@ impl Interpreter {
             owner,
             &sibling.role_def.deferred_body,
             decl_file.as_deref(),
+            false,
         ) {
             self.registry_mut().composed_role_bodies.remove(&compose_key);
             return Err(error);
@@ -1626,12 +1632,18 @@ impl Interpreter {
     /// composing package is not known until composition — the same
     /// ADR-0009 carve-out D6/D9 apply elsewhere) and falls back to
     /// `run_block_raw` on its `raw` statement.
+    ///
+    /// `forward_shell` is true for a unit-level forward-reference class shell
+    /// (`HoistedShell::Forward`): it runs before the role's own declaration
+    /// has initialised a body `my constant`, so the shell leaves one alone
+    /// unless it was recorded already (#16255).
     pub(crate) fn run_role_body_for_composition(
         &mut self,
         type_owner: &str,
         regex_owner: &str,
         ops: &[crate::opcode::DeferredBodyOp],
         decl_file: Option<&str>,
+        forward_shell: bool,
     ) -> Result<(), RuntimeError> {
         if ops.is_empty() {
             return Ok(());
@@ -1653,7 +1665,28 @@ impl Interpreter {
                 this.env.remove("_");
             }
         };
+        // A lexical `my constant` of a non-parametric role is initialised once
+        // per role (#16255), as in the twin `run_composed_role_deferred_body`.
+        let role_is_parametric = self
+            .registry()
+            .role_candidates
+            .get(type_owner)
+            .is_some_and(|cands| cands.iter().any(|c| !c.type_params.is_empty()));
         for op in ops {
+            let constant_name = match &op.raw {
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(_),
+                    is_our: false,
+                    ..
+                } if !role_is_parametric => Some(name.as_str()),
+                _ => None,
+            };
+            if let Some(name) = constant_name
+                && (self.reuse_role_evaluated_constant(type_owner, name) || forward_shell)
+            {
+                continue;
+            }
             // See the twin in `run_composed_role_deferred_body`: a sub-level
             // `proto` is registered once per role.
             let sub_proto_key = match &op.raw {
@@ -1788,6 +1821,11 @@ impl Interpreter {
                 && let Some(key) = sub_proto_key
             {
                 self.registry_mut().role_registered_sub_protos.insert(key);
+            }
+            if r.is_ok()
+                && let Some(name) = constant_name
+            {
+                self.record_role_evaluated_constant(type_owner, name);
             }
             if let Err(err) = r {
                 if err.control.is_none() {

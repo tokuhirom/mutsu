@@ -851,8 +851,11 @@ impl Interpreter {
                             role_name,
                             &ops,
                             decl_file.as_deref(),
+                            false,
                         )
-                        .and_then(|()| self.run_composed_role_ancestor_bodies(role_name, role_name));
+                        .and_then(|()| {
+                            self.run_composed_role_ancestor_bodies(role_name, role_name, false)
+                        });
                     self.end_scoped_fixtures(class_scope);
                     body_result?;
                     self.persist_role_body_lexicals(role_name, &declared);

@@ -1587,7 +1587,15 @@ impl Interpreter {
                 deferred_body_ops,
                 type_params,
             );
-            self.register_role_body_lexical_types(&qualified_name, deferred_body_ops, type_params)?;
+            // A hoisted forward-reference registration runs before the unit's
+            // lexicals exist: a body `my constant` waits for the real
+            // declaration, which initialises it once (#16255).
+            self.register_role_body_lexical_types(
+                &qualified_name,
+                deferred_body_ops,
+                type_params,
+                !pass.hoisted,
+            )?;
             self.resolve_role_signature_types(&qualified_name, *role_id)?;
             self.register_role_body_exported_subs(&qualified_name, deferred_body_ops)?;
             // A role declared in a CLASS body (`unit class UA; role Connection

@@ -186,16 +186,22 @@ impl Interpreter {
     /// Only declarative statement kinds are eagerly run — never a plain
     /// statement or expression, whose side effects must not replay both here
     /// and at composition.
+    ///
+    /// `run_constants` is false for a hoisted forward-reference registration:
+    /// it runs before the unit's lexicals exist, so a `my constant` waits for
+    /// the real declaration, which initialises it once (#16255).
     pub(crate) fn register_role_body_lexical_types(
         &mut self,
         role_name: &str,
         deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         type_params: &[String],
+        run_constants: bool,
     ) -> Result<(), RuntimeError> {
         self.register_role_body_lexical_types_where(
             role_name,
             deferred_body_ops,
             type_params,
+            run_constants,
             |_| true,
         )
     }
@@ -228,6 +234,7 @@ impl Interpreter {
             role_name,
             deferred_body_ops,
             type_params,
+            true,
             names_parent,
         )
     }
@@ -237,6 +244,7 @@ impl Interpreter {
         role_name: &str,
         deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         type_params: &[String],
+        run_constants: bool,
         wanted: impl Fn(&Stmt) -> bool,
     ) -> Result<(), RuntimeError> {
         let parameterized = !type_params.is_empty();
@@ -275,7 +283,8 @@ impl Interpreter {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
                 Stmt::VarDecl { constant, .. } if is_constant_decl(*constant) => {
-                    (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
+                    (run_constants || initializer_is_self_contained(&op.raw))
+                        && (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
                         && !stmt_mentions_role_params(&op.raw, &body_routines)
                 }
                 // A sigilless or bind declaration arrives as the group
@@ -303,10 +312,34 @@ impl Interpreter {
             if !eager {
                 continue;
             }
+            // A non-parametric role's lexical `my constant` is initialised
+            // once (#16255), also when the declaration itself is registered
+            // again (a `my role` at BEGIN time and again when its statement
+            // runs).
+            let constant_name = match &op.raw {
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(_),
+                    is_our: false,
+                    ..
+                } if !parameterized => Some(name.as_str()),
+                _ => None,
+            };
+            if let Some(name) = constant_name
+                && self.reuse_role_evaluated_constant(role_name, name)
+            {
+                continue;
+            }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
                 self.restore_role_type_bindings(saved_types);
                 self.set_current_package(saved_package);
                 return Err(error);
+            }
+            // A non-parametric role's lexical `my constant` is initialised
+            // here, once (#16255): record the binding so a composition reuses
+            // it instead of running the initializer again.
+            if let Some(name) = constant_name {
+                self.record_role_evaluated_constant(role_name, name);
             }
             if matches!(op.kind, crate::opcode::DeferredBodyOpKind::TypeDecl) {
                 Self::collect_role_body_declared_names(
@@ -340,6 +373,46 @@ impl Interpreter {
         self.restore_role_type_bindings(saved_types);
         self.set_current_package(saved_package);
         Ok(())
+    }
+
+    /// Record the env bindings a role body's lexical `my constant` `name` just
+    /// left (its own name and its term key), so every later composition of
+    /// `role` puts them back instead of running the initializer again
+    /// (`Registry::role_evaluated_constants`, #16255). The first evaluation
+    /// wins: the declaration-time pass when it could run the initializer, the
+    /// first composition otherwise.
+    // Cost: O(1) amortized (two env lookups and one map insert).
+    pub(crate) fn record_role_evaluated_constant(&mut self, role: &str, name: &str) {
+        let term_key = format!("{}{}", crate::term_names::TERM_PREFIX, name);
+        let bindings: Vec<(String, Value)> = [name.to_string(), term_key]
+            .into_iter()
+            .filter_map(|k| self.env.get(&k).cloned().map(|v| (k, v)))
+            .collect();
+        if !bindings.is_empty() {
+            self.registry_mut()
+                .role_evaluated_constants
+                .entry((role.to_string(), name.to_string()))
+                .or_insert(bindings);
+        }
+    }
+
+    /// Put back the bindings [`Self::record_role_evaluated_constant`] recorded
+    /// for `role`'s `my constant` `name`; `false` when none was recorded yet
+    /// (the caller then evaluates the initializer).
+    // Cost: O(1) amortized (one map lookup and two env inserts).
+    pub(crate) fn reuse_role_evaluated_constant(&mut self, role: &str, name: &str) -> bool {
+        let Some(bindings) = self
+            .registry()
+            .role_evaluated_constants
+            .get(&(role.to_string(), name.to_string()))
+            .cloned()
+        else {
+            return false;
+        };
+        for (env_key, value) in bindings {
+            self.env.insert(env_key, value);
+        }
+        true
     }
 }
 
@@ -388,6 +461,58 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     };
     m.visit_stmt(stmt);
     m.found
+}
+
+/// Whether a declaration's initializer reads nothing from its surroundings
+/// and calls nothing (`my constant name = 'r' ~ 'second'`): evaluating it in
+/// a hoisted forward-reference registration, before the unit's lexicals
+/// exist, gives the value the real declaration would and has no side effect
+/// to repeat. The hoisted role needs it when the constant names one of its
+/// methods (`method ::(name) { ... }`).
+///
+/// Cost: O(n), n = size of `stmt`'s AST.
+fn initializer_is_self_contained(stmt: &Stmt) -> bool {
+    use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
+
+    #[derive(Default)]
+    struct Reaches {
+        found: bool,
+    }
+    impl<'ast> Visit<'ast> for Reaches {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if !self.found {
+                walk_stmt(self, stmt);
+            }
+        }
+        fn visit_expr(&mut self, expr: &'ast Expr) {
+            if !self.found {
+                walk_expr(self, expr);
+            }
+        }
+        fn visit_name(&mut self, _name: &str, kind: NameKind) {
+            self.found |= matches!(
+                kind,
+                NameKind::Call
+                    | NameKind::UserRoutineCall
+                    | NameKind::Method
+                    | NameKind::CodeVar
+                    | NameKind::Var
+                    | NameKind::ArrayVar
+                    | NameKind::HashVar
+                    | NameKind::CaptureVar
+                    | NameKind::Term
+                    | NameKind::Symbolic
+                    | NameKind::Source
+            );
+        }
+    }
+
+    let Stmt::VarDecl { expr, .. } = stmt else {
+        return false;
+    };
+    let mut r = Reaches::default();
+    r.visit_expr(expr);
+    !r.found
 }
 
 /// Whether a `VarDecl` is a `constant` declaration.
