@@ -138,6 +138,12 @@ impl Interpreter {
             // `.combinations` / ... iterator) yields only defined elements, so
             // it is never nilish; asking its length would pull all of it.
             ValueView::Seq(items) if items.has_unread_defined_source() => false,
+            // Nor is one nothing has read yet: a cursor over a live list
+            // (`my $s := @a.values`) must stay unread until it is consumed,
+            // so a later `@a.push` shows through (#17938). The one-nilish
+            // collapse is for an intermediate that is already there, and
+            // rakudo keeps `[Any].values` as the Seq it is.
+            ValueView::Seq(items) if items.has_unread_pure_source() => false,
             ValueView::Seq(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
             ValueView::Slip(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
             _ => false,
