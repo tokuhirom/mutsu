@@ -211,7 +211,7 @@ impl Interpreter {
         method_sym: Symbol,
         args: &[Value],
         target: &Value,
-    ) -> Option<(Symbol, MethodDef)> {
+    ) -> super::MethodResolved {
         // `resolve_method_with_owner_impl` resets this at the top of every
         // call (`resolution_method.rs:164`) — `pick_method_winner` only ever
         // sets it `true` on ambiguity, never clears it, so callers that check
@@ -420,7 +420,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
-    ) -> Option<(Symbol, MethodDef)> {
+    ) -> super::MethodResolved {
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
         // Parallel to `all_matches`: matched only nominally, its `where`
         // clauses still unchecked (`resolution_lazy_where`).
@@ -464,7 +464,7 @@ impl Interpreter {
                     &mut all_matches,
                     &mut unverified,
                     &mut rivals,
-                );
+                )?;
             }
             if !any_multi && all_matches.is_empty() {
                 // A lone non-multi candidate wins whether or not the arguments
@@ -476,7 +476,7 @@ impl Interpreter {
                 if let [ResolvedCandidate::User { owner, def, .. }] = group
                     && def.param_defs.iter().all(|pd| pd.sub_signature.is_none())
                 {
-                    return Some((owner.symbol(), (**def).clone()));
+                    return Ok(Some((owner.symbol(), (**def).clone())));
                 }
                 let mut first_visible: Option<(Symbol, MethodDef)> = None;
                 for c in group {
@@ -492,11 +492,11 @@ impl Interpreter {
                         arg_values,
                         role_bindings,
                         invocant,
-                    ) {
-                        return Some((owner.symbol(), (**def).clone()));
+                    )? {
+                        return Ok(Some((owner.symbol(), (**def).clone())));
                     }
                 }
-                return first_visible;
+                return Ok(first_visible);
             }
             for c in group {
                 let ResolvedCandidate::User { owner, def, .. } = c else {
@@ -512,7 +512,7 @@ impl Interpreter {
                             role_bindings,
                         },
                         def,
-                    )
+                    )?
                 } else {
                     self.method_args_match_for_invocant(
                         class_name,
@@ -520,7 +520,7 @@ impl Interpreter {
                         arg_values,
                         role_bindings,
                         invocant,
-                    )
+                    )?
                 };
                 if matched {
                     all_matches.push((owner.symbol(), (**def).clone()));
@@ -531,7 +531,7 @@ impl Interpreter {
             }
         }
         if all_matches.is_empty() {
-            None
+            Ok(None)
         } else {
             self.pick_method_winner_lazy_where(
             mro,
@@ -567,7 +567,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
-    ) -> Vec<(Symbol, MethodDef)> {
+    ) -> Result<Vec<(Symbol, MethodDef)>, RuntimeError> {
         let mut matched: Vec<(Symbol, MethodDef)> = Vec::new();
         for c in candidates {
             let ResolvedCandidate::User { owner, def, .. } = c else {
@@ -579,11 +579,11 @@ impl Interpreter {
                 arg_values,
                 role_bindings,
                 invocant,
-            ) {
+            )? {
                 matched.push((owner.symbol(), (**def).clone()));
             }
         }
-        matched
+        Ok(matched)
     }
 
     /// ADR-0019 E4a shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
@@ -696,14 +696,19 @@ impl Interpreter {
         }
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
-        let shadow = self.pick_method_winner_from_sequence(
-            &mro,
-            class_name,
-            &seq.candidates,
-            arg_values,
-            invocant,
-            role_bindings.as_ref(),
-        );
+        // A probe: a `MUTSU_VM_STATS` shadow check over candidates with no
+        // `where` clause (skipped above); the real resolution drives dispatch.
+        let shadow = self
+            .pick_method_winner_from_sequence(
+                &mro,
+                class_name,
+                &seq.candidates,
+                arg_values,
+                invocant,
+                role_bindings.as_ref(),
+            )
+            .ok()
+            .flatten();
         self.dispatch.dispatch_ambiguous = saved_ambiguous;
         let matched_ok = match (real, shadow.as_ref()) {
             (None, None) => true,
@@ -802,13 +807,17 @@ impl Interpreter {
             return;
         }
         let role_bindings = self.registry().get_role_param_bindings(receiver_class);
-        let matched = self.match_sequence_candidates(
-            receiver_class,
-            &seq.candidates,
-            arg_values,
-            None,
-            role_bindings.as_ref(),
-        );
+        // A probe: a `MUTSU_VM_STATS` shadow check over candidates with no
+        // `where` clause (skipped above); the real frame build drives dispatch.
+        let matched = self
+            .match_sequence_candidates(
+                receiver_class,
+                &seq.candidates,
+                arg_values,
+                None,
+                role_bindings.as_ref(),
+            )
+            .unwrap_or_default();
         // Mirrors `push_method_dispatch_frame`'s own loop shape exactly (fp
         // compare against `chosen_fp` first, THEN the hidden-defer-parent
         // filter `should_skip_defer_method_candidate`) so a candidate that
@@ -1103,6 +1112,7 @@ mod tests {
         .unwrap();
         let real = i
             .resolve_method_with_owner("Child", "greet", &[Value::int(1)])
+            .expect("no where clause to die")
             .expect("real resolver should still return the sole non-matching candidate");
         assert_eq!(real.0.as_str(), "Child");
         let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
@@ -1121,7 +1131,9 @@ mod tests {
             None,
             None,
         );
-        let shadow = shadow.expect("shadow winner must also return Child.greet");
+        let shadow = shadow
+            .expect("no where clause to die")
+            .expect("shadow winner must also return Child.greet");
         assert_eq!(shadow.0.as_str(), "Child");
     }
 
@@ -1152,6 +1164,7 @@ mod tests {
                 None,
                 None,
             )
+            .expect("no where clause to die")
             .expect("Int arg should match both candidates");
         assert_eq!(
             shadow.0.as_str(),

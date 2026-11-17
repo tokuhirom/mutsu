@@ -243,14 +243,14 @@ impl Interpreter {
                         &canonical_owner,
                         pm_name,
                         &args,
-                    )
+                    )?
                     .map(|r| (r, pm_name))
                 } else {
                     self.resolve_private_method_any_owner(
                         &class_name.resolve(),
                         private_rest,
                         &args,
-                    )
+                    )?
                     .map(|r| (r, private_rest))
                 };
                 if let Some(((resolved_owner, method_def), pm_name)) = resolved {
@@ -285,7 +285,7 @@ impl Interpreter {
             }
 
             let (candidates, any_failed) =
-                self.resolve_methods_per_mro_level(&class_name.resolve(), method, &args);
+                self.resolve_methods_per_mro_level(&class_name.resolve(), method, &args)?;
             if !candidates.is_empty() {
                 let mut attrs = attributes.to_map();
                 let mut out = Vec::with_capacity(candidates.len());
@@ -352,7 +352,7 @@ impl Interpreter {
             let class_name = name.resolve();
             if self.registry().classes.contains_key(class_name.as_str()) {
                 let (candidates, any_failed) =
-                    self.resolve_methods_per_mro_level(&class_name, method, &args);
+                    self.resolve_methods_per_mro_level(&class_name, method, &args)?;
                 if !candidates.is_empty() {
                     let mut out = Vec::with_capacity(candidates.len());
                     for (resolved_owner, method_def) in candidates {

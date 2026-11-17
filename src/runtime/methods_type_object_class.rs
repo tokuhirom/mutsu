@@ -41,7 +41,10 @@ impl Interpreter {
             _ => return None,
         };
         if !crate::builtins::method_table::owner_has_row(&owner, method)
-            || self.user_shadows_builtin(target, Symbol::intern(method), args, false)
+            || match self.user_shadows_builtin(target, Symbol::intern(method), args, false) {
+                Ok(shadows) => shadows,
+                Err(e) => return Some(Err(e)),
+            }
         {
             return None;
         }

@@ -664,7 +664,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-    ) -> Vec<FunctionDef> {
+    ) -> Result<Vec<FunctionDef>, RuntimeError> {
         let arity = arg_values
             .iter()
             .filter(|value| !value.is_string_pair_value())
@@ -698,7 +698,7 @@ impl Interpreter {
                 .map(|(_, def)| (**def).clone())
                 .collect();
             for def in candidates {
-                if self.args_match_multi_candidate_in_scope(arg_values, &def) {
+                if self.args_match_multi_candidate_in_scope(arg_values, &def)? {
                     all_matches.push(def);
                 }
             }
@@ -725,7 +725,7 @@ impl Interpreter {
                 b_has_subsig.cmp(&a_has_subsig).then(a.0.cmp(&b.0))
             });
             for (_, def) in candidates {
-                if self.args_match_multi_candidate_in_scope(arg_values, &def) {
+                if self.args_match_multi_candidate_in_scope(arg_values, &def)? {
                     let fp = crate::ast::function_body_fingerprint(
                         &def.params,
                         &def.param_defs,
@@ -762,7 +762,7 @@ impl Interpreter {
             .collect();
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
         for (_, def) in slurpy_candidates {
-            if self.args_match_multi_candidate_in_scope(arg_values, &def) {
+            if self.args_match_multi_candidate_in_scope(arg_values, &def)? {
                 let fp = def.body_fingerprint();
                 if !all_matches.iter().any(|m: &FunctionDef| {
                     crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body) == fp
@@ -772,7 +772,7 @@ impl Interpreter {
             }
         }
 
-        all_matches
+        Ok(all_matches)
     }
 }
 

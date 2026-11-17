@@ -598,7 +598,11 @@ impl Interpreter {
         match val.view() {
             ValueView::Package(name) => {
                 let class_name = name.resolve();
-                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[])).is_some() {
+                // A probe: a type object's `Bool` that dies keeps the old
+                // answer (below), and so does one whose resolution dies.
+                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[]))
+                    .is_ok_and(|resolved| resolved.is_some())
+                {
                     // Slice F: a user `Bool` method run by this internal coercion
                     // can mutate a captured-outer caller lexical; drain its
                     // writeback to the caller's slot (see coerce_numeric_bridge_value).
@@ -618,7 +622,15 @@ impl Interpreter {
                 let cn = class_name.resolve();
                 // A composed role's `Bool` (`Numeric.Bool` of a `does Real`
                 // class, ADR-11276 §9.179) is a method too.
-                if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
+                let declares_bool =
+                    match loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])) {
+                        Ok(resolved) => resolved.is_some(),
+                        Err(e) => {
+                            *error = Some(e);
+                            return val.truthy();
+                        }
+                    };
+                if declares_bool
                     || crate::builtins::method_table::composed_roles::role_declares(
                         self,
                         &cn,
@@ -728,12 +740,16 @@ impl Interpreter {
             return false;
         };
         let cn = class_name.resolve();
-        loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
-            || crate::builtins::method_table::composed_roles::role_declares(
-                self,
-                &cn,
-                crate::symbol::wk::bool_method(),
-            )
+        // A probe: a resolution that dies counts as a declared `Bool`, so the
+        // mixin's `Bool` call that follows resolves it again and reports it.
+        !matches!(
+            loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])),
+            Ok(None)
+        ) || crate::builtins::method_table::composed_roles::role_declares(
+            self,
+            &cn,
+            crate::symbol::wk::bool_method(),
+        )
     }
 
     /// Evaluate a callable's result as a grep/map predicate. A regex value

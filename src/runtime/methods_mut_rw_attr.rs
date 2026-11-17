@@ -295,7 +295,14 @@ impl Interpreter {
             return None;
         };
         let class_name = class_name.resolve();
-        if let Some(def) = self.resolve_method(&class_name, method, method_args, target) {
+        // A probe: this only names the attribute an assignment stores
+        // through; the assignment's own method call resolves (and reports a
+        // dying `where` clause) itself.
+        if let Some(def) = self
+            .resolve_method(&class_name, method, method_args, target)
+            .ok()
+            .flatten()
+        {
             return match Self::rw_method_attribute_target(&def.body) {
                 Some((name, '$')) => Some(name),
                 _ => None,

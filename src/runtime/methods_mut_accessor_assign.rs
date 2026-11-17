@@ -42,9 +42,12 @@ impl Interpreter {
             };
             if is_public_rw_accessor {
                 // User-defined rw method takes priority over simple accessor
-                let has_rw_method = self
+                let has_rw_method = match self
                     .resolve_method(&class_name.resolve(), method, &[], &target)
-                    .is_some_and(|m| m.is_rw);
+                {
+                    Ok(def) => def.is_some_and(|m| m.is_rw),
+                    Err(e) => return Some(Err(e)),
+                };
                 if !has_rw_method {
                     crate::vm::vm_stats::record_dispatch_entry_outcome(
                         "callmethodmutwithvalues",
@@ -107,9 +110,12 @@ impl Interpreter {
                 )));
             } else {
                 // Check if there's a user-defined method with is_rw
-                let has_rw_method = self
+                let has_rw_method = match self
                     .resolve_method(&class_name.resolve(), method, &[], &target)
-                    .is_some_and(|m| m.is_rw);
+                {
+                    Ok(def) => def.is_some_and(|m| m.is_rw),
+                    Err(e) => return Some(Err(e)),
+                };
                 if has_rw_method {
                     // Signal to assign_method_lvalue to handle via Proxy
                     crate::vm::vm_stats::record_dispatch_entry_intercept(

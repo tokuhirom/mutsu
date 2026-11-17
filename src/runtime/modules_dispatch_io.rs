@@ -7,7 +7,7 @@ pub(crate) mod core_infix_names;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;
-pub(crate) use dispatch::Resolved;
+pub(crate) use dispatch::{MethodResolved, Resolved};
 mod class_scoped_accessor;
 mod wrap_handle_restore;
 mod dispatch_candidates;

@@ -180,8 +180,8 @@ pub(super) unsafe extern "C" fn check_read_only(
     panic_boundary(|| {
         match interp.exec_check_read_only_op(code, name_idx) {
             // `finish_op_result` would return this `Ok` unchanged: it only acts
-            // on an error or a pending `where` exception.
-            Ok(()) if interp.pending_where_exception.is_none() => JIT_STATUS_OK,
+            // on an error.
+            Ok(()) => JIT_STATUS_OK,
             r => match interp.finish_op_result(code, op_idx as usize, r) {
                 Ok(()) => JIT_STATUS_OK,
                 Err(e) => park_err(interp, e),

@@ -162,7 +162,10 @@ impl Interpreter {
             || target.is_nil()
             || class_sym == "Nil"
             || self.grammar_has_user_method_memo(class_sym, method_sym)
-            || self.package_has_applicable_user_method(target, method, args)
+            || match self.package_has_applicable_user_method(target, method, args) {
+                Ok(applies) => applies,
+                Err(e) => return Some(Err(e)),
+            }
             || self.native_lever_a_user_override_sym(target, method_sym)
         {
             return None;

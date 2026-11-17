@@ -60,7 +60,10 @@ impl Interpreter {
         let cn = class_sym.as_str();
         let method_sym = crate::symbol::Symbol::intern(method);
         let (owner_class, method_def) =
-            self.resolve_method_cached(cn, method, class_sym, method_sym, args, target)?;
+            match self.resolve_method_cached(cn, method, class_sym, method_sym, args, target) {
+                Ok(resolved) => resolved?,
+                Err(e) => return Some(Err(e)),
+            };
         if let Some(result) =
             self.check_method_wrap_chain(cn, owner_class, method, &method_def, target, args)
         {
@@ -69,8 +72,16 @@ impl Interpreter {
         let (owner_class, method_def) = if method_def.compiled_code.is_some() {
             (owner_class, method_def)
         } else if !method_def.body.is_empty()
-            && let Some((owner, def)) =
-                self.populate_uncompiled_method(cn, owner_class.as_str(), method, args, target)
+            && let Some((owner, def)) = match self.populate_uncompiled_method(
+                cn,
+                owner_class.as_str(),
+                method,
+                args,
+                target,
+            ) {
+                Ok(populated) => populated,
+                Err(e) => return Some(Err(e)),
+            }
         {
             // Refresh the resolve caches so future calls take the
             // already-compiled fast path without re-resolving (mirrors
@@ -123,7 +134,10 @@ impl Interpreter {
         let cn = class_sym.as_str();
         let method_sym = crate::symbol::Symbol::intern(method);
         let (owner_class, method_def) =
-            self.resolve_method_cached(cn, method, class_sym, method_sym, args, target)?;
+            match self.resolve_method_cached(cn, method, class_sym, method_sym, args, target) {
+                Ok(resolved) => resolved?,
+                Err(e) => return Some(Err(e)),
+            };
         if let Some(result) =
             self.check_method_wrap_chain(cn, owner_class, method, &method_def, target, args)
         {
@@ -132,8 +146,16 @@ impl Interpreter {
         let (owner_class, method_def) = if method_def.compiled_code.is_some() {
             (owner_class, method_def)
         } else if !method_def.body.is_empty()
-            && let Some((owner, def)) =
-                self.populate_uncompiled_method(cn, owner_class.as_str(), method, args, target)
+            && let Some((owner, def)) = match self.populate_uncompiled_method(
+                cn,
+                owner_class.as_str(),
+                method,
+                args,
+                target,
+            ) {
+                Ok(populated) => populated,
+                Err(e) => return Some(Err(e)),
+            }
         {
             let cache_key = (class_sym, method_sym);
             self.caches

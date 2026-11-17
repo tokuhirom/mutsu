@@ -423,7 +423,7 @@ impl Interpreter {
                 let resolved = loan_env!(
                     self,
                     resolve_private_method_for_vm_sym(class_sym, method_sym, &args)
-                );
+                )?;
                 if let Some((owner_class, method_def)) = resolved {
                     let caller_allowed =
                         self.can_fast_dispatch_private_method_vm(owner_class.as_str());
@@ -449,7 +449,7 @@ impl Interpreter {
                                 invocant_for_dispatch,
                                 Some((owner_class, &method_def))
                             )
-                        );
+                        )?;
                         let invocant = Some(target);
                         let empty_fns = CompiledFns::default();
                         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
@@ -656,7 +656,7 @@ impl Interpreter {
             // caching-behavior change. See
             // `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 4".
             if let Some((owner_class, method_def)) =
-                self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)
+                self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)?
                 // An augmented slurpy-only `multi` on a built-in ancestor
                 // (`augment class Any { multi method map(|c) }`) ranks after the
                 // built-in method for a user-class instance too: leave it to
@@ -714,7 +714,7 @@ impl Interpreter {
                         method,
                         &args,
                         &target,
-                    )
+                    )?
                 {
                     // Refresh the resolve caches so future calls take the
                     // already-compiled fast path without re-resolving.

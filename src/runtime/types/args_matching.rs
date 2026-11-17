@@ -37,41 +37,40 @@ impl Interpreter {
         }
     }
 
-    /// Record an exception thrown while evaluating a `where` constraint during
-    /// candidate matching, and report the constraint as unmatched. Raku
-    /// propagates such an exception out of the whole dispatch instead of
-    /// treating the candidate as a non-match, so the recorded error is
-    /// re-raised by the dispatch funnels (and, as a backstop, by `exec_one`).
-    /// A control-flow signal (`return`/`next`/`last`/...) is not an exception
-    /// and keeps the old "does not match" reading.
-    pub(crate) fn note_where_exception(&mut self, e: RuntimeError) -> bool {
-        if e.control.is_none() && self.pending_where_exception.is_none() {
-            self.pending_where_exception = Some(Box::new(e));
-        }
-        false
-    }
-
-    /// Truthiness of a `where` constraint body's result, recording an
-    /// exception rather than swallowing it.
-    pub(crate) fn where_truthy(&mut self, r: Result<Value, RuntimeError>) -> bool {
+    /// Truthiness of a `where` constraint body's result. Raku propagates an
+    /// exception thrown by the constraint out of the whole dispatch instead of
+    /// treating the candidate as a non-match, so it is returned for the
+    /// dispatch funnels to raise. A control-flow signal (`return`/`next`/
+    /// `last`/...) is not an exception and keeps the "does not match" reading.
+    // Cost: O(1).
+    pub(crate) fn where_truthy(
+        &mut self,
+        r: Result<Value, RuntimeError>,
+    ) -> Result<bool, RuntimeError> {
         match r {
-            Ok(v) => v.truthy(),
-            Err(e) => self.note_where_exception(e),
+            Ok(v) => Ok(v.truthy()),
+            Err(e) => Self::where_failure(e),
         }
     }
 
     /// As [`Self::where_truthy`], for a non-block `where` constraint, whose
     /// value is smart-matched against the candidate argument.
-    pub(crate) fn where_smartmatch(&mut self, arg: &Value, r: Result<Value, RuntimeError>) -> bool {
+    // Cost: O(1) plus the smartmatch.
+    pub(crate) fn where_smartmatch(
+        &mut self,
+        arg: &Value,
+        r: Result<Value, RuntimeError>,
+    ) -> Result<bool, RuntimeError> {
         match r {
-            Ok(v) => self.smart_match(arg, &v),
-            Err(e) => self.note_where_exception(e),
+            Ok(v) => Ok(self.smart_match(arg, &v)),
+            Err(e) => Self::where_failure(e),
         }
     }
 
-    /// Drain a `where`-constraint exception recorded during candidate matching.
-    pub(crate) fn take_where_exception(&mut self) -> Option<RuntimeError> {
-        self.pending_where_exception.take().map(|e| *e)
+    /// A `where` evaluation that did not return a value: an exception escapes
+    /// the dispatch, a control-flow signal is a non-match.
+    fn where_failure(e: RuntimeError) -> Result<bool, RuntimeError> {
+        if e.control.is_none() { Err(e) } else { Ok(false) }
     }
 
     /// Verify that every `is rw` positional parameter in a subsignature is
@@ -151,7 +150,7 @@ impl Interpreter {
         &mut self,
         args: &[Value],
         param_defs: &[ParamDef],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         self.args_match_param_types_inner(args, param_defs, false, None)
     }
 
@@ -172,9 +171,9 @@ impl Interpreter {
         &mut self,
         args: &[Value],
         def: &FunctionDef,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         if self.candidate_shape_excludes(args, &def.param_defs) {
-            return false;
+            return Ok(false);
         }
         let package = def.package;
         self.with_candidate_scope(def, |this| {
@@ -338,9 +337,9 @@ impl Interpreter {
         pd: &ParamDef,
         inv: &Value,
         package: Option<Symbol>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
-            return true;
+            return Ok(true);
         };
         let saved = self.env.clone();
         self.env.insert_sym(crate::symbol::wk::topic(), inv.clone());
@@ -436,11 +435,11 @@ impl Interpreter {
         param_defs: &[ParamDef],
         multi_dispatch: bool,
         candidate_package: Option<Symbol>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         if let Some(verdict) =
             self.args_match_simple_positional(args, param_defs, multi_dispatch, candidate_package)
         {
-            return verdict;
+            return Ok(verdict);
         }
         let saved_env = self.env.clone();
         // The outer per-arg `bind_param_value` below only exists so that a
@@ -542,10 +541,10 @@ impl Interpreter {
                 }
             }
             if positional_arg_count < required_positional_count {
-                return false;
+                return Ok(false);
             }
             if !has_variadic_positional && positional_arg_count > positional_max_count {
-                return false;
+                return Ok(false);
             }
             // `p` walks the *positional* argument slots; `arg_idx` is the raw
             // `args` index of the slot `p` names (they differ as soon as a named
@@ -737,7 +736,7 @@ impl Interpreter {
                         .map(|a| unwrap_varref_value(a.clone()).is_proxy_value())
                         .unwrap_or(false);
                     if !is_varref && !has_arg_source && !is_container && !is_proxy {
-                        return false;
+                        return Ok(false);
                     }
                     // A `$x is raw` parameter bound to a literal holds the value
                     // itself, so forwarding `$x` supplies no container either.
@@ -756,17 +755,17 @@ impl Interpreter {
                                 )
                             });
                         if source_immutable {
-                            return false;
+                            return Ok(false);
                         }
                     }
                 }
                 if let Some(literal) = &pd.literal_value {
                     if let Some(arg) = arg_for_checks.as_ref() {
                         if arg != literal {
-                            return false;
+                            return Ok(false);
                         }
                     } else {
-                        return false;
+                        return Ok(false);
                     }
                 }
                 if arg_for_checks.is_none()
@@ -776,7 +775,7 @@ impl Interpreter {
                     && pd.default.is_none()
                     && !pd.optional_marker
                 {
-                    return false;
+                    return Ok(false);
                 }
                 // A coercion parameter's `where` (and sub-/code-signature) runs
                 // against the COERCED value in rakudo, not the raw argument:
@@ -815,16 +814,16 @@ impl Interpreter {
                     let resolved_constraint = resolved_constraint;
                     if pd.name.starts_with('&') {
                         if !self.type_matches_value("Callable", arg) {
-                            return false;
+                            return Ok(false);
                         }
                         let Some(return_type) = self.callable_return_type(arg) else {
-                            return false;
+                            return Ok(false);
                         };
                         if !self.type_matches_value(
                             &resolved_constraint,
                             &Value::package(Symbol::intern(&return_type)),
                         ) {
-                            return false;
+                            return Ok(false);
                         }
                     }
                     let dispatch_arg = self
@@ -871,7 +870,7 @@ impl Interpreter {
                         // same-named `$`-scalar's storage and never the enum value.
                         if !self.type_only_param_value_matches(&resolved_constraint, &dispatch_arg)
                         {
-                            return false;
+                            return Ok(false);
                         }
                     } else if pd.name.starts_with('&') {
                         // Callable return-type matching was handled above.
@@ -886,7 +885,7 @@ impl Interpreter {
                             .typed_container_param_expected(&pd.name, &resolved_constraint)
                             .is_some()
                         {
-                            return false;
+                            return Ok(false);
                         }
                     } else if is_coercion_constraint(&resolved_constraint) {
                         if self
@@ -897,7 +896,7 @@ impl Interpreter {
                                 &dispatch_arg,
                             )
                         {
-                            return false;
+                            return Ok(false);
                         }
                     } else if let Some(accepts) =
                         Self::rakuast_node_accepts(&resolved_constraint, &dispatch_arg)
@@ -909,7 +908,7 @@ impl Interpreter {
                              with the general matcher"
                         );
                         if !accepts {
-                            return false;
+                            return Ok(false);
                         }
                     } else if (multi_dispatch
                         && arg_was_supplied
@@ -920,7 +919,7 @@ impl Interpreter {
                         ))
                         || !self.param_constraint_accepts(&resolved_constraint, &dispatch_arg)
                     {
-                        return false;
+                        return Ok(false);
                     }
                     if is_coercion_constraint(&resolved_constraint) {
                         coerced_for_checks = Some(dispatch_arg);
@@ -938,7 +937,7 @@ impl Interpreter {
                     && let Some(arg) = arg_for_checks.as_ref()
                     && !self.type_matches_value("Any", arg)
                 {
-                    return false;
+                    return Ok(false);
                 }
                 // Sigil-based dispatch: @ params require Positional args
                 if pd.name.starts_with('@')
@@ -948,7 +947,7 @@ impl Interpreter {
                     && !matches!(arg.view(), ValueView::Array(..) | ValueView::Slip(..))
                     && !self.binds_to_positional_param(arg)
                 {
-                    return false;
+                    return Ok(false);
                 }
                 // Sigil-based dispatch: % params require Associative args
                 if pd.name.starts_with('%')
@@ -958,20 +957,20 @@ impl Interpreter {
                     && !matches!(arg.view(), ValueView::Hash(..))
                     && !self.type_matches_value("Associative", arg)
                 {
-                    return false;
+                    return Ok(false);
                 }
                 if pd.name.starts_with('&')
                     && let Some(arg) = arg_for_checks.as_ref()
                     && !self.type_matches_value("Callable", arg)
                 {
-                    return false;
+                    return Ok(false);
                 }
                 if let Some(sub_params) = &pd.sub_signature {
                     let Some(arg) = arg_for_checks.as_ref() else {
-                        return false;
+                        return Ok(false);
                     };
-                    if !sub_signature_matches_value(self, sub_params, arg) {
-                        return false;
+                    if !sub_signature_matches_value(self, sub_params, arg)? {
+                        return Ok(false);
                     }
                     // A later parameter's `where` may name what this
                     // destructure bound (`:left($rl) where { compare $ll, $rl }`).
@@ -989,15 +988,15 @@ impl Interpreter {
                     // this param's own positional slot).
                     let raw_start = positional_indices.get(p).copied().unwrap_or(args.len());
                     if !self.sub_signature_rw_args_writable(sub_params, args, raw_start) {
-                        return false;
+                        return Ok(false);
                     }
                 }
                 if let Some((sig_params, sig_ret)) = &pd.code_signature {
                     let Some(arg) = arg_for_checks.as_ref() else {
-                        return false;
+                        return Ok(false);
                     };
                     if !code_signature_matches_value(self, sig_params, sig_ret, arg) {
-                        return false;
+                        return Ok(false);
                     }
                 }
                 // An unsupplied parameter is checked against the value it
@@ -1030,7 +1029,7 @@ impl Interpreter {
                 };
                 if let Some(where_expr) = &pd.where_constraint {
                     let Some(arg) = where_default.as_ref().or(arg_for_checks.as_ref()) else {
-                        return false;
+                        return Ok(false);
                     };
                     let saved = self.env.clone();
                     self.install_match_context_for_where(&pd.name, arg);
@@ -1085,8 +1084,8 @@ impl Interpreter {
                     // Keep the where clause's dynamic-variable side effects
                     // across the bindings rollback (A01-limits/misc.t).
                     self.restore_env_preserving_dynamics(saved);
-                    if !ok {
-                        return false;
+                    if !ok? {
+                        return Ok(false);
                     }
                 }
                 if needs_outer_bind
@@ -1128,7 +1127,7 @@ impl Interpreter {
                             }
                         });
                         if !consumed {
-                            return false;
+                            return Ok(false);
                         }
                     }
                 }
@@ -1162,7 +1161,7 @@ impl Interpreter {
 
                 // Check required named params have corresponding args
                 if pd.required && pd.default.is_none() && arg_val.is_none() {
-                    return false;
+                    return Ok(false);
                 }
 
                 // A named `is rw` param, like a positional one, only binds a
@@ -1203,7 +1202,7 @@ impl Interpreter {
                             }
                     });
                     if !writable {
-                        return false;
+                        return Ok(false);
                     }
                 }
 
@@ -1221,7 +1220,7 @@ impl Interpreter {
                         Some(":D")
                     )
                 {
-                    return false;
+                    return Ok(false);
                 }
 
                 // Check type constraint on named param
@@ -1243,10 +1242,10 @@ impl Interpreter {
                             .typed_container_param_expected(&pd.name, &resolved_constraint)
                             .is_some()
                         {
-                            return false;
+                            return Ok(false);
                         }
                     } else if !self.type_matches_value(&resolved_constraint, val) {
-                        return false;
+                        return Ok(false);
                     }
                 }
 
@@ -1265,13 +1264,13 @@ impl Interpreter {
                     // external key `c` and has none.
                     let sigil_name = pd.sigil_carrying_name();
                     if sigil_name.starts_with('@') && !self.binds_to_positional_param(val) {
-                        return false;
+                        return Ok(false);
                     }
                     if sigil_name.starts_with('%') && !self.type_matches_value("Associative", val) {
-                        return false;
+                        return Ok(false);
                     }
                     if sigil_name.starts_with('&') && !self.type_matches_value("Callable", val) {
-                        return false;
+                        return Ok(false);
                     }
                     // Implicit Any constraint, as for a positional: an untyped
                     // `$` named parameter does not take a `Mu` type object, so a
@@ -1281,7 +1280,7 @@ impl Interpreter {
                         && !pd.slurpy
                         && !self.type_matches_value("Any", val)
                     {
-                        return false;
+                        return Ok(false);
                     }
                 }
 
@@ -1297,8 +1296,8 @@ impl Interpreter {
                 // `:op(@) (...)` candidate (SQL::Abstract, #16612).
                 if let Some(sub_params) = &pd.sub_signature {
                     if let Some(ref val) = arg_val {
-                        if !super::signature::named_param_parens_accept(self, pd, sub_params, val) {
-                            return false;
+                        if !super::signature::named_param_parens_accept(self, pd, sub_params, val)? {
+                            return Ok(false);
                         }
                     } else if pd.default.is_none()
                         // `:a($u)` / `:a(@u)` only renames the variable; the
@@ -1306,7 +1305,7 @@ impl Interpreter {
                         && !pd.named_alias
                         && !sub_signature_binds_nothing(sub_params)
                     {
-                        return false;
+                        return Ok(false);
                     }
                 }
 
@@ -1315,11 +1314,11 @@ impl Interpreter {
                 // inapplicable instead of failing its bind later.
                 if let Some(outer) = &pd.outer_sub_signature {
                     if let Some(ref val) = arg_val {
-                        if !sub_signature_matches_value(self, outer, val) {
-                            return false;
+                        if !sub_signature_matches_value(self, outer, val)? {
+                            return Ok(false);
                         }
                     } else if pd.default.is_none() && !sub_signature_binds_nothing(outer) {
-                        return false;
+                        return Ok(false);
                     }
                 }
 
@@ -1349,7 +1348,7 @@ impl Interpreter {
                                     candidate_package,
                                 ) {
                                     Ok(v) => v,
-                                    Err(_) => return false,
+                                    Err(_) => return Ok(false),
                                 }
                             } else {
                                 Self::missing_optional_param_value(pd)
@@ -1421,8 +1420,8 @@ impl Interpreter {
                     // Keep the where clause's dynamic-variable side effects
                     // across the bindings rollback (A01-limits/misc.t).
                     self.restore_env_preserving_dynamics(saved);
-                    if !ok {
-                        return false;
+                    if !ok? {
+                        return Ok(false);
                     }
                 }
             }
@@ -1479,11 +1478,11 @@ impl Interpreter {
                     }
                 };
                 self.restore_env_preserving_dynamics(saved);
-                if !ok {
-                    return false;
+                if !ok? {
+                    return Ok(false);
                 }
             }
-            true
+            Ok(true)
         })();
         if param_defs.iter().any(|pd| pd.where_constraint.is_some()) {
             // Keep where clauses' dynamic-variable side effects across the
@@ -1676,7 +1675,7 @@ impl Interpreter {
         true
     }
 
-    pub(crate) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> bool {
+    pub(crate) fn method_args_match(&mut self, args: &[Value], param_defs: &[ParamDef]) -> Result<bool, RuntimeError> {
         let is_invocant_param =
             |p: &ParamDef| p.is_invocant;
         let all_invocant_only = param_defs.iter().all(is_invocant_param);
@@ -1689,13 +1688,13 @@ impl Interpreter {
                     ValueView::ValuePair(key, _) => {
                         if let ValueView::Str(name) = key.view() {
                             if name.as_str() != TEST_CALLSITE_LINE_KEY {
-                                return false;
+                                return Ok(false);
                             }
                         } else {
-                            return false;
+                            return Ok(false);
                         }
                     }
-                    _ => return false,
+                    _ => return Ok(false),
                 }
             }
             return self.args_match_param_types(args, &[]);
@@ -1743,10 +1742,10 @@ impl Interpreter {
             .count();
         if has_positional_slurpy {
             if positional_arg_count < required {
-                return false;
+                return Ok(false);
             }
         } else if positional_arg_count < required || positional_arg_count > max_positional {
-            return false;
+            return Ok(false);
         }
         if !has_hash_slurpy {
             // `named_external_keys()` covers every alias a named parameter
@@ -1767,21 +1766,18 @@ impl Interpreter {
                     && key != TEST_CALLSITE_LINE_KEY
                     && !named_params.contains(key.as_str())
                 {
-                    return false;
+                    return Ok(false);
                 }
                 if let ValueView::ValuePair(key, _) = arg.view()
                     && let ValueView::Str(name) = key.view()
                     && name.as_str() != TEST_CALLSITE_LINE_KEY
                     && !named_params.contains(name.as_str())
                 {
-                    return false;
+                    return Ok(false);
                 }
             }
         }
-        if !self.args_match_param_types(args, filtered_params) {
-            return false;
-        }
-        true
+        self.args_match_param_types(args, filtered_params)
     }
 
     /// Create an error for calling a sub with empty signature `()` with arguments.

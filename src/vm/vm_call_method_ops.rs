@@ -1439,8 +1439,8 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
-                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
-                && loan_env!(self, resolve_method_with_owner(&cn, method, &[])).is_none()
+                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[]))?.is_some()
+                && loan_env!(self, resolve_method_with_owner(&cn, method, &[]))?.is_none()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethod",
@@ -1671,7 +1671,7 @@ impl Interpreter {
         // interpreter's resolution: the one shadow query (ADR-11276 §2.3).
         // `VAR` is never a built-in row.
         let mut skip_native =
-            method == "VAR" || self.user_shadows_builtin(&target, method_sym, &args, quoted);
+            method == "VAR" || self.user_shadows_builtin(&target, method_sym, &args, quoted)?;
         let is_junction_target = match target.view() {
             ValueView::Junction { .. } => true,
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
@@ -1764,7 +1764,7 @@ impl Interpreter {
                 // `Blob`-doing class's own `Str`) takes the call from the
                 // built-in row exactly as it does without the Proxy.
                 if !skip_native {
-                    skip_native = self.user_shadows_builtin(&fetched, method_sym, &args, quoted);
+                    skip_native = self.user_shadows_builtin(&fetched, method_sym, &args, quoted)?;
                 }
                 fetched
             }

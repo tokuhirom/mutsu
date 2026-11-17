@@ -849,9 +849,14 @@ impl Interpreter {
         }
         let mro = self.class_mro(&class);
         let inherited: Vec<String> = mro.iter().skip(1).map(|c| c.resolve()).collect();
-        !inherited
-            .iter()
-            .any(|parent| self.resolve_method_with_owner(parent, method_name, &[]).is_some())
+        // A probe: `^can` asks whether a method exists, which rakudo answers
+        // without running a `where` clause, so a dying one reads as absent.
+        !inherited.iter().any(|parent| {
+            self.resolve_method_with_owner(parent, method_name, &[])
+                .ok()
+                .flatten()
+                .is_some()
+        })
     }
 
     pub(crate) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {

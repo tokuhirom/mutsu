@@ -165,14 +165,13 @@ impl Interpreter {
             let call_args = Self::capture_to_call_args(&args[0]);
             let builtin = self.builtin_routine_candidates(package, name);
             if !builtin.is_empty() {
-                let matching: Vec<Value> = builtin
-                    .into_iter()
-                    .filter(|cand| self.candidate_matches_capture(cand, &call_args))
-                    .collect();
-                return Some(Ok(Value::array(matching)));
+                return Some(self.cando_matching(builtin, &call_args));
             }
-            let matching = self
-                .resolve_all_matching_candidates(name, &call_args)
+            let matching = match self.resolve_all_matching_candidates(name, &call_args) {
+                Ok(matching) => matching,
+                Err(e) => return Some(Err(e)),
+            };
+            let matching = matching
                 .into_iter()
                 .map(|def| {
                     if let Some(code) = &def.dispatchee {
@@ -216,15 +215,11 @@ impl Interpreter {
                     .map(Value::to_string_value),
             ) {
                 let call_args = Self::capture_to_call_args(&args[0]);
-                return Some(Ok(Value::array(
-                    self.collect_can_methods(
-                        &Value::package(Symbol::intern(&class_name)),
-                        &method_name,
-                    )
-                    .into_iter()
-                    .filter(|candidate| self.candidate_matches_capture(candidate, &call_args))
-                    .collect(),
-                )));
+                let methods = self.collect_can_methods(
+                    &Value::package(Symbol::intern(&class_name)),
+                    &method_name,
+                );
+                return Some(self.cando_matching(methods, &call_args));
             }
             // Multi-dispatch dispatcher: try name-based lookup first
             if let Some(ValueView::Str(disp_name)) =
@@ -234,11 +229,7 @@ impl Interpreter {
                     self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
                 if !name_based.is_empty() {
                     let call_args = Self::capture_to_call_args(&args[0]);
-                    let matches: Vec<Value> = name_based
-                        .into_iter()
-                        .filter(|c| self.candidate_matches_capture(c, &call_args))
-                        .collect();
-                    return Some(Ok(Value::array(matches)));
+                    return Some(self.cando_matching(name_based, &call_args));
                 }
             }
             // Fall back to captured candidates
@@ -250,19 +241,10 @@ impl Interpreter {
                         &data.name.resolve(),
                     );
                     if !builtin.is_empty() {
-                        let matches: Vec<Value> = builtin
-                            .into_iter()
-                            .filter(|c| self.candidate_matches_capture(c, &call_args))
-                            .collect();
-                        return Some(Ok(Value::array(matches)));
+                        return Some(self.cando_matching(builtin, &call_args));
                     }
                 }
-                let matches: Vec<Value> = cands
-                    .iter()
-                    .filter(|c| self.candidate_matches_capture(c, &call_args))
-                    .cloned()
-                    .collect();
-                return Some(Ok(Value::array(matches)));
+                return Some(self.cando_matching(cands.iter().cloned(), &call_args));
             }
             let call_args = Self::capture_to_call_args(&args[0]);
             // A built-in candidate (one `.candidates` of a core multi handed
@@ -274,19 +256,27 @@ impl Interpreter {
                 self.builtin_routine_candidates(&data.package.resolve(), &data.name.resolve())
             };
             if !builtin.is_empty() {
-                let matches: Vec<Value> = builtin
-                    .into_iter()
-                    .filter(|c| self.candidate_matches_capture(c, &call_args))
-                    .collect();
-                return Some(Ok(Value::array(matches)));
+                return Some(self.cando_matching(builtin, &call_args));
             }
-            let matches = if self.candidate_matches_capture(target, &call_args) {
-                vec![target.clone()]
-            } else {
-                Vec::new()
-            };
-            return Some(Ok(Value::array(matches)));
+            return Some(self.cando_matching(std::iter::once(target.clone()), &call_args));
         }
         None
+    }
+
+    /// The `candidates` a `cando` capture binds, as an Array. A `where` that
+    /// dies fails the `cando` itself, as in rakudo.
+    // Cost: O(c * p), c = candidates, p = parameters each.
+    fn cando_matching(
+        &mut self,
+        candidates: impl IntoIterator<Item = Value>,
+        call_args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let mut matching = Vec::new();
+        for candidate in candidates {
+            if self.candidate_matches_capture(&candidate, call_args)? {
+                matching.push(candidate);
+            }
+        }
+        Ok(Value::array(matching))
     }
 }

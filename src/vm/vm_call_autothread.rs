@@ -362,7 +362,7 @@ impl Interpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         // Don't auto-thread args for methods that natively handle junctions
         // or that accept Mu/Junction arguments (matchers, comparators, etc.)
-        let multi_accepts = method == "ACCEPTS" && self.user_multi_accepts_threads(target, args);
+        let multi_accepts = method == "ACCEPTS" && self.user_multi_accepts_threads(target, args)?;
         if !multi_accepts
             && matches!(
                 method,
@@ -485,7 +485,7 @@ impl Interpreter {
                 Some(name) => {
                     let resolved_args: Vec<Value> =
                         args.iter().map(Self::unwrap_junction_deep).collect();
-                    match self.resolve_method_with_owner(&name.resolve(), method, &resolved_args) {
+                    match self.resolve_method_with_owner(&name.resolve(), method, &resolved_args)? {
                         Some((_, def)) => self.autothread_indices_for_params(
                             args,
                             &junction_indices,
@@ -512,7 +512,7 @@ impl Interpreter {
             if multi_accepts {
                 junction_indices
             } else if let Some(indices) =
-                self.how_metamethod_autothread_indices(target, method, args, &junction_indices)
+                self.how_metamethod_autothread_indices(target, method, args, &junction_indices)?
             {
                 indices
             } else if let ValueView::Instance { class_name, .. } = target.view()
@@ -538,14 +538,14 @@ impl Interpreter {
                                 class_name,
                                 Symbol::intern(method),
                                 &resolved_args,
-                            )
+                            )?
                             .map(|(owner, def)| (owner, (*def).clone()))
                         } else {
                             self.resolve_method_with_owner(
                                 &class_name.resolve(),
                                 method,
                                 &resolved_args,
-                            )
+                            )?
                         };
                         // A wrapped method binds its arguments to the outermost
                         // wrapper's signature first: a `|capture` wrapper takes a
@@ -742,21 +742,26 @@ impl Interpreter {
     /// relies on it (`$junction := self.ACCEPTS: $junction` is a Junction of
     /// subs). Measured with `raku`; no other method name behaves so.
     // Cost: O(m), m = methods of the receiver's class chain.
-    fn user_multi_accepts_threads(&mut self, target: &Value, args: &[Value]) -> bool {
+    fn user_multi_accepts_threads(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Result<bool, RuntimeError> {
         let class_name = match target.view() {
             ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
                 class_name.resolve()
             }
-            _ => return false,
+            _ => return Ok(false),
         };
         if !self.has_user_method(&class_name, "ACCEPTS")
             || self.lookup_proto_method(&class_name, "ACCEPTS").is_some()
         {
-            return false;
+            return Ok(false);
         }
         let resolved_args: Vec<Value> = args.iter().map(Self::unwrap_junction_deep).collect();
-        self.resolve_method_with_owner(&class_name, "ACCEPTS", &resolved_args)
-            .is_some_and(|(_, def)| def.is_multi)
+        Ok(self
+            .resolve_method_with_owner(&class_name, "ACCEPTS", &resolved_args)?
+            .is_some_and(|(_, def)| def.is_multi))
     }
 
     /// The junction arguments that autothread when `target` is a metaobject
@@ -771,26 +776,33 @@ impl Interpreter {
         method: &str,
         args: &[Value],
         junction_indices: &[usize],
-    ) -> Option<Vec<usize>> {
+    ) -> Result<Option<Vec<usize>>, RuntimeError> {
         let ValueView::Instance { class_name, .. } = target.view() else {
-            return None;
+            return Ok(None);
         };
         if !Self::is_metamodel_how(&class_name) || method.starts_with('^') {
-            return None;
+            return Ok(None);
         }
         // A metamethod's first argument is the type object it describes
         // (`$obj.^kind(..)` is `$obj.HOW.kind($obj, ..)`).
         let Some(ValueView::Package(owner)) = args.first().map(Value::view) else {
-            return None;
+            return Ok(None);
         };
         let owner = owner.resolve();
         let meta_name = format!("^{method}");
         if !self.has_user_method(&owner, &meta_name) {
-            return None;
+            return Ok(None);
         }
         let resolved_args: Vec<Value> = args.iter().map(Self::unwrap_junction_deep).collect();
-        let (_, def) = self.resolve_method_with_owner(&owner, &meta_name, &resolved_args)?;
-        Some(self.autothread_indices_for_params(args, junction_indices, &def.param_defs))
+        let Some((_, def)) = self.resolve_method_with_owner(&owner, &meta_name, &resolved_args)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(self.autothread_indices_for_params(
+            args,
+            junction_indices,
+            &def.param_defs,
+        )))
     }
 
     /// Find an instance in the environment by class name and id.

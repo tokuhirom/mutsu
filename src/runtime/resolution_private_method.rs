@@ -20,7 +20,7 @@ impl Interpreter {
         owner_class: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Option<(String, MethodDef)> {
+    ) -> Result<Option<(String, MethodDef)>, RuntimeError> {
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         for cn in mro.iter().map(|s| s.as_str()) {
@@ -42,13 +42,13 @@ impl Interpreter {
                         arg_values,
                         role_bindings.as_ref(),
                         None,
-                    ) {
-                        return Some((cn.to_string(), def));
+                    )? {
+                        return Ok(Some((cn.to_string(), def)));
                     }
                 }
             }
         }
-        None
+        Ok(None)
     }
 
     pub(super) fn resolve_private_method_any_owner(
@@ -56,7 +56,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Option<(String, MethodDef)> {
+    ) -> Result<Option<(String, MethodDef)>, RuntimeError> {
         // ADR-0019 Phase F box F5: refresh here, at the cache's own read site,
         // rather than relying on every caller to have gone through
         // `resolve_private_method_for_vm` first -- `methods_call_dispatch.rs`,
@@ -74,7 +74,7 @@ impl Interpreter {
                 .private_zeroarg_method_cache
                 .get(&(class_name.to_string(), method_name.to_string()))
         {
-            return cached.clone();
+            return Ok(cached.clone());
         }
         let mro = self.class_mro(class_name);
         // Fast path: when there are no positional args, avoid cloning the
@@ -126,7 +126,7 @@ impl Interpreter {
                     (class_name.to_string(), method_name.to_string()),
                     Some(resolved.clone()),
                 );
-                return Some(resolved);
+                return Ok(Some(resolved));
             }
         }
         for cn in mro.iter().map(|s| s.as_str()) {
@@ -148,8 +148,8 @@ impl Interpreter {
                         arg_values,
                         role_bindings.as_ref(),
                         None,
-                    ) {
-                        return Some((cn.to_string(), def.clone()));
+                    )? {
+                        return Ok(Some((cn.to_string(), def.clone())));
                     }
                 }
                 for def in overloads {
@@ -162,13 +162,13 @@ impl Interpreter {
                         arg_values,
                         role_bindings.as_ref(),
                         None,
-                    ) {
-                        return Some((cn.to_string(), def));
+                    )? {
+                        return Ok(Some((cn.to_string(), def)));
                     }
                 }
             }
         }
-        None
+        Ok(None)
     }
 
     /// Private-method candidates for `class_name`, found by NAME only —
@@ -233,10 +233,12 @@ impl Interpreter {
         class_sym: Symbol,
         method_sym: Symbol,
         arg_values: &[Value],
-    ) -> Option<(Symbol, std::sync::Arc<MethodDef>)> {
+    ) -> Result<Option<(Symbol, std::sync::Arc<MethodDef>)>, RuntimeError> {
         self.refresh_method_caches_for_generation();
         let method = method_sym.as_str();
-        let private_rest = method.strip_prefix('!')?;
+        let Some(private_rest) = method.strip_prefix('!') else {
+            return Ok(None);
+        };
         // The owner-qualified form (`$obj!Owner::m`) is rare and keeps the
         // uncached walk.
         let keys = if crate::qualified::is_qualified(method_sym) {
@@ -245,9 +247,9 @@ impl Interpreter {
             self.multi_arg_type_keys(arg_values)
         };
         let Some(keys) = keys else {
-            return self
-                .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
-                .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
+            return Ok(self
+                .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)?
+                .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def))));
         };
         let cacheable = match self
             .caches
@@ -265,21 +267,21 @@ impl Interpreter {
             }
         };
         if !cacheable {
-            return self
-                .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
-                .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
+            return Ok(self
+                .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)?
+                .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def))));
         }
         let key = (class_sym, method_sym, keys);
         if let Some(hit) = self.caches.private_resolve_cache.get(&key) {
-            return hit.clone();
+            return Ok(hit.clone());
         }
         let resolved = self
-            .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)
+            .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)?
             .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def)));
         self.caches
             .private_resolve_cache
             .insert(key, resolved.clone());
-        resolved
+        Ok(resolved)
     }
 
     pub(crate) fn resolve_private_method_for_vm(
@@ -287,7 +289,7 @@ impl Interpreter {
         class_name: &str,
         method: &str,
         arg_values: &[Value],
-    ) -> Option<(String, MethodDef)> {
+    ) -> Result<Option<(String, MethodDef)>, RuntimeError> {
         // ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
         // `resolve_private_method_any_owner`'s `private_zeroarg_method_cache`
         // read is generation-blind — it relied entirely on the manual clear
@@ -296,7 +298,9 @@ impl Interpreter {
         // resolvers share, so refreshing here covers the cache before it is
         // ever consulted.
         self.refresh_method_caches_for_generation();
-        let private_rest = method.strip_prefix('!')?;
+        let Some(private_rest) = method.strip_prefix('!') else {
+            return Ok(None);
+        };
         let split = crate::qualified::split_first(crate::qualified::known_symbol(private_rest));
         let owner_class = split.map(|(o, _)| o);
         let pm_name = split.map(|(_, n)| n).unwrap_or(private_rest);
@@ -305,7 +309,7 @@ impl Interpreter {
                 self.resolve_private_method_with_owner(class_name, owner, pm_name, arg_values)
             }
             None => self.resolve_private_method_any_owner(class_name, pm_name, arg_values),
-        };
+        }?;
         // ADR-0019 Phase E box E7 (third consumer family, private-as-
         // sequence-query -- see `todo/deep/adr0019-e5-e7-entry-routing.md`
         // "E7 step 3"): shadow-check this ad-hoc private-method MRO walk
@@ -375,7 +379,7 @@ impl Interpreter {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("privatedispatch", "notfound");
             }
         }
-        real
+        Ok(real)
     }
 
     /// Whether a `self!name(...)` call may take the compiled private-method

@@ -139,10 +139,11 @@ impl Interpreter {
                     checks,
                 });
             } else if allow_general && self.verdict_is_key_decided(def) {
-                let nominal_ok = self.args_match_multi_candidate_in_scope(args, def);
-                if self.take_where_exception().is_some() {
+                // A `where` that dies needs the general scan's ranking to
+                // decide whether it escapes.
+                let Ok(nominal_ok) = self.args_match_multi_candidate_in_scope(args, def) else {
                     return None;
-                }
+                };
                 has_general_steps = true;
                 steps.push(ProgramStep {
                     key: entry.key,
@@ -265,8 +266,6 @@ impl Interpreter {
         }
         let mut matches: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::new();
         let mut best_key: Option<MultiRank> = None;
-        let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
-        let outer_where_exception = self.pending_where_exception.take();
         for step in &program.steps {
             // Strictly wider than the best match and comparable with it; an
             // incomparable one is still a contender (#11943).
@@ -281,37 +280,23 @@ impl Interpreter {
                 && self.with_candidate_scope(&step.def, |this| {
                     this.run_value_checks(args, &step.def.param_defs, &step.checks)
                 });
-            if let Some(e) = self.take_where_exception() {
-                if threw.is_none() {
-                    threw = Some((step.def.clone(), e));
-                }
-                continue;
-            }
             if !ok {
                 continue;
             }
             best_key.get_or_insert(step.key);
             matches.push((step.key, step.def.clone()));
         }
-        if matches.is_empty() && threw.is_none() {
-            self.pending_where_exception = outer_where_exception;
+        if matches.is_empty() {
             return Ok(None);
         }
         let tier_bind_check = matches.first().is_some_and(|(rank, _)| rank.tier_bind_check);
-        let matches = match self.prune_incomparable_matches(name, args, matches) {
-            Ok(matches) => matches,
-            Err(err) => {
-                self.pending_where_exception = outer_where_exception;
-                return Err(err);
-            }
-        };
-        let key_decided = threw.is_none() && program.steps.iter().all(|s| s.checks.is_empty());
+        let matches = self.prune_incomparable_matches(name, args, matches)?;
+        let key_decided = program.steps.iter().all(|s| s.checks.is_empty());
         let settled = self.settle_ranked_matches(
             name,
             args,
             matches,
-            threw,
-            outer_where_exception,
+            None,
             tier_bind_check,
         );
         if key_decided

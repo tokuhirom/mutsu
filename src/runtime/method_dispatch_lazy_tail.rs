@@ -69,28 +69,28 @@ impl Interpreter {
         chosen_def: &MethodDef,
         invocant: &Value,
         drop_if_empty: bool,
-    ) -> DeferralTail {
+    ) -> Result<DeferralTail, RuntimeError> {
         // With at most one structural candidate the winner is it, and nothing
         // is left to defer to (the same fast path the pending frame build
         // takes).
         if !self.has_multiple_dispatch_candidates(receiver_class, method_name) {
-            return DeferralTail::Empty;
+            return Ok(DeferralTail::Empty);
         }
         if !self.deferral_build_is_context_free(receiver_class, method_name) {
-            return DeferralTail::Eager(self.deferral_tail_entries(
+            return Ok(DeferralTail::Eager(self.deferral_tail_entries(
                 receiver_class,
                 method_name,
                 args,
                 chosen_def,
                 invocant,
-            ));
+            )?));
         }
-        DeferralTail::Lazy(Box::new(LazyDeferralTail {
+        Ok(DeferralTail::Lazy(Box::new(LazyDeferralTail {
             method_name: Symbol::intern(method_name),
             chosen_fp: self.method_def_fingerprint(chosen_def),
             invocant: invocant.clone(),
             drop_if_empty,
-        }))
+        })))
     }
 
     /// Build the innermost method frame's lazy tail, if it has one; a
@@ -98,14 +98,14 @@ impl Interpreter {
     /// is considered in its place.
     // Cost: O(1) when the innermost frame has no lazy tail; otherwise
     // `deferral_tail_entries`' O(c) per frame built, each built at most once.
-    pub(super) fn materialize_lazy_deferral_tail(&mut self) {
+    pub(super) fn materialize_lazy_deferral_tail(&mut self) -> Result<(), RuntimeError> {
         loop {
             let Some(idx) = self.dispatch.method_dispatch_stack.len().checked_sub(1) else {
-                return;
+                return Ok(());
             };
             let frame = &mut self.dispatch.method_dispatch_stack[idx];
             let Some(lazy) = frame.lazy_tail.take() else {
-                return;
+                return Ok(());
             };
             let token = frame.dispatch_token;
             let receiver_class = frame.receiver_class.clone();
@@ -119,9 +119,9 @@ impl Interpreter {
                 &args,
                 lazy.chosen_fp,
                 &lazy.invocant,
-            );
+            )?;
             let Some(frame) = self.dispatch.method_dispatch_stack.get_mut(idx) else {
-                return;
+                return Ok(());
             };
             debug_assert_eq!(frame.dispatch_token, token);
             if entries.is_empty() && lazy.drop_if_empty && frame.remaining.is_empty() {
@@ -129,7 +129,7 @@ impl Interpreter {
                 continue;
             }
             frame.remaining.extend(entries);
-            return;
+            return Ok(());
         }
     }
 

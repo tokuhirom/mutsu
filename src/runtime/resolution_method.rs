@@ -12,9 +12,10 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
         invocant: &Value,
-    ) -> Option<MethodDef> {
-        self.resolve_method_with_owner_invocant(class_name, method_name, arg_values, invocant)
-            .map(|(_, def)| def)
+    ) -> Result<Option<MethodDef>, RuntimeError> {
+        Ok(self
+            .resolve_method_with_owner_invocant(class_name, method_name, arg_values, invocant)?
+            .map(|(_, def)| def))
     }
 
     pub(crate) fn method_args_match_for_invocant(
@@ -24,7 +25,7 @@ impl Interpreter {
         arg_values: &[Value],
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
         invocant: Option<&Value>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         // Candidate matching evaluates user code (a `where` constraint, a
         // default) before the method frame exists, so `self` -- and hence
         // `$.attr` -- is a scoped frame record for the window, not an env key
@@ -53,7 +54,7 @@ impl Interpreter {
         arg_values: &[Value],
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
         invocant: Option<&Value>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         // Candidate matching is a *speculative* window: everything it binds
         // (role type params, the method's captured lexical scope, `self`, type
         // captures) is rolled back when it ends, and it can run for every
@@ -67,7 +68,7 @@ impl Interpreter {
         // A candidate of plain nominal positionals reads none of the window
         // below: match it on the argument types alone (#12942).
         if let Some(verdict) = self.match_candidate_by_type_alone(def, role_bindings, arg_values) {
-            return verdict;
+            return Ok(verdict);
         }
         let saved_env = self.env.clone();
         self.env = crate::env::Env::scoped_child(std::mem::take(&mut self.env));
@@ -167,7 +168,7 @@ impl Interpreter {
                         self.env = saved_env;
                         self.set_current_package(saved_package);
                         self.pending_call_arg_sources = saved_arg_sources;
-                        return false;
+                        return Ok(false);
                     }
                 }
             }
@@ -176,19 +177,21 @@ impl Interpreter {
             // a type that unit imported (`Json`) must resolve here too.
             if let Some(inv) = invocant
                 && pd.where_constraint.is_some()
-                && !(match def.source_file.as_deref() {
+            {
+                let accepted = match def.source_file.as_deref() {
                     Some(file) => self.with_candidate_unit(file, |this| {
                         this.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
                     }),
                     None => {
                         self.invocant_where_accepts(pd, inv, Some(Symbol::intern(class_name)))
                     }
-                })
-            {
-                self.restore_env_preserving_dynamics(saved_env);
-                self.set_current_package(saved_package);
-                self.pending_call_arg_sources = saved_arg_sources;
-                return false;
+                };
+                if !matches!(accepted, Ok(true)) {
+                    self.restore_env_preserving_dynamics(saved_env);
+                    self.set_current_package(saved_package);
+                    self.pending_call_arg_sources = saved_arg_sources;
+                    return accepted;
+                }
             }
         }
         // The `where` clauses and defaults of the signature were compiled in
@@ -254,7 +257,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Option<(Symbol, MethodDef)> {
+    ) -> MethodResolved {
         self.resolve_method_with_owner_impl(class_name, method_name, arg_values, None, None)
     }
 
@@ -264,7 +267,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
         invocant: &Value,
-    ) -> Option<(Symbol, MethodDef)> {
+    ) -> MethodResolved {
         self.resolve_method_with_owner_impl(
             class_name,
             method_name,
@@ -298,7 +301,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
         boundary_owner: Option<Symbol>,
-    ) -> Option<(Symbol, MethodDef)> {
+    ) -> MethodResolved {
         self.resolve_method_with_owner_impl(
             class_name,
             method_name,
@@ -315,7 +318,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
         boundary_owner: Option<Symbol>,
-    ) -> Option<(Symbol, MethodDef)> {
+    ) -> MethodResolved {
         self.dispatch.dispatch_ambiguous = false;
         // An object reblessed on another thread may carry a mixin type this
         // thread has not composed yet (#11456).
@@ -394,7 +397,7 @@ impl Interpreter {
                         &mut all_matches,
                         &mut unverified,
                         &mut rivals,
-                    );
+                    )?;
                 }
                 let mut first_visible_non_multi: Option<MethodDef> = None;
                 // Check if all overloads are submethods on an ancestor class
@@ -422,7 +425,7 @@ impl Interpreter {
                         && visible.next().is_none()
                         && only.param_defs.iter().all(|pd| pd.sub_signature.is_none())
                     {
-                        return Some((*cn, only.clone()));
+                        return Ok(Some((*cn, only.clone())));
                     }
                 }
                 for (def_idx, def) in overloads.iter().enumerate() {
@@ -452,7 +455,7 @@ impl Interpreter {
                             role_bindings: role_bindings.as_ref(),
                         },
                         def,
-                    )
+                    )?
                     } else {
                         self.method_args_match_for_invocant(
                             class_name,
@@ -460,14 +463,14 @@ impl Interpreter {
                             arg_values,
                             role_bindings.as_ref(),
                             invocant,
-                        )
+                        )?
                     };
                     if args_match {
                         if !any_multi && all_matches.is_empty() {
                             // Non-multi: return the first match immediately,
                             // but only if no multi candidates were already
                             // collected from a child class in the MRO.
-                            return Some((*cn, def.clone()));
+                            return Ok(Some((*cn, def.clone())));
                         }
                         all_matches.push((*cn, def.clone()));
                         unverified.push(lazy_where);
@@ -486,13 +489,13 @@ impl Interpreter {
                 // For non-multi methods, stop here — a subclass override
                 // hides the parent's version.
                 if !any_multi && all_matches.is_empty() {
-                    return first_visible_non_multi.map(|def| (*cn, def));
+                    return Ok(first_visible_non_multi.map(|def| (*cn, def)));
                 }
             }
         }
         let _ = submethod_blocks; // used for control flow above
         if all_matches.is_empty() {
-            return None;
+            return Ok(None);
         }
         self.pick_method_winner_lazy_where(
             mro,
@@ -571,7 +574,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Vec<(Symbol, MethodDef)> {
+    ) -> Result<Vec<(Symbol, MethodDef)>, RuntimeError> {
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
@@ -600,14 +603,14 @@ impl Interpreter {
                         arg_values,
                         role_bindings.as_ref(),
                         None,
-                    ) {
+                    )? {
                         matches.push((*cn, def.clone()));
                     }
                 }
             }
         }
         self.drop_flattened_role_duplicates(&mut matches);
-        matches
+        Ok(matches)
     }
 
     /// A composed role is *flattened* into the class: its methods are copied in,
@@ -698,7 +701,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> (Vec<(Symbol, MethodDef)>, bool) {
+    ) -> Result<(Vec<(Symbol, MethodDef)>, bool), RuntimeError> {
         let mro = self.class_mro(class_name);
         let mut defining_levels: Vec<Symbol> = Vec::new();
         for cn in mro.iter() {
@@ -716,7 +719,7 @@ impl Interpreter {
             }
         }
         if defining_levels.is_empty() {
-            return (Vec::new(), false);
+            return Ok((Vec::new(), false));
         }
         let any_multi = defining_levels.iter().any(|cn| {
             self.registry()
@@ -725,10 +728,10 @@ impl Interpreter {
         });
         if !any_multi {
             // Non-multi: use the standard resolution
-            return (
-                self.resolve_all_methods_with_owner(class_name, method_name, arg_values),
+            return Ok((
+                self.resolve_all_methods_with_owner(class_name, method_name, arg_values)?,
                 false,
-            );
+            ));
         }
         // Multi methods: dispatch through proto at each level
         let mut matches = Vec::new();
@@ -740,13 +743,13 @@ impl Interpreter {
                 arg_values,
                 None,
                 None,
-            ) {
+            )? {
                 matches.push(resolved);
             } else {
                 any_failed = true;
             }
         }
         self.drop_flattened_role_duplicates(&mut matches);
-        (matches, any_failed)
+        Ok((matches, any_failed))
     }
 }

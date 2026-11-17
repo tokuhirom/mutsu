@@ -897,15 +897,15 @@ impl Interpreter {
     /// Check if a user-defined function with the given name can accept the
     /// given args (arity + type check). Used to decide whether a user-defined
     /// sub should shadow a same-named builtin.
-    pub(crate) fn user_function_matches_call(&mut self, name: &str, args: &[Value]) -> bool {
+    pub(crate) fn user_function_matches_call(&mut self, name: &str, args: &[Value]) -> Result<bool, RuntimeError> {
         let has_fn = self.has_declared_function_cached(name);
         let has_multi = self.has_multi_function_cached(name);
         if !has_fn && !has_multi {
-            return false;
+            return Ok(false);
         }
         let def = self.resolve_function_with_types(name, args).ok().flatten();
         let Some(def) = def else {
-            return false;
+            return Ok(false);
         };
         // The memoised probe, not `has_multi_function`: this is the same
         // question `has_multi` asked above (a hit unless resolving ran user

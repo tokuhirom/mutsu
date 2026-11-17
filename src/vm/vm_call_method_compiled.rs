@@ -381,8 +381,17 @@ impl Interpreter {
         if !self.has_any_wrap_chains() {
             return None;
         }
-        let outermost =
-            self.enter_method_wrap_chain(cn, method, owner_sym, method_def, args, target.clone())?;
+        let outermost = match self.enter_method_wrap_chain(
+            cn,
+            method,
+            owner_sym,
+            method_def,
+            args,
+            target.clone(),
+        ) {
+            Ok(outermost) => outermost?,
+            Err(e) => return Some(Err(e)),
+        };
         let mut call_args = vec![target.clone()];
         call_args.extend(args.to_vec());
         self.shift_arg_sources_for_wrap_invocant();

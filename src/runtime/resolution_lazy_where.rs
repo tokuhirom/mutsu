@@ -84,7 +84,7 @@ impl Interpreter {
         &mut self,
         call: &CallShape<'_>,
         def: &MethodDef,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let mut nominal = def.clone();
         nominal.param_defs = self.nominal_param_defs(def);
         self.method_args_match_full(call, &nominal)
@@ -104,33 +104,41 @@ impl Interpreter {
         mut all_matches: Vec<(Symbol, MethodDef)>,
         mut unverified: Vec<bool>,
         mut rivals: Vec<(Symbol, Rival)>,
-    ) -> Option<(Symbol, MethodDef)> {
+    ) -> MethodResolved {
         debug_assert_eq!(all_matches.len(), unverified.len());
         if !unverified.contains(&true) {
-            return self.pick_method_winner(mro, call.arg_values, call.invocant, all_matches, rivals);
+            return Ok(self.pick_method_winner(
+                mro,
+                call.arg_values,
+                call.invocant,
+                all_matches,
+                rivals,
+            ));
         }
         let saved_ambiguous = self.dispatch.dispatch_ambiguous;
         loop {
             if all_matches.is_empty() {
-                return None;
+                return Ok(None);
             }
             self.dispatch.dispatch_ambiguous = saved_ambiguous;
-            let (owner, def) = self.pick_method_winner(
+            let Some((owner, def)) = self.pick_method_winner(
                 mro,
                 call.arg_values,
                 call.invocant,
                 all_matches.clone(),
                 rivals.clone(),
-            )?;
+            ) else {
+                return Ok(None);
+            };
             let Some(idx) = all_matches.iter().position(|(o, d)| {
                 *o == owner
                     && Arc::ptr_eq(&d.param_defs, &def.param_defs)
                     && Arc::ptr_eq(&d.body, &def.body)
             }) else {
-                return Some((owner, def));
+                return Ok(Some((owner, def)));
             };
-            if !unverified[idx] || self.method_args_match_full(call, &def) {
-                return Some((owner, def));
+            if !unverified[idx] || self.method_args_match_full(call, &def)? {
+                return Ok(Some((owner, def)));
             }
             let (owner, def) = all_matches.remove(idx);
             unverified.remove(idx);
@@ -150,12 +158,12 @@ impl Interpreter {
         all_matches: &mut Vec<(Symbol, MethodDef)>,
         unverified: &mut Vec<bool>,
         rivals: &mut Vec<(Symbol, Rival)>,
-    ) {
+    ) -> Result<(), RuntimeError> {
         let mut i = 0;
         while i < all_matches.len() {
             if unverified[i] {
                 let def = all_matches[i].1.clone();
-                if !self.method_args_match_full(call, &def) {
+                if !self.method_args_match_full(call, &def)? {
                     let (owner, def) = all_matches.remove(i);
                     unverified.remove(i);
                     rivals.push((owner, Rival::owned(def)));
@@ -165,11 +173,16 @@ impl Interpreter {
             }
             i += 1;
         }
+        Ok(())
     }
 
     /// `method_args_match_for_invocant` for `call`.
     // Cost: as `method_args_match_for_invocant`.
-    fn method_args_match_full(&mut self, call: &CallShape<'_>, def: &MethodDef) -> bool {
+    fn method_args_match_full(
+        &mut self,
+        call: &CallShape<'_>,
+        def: &MethodDef,
+    ) -> Result<bool, RuntimeError> {
         self.method_args_match_for_invocant(
             call.class_name,
             def,

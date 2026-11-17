@@ -2379,13 +2379,6 @@ impl Interpreter {
                 None
             };
             self.set_pending_call_arg_sources(None);
-            // A `where` constraint that threw while candidate matching ran is
-            // an exception of the *call*, not a "candidate does not match":
-            // raku propagates it out of the dispatch, so no candidate body may
-            // run. Raise it here, before the winner is invoked.
-            if let Some(e) = self.take_where_exception() {
-                return Err(e);
-            }
             if let Some(cf) = compiled {
                 // Whether the positional-light path serves this call. Decided
                 // before the TRIR attempt below: a TRIR routine that completes
@@ -2800,7 +2793,7 @@ impl Interpreter {
                         let result = result?;
                         loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
-                } else if loan_env!(self, user_function_matches_call(name, &args)) {
+                } else if loan_env!(self, user_function_matches_call(name, &args))? {
                     // A user-defined sub shadows a same-named builtin (③ PR-2). When
                     // the resolved def is a plain single candidate that is
                     // OTF-compilable, run it as compiled bytecode — but resolve it
@@ -3214,7 +3207,9 @@ impl Interpreter {
         // A bare `(|)` capture takes every argument list, so it gates nothing.
         let proto_matches = proto.param_defs.is_empty()
             || Self::is_bare_capture_signature(&proto.param_defs)
-            || self.method_args_match(args, &proto.param_defs);
+            // A `where` that dies falls through too: the interpreter path
+            // matches again and raises it.
+            || self.method_args_match(args, &proto.param_defs).ok()?;
         let proto_constraints: Vec<&str> = proto
             .param_defs
             .iter()

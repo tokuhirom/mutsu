@@ -16,7 +16,7 @@ impl Interpreter {
         invocant: Value,
         dispatch_token: u64,
         winner: Option<super::method_dispatch_lazy::MethodDispatchWinner>,
-    ) -> super::MethodDispatchFrame {
+    ) -> Result<super::MethodDispatchFrame, RuntimeError> {
         // A user-overridden grammar `parse`/`subparse`/`parsefile` needs an MRO frame
         // even with a single user candidate, so a `nextsame`/`nextwith` inside it can
         // defer to the NATIVE grammar parse — the base candidate that is not a
@@ -157,12 +157,12 @@ impl Interpreter {
         if !native_base_override
             && !self.has_multiple_dispatch_candidates(receiver_class, method_name)
         {
-            return Self::empty_method_dispatch_frame(
+            return Ok(Self::empty_method_dispatch_frame(
                 receiver_class,
                 invocant,
                 args,
                 dispatch_token,
-            );
+            ));
         }
         // ADR-0019 E9a: the flat deferral expansion (`resolution_deferral.rs`) replaces
         // `resolve_all_methods_with_owner` as the ordering source — see its module doc for why
@@ -170,19 +170,21 @@ impl Interpreter {
         // a `multi method` spans MRO levels. The expansion is structural (unfiltered); apply the
         // same per-call argument match as `resolve_all_methods_with_owner` used to
         // apply internally, with the actual invocant available to `where` clauses.
-        let winner = winner.or_else(|| {
-            self.resolve_method_with_owner_invocant(receiver_class, method_name, &args, &invocant)
+        let winner = match winner {
+            Some(winner) => Some(winner),
+            None => self
+                .resolve_method_with_owner_invocant(receiver_class, method_name, &args, &invocant)?
                 .map(|(owner, def)| super::method_dispatch_lazy::MethodDispatchWinner {
                     owner,
                     fingerprint: self.method_def_fingerprint(&def),
                     rw_params: super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs),
-                })
-        });
+                }),
+        };
         let chosen_fp = winner.as_ref().map(|winner| winner.fingerprint);
         let all_candidates = self.matched_deferral_candidates(
             receiver_class, method_name, &args, &invocant,
             winner.as_ref().map(|winner| (winner.owner, winner.fingerprint)),
-        );
+        )?;
         // Fast path: with zero or one candidate there is nothing to defer to (the
         // single candidate is the chosen one and gets skipped). Returning early
         // with an empty boundary avoids the
@@ -192,12 +194,12 @@ impl Interpreter {
         // A grammar parse / Mu-base override still pushes a frame (empty
         // `remaining`) so its `nextsame`/`nextwith` reaches the native fallback.
         if !native_base_override && all_candidates.len() <= 1 {
-            return Self::empty_method_dispatch_frame(
+            return Ok(Self::empty_method_dispatch_frame(
                 receiver_class,
                 invocant,
                 args,
                 dispatch_token,
-            );
+            ));
         }
         // Identify the chosen candidate and skip exactly that one
         let mut remaining: Vec<(Symbol, super::MethodDef)> = Vec::new();
@@ -223,12 +225,12 @@ impl Interpreter {
             &remaining,
         );
         if remaining.is_empty() && !native_base_override {
-            return Self::empty_method_dispatch_frame(
+            return Ok(Self::empty_method_dispatch_frame(
                 receiver_class,
                 invocant,
                 args,
                 dispatch_token,
-            );
+            ));
         }
         {
             let rw_params = winner
@@ -283,7 +285,7 @@ impl Interpreter {
                     base,
                 });
             }
-            super::MethodDispatchFrame {
+            Ok(super::MethodDispatchFrame {
                 receiver_class: receiver_class.to_string(),
                 invocant,
                 args,
@@ -293,7 +295,7 @@ impl Interpreter {
                 arg_sources: None,
                 in_wrapper: false,
                 lazy_tail: None,
-            }
+            })
         }
     }
 

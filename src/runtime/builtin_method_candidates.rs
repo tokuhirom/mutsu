@@ -221,7 +221,7 @@ impl Interpreter {
         class_name: &str,
         method: &str,
         args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let mro = self.class_mro(class_name);
         let mut builtin: Vec<(usize, Symbol, MethodDef)> = Vec::new();
         for (level, owner) in mro.iter().enumerate() {
@@ -242,7 +242,7 @@ impl Interpreter {
             }
         }
         if builtin.is_empty() {
-            return false;
+            return Ok(false);
         }
         // The level of the most derived class that declares the method: a
         // user candidate above it is not a candidate of the receiver's
@@ -271,7 +271,7 @@ impl Interpreter {
                 // multi ranked against `Any.ASSIGN-POS` would leave the call
                 // to a built-in row the instance cannot run).
                 if !is_core_owner(owner.as_str()) {
-                    return false;
+                    return Ok(false);
                 }
                 if !def.is_private && def.is_multi {
                     user.push((level, *owner, def.clone()));
@@ -279,24 +279,26 @@ impl Interpreter {
             }
         }
         if user.is_empty() {
-            return false;
+            return Ok(false);
         }
-        let bound = |this: &mut Self, entries: Vec<(usize, Symbol, MethodDef)>| {
+        let bound = |this: &mut Self,
+                     entries: Vec<(usize, Symbol, MethodDef)>|
+         -> Result<Vec<(usize, Symbol, MethodDef)>, RuntimeError> {
             let mut matched = Vec::new();
             for (level, owner, def) in entries {
-                if this.method_args_match_for_invocant(class_name, &def, args, None, Some(target)) {
+                if this.method_args_match_for_invocant(class_name, &def, args, None, Some(target))? {
                     matched.push((level, owner, def));
                 }
             }
-            matched
+            Ok(matched)
         };
-        let builtin = bound(self, builtin);
+        let builtin = bound(self, builtin)?;
         if builtin.is_empty() {
-            return false;
+            return Ok(false);
         }
-        let user = bound(self, user);
+        let user = bound(self, user)?;
         if user.is_empty() {
-            return false;
+            return Ok(false);
         }
         // MRO order, the built-in candidates ahead of the program's at one
         // level (they were declared first).
@@ -309,6 +311,6 @@ impl Interpreter {
         let saved_ambiguous = self.dispatch.dispatch_ambiguous;
         let winner = self.pick_method_winner(&mro, args, Some(target), matches, Vec::new());
         self.dispatch.dispatch_ambiguous = saved_ambiguous;
-        winner.is_some_and(|(_, def)| def.role_origin.as_deref() == Some(BUILTIN_MARK))
+        Ok(winner.is_some_and(|(_, def)| def.role_origin.as_deref() == Some(BUILTIN_MARK)))
     }
 }

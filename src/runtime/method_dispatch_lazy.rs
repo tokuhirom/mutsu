@@ -92,7 +92,7 @@ impl Interpreter {
         args: &[Value],
         invocant: Value,
         chosen: Option<(Symbol, &MethodDef)>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         self.push_method_dispatch_frame_named(
             Symbol::intern(receiver_class),
             Symbol::intern(method_name),
@@ -118,7 +118,7 @@ impl Interpreter {
         args: &[Value],
         invocant: Value,
         chosen: Option<(Symbol, &MethodDef)>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let method_name = method_sym.as_str();
         self.push_method_dispatch_frame_named(
             receiver_sym,
@@ -138,7 +138,7 @@ impl Interpreter {
         args: &[Value],
         invocant: Value,
         chosen: Option<(Symbol, &MethodDef)>,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let receiver_class = receiver_sym.as_str();
         let method_name = method_sym.as_str();
         // Always push samewith context so samewith() can find the method name/invocant
@@ -152,7 +152,7 @@ impl Interpreter {
         // `lastcall`) read a dispatch frame, so a program that names none of
         // them anywhere never needs one. See `dispatcher_possible`.
         if !crate::opcode::dispatcher_possible() {
-            return false;
+            return Ok(false);
         }
         let dispatch_token = self.next_dispatch_token();
         // The resolver already tested this exact winner. Keep its identity and
@@ -168,16 +168,25 @@ impl Interpreter {
             receiver_class,
             method_name,
         ) {
-            let frame = self.build_method_dispatch_frame(
+            let frame = match self.build_method_dispatch_frame(
                 receiver_class,
                 method_name,
                 args.to_vec(),
                 invocant,
                 dispatch_token,
                 winner,
-            );
+            ) {
+                Ok(frame) => frame,
+                Err(e) => {
+                    // A `where` clause of a deferral candidate died: no frame
+                    // went on, so take back the samewith context pushed above
+                    // before the caller propagates the error past its pops.
+                    self.pop_method_samewith_context();
+                    return Err(e);
+                }
+            };
             self.dispatch.method_dispatch_stack.push(frame);
-            return true;
+            return Ok(true);
         }
         self.dispatch
             .pending_method_dispatch
@@ -191,7 +200,7 @@ impl Interpreter {
                     winner,
                 },
             });
-        true
+        Ok(true)
     }
 
     /// Push the deferral frame of a call qualified by a ROLE (`self.R::m()`,
@@ -302,14 +311,14 @@ impl Interpreter {
     /// the innermost dispatch frame.
     // Cost: O(1) when nothing is pending; otherwise the eager build's cost for
     // the one innermost frame, each frame built at most once.
-    pub(super) fn materialize_pending_method_dispatch(&mut self) {
-        self.materialize_pending_method_frames();
-        self.materialize_lazy_deferral_tail();
+    pub(super) fn materialize_pending_method_dispatch(&mut self) -> Result<(), RuntimeError> {
+        self.materialize_pending_method_frames()?;
+        self.materialize_lazy_deferral_tail()
     }
 
     // Cost: O(1) when nothing is pending or the innermost frame is built;
     // otherwise the eager build's cost for that one frame.
-    fn materialize_pending_method_frames(&mut self) {
+    fn materialize_pending_method_frames(&mut self) -> Result<(), RuntimeError> {
         // Only the innermost method frame is ever read (every deferral builtin
         // looks at `method_dispatch_stack.last()`), so only a pending entry
         // newer than the newest built frame is built; the outer pending calls
@@ -317,7 +326,7 @@ impl Interpreter {
         // them all here made every `nextsame` in a nested multi-method chain
         // re-match the candidates of every enclosing call.
         let Some(top) = self.dispatch.pending_method_dispatch.last() else {
-            return;
+            return Ok(());
         };
         if self
             .dispatch
@@ -325,35 +334,53 @@ impl Interpreter {
             .last()
             .is_some_and(|f| f.dispatch_token > top.dispatch_token)
         {
-            return;
+            return Ok(());
         }
         let Some(entry) = self.dispatch.pending_method_dispatch.pop() else {
-            return;
+            return Ok(());
         };
         let depth = self.dispatch.pending_method_dispatch.len();
         // Resolving the winner resets this flag; the caller's view of the
         // last dispatch must not change because a frame was built late.
         let saved_ambiguous = self.dispatch.dispatch_ambiguous;
-        {
+        let built = {
             let call = entry.call;
-            let frame = self.build_method_dispatch_frame(
-                &call.receiver_class.resolve(),
+            let receiver_class = call.receiver_class.resolve();
+            let built = self.build_method_dispatch_frame(
+                &receiver_class,
                 &call.method_name.resolve(),
                 call.args,
                 call.invocant,
                 entry.dispatch_token,
                 call.winner,
             );
+            // A `where` clause of a deferral candidate died: the call still
+            // owns a frame (its caller pops one when the error unwinds), so
+            // leave an empty one in the pending entry's place.
+            let (frame, result) = match built {
+                Ok(frame) => (frame, Ok(())),
+                Err(e) => (
+                    Self::empty_method_dispatch_frame(
+                        &receiver_class,
+                        Value::NIL,
+                        Vec::new(),
+                        entry.dispatch_token,
+                    ),
+                    Err(e),
+                ),
+            };
             let at = self
                 .dispatch
                 .method_dispatch_stack
                 .partition_point(|f| f.dispatch_token < frame.dispatch_token);
             self.dispatch.method_dispatch_stack.insert(at, frame);
-        }
+            result
+        };
         self.dispatch.dispatch_ambiguous = saved_ambiguous;
         // A `where` clause run by the build may make method calls of its own;
         // they push and pop their own pending entries during the build.
         debug_assert_eq!(self.dispatch.pending_method_dispatch.len(), depth);
+        built
     }
 
 }

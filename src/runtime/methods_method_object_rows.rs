@@ -63,7 +63,7 @@ impl Interpreter {
             && args.len() == 1
             && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
         {
-            return Some(Ok(self.method_object_cando(&target, &args[0])));
+            return Some(self.method_object_cando(&target, &args[0]));
         }
         // A multi Method dispatcher has no single callable payload. Its
         // candidates do, however, so preserve `.assuming`'s bound

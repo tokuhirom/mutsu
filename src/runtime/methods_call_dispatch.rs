@@ -580,7 +580,7 @@ impl Interpreter {
                 // An `augment`ed `multi` is ranked with the built-in
                 // candidates of the method (#12751).
                 let owner = self.dispatch_owner_name(&target);
-                !self.builtin_candidate_outranks_user(&target, owner, method, &args)
+                !self.builtin_candidate_outranks_user(&target, owner, method, &args)?
             }
         {
             // ADR-0019 F6: VM-level direct-dispatch path first (see
@@ -883,7 +883,7 @@ impl Interpreter {
             .collect();
         let metamethod_takes_junction = !junction_indices.is_empty()
             && self
-                .how_metamethod_autothread_indices(&target, method, &args, &junction_indices)
+                .how_metamethod_autothread_indices(&target, method, &args, &junction_indices)?
                 .is_some_and(|threaded| threaded.is_empty());
         if Self::should_autothread_method(method)
             && !metamethod_takes_junction
@@ -1077,7 +1077,7 @@ impl Interpreter {
             let pushed = if qualifier_is_role {
                 self.push_qualified_method_dispatch_frame(&qualifier, &args, target.clone())
             } else {
-                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone(), None)
+                self.push_method_dispatch_frame(&qualifier, actual, &args, target.clone(), None)?
             };
             let result = self.dispatch_qualified_method(&target, method, &args);
             if pushed {
@@ -1376,7 +1376,7 @@ impl Interpreter {
         // quoted call `skip_pseudo` marks).
         let bypass_native_fastpath = skip_pseudo
             || self.native_receiver_defers(&target, method, &args)
-            || self.user_shadows_builtin(&target, method_sym, &args, false);
+            || self.user_shadows_builtin(&target, method_sym, &args, false)?;
         // Named-blind arity cascade -- the interpreter-side twin of the guard in
         // `vm_native_dispatch::try_native_method_raw`. The arity cascade selects
         // its arm by argument *count*, so a named argument the method does not
@@ -1746,7 +1746,7 @@ impl Interpreter {
             if self.has_user_method(type_name, method)
                 && !self.native_base_bypass_hit(&target, Symbol::intern(method))
                 && !self.user_override_outranked_by_builtin(type_name, method)
-                && !self.builtin_candidate_outranks_user(&target, type_name, method, &args)
+                && !self.builtin_candidate_outranks_user(&target, type_name, method, &args)?
             {
                 return self.dispatch_instance_and_fallback(target, method, args);
             }
@@ -1782,7 +1782,7 @@ impl Interpreter {
         // The one shadow query (ADR-11276 §2.3), the same answer the native
         // entries read; `.WHAT` and the other MOP macros are not overridable
         // here (only the quoted `$o."WHAT"()` reaches a user method).
-        let shadows_builtin = self.user_shadows_builtin(&target, method_sym, &args, false);
+        let shadows_builtin = self.user_shadows_builtin(&target, method_sym, &args, false)?;
 
         // Named-blind by-name dispatch, the slow-path twin of the arity-cascade
         // guard above. These three handlers read `args[0]`/`args[1]` positionally
@@ -1935,10 +1935,10 @@ impl Interpreter {
                     let resolved = if let Some((owner_class, pm_name)) =
                         crate::qualified::split_first(crate::qualified::known_symbol(private_rest))
                     {
-                        self.resolve_private_method_with_owner(&cls, owner_class, pm_name, &args)
+                        self.resolve_private_method_with_owner(&cls, owner_class, pm_name, &args)?
                             .map(|r| (r, pm_name))
                     } else {
-                        self.resolve_private_method_any_owner(&cls, private_rest, &args)
+                        self.resolve_private_method_any_owner(&cls, private_rest, &args)?
                             .map(|r| (r, private_rest))
                     };
                     if let Some(((resolved_owner, method_def), pm_name)) = resolved {

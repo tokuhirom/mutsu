@@ -125,7 +125,6 @@ impl Interpreter {
             routine_stack: crate::runtime::routine_stack::RoutineStack::default(),
             callframe_stack: Vec::new(),
             pending_call_arg_sources: None,
-            pending_where_exception: None,
             pending_skip_constraint_recheck: false,
             pending_raw_invocant: None,
             pending_call_arg_source_slots: rustc_hash::FxHashMap::default(),

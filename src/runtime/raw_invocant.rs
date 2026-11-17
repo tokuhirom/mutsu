@@ -194,7 +194,14 @@ impl Interpreter {
             return true;
         }
         let class_name = Self::raw_invocant_class_name(target);
-        if let Some(def) = self.resolve_method(&class_name, method, method_args, target) {
+        // A probe: this only decides how the invocant is passed to the call
+        // that follows, which resolves the method itself and reports a dying
+        // `where` clause.
+        if let Some(def) = self
+            .resolve_method(&class_name, method, method_args, target)
+            .ok()
+            .flatten()
+        {
             return Self::method_is_rw_capable(&def) && method_def_has_raw_invocant(&def);
         }
         native_method_returns_raw_invocant(method)
@@ -214,8 +221,9 @@ impl Interpreter {
         }
         native_method_writes_raw_invocant(method) && {
             let class_name = Self::raw_invocant_class_name(target);
+            // A probe: as in `method_returns_raw_invocant`.
             self.resolve_method(&class_name, method, method_args, target)
-                .is_none()
+                .is_ok_and(|def| def.is_none())
         }
     }
 
@@ -257,7 +265,10 @@ impl Interpreter {
             return true;
         }
         let class_name = Self::raw_invocant_class_name(target);
+        // A probe: as in `method_returns_raw_invocant`.
         self.resolve_method(&class_name, method, method_args, target)
+            .ok()
+            .flatten()
             .as_ref()
             .is_some_and(method_def_has_raw_invocant)
     }

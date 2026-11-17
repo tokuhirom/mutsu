@@ -300,3 +300,7 @@ these preconditions:
   duplicates it below the store's operand), and the store's "a trait takes the raw value"
   question is the mark-context bit `TRAIT_INIT`. A compiler-named consumer cannot leave a
   stale value for an unrelated declaration, which the field could.
+- D3, `pending_where_exception` (2026-11-17): 84 → 83 fields. The matchers return a dying
+  `where` clause's exception (`Result<bool, RuntimeError>`) and method resolution returns
+  `MethodResolved`, the method twin of `Resolved`; the dispatch funnels raise it, probes drop
+  it. The backstop `exec_one` ran after every op is gone with the field.

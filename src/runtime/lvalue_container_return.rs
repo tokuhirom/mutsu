@@ -149,10 +149,10 @@ impl Interpreter {
         target: &Value,
         method: &str,
         method_args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let target = Self::unwrap_lvalue_invocant(target);
         if !matches!(target.view(), ValueView::Instance { .. }) {
-            return false;
+            return Ok(false);
         }
         self.method_lvalue_returns_container(&target, method, method_args)
     }
@@ -166,14 +166,14 @@ impl Interpreter {
         target: &Value,
         method: &str,
         method_args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let Some(class_name) = Self::lvalue_invocant_class_name(target) else {
-            return false;
+            return Ok(false);
         };
-        let Some(def) = self.resolve_method(&class_name, method, method_args, target) else {
-            return false;
+        let Some(def) = self.resolve_method(&class_name, method, method_args, target)? else {
+            return Ok(false);
         };
-        Self::method_is_rw_capable(&def) && Self::rw_method_attribute_target(&def.body).is_none()
+        Ok(Self::method_is_rw_capable(&def) && Self::rw_method_attribute_target(&def.body).is_none())
     }
 
     /// The method-call half of the lvalue return: `$obj.m(args) = value` where
@@ -207,7 +207,7 @@ impl Interpreter {
         // `method_lvalue_returns_container` does not search; run it and let
         // the write half decide whether it handed back a location.
         if !method.starts_with('^')
-            && !self.method_lvalue_returns_container(&target, method, method_args)
+            && !self.method_lvalue_returns_container(&target, method, method_args)?
         {
             return self.type_object_non_rw_method_lvalue(&target, method, method_args, value);
         }
@@ -391,7 +391,7 @@ impl Interpreter {
         let Some(class_name) = Self::lvalue_invocant_class_name(&target) else {
             return Ok(None);
         };
-        if !self.user_method_call_is_wrapped(&class_name, method, method_args) {
+        if !self.user_method_call_is_wrapped(&class_name, method, method_args)? {
             return Ok(None);
         }
         let was_lvalue = self.in_lvalue_assignment;
@@ -442,7 +442,7 @@ impl Interpreter {
         let Some(class_name) = Self::lvalue_invocant_class_name(target) else {
             return Ok(None);
         };
-        let Some(def) = self.resolve_method(&class_name, method, method_args, target) else {
+        let Some(def) = self.resolve_method(&class_name, method, method_args, target)? else {
             return Ok(None);
         };
         // rw-capable methods never reach here (the caller took the other
@@ -508,7 +508,7 @@ impl Interpreter {
             return Ok(None);
         };
         let Some((_, method_def)) =
-            self.resolve_private_method_for_vm(&class_name, method, method_args)
+            self.resolve_private_method_for_vm(&class_name, method, method_args)?
         else {
             return Ok(None);
         };

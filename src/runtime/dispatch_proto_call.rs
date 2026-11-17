@@ -188,13 +188,21 @@ impl Interpreter {
                 ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
                 _ => crate::value::AttrMap::new(),
             };
-            let resolved = self.resolve_proto_redispatch_cached(
+            let resolved = match self.resolve_proto_redispatch_cached(
                 &receiver_class_name,
                 &proto_name,
                 &args,
                 &ctx.invocant,
                 Symbol::intern(&owner),
-            );
+            ) {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    // No candidate runs to consume the call-site sources set
+                    // above for it.
+                    self.set_pending_call_arg_sources(None);
+                    return Err(e);
+                }
+            };
             // A `.wrap` on the dispatcher was entered where the proto body was
             // intercepted (`try_proto_method_body`), before this `{*}`; the
             // winning candidate must not enter that chain a second time
@@ -340,7 +348,13 @@ impl Interpreter {
             if !seen_fps.insert(fp) {
                 continue; // duplicate
             }
-            if !self.args_match_multi_candidate_in_scope(args, cand) {
+            // A probe of the candidates `nextsame` may reach later: rakudo runs
+            // their `where` only when the chain gets there, so one that dies
+            // here does not fail the call that already has its winner.
+            if !self
+                .args_match_multi_candidate_in_scope(args, cand)
+                .unwrap_or(false)
+            {
                 continue; // doesn't match
             }
             if !found_current {

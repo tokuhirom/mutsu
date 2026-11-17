@@ -57,20 +57,21 @@ impl Interpreter {
         receiver_class: &str,
         method: &str,
         args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         if !self.has_any_wrap_chains() {
-            return false;
+            return Ok(false);
         }
         if self.dispatcher_wrap_chain(receiver_class, method).is_some() {
-            return true;
+            return Ok(true);
         }
-        let Some((owner, def)) = self.resolve_method_with_owner(receiver_class, method, args)
+        let Some((owner, def)) = self.resolve_method_with_owner(receiver_class, method, args)?
         else {
-            return false;
+            return Ok(false);
         };
-        self.find_method_candidate_index(owner.as_str(), method, &def)
+        Ok(self
+            .find_method_candidate_index(owner.as_str(), method, &def)
             .and_then(|idx| self.get_method_wrap_chain(owner.as_str(), method, idx))
-            .is_some()
+            .is_some())
     }
 
     /// The outermost wrapper a call of `method` on `receiver_class`, resolved
@@ -154,14 +155,14 @@ impl Interpreter {
         method_def: &MethodDef,
         args: &[Value],
         invocant: Value,
-    ) -> Option<Value> {
+    ) -> Result<Option<Value>, RuntimeError> {
         if !self.has_any_wrap_chains() {
-            return None;
+            return Ok(None);
         }
         if let Some(chain) = self.dispatcher_wrap_chain(receiver_class, method) {
             self.push_method_samewith_context(receiver_class, method, args, Some(invocant.clone()));
             self.push_dispatcher_wrap_frame(receiver_class, method, args, invocant, &chain);
-            return chain.last().map(|(_, wrapper)| wrapper.clone());
+            return Ok(chain.last().map(|(_, wrapper)| wrapper.clone()));
         }
         // No candidate of this name was ever wrapped: skip the index scan.
         if !self
@@ -169,13 +170,18 @@ impl Interpreter {
             .candidate_wrapped_methods
             .contains(method)
         {
-            return None;
+            return Ok(None);
         }
-        let cand_idx =
-            self.find_method_candidate_index(owner_class.as_str(), method, method_def)?;
-        let chain = self.get_method_wrap_chain(owner_class.as_str(), method, cand_idx)?;
+        let Some(cand_idx) =
+            self.find_method_candidate_index(owner_class.as_str(), method, method_def)
+        else {
+            return Ok(None);
+        };
+        let Some(chain) = self.get_method_wrap_chain(owner_class.as_str(), method, cand_idx) else {
+            return Ok(None);
+        };
         self.push_method_samewith_context(receiver_class, method, args, Some(invocant.clone()));
-        self.push_wrapped_method_dispatch_frame(
+        if let Err(e) = self.push_wrapped_method_dispatch_frame(
             receiver_class,
             method,
             args,
@@ -183,8 +189,13 @@ impl Interpreter {
             owner_class,
             method_def,
             &chain,
-        );
-        chain.last().map(|(_, wrapper)| wrapper.clone())
+        ) {
+            // A `where` clause of a deferral candidate died: no frame went
+            // on, so take back the samewith context before propagating.
+            self.pop_method_samewith_context();
+            return Err(e);
+        }
+        Ok(chain.last().map(|(_, wrapper)| wrapper.clone()))
     }
 
     /// Run a call of the proto `method` through its dispatcher wrap `chain`:

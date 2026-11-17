@@ -628,26 +628,36 @@ impl Interpreter {
                 None => {
                     // The visible multis that do not bind are kept as rivals: they
                     // still shape the tiers of `pick_method_winner` (#12795).
-                    let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads_miss
+                    let mut matching: Vec<MethodDef> = Vec::new();
+                    let mut rivals: Vec<MethodDef> = Vec::new();
+                    // For private calls, only match private methods; for public calls, skip private.
+                    for def in overloads_miss
                         .into_iter()
-                        // For private calls, only match private methods; for public calls, skip private.
                         .filter(|def| is_private_call == def.is_private)
-                        .partition(|def| {
-                            // Use the invocant-aware matcher (not `method_args_match`) so an
-                            // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
-                            // is told apart by the mixin's definedness, matching the ordinary
-                            // MRO dispatch path (`resolve_method_with_owner_impl`). Without
-                            // this, a punned role's `:D:` candidate never won over `:U:`
-                            // because this filter never looked at the invocant at all.
-                            sole_private
-                                || self.method_args_match_for_invocant(
-                                    role_name,
-                                    def,
-                                    &args,
-                                    None,
-                                    Some(target),
-                                )
-                        });
+                    {
+                        // Use the invocant-aware matcher (not `method_args_match`) so an
+                        // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
+                        // is told apart by the mixin's definedness, matching the ordinary
+                        // MRO dispatch path (`resolve_method_with_owner_impl`). Without
+                        // this, a punned role's `:D:` candidate never won over `:U:`
+                        // because this filter never looked at the invocant at all.
+                        let binds = sole_private
+                            || match self.method_args_match_for_invocant(
+                                role_name,
+                                &def,
+                                &args,
+                                None,
+                                Some(target),
+                            ) {
+                                Ok(binds) => binds,
+                                Err(e) => return Some(Err(e)),
+                            };
+                        if binds {
+                            matching.push(def);
+                        } else {
+                            rivals.push(def);
+                        }
+                    }
                     let owner = Symbol::intern(role_name);
                     let matching: Vec<(Symbol, MethodDef)> =
                         matching.into_iter().map(|def| (owner, def)).collect();
@@ -840,9 +850,13 @@ impl Interpreter {
                 // not declaration order: the most specific of the class's multis
                 // is the next candidate (`callsame` out of a mixed-in role's
                 // method, Red's `ScopedDriver.map-exception`).
-                let ranked: Vec<(Symbol, MethodDef)> = self
+                let ranked: Vec<(Symbol, MethodDef)> = match self
                     .matched_deferral_candidates(bc, lookup_name, &args, target, None)
-                    .into_iter()
+                {
+                    Ok(ranked) => ranked,
+                    Err(e) => return Some(Err(e)),
+                }
+                .into_iter()
                     .filter(|(_, d)| d.is_private == is_private_call)
                     .collect();
                 // `method` keeps a private call's `!`, so no `Mu` base answers it.

@@ -1572,7 +1572,7 @@ impl Interpreter {
         args: &[Value],
         invocant: &Value,
         matched_winner: Option<(Symbol, u64)>,
-    ) -> Vec<(Symbol, super::MethodDef)> {
+    ) -> Result<Vec<(Symbol, super::MethodDef)>, RuntimeError> {
         let role_bindings = self.registry().get_role_param_bindings(receiver_class);
         let expansion = self.deferral_expansion_shared(receiver_class, method_name);
         let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
@@ -1590,12 +1590,12 @@ impl Interpreter {
                     args,
                     role_bindings.as_ref(),
                     Some(invocant),
-                )
+                )?
             {
                 all_candidates.push((owner, def.clone()));
             }
         }
-        all_candidates
+        Ok(all_candidates)
     }
 
     /// ADR-0019 E9b-2: the plain MRO-tail deferral entries following an
@@ -1615,14 +1615,14 @@ impl Interpreter {
         args: &[Value],
         chosen_def: &super::MethodDef,
         invocant: &Value,
-    ) -> Vec<super::DeferralEntry> {
+    ) -> Result<Vec<super::DeferralEntry>, RuntimeError> {
         // Submethod fast path, mirroring `push_method_dispatch_frame`'s own
         // `<=1` guard: a submethod is never inherited, so a single visible
         // candidate can never produce a deferral tail.
         if (chosen_def.is_my || chosen_def.is_submethod)
             && self.count_visible_method_candidates(receiver_class, method_name) <= 1
         {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let chosen_fp = self.method_def_fingerprint(chosen_def);
         self.deferral_tail_entries_after(receiver_class, method_name, args, chosen_fp, invocant)
@@ -1639,9 +1639,9 @@ impl Interpreter {
         args: &[Value],
         chosen_fp: u64,
         invocant: &Value,
-    ) -> Vec<super::DeferralEntry> {
+    ) -> Result<Vec<super::DeferralEntry>, RuntimeError> {
         let all_candidates =
-            self.matched_deferral_candidates(receiver_class, method_name, args, invocant, None);
+            self.matched_deferral_candidates(receiver_class, method_name, args, invocant, None)?;
         let mut remaining = Vec::new();
         let mut skipped = false;
         for (owner, def) in all_candidates {
@@ -1659,7 +1659,7 @@ impl Interpreter {
                 wraps_spliced: false,
             });
         }
-        remaining
+        Ok(remaining)
     }
 
     /// ADR-0019 E9b-2: build and push the SINGLE wrap-prefixed
@@ -1684,7 +1684,7 @@ impl Interpreter {
         owner_class: Symbol,
         method_def: &super::MethodDef,
         chain: &[(u64, Value)],
-    ) {
+    ) -> Result<(), RuntimeError> {
         let (mro_tail, lazy_tail) = match self.plan_deferral_tail(
             receiver_class,
             method_name,
@@ -1692,7 +1692,7 @@ impl Interpreter {
             method_def,
             &invocant,
             false,
-        ) {
+        )? {
             super::method_dispatch_lazy_tail::DeferralTail::Empty => (Vec::new(), None),
             super::method_dispatch_lazy_tail::DeferralTail::Lazy(lazy) => (Vec::new(), Some(lazy)),
             super::method_dispatch_lazy_tail::DeferralTail::Eager(tail) => (tail, None),
@@ -1738,6 +1738,7 @@ impl Interpreter {
                 in_wrapper: true,
                 lazy_tail,
             });
+        Ok(())
     }
 
     /// Push the callsame frame for a wrapped auto-generated attribute
