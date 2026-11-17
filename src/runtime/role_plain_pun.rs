@@ -22,7 +22,15 @@ impl Interpreter {
     /// The storage name of the pun class of the plain role `role_name`.
     // Cost: O(n), n = bytes of the role name.
     fn plain_role_pun_name(role_name: &str) -> String {
+        // The inverse of `plain_role_pun_source`.
         format!("{role_name}\u{0}pun")
+    }
+
+    /// The role whose pun class is named `class_name` (`R` for `R\0pun`), or
+    /// `None` for any other name.
+    // Cost: O(n), n = bytes of the name.
+    pub(crate) fn plain_role_pun_source(class_name: &str) -> Option<&str> {
+        class_name.strip_suffix("\u{0}pun")
     }
 
     /// The pun class of the plain role `role_name`, composed on the first call

@@ -424,18 +424,23 @@ impl Interpreter {
     fn pun_source_role(&self, obj: &Value) -> Option<String> {
         match obj.view() {
             ValueView::Instance { class_name, .. } => {
+                if let Some(role) = Self::plain_role_pun_source(class_name.as_str()) {
+                    return self.registry().roles.contains_key(role).then(|| role.to_string());
+                }
                 let name = class_name.resolve();
                 (self.registry().roles.contains_key(&name)
                     && self.registry().classes.contains_key(&name))
                 .then_some(name)
             }
             // A method called on a role type object (`R.m`) runs on the role's
-            // pun, which mutsu passes as the role type object itself:
-            // `self.^is_pun` is True there and `self.^pun_source` is the role
-            // (PDF's `PDF::COS::Tie.induce`).
+            // pun (`R\0pun`, `role_plain_pun.rs`): `self.^is_pun` is True
+            // there and `self.^pun_source` is the role (PDF's
+            // `PDF::COS::Tie.induce`). The role type object itself answers
+            // the same.
             ValueView::Package(name) => {
-                let name = name.resolve();
-                self.registry().roles.contains_key(&name).then_some(name)
+                let name = name.as_str();
+                let role = Self::plain_role_pun_source(name).unwrap_or(name);
+                self.registry().roles.contains_key(role).then(|| role.to_string())
             }
             ValueView::Mixin(_, overrides) => overrides.keys().find_map(|key| {
                 let role = key.strip_prefix("__mutsu_role__")?;
