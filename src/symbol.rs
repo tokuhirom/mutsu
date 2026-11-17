@@ -957,6 +957,22 @@ pub(crate) mod wk {
         /// The method name `new`, which the constructor lane gates every
         /// `CallMethodMut` on (see `vm_ctor_lane`).
         new_method => "new";
+        /// The attribute keys of a materialized `Match`
+        /// (`MatchNode::materialize_map`). A grammar parse with actions
+        /// materializes every node the action walk visits, and each key was
+        /// re-interned per node (a thread-local hash of the literal).
+        match_str => "str";
+        match_from => "from";
+        match_to => "to";
+        match_pos => "pos";
+        match_list => "list";
+        match_named => "named";
+        match_silent_caps => "silent_caps";
+        match_orig => "orig";
+        match_sym_variant => "sym_variant";
+        match_action_name => "action_name";
+        match_ast => "ast";
+        match_reduce_time_vars => "reduce_time_vars";
         /// The method names `Bool` and `Str`, which the truth test and the
         /// string coercions ask a composed role about
         /// (`method_table::composed_roles::role_declares`).
