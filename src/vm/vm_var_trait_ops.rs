@@ -9,8 +9,8 @@ impl Interpreter {
     /// Raku hands `STORE` the RHS *as written*: a plain scalar stays a scalar
     /// (`STORE('GAATCC', :INITIALIZE)`), a comma list or an array arrives as one
     /// list (`STORE(('x','y'), :INITIALIZE)`). `SetLocal`'s Array/Hash coercion
-    /// erases that distinction, so `StashVarDeclInit` captures the raw RHS and
-    /// it is preferred here; `coerced` (the value read back out of the slot) is
+    /// erases that distinction, so `StashVarDeclInit` keeps the raw RHS for
+    /// `ApplyVarTrait { raw_init: true }` and it is preferred here; `coerced` (the value read back out of the slot) is
     /// the fallback for declarations that reach this op without a stash.
     ///
     /// Returns `None` when there was no initializer at all — `my @a is DNA;`
@@ -148,14 +148,11 @@ impl Interpreter {
         trait_name_idx: u32,
         has_arg: bool,
         slot: Option<u32>,
+        stashed_init: Option<Value>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let trait_name =
             crate::ast::unescape_user_trait(Self::const_str(code, trait_name_idx)).to_string();
-        // Consume the `StashVarDeclInit` capture unconditionally, right here, so
-        // a declaration whose trait takes some *other* branch below cannot leave
-        // a stale RHS behind for the next custom-container tie to pick up.
-        let stashed_init = self.vardecl_init_raw.take();
         // `is TraitName` names its target class/role as WRITTEN in the source
         // (a constant string baked at compile time), but a lexical class
         // registers under a mangled storage name (ADR-0047 P1:

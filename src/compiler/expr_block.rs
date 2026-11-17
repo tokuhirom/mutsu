@@ -595,13 +595,23 @@ impl Compiler {
                     // As the statement-position decl does: a custom container
                     // trait (`is List`, a class with its own `STORE`) is fed the
                     // initializer as written, so keep the raw value for
-                    // `ApplyVarTrait` before `SetLocal` coerces it.
-                    if (name.starts_with('@') || name.starts_with('%'))
+                    // `ApplyVarTrait` before `SetLocal` coerces it. Only an
+                    // argument-less trait is applied below; one taking an
+                    // argument gets the mark but no raw copy, which nothing
+                    // here would consume.
+                    let container_decl = name.starts_with('@') || name.starts_with('%');
+                    let mut raw_init_pending = container_decl
                         && custom_traits
                             .iter()
-                            .any(|(t, _)| t.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
+                            .any(|(t, a)| a.is_none() && Self::is_type_named_trait(t));
+                    if container_decl
+                        && custom_traits
+                            .iter()
+                            .any(|(t, _)| Self::is_type_named_trait(t))
                     {
-                        self.code.emit(OpCode::StashVarDeclInit);
+                        self.code.emit(OpCode::StashVarDeclInit {
+                            keep_raw: raw_init_pending,
+                        });
                     }
                     if let Some(slot) = decl_slot {
                         self.code.emit(OpCode::SetLocal(slot));
@@ -630,6 +640,7 @@ impl Compiler {
                             trait_name_idx,
                             has_arg: trait_arg.is_some(),
                             slot: decl_slot,
+                            raw_init: false,
                         });
                     }
                     // Every OTHER named trait, for the same reason: a CONTAINER
@@ -651,11 +662,14 @@ impl Compiler {
                         }
                         let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
                         self.code.poison_declared_constraint(name);
+                        let raw_init = raw_init_pending && Self::is_type_named_trait(trait_name);
+                        raw_init_pending &= !raw_init;
                         self.code.emit(OpCode::ApplyVarTrait {
                             name_idx,
                             trait_name_idx,
                             has_arg: false,
                             slot: decl_slot,
+                            raw_init,
                         });
                     }
                     // Tag the container's element-type metadata so `.of` survives
@@ -1069,6 +1083,7 @@ impl Compiler {
                         trait_name_idx,
                         has_arg: trait_arg.is_some(),
                         slot: self.local_map.get(name.as_str()).copied(),
+                        raw_init: false,
                     });
                 }
                 // An uninitialized scalar declared `is default(V)` used as an

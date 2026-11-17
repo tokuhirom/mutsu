@@ -1805,7 +1805,7 @@ impl Interpreter {
                 // implicit-Associative check, which sees a `$`-wrapped hash as
                 // a non-Associative and rejects it outright.
                 let raw_popped = raw_popped.deitemize_for_sigil_bind();
-                self.check_associative_bind_value(name, &raw_popped)?;
+                self.check_associative_bind_value(name, &raw_popped, marks.trait_init())?;
                 // `:=` binding preserves containers — skip coercion. But the
                 // bound container must conform to a typed-hash variable's
                 // declared value type: `my Int %h := <untyped hash>` dies
@@ -3487,7 +3487,7 @@ impl Interpreter {
             // (`my %h is BagHash = ...`, see `check_associative_bind_value`):
             // its trait constraint is what `ApplyVarTrait` reads next.
             let constraint = self.bound_container_constraint(name, &val);
-            if constraint.is_some() || self.vardecl_init_raw.is_none() {
+            if constraint.is_some() || !marks.trait_init() {
                 self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
             }
         }

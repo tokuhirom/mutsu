@@ -153,7 +153,9 @@ pub(crate) fn interpreter_version() -> String {
     // 63: `OpCode::CallOnCodeVar` gained `local_slot`.
     // 64: `CompiledDeclExpr` gained `reads_attributes`.
     // 65: `CompiledCode` lost `type_body_written_lexicals` (ADR-16595 slice 5).
-    const CACHE_FORMAT_VERSION: u32 = 65;
+    // 66: `OpCode::StashVarDeclInit` gained `keep_raw` and `OpCode::ApplyVarTrait`
+    // gained `raw_init` (ADR-10779 D3).
+    const CACHE_FORMAT_VERSION: u32 = 66;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

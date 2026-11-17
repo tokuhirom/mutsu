@@ -185,7 +185,6 @@ impl Interpreter {
             sigilless_bind_source: None,
             mark_ctx: Box::default(),
             array_share_active: false,
-            vardecl_init_raw: None,
             pending_rw_writeback_sources: Vec::new(),
             pending_caller_var_writeback: rustc_hash::FxHashSet::default(),
             inline_control_env_writes: Vec::new(),

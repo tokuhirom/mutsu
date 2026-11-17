@@ -1227,14 +1227,17 @@ pub(crate) enum OpCode {
     /// itself, so SetLocal must KEEP it (unlike `my @u = @shaped`, which copies
     /// values and drops shaped-ness).
     MarkShapedDeclContext,
-    /// Stash (non-destructively peek) the initializer value about to be stored
-    /// by the next `SetLocal`/`SetGlobal` of an `@`/`%` declaration that carries
-    /// a type-named `is` trait. `SetLocal`'s Array/Hash coercion erases the RHS's
+    /// Precedes the store (`SetLocal`/`SetGlobal`) of an `@`/`%` declaration
+    /// that carries a type-named `is` trait, and sets the `TRAIT_INIT` mark that
+    /// store consumes. `SetLocal`'s Array/Hash coercion erases the RHS's
     /// original shape (`= 'x'` and `= ('x',)` both land as a 1-element Array),
     /// but Raku's custom-container protocol hands `STORE` the RHS *as written*.
-    /// Only `ApplyVarTrait`'s custom-container branches read the stash, so this
-    /// is purely additive for every other declaration.
-    StashVarDeclInit,
+    ///
+    /// With `keep_raw`, the initializer is also left on the stack under the
+    /// value the store pops (`[v] → [v, v]`): the one `ApplyVarTrait` with
+    /// `raw_init` set takes it from there. The compiler sets `keep_raw` only
+    /// when it emits that consumer, so the copy never outlives its declaration.
+    StashVarDeclInit { keep_raw: bool },
     /// Register a variable's declared type constraint. Stack: `[] → []`.
     ///
     /// Emitted before the store of a typed declaration that is not scoped to
@@ -4931,11 +4934,15 @@ pub(crate) enum OpCode {
     /// `slot` is the compile-time-baked local slot of the declared variable
     /// (§1.5; scope-correct under shadow slots). `None` for env-only
     /// expression-position declarations, which have no local slot to bake.
+    /// With `raw_init`, it also takes the declaration's initializer as written,
+    /// which `StashVarDeclInit { keep_raw: true }` left just below the trait
+    /// argument (or on top, without one).
     ApplyVarTrait {
         name_idx: u32,
         trait_name_idx: u32,
         has_arg: bool,
         slot: Option<u32>,
+        raw_init: bool,
     },
 
     /// A control step around a lifted variable-trait application (ADR-12131):

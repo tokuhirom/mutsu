@@ -130,22 +130,24 @@ impl Interpreter {
     /// `%` variables carry an implicit `Associative` constraint even when no
     /// element type was declared. Assignment may coerce an arbitrary value to
     /// a Hash, but binding aliases the RHS and therefore must reject a plain
-    /// object such as `Foo.new`.
+    /// object such as `Foo.new`. `trait_init` is the store's `TRAIT_INIT` mark
+    /// (`OpCode::StashVarDeclInit`).
     pub(crate) fn check_associative_bind_value(
         &mut self,
         name: &str,
         value: &Value,
+        trait_init: bool,
     ) -> Result<(), RuntimeError> {
         if !name.starts_with('%') {
             return Ok(());
         }
-        // A declaration with a type-named `is` trait stashes its raw
-        // initializer for `ApplyVarTrait`. QuantHash declarations deliberately
+        // A declaration with a type-named `is` trait hands its raw
+        // initializer to `ApplyVarTrait`. QuantHash declarations deliberately
         // use the bind marker to preserve that raw value until the trait handler
         // populates the container; the handler also owns the custom-container
         // error for a non-container class/role. Do not mistake that internal
         // marker for a user `:=` bind here.
-        if self.vardecl_init_raw.is_some() {
+        if trait_init {
             return Ok(());
         }
         if let Some(constraint) = loan_env!(self, var_type_constraint(name)) {

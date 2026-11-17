@@ -1494,6 +1494,10 @@ impl Interpreter {
                 let is_bind_ctx = self.bind_context().get();
                 let is_rebind = self.rebind_context().get();
                 self.bind_context().set(false);
+                // A type-named trait's `StashVarDeclInit` mark belongs to this
+                // store alone.
+                let trait_init = self.trait_init_context().get();
+                self.trait_init_context().set(false);
                 // Consume the scalar-bind marker here too: a topic bind
                 // (`$_ := $d`) compiles MarkScalarBindContext + SetGlobal, so
                 // without this the flag leaks into the NEXT SetLocal (e.g. a
@@ -2085,7 +2089,7 @@ impl Interpreter {
                     // Flush`): the bind aliases the mixed-in Hash itself, so
                     // the role's methods stay; coercing it took a plain copy.
                     let raw_val = raw_val.into_deref();
-                    self.check_associative_bind_value(&name, &raw_val)?;
+                    self.check_associative_bind_value(&name, &raw_val, trait_init)?;
                     raw_val
                 } else if name.starts_with('%')
                     && (is_bind_ctx || is_rebind)
@@ -2094,7 +2098,7 @@ impl Interpreter {
                     // `%!attr := Subclass-of-Map.new(...)`: a bind aliases the
                     // Associative instance itself, as `SetLocal` does; coercing
                     // it to a Hash would drop the subclass and its methods.
-                    self.check_associative_bind_value(&name, &raw_val)?;
+                    self.check_associative_bind_value(&name, &raw_val, trait_init)?;
                     raw_val
                 } else if name.starts_with('%')
                     && (is_bind_ctx || is_rebind)
@@ -2108,7 +2112,7 @@ impl Interpreter {
                     // RakuAST-built `%state := $_` restore block) held a
                     // copy that later writes through the source never reached.
                     let raw_val = raw_val.into_deref().deitemize_for_sigil_bind();
-                    self.check_associative_bind_value(&name, &raw_val)?;
+                    self.check_associative_bind_value(&name, &raw_val, trait_init)?;
                     self.check_hash_bind_value_type(&name, &raw_val)?;
                     raw_val
                 } else if name.starts_with('%') {
@@ -4066,10 +4070,13 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1).
-            OpCode::StashVarDeclInit => {
-                // Peek, do NOT pop: the value still has to reach the SetLocal
-                // that follows.
-                self.vardecl_init_raw = self.stack.last().cloned();
+            OpCode::StashVarDeclInit { keep_raw } => {
+                self.trait_init_context().set(true);
+                // The copy goes below the value the next store pops, for the
+                // `ApplyVarTrait { raw_init: true }` the compiler emitted.
+                if *keep_raw && let Some(top) = self.stack.last().cloned() {
+                    self.stack.push(top);
+                }
                 *ip += 1;
             }
 
@@ -8203,8 +8210,22 @@ impl Interpreter {
                 trait_name_idx,
                 has_arg,
                 slot,
+                raw_init,
             } => {
-                self.exec_apply_var_trait_op(code, *name_idx, *trait_name_idx, *has_arg, *slot)?;
+                // The initializer as written sits just below the trait
+                // argument (`StashVarDeclInit { keep_raw: true }`).
+                let raw_init = raw_init.then(|| {
+                    let at = self.stack.len().saturating_sub(1 + usize::from(*has_arg));
+                    self.stack.remove(at)
+                });
+                self.exec_apply_var_trait_op(
+                    code,
+                    *name_idx,
+                    *trait_name_idx,
+                    *has_arg,
+                    *slot,
+                    raw_init,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for the site and the seed steps; a replay runs the phasers filed under its site (O(p), p = phasers filed).

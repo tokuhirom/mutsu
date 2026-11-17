@@ -37,4 +37,3 @@ trait_mod_default_writeback
 trait_mod_writeback_key
 trait_mod_writeback_value
 type_meta_key_cache
-vardecl_init_raw

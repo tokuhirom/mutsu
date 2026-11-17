@@ -2,6 +2,18 @@ use super::*;
 use crate::ast::VarTraitOp;
 
 impl Compiler {
+    /// Whether a variable trait names a type (`is List`, `is Tied`, a class
+    /// with its own `STORE`) rather than a builtin or user trait word
+    /// (`is default`, `is rw`): such a trait may be a custom container, which
+    /// is handed the declaration's initializer as written
+    /// (`OpCode::StashVarDeclInit`).
+    pub(in crate::compiler) fn is_type_named_trait(trait_name: &str) -> bool {
+        trait_name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_uppercase())
+    }
+
     /// Declare a fresh array and apply its default before the initializer
     /// expression runs. The later SetLocal assigns into this container and
     /// therefore preserves an explicit Any that came from an inner `[Nil]`.
@@ -31,6 +43,7 @@ impl Compiler {
             trait_name_idx,
             has_arg: default_trait_expr.is_some(),
             slot: Some(slot),
+            raw_init: false,
         });
     }
 
@@ -154,6 +167,7 @@ impl Compiler {
                     trait_name_idx,
                     has_arg: arg.is_some(),
                     slot,
+                    raw_init: false,
                 });
                 return;
             }
