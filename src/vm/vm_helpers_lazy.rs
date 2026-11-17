@@ -421,7 +421,11 @@ impl Interpreter {
     /// `sink-all` (rakudo's `Seq.sink` is `self.iterator.sink-all`, #17628),
     /// otherwise a pull to the end.
     // Cost: the user `sink-all`, or the pull of the source.
-    fn sink_seq_source(&mut self, source: &SeqSource, out: &mut PullOut) -> Result<(), RuntimeError> {
+    fn sink_seq_source(
+        &mut self,
+        source: &SeqSource,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
         if let SeqSource::Iterator(iterator) = source
             && self.sink_all_user_iterator(iterator)?
         {

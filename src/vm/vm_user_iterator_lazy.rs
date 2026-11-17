@@ -155,7 +155,10 @@ impl Interpreter {
     /// pulls the iterator to its end, which is what the `Iterator` role's
     /// default `sink-all` does.
     // Cost: O(1) plus the user `sink-all`.
-    pub(crate) fn sink_all_user_iterator(&mut self, iterator: &Value) -> Result<bool, RuntimeError> {
+    pub(crate) fn sink_all_user_iterator(
+        &mut self,
+        iterator: &Value,
+    ) -> Result<bool, RuntimeError> {
         let Some(class_name) = self.user_iterator_class_with(iterator, "sink-all") else {
             return Ok(false);
         };
