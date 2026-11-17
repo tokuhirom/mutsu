@@ -83,16 +83,23 @@ impl Interpreter {
         {
             earlier.extend(candidates);
         }
-        let mut merged: Vec<Value> = Vec::with_capacity(earlier.len() + own.len());
-        for candidate in earlier.into_iter().chain(own.iter().cloned()) {
-            if !merged.iter().any(|seen| same_routine(seen, &candidate)) {
-                merged.push(candidate);
+        // This set's own candidates stay as they are; an earlier one joins
+        // ahead of them unless it is one of them (or already joined).
+        let mut joined: Vec<Value> = Vec::with_capacity(earlier.len());
+        for candidate in earlier {
+            if !own
+                .iter()
+                .chain(joined.iter())
+                .any(|seen| same_routine(seen, &candidate))
+            {
+                joined.push(candidate);
             }
         }
-        if merged.len() == own.len() {
+        if joined.is_empty() {
             return binding;
         }
-        LexicalImport::Code(with_candidates(&data, merged))
+        joined.extend(own);
+        LexicalImport::Code(with_candidates(&data, joined))
     }
 
     /// The dispatcher the last earlier set of the scope binds the built-in
@@ -128,11 +135,11 @@ impl Interpreter {
             .cloned()
             .and_then(Value::into_array)?;
         let mut merged: Vec<Value> = own.iter().cloned().collect();
-        for candidate in hook_candidates {
-            if !merged.iter().any(|seen| same_routine(seen, &candidate)) {
-                merged.push(candidate);
-            }
-        }
+        let added: Vec<Value> = hook_candidates
+            .into_iter()
+            .filter(|candidate| !own.iter().any(|seen| same_routine(seen, candidate)))
+            .collect();
+        merged.extend(added);
         Some(LexicalImport::Code(with_candidates(&data, merged)))
     }
 }
@@ -155,7 +162,8 @@ fn with_candidates(data: &crate::value::SubData, candidates: Vec<Value>) -> Valu
 }
 
 /// Whether two candidate code objects are the same routine: one object, or
-/// two code objects one declaration made, which share its parameter list
+/// two code objects one declaration made, which name the same
+/// declaration site and signature
 /// (the same family reached through a hook and through an `is export`
 /// import builds a code object for each).
 // Cost: O(1).
@@ -165,9 +173,21 @@ fn same_routine(a: &Value, b: &Value) -> bool {
             x.id == y.id
                 || (x.name == y.name
                     && x.package == y.package
-                    && !x.param_defs.is_empty()
-                    && std::sync::Arc::ptr_eq(&x.param_defs, &y.param_defs))
+                    && x.source_line.is_some()
+                    && x.source_file.is_some()
+                    && x.source_line == y.source_line
+                    && x.source_file == y.source_file
+                    && signature_hash(&x) == signature_hash(&y))
         }
         _ => false,
     }
+}
+
+/// A hash of a candidate's parameter list (a `ParamDef` has no equality).
+// Cost: O(p), p = parameters.
+fn signature_hash(data: &crate::value::SubData) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    data.param_defs.hash(&mut hasher);
+    hasher.finish()
 }
