@@ -5881,6 +5881,9 @@ pub(super) fn call_name(
     args: &[Expr],
     without_parentheses: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
+    if let (true, [], Some(term)) = (without_parentheses, args, super::term_named::view(name)) {
+        return Ok(term);
+    }
     let name_node = name_from_identifier(name);
     let arg_list = arg_list(names, args)?;
     // A qualified name (`M::foo`) is a `Call::Name` however it is spelled:

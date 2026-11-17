@@ -1067,6 +1067,15 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             "RakuAST::Declaration::External::Setting",
             &type_node_name(node).or_else(|| leaf(node, "name"))?,
         ),
+        // `now`, `time`: the setting's `term:<now>` routine, unless the unit
+        // declares that term itself.
+        C::TermNamed => {
+            let name = format!("term:<{}>", positional_leaf(node).ok()?.to_string_value());
+            if let Some(declared) = scopes.find(&format!("&{name}")) {
+                return Some(declared.clone());
+            }
+            (!(scopes.shadowed)(&name)).then(|| external_setting(&name))?
+        }
         // `pi`, `Empty`, `IterationEnd`: a term of the setting, unless the unit
         // declares the name itself.
         C::TermName => {
