@@ -541,8 +541,18 @@ impl Interpreter {
             // ACCEPTS semantics in the specific arms below and report no *user*
             // method here, so they are unaffected. Junction LHS is excluded so
             // junction autothreading (the arm below) still wins.
-            (_, ValueView::Instance { class_name, .. })
+            //
+            // The class's type object is a matcher too (`"yes" ~~ Picky`
+            // dispatches `Picky.ACCEPTS("yes")`, #17594): a user candidate that
+            // binds the type-object invocant wins over `Mu.ACCEPTS`'s nominal
+            // test, and one that does not (`multi method ACCEPTS(Picky:D: $x)`)
+            // leaves the nominal test below. A role's type object is excluded:
+            // Rakudo type-checks against a role without consulting the role's
+            // own `ACCEPTS`.
+            (_, ValueView::Instance { class_name, .. } | ValueView::Package(class_name))
                 if !matches!(left.view(), ValueView::Junction { .. })
+                    && !(matches!(right.view(), ValueView::Package(_))
+                        && self.registry().roles.contains_key(class_name.as_str()))
                     && self.has_user_method(&class_name.resolve(), "ACCEPTS")
                     && self.user_accepts_applies(&class_name.resolve(), right, left) =>
             {
