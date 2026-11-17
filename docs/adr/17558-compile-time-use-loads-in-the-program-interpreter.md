@@ -1,10 +1,11 @@
 # ADR-17558: A `use` loads its module in the program's own interpreter when the parser reaches it
 
-- **Status**: Proposed (awaiting the maintainer's decision; route B of the 2026-11-12 decision recorded in ADR-17557)
+- **Status**: Accepted (decision: the maintainer, 2026-11-17: "match rakudo"; route B of the
+  2026-11-12 decision recorded in ADR-17557). The open questions of §5 are answered by §7.
 - Date: 2026-11-17
-- Deciders: tokuhirom (pending), Claude
+- Deciders: tokuhirom, Claude
 - Issue: [#17558](https://github.com/tokuhirom/mutsu/issues/17558)
-- Would supersede: [ADR-0124](0124-parse-time-export-probe-for-computed-export-stashes.md)
+- Supersedes (as its slices land): [ADR-0124](0124-parse-time-export-probe-for-computed-export-stashes.md)
   (the parse-time export probe) and [ADR-17557](17557-parse-time-probe-for-begin-time-merges.md)
   (its BEGIN-call gate), and the probe half of [ADR-0026](0026-slang-activation-architecture.md)
   §2.1 (slang activation in a separate interpreter). It completes the step
@@ -55,7 +56,7 @@ This has three structural costs:
 `Never build an Interpreter to run code` (AGENTS.md) lists the parse-time probes
 as one of the few allowed constructions; this ADR removes most of them.
 
-## 2. Decision (proposed)
+## 2. Decision
 
 ### 2.1 The parser asks the program's interpreter to load the module
 
@@ -183,7 +184,9 @@ until it lands, slang activation keeps its current host.
   Rejected: two interpreters must then agree on every registry, which is the
   copy problem ADR-0134 §4 rejected for BEGIN.
 
-## 5. Open questions
+## 5. Open questions (answered by §7)
+
+Kept as written when the ADR was proposed; §7 records the answers.
 
 - **The importer's own BEGIN blocks.** rakudo runs `BEGIN` at parse time too.
   This ADR moves only `use`. A `BEGIN` that changes what a later `use` loads
@@ -198,7 +201,7 @@ until it lands, slang activation keeps its current host.
   module export" before the load (to avoid the load for a `use` whose import list
   is empty) is a measurement question, not a semantic one.
 
-## 6. Implementation plan (if accepted)
+## 6. Implementation plan
 
 1. **The loader seam.** The leaf trait, the interpreter implementation, the
    no-op loader for analysis, and the call after a parsed `use`. The registry
@@ -214,3 +217,104 @@ until it lands, slang activation keeps its current host.
    from the loaded unit.
 4. **Slangs on the program interpreter.** The slang host becomes the program
    interpreter; the separate activation interpreter is deleted.
+5. **The importer's BEGIN-time statements at parse time** (§7.1). A `BEGIN` phaser of the unit
+   runs when the parser reaches it, through the same loader seam, so it interleaves with the
+   `use` loads in source order. Until this slice lands, slice 1 keeps the source order with the
+   transitional rule of §7.1.
+
+## 7. Amendment (2026-11-17): the open questions, answered by rakudo
+
+The maintainer accepted this ADR with the instruction "match rakudo": wherever §5 left a question
+open, mutsu does what rakudo does. Measured on rakudo 2026.09 (RakuAST frontend) with a module
+`LoudA` that prints from a `BEGIN`, an `INIT` and its mainline, and an importer that prints from
+`BEGIN`s around `use LoudA`:
+
+```raku
+BEGIN say "importer BEGIN 1";
+say "importer mainline 1";
+use LoudA;
+BEGIN say "importer BEGIN 2";
+INIT say "importer INIT";
+say a();
+```
+
+```
+importer BEGIN 1
+LoudA BEGIN          # first run only: LoudA is compiled (and precompiled) here
+LoudA INIT
+LoudA mainline
+importer BEGIN 2
+importer INIT
+importer mainline 1
+a
+```
+
+### 7.1 The importer's own BEGIN blocks
+
+rakudo runs each `BEGIN` of the importer when the parser reaches it, interleaved with the `use`
+loads in source order: `importer BEGIN 1` comes before everything `LoudA` prints, and
+`importer BEGIN 2` after it. A `BEGIN` that changes what a later `use` finds (`%*ENV`, a
+repository it registers) therefore takes effect for that `use`.
+
+**Decision:** mutsu matches this. The importer's `BEGIN` blocks become parse-time statements of
+the same loader seam: the parser hands a finished `BEGIN` to the program interpreter, which runs it
+at once. That is slice 5 of §6, the remaining step of ADR-0134 §2.4; after it the prologue no
+longer runs `BEGIN` blocks that already ran at parse time.
+
+**Until slice 5 lands**, loading a module at parse time must not move it ahead of a `BEGIN` that
+precedes it in the unit (that `BEGIN` still runs in the prologue). The transitional rule: a `use`
+loads at parse time only while no `BEGIN` phaser of the same unit precedes it; a `use` after one
+keeps loading in the prologue, at its position, as before this ADR. This keeps today's order in
+every case and is removed by slice 5.
+
+### 7.2 `no precompilation` and `require`
+
+- A `no precompilation` module is loaded from source by every process that `use`s it, so its
+  `BEGIN` runs on every run (`LoudNP BEGIN` is printed on the second run too), while a
+  precompiled module's `BEGIN` runs only when it is compiled. Otherwise its `use` is the ordinary
+  compile-time load: its mainline runs when the parser reaches the `use`. **Decision:** no special
+  path. A module mutsu serves from its precompilation cache (ADR-11756/12026) loads from its facts
+  at parse time exactly as at run time today; a module that opts out is parsed, compiled and run at
+  parse time.
+- `require M` is a run-time load in statement order: `say "before"; require M; say "after"` prints
+  `before`, `M`'s output, `after`. **Decision:** `require` stays a run-time load and does not go
+  through the loader seam.
+- A `use` inside a routine that is never called loads at compile time (rakudo prints the module's
+  output before the unit's first `say`). Already true since ADR-0134; unchanged.
+- `use M ()` (an empty import list) still loads `M` at compile time and runs its mainline.
+
+### 7.3 The disk scan cache
+
+rakudo has no export scan: a compiling parse always loads the module, an empty import list
+included (§7.2), and reads its exports from the loaded unit. **Decision:** a compiling parse does
+not consult the static scan, or its disk cache, for a module the loader loaded; it reads the loaded
+unit's facts (slice 2). The scan and its disk cache stay for the analysis paths (§2.5), which never
+load, and for a `use` the loader does not take (a module it cannot resolve at parse time, which
+then loads at run time as before).
+
+### 7.4 Errors and `-c`
+
+- A module that dies while loading fails the importer's compile at the `use`:
+
+  ```
+  ===SORRY!=== Error while compiling t3.raku
+  boom in Dies
+  at t3.raku:3
+  ------> <BOL><HERE>use Dies;
+  ```
+
+  The importer's mainline does not run (a `say` before the `use` prints nothing), the exit status
+  is 1, and what the module printed before dying is printed. A `BEGIN` before the `use` has run.
+- A syntax error *after* a `use` is reported after the module has run: the module's output comes
+  first.
+- `raku -c` runs `use` (and `BEGIN`): `LoudA` prints and then `Syntax OK`. §2.5 already treats
+  `-c` as a compiling parse.
+
+### 7.5 The analysis gate
+
+The loader is reached only through a thread-local stack that a compiling interpreter pushes for
+the extent of its parse (`run`, `-c`, a module's compile, `EVAL`). A parse with no loader on the
+stack — every analysis entry point, and any thread nobody granted one — loads nothing. That makes
+the seam fail-closed by construction, the property ADR-17741 §3.2 asks of the parse-time
+execution gate; the `NoExecuteGuard` callers keep their guard, and the loader also refuses while
+one is held.
