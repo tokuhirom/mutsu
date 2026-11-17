@@ -7570,7 +7570,6 @@ t/routines/call/sleep-listop-expression.t
 t/routines/call/slip-array-element-capture.t
 t/routines/call/spawn-aggregate-cell-capture-callbacks.t
 t/routines/call/spawn-aggregate-cell-capture.t
-t/routines/call/spawn-capture-check-oracle.t
 t/routines/call/start-worker-redeclared-captured-lexical-keeps-spawner.t
 t/routines/call/statement-call-sinks-its-value.t
 t/routines/call/tail-bare-block-when-succeed.t

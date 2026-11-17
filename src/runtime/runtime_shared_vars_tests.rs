@@ -2,6 +2,10 @@ use super::*;
 use crate::meta_ns::MetaNs;
 use crate::value::Value;
 
+// The store never holds a user lexical (ADR-16595, #17837), so these pin the
+// mirror and sync mechanics on dynamic-variable keys (`*url`), which still
+// use it.
+
 /// The incidental locals -> env mirrors (the I/O pre-sync before
 /// Say/Put/Print/Note, and the regex interpolation pre-sync) must reach
 /// `env` WITHOUT touching the cross-thread lane. The lane is keyed by bare
@@ -16,13 +20,13 @@ fn suppressed_publish_writes_env_but_not_the_shared_lane() {
     interp
         .threads
         .shared_vars
-        .set("url", Value::str("lane".to_string()));
+        .set("*url", Value::str("lane".to_string()));
 
     interp.threads.suppress_shared_publish = true;
-    interp.set_shared_var_sym("url", None, Value::str("frame-local".to_string()));
+    interp.set_shared_var_sym("*url", None, Value::str("frame-local".to_string()));
 
     assert_eq!(
-        interp.env.get("url").and_then(|v| match v.view() {
+        interp.env.get("*url").and_then(|v| match v.view() {
             ValueView::Str(s) => Some(s.to_string()),
             _ => None,
         }),
@@ -33,7 +37,7 @@ fn suppressed_publish_writes_env_but_not_the_shared_lane() {
         interp
             .threads
             .shared_vars
-            .get("url")
+            .get("*url")
             .and_then(|v| match v.view() {
                 ValueView::Str(s) => Some(s.to_string()),
                 _ => None,
@@ -42,7 +46,7 @@ fn suppressed_publish_writes_env_but_not_the_shared_lane() {
         "the cross-thread lane must be left alone"
     );
     assert!(
-        !interp.is_shared_var_dirty("url"),
+        !interp.is_shared_var_dirty("*url"),
         "a suppressed mirror must not mark the name dirty, or the next \
          sync pulls the lane back over the live binding"
     );
@@ -56,22 +60,22 @@ fn unsuppressed_write_publishes_to_the_shared_lane() {
     interp
         .threads
         .shared_vars
-        .set("url", Value::str("lane".to_string()));
+        .set("*url", Value::str("lane".to_string()));
 
-    interp.set_shared_var_sym("url", None, Value::str("assigned".to_string()));
+    interp.set_shared_var_sym("*url", None, Value::str("assigned".to_string()));
 
     assert_eq!(
         interp
             .threads
             .shared_vars
-            .get("url")
+            .get("*url")
             .and_then(|v| match v.view() {
                 ValueView::Str(s) => Some(s.to_string()),
                 _ => None,
             }),
         Some("assigned".to_string())
     );
-    assert!(interp.is_shared_var_dirty("url"));
+    assert!(interp.is_shared_var_dirty("*url"));
 }
 
 /// Entering a critical section refreshes only what ANOTHER thread committed.
@@ -86,18 +90,18 @@ fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
     interp
         .threads
         .shared_vars
-        .set("guard", Value::str("seed".to_string()));
+        .set("*guard", Value::str("seed".to_string()));
 
     interp.enter_critical_section();
-    interp.set_shared_var_sym("guard", None, Value::str("inner".to_string()));
+    interp.set_shared_var_sym("*guard", None, Value::str("inner".to_string()));
     interp.leave_critical_section();
 
     // The outer frame's own `$guard`, entering a critical section later.
-    interp.env.insert("guard".to_string(), Value::str("outer".to_string()));
+    interp.env.insert("*guard".to_string(), Value::str("outer".to_string()));
     interp.enter_critical_section();
 
     assert_eq!(
-        interp.env.get("guard").and_then(|v| match v.view() {
+        interp.env.get("*guard").and_then(|v| match v.view() {
             ValueView::Str(s) => Some(s.to_string()),
             _ => None,
         }),
@@ -173,12 +177,12 @@ fn protect_sync_leaves_a_sigilless_binding_alone() {
     interp
         .threads
         .shared_vars
-        .set("count", Value::str("shared".to_string()));
+        .set("*count", Value::str("shared".to_string()));
     interp.env.insert("\\type".to_string(), Value::str("live".to_string()));
-    interp.env.insert("count".to_string(), Value::str("live".to_string()));
+    interp.env.insert("*count".to_string(), Value::str("live".to_string()));
 
-    interp.sync_shared_vars_for_names(["\\type", "count"]);
+    interp.sync_shared_vars_for_names(["\\type", "*count"]);
 
     assert_eq!(env_str(&interp, "\\type"), Some("live".to_string()));
-    assert_eq!(env_str(&interp, "count"), Some("shared".to_string()));
+    assert_eq!(env_str(&interp, "*count"), Some("shared".to_string()));
 }

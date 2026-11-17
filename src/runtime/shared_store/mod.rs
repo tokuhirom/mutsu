@@ -18,7 +18,6 @@ use crate::value::Value;
 use std::sync::{Arc, Mutex, RwLock};
 
 
-pub(crate) mod capture_check;
 
 // Lineage-store maps are String-keyed and hit on every spawn's seeding loop;
 // use FxHash instead of SipHash (variable names are program identifiers, not
@@ -36,6 +35,38 @@ use rustc_hash::FxHashMap as HashMap;
 /// counter or its own `state` cell and silently lose updates.
 fn is_internal_key(key: &str) -> bool {
     key.starts_with("__mutsu_")
+}
+
+/// Whether `key` names a plain user lexical (`x`, `@a`, `%h`, `&f`) rather
+/// than a dynamic (`*x`, `@*x`), an attribute alias (`!x`), a twigil'd or
+/// special variable, a qualified name or a runtime-internal `__mutsu_*` key.
+/// (The invocant binding is a lexical too: no thread reaches it by name.)
+///
+/// ADR-16595: such a name is never in the store. Code on another thread
+/// reaches a lexical through the cell its capture holds, a spawn publishes
+/// none, and no operation on a lexical reads or writes the store by name, so
+/// a read under one is answered "absent" without touching a lineage and a
+/// write is a bug (#17837).
+// Cost: O(|key|).
+pub(crate) fn is_user_lexical_key(key: &str) -> bool {
+    let bare = key.strip_prefix(['@', '%', '&', '$']).unwrap_or(key);
+    let mut chars = bare.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_alphabetic() || (first == '_' && bare.len() > 1 && !bare.starts_with("__")))
+        && !crate::qualified::is_qualified_str(bare)
+        && !bare.contains(['*', '!', '?', '.', '^', '='])
+}
+
+/// The ADR-16595 invariant at every store insertion: debug builds stop at a
+/// user-lexical key (see [`is_user_lexical_key`]).
+// Cost: O(|key|) in a debug build, nothing in a release build.
+fn debug_assert_not_lexical(key: &str) {
+    debug_assert!(
+        !is_user_lexical_key(key),
+        "the lineage store must not hold the user lexical `{key}` (ADR-16595)"
+    );
 }
 
 /// Strip the `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::` lane prefix off
@@ -230,6 +261,9 @@ impl SharedStore {
     /// Read a name: this lineage first, then up the chain. An internal key
     /// resolves at the root instead (see `is_internal_key`).
     pub(crate) fn get(&self, key: &str) -> Option<Value> {
+        if is_user_lexical_key(key) {
+            return None;
+        }
         if is_internal_key(key) {
             return self.scope_for(key).own_get(key);
         }
@@ -241,6 +275,9 @@ impl SharedStore {
     }
 
     pub(crate) fn contains_key(&self, key: &str) -> bool {
+        if is_user_lexical_key(key) {
+            return false;
+        }
         if is_internal_key(key) {
             return self.scope_for(key).owns(key);
         }
@@ -258,9 +295,7 @@ impl SharedStore {
     /// Falls back to this lineage when the name is new (a first write with no
     /// prior declaration behaves as a declaration here).
     pub(crate) fn set(&self, key: &str, value: Value) {
-        if capture_check::enabled() {
-            capture_check::note_lane_access(key, "set");
-        }
+        debug_assert_not_lexical(key);
         note_inserted_key(key);
         let target = self.owner_of(key).unwrap_or_else(|| self.scope_for(key));
         target.own.write().unwrap().insert(key.to_string(), value);
@@ -298,6 +333,7 @@ impl SharedStore {
         if self.contains_key(key) {
             return false;
         }
+        debug_assert_not_lexical(key);
         note_inserted_key(key);
         self.scope_for(key)
             .own
@@ -314,6 +350,7 @@ impl SharedStore {
     /// seeded into the spawning lineage by `clone_for_thread` *before* the child
     /// starts, so children resolve them through the chain and never re-init.
     pub(crate) fn get_or_init_cell(&self, key: &str, make: impl FnOnce() -> Value) -> Value {
+        debug_assert_not_lexical(key);
         if let Some(existing) = self.get(key)
             && existing.is_container_ref()
         {
@@ -355,9 +392,6 @@ impl SharedStore {
         key: &str,
         f: impl FnOnce(&mut Value) -> R,
     ) -> Option<R> {
-        if capture_check::enabled() {
-            capture_check::note_lane_access(key, "mut");
-        }
         let target = self.owner_of(key)?;
         let mut guard = target.own.write().unwrap();
         let r = guard.get_mut(key).map(f);
