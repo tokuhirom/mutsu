@@ -70,31 +70,6 @@ impl<'a> CarrierBody<'a> {
     }
 }
 
-/// The three per-`SubData` mutations `eval_block_value_inner` applies to the
-/// chunk it compiles for a carrier block, gathered so they can be both keyed on
-/// and applied in one place.
-///
-/// They are derived from the code object being run, not from the ambient frame,
-/// so for one `cache_id` they are the same on every call -- which is what makes
-/// caching a chunk carrying them sound. See [`CarrierCompileCtxKey`].
-pub(super) struct CarrierPostCompile {
-    is_supply_block_body: bool,
-    supply_emitter_sym: Option<crate::symbol::Symbol>,
-    authoritative_free_vars: Vec<crate::symbol::Symbol>,
-}
-
-impl CarrierPostCompile {
-    fn apply(&self, code: &mut crate::opcode::CompiledCode) {
-        code.is_supply_block_body = self.is_supply_block_body;
-        code.supply_emitter_sym = self.supply_emitter_sym;
-        for sym in &self.authoritative_free_vars {
-            if !code.authoritative_free_vars.contains(sym) {
-                code.authoritative_free_vars.push(*sym);
-            }
-        }
-    }
-}
-
 impl Interpreter {
     pub(crate) fn composed_result_to_args(value: Value, prefer_single: bool) -> Vec<Value> {
         if prefer_single {
@@ -375,9 +350,6 @@ impl Interpreter {
             // never a caller's `my &name` (#10997).
             compiler.lexical_scope_known = true;
         }
-        // ADR-0059 Slice 2: an `is rw`/`is raw` routine body recompiled here
-        // still hands its caller its tail's container.
-        compiler.set_rw_tail(self.pending_eval_rw_tail);
         let scope = if let Some(frame) = self.routine_stack.last() {
             // Set enclosing_package to the clean package name so that
             // $?PACKAGE resolves to the package, not the mangled routine
@@ -627,7 +599,6 @@ impl Interpreter {
         &self,
         is_eval_unit: bool,
         routineness: Option<BlockRoutineness>,
-        post: &CarrierPostCompile,
     ) -> CarrierCompileCtxKey {
         let ambient = self.carrier_ambient_routineness(is_eval_unit);
         let return_routineness = routineness.filter(|_| !is_eval_unit);
@@ -649,7 +620,6 @@ impl Interpreter {
             scope,
             sigilless: self.pending_eval_sigilless.clone(),
             placeholder_params: self.pending_eval_placeholder_params.clone(),
-            rw_tail: self.pending_eval_rw_tail,
             import_chain: if !is_eval_unit {
                 self.eval_lexical_import_chain()
             } else {
@@ -661,9 +631,6 @@ impl Interpreter {
             } else {
                 None
             },
-            supply_block_body: post.is_supply_block_body,
-            supply_emitter_sym: post.supply_emitter_sym,
-            supply_authoritative_free_vars: post.authoritative_free_vars.clone(),
         }
     }
 
@@ -678,13 +645,12 @@ impl Interpreter {
         is_eval_unit: bool,
         routineness: Option<BlockRoutineness>,
         cache_id: CarrierCacheKey,
-        post: &CarrierPostCompile,
         origin: Option<&crate::opcode::CompiledCode>,
     ) -> (
         std::sync::Arc<crate::opcode::CompiledCode>,
         std::sync::Arc<crate::opcode::CompiledFns>,
     ) {
-        let key = self.carrier_compile_ctx_key(is_eval_unit, routineness, post);
+        let key = self.carrier_compile_ctx_key(is_eval_unit, routineness);
         if let Some(entries) = self.caches.carrier_compile_cache.get(&cache_id)
             && let Some((_, code, fns)) = entries.iter().find(|(k, ..)| *k == key)
         {
@@ -692,14 +658,8 @@ impl Interpreter {
             return (code.clone(), fns.clone());
         }
         crate::vm::vm_stats::record_carrier_compile(false);
-        let (mut code, fns) =
+        let (code, fns) =
             self.compile_block_value_opts_under(body, is_eval_unit, routineness, origin);
-        // The three per-`SubData` mutations, applied BEFORE the chunk is shared.
-        // They are part of the key above, so an entry served from the cache is
-        // byte-identical to what this fresh path produces for the same key --
-        // which is what lets them be cached at all rather than forcing a
-        // re-compile (see `CarrierCompileCtxKey`'s doc).
-        post.apply(&mut code);
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);
         let entries = self
@@ -751,18 +711,9 @@ impl Interpreter {
         let is_eval_unit = kind.is_eval_unit();
         let origin = kind.origin();
         let routineness = kind.routineness();
-        // Taken first, unconditionally: it belongs to THIS body's compile only
-        // (see the field doc), and an empty body must not leave it armed.
-        let rw_tail = std::mem::take(&mut self.pending_eval_rw_tail);
         if body.is_empty() && precompiled.is_none() {
             return Ok(Value::NIL);
         }
-        // Taken (not read) so a block compiled from *inside* this body does not
-        // inherit the mark — see `pending_supply_block_body`.
-        let is_supply_block_body = std::mem::take(&mut self.pending_supply_block_body);
-        let supply_emitter_sym = std::mem::take(&mut self.pending_supply_emitter_sym);
-        let supply_authoritative_free_vars =
-            std::mem::take(&mut self.pending_supply_authoritative_free_vars);
         let let_mark = self.let_saves_len();
         // All five snapshots are refcount bumps, not copies: every one of these
         // tables is a copy-on-write `Arc` (`Registry::functions`,
@@ -810,37 +761,17 @@ impl Interpreter {
             .iter()
             .filter_map(|k| self.env.overlay_get_sym(*k).map(|v| (*k, v.clone())))
             .collect();
-        // The compiled chunk can be reused across calls to the SAME `SubData`
-        // (cache_id) only when nothing below would mutate it per-call — a
-        // cached `Arc` must stay byte-identical to what a fresh compile would
-        // have produced every time it is served, and these four fields are
-        // exactly what the plain (uncached) path below mutates post-compile.
-        // Bypass the cache (compile fresh, don't store) rather than caching a
-        // wrong/stale mutation.
-        let post = CarrierPostCompile {
-            is_supply_block_body,
-            supply_emitter_sym,
-            authoritative_free_vars: supply_authoritative_free_vars,
-        };
-        // Re-armed only for the duration of the compile below (the cache key
-        // and `compile_block_value_opts` read it), then cleared before the body
-        // runs so nothing compiled during execution inherits it.
-        self.pending_eval_rw_tail = rw_tail;
         let (code, compiled_fns) = if let Some(chunk) = precompiled {
             // ADR-0133: compiled once by the compiler, in the declaring scope.
-            // The pending per-body marks taken above belong to a body a
-            // caller was about to compile, never to a signature expression.
             (chunk.code.clone(), chunk.fns.clone())
         } else if let Some(id) = cache_id {
-            self.compile_block_value_cached(body, is_eval_unit, routineness, id, &post, origin)
+            self.compile_block_value_cached(body, is_eval_unit, routineness, id, origin)
         } else {
             crate::vm::vm_stats::record_carrier_compile_uncached();
-            let (mut code, fns) =
+            let (code, fns) =
                 self.compile_block_value_opts_under(body, is_eval_unit, routineness, origin);
-            post.apply(&mut code);
             (std::sync::Arc::new(code), std::sync::Arc::new(fns))
         };
-        self.pending_eval_rw_tail = false;
         // An `EVAL` unit's `our sub`s close over their block's lexicals like the
         // program's own: seed the escaping names from the unit's compiled code, as the
         // mainline does at program start (#16356).
@@ -1073,18 +1004,6 @@ impl Interpreter {
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
         self.run_pending_instance_destroys()?;
-        // Publish the block's own `my` declarations for `call_sub_value`'s exit
-        // merge — see `Interpreter::last_block_my_declared`. Written here, after
-        // the body (and every block nested in it) has run, so the outermost
-        // block's set is the one that survives. A name that is ALSO a free var
-        // refers to the outer binding for its pre-declaration uses, so it is not
-        // block-private and stays out.
-        self.last_block_my_declared = code
-            .my_declared_sym
-            .iter()
-            .filter(|sym| !code.free_var_syms.contains(sym))
-            .copied()
-            .collect();
         result.map(|value| {
             // When the block's last statement is a sub declaration, its value is
             // the declared sub — not a leftover topic/`$_` value from an earlier

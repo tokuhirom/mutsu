@@ -537,10 +537,6 @@ struct CarrierCompileCtxKey {
     scope: String,
     sigilless: Vec<String>,
     placeholder_params: Vec<String>,
-    /// ADR-0059 Slice 2: whether the body's bare tail compiles in container
-    /// mode (an `is rw`/`is raw` routine body). Part of the key because it
-    /// changes the tail's bytecode.
-    rw_tail: bool,
     /// The import sets a regex code block compiles under (empty for every
     /// other body): they change which routines its calls reach.
     import_chain: Vec<Symbol>,
@@ -553,21 +549,6 @@ struct CarrierCompileCtxKey {
     /// eval_context_dead_routine`). Must stay in the key or the cache could
     /// serve a unit compiled under the wrong classification.
     eval_context_routine: Option<EvalContextRoutineState>,
-    /// The four post-compile mutations `eval_block_value_inner` applies to the
-    /// chunk it just compiled: the supply-body mark, the emitter name and the
-    /// vouched capture set. They come from
-    /// the `SubData` being run, so they are the same on every call for one
-    /// `cache_id` -- but they are *not* the same across two different code
-    /// objects that happen to share one, so they belong in the key.
-    ///
-    /// They used to bypass the cache instead ("compile fresh, don't store"),
-    /// which meant a `whenever` callback (then still dispatched through the
-    /// carrier) was re-compiled from AST on every single emitted value.
-    /// On Cro's HTTP/2 parser that was one full `Compiler::compile` per DATA
-    /// frame, 38% of the frame's instructions (#7667).
-    supply_block_body: bool,
-    supply_emitter_sym: Option<Symbol>,
-    supply_authoritative_free_vars: Vec<Symbol>,
 }
 
 /// What a carrier-block compile is cached *under*.
@@ -2206,13 +2187,6 @@ pub struct Interpreter {
     /// bound in env, seeded into `compile_block_value_opts`'s fresh compiler
     /// so its stray-placeholder checks know they are attached.
     pending_eval_placeholder_params: Vec<String>,
-    /// ADR-0059 Slice 2: the interpret-path sub call about to recompile a
-    /// `SubData` body through `eval_block_value_cached` is an `is rw`/`is raw`
-    /// routine, so the fresh compiler must compile the body's bare tail as the
-    /// container it denotes (`Compiler::rw_tail`). Consumed (taken) by
-    /// `eval_block_value_inner` at entry, so it never leaks into a block
-    /// compiled from *inside* that body.
-    pending_eval_rw_tail: bool,
     /// ADR-0037 §2.3: how `EVAL ..., context => $ctx` should classify the
     /// snippet's `return`, computed once by `builtin_eval` from `$ctx`'s
     /// stamped routine identity (`Interpreter::eval_context_routine`) and
@@ -2229,35 +2203,6 @@ pub struct Interpreter {
     /// `.eval` calls (ADR-0122, `runtime::repl_compiler`). Boxed: it is
     /// idle in almost every program, and `Interpreter` lives on the stack.
     pub(crate) repl_compiler: Box<repl_compiler::ReplCompilerState>,
-    /// Set right before the interpret path evaluates the body of a `supply { … }`
-    /// block, and consumed by the very next `eval_block_value_inner` so the
-    /// freshly compiled chunk carries `CompiledCode::is_supply_block_body`.
-    ///
-    /// The compiler already marks the supply lambda's own `CompiledCode`, but
-    /// `call_sub_value` does not run that chunk — it re-compiles `data.body` from
-    /// the AST, and that copy would otherwise lose the mark. Consumed (taken) on
-    /// entry, so a nested block compiled from inside the body does not inherit it.
-    pending_supply_block_body: bool,
-    /// The emitter parameter name that goes with `pending_supply_block_body`, so
-    /// the re-compiled chunk also carries `CompiledCode::supply_emitter_sym`.
-    pending_supply_emitter_sym: Option<Symbol>,
-    /// The compiler-vouched never-written captures of the supply lambda whose
-    /// body `eval_block_value` is about to re-compile. Only the *original*
-    /// compile saw the creating frame, so the carrier chunk cannot derive
-    /// `authoritative_free_vars` itself — it has no enclosing frame to vouch.
-    /// Travels with `pending_supply_block_body`.
-    pending_supply_authoritative_free_vars: Vec<Symbol>,
-    /// Names the block `eval_block_value_inner` most recently FINISHED running
-    /// declared with its own `my` (excluding those it also uses as free
-    /// variables). Written just before that function returns, so after a call
-    /// the value belongs to the outermost block that just completed — nested
-    /// blocks run and publish their own set first, and are overwritten.
-    ///
-    /// `call_sub_value`'s exit merge reads it to keep such names out of the
-    /// caller: a body compiled on the fly from AST (a `whenever` body, a
-    /// `supply` block body) has no `CompiledCode` on its `SubData`, so the
-    /// compile-time `my_declared_sym` is otherwise unreachable from there.
-    last_block_my_declared: Vec<Symbol>,
     /// The subset of [`Self::pending_caller_var_writeback`] that came from a write
     /// whose TARGET NAME was resolved at RUN TIME — `$::($n) = v`, `::('$x') = v`,
     /// an assignment inside an `EVAL`'d snippet. Only these names are carried
