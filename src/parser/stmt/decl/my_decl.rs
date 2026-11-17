@@ -745,6 +745,11 @@ fn parse_variable_traits<'a>(
                     msg,
                 ));
             }
+            // `my @a of Int` with nothing before the `of`: RakuAST keeps it a
+            // `Trait::Of`, not the declaration's `type`.
+            if type_constraint.is_none() && custom_traits.is_empty() && !has_export_trait {
+                marks.type_from_of = true;
+            }
             *type_constraint = Some(tc);
             rest = r;
             progressed = true;

@@ -1715,6 +1715,7 @@ pub(super) fn var_decl_statement(
         Some((value, _)) => value,
         None => marks.written_type(type_constraint),
     };
+    let (type_name, of_type) = decl_traits::split_of(type_name, marks);
     let scope = if is_our {
         Some("our")
     } else if is_state {
@@ -1791,6 +1792,7 @@ pub(super) fn var_decl_statement(
         super::keyed_hash::insert_dimensions(names, &mut decl, dims)?;
     }
     let mut traits = decl_traits::view_node(names, custom_traits)?;
+    decl_traits::push_of(names, &mut traits, of_type)?;
     if is_dynamic && !twigil_dynamic {
         // The parser keeps `is dynamic` as a flag, not in source order among
         // the other traits, so only a lone one renders faithfully.

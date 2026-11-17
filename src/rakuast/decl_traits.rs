@@ -76,6 +76,39 @@ pub(super) fn type_node(names: &NameScope, name: &str) -> Result<RakuAstNode, Ru
     }
 }
 
+/// A declaration's written type split into its `type` and the type of its
+/// `of` trait: `my @a of Int` keeps `Int` a `Trait::Of` (`marks.type_from_of`).
+// Cost: O(1).
+pub(super) fn split_of<'a>(
+    type_name: Option<&'a str>,
+    marks: &crate::ast::var_marks::VarMarks,
+) -> (Option<&'a str>, Option<&'a str>) {
+    if marks.type_from_of {
+        (None, type_name)
+    } else {
+        (type_name, None)
+    }
+}
+
+/// Put the `Trait::Of` of [`split_of`] first in `traits`: the parser marks it
+/// only when no other trait came before the `of`.
+// Cost: O(t + |of_type|), t = traits already in the list.
+pub(super) fn push_of(
+    names: &NameScope,
+    traits: &mut Vec<Value>,
+    of_type: Option<&str>,
+) -> Result<(), RuntimeError> {
+    if let Some(of_type) = of_type {
+        let of = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TraitOf,
+            fields: vec![node_field(None, type_node(names, of_type)?)],
+        };
+        traits.insert(0, Value::rakuast(Box::new(of)));
+    }
+    Ok(())
+}
+
 /// The `traits` items for a declaration's rendered custom traits, in source
 /// order.
 // Cost: O(t), t = custom traits of the declaration.
@@ -178,19 +211,45 @@ pub(super) fn lower(
     names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<(CustomTraits, Option<Option<Expr>>), RuntimeError> {
+    match lower_with_of(names, node)? {
+        (traits, dynamic, None) => Ok((traits, dynamic)),
+        (_, _, Some(_)) => Err(super::lower::unsupported(node)),
+    }
+}
+
+/// [`lower`] for a variable declaration, whose first trait may be the
+/// `Trait::Of` of `my @a of Int`: its type comes back third.
+// Cost: O(t + a), t = traits of the declaration, a = size of their arguments.
+pub(super) fn lower_with_of(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<(CustomTraits, Option<Option<Expr>>, Option<String>), RuntimeError> {
     let refuse = || super::lower::unsupported(node);
     let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) else {
-        return Ok((Vec::new(), None));
+        return Ok((Vec::new(), None, None));
     };
     let RakuAstFieldValue::List(items) = &field.value else {
         return Err(refuse());
     };
     let mut traits = Vec::with_capacity(items.len());
     let mut dynamic = None;
-    for item in items {
+    let mut of_type = None;
+    for (index, item) in items.iter().enumerate() {
         let ValueView::RakuAst(t) = item.view() else {
             return Err(refuse());
         };
+        if index == 0 && t.class == RakuAstClass::TraitOf {
+            let type_node = super::lower::named_child_or_positional(t)?;
+            if t.fields.len() != 1
+                || !matches!(
+                type_node.class,
+                RakuAstClass::TypeSimple | RakuAstClass::TypeParameterized
+            ) {
+                return Err(refuse());
+            }
+            of_type = Some(super::type_lower::type_constraint(names, t, type_node)?);
+            continue;
+        }
         if t.class != RakuAstClass::TraitIs {
             return Err(refuse());
         }
@@ -244,7 +303,7 @@ pub(super) fn lower(
             _ => return Err(refuse()),
         }
     }
-    Ok((traits, dynamic))
+    Ok((traits, dynamic, of_type))
 }
 
 /// Whether `name` is a class trait the view renders as a `Trait::Is` by
