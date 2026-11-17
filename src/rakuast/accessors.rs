@@ -281,6 +281,16 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(Value::str(String::new()));
     }
+    // `Name.canonicalize` of an extended name (`today:foo<g h>`): the
+    // identifier and each colonpair as rakudo canonicalizes it (`:k`, `:!k`,
+    // `:k<v>`), which is the parser's variable-name rule.
+    if method == "canonicalize"
+        && node.class == RakuAstClass::Name
+        && let Some(Ok(canonical)) =
+            super::name_colonpairs::lower(&crate::scope::NameScope::default(), node)
+    {
+        return Some(Value::str(canonical));
+    }
     // `Name.canonicalize`: the `::`-joined spelling of a static identifier name.
     if method == "canonicalize"
         && let Some(name_parts::NameShape::Identifier(s)) = name_parts::name_shape(node)
