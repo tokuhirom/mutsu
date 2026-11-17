@@ -395,6 +395,25 @@ impl Interpreter {
         self.interpolate_bound_regex_scalars_declared(
             pattern,
             &mut std::collections::HashSet::new(),
+            None,
+        )
+    }
+
+    /// [`Self::interpolate_bound_regex_scalars`] for a rule body's render: only
+    /// the rule's own parameters (`params`, sigil-less) are spliced. Every
+    /// other `$var` stays in the text, so the pattern parse reads it at match
+    /// time in the rule's declaring scope (`regex_token_closure`,
+    /// `parse_regex_for_match`), where a code block's write is seen (#14510).
+    // Cost: O(n), n = the pattern's length.
+    pub(in crate::runtime) fn interpolate_bound_regex_params(
+        &self,
+        pattern: &str,
+        params: &std::collections::HashSet<String>,
+    ) -> String {
+        self.interpolate_bound_regex_scalars_declared(
+            pattern,
+            &mut std::collections::HashSet::new(),
+            Some(params),
         )
     }
 
@@ -406,6 +425,7 @@ impl Interpreter {
         &self,
         pattern: &str,
         declared_my_vars: &mut std::collections::HashSet<String>,
+        only: Option<&std::collections::HashSet<String>>,
     ) -> String {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
@@ -467,7 +487,7 @@ impl Interpreter {
                 match Self::split_lookaround_body(&inner) {
                     Some((keyword, body)) => {
                         out.push_str(keyword);
-                        out.push_str(&self.interpolate_bound_regex_scalars_declared(body, declared_my_vars));
+                        out.push_str(&self.interpolate_bound_regex_scalars_declared(body, declared_my_vars, only));
                     }
                     None => out.push_str(&inner),
                 }
@@ -540,7 +560,7 @@ impl Interpreter {
                     None
                 };
                 if let Some((name, end)) = parsed {
-                    if declared_my_vars.contains(&name) {
+                    if declared_my_vars.contains(&name) || only.is_some_and(|o| !o.contains(&name)) {
                         out.extend(chars[start..end].iter());
                     } else if let Some(value) = self
                         .env
