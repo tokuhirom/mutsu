@@ -6,6 +6,7 @@ mod methods_list_view_default;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
 pub(crate) use methods_mixin_dispatch::{MixinFrontEntry, MixinFrontKey, MixinWinnerKey};
+mod methods_mixin_role_deferral;
 mod methods_mixin_what_cache;
 mod methods_mut;
 mod methods_mut_accessor_assign;
