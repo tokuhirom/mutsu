@@ -611,11 +611,6 @@ pub(crate) struct ModuleState {
     /// is recorded in `parse_time_hook_results` (a dependency's hook imports
     /// into the module, not into the unit).
     pub(crate) parse_time_hook_depth: Option<usize>,
-    /// Set when a hook run with no in-position `use` (a preload, a parse-time
-    /// load) asked to attach a phaser to its importing scope, which only the
-    /// in-position run can do (`runtime::attach_target`): the parse-time
-    /// load then keeps no map for that `use`, whose import runs the hook.
-    pub(crate) parse_time_hook_attached: bool,
     /// The routine-table version an import scope's exit last found free of
     /// a module-declared `GLOBAL::MAIN` candidate
     /// (`drop_foreign_global_main_candidates`), so a later exit over the same
@@ -875,7 +870,6 @@ impl ModuleState {
             eval_hook_recording: false,
             parse_time_hook_results: HashMap::new(),
             parse_time_hook_depth: None,
-            parse_time_hook_attached: false,
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
             lexical_operator_candidate_defs: Default::default(),
@@ -1004,7 +998,6 @@ impl ModuleState {
             eval_hook_recording: false,
             parse_time_hook_results: HashMap::new(),
             parse_time_hook_depth: None,
-            parse_time_hook_attached: false,
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),
             lexical_operator_candidate_defs: self.lexical_operator_candidate_defs.clone(),

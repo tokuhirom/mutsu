@@ -93,7 +93,7 @@ impl CompileTimeLoader for Interpreter {
             .module
             .parse_time_hook_depth
             .replace(self.module.module_load_stack.len() + 1);
-        self.module.parse_time_hook_attached = false;
+        take_hook_reached_importer();
         let result = if request.nested {
             // A `use` inside a block: what the module installs while it loads
             // is lexical to the block (`OpCode::PreloadModule`'s scope).
@@ -229,4 +229,26 @@ impl Interpreter {
         names.dedup();
         names
     }
+}
+
+thread_local! {
+    /// Set when code running for a `sub EXPORT` hook reached the unit it is
+    /// imported into beyond the map it returns: it read `$*CU`, or asked
+    /// `$*R` to attach a phaser to the importing scope. A parse-time run of
+    /// such a hook cannot stand in for the run at the `use`'s import, which
+    /// reaches the unit that actually runs (`record_parse_time_hook_result`).
+    static HOOK_REACHED_IMPORTER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Note that the running hook reached its importing unit (see
+/// `HOOK_REACHED_IMPORTER`).
+// Cost: O(1).
+pub(crate) fn note_hook_reached_importer() {
+    HOOK_REACHED_IMPORTER.with(|flag| flag.set(true));
+}
+
+/// Whether a hook reached its importing unit since the last call, clearing it.
+// Cost: O(1).
+pub(crate) fn take_hook_reached_importer() -> bool {
+    HOOK_REACHED_IMPORTER.with(|flag| flag.replace(false))
 }

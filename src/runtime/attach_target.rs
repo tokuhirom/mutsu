@@ -375,7 +375,7 @@ impl Interpreter {
         if matches!(place, Target::Discard) {
             // A parse-time load's hook map cannot stand in for this run: the
             // in-position `use` has to run the hook again to attach it.
-            self.module.parse_time_hook_attached = true;
+            crate::runtime::compile_time_use::note_hook_reached_importer();
             return Ok(Value::NIL);
         }
         // The phaser node's `meta-object` is the code it runs — for a phaser

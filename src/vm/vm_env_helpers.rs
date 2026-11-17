@@ -13,6 +13,12 @@ impl Interpreter {
             &|name| self.has_class(name),
         );
         crate::parser::clear_parser_lib_paths();
+        // A hook that reads `$*CU` can change the unit it is imported into
+        // (its CHECK closures, its declarations): only its run at the import
+        // reaches the unit that runs.
+        if cu.is_some() {
+            crate::runtime::compile_time_use::note_hook_reached_importer();
+        }
         cu
     }
 

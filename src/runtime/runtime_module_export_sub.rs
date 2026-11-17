@@ -441,12 +441,7 @@ impl Interpreter {
         if self.module.parse_time_hook_depth != Some(self.module.module_load_stack.len()) {
             return false;
         }
-        // A hook that attached a phaser to the scope of its `use` runs again
-        // at the import, where the attach takes effect; its map is that run's.
-        if std::mem::take(&mut self.module.parse_time_hook_attached) {
-            self.module.pending_generated_lexicals.clear();
-            return true;
-        }
+        let reached_importer = crate::runtime::compile_time_use::take_hook_reached_importer();
         let key = Self::hook_replay_key(module, args);
         let mut generated = std::mem::take(&mut self.module.pending_generated_lexicals);
         // A `use` inside a block loads under a preload scope: a declaration
@@ -460,6 +455,12 @@ impl Interpreter {
                 self.install_unit_generated_lexical(name, value, None);
             }
             generated = block;
+        }
+        // A hook that reached its importing unit (`$*CU`, a phaser attached
+        // through `$*R`) runs again at the import, where that takes effect on
+        // the unit that runs; its map is that run's.
+        if reached_importer {
+            return true;
         }
         self.module
             .parse_time_hook_results
