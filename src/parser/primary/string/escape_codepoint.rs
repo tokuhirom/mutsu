@@ -58,10 +58,7 @@ pub(super) fn numeric_escape(rest: &str, kind: char) -> Result<(&str, String), S
             .find(']')
             .ok_or_else(|| format!("Missing closing bracket for \\{kind}["))?;
         for digits in inner[..end].split(',') {
-            crate::grapheme_break::push_codepoint(
-                &mut text,
-                codepoint(digits.trim(), radix, kind)?,
-            );
+            text.push(codepoint(digits.trim(), radix, kind)?);
         }
         Ok((&inner[end + 1..], text))
     } else {
@@ -75,7 +72,7 @@ pub(super) fn numeric_escape(rest: &str, kind: char) -> Result<(&str, String), S
             }
             end = index + ch.len_utf8();
         }
-        crate::grapheme_break::push_codepoint(&mut text, codepoint(&rest[..end], radix, kind)?);
+        text.push(codepoint(&rest[..end], radix, kind)?);
         Ok((&rest[end..], text))
     }
 }
