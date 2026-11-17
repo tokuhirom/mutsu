@@ -303,6 +303,24 @@ impl Interpreter {
             if !eager {
                 continue;
             }
+            // A non-parametric role's lexical `my constant` is initialised
+            // once (#16255), also when the declaration itself is registered
+            // again (a `my role` at BEGIN time and again when its statement
+            // runs).
+            let constant_name = match &op.raw {
+                Stmt::VarDecl {
+                    name,
+                    constant: Some(_),
+                    is_our: false,
+                    ..
+                } if !parameterized => Some(name.as_str()),
+                _ => None,
+            };
+            if let Some(name) = constant_name
+                && self.reuse_role_evaluated_constant(role_name, name)
+            {
+                continue;
+            }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
                 self.restore_role_type_bindings(saved_types);
                 self.set_current_package(saved_package);
@@ -311,14 +329,7 @@ impl Interpreter {
             // A non-parametric role's lexical `my constant` is initialised
             // here, once (#16255): record the binding so a composition reuses
             // it instead of running the initializer again.
-            if !parameterized
-                && let Stmt::VarDecl {
-                    name,
-                    constant: Some(_),
-                    is_our: false,
-                    ..
-                } = &op.raw
-            {
+            if let Some(name) = constant_name {
                 self.record_role_evaluated_constant(role_name, name);
             }
             if matches!(op.kind, crate::opcode::DeferredBodyOpKind::TypeDecl) {
