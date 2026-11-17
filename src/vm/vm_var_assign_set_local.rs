@@ -2530,7 +2530,17 @@ impl Interpreter {
                             | ("num" | "num64", ValueView::Num(_))
                     )
                     && self.registry().subsets.is_empty();
-                if !native_identity
+                // A sized native int (`int32`, `uint8`, ...) admits every
+                // `Int` (the general checker's `is_native_int_type` arm) and
+                // coerces it to itself; only the overflow wrap below changes
+                // it. The generic match was ~2.3k instructions per store in a
+                // C-port's `int32` arithmetic (Timezones::ZoneInfo, #15079).
+                let native_int_store = native_identity
+                    || !binding
+                        && matches!(val.view(), ValueView::Int(_))
+                        && crate::runtime::native_types::is_native_int_type(constraint)
+                        && self.registry().subsets.is_empty();
+                if !native_int_store
                     && !decl_typechecked
                     && (!check_val.is_nil() || binding)
                     && !self.type_matches_value(constraint, check_val)
@@ -2544,7 +2554,7 @@ impl Interpreter {
                 // The adjacent `TypeCheck` that vouched for the value
                 // (`decl_typechecked`) already ran this coercion on it as its
                 // last step, and stored the result we just popped.
-                if !(native_identity
+                if !(native_int_store
                     || decl_typechecked
                     || val.is_nil()
                     || binding && val.is_proxy_value())
