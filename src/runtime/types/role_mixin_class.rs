@@ -120,10 +120,19 @@ impl Interpreter {
         // X::Role::Composition::Conflict. A role the base already does gets a
         // level of its own too (`D does R; D.new but R` is `D+{R}`, and
         // `$o does R; $o does R` is `C+{R}+{R}`, as in Rakudo, #17890).
-        let fresh: Vec<String> = new_roles.to_vec();
-        let fresh_args: Vec<Option<Vec<Value>>> = (0..new_roles.len())
-            .map(|i| role_args.get(i).cloned().flatten())
-            .collect();
+        // A role's own pun (`R.^pun`, the class named `R`) already is that
+        // role: mixing it into its pun again adds nothing.
+        let root = base_class.split("+{").next().unwrap_or(base_class);
+        let is_pun_root = self.registry().roles.contains_key(root);
+        let mut fresh: Vec<String> = Vec::new();
+        let mut fresh_args: Vec<Option<Vec<Value>>> = Vec::new();
+        for (i, role) in new_roles.iter().enumerate() {
+            if is_pun_root && role == root {
+                continue;
+            }
+            fresh.push(role.clone());
+            fresh_args.push(role_args.get(i).cloned().flatten());
+        }
         if fresh.is_empty() {
             return Ok(base_class.to_string());
         }
