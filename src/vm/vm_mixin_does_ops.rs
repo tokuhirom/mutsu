@@ -33,13 +33,11 @@ impl Interpreter {
         // group a preceding `but (R1, R2)` left open (see
         // `open_role_application_group`).
         self.close_role_application_group();
-        // Rakudo specializes the role onto a new `C+{R}` type for `obj but R`,
-        // which a user `specialize` (a trait handler mixed a meta-role into the
-        // role's HOW, known only once the role's attributes compose) adds
-        // methods to. `but` mixes into a copy, so the original is untouched.
-        // TODO: every `but` on an instance should compose a real mixin type;
-        // the wrapper path still carries anon-role names, `set_name` and
-        // stacking (t/oo/mixin-*.t), so only trait-bearing roles take this one.
+        // `obj but R` on an instance is rakudo's `obj.clone.does(R)`: a copy
+        // reblessed into the mixin type `C+{R}`, with the role's parameter
+        // defaults bound and its `TWEAK` run like an in-place `does` (#17765).
+        // A user `specialize` (a trait handler mixed a meta-role into the
+        // role's HOW) adds methods to that type. The original is untouched.
         if let Some(reblessed) = self.but_rebless_copy(&left, &right)? {
             self.apply_pending_caller_var_writeback(code);
             self.stack.push(reblessed);
@@ -118,11 +116,10 @@ impl Interpreter {
         Ok(())
     }
 
-    /// `obj but R` for an instance of a user class, `R` having attributes with
-    /// custom traits (whose handlers may mix a meta-role into the role's HOW):
-    /// rebless a copy of `obj` into the mixin class `C+{R}` (`None` when `left`
-    /// is no such instance, `R` has none, or `does_rebless_instance` keeps the
-    /// wrapper path for it). Any other `but` keeps the mixin-map wrapper.
+    /// `obj but R` for an instance: rebless a copy of `obj` into the mixin
+    /// class `C+{R}` (`None` when `left` is no instance, `right` no role
+    /// application, or `does_rebless_instance` keeps the wrapper path for it,
+    /// which any other `but` takes).
     // Cost: O(a) to copy the attributes, a = attributes of `left`, plus the
     // role composition.
     fn but_rebless_copy(
