@@ -1113,6 +1113,17 @@ pub(crate) mod wk {
         /// `$*RAT-OVERFLOW` on every Rat-family arithmetic op
         /// (`Interpreter::rat_overflow_scope_for`).
         fat_rat => "FatRat";
+        /// The built-in scalar types, the receiver key of the smartmatch type
+        /// memo (`builtin_scalar_kind`).
+        int_type => "Int";
+        num_type => "Num";
+        str_type => "Str";
+        bool_type => "Bool";
+        rat_type => "Rat";
+        complex_type => "Complex";
+        /// The smartmatch protocol's method, probed on every type-object
+        /// matcher (`smart_match_inner`).
+        accepts_method => "ACCEPTS";
     }
 
     /// How many positional-capture index names ([`capture_index`]) are served

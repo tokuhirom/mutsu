@@ -44,6 +44,9 @@ pub(crate) type SharedParams = std::sync::Arc<Vec<crate::ast::ParamDef>>;
 pub(crate) enum MemoCheck {
     Accepts,
     Matches,
+    /// `Accepts` for a built-in scalar receiver, keyed by its built-in type
+    /// (#17876).
+    ScalarAccepts,
 }
 
 #[derive(Default)]
