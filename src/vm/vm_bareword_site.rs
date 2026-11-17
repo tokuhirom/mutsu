@@ -35,6 +35,30 @@
 
 use super::*;
 
+/// How a bareword resolution ended, as far as `GetBareWord`'s per-site memo
+/// cares: the call-chain term arm (`callsame`, `nextcallee`, ...) is reached
+/// only after every declaration of the name had first refusal -- a `sub`,
+/// `constant`, type or import of that name is a registry write or an `env`
+/// binding, which the generation and the hit's re-check cover, exactly as for
+/// the `IterationEnd` memo. Each call of that arm answers afresh, so the site
+/// remembers the route, not a value.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BarewordRoute {
+    /// Any other answer of the chain.
+    Resolved,
+    /// The call-chain term arm.
+    CallChain,
+}
+
+/// The call-chain introspection terms a bareword can name.
+// Cost: O(1).
+pub(crate) fn is_call_chain_term(name: &str) -> bool {
+    matches!(
+        name,
+        "callsame" | "nextsame" | "callwith" | "nextwith" | "nextcallee" | "lastcall"
+    )
+}
+
 impl Interpreter {
     // Cost: O(1) on a memo hit (one lock, two `env` probes, one provenance
     // probe; a module-published name adds the O(d) merge check, d = EVAL
@@ -76,6 +100,18 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // A call-chain term (`callsame`, `nextcallee`, ...) this site saw
+        // fall through every declaration of its name: answer the term
+        // without walking them again (see `BarewordRoute`).
+        if code.bareword_sites.call_chain_route(sites, idx, generation) {
+            let name_sym = code.const_sym(name_idx);
+            if self.env_binds_no_term(name_sym) && self.bare_name_visible_here(name_sym) {
+                // CARRIER: call-chain introspection, as the chain's own arm.
+                let result = self.vm_call_function(name_sym.as_str(), Vec::new())?;
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
         let name = Self::const_str(code, name_idx);
         // A `C[T]` spelling of a class with its own `^parameterize` (the
         // desugared `my Pointer[uint16] $p .= new`) is the type object that
@@ -96,7 +132,22 @@ impl Interpreter {
             return Ok(());
         }
         let foreign_unit = self.code_is_loaded_module_code(code);
-        self.push_bare_word_value_in(code.const_sym(name_idx), compiled_fns, false, foreign_unit)?;
+        let mut route = BarewordRoute::Resolved;
+        self.push_bare_word_value_routed(
+            code.const_sym(name_idx),
+            compiled_fns,
+            false,
+            foreign_unit,
+            &mut route,
+        )?;
+        if route == BarewordRoute::CallChain {
+            let name_sym = code.const_sym(name_idx);
+            if self.env_binds_no_term(name_sym) {
+                code.bareword_sites
+                    .remember_call_chain_route(sites, idx, generation);
+            }
+            return Ok(());
+        }
         let unit_lexical = self.resolve_unit_lexical_type(code, name_idx);
         let name_sym = code.const_sym(name_idx);
         // The type object of the name's own spelling, or the unit-level
@@ -216,6 +267,22 @@ impl Interpreter {
             None => env.get_sym(term),
         };
         holds(bound) && holds(term_bound)
+    }
+
+    /// Whether `env` binds nothing under `name` or its term key: what a
+    /// call-chain route memo needs, since any binding there is a declaration
+    /// the chain would answer ahead of the call-chain arm.
+    // Cost: O(1), two `env` probes.
+    fn env_binds_no_term(&self, name: Symbol) -> bool {
+        let env = self.env();
+        let unbound = |key: Symbol| {
+            match env.base_only_get(key) {
+                Some(base) => base,
+                None => env.get_sym(key),
+            }
+            .is_none()
+        };
+        unbound(name) && unbound(crate::runtime::term_names::term_key_sym(name))
     }
 
     /// `OpCode::GetTypeCapture`: push the live binding of the type capture

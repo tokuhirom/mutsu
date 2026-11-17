@@ -24,7 +24,11 @@ type Word = Mutex<Option<(u64, Value)>>;
 /// the reader asks on every hit of a lexical-type memo: whether the chunk
 /// declares no type of its own (see `Interpreter::exec_get_bare_word_op`).
 #[derive(Debug, Default)]
-pub(crate) struct BarewordSiteCaches(OnceLock<Box<[Word]>>, OnceLock<bool>);
+pub(crate) struct BarewordSiteCaches(
+    OnceLock<Box<[Word]>>,
+    OnceLock<bool>,
+    OnceLock<Box<[Mutex<Option<u64>>]>>,
+);
 
 impl Clone for BarewordSiteCaches {
     /// A cloned chunk starts cold: the memo is an optimization, not state.
@@ -59,6 +63,35 @@ impl BarewordSiteCaches {
         match &*self.words(sites).get(idx)?.lock().ok()? {
             Some((g, value)) if *g == generation => Some(value.clone()),
             _ => None,
+        }
+    }
+
+    /// Whether constant `idx` was seen, under `generation`, to fall through
+    /// every declaration to the call-chain term arm (`callsame`,
+    /// `nextcallee`, ...): a route rather than a value, since each call of
+    /// that arm answers afresh.
+    // Cost: O(1), one uncontended lock.
+    #[inline]
+    pub(crate) fn call_chain_route(&self, sites: usize, idx: usize, generation: u64) -> bool {
+        self.2
+            .get()
+            .and_then(|routes| routes.get(idx))
+            .and_then(|r| r.lock().ok().map(|g| *g == Some(generation)))
+            .unwrap_or(false)
+            && idx < sites
+    }
+
+    /// Remember that constant `idx` took the call-chain term arm under
+    /// `generation`.
+    // Cost: O(1), one uncontended lock; the first call allocates O(sites).
+    pub(crate) fn remember_call_chain_route(&self, sites: usize, idx: usize, generation: u64) {
+        let routes = self
+            .2
+            .get_or_init(|| (0..sites).map(|_| Mutex::new(None)).collect());
+        if let Some(route) = routes.get(idx)
+            && let Ok(mut r) = route.lock()
+        {
+            *r = Some(generation);
         }
     }
 

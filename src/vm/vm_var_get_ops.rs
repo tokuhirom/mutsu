@@ -260,6 +260,22 @@ impl Interpreter {
         over_scalar: bool,
         foreign_unit: bool,
     ) -> Result<(), RuntimeError> {
+        let mut route = super::vm_bareword_site::BarewordRoute::Resolved;
+        self.push_bare_word_value_routed(name_sym, compiled_fns, over_scalar, foreign_unit, &mut route)
+    }
+
+    /// [`Self::push_bare_word_value_in`], also reporting in `route` whether
+    /// the name fell through every declaration to the call-chain term arm
+    /// (`callsame`, `nextcallee`, ...), which `GetBareWord` remembers per site.
+    // Cost: as `push_bare_word_value`.
+    pub(super) fn push_bare_word_value_routed(
+        &mut self,
+        name_sym: Symbol,
+        compiled_fns: &CompiledFns,
+        over_scalar: bool,
+        foreign_unit: bool,
+        route: &mut super::vm_bareword_site::BarewordRoute,
+    ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
         if self
             .registry()
@@ -1046,13 +1062,8 @@ impl Interpreter {
             || self.has_multi_function(name)
         {
             self.call_bare_routine_term(name, compiled_fns)?
-        } else if name == "callsame"
-            || name == "nextsame"
-            || name == "callwith"
-            || name == "nextwith"
-            || name == "nextcallee"
-            || name == "lastcall"
-        {
+        } else if super::vm_bareword_site::is_call_chain_term(name) {
+            *route = super::vm_bareword_site::BarewordRoute::CallChain;
             // CARRIER: call-chain introspection (interpreter MOP dispatch stack). See ledger §C.
             //
             // The next candidate's result is handed back as-is, like the
