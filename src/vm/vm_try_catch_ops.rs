@@ -248,7 +248,7 @@ impl Interpreter {
                     && control_begin >= end
                     && !self.module.fatal_mode
                     && !self.module.lexical_fatal_mode
-                    && self.fail_returns_past_catch(code, &e) =>
+                    && self.fail_returns_past_catch(&e) =>
             {
                 self.discard_let_saves(let_mark);
                 Err(e)
@@ -794,14 +794,18 @@ impl Interpreter {
     /// Whether the `fail` signal `e` reaching a CATCH region of `code` is a
     /// return from a routine that is still running, which the CATCH must let
     /// through. A closure stamps the routine its `fail` leaves on the way out
-    /// (`vm_closure_dispatch`); an unstamped one was raised in this code's own
-    /// frame, so it returns from a routine exactly when this code lexically
-    /// lies inside one (`.fail` counts: rakudo fails its caller's routine).
+    /// (`vm_closure_dispatch`); an unstamped one returns from a routine when
+    /// the `fail` keyword raised it lexically inside one. A `fail` from a
+    /// `where` block or another construct run outside any routine stays
+    /// catchable.
+    // TODO: the routine form `fail(...)` in an expression and `.fail` raise
+    // through the builtins, which do not know whether their caller lies in a
+    // routine, so a CATCH beside them still catches them (rakudo returns).
     // Cost: O(r) for a stamped signal, r = routine-stack depth; O(1) otherwise.
-    fn fail_returns_past_catch(&self, code: &CompiledCode, e: &RuntimeError) -> bool {
+    fn fail_returns_past_catch(&self, e: &RuntimeError) -> bool {
         match e.fail_target_callable_id() {
             Some(target) => self.return_target_is_live(target),
-            None => code.is_routine || code.lexically_in_routine,
+            None => e.fail_in_routine_body(),
         }
     }
 }

@@ -6874,9 +6874,10 @@ impl Interpreter {
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
-                if !lexically_in_routine || self.module.fatal_mode || self.module.lexical_fatal_mode
-                {
+                if !lexically_in_routine {
                     err.control = None;
+                } else if err.is_fail() {
+                    err.set_fail_in_routine_body();
                 }
                 // A direct CATCH sees the fail-site Backtrace. A soft Failure
                 // moves it off the exception in fail_error_to_failure_value.
