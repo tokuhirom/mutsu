@@ -2485,6 +2485,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 Ok(super::term_name::imported(names, name))
             }
             Spelling::Words(text) => Ok(word_quote(text)),
+            Spelling::Imaginary(text) => super::imaginary_literal::spelled(text),
             Spelling::ParenthesizedDeclaratorAdverb => {
                 parenthesized_expression(names, &spelled.expr)
             }
@@ -5559,51 +5560,6 @@ fn term_name_node(name: &str) -> RakuAstNode {
     }
 }
 
-/// `ApplyPostfix(<number>, Postfix("i"))` for an imaginary literal of
-/// imaginary part `im`. The parser keeps only the value, so the number's
-/// spelling is chosen from it: an integral part is an `IntLiteral` (`2i`), any
-/// other finite one the `RatLiteral` of its shortest decimal spelling (`3.5i`).
-/// A `3.5e0i` therefore comes back as `3.5i`, which denotes the same Complex.
-// Cost: O(d), d = digits of the imaginary part.
-fn imaginary_literal(im: f64) -> Result<RakuAstNode, RuntimeError> {
-    if !im.is_finite() || im < 0.0 || (im == 0.0 && im.is_sign_negative()) {
-        return Err(unsupported(
-            "imaginary literal with a non-finite or negative part",
-        ));
-    }
-    let number = if im.fract() == 0.0 && im < 9.007_199_254_740_992e15 {
-        RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::IntLiteral,
-            fields: vec![leaf_field(None, Value::int(im as i64))],
-        }
-    } else {
-        let spelling = format!("{im}");
-        let rat = crate::parser::decimal_literal_value(&spelling)
-            .ok_or_else(|| unsupported("imaginary literal without a decimal spelling"))?;
-        RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::RatLiteral,
-            fields: vec![leaf_field(None, rat)],
-        }
-    };
-    Ok(RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::ApplyPostfix,
-        fields: vec![
-            node_field(Some("operand"), number),
-            node_field(
-                Some("postfix"),
-                RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::Postfix,
-                    fields: vec![leaf_field(Some("operator"), Value::str_from("i"))],
-                },
-            ),
-        ],
-    })
-}
-
 pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, RuntimeError> {
     // `Nil` is a type object written as a bareword, not a literal value: raku
     // renders it `Type::Simple.new(Name.from-identifier("Nil"))`, exactly like
@@ -5658,7 +5614,7 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
                 && im >= 0.0
                 && !im.is_sign_negative() =>
         {
-            imaginary_literal(im)
+            super::imaginary_literal::from_value(im)
         }
         // `<1+2i>`: a complex number written whole.
         ValueView::Complex(..) => Ok(RakuAstNode {
