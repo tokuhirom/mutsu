@@ -160,6 +160,15 @@ fn of(
     let type_name = interp
         .callable_return_type(target)
         .unwrap_or_else(|| "Mu".to_string());
+    // A constant return (`--> 0`, `--> True`, `--> Nil`) is the routine's
+    // value, not a type: its `.returns` is the type of that value (#18010).
+    if interp.is_definite_return_spec(&type_name) {
+        return Some(
+            interp
+                .evaluate_definite_return_value(&type_name)
+                .and_then(|value| interp.try_compiled_method_or_interpret(value, "WHAT", vec![])),
+        );
+    }
     // `--> C[T]` for a `C` with its own `^parameterize` denotes the type object
     // that meta-method returns, not a name.
     if let Some(ty) = interp.meta_parameterized_type(&type_name) {

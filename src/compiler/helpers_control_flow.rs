@@ -115,6 +115,7 @@ impl Compiler {
         // can consult; the interpreter's twin check in
         // `Interpreter::is_definite_return_spec` must agree.
         if crate::runtime::utils::is_builtin_enum_value(s)
+            || crate::runtime::utils::is_qualified_builtin_enum_value(s)
             || super::compile_inputs::is_user_declared_enum_value(s)
         {
             return Some(true);

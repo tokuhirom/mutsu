@@ -81,8 +81,20 @@ impl Interpreter {
             format!("sub __builtin_candidate {sig} {{ {die} }}")
         };
         let (stmts, _) = crate::parser::parse_program(&src).ok()?;
-        let (params, param_defs, body) = find_routine_decl(stmts)?;
+        let RoutineDecl {
+            params,
+            param_defs,
+            body,
+            return_type,
+        } = find_routine_decl(stmts)?;
         let mut env = self.env.clone();
+        // The candidate's own return spec (`--> 0`, `--> Int`), as a declared
+        // routine carries it: its signature prints it, and the frame's own is
+        // not the candidate's (#18010).
+        env.remove_sym(crate::symbol::well_known::return_type());
+        if let Some(return_type) = return_type {
+            env.insert("__mutsu_return_type".to_string(), Value::str(return_type));
+        }
         if row.multi {
             env.insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
         }
@@ -119,23 +131,40 @@ fn normalize_core_signature(sig: &str) -> String {
         .replace(" is item", "")
 }
 
-/// The parameters and body of the first `sub`/`method` declaration in `stmts`
-/// or in the body of a class declared there.
+/// What a candidate's parsed `sub`/`method` declaration contributes to its
+/// code object.
+struct RoutineDecl {
+    params: Vec<String>,
+    param_defs: Vec<ParamDef>,
+    body: Vec<Stmt>,
+    /// The `-->` return spec, a type or a constant value (`--> 0`).
+    return_type: Option<String>,
+}
+
+/// The parameters, body and return spec of the first `sub`/`method`
+/// declaration in `stmts` or in the body of a class declared there.
 // Cost: O(n), n = statements scanned.
-fn find_routine_decl(stmts: Vec<Stmt>) -> Option<(Vec<String>, Vec<ParamDef>, Vec<Stmt>)> {
+fn find_routine_decl(stmts: Vec<Stmt>) -> Option<RoutineDecl> {
     let decl = |stmt: Stmt| match stmt {
         Stmt::SubDecl {
             params,
             param_defs,
             body,
+            return_type,
             ..
         }
         | Stmt::MethodDecl {
             params,
             param_defs,
             body,
+            return_type,
             ..
-        } => Some((params, param_defs, body)),
+        } => Some(RoutineDecl {
+            params,
+            param_defs,
+            body,
+            return_type,
+        }),
         _ => None,
     };
     let (classes, others): (Vec<Stmt>, Vec<Stmt>) = stmts
