@@ -71,7 +71,7 @@ fn plan_arg_kind_ok(arg: &Value) -> bool {
     if arg.is_string_pair_value()
         && let ValueView::Pair(key, value) = arg.view()
     {
-        return !key.starts_with("__mutsu_") && plan_scalar_kind_ok(&value);
+        return !key.starts_with("__mutsu_") && plan_scalar_kind_ok(value);
     }
     plan_scalar_kind_ok(arg)
 }
