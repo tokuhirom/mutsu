@@ -709,19 +709,63 @@ fn walk_mro(
     // many arguments: Rakudo's multi dispatch finds none (`"".subst`).
     // Or every candidate that takes the arity is for a defined invocant only:
     // Rakudo's `Any:D` candidates do not bind a type object either.
-    if answer.is_none()
-        && !late_only
-        && declared
-        && (!owners
-            .iter()
-            .any(|owner| super::owner_row(Symbol::intern(owner), method, arity).is_some())
-            || (arity_rows && only_type_refused))
-    {
-        return Some(Err(
-            crate::runtime::methods_signature_errors::make_multi_no_match_error(method.as_str()),
-        ));
+    if answer.is_none() && !late_only && declared {
+        let takes_arity = |arity: usize| {
+            owners
+                .iter()
+                .any(|owner| super::owner_row(Symbol::intern(owner), method, arity).is_some())
+        };
+        if !takes_arity(arity) {
+            return Some(Err(arity_mismatch(
+                target,
+                method,
+                args,
+                arity,
+                takes_arity,
+            )));
+        }
+        if arity_rows && only_type_refused {
+            return Some(Err(
+                crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                    method.as_str(),
+                ),
+            ));
+        }
     }
     answer
+}
+
+/// The error for a call whose positional count (`arity`) no owner's row of
+/// `method` takes: rakudo's multi wording when its method is a multi;
+/// otherwise "Too many positionals passed" when every row takes fewer, and
+/// the bare `X::Multi::NoMatch` for an arity between the rows'.
+// Cost: O(n + a + c + k), as `builtin_multi_arity_mismatch`, plus k = 8 row
+// probes per owner.
+fn arity_mismatch(
+    target: &Value,
+    method: Symbol,
+    args: &[Value],
+    arity: usize,
+    takes_arity: impl Fn(usize) -> bool,
+) -> RuntimeError {
+    use crate::runtime::methods_signature_errors as errors;
+    if let Some(err) = errors::builtin_multi_arity_mismatch(target, method.as_str(), args) {
+        return err;
+    }
+    // A row with arity 7 is slurpy (or takes everything the masks hold).
+    let max = (0..8).rev().find(|&a| takes_arity(a));
+    if let Some(max) = max
+        && max < 7
+        && arity > max
+    {
+        let min = (0..=max).find(|&a| takes_arity(a)).unwrap_or(max);
+        return RuntimeError::new(crate::runtime::types::arity_message::too_many_positionals(
+            min + 1,
+            max + 1,
+            arity + 1,
+        ));
+    }
+    errors::make_multi_no_match_error(method.as_str())
 }
 
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,

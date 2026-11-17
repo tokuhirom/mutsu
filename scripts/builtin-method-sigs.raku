@@ -7,8 +7,14 @@
 #   raku scripts/builtin-method-sigs.raku > src/runtime/builtin_method_sigs.tsv
 #
 # One row per candidate: `Type<TAB>method<TAB>signature`, in the order the
-# dispatcher tries them. Only methods with two or more candidates are listed
-# (a single-candidate method reports its parameter mismatch instead).
+# dispatcher tries them. Every multi is listed, a one-candidate multi too (it
+# still raises `X::Multi::NoMatch`). A method a type declares as an only method
+# gets one `Type<TAB>method<TAB>-` row: it hides an ancestor's multi of the same
+# name, and a bind failure on it is "Too many positionals passed", not NoMatch.
+# A multi whose proto binds a bounded number of positionals (`proto method
+# chars(*%)`) first gets a `Type<TAB>method<TAB>#<arity>-<count>` row (both
+# counting the invocant): a call with more positionals than that fails the
+# proto's own bind ("Too many positionals passed"), before any candidate.
 my %seen;
 my %groups;
 for CORE::.keys.sort -> $name {
@@ -17,9 +23,16 @@ for CORE::.keys.sort -> $name {
     my $tn = $t.^name;
     next if $tn.contains(any('<', '[', '::', '(')) || %seen{$tn}++;
     for $t.^methods(:local) -> $m {
-        next unless $m.?candidates;
+        unless $m.?is_dispatcher {
+            %groups{$tn}{$m.name} = ['-'] unless %groups{$tn}{$m.name};
+            next;
+        }
         my @c = $m.candidates;
-        next if @c.elems < 2;
+        # An only method and a multi of the same name: the multi answers.
+        %groups{$tn}{$m.name} = [] if %groups{$tn}{$m.name} eqv ['-'];
+        my $proto = $m.signature;
+        %groups{$tn}{$m.name}.push("#{$proto.arity}-{$proto.count}")
+            if $proto.count != Inf && !%groups{$tn}{$m.name};
         my %once;
         for @c -> $cand {
             my $sig = $cand.signature.gist;
