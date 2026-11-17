@@ -12,5 +12,5 @@ the literal operand of a `Postfix("i")`, as rakudo's RakuAST frontend does:
 
 The value is unchanged. The view code moved to `src/rakuast/imaginary_literal.rs`.
 
-`roast/S32-trig/cosech.t` and `tanh.t` now match rakudo statement for
-statement in both corpora.
+`roast/S32-trig/cosech.t`, `tanh.t` and `roast/S32-num/fatrat.t` now match
+rakudo statement for statement in both corpora.
