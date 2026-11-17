@@ -427,6 +427,7 @@ impl Compiler {
         if let Some(line) = sub_compiler.last_source_line {
             sub_compiler.code.set_emit_line(line);
         }
+        sub_compiler.emit_first_phasers(body, true);
         // If sub body contains CATCH/CONTROL, wrap in implicit try. compile_try
         // leaves the body's final-expression value on the stack; for a normal
         // value-producing sub that value is the implicit return, so keep it.
@@ -1664,6 +1665,7 @@ impl Compiler {
             sub_compiler.emit_sigilless_readonly(term);
         }
         Self::mark_sigilless_subsig_params(&mut sub_compiler, param_defs);
+        sub_compiler.emit_first_phasers(body, true);
         // If body contains CATCH/CONTROL, wrap in implicit try. compile_try
         // leaves the body's final-expression value on the stack, which is the
         // closure's implicit return value, so keep it (do not Pop).

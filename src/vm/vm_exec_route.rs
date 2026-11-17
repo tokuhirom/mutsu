@@ -390,6 +390,7 @@ impl Interpreter {
             | OpCode::NeedModule(..)
             | OpCode::NoModule(..)
             | OpCode::OnceExpr { .. }
+            | OpCode::FirstPhaser { .. }
             | OpCode::PreloadModule(..)
             | OpCode::RegisterDecl(..)
             | OpCode::RegisterEnum(..)

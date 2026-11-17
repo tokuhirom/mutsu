@@ -114,11 +114,9 @@ impl Interpreter {
                     .flatten()
                     .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
                 let chunk_at = |items: &[Value], i: usize| items[i..(i + arity).min(items.len())].to_vec();
-                if slot.take_first_phaser(src.has(1)) {
-                    src.has(arity);
-                    let first = chunk_at(&src.buf, 0);
-                    self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first)?;
-                }
+                // The callback's `FIRST` runs in its own body, on the first call of
+                // this clone (#17945); the slot only records that the loop started.
+                slot.take_first_phaser(src.has(1));
                 let mut i = 0usize;
                 let mut by_last = false;
                 while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
@@ -278,9 +276,9 @@ impl Interpreter {
                 // re-compiled fresh, so two distinct blocks share compile-time
                 // state keys (see the same line in `eval_map_over_items`).
                 vm.lexicals.state_scope_id.set(Some(vm.callable_state_scope(&data)));
-                if slot.take_first_phaser(src.has(1)) {
-                    vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
-                }
+                // The callback's `FIRST` runs in its own body, on the first call of
+                // this clone (#17945); the slot only records that the loop started.
+                slot.take_first_phaser(src.has(1));
                 // A `NEXT` phaser fires after every iteration, including one
                 // ended by `next` (not by `last`).
                 let has_next_phaser = data.body.iter().any(|s| {

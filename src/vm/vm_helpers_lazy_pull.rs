@@ -616,9 +616,6 @@ impl Interpreter {
                     // sequence (excluding the current element), `next` skips the
                     // current element. This makes `(^Inf).grep({last if …})`
                     // terminate instead of running forever.
-                    if source_idx == 0 {
-                        self.run_callback_first_phasers(&func, &elem)?;
-                    }
                     let mut pending_slip: Option<Value> = None;
                     // A callback that is `$_ OP constant` over an Int is
                     // computed by the built-in operator itself: no closure

@@ -704,11 +704,9 @@ impl Interpreter {
                 } else {
                     positional.len().saturating_sub(assumed).max(1)
                 };
-                if slot.take_first_phaser(src.has(1)) {
-                    src.has(batch);
-                    let first_args = src.buf[..batch.min(src.buf.len())].to_vec();
-                    self.call_block_loop_phasers(&data, crate::ast::PhaserKind::First, first_args)?;
-                }
+                // The callback's `FIRST` runs in its own body, on the first call of
+                // this clone (#17945); the slot only records that the loop started.
+                slot.take_first_phaser(src.has(1));
                 let mut i = 0usize;
                 let mut by_last = false;
                 while !src.satisfied(&out.produced, produced_base) && src.has(i + 1) {
@@ -852,9 +850,9 @@ impl Interpreter {
                 // The fresh chunk's block-declared routine calls read the
                 // closure's own upvalues (`bind_origin_code_var_upvalues`).
                 vm.upvalues = data.upvalues.clone();
-                if slot.take_first_phaser(src.has(1)) {
-                    vm.run_block_loop_phasers(&data, crate::ast::PhaserKind::First)?;
-                }
+                // The callback's `FIRST` runs in its own body, on the first call of
+                // this clone (#17945); the slot only records that the loop started.
+                slot.take_first_phaser(src.has(1));
                 // A `NEXT` phaser fires after every iteration, including one
                 // ended by `next` (not by `last`).
                 let has_next_phaser = data.body.iter().any(|s| {

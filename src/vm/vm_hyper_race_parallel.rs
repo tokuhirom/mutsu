@@ -460,11 +460,6 @@ impl Interpreter {
                 }
             }
         }
-        if source_idx == 0
-            && let Some(first) = items.first()
-        {
-            self.run_callback_first_phasers(&func, first)?;
-        }
         let produced = if items.is_empty() {
             Vec::new()
         } else {

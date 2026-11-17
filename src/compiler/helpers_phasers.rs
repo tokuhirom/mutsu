@@ -168,6 +168,44 @@ impl Compiler {
     /// statement-form (`bare`) phaser shares the
     /// enclosing block's lexical scope, so it is spliced in scope-less; a
     /// block-form phaser gets its own `Stmt::Block` scope.
+    /// Emit the block's `FIRST` phasers as its entry prologue, before ENTER;
+    /// their values are sunk. `FIRST` belongs to the code object (rakudo's
+    /// `p6takefirstflag`): the first call of each closure clone runs it,
+    /// whoever makes the call -- a `.map`, a routine, or a direct `$c()`
+    /// (#17945). For a callable's body (`per_clone`) the bodies sit behind
+    /// [`OpCode::FirstPhaser`], which takes that clone's flag. A block
+    /// inlined into its enclosing code (a bare block, an `if` or `do` body)
+    /// is a fresh clone each time it is entered, so its `FIRST` runs on every
+    /// entry. A loop body's own `FIRST`s were lifted out by
+    /// [`Self::expand_loop_phasers`] before this sees the body.
+    pub(super) fn emit_first_phasers(&mut self, stmts: &[Stmt], per_clone: bool) {
+        let mut bodies = Vec::new();
+        for s in stmts {
+            if let Stmt::Phaser {
+                kind: PhaserKind::First,
+                body,
+                ..
+            } = s
+            {
+                if self.emit_block_placeholder_die(body) {
+                    continue;
+                }
+                bodies.push(body);
+            }
+        }
+        if bodies.is_empty() {
+            return;
+        }
+        let first_idx = per_clone.then(|| self.code.emit(OpCode::FirstPhaser { body_end: 0 }));
+        for body in bodies {
+            self.compile_block_inline(body);
+            self.code.emit(OpCode::Pop);
+        }
+        if let Some(idx) = first_idx {
+            self.code.patch_body_end(idx);
+        }
+    }
+
     fn loop_phaser_body(body: &[Stmt], bare: bool) -> Stmt {
         if bare {
             Stmt::SyntheticBlock(body.to_vec())
