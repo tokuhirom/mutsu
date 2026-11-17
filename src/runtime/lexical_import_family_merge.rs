@@ -155,8 +155,9 @@ fn with_candidates(data: &crate::value::SubData, candidates: Vec<Value>) -> Valu
 }
 
 /// Whether two candidate code objects are the same routine: one object, or
-/// two code objects one declaration made (the same family reached through a
-/// hook and through an `is export` import builds a code object for each).
+/// two code objects one declaration made, which share its parameter list
+/// (the same family reached through a hook and through an `is export`
+/// import builds a code object for each).
 // Cost: O(1).
 fn same_routine(a: &Value, b: &Value) -> bool {
     match (a.view(), b.view()) {
@@ -164,10 +165,8 @@ fn same_routine(a: &Value, b: &Value) -> bool {
             x.id == y.id
                 || (x.name == y.name
                     && x.package == y.package
-                    && ((!x.body.is_empty() && std::sync::Arc::ptr_eq(&x.body, &y.body))
-                        || (x.source_line.is_some()
-                            && x.source_line == y.source_line
-                            && x.source_file == y.source_file)))
+                    && !x.param_defs.is_empty()
+                    && std::sync::Arc::ptr_eq(&x.param_defs, &y.param_defs))
         }
         _ => false,
     }
