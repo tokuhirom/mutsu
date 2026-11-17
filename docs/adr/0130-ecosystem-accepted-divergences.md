@@ -58,6 +58,22 @@ the distribution would hide it.
    mutsu will not copy the behaviour. "Looks hard" never qualifies.
    `exclude.txt` remains the tool for a whole distribution that can never pass.
 
+### Amendment 2026-11-17: alternatives for a non-deterministic first line
+
+Some accepted failures do not print the same first line twice. Linux::NFTables
+`t/02-oo.rakutest` (#17834) dies after every assertion has passed, because a
+libnftables double free corrupts the heap. Depending on the run, that surfaces
+as `free(): invalid pointer`, `double free or corruption (out)`, a crash report,
+an index out of bounds with random numbers, or a panic in an unrelated table.
+No single exact string can record that.
+
+So `first_failure` may be a non-empty list of alternatives. Each one is an exact
+line, or `re:<pattern>` that must match the whole line. Every other shape field
+is still compared exactly, and a list entry should pin `ok` / `nok` so that it
+covers only the run that has already passed everything. A single string still
+means exactly that string. `load_accepted` rejects an empty list and a pattern
+that does not compile.
+
 ## Consequences
 
 - The random draw and the tickets report stop offering a file that has already
