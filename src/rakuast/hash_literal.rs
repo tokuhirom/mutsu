@@ -276,7 +276,11 @@ fn literal_pair(item: Expr) -> Option<(String, Option<Expr>)> {
     };
     // A key written as a quoted string or a number (`"a" => 1`, `1 => 2`) is
     // an `ApplyInfix`: keep it written, as the parser does.
-    let written = form != crate::ast::BinaryForm::Infix || key.as_str().is_none();
+    let written = match form {
+        crate::ast::BinaryForm::QuotedKey => true,
+        crate::ast::BinaryForm::Infix => key.as_str().is_none(),
+        _ => false,
+    };
     let key_text = key.to_string_value();
     let value = if written {
         Expr::spelled(*right, || Spelling::HashPairKey {

@@ -5,7 +5,7 @@ use Test;
 # as written: RakuAST holds an `ApplyInfix` over it, where a bare `a => 1` is a
 # `FatArrow` (#14880, the `.DEPARSE` corpus's integration/advent2010-day08.t).
 
-plan 12;
+plan 14;
 
 sub init($src) { $src.AST.statements[0].expression.initializer.expression }
 sub deparse($src) { $src.AST.statements[0].DEPARSE.chomp }
@@ -26,3 +26,9 @@ isa-ok $pairs[2], RakuAST::FatArrow, 'a bare key is a FatArrow';
 my $h = {"a b" => 1, 2 => 3, c => 4};
 is $h.keys.sort.join(','), '2,a b,c', 'the hash has the keys';
 is-deeply EVAL(Q[{"x" => 1, 2 => 2}].AST), {x => 1, "2" => 2}, 'EVAL of the .AST builds the same hash';
+
+# A colonpair entry keeps its own spelling, also where the hash is a type
+# argument (`does R[{:k<v>}]`).
+is-deeply EVAL(Q[{:k<v>, :n(2)}].AST), {k => 'v', n => 2}, 'EVAL of colonpair entries';
+is EVAL(Q[role RP[$x] { method x { $x } }; (anon class :: does RP[{:k<v>}] { }).new.x<k>].AST), 'v',
+    'a hash literal as a role argument';
