@@ -124,6 +124,7 @@ pub(crate) mod doc_edit;
 mod doc_phaser;
 mod doc_source;
 mod doc_str;
+pub(crate) use doc_str::legacy_row_text;
 mod dynamic_method;
 mod enum_term;
 mod expr_block_origins;

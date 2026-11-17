@@ -105,36 +105,59 @@ pub(super) fn markup_inner(node: &RakuAstNode) -> String {
 
 // Cost: O(n).
 fn row_text(node: &RakuAstNode) -> String {
+    legacy_row_text(node, &mut |divider| Ok(divider.to_string())).unwrap_or_default()
+}
+
+/// `LegacyRow.Str(&divider)`: the row as written, line by line (a header cell
+/// may span lines), each divider passed through `divider` (the deparser
+/// highlights it), as rakudo 2026.09 answers it. A row of dividers is each
+/// cell, then a blank and its divider (the empty string past the last one),
+/// and a blank before the next cell; a divider at the line's start is written
+/// as is. A row of columns is its cells two blanks apart. Each line drops its
+/// trailing blanks.
+// Cost: O(n) plus `divider` per divider and line, n = size of the cells.
+pub(crate) fn legacy_row_text(
+    node: &RakuAstNode,
+    divider: &mut dyn FnMut(&str) -> Result<String, crate::value::RuntimeError>,
+) -> Result<String, crate::value::RuntimeError> {
     let cells: Vec<String> = field_items(node, "cells").iter().map(item_text).collect();
-    if let Some(_dividers) = field_str(node, "column-dividers") {
-        let offsets = field_items(node, "column-offsets");
-        // The first divider at column 0 puts the first cell at offset 2; a
-        // divider after the last cell gives one offset per cell.
-        let leading = offsets.first().is_some_and(|o| o.as_int() == Some(2));
-        // The dividers are the gaps between cells, plus one at either edge.
-        let trailing = offsets.len() > cells.len().saturating_sub(1) + usize::from(leading);
-        let mut out = String::new();
-        if leading {
-            out.push_str("| ");
-        }
-        out.push_str(&cells.join(" | "));
-        if trailing {
-            out.push_str(" |");
-        }
-        out.push('\n');
-        return out;
-    }
-    // A cell may span lines (a header): the lines of the cells go side by side.
     let lines: Vec<Vec<&str>> = cells.iter().map(|c| c.split('\n').collect()).collect();
     let height = lines.iter().map(Vec::len).max().unwrap_or(0);
+    let dividers: Option<Vec<char>> =
+        field_str(node, "column-dividers").map(|d| d.chars().collect());
+    // The first divider at column 0 puts the first cell at offset 2.
+    let leading = dividers.is_some()
+        && field_items(node, "column-offsets")
+            .first()
+            .is_some_and(|o| o.as_int() == Some(2));
     let mut out = String::new();
     for k in 0..height {
         let row: Vec<&str> = lines
             .iter()
             .map(|l| l.get(k).copied().unwrap_or(""))
             .collect();
-        out.push_str(&row.join("  "));
+        let mut line = String::new();
+        match &dividers {
+            None => line.push_str(&row.join("  ")),
+            Some(dividers) => {
+                let mut rest = dividers.iter();
+                if leading && let Some(first) = rest.next() {
+                    line.push(*first);
+                    line.push(' ');
+                }
+                for (i, cell) in row.iter().enumerate() {
+                    if i > 0 {
+                        line.push(' ');
+                    }
+                    line.push_str(cell);
+                    line.push(' ');
+                    let d = rest.next().map(char::to_string).unwrap_or_default();
+                    line.push_str(&divider(&d)?);
+                }
+            }
+        }
+        out.push_str(line.trim_end_matches(' '));
         out.push('\n');
     }
-    out
+    Ok(out)
 }
