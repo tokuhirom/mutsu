@@ -161,12 +161,8 @@ impl Interpreter {
             return Err(err);
         }
         if let Some(threaded) = crate::builtins::thread_junctions_in_items(&flat_items, &|c| {
-            Value::str(
-                c.iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join(&sep),
-            )
+            let parts: Vec<String> = c.iter().map(|v| v.to_str_context()).collect();
+            Value::str(crate::builtins::str_prim::join(&parts, &sep))
         }) {
             return Ok(threaded);
         }
@@ -501,7 +497,6 @@ impl Interpreter {
     pub(super) fn builtin_sort(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Extract named args (:k, :by) and positional args
         let mut return_k = false;
-        let mut by_callable: Option<Value> = None;
         let mut callable: Option<Value> = None;
         let mut positional: Vec<Value> = Vec::new();
 
@@ -510,9 +505,10 @@ impl Interpreter {
                 ValueView::Pair(key, val) if key == "k" => {
                     return_k = val.truthy();
                 }
-                ValueView::Pair(key, val) if key == "by" => {
-                    by_callable = Some(val.clone());
-                }
+                // No `sort` candidate declares `:by`: it is swallowed by
+                // `*%_`, not a comparator (rakudo: `sort(:by(-*), 3, 1, 2)`
+                // is `(1 2 3)`).
+                ValueView::Pair(key, _) if key == "by" => {}
                 _ => positional.push(arg.clone()),
             }
         }
@@ -533,10 +529,6 @@ impl Interpreter {
             }
         }
 
-        // Prefer :by over positional callable
-        if by_callable.is_some() {
-            callable = by_callable;
-        }
 
         // `sort(+values)` applies the single-argument rule: only a lone
         // positional is flattened. With several, each is an item, so

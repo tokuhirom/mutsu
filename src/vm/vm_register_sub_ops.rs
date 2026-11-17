@@ -1166,6 +1166,22 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let plan = &code.token_decl_plans[plan_idx as usize];
         let name = plan.name.resolve();
+        // A `my regex` in a routine or block closes over its frame (#17872).
+        // Boxed before the body's regex value snapshots its closure below, so
+        // both hold the same cells.
+        if let Some(pattern) =
+            crate::runtime::regex::regex_token_closure::rule_body_pattern(&plan.raw_body)
+        {
+            let slots: Vec<(Symbol, u32)> = code
+                .locals
+                .iter()
+                .enumerate()
+                .map(|(slot, local)| (Symbol::intern(local), slot as u32))
+                .collect();
+            let key =
+                crate::qualified::qualified(self.current_package_sym(), Symbol::intern(&name));
+            self.capture_token_env(code, key, &[pattern], &slots);
+        }
         // A declaration whose pattern interpolates a defining-frame lexical
         // (`<{$x}>`, `<$x>`) must snapshot it now, while that frame is still
         // live — `plan.raw_body`'s embedded regex literal always carries

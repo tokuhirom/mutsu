@@ -306,13 +306,6 @@ pub(crate) struct LexicalState {
     /// declaration's store adopts its cell. See `vm/vm_hoist_capture_cells.rs`.
     /// Empty unless a sub is called before a variable it reads is declared.
     pub(crate) hoist_pending_cells: Vec<crate::vm::HoistPendingCell>,
-    /// Union of every executed `CompiledCode::type_body_written_lexicals`:
-    /// lexicals written by a registered class/role method body. These keep the
-    /// name-keyed `shared_vars` lane even when a spawned block also captures
-    /// them — the capture analysis cannot see such a write (PLAN.md §6).
-    /// Populated at `RegisterClass` / `RegisterRole`, which always run before
-    /// the type can be instantiated.
-    pub(crate) type_body_written_lexicals: std::sync::Arc<std::collections::HashSet<String>>,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.
     pub(crate) var_dynamic_flags: HashMap<String, bool>,
     /// Variable binding aliases: maps target name -> source name.
@@ -459,7 +452,6 @@ impl LexicalState {
             state_vars: rustc_hash::FxHashMap::default(),
             state_vars_unmigrated: Vec::new(),
             hoist_pending_cells: Vec::new(),
-            type_body_written_lexicals: Default::default(),
             var_dynamic_flags: HashMap::new(),
             var_bindings: HashMap::new(),
             atomic_var_seen: false,
@@ -529,7 +521,6 @@ impl LexicalState {
             // The child re-binds its own env-bound parameters if it runs any.
             // A worker can instantiate a type registered on the parent, so the
             // set of method-written lexicals travels with the clone.
-            type_body_written_lexicals: self.type_body_written_lexicals.clone(),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             var_bindings: HashMap::new(),
             // Inherit monotonically: if the parent ever registered an atomic var,

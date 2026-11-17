@@ -609,13 +609,8 @@ pub(crate) fn join_items(items: &[Value], sep: &str) -> Option<Value> {
     }) {
         return None;
     }
-    Some(Value::str(
-        items
-            .iter()
-            .map(Value::to_str_context)
-            .collect::<Vec<_>>()
-            .join(sep),
-    ))
+    let parts: Vec<String> = items.iter().map(Value::to_str_context).collect();
+    Some(Value::str(crate::builtins::str_prim::join(&parts, sep)))
 }
 
 /// `Array.default`: the value an unassigned element reads as. A

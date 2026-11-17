@@ -27,7 +27,6 @@ impl Interpreter {
                 self.exec_register_sub_op(code, plan_idx, compiled_fns)
             }
             Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
-                self.note_type_body_written_lexicals(code);
                 // Copy-on-write snapshot: the classes this declaration adds are
                 // the keys missing from it if the declaration dies.
                 let classes_before = self.registry().classes.clone();
@@ -49,7 +48,6 @@ impl Interpreter {
                 }
             }
             Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
-                self.note_type_body_written_lexicals(code);
                 match self.exec_register_role_op(code, plan_idx, compiled_fns) {
                     Ok(()) => {
                         let plan = &code.role_decl_plans[plan_idx as usize];
@@ -786,6 +784,8 @@ impl Interpreter {
                     &storage_name,
                     method_outer_lexical_slots,
                 );
+                // A grammar's rules close over this frame too (#17872).
+                self.capture_declared_token_envs(code, &storage_name, method_outer_lexical_slots);
                 if reuse_site {
                     // A kept class's methods now close over this entry's frame;
                     // a cached resolution still holds the previous entry's

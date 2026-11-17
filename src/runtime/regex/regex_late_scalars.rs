@@ -64,6 +64,15 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
                 }
                 i += 1;
             }
+            '<' if chars.get(i + 1) == Some(&'$') => {
+                // `<$var>` interpolates its value as regex source, with
+                // semantics of its own (#13029, #13042), read where the
+                // parse-time `<$var>` arm reads it.
+                while i < chars.len() && chars[i] != '>' {
+                    i += 1;
+                }
+                i += 1;
+            }
             '{' => {
                 seen_block = true;
                 let mut depth = 1usize;
@@ -176,6 +185,47 @@ impl super::super::Interpreter {
 }
 
 impl super::super::Interpreter {
+    /// `pattern` with every plain scalar it names declared as a match-time
+    /// lexical (`regex_rule_params::add_runtime_names`), together with
+    /// `names`, so the structural parser lowers each to a `VarInterp` read
+    /// where the cursor reaches it instead of the interpolation pre-pass
+    /// splicing its current value (ADR-12917, direction 2). A `constant` is
+    /// inlined at compile time, so it stays spliced, as does a value
+    /// `VarInterp` does not match the way the splice does (a callable, an
+    /// unbound name).
+    // Cost: O(n + k), n = the pattern's length, k = the scalars it names (one
+    // env lookup each).
+    pub(crate) fn with_match_time_scalars<'a>(
+        &self,
+        pattern: &'a str,
+        mut names: Vec<String>,
+    ) -> std::borrow::Cow<'a, str> {
+        let (pattern_scalars, _) = scalars_in_pattern(pattern);
+        for name in pattern_scalars {
+            if self.late_scalar_reads_at_match_time(&name, true)
+                && !self.is_compile_time_constant_scalar(&name)
+                && !names.contains(&name)
+            {
+                names.push(name);
+            }
+        }
+        if names.is_empty() {
+            std::borrow::Cow::Borrowed(pattern)
+        } else {
+            std::borrow::Cow::Owned(super::regex_rule_params::add_runtime_names(&names, pattern))
+        }
+    }
+
+    /// [`Self::parse_regex`] for a match entry point: the pattern's plain
+    /// scalars are read at match time ([`Self::with_match_time_scalars`]).
+    // Cost: `with_match_time_scalars`, plus the (cached) parse.
+    pub(crate) fn parse_regex_for_match(
+        &self,
+        pattern: &str,
+    ) -> Option<std::sync::Arc<crate::runtime::regex_types::RegexPattern>> {
+        self.parse_regex(&self.with_match_time_scalars(pattern, Vec::new()))
+    }
+
     /// Whether an interpolated `$name` may hold text the case-folding match
     /// has to expand. A Regex object never does: it keeps its own adverbs, so
     /// the enclosing literal's `:i` does not fold it, and folding the subject
@@ -210,6 +260,7 @@ mod tests {
         assert!(scalars_in_pattern("<a=$b>").0.is_empty());
         assert_eq!(scalars_in_pattern("$<a>=$b").0, ["b"]);
         assert_eq!(scalars_in_pattern("$0 = $b").0, ["b"]);
+        assert!(scalars_in_pattern("<$b> 'x'").0.is_empty());
         assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
         assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
     }

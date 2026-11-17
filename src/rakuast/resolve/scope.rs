@@ -24,6 +24,7 @@ fn scope_declarations(scope: &RakuAstNode) -> HashMap<String, Value> {
         whatever_args: vec![0],
         anonymous_subsets: 0,
         multi_candidates: HashMap::new(),
+        scope_candidates: HashMap::new(),
         dispatchers: HashSet::new(),
         hidden: Vec::new(),
     };
@@ -78,6 +79,7 @@ fn annotate_in(
         whatever_args: vec![0],
         anonymous_subsets: 0,
         multi_candidates: HashMap::new(),
+        scope_candidates: HashMap::new(),
         dispatchers: HashSet::new(),
         hidden: Vec::new(),
     };

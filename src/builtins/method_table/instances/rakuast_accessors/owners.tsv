@@ -631,7 +631,9 @@ RakuAST::Term::Enum	resolution	RakuAST::Term::Name
 RakuAST::Term::Name	is-resolved	RakuAST::Term::Name
 RakuAST::Term::Name	name	RakuAST::Term::Name
 RakuAST::Term::Name	resolution	RakuAST::Term::Name
+RakuAST::Term::Named	is-resolved	RakuAST::Term::Named
 RakuAST::Term::Named	name	RakuAST::Term::Named
+RakuAST::Term::Named	resolution	RakuAST::Term::Named
 RakuAST::Term::Reduce	args	RakuAST::Term::Reduce
 RakuAST::Term::Reduce	infix	RakuAST::Term::Reduce
 RakuAST::Term::Reduce	triangle	RakuAST::Term::Reduce

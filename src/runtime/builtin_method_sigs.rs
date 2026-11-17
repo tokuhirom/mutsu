@@ -67,6 +67,16 @@ fn lookup(type_name: &str, method: &str) -> Option<&'static Entry> {
         .find_map(|ty| table.get(*ty)?.get(method))
 }
 
+/// Whether `type_name` itself (no ancestor) declares `method` as a multi:
+/// `declares_multi_locally("Mu", "print")`.
+// Cost: O(1), two hash probes.
+pub(crate) fn declares_multi_locally(type_name: &str, method: &str) -> bool {
+    table()
+        .get(type_name)
+        .and_then(|methods| methods.get(method))
+        .is_some_and(|entry| !entry.only)
+}
+
 /// Whether rakudo's core type `type_name` (or an ancestor up to `Any`/`Mu`)
 /// declares `method`, as an only method or a multi.
 // Cost: O(a) hash probes, a = the ancestry length of `type_name`.
@@ -143,6 +153,14 @@ mod tests {
         // `proto method chars(*%)` binds the invocant only.
         assert_eq!(super::proto_positional_bounds("Str", "chars"), Some((1, 1)));
         assert_eq!(super::proto_positional_bounds("Str", "lines"), None);
+    }
+
+    #[test]
+    fn a_local_multi_ignores_the_ancestry() {
+        assert!(super::declares_multi_locally("Mu", "print"));
+        // `head` and `STORE` are `Any`'s, not `Mu`'s.
+        assert!(!super::declares_multi_locally("Mu", "head"));
+        assert!(!super::declares_multi_locally("Mu", "STORE"));
     }
 
     #[test]

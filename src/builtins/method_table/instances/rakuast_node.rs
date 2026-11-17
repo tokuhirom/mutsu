@@ -422,7 +422,11 @@ pub(super) fn sub_value(
             return Some(Ok(Value::package(Symbol::intern(&name))));
         }
         // A type name's value is the type its resolution names (#14916).
-        K::TypeSimple | K::TypeSetting => {
+        K::TypeSimple
+        | K::TypeSetting
+        | K::TypeDefinedness
+        | K::TypeParameterized
+        | K::TypeCoercion => {
             return super::rakuast_lookup_values::lookup_value(interp, target);
         }
         // A constant's value is its initializer's, evaluated now.
@@ -462,6 +466,15 @@ pub(super) fn sub_value(
             super::rakuast_check_time_routine::check_time_routine(interp, node, &name)
     {
         return Some(result);
+    }
+    // A nested scope's `proto` (written, or the one its first `multi`
+    // implies) is not installed before its scope runs: the dispatcher over
+    // the scope's candidates (#17826).
+    if !matches!(routine.view(), ValueView::Sub(_))
+        && let Some(dispatcher) =
+            super::rakuast_check_time_routine::check_time_dispatcher(interp, node, &name)
+    {
+        return Some(dispatcher);
     }
     // A `multi sub` is its own candidate of the dispatcher, as in rakudo.
     if is_multi

@@ -3,90 +3,20 @@ use crate::meta_ns::MetaNs;
 use crate::runtime::shared_store::atomic_lane_str_key;
 
 impl Interpreter {
-    /// ADR-12204 S2: whether the `@`/`%` lexical `name` (with sigil) is held in
-    /// a shared `ContainerRef` cell by the spawning frame and may therefore be
-    /// captured by that cell instead of the name-keyed lane. Opaque names (a
-    /// registered class/role method writes them, attributes, dynamics,
-    /// qualified or compiler-internal names) stay on the lane.
-    // Cost: O(1) expected, two hash lookups.
-    fn aggregate_cell_captured(&self, name: &str) -> bool {
-        if !Self::transient_lane_candidate(name)
-            || name.contains("__")
-            || self
-                .lexicals
-                .type_body_written_lexicals
-                .contains(name.trim_start_matches(['@', '%']))
-            || self.lexicals.type_body_written_lexicals.contains(name)
-        {
-            return false;
-        }
-        self.env.get(name).is_some_and(|v| {
-            matches!(
-                v.view(),
-                ValueView::ContainerRef(_)
-            ) && matches!(v.deref_container().view(), ValueView::Array(..) | ValueView::Hash(..))
-        })
-    }
-
-    /// Whether `key` is a plain-lexical `@`/`%` name the ADR-0039 §8.6
-    /// transient-lane rule applies to. Twigil'd, dynamic and attribute
-    /// containers (`@!x`, `@*y`, `%?RESOURCES`) are not plain lexicals and keep
-    /// their existing lifetimes — `@*x`/`%*x` in particular depend on a durable
-    /// name-lane entry for their cross-thread propagation (see the
-    /// aggregate-dynamic carve-out in the seeding loop). The anonymous
-    /// container slot names and `::`-qualified names are excluded for the same
-    /// reason `collect_unit_lexical_names` excludes them.
-    pub(crate) fn transient_lane_candidate(key: &str) -> bool {
-        Self::is_plain_lexical_name(key)
-            && !key.contains("__ANON")
-            && !crate::qualified::is_qualified_str(key)
-    }
-
-    /// Union a frame's `type_body_written_lexicals` into the interpreter-wide
-    /// set. Called at `RegisterClass` / `RegisterRole`, which always run before
-    /// the type can be instantiated (and so before any of its methods can run).
-    pub(crate) fn note_type_body_written_lexicals(&mut self, code: &CompiledCode) {
-        for sym in &code.type_body_written_lexicals {
-            let name = sym.resolve();
-            crate::runtime::cow_table_mut(&mut self.lexicals.type_body_written_lexicals)
-                .insert(name.trim_start_matches('$').to_string());
-        }
-    }
-
-    /// [`Self::clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
-    /// `Promise.start`, `Thread.start`). The block only feeds the ADR-12204
-    /// capture oracle: no plain user lexical is published by the spawn.
-    pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
-        if crate::runtime::shared_store::capture_check::enabled() {
-            // ADR-12204 S1: the aggregates this spawn's block names.
-            if let ValueView::Sub(data) = block.view()
-                && let Some(cc) = data.compiled_code.as_ref()
-            {
-                let names: Vec<String> = cc
-                    .free_var_syms
-                    .iter()
-                    .chain(cc.free_var_writes.iter())
-                    .chain(cc.free_var_container_writes.iter())
-                    .map(|sym| sym.resolve())
-                    .filter(|name| name.starts_with(['@', '%']))
-                    .collect();
-                let cells: Vec<String> = names
-                    .iter()
-                    .filter(|name| self.aggregate_cell_captured(name))
-                    .cloned()
-                    .collect();
-                crate::runtime::shared_store::capture_check::record_spawn_captures(&names);
-                crate::runtime::shared_store::capture_check::record_cell_captures(&cells);
-            }
-        }
+    /// [`Self::clone_for_thread`] for a spawn that runs a known block or
+    /// callback (`start { ... }`, `Promise.start`, `Thread.start`, a `tap` or
+    /// scheduler callback). The block reaches its lexicals through its own
+    /// captures (ADR-16595), so the clone is the plain one; the block names
+    /// the spawn's work at the call site.
+    pub(crate) fn clone_for_thread_for_block(&mut self, _block: &Value) -> Self {
         self.spawn_clone()
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
     /// Shares function/class/role/enum definitions but starts with fresh output and test state.
     /// The child reaches the parent's lexicals through the cells and objects its
-    /// env clone carries (ADR-16595); only opaque names and `@*`/`%*` dynamics are
-    /// published into `shared_vars`.
+    /// env clone carries (ADR-16595); the spawn publishes no lexical into
+    /// `shared_vars`.
     ///
     /// Most of what this builds is cheap, and deliberately so: the program-global
     /// symbol tables it carries over are `Arc<...>` copy-on-write shares (see the
@@ -102,9 +32,6 @@ impl Interpreter {
 
     /// The workhorse behind every thread clone.
     fn spawn_clone(&mut self) -> Self {
-        // ADR-12204 S1 oracle: the lane writes below seed the spawner's
-        // lexicals; they are not uses of the names.
-        let _seeding = crate::runtime::shared_store::capture_check::SeedingGuard::new();
         // A worker has no mainline callframe of its own. Preserve the spawning
         // source location separately so an anonymous callback can still expose
         // a useful bottom backtrace frame without duplicating a located entry
@@ -128,36 +55,17 @@ impl Interpreter {
             self.io.tap.ensure_state();
         }
         // Collapse a scoped (multi-tier overlay) env to a flat one first: the
-        // shared-var seeding and the child's env clone below iterate the env
+        // handle walk and the child's env clone below iterate the env
         // overlay-only, which would miss parent-chain lexicals on a scoped env.
         // The parent keeps its scoped env: flattening it in place merged a
         // routine's `my $n` with a caller's same-named `$n`, and the routine
         // read the caller's value back once its scope was restored (#17747).
         let flat_env = self.env.is_scoped().then(|| self.env.flattened());
-        // Copy user variables into shared_vars so both parent and child see mutations.
-        // The compiler stores locals with bare names (no sigil), so we share everything
-        // except internal/special variables that should remain thread-local.
-        // ADR-0010: seed into THIS lineage's store. The parent's lexicals belong
-        // to the parent's lineage; the child (created below) chains to it, so it
-        // sees them and its writes resolve back here. A sibling thread seeds into
-        // its OWN store, which is why two hyper workers that each declare
-        // `my $uri` no longer collide on one bare-name entry.
-        let shared = Arc::clone(&self.threads.shared_vars);
-        // Merged with the lineage-seeding walk below (was a separate `for value
-        // in self.env.values()` pass): both need one full traversal of the
-        // parent env per spawn, so collecting handle ids here — BEFORE any of
-        // the seeding loop's `continue`s — does both jobs in one pass. Every
-        // value must still be checked for a handle id even when the seeding
-        // side skips it (e.g. `$*CWD`/`self`/`__mutsu_*` are never handles, but
-        // an excluded captured scalar or an already-visible name legitimately
-        // could be).
         let mut referenced_handle_ids = std::collections::HashSet::new();
         // The built-in dynamics live in the per-interpreter base tier, which
         // `&self.env` (map-only) does not yield (ADR-0086) — but `$*OUT` /
         // `$*ERR` / `$*IN` / `$*ARGFILES` are exactly the handles the child
-        // must be able to keep using, so collect their ids explicitly. The
-        // seeding walk below deliberately skips these names anyway (a dynamic
-        // is thread-local), so only the handle-id half applies to them.
+        // must be able to keep using, so collect their ids explicitly.
         if let Some(base) = self.env.dyn_base() {
             for val in base.values() {
                 if let Some(id) = Self::handle_id_from_value(val) {
@@ -177,102 +85,23 @@ impl Interpreter {
             .map
             .iter()
             .any(|(id, handle)| !handle.closed && !referenced_handle_ids.contains(id));
-        {
-            // Slice 5 step A instrumentation: how many env entries this walk
-            // visits vs. how many actually land in the store. Accumulated
-            // locally and recorded once per spawn (one atomic add per counter).
-            let mut seed_keys_walked: u64 = 0;
-            let mut seed_inserts: u64 = 0;
+        // ADR-16595 slice 5: the spawn publishes no lexical. A scalar or
+        // `@`/`%` the spawned code reaches lives in its frame's slot, in the
+        // declaration-site `ContainerRef` cell every escaping capture holds, or
+        // in a package/compunit static store whose cells the child's tables
+        // share; the child's env clone below carries the cells (or the shared
+        // object itself). The env walk only collects the handles the child
+        // must be handed a clone of.
+        if handle_walk_needed {
             let walked_env = flat_env.as_ref().unwrap_or(&self.env);
-            for (key, val) in walked_env {
-                seed_keys_walked += 1;
-                if handle_walk_needed {
-                    Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
-                }
-                // Skip internal variables and topic variables.
-                // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
-                // are thread-local; mutations inside `start` blocks must not
-                // propagate back to the parent thread.
-                // `self` is a per-invocation binding, never a shared mutable
-                // variable: seeding it lets one start-block's invocant leak into
-                // a sibling thread's env via the await-time shared-var sync
-                // (Cro::CompositeConnector read another connector's attributes).
-                // `?`-prefixed compile-time pseudo-lexicals (?CLASS, ?ROLE,
-                // ?LINE, ...) are per-scope constants with the same problem.
-                if key == "_"
-                    || key == "@_"
-                    || key == "%_"
-                    || key == "/"
-                    || key == "!"
-                    || key == "$/"
-                    || key == "$!"
-                    || key == "$*CWD"
-                    || key == "*CWD"
-                    || key == "self"
-                    || key.starts_with("__mutsu_")
-                    || key.starts_with("&")
-                    || key.starts_with("?")
-                    // Every SCALAR dynamic variable (`*x` / `$*x`), not just
-                    // `$*CWD`: dynamics are thread-local in Raku, so a `start`
-                    // block must not seed the parent frame's binding into the
-                    // lineage-shared store, or it leaks process-wide after the
-                    // frame returns (the child env is a clone of the parent's,
-                    // so a spawned worker still reads the current dynamic fine
-                    // without this name-lane sharing; and a block that closes
-                    // over the dynamic gets it via the normal captured-scalar
-                    // cell below regardless).
-                    //
-                    // `@*x`/`%*x` aggregate dynamics are deliberately NOT
-                    // excluded here: unlike scalars, aggregates have no
-                    // cell-based closure capture in this codebase — their
-                    // cross-thread mutation visibility (e.g. `.then`
-                    // callbacks chained onto the SAME promise, roast
-                    // S17-promise/then.t's `@*FOO`) depends entirely on this
-                    // name lane's `__mutsu_atomic_*` CAS mechanism, same as
-                    // any other captured aggregate (see the comment on that
-                    // exclusion below). Excluding them here would silently
-                    // break that live-chain propagation, not just the leak.
-                    || (key.with_str(crate::env::is_dynamic_var_name)
-                        && !key.starts_with("@")
-                        && !key.starts_with("%"))
-                    // An attribute alias (`!x`, `@!x`, `%!x`) is a view of
-                    // the invocant's storage, not a lexical of this frame: the
-                    // instance is already shared, so seeding a snapshot of the
-                    // alias into the lineage store only shadows it — an inline
-                    // `$!lock.protect: { @!x ... }` in the spawning method then
-                    // read the spawn-time copy and lost every write another
-                    // thread made to the attribute since (#8380's
-                    // `Test::Scheduler.run-due` dropping a `FutureEvent`).
-                    || key.with_str(is_attribute_alias_name)
-                {
-                    continue;
-                }
-                let key = key.resolve();
-                // ADR-16595 slice 4: the spawn publishes no plain user lexical.
-                // A scalar or `@`/`%` the spawned code reaches lives in its
-                // frame's slot or in the declaration-site `ContainerRef` cell
-                // every escaping capture holds, and the child's env clone below
-                // carries that cell (or the shared object itself). What still
-                // rides the name lane is a name code on another thread reaches
-                // WITHOUT a capture ([`Self::lexical_name_is_opaque`]: a name a
-                // registered class/role method writes) and the aggregate
-                // dynamics `@*x` / `%*x`, whose live `.then`-chain propagation
-                // depends on it (the exclusion list above keeps their scalar
-                // siblings off).
-                if !self.lexical_name_is_opaque(&key) {
-                    continue;
-                }
-                // Only seed if not already visible — an entry an earlier thread
-                // already updated must not be reset to this env's copy.
-                if shared.seed_if_absent(&key, || val.clone()) {
-                    seed_inserts += 1;
-                }
+            for (_, val) in walked_env {
+                Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
             }
-            crate::vm::vm_stats::record_spawn_seeding(seed_keys_walked, seed_inserts);
-            // Track C: migrate the parent's `state` variables into shared cells.
-            // Incremental: only the keys created since the previous spawn.
-            self.seed_unmigrated_state_vars(&shared);
         }
+        // Track C: migrate the parent's `state` variables into shared cells.
+        // Incremental: only the keys created since the previous spawn.
+        let shared = Arc::clone(&self.threads.shared_vars);
+        self.seed_unmigrated_state_vars(&shared);
         self.threads.shared_vars_active = true;
         let mut cloned = Self {
             types: self.types.fork_for_thread(),
@@ -680,13 +509,6 @@ impl Interpreter {
         }
         Some(result)
     }
-}
-
-/// Whether an env key is an attribute alias (`!x`, `@!x`, `%!x`, `&!x`) rather
-/// than a lexical.
-fn is_attribute_alias_name(key: &str) -> bool {
-    let bare = key.trim_start_matches(['$', '@', '%', '&']);
-    bare.len() > 1 && bare.starts_with('!')
 }
 
 /// Whether `key` names a dynamic array (`@*x`), which the name-keyed shared

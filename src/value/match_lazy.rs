@@ -21,6 +21,7 @@
 //! capture node's shared cell (#12954).
 
 use super::*;
+use crate::symbol::wk;
 use crate::value::regex_caps::{
     CapNode, MatchTarget, NamedSlot, PosSlot, SILENT_ACTION_MARKER_PREFIX,
 };
@@ -199,7 +200,9 @@ impl MatchNode {
             sub_named.insert(key.resolve(), Value::named_slot_value(slot, &self.target));
         }
 
-        let mut attrs = AttrMap::new();
+        // The fixed keys below plus the optional ones: sized up front so the
+        // map does not rehash as it fills.
+        let mut attrs = AttrMap::with_capacity(14);
         // A grammar cursor's class name is the GRAMMAR's, so it can no longer
         // double as the "this Instance is a Match" signal. Record the fact in
         // the attribute map instead: every eager derivative of this Match (the
@@ -212,28 +215,31 @@ impl MatchNode {
                 Value::Bool(true),
             );
         }
-        attrs.insert("str", Value::str(self.span_text()));
-        attrs.insert("from", Value::Int(cap.from as i64));
-        attrs.insert("to", Value::Int(cap.to as i64));
+        attrs.insert(wk::match_str(), Value::str(self.span_text()));
+        attrs.insert(wk::match_from(), Value::Int(cap.from as i64));
+        attrs.insert(wk::match_to(), Value::Int(cap.to as i64));
         if let Some(pos) = kids.pos {
-            attrs.insert("pos", Value::Int(pos as i64));
+            attrs.insert(wk::match_pos(), Value::Int(pos as i64));
         }
-        attrs.insert("list", Value::array(pos_vals));
-        attrs.insert("named", Value::hash_bare_values(sub_named));
+        attrs.insert(wk::match_list(), Value::array(pos_vals));
+        attrs.insert(wk::match_named(), Value::hash_bare_values(sub_named));
         if !silent_caps_vals.is_empty() {
-            attrs.insert("silent_caps", Value::real_array(silent_caps_vals));
+            attrs.insert(wk::match_silent_caps(), Value::real_array(silent_caps_vals));
         }
-        attrs.insert("orig", Value::str_arc(Arc::clone(self.target.text())));
+        attrs.insert(
+            wk::match_orig(),
+            Value::str_arc(Arc::clone(self.target.text())),
+        );
         if let Some(sym) = &cap.sym {
-            attrs.insert("sym_variant", Value::str(sym.resolve()));
+            attrs.insert(wk::match_sym_variant(), Value::str(sym.resolve()));
         }
         if let Some(action_name) = &cap.action_name {
-            attrs.insert("action_name", Value::str(action_name.resolve()));
+            attrs.insert(wk::match_action_name(), Value::str(action_name.resolve()));
         }
         // This node's `.made`: an inline `{ make … }` from reduce time, or a
         // grammar action's `make` that already ran.
         if let Some(ast) = cap.made.get() {
-            attrs.insert("ast", ast);
+            attrs.insert(wk::match_ast(), ast);
         }
         // Per-match `:my $*x` values, re-installed around this node's action
         // by the grammar action walk.
@@ -243,7 +249,7 @@ impl MatchNode {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
-            attrs.insert("reduce_time_vars", Value::hash_bare_values(vars));
+            attrs.insert(wk::match_reduce_time_vars(), Value::hash_bare_values(vars));
         }
         if !kids.capture_alias_map.is_empty() {
             let alias_hash: ValueMap = kids

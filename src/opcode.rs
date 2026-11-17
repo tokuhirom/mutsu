@@ -7835,15 +7835,6 @@ pub(crate) struct CompiledCode {
     /// unrelated same-named local through the wrong signal is the historical
     /// bug class in this area (see the `needs_cell_locals` doc comment above).
     pub(crate) needs_cell_regex: Vec<Symbol>,
-    /// Frame lexicals that a `class`/`role` body's methods WRITE. A method is
-    /// installed by `RegisterClass`/`RegisterRole` and is invoked with no
-    /// closure-creation op, so the capture analysis behind
-    /// `box_captured_lexicals` never sees these writes. Such a name therefore
-    /// keeps the name-keyed `shared_vars` lane that `clone_for_thread_for_block`
-    /// otherwise retires for a block's own captures (PLAN.md §6): it is the only
-    /// mechanism that carries a `submethod DESTROY { $a++ }` write on a worker
-    /// back to the parent. Populated by `record_type_body_captures`.
-    pub(crate) type_body_written_lexicals: Vec<Symbol>,
     /// The subset of this code's own `free_var_syms` whose captured value is
     /// **authoritative**: the CREATING frame declares them as plain lexicals and
     /// provably never mutates them after this closure captured them, so the
@@ -8802,7 +8793,6 @@ impl CompiledCode {
             needs_cell_unvouched_locals: Vec::new(),
             needs_cell_captured_containers: Vec::new(),
             needs_cell_regex: Vec::new(),
-            type_body_written_lexicals: Vec::new(),
             authoritative_free_vars: Vec::new(),
             routine_scoped_free: Vec::new(),
             self_capture_decl_locals: Vec::new(),
@@ -12013,8 +12003,8 @@ impl CompiledCode {
         // when this code is later invoked as a Callable value. Deliberately
         // does NOT touch `self_mutated`/`free_writes` here: nested-routine
         // write tracking (mutation -> shared-cell boxing) is already handled by
-        // the separate `named_sub_captures` channel below, and by
-        // `type_body_written_lexicals` for a method body.
+        // the separate `named_sub_captures` channel below, and by the method
+        // body's `container_ref_capture_syms` boxing for a method body.
         for syms in &self.nested_routine_free_reads {
             for sym in syms {
                 if !sym.with_str(|s| own.contains(s)) {

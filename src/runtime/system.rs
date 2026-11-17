@@ -315,7 +315,8 @@ impl Interpreter {
         // (`runtime::repl_session_scope`): `Out(...)` is a call there.
         // Nor a module's it has not merged (ADR-11136), which the parse of an
         // ordinary EVAL keeps knowing.
-        if let Some(hidden) = self.session_hidden_type_names() {
+        let session_hidden = self.session_hidden_type_names();
+        if let Some(hidden) = &session_hidden {
             let visible = |name: &String| {
                 !hidden.contains(name.as_str()) && !self.module_name_hidden_here(name)
             };
@@ -337,7 +338,10 @@ impl Interpreter {
         );
         crate::parser::clear_parser_lib_paths();
         match parse_result {
-            Ok((stmts, _)) => {
+            Ok((mut stmts, _)) => {
+                if let Some(hidden) = &session_hidden {
+                    super::repl_session_scope::declare_session_types_apart(&mut stmts, hidden);
+                }
                 // EVAL is its own compilation unit, so its `$=pod` must be
                 // collected from the evaluated source before the mainline
                 // runs.  This also adds declarator blocks from `#|` comments;

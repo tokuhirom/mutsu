@@ -883,6 +883,31 @@ impl Interpreter {
             }
             // Backslash escape: \x
             '\\' if chars.len() > 1 => 2,
+            // A value the interpolation pre-pass spliced in (`$*sep`): the
+            // whole span between its marks is the one atom it replaced.
+            c if c == Self::NON_DECLARATIVE_INTERP_MARK => chars[1..]
+                .iter()
+                .position(|&m| m == Self::NON_DECLARATIVE_INTERP_MARK)
+                .map_or(chars.len(), |close| close + 2),
+            // A variable (`$sep`, `$*sep`, `$kebab-name`): one interpolation
+            // atom, read at match time, not the `$` end anchor followed by a
+            // name.
+            '$' if chars
+                .get(1)
+                .is_some_and(|c| c.is_alphabetic() || matches!(c, '_' | '*' | '?')) =>
+            {
+                let mut j = 2;
+                while j < chars.len() {
+                    let kebab = chars[j] == '-'
+                        && chars.get(j + 1).is_some_and(|n| n.is_alphabetic() || *n == '_');
+                    if chars[j].is_alphanumeric() || chars[j] == '_' || kebab {
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                j
+            }
             // Single character atom
             _ => 1,
         };
@@ -1672,7 +1697,7 @@ impl Interpreter {
             _ => return None,
         };
         let Some(tree) = value.regex_source_tree() else {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         };
         // Array interpolation is retained in the source tree for RakuAST,
         // but the established parser resolves its elements at match time.
@@ -1695,7 +1720,7 @@ impl Interpreter {
         // `parse_regex` keys such a plan by the values it read
         // (`regex_value_keyed_parse`), so a rebound lexical re-parses.
         if tree.contains_regex_value_interpolation() {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         }
         let interpolation_names = tree.interpolation_names();
         // The direct tree plan's VarInterp atom intentionally handles the
@@ -1732,7 +1757,7 @@ impl Interpreter {
                     })
             })
         {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         }
         // Include the tree fingerprint in the existing plan-cache key. This
         // keeps the cache honest if a future parser creates two source trees
@@ -1761,7 +1786,7 @@ impl Interpreter {
         // through `parse_regex`, whose caches key by the interpolated text.
         let Some(parsed) = lower_static_execution_tree(&pattern, tree).map(std::sync::Arc::new)
         else {
-            return self.parse_regex(&pattern);
+            return self.parse_regex_for_match(&pattern);
         };
         REGEX_PARSE_CACHE.with(|c| {
             c.borrow_mut()

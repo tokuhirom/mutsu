@@ -334,10 +334,21 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         let env = &self.caller_env_stack[stack_len - depth];
-        if let Some(val) = env.get_through_callers(name) {
+        // A sigil-less key is looked up as a term (a constant's term key,
+        // #9962) first, then as itself (a lexical type), #17846.
+        // A sigil-less key is reported as spelled, without a `$`.
+        let reported = name;
+        let (name, found) = match env.get_through_callers(name) {
+            Some(val) => (name, Some(val)),
+            None => match name.strip_prefix(crate::runtime::term_names::TERM_PREFIX) {
+                Some(bare) => (bare, env.get_through_callers(bare)),
+                None => (name, None),
+            },
+        };
+        if let Some(val) = found {
             // Check that the variable is declared `is dynamic`
             if !self.is_var_dynamic(name) {
-                return Err(crate::runtime::utils::caller_not_dynamic_error(name));
+                return Err(crate::runtime::utils::caller_not_dynamic_error(reported));
             }
             Ok(val.clone())
         } else {

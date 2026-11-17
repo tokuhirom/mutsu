@@ -40,7 +40,9 @@ pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
             }
         }
     }
-    Some(text)
+    // The text is matched against `Str`s, which hold a literal U+10FFFD as the
+    // doubled marker (ADR-17800).
+    Some(crate::grapheme_break::escape_literal_marker_owned(text))
 }
 
 /// The decoded text of the body of a `'...'` (or `‘...’`) regex term whose
@@ -60,7 +62,7 @@ pub(crate) fn decode_q_regex_quote(body: &str, close: char) -> String {
             text.push(ch);
         }
     }
-    text
+    crate::grapheme_break::escape_literal_marker_owned(text)
 }
 
 #[cfg(test)]

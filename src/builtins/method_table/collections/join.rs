@@ -86,12 +86,8 @@ fn join_core(target: &Value, sep: &str) -> Joined {
     }
     match target.view() {
         ValueView::Capture { positional, .. } => {
-            let joined = positional
-                .iter()
-                .map(Value::to_string_value)
-                .collect::<Vec<_>>()
-                .join(sep);
-            Joined::Done(Ok(Value::str(joined)))
+            let parts: Vec<String> = positional.iter().map(Value::to_string_value).collect();
+            Joined::Done(Ok(Value::str(crate::builtins::str_prim::join(&parts, sep))))
         }
         // `Match.join` joins the POSITIONAL CAPTURES (`.list`), not the matched
         // string; a captureless match joins to "".
@@ -100,12 +96,8 @@ fn join_core(target: &Value, sep: &str) -> Joined {
                 .match_list()
                 .and_then(|v| v.as_list_items().map(|i| i.to_vec()))
                 .unwrap_or_default();
-            let joined = items
-                .iter()
-                .map(Value::to_str_context)
-                .collect::<Vec<_>>()
-                .join(sep);
-            Joined::Done(Ok(Value::str(joined)))
+            let parts: Vec<String> = items.iter().map(Value::to_str_context).collect();
+            Joined::Done(Ok(Value::str(crate::builtins::str_prim::join(&parts, sep))))
         }
         // A `Blob`/`Buf` (or a user class over one) lists as its elements:
         // `Blob.new(1, 2).join(",")` is "1,2" (its own `Str` would throw
@@ -131,12 +123,11 @@ fn join_core(target: &Value, sep: &str) -> Joined {
             Joined::Done(Ok(Value::str(target.to_string_value())))
         }
         ValueView::Hash(map) => {
-            let joined = map
+            let parts: Vec<String> = map
                 .iter()
                 .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
-                .collect::<Vec<_>>()
-                .join(sep);
-            Joined::Done(Ok(Value::str(joined)))
+                .collect();
+            Joined::Done(Ok(Value::str(crate::builtins::str_prim::join(&parts, sep))))
         }
         // A Set/Bag/Mix reads as its pairs (`self.list`): `key\tTrue`,
         // `key\tweight`.

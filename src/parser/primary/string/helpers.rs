@@ -377,6 +377,14 @@ pub(crate) fn process_q_escapes(content: &str, delim: char) -> String {
 ///
 /// The `is_nfc_quick` gate inside makes this free for ASCII, which every hot
 /// literal is.
+///
+/// A literal `U+10FFFD` — written raw in the source or spelled `\x[10FFFD]`,
+/// `\c[...]` — is escaped as the doubled marker here, once for every piece
+/// of a literal, so it is not read as a utf8-c8 synthetic (ADR-17800). The
+/// escapes therefore push the raw codepoint.
+// Cost: O(n), n = bytes of `s` (no copy for ASCII or text without the marker).
 pub(crate) fn literal_str(s: impl Into<String>) -> Value {
-    Value::str(crate::ucd::normalize::nfc(s.into()))
+    Value::str(crate::grapheme_break::escape_literal_marker_owned(
+        crate::ucd::normalize::nfc(s.into()),
+    ))
 }

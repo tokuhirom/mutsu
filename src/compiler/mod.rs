@@ -3487,6 +3487,13 @@ impl Compiler {
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
     /// `OUTER::<$x>`, and their `OUTER::OUTER::` chains).
     fn emit_outer_var_access(&mut self, bare: String, depth: usize) {
+        if self.outer_is_setting(depth) {
+            // The unit mainline's `OUTER::` is outside the unit: none of the
+            // program's lexicals is there, and rakudo answers Nil (#17898).
+            let idx = self.code.add_constant(Value::NIL);
+            self.code.emit(OpCode::LoadConst(idx));
+            return;
+        }
         if self.try_emit_outer_capture_read(&bare, depth) {
             return;
         }
@@ -3579,6 +3586,19 @@ impl Compiler {
 
     /// The index, in the full (enclosing ++ local) scope chain, of this
     /// compilation unit's outermost scope — the scope `UNIT::` resolves against.
+    /// Whether `OUTER::` at `depth` from the code being compiled names the
+    /// setting: the code is a unit's own mainline (not a routine, closure or
+    /// `EVAL`, whose outer scopes live outside this compilation) and `depth`
+    /// reaches past its outermost scope.
+    // Cost: O(1).
+    fn outer_is_setting(&self, depth: usize) -> bool {
+        !self.in_eval_unit
+            && !self.is_routine
+            && self.enclosing_scopes.is_empty()
+            && self.unit_root_scope == 0
+            && depth >= self.local_scopes.len()
+    }
+
     fn unit_root_index(&self) -> usize {
         self.enclosing_scopes.len() + self.unit_root_scope
     }
@@ -5235,14 +5255,10 @@ impl Compiler {
         }
     }
 
-    /// Whether `stmts` holds a written `LEAVE` / `KEEP` / `UNDO` phaser.
-    ///
-    /// The replay phasers a unit-level variable trait queues
-    /// (`begin_prologue::lift_unit_var_traits`) are not counted: a unit that
-    /// only has those keeps the plain path.
-    // TODO: run a unit-level variable trait's LEAVE replay when an EVAL'd unit
-    // ends; the phaser-scope path loses the unit's tail value after a
-    // `trait_mod:<does>` mixin there (t/lang/eval-unit-builtin-prelude-by-names.t).
+    /// Whether `stmts` holds a `LEAVE` / `KEEP` / `UNDO` phaser: a written one,
+    /// or the replay a unit-level variable trait queues
+    /// (`begin_prologue::lift_unit_var_traits`), whose phasers
+    /// `Variable.block.add_phaser` filed run when an EVAL'd unit ends (#17202).
     // Cost: O(n), n = statements.
     fn has_exit_phasers(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| {
@@ -5250,9 +5266,8 @@ impl Compiler {
                 s,
                 Stmt::Phaser {
                     kind: PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo,
-                    body,
                     ..
-                } if !matches!(body.as_slice(), [Stmt::VarTrait { .. }])
+                }
             )
         })
     }
@@ -5388,7 +5403,16 @@ impl Compiler {
             for stmt in &stmts[..split] {
                 self.compile_stmt(stmt);
             }
-            self.compile_phaser_block_scope(&stmts[split..], PhaserBlockResult::ReturnViaTopic);
+            // An EVAL'd unit returns its tail value on the VM stack
+            // (`unit_tail_on_stack`), not through the topic: routing it through
+            // `$_` left whatever else the stack held as the unit's value
+            // (#17202: a lifted variable trait's replayed exit phasers).
+            let mode = if self.in_eval_unit && self.unit_tail_on_stack {
+                PhaserBlockResult::Push
+            } else {
+                PhaserBlockResult::ReturnViaTopic
+            };
+            self.compile_phaser_block_scope(&stmts[split..], mode);
         } else {
             // The statement whose value the unit evaluates to. Not simply the
             // last one: reordering hoists a declaration (`constant X = 5`)

@@ -233,6 +233,26 @@ impl Interpreter {
             Err(e) if Self::is_gather_take_limit_signal(&e) => {
                 Err(self.park_try_catch_gather_suspend(code, try_ip, catch_begin, e))
             }
+            // `fail` lexically inside a routine returns a Failure from that
+            // routine: it is a return, not an exception, so a block's CATCH
+            // does not see it (`sub f { CATCH {...}; fail "x" }` is a Failure,
+            // as is a `fail` in a closure called through a routine holding a
+            // CATCH). Only `try`, which is fatal, and `use fatal` turn it into
+            // the exception CATCH handles, and so does a `fail` with no routine
+            // to return from (`{ fail "x"; CATCH {...} }` in a mainline).
+            // (A CONTROL block, which would see
+            // it as the `CX::Return` it is, keeps the older routing.)
+            Err(e)
+                if e.is_fail()
+                    && !traps
+                    && control_begin >= end
+                    && !self.module.fatal_mode
+                    && !self.module.lexical_fatal_mode
+                    && self.fail_returns_past_catch(&e) =>
+            {
+                self.discard_let_saves(let_mark);
+                Err(e)
+            }
             Ok(()) => {
                 // A `try`/implicit-CATCH region is a block, so it owns the
                 // `let`/`temp` saves its body recorded: `temp` restores here and
@@ -769,5 +789,23 @@ impl Interpreter {
         let r = f(self);
         self.control.catch_handlers.pop();
         r
+    }
+
+    /// Whether the `fail` signal `e` reaching a CATCH region of `code` is a
+    /// return from a routine that is still running, which the CATCH must let
+    /// through. A closure stamps the routine its `fail` leaves on the way out
+    /// (`vm_closure_dispatch`); an unstamped one returns from a routine when
+    /// the `fail` keyword raised it lexically inside one. A `fail` from a
+    /// `where` block or another construct run outside any routine stays
+    /// catchable.
+    // TODO: the routine form `fail(...)` in an expression and `.fail` raise
+    // through the builtins, which do not know whether their caller lies in a
+    // routine, so a CATCH beside them still catches them (rakudo returns).
+    // Cost: O(r) for a stamped signal, r = routine-stack depth; O(1) otherwise.
+    fn fail_returns_past_catch(&self, e: &RuntimeError) -> bool {
+        match e.fail_target_callable_id() {
+            Some(target) => self.return_target_is_live(target),
+            None => e.fail_in_routine_body(),
+        }
     }
 }

@@ -246,37 +246,22 @@ impl Interpreter {
     /// `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::`) may stand for the
     /// `@`/`%` binding `key` (ADR-16595 §2 rule 3).
     ///
-    /// A plain user lexical never does: it lives in its frame's slot or in the
-    /// declaration-site `ContainerRef` cell every escaping closure captured,
-    /// and a thread reaches it through that capture, under the container's
-    /// ADR-0068 lock. The lane keeps the names that are not such a lexical
-    /// (attributes `@!x`, dynamics `@*x`, `__mutsu_*` keys) and the opaque ones
-    /// ([`Self::lexical_name_is_opaque`]), unless this lineage re-declared the
-    /// name.
-    // Cost: O(1) expected, a prefix check and at most two set probes.
+    /// A plain user lexical never does: it lives in its frame's slot, in the
+    /// declaration-site `ContainerRef` cell every escaping closure captured, or
+    /// in a package/compunit static store, and a thread reaches it through
+    /// that, under the container's ADR-0068 lock. The lane keeps only the names
+    /// that are not such a lexical (attributes `@!x`, dynamics `@*x`,
+    /// `__mutsu_*` keys).
+    // Cost: O(1), a prefix check.
     pub(crate) fn container_lane_applies(&self, key: &str) -> bool {
         !self.lexical_has_own_place(key)
     }
 
     /// Whether `key` is a plain user `@`/`%` lexical that a thread reaches
     /// through its own slot or captured cell rather than through the lane.
-    // Cost: O(1) expected, a prefix check and at most two set probes.
+    // Cost: O(1), a prefix check.
     pub(crate) fn lexical_has_own_place(&self, key: &str) -> bool {
-        Self::is_plain_lexical_name(key)
-            && !key.contains("__")
-            && !self.lexical_name_is_opaque(key)
-    }
-
-    /// The closed set of lexicals that code on another thread reaches without
-    /// a capture, so they keep the lane until ADR-12529 phase 3 (slice 5): a
-    /// name a registered class/role method writes
-    /// (`lexicals.type_body_written_lexicals`).
-    // Cost: O(1) expected, two set probes.
-    pub(crate) fn lexical_name_is_opaque(&self, key: &str) -> bool {
-        self.lexicals
-            .type_body_written_lexicals
-            .contains(key.trim_start_matches(['@', '%']))
-            || self.lexicals.type_body_written_lexicals.contains(key)
+        Self::is_plain_lexical_name(key) && !key.contains("__")
     }
 
     /// Snapshot the set of keys currently present in `shared_vars`. Used by the
@@ -466,8 +451,11 @@ impl Interpreter {
         // A blanket locals -> env mirror is a coherence pass over THIS frame's
         // slots, not an assignment: the bare-name lane must not be republished
         // from it (see `suppress_shared_publish`).
+        // A user lexical has no store entry to update (ADR-16595, #17837):
+        // another thread reaches it through its cell.
         if self.threads.shared_vars_active
             && !self.threads.suppress_shared_publish
+            && !crate::runtime::shared_store::is_user_lexical_key(key)
         {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS

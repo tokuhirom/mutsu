@@ -290,6 +290,42 @@ rejected). Run `scripts/dev gate --full` before publishing a slice.
 - Native-element containers (`my int @a`) get their cell or a documented
   equivalent here.
 
+**Slice 5 done** (`fix/16600-opaque-lexicals-no-lane`, #16600). The opaque
+set needed no static-chain routing of its own: every member already had a
+place a worker reaches, and the lane only hid two gaps on the way there.
+
+- A lexical a class/role method writes is reached through the declaring
+  frame's cell (the method body's `container_ref_capture_syms` boxing,
+  #15782), the compunit's `unit_lexicals` cell (ADR-0024) or the package's
+  static store (`share_body_static_scalar`, #12825). So
+  `lexical_name_is_opaque`, the runtime and compiled
+  `type_body_written_lexicals` sets (precomp format 65) and the spawn's
+  seeding loop are deleted; the spawn walks the env only for handle ids.
+- Gap 1: composing a role left the role body's `my` lexicals bound in the
+  composing scope. A later class's method found such a `$n` in the env ahead
+  of its own static cell and, on a worker, wrote the env copy. The
+  composition now restores each body-declared scalar after persisting it as
+  the composing class's static (`registration_class_compose_body.rs`); the
+  `@`/`%`/`&` names stay bound until a role body sub resolves them through
+  the static store (#17854).
+- Gap 2: a closure created at program scope that looks names up reflectively
+  (`start { EVAL '$x = 1' }`, `::('$y')`) linked to the live program scope
+  without boxing its scalars, which on a worker is the worker's env copy. It
+  now boxes them as a routine frame's reflective capture already did
+  (`capture_closure_env`).
+- `OUTER::`/`CALLER::` and dynamics already resolve without the lane
+  (ADR-12529 phase 3; `my $*E = 0; await start { $*E = 5 }; $*E` is `5`).
+  Native-element containers share their node like any aggregate; no cell is
+  needed (`my int @a` pushed and element-assigned on a worker matches
+  `raku`).
+- Remainder (#17837): no spawn publishes a user lexical any more, but the
+  write mirrors that update an *existing* name-keyed entry
+  (`set_shared_var_sym` on every `SetGlobal` store while `shared_vars_active`,
+  the `sync_shared_vars_to_env` pull, the `__mutsu_atomic_arr::` lanes for
+  `@*x`) are still in place for the dynamics, `state` cells and internal keys
+  that use the store. Whether the ADR-0010 lineage store survives for those
+  (§6) is that issue's decision.
+
 ### Order and parallelism
 
 Slices 1 and 2 are independent. Slice 3 needs neither, but its acceptance (the
@@ -341,3 +377,17 @@ worktrees; they touch disjoint files except `src/opcode.rs` (1, 2).
   window). Decide from slice 1's numbers; do not pre-build it.
 - Whether the ADR-0010 lineage store survives slice 5 for internal keys only,
   or those keys move to their own typed homes (`state` cells, atomics).
+
+  **Decided (#17837, 2026-11-17):** the store survives, for what is not a
+  lexical: `@*x`/`%*x` dynamics, attribute aliases, `state` cells and the
+  internal `__mutsu_*` keys (atomic lanes, dirty markers). A user lexical is
+  excluded structurally: `shared_store::is_user_lexical_key` answers a read
+  under such a key as absent without touching a lineage, a store insertion
+  under one is a `debug_assert!`, and `set_shared_var_sym`'s write mirror skips
+  it. Measured before the change with an env-gated oracle over every `t/` file
+  and the roast whitelist on a release build: zero insertions under a user
+  lexical key, only read probes (which always missed). Moving the remaining
+  keys to typed homes is not needed for correctness and is left to whoever
+  next finds the store in a profile. The ADR-12204 S1 capture oracle
+  (`MUTSU_SPAWN_CAPTURE_CHECK`) is deleted with it: no spawn records captures
+  any more.

@@ -90,7 +90,10 @@ impl Interpreter {
         // and its replay re-runs the private dispatch arm that installed it
         // (`try_private_compiled_mut_dispatch`), including that arm's
         // calling-context permission check.
-        if !matches!(modifier, None | Some("!")) || quoted || want_ref {
+        if !matches!(modifier, None | Some("!"))
+            || Self::quoting_matters(quoted, method_sym.as_str())
+            || want_ref
+        {
             return None;
         }
         let ValueView::Instance { class_name, .. } = target.view() else {
@@ -103,6 +106,22 @@ impl Interpreter {
             return None;
         }
         Some((class_name, method_sym, arg_keys))
+    }
+
+    /// Whether a quoted spelling (`$obj."name"()`, or a run-time name) can
+    /// dispatch differently from the bare one. Only for a MOP pseudo-method
+    /// name, which a quoted call sends to a user method of that name instead of
+    /// the reflection macro (`user_shadows_builtin`,
+    /// `skip_pseudo_method_native`); for every other name the two spellings
+    /// run the same stretch, so a quoted call shares the plain-method lane
+    /// (#17811: `self."$name"()` in SBOM::CycloneDX's `Map`).
+    // Cost: O(1).
+    pub(super) fn quoting_matters(quoted: bool, method: &str) -> bool {
+        quoted
+            && matches!(
+                method,
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            )
     }
 
     /// Whether the prefix has already been proven inert for this key.

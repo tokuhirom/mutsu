@@ -141,6 +141,12 @@ pub(crate) struct ResolutionCaches {
         (Symbol, bool, Symbol),
         (u64, Option<crate::builtins::method_table::RowId>),
     >,
+    /// The cursor-Match lane's verdicts (`vm_cursor_match_lane`): whether a
+    /// grammar cursor of the keyed grammar class may take the `Match` rows
+    /// for the keyed method (no user method of that name in the grammar's
+    /// MRO, no `augment`), for one registry write generation. Starts empty
+    /// per thread (a pure recomputable memo).
+    pub(crate) cursor_match_site_lane: rustc_hash::FxHashMap<(Symbol, Symbol), (u64, bool)>,
     /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
     /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
     /// `.parse`/subparse is re-entered many times against a stable token registry
@@ -355,6 +361,13 @@ pub(crate) struct ResolutionCaches {
     /// Written only from that outcome, and cleared with the other method caches
     /// on a registry generation change. See `vm_accessor_lane`.
     pub(crate) accessor_lane: rustc_hash::FxHashMap<(u32, Symbol), u32>,
+    /// `(class, accessor) ->` [`Interpreter::rw_accessor_type_constraint`]'s
+    /// answer (`None`: not a public `is rw` attribute; `Some(tc)`: its type
+    /// constraint). Cleared with the other method caches on a method
+    /// generation change, which every class declaration and attribute
+    /// addition takes.
+    pub(crate) rw_accessor_constraint:
+        rustc_hash::FxHashMap<(Symbol, Symbol), Option<Option<String>>>,
     /// Memoized `class -> NativeCtorPlan` for the native default constructor.
     /// Cleared wherever `fast_method_cache` is cleared, plus the MOP class-shape
     /// mutators (`Attribute.set_build`, `^add_attribute`, `^add_method`,

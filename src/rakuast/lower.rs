@@ -5235,11 +5235,11 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness => {
             Ok(Expr::BareWord(simple_type_name(names, node, node)?))
         }
-        // `Term::Named.new("now")` -> the argument-less `now` call the parser
-        // produces for the term.
+        // `Term::Named.new("now")` -> the argument-less call the parser
+        // produces for the term (`now`, or a unit's `term:<NAME>`).
         RakuAstClass::TermNamed => match positional_leaf(node)?.view() {
-            ValueView::Str(s) if matches!(s.as_str(), "now" | "time") => Ok(Expr::Call {
-                name: Symbol::intern(s.as_str()),
+            ValueView::Str(s) => Ok(Expr::Call {
+                name: Symbol::intern(&super::term_named::routine_name(s.as_str())),
                 args: vec![],
                 listop: false,
             }),

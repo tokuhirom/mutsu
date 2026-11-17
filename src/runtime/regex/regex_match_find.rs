@@ -34,7 +34,7 @@ impl Interpreter {
         text: &str,
         partial: &mut Option<RegexCaptures>,
     ) -> Option<RegexCaptures> {
-        let parsed = self.parse_regex(pattern)?;
+        let parsed = self.parse_regex_for_match(pattern)?;
         let pkg = self.current_package_sym();
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
@@ -124,7 +124,7 @@ impl Interpreter {
         target: &MatchTarget,
         from_pos: usize,
     ) -> Option<RegexCaptures> {
-        let parsed = self.parse_regex(pattern)?;
+        let parsed = self.parse_regex_for_match(pattern)?;
         let pkg = self.current_package_sym();
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
@@ -219,7 +219,7 @@ impl Interpreter {
         canonical_only: bool,
         skip_covered: bool,
     ) -> Vec<RegexCaptures> {
-        let Some(parsed) = self.parse_regex(pattern) else {
+        let Some(parsed) = self.parse_regex_for_match(pattern) else {
             return Vec::new();
         };
         let pkg = self.current_package_sym();
@@ -359,7 +359,7 @@ impl Interpreter {
         target: &MatchTarget,
         min_pos: usize,
     ) -> Option<MatchWithAllCaptures> {
-        let parsed = self.parse_regex(pattern)?;
+        let parsed = self.parse_regex_for_match(pattern)?;
         self.regex_find_first_from_with_all_captures_in_parsed(&parsed, target, min_pos)
     }
 
@@ -457,7 +457,7 @@ impl Interpreter {
     }
 
     pub(crate) fn regex_find_first(&mut self, pattern: &str, text: &str) -> Option<(usize, usize)> {
-        let parsed = self.parse_regex(pattern)?;
+        let parsed = self.parse_regex_for_match(pattern)?;
         let pkg = self.current_package_sym();
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());

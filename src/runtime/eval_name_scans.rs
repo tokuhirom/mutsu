@@ -266,6 +266,7 @@ impl UndeclaredName<'_> {
                 .is_some_and(|sym| interp.main_type_hidden_in_unit(interp.current_unit, sym))
         {
             return self.declared.contains(name)
+                || interp.lexical_type_in_scope(name).is_some()
                 || interp.has_function(name)
                 || interp.has_multi_function_unindexed(name)
                 || interp.env().contains_key(&format!("&{name}"));

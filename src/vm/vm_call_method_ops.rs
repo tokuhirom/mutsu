@@ -283,6 +283,29 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The `X::Multi::NoMatch` of `.print(arg)` / `.say(arg)` / `.put(arg)` /
+    /// `.note(arg)` on an unhandled Failure, which must not explode it: `Mu`'s
+    /// candidates take no positional. Shared by `CallMethod` and
+    /// `CallMethodMut` (a Failure held in a variable).
+    // Cost: O(a), a = arguments.
+    pub(super) fn failure_print_no_match(
+        method: &str,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<RuntimeError> {
+        if matches!(method, "print" | "say" | "put" | "note")
+            && args
+                .iter()
+                .any(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && class_name.resolve() == "Failure"
+            && !target.is_failure_handled()
+        {
+            return Some(Self::print_routine_no_match_error(method, target, args));
+        }
+        None
+    }
+
     /// Build an X::Multi::NoMatch error for a `print`/`say`/`put`/`note` call
     /// made with a positional argument on an invocant whose only candidate is
     /// the default `(Mu: *%_)` one. The `capture` attribute carries the full
@@ -302,8 +325,9 @@ impl Interpreter {
                 if a.is_nil() { tn } else { format!("{}:D", tn) }
             })
             .collect();
+        // The invocant is an unhandled Failure, which is undefined: `Failure:U`.
         let message = format!(
-            "Cannot resolve caller {}({}:D: {}); none of these signatures matches:{}",
+            "Cannot resolve caller {}({}:U: {}); none of these signatures matches:{}",
             method,
             invocant_type,
             arg_profile.join(", "),
@@ -352,13 +376,16 @@ impl Interpreter {
         quoted: bool,
         want_ref: bool,
     ) -> Option<Value> {
-        // A quoted name (`$obj."$name"()`) still addresses the same accessor;
-        // this fast path only takes it when a container was asked for, which
-        // nothing but this path can hand back.
-        if !args.is_empty() || has_modifier || (quoted && !want_ref) {
+        // A quoted name (`$obj."$name"()`) addresses the same accessor as the
+        // bare one, except for a MOP pseudo-method name, which a quoted call
+        // sends to a user method of that name: that one is taken here only
+        // when a container was asked for, which nothing but this path can
+        // hand back.
+        let method = method_sym.as_str();
+        if !args.is_empty() || has_modifier || (Self::quoting_matters(quoted, method) && !want_ref)
+        {
             return None;
         }
-        let method = method_sym.as_str();
         let ValueView::Instance {
             attributes,
             class_name,
@@ -1873,19 +1900,12 @@ impl Interpreter {
         // resolve and Raku throws X::Multi::NoMatch (rather than exploding the
         // Failure). IO::Handle / user classes override these with a positional
         // signature and are dispatched normally before reaching this point.
-        if matches!(method, "print" | "say" | "put" | "note")
-            && args
-                .iter()
-                .any(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-            && let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
-            && !target.is_failure_handled()
-        {
+        if let Some(err) = Self::failure_print_no_match(method, &target, &args) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
                 "failure-print-nomatch",
             );
-            return Err(Self::print_routine_no_match_error(method, &target, &args));
+            return Err(err);
         }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).

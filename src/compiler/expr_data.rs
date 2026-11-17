@@ -641,7 +641,9 @@ impl Compiler {
             let bare: String = match key.chars().next() {
                 Some('&') => String::clone(&key),
                 Some('$' | '@' | '%') => key.chars().skip(1).collect(),
-                _ => String::clone(&key),
+                // A sigil-less key names a term: a constant's binding is its
+                // term key (#9962, #17846).
+                _ => crate::runtime::term_names::term_key(&key),
             };
             // Immediate-block `CALLERS::<$x>` is the lexical `OUTERS::` walk, the
             // stash twin of the `$CALLERS::x` routing in `emit_var_read`.
@@ -675,7 +677,8 @@ impl Compiler {
         {
             let bare: String = match key.chars().next() {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
-                _ => String::clone(&key),
+                // A sigil-less key names a term (#9962, #17846).
+                _ => crate::runtime::term_names::term_key(&key),
             };
             // Immediate-block `CALLER::<$x>` resolves lexically, the stash twin of
             // the `$CALLER::x` routing in `emit_var_read`.
@@ -750,8 +753,37 @@ impl Compiler {
             };
             match scope {
                 OuterStash::At(depth) => self.emit_outer_var_access(bare, depth),
+                // `OUTERS::` reaches the setting: a routine no enclosing scope
+                // binds is CORE's (#17846).
+                OuterStash::Any if bare.starts_with('&') => {
+                    let key = bare.clone();
+                    self.emit_outers_var_access(bare);
+                    self.emit_core_routine_fallback(&key);
+                }
                 OuterStash::Any => self.emit_outers_var_access(bare),
             }
+            self.bind_terminal = saved_terminal;
+            self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
+            return;
+        }
+
+        // `LEXICAL::<&name>`: every lexical visible here, the setting's
+        // routines included, so a routine no enclosing scope binds is CORE's
+        // (#17846).
+        if let Expr::PseudoStash(stash) = target
+            && stash == "LEXICAL::"
+            && !use_autovivify
+            && !is_positional
+            && let Expr::Literal(lit) = index
+            && let ValueView::Str(key) = lit.view()
+            && key.starts_with('&')
+        {
+            self.compile_expr(target);
+            self.compile_subscript_index(index);
+            self.code.emit(OpCode::Index {
+                is_positional: false,
+            });
+            self.emit_core_routine_fallback(&key);
             self.bind_terminal = saved_terminal;
             self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
             return;

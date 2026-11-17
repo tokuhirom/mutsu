@@ -1845,14 +1845,11 @@ impl Interpreter {
         {
             // Only a comma list spreads into several type arguments
             // (`T[Int, Str]`); an itemized array is ONE argument.
-            let mut how_args = vec![target.clone()];
-            match index.view() {
-                ValueView::Array(items, crate::value::ArrayKind::List) => {
-                    how_args.extend(items.iter().cloned())
-                }
-                _ => how_args.push(index.clone()),
-            }
-            let result = self.call_method_with_values(target.clone(), "^parameterize", how_args)?;
+            let type_args = match index.view() {
+                ValueView::Array(items, crate::value::ArrayKind::List) => items.to_vec(),
+                _ => vec![index.clone()],
+            };
+            let result = self.parameterize_by_user_metamethod(target.clone(), type_args)?;
             self.stack.push(result);
             return Ok(());
         }

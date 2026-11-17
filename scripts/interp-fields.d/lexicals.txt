@@ -33,7 +33,6 @@ sigilless_alias_seen
 state_scope_id
 state_vars
 state_vars_unmigrated
-type_body_written_lexicals
 unit_lexical_gen
 unit_lexicals
 var_bindings

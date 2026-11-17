@@ -451,21 +451,13 @@ impl Interpreter {
             return Some(Err(err));
         }
         if let Some(threaded) = crate::builtins::thread_junctions_in_items(&resolved, &|c| {
-            Value::str(
-                c.iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join(&sep),
-            )
+            let parts: Vec<String> = c.iter().map(|v| v.to_str_context()).collect();
+            Value::str(crate::builtins::str_prim::join(&parts, &sep))
         }) {
             return Some(Ok(threaded));
         }
-        let joined = resolved
-            .iter()
-            .map(|v| v.to_str_context())
-            .collect::<Vec<_>>()
-            .join(&sep);
-        Some(Ok(Value::str(joined)))
+        let parts: Vec<String> = resolved.iter().map(|v| v.to_str_context()).collect();
+        Some(Ok(Value::str(crate::builtins::str_prim::join(&parts, &sep))))
     }
 
     /// Dispatch the "eager" method.
@@ -756,22 +748,9 @@ impl Interpreter {
                 if let Some(ValueView::Hash(symbols)) =
                     attributes.as_map().get("symbols").map(Value::view)
                 {
-                    let stash_lookup = |raw_key: &str| {
-                        if let Some(value) = symbols.get(raw_key) {
-                            return Some(value.clone());
-                        }
-                        if !raw_key.starts_with('$')
-                            && !raw_key.starts_with('@')
-                            && !raw_key.starts_with('%')
-                            && !raw_key.starts_with('&')
-                        {
-                            let scalar = format!("${raw_key}");
-                            if let Some(value) = symbols.get(&scalar) {
-                                return Some(value.clone());
-                            }
-                        }
-                        None
-                    };
+                    // A key is the symbol as spelled: a sigil-less key does
+                    // not find a `$` variable (`OUR::<x>` is not `$x`, #17846).
+                    let stash_lookup = |raw_key: &str| symbols.get(raw_key).cloned();
 
                     if let ValueView::Array(items, ..) = idx.view() {
                         let values = items

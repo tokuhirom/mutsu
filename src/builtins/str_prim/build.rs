@@ -18,6 +18,26 @@ pub(super) fn nfc_value(s: String) -> Value {
     }
 }
 
+/// `parts` joined with `sep` (`.join`, the `join` routine, `nqp::join`), in
+/// NFC: a combining mark at the start of one piece (or of `sep`) composes with
+/// the end of the one before it, as `~` composes across its seam, so
+/// `("a", "\x[301]").join eq "\x[e1]"` (#17889).
+// Cost: O(t), t = bytes of the result (no second pass for ASCII or for text
+// already in NFC, which `is_nfc_quick` answers in the same pass).
+pub(crate) fn join<S: AsRef<str>>(parts: &[S], sep: &str) -> String {
+    let mut out = String::with_capacity(
+        parts.iter().map(|p| p.as_ref().len()).sum::<usize>()
+            + sep.len() * parts.len().saturating_sub(1),
+    );
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            out.push_str(sep);
+        }
+        out.push_str(part.as_ref());
+    }
+    crate::ucd::normalize::nfc(out)
+}
+
 /// `left ~ right` (`infix:<~>`, `nqp::concat`), both stringified.
 ///
 /// A plain `Str` on the left appends through the same primitive as the fused

@@ -1793,17 +1793,17 @@ impl Interpreter {
         } else if let ValueView::Instance { attributes, .. } = match_obj.view() {
             let amap = attributes.as_map();
             let has_named_children = matches!(
-                amap.get("named").map(Value::view),
+                amap.get(crate::symbol::wk::match_named()).map(Value::view),
                 Some(ValueView::Hash(h)) if !h.is_empty()
             );
             let has_list_children = matches!(
-                amap.get("list").map(Value::view),
+                amap.get(crate::symbol::wk::match_list()).map(Value::view),
                 Some(ValueView::Array(a, _)) if !a.is_empty()
             );
-            let has_silent = amap.get("silent_caps").is_some();
+            let has_silent = amap.get(crate::symbol::wk::match_silent_caps()).is_some();
             if !has_named_children && !has_list_children && !has_silent {
                 is_actionless_candidate_leaf = true;
-                leaf_sym_method = match amap.get("sym_variant").map(Value::view) {
+                leaf_sym_method = match amap.get(crate::symbol::wk::match_sym_variant()).map(Value::view) {
                     Some(ValueView::Str(sym_val)) => Some(self.variant_action_method_name(
                         actions_cn.as_deref(),
                         rule_name,
@@ -1850,11 +1850,11 @@ impl Interpreter {
             };
             let amap = attributes.as_map();
             (
-                amap.get("named").cloned(),
-                amap.get("list").cloned(),
-                amap.get("silent_caps").cloned(),
-                amap.get("reduce_time_vars").cloned(),
-                amap.get("sym_variant").cloned(),
+                amap.get(crate::symbol::wk::match_named()).cloned(),
+                amap.get(crate::symbol::wk::match_list()).cloned(),
+                amap.get(crate::symbol::wk::match_silent_caps()).cloned(),
+                amap.get(crate::symbol::wk::match_reduce_time_vars()).cloned(),
+                amap.get(crate::symbol::wk::match_sym_variant()).cloned(),
             )
         };
 

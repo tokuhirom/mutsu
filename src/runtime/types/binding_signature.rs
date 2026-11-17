@@ -963,18 +963,25 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
         let saved_sources = self.take_pending_call_arg_sources();
-        // A role's bare `::T` parameter takes any type object, `Mu` included
-        // (`R[Mu]`); a sub's bare `::T` is an `Any` parameter. Say so for the
-        // role's parameters, which bind through the sub machinery.
-        let needs_mu = param_defs
-            .iter()
-            .any(|pd| pd.is_bare_type_capture() && pd.type_constraint.is_none());
-        let bound = if needs_mu {
+        // A role's parameters are `Mu` parameters where a sub's are `Any`:
+        // a bare `::T` takes any type object, `Mu` included (`R[Mu]`), and an
+        // untyped `$x` / `:$x` left unsupplied reads `Mu` (rakudo:
+        // `role R[:$x] { method m { $x.raku } }` answers `Mu`, #17765). Say
+        // so for the role's parameters, which bind through the sub machinery.
+        let widens = |pd: &ParamDef| {
+            pd.type_constraint.is_none()
+                && (pd.is_bare_type_capture()
+                    || !pd.name.starts_with(['@', '%', '&'])
+                        && !pd.slurpy
+                        && !pd.double_slurpy
+                        && pd.sub_signature.is_none())
+        };
+        let bound = if param_defs.iter().any(widens) {
             let widened: Vec<ParamDef> = param_defs
                 .iter()
                 .map(|pd| {
                     let mut pd = pd.clone();
-                    if pd.is_bare_type_capture() && pd.type_constraint.is_none() {
+                    if widens(&pd) {
                         pd.type_constraint = Some("Mu".to_string());
                     }
                     pd

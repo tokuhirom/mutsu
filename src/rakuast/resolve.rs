@@ -72,6 +72,10 @@ struct Scopes<'a> {
     /// dispatcher of their name yet: inside their body the name is the outer
     /// scope's (#17793).
     hidden: Vec<(String, usize)>,
+    /// The `multi` candidates of each routine name (`&baz`) the scope being
+    /// hoisted declares, body-less, in declaration order: the scope's
+    /// dispatcher stub carries them (#17826).
+    scope_candidates: HashMap<String, Vec<Value>>,
 }
 
 impl Scopes<'_> {
@@ -122,6 +126,7 @@ fn annotate_with(
         whatever_args: vec![0],
         anonymous_subsets: 0,
         multi_candidates: HashMap::new(),
+        scope_candidates: HashMap::new(),
         dispatchers: HashSet::new(),
         hidden: Vec::new(),
     };
@@ -215,6 +220,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     if opened {
         scopes.scopes.push(HashMap::new());
         hoist(node, scopes);
+        attach_scope_candidates(scopes);
     }
     // A method remembers the package that declares it, for `compile-time-value`.
     let package = matches!(
@@ -353,6 +359,34 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     }
 }
 
+/// Give each dispatcher stub of the scope just hoisted (its `proto`, or the one
+/// its first `multi` implies) the scope's candidates of its name, in its
+/// metadata: a CHECK-time `compile-time-value` builds the dispatcher from them
+/// while the scope has not run (#17826).
+// Cost: O(c), c = candidates the scope declares.
+fn attach_scope_candidates(scopes: &mut Scopes) {
+    let candidates = std::mem::take(&mut scopes.scope_candidates);
+    let Some(scope) = scopes.scopes.last_mut() else {
+        return;
+    };
+    for (key, found) in candidates {
+        let Some(stub) = scope.get_mut(&key) else {
+            continue;
+        };
+        let ValueView::RakuAst(node) = stub.view() else {
+            continue;
+        };
+        if node.class != C::Sub
+            || !super::lower::leaf_str(node, "multiness").is_ok_and(|m| m == "proto")
+        {
+            continue;
+        }
+        let mut with_candidates = RakuAstNode::clone(node);
+        with_candidates.origin.2 = Some(Value::array(found));
+        *stub = Value::rakuast(Box::new(with_candidates));
+    }
+}
+
 /// Register the subs and packages `node`'s own scope declares, before its
 /// statements are walked (they are visible from the start of the scope).
 // Cost: O(size of the scope's statements, not counting nested scopes).
@@ -450,6 +484,15 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
                 .last()
                 .is_some_and(|scope| scope.contains_key(&key));
         let implies_proto = is_multi && !has_dispatcher && !outer_dispatcher(&name, &key, scopes);
+        if is_multi {
+            let mut candidate = RakuAstNode::clone(held);
+            candidate.fields.retain(|f| f.name != Some("body"));
+            scopes
+                .scope_candidates
+                .entry(key.clone())
+                .or_default()
+                .push(Value::rakuast(Box::new(candidate)));
+        }
         if !has_dispatcher {
             let mut stub = RakuAstNode::clone(held);
             stub.fields.retain(|f| f.name != Some("body"));
@@ -1062,11 +1105,30 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             }
             external_setting(&name)
         }
-        // `True`, `Inf`, ... : a core enum value, constant of the setting.
+        // `True`, `Less`, ... : a core enum value, a symbol of the setting.
         C::TermEnum => external(
-            "RakuAST::Declaration::External::Constant",
+            "RakuAST::Declaration::External::Setting",
             &type_node_name(node).or_else(|| leaf(node, "name"))?,
         ),
+        // `now`, `time`: the setting's `term:<now>` routine, unless the unit
+        // declares that term itself.
+        C::TermNamed => {
+            let name = format!("term:<{}>", positional_leaf(node).ok()?.to_string_value());
+            if let Some(declared) = scopes.find(&format!("&{name}")) {
+                return Some(declared.clone());
+            }
+            (!(scopes.shadowed)(&name)).then(|| external_setting(&name))?
+        }
+        // `pi`, `Empty`, `IterationEnd`: a term of the setting, unless the unit
+        // declares the name itself.
+        C::TermName => {
+            let name = type_node_name(node).or_else(|| leaf(node, "name"))?;
+            if let Some(declared) = scopes.find(&name) {
+                return Some(declared.clone());
+            }
+            (super::core_term_names::kind(&name).is_some() && !(scopes.shadowed)(&name))
+                .then(|| external("RakuAST::Declaration::External::Setting", &name))?
+        }
         C::TypeSimple | C::TypeSetting => {
             let name = type_node_name(node)?;
             if let Some(package) = scopes.find(&name) {

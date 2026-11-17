@@ -1099,6 +1099,15 @@ impl Interpreter {
             // The descriptor belongs to the destination container, not to the
             // source whose node was cloned: `@e = @a; @e.name` is `@e`.
             new_data.descriptor_name = old_gc.descriptor_name.clone();
+            // So does its element type: new contents that carry none (shaped
+            // for a slot whose code declares no type, such as a parameter
+            // bound to a `my Int @a`) leave the container's own.
+            Self::keep_container_type(
+                &mut new_data.value_type,
+                &mut new_data.declared_type,
+                &old_gc.value_type,
+                &old_gc.declared_type,
+            );
         }
         let mut seen = Vec::new();
         for item in new_data.live_mut().iter_mut() {
@@ -1355,6 +1364,23 @@ impl Interpreter {
 
     /// The `Hash` analogue of [`Self::array_inplace_reassign`]. Redirects any
     /// self-referencing hash value that pointed at `new_gc` back to `old_gc`.
+    /// A whole-container assignment's new contents take the destination's
+    /// element type and declared type when they carry none themselves.
+    // Cost: O(1).
+    fn keep_container_type<T: Clone, D: Clone>(
+        value_type: &mut Option<T>,
+        declared_type: &mut Option<D>,
+        old_value_type: &Option<T>,
+        old_declared_type: &Option<D>,
+    ) {
+        if value_type.is_none() {
+            *value_type = old_value_type.clone();
+        }
+        if declared_type.is_none() {
+            *declared_type = old_declared_type.clone();
+        }
+    }
+
     pub(crate) fn hash_inplace_reassign(
         old_gc: &crate::gc::Gc<crate::value::HashData>,
         new_gc: &crate::gc::Gc<crate::value::HashData>,
@@ -1389,8 +1415,19 @@ impl Interpreter {
                 .descriptor_name
                 .or_else(|| old_gc.descriptor_name.clone());
         } else {
-            // As for arrays: the destination keeps its own descriptor.
+            // As for arrays: the destination keeps its own descriptor, and
+            // its key/value type when the new contents carry none (an object
+            // hash `%h{Any}` bound to a parameter, ADR-12529 slice 55).
             new_data.descriptor_name = old_gc.descriptor_name.clone();
+            if new_data.key_type.is_none() {
+                new_data.key_type = old_gc.key_type.clone();
+            }
+            Self::keep_container_type(
+                &mut new_data.value_type,
+                &mut new_data.declared_type,
+                &old_gc.value_type,
+                &old_gc.declared_type,
+            );
         }
         for v in new_data.map.values_mut() {
             if let ValueView::Hash(inner) = v.view()

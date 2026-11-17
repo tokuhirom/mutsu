@@ -1290,48 +1290,7 @@ impl Compiler {
         }
     }
 
-    /// Record the frame lexicals that one `class`/`role` body method WRITES
-    /// (see `CompiledCode::type_body_written_lexicals`), so that
-    /// `clone_for_thread_for_block` keeps them on the name-keyed `shared_vars`
-    /// lane instead of assuming the closure machinery owns them.
-    ///
-    /// A method is installed into the type's method table by `RegisterClass` /
-    /// `RegisterRole` and — unlike a closure — has no runtime creation op, so
-    /// `box_captured_lexicals` never sees it. `my $a = 0; class Foo { submethod
-    /// DESTROY { $a++ } }` reaches the outer `$a` ONLY through that lane (pins:
-    /// t/destroy-cross-thread-writeback-coherence.t, roast
-    /// S12-construction/roles-6e.t, where `$order` holds a List and so is a
-    /// shape `box_captured_lexicals` declines to box at all).
-    ///
-    /// The writes normally come as a byproduct of the ONE main-pass method-body
-    /// compile `Compiler::compile_method_body` already performs (ADR-0019
-    /// D3-8a), which is why this takes the harvested symbols rather than doing
-    /// its own compile. Only [`Self::record_type_body_captures_uncompiled`]
-    /// still compiles, and only for the methods the main pass skips.
-    pub(crate) fn record_type_body_written_lexicals(
-        &mut self,
-        writes: impl IntoIterator<Item = crate::symbol::Symbol>,
-    ) {
-        // Only genuine `my` lexicals are captured this way — mirrors the
-        // `escaping_our_sub_captures` filter: dynamic (`$*X`), attribute
-        // (`$!x`/`$.x`) and special (`$/`, `$_`, ...) names resolve through their
-        // own stores, and boxing them would break those paths. Compiler-minted
-        // temporaries (`__mutsu_call_result_7`, ...) are filtered by the same
-        // rule — they start with `_`, never own an enclosing frame's binding,
-        // and their ordinals are not stable across independent compiles.
-        self.code
-            .type_body_written_lexicals
-            .extend(writes.into_iter().filter(|sym| {
-                sym.with_str(|s| {
-                    s.trim_start_matches(['$', '@', '%', '&'])
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_ascii_alphabetic())
-                })
-            }));
-    }
-
-    /// [`Self::record_type_body_written_lexicals`] for a method body the
+    /// The outer-lexical capture harvest of a method body the
     /// main pass did NOT compile — a method whose own name is computed
     /// (`method ::($n) {...}`), or any method of a class whose name is
     /// (`class ::($n) {...}`). Those keep the registration-time throwaway
@@ -1352,14 +1311,6 @@ impl Compiler {
         let cf = self.compile_closure_body(params, param_defs, body);
         self.compiled_functions
             .retain(|k, _| fn_keys_before.contains(k));
-        let writes: Vec<crate::symbol::Symbol> = cf
-            .free_var_writes
-            .iter()
-            .chain(cf.free_var_container_writes.iter())
-            .chain(cf.needs_cell_named_sub_free.iter())
-            .copied()
-            .collect();
-        self.record_type_body_written_lexicals(writes);
         // The declaring frame boxes the outer scalars this body captures, as it
         // does for a method (`compile_method_body`, ADR-0032).
         let boxed: Vec<crate::symbol::Symbol> = cf

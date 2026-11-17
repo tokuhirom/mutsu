@@ -1756,6 +1756,39 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    before the bare alias. Pinned by
    `t/modules/our-lexical-alias-rebound-in-sub.t`.
 
+   **Slice 53 done** (`refactor/12529-loop-param-always-slot`): a single
+   pointy `for` parameter keeps the local slot #17530 gave it when the body
+   re-declares the name in a nested block or declares a lexical `sub`. Those
+   were two of `loop_param_slot_hazard`'s cases, which fell back to the
+   by-name binding (and so to `name_bound_by_loop_param`'s special reads):
+   the parameter was allocated but not *declared* in a scope, so a nested
+   `my` reused its slot and restored over it on exit. It is now declared in
+   the body's scope frame, and a nested `my` takes a shadow slot of its own.
+   What still keeps the by-name binding: an `our` routine or a proto in the
+   body (`RegisterSub` persists the by-name binding an escaping `our` sub
+   closes over, `escaping_our_env_params`) and a `use`. Pinned by
+   `t/routines/signature/for-loop-param-slot-with-nested-decls.t`.
+
+   **Slice 54 done** (`refactor/12529-loop-param-slot-sigils`): a sigilless
+   pointy `for` parameter (`-> \x`) gets the slot too, reads and writes
+   through it included. An `@`/`%` parameter stays by name: given a slot, a
+   whole-container assignment through it (`for (%ao,) -> %a { %a = %r }`)
+   replaced the bound object hash with a plain `Hash` and stopped writing
+   through to `%ao` (`t/collections/hash/hash-cell-writethrough-object-hash.t`),
+   so the slot store needs the by-name path's container-identity rule first.
+   Pinned by `t/routines/signature/for-loop-sigil-param-slot.t`.
+
+   **Slice 55 done** (`refactor/12529-loop-param-slot-containers`): `@`/`%`
+   loop parameters get the slot as well, so every single-parameter loop
+   reads its parameter from a slot unless the body has an `our` routine, a
+   proto or a `use`. The blocker slice 54 recorded was in the whole-container
+   in-place reassign (`array_inplace_reassign` / `hash_inplace_reassign`):
+   it gave the container the typing of the shaped new contents, and a slot
+   whose code declares no type (a parameter) shapes them untyped. The
+   destination now keeps its element/key/declared type when the new
+   contents carry none, beside its descriptor name and `is default`, which
+   it already kept.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

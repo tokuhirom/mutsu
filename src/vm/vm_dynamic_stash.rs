@@ -30,11 +30,31 @@ impl Interpreter {
         code: &CompiledCode,
         key: &str,
     ) -> Option<Value> {
+        // A sigil-less key names a term: a constant's binding is its term key
+        // (#9962, #17846); any other sigil-less binding (a lexical type) is
+        // under the key itself.
+        if !key.starts_with(['$', '@', '%', '&'])
+            && let Some(value) =
+                self.dynamic_stash_lookup(code, &crate::runtime::term_names::term_key(key), false)
+        {
+            return Some(value);
+        }
         let env_key = key.strip_prefix('$').unwrap_or(key);
+        self.dynamic_stash_lookup(code, env_key, key.starts_with('$'))
+    }
+
+    /// [`Self::dynamic_stash_keyed_value`] for the env key `env_key`; `scalar`
+    /// when the key was spelled with `$`.
+    // Cost: as `dynamic_stash_keyed_value`.
+    fn dynamic_stash_lookup(
+        &self,
+        code: &CompiledCode,
+        env_key: &str,
+        scalar: bool,
+    ) -> Option<Value> {
         if env_key.is_empty() {
             return None;
         }
-        let scalar = key.starts_with('$');
         let sym = Symbol::intern(env_key);
         // A dynamic's binding is its env entry, written when its `my $*d`
         // runs; the slot is seeded from the callers' binding at the frame's

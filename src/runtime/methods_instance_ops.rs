@@ -181,10 +181,17 @@ impl Interpreter {
         {
             return Some(Ok(Value::str_from("IterationEnd")));
         }
-        let has_coercion_gist = target.does_check("Real")
-            || target.does_check("Numeric")
-            || target.does_check("Stringy")
-            || self.has_user_method(&class_name.resolve(), "Bridge");
+        // Only `raku`, `gist` and `perl` with no arguments render here; every
+        // other method reaching the instance fallback leaves at once, before
+        // the role and MRO probes below.
+        if !args.is_empty() || !matches!(method, "raku" | "gist" | "perl") {
+            return None;
+        }
+        let has_coercion_gist = method == "gist"
+            && (target.does_check("Real")
+                || target.does_check("Numeric")
+                || target.does_check("Stringy")
+                || self.has_user_method(&class_name.resolve(), "Bridge"));
         let is_callable_instance = matches!(
             class_name.resolve().as_str(),
             "Method"
@@ -470,7 +477,17 @@ impl Interpreter {
             _ => {}
         }
         let class_key = class_name.resolve();
-        let display_name = crate::value::user_facing_type_name(&class_key);
+        // A type renamed with `.^set_name` renders its instances by the new
+        // name, as `.^name` reports it (`$obj does R; $obj.^set_name(...)`).
+        let display_name: std::borrow::Cow<'_, str> = match self
+            .types
+            .type_metadata
+            .get(&class_key)
+            .and_then(|m| m.get("__set_name__"))
+        {
+            Some(name) => std::borrow::Cow::Owned(name.to_string_value()),
+            None => crate::value::user_facing_type_name(&class_key),
+        };
         // A CStruct's fields live in C memory (a body it owns, or the memory C
         // handed back): read them out before rendering them.
         self.seed_cstruct_fields_for_method(&class_key, Some(target));
@@ -2478,6 +2495,17 @@ impl Interpreter {
                             got + 1,
                         ),
                     ));
+                }
+                // Every object has `Mu`'s multis (`print`, `note`, ...): a call
+                // that reaches here with a positional none of mutsu's paths
+                // took fails their dispatch (`1.print(2)`), not the lookup.
+                if args.iter().any(|arg| !arg.is_string_pair_value())
+                    && super::builtin_method_sigs::declares_multi_locally("Mu", method)
+                    && let Some(err) = super::methods_signature_errors::builtin_multi_arity_mismatch(
+                        &target, method, &args,
+                    )
+                {
+                    return Err(err);
                 }
                 // Rakudo words a `Str` invocant's miss `for string 'abc'`.
                 let text = match target.view() {

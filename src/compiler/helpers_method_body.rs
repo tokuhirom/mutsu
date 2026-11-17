@@ -255,29 +255,19 @@ impl Compiler {
         // `method_compiler` above yields the same set the outer compiler's
         // analysis compile did. Verified empirically across the whole `t/`
         // suite and the roast whitelist: the two harvests differ only in
-        // compiler-minted `__mutsu_*` temporaries' ordinals, which
-        // `record_type_body_written_lexicals` filters out either way.
-        let type_body_writes: Vec<Symbol> = cc
+        // compiler-minted `__mutsu_*` temporaries' ordinals.
+        //
+        // The declaring frame boxes what the method writes, so a code object
+        // of the method (a `my method` value, `.^find_method`) and a method
+        // run on another thread write the same cell (#15782, ADR-16595).
+        let boxed: Vec<Symbol> = cc
             .free_var_writes
             .iter()
-            .chain(cc.free_var_container_writes.iter())
-            .chain(cc.needs_cell_named_sub_free.iter())
+            .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
             .copied()
             .collect();
-        if !type_body_writes.is_empty() {
-            // The declaring frame boxes what the method writes, so a code
-            // object of the method (a `my method` value, `.^find_method`) that
-            // writes it reaches the same cell (#15782).
-            let boxed: Vec<Symbol> = cc
-                .free_var_writes
-                .iter()
-                .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
-                .copied()
-                .collect();
-            if !boxed.is_empty() {
-                self.bubble_container_ref_capture_syms(&boxed);
-            }
-            self.record_type_body_written_lexicals(type_body_writes);
+        if !boxed.is_empty() {
+            self.bubble_container_ref_capture_syms(&boxed);
         }
 
         // A method that REBINDS an outer lexical (`method set { $list := ... }`)
@@ -304,10 +294,6 @@ impl Compiler {
         // } }; C.new.go }; blk()` snapshots a closure env with no `$l` in it
         // and the method reads `Any` (see
         // `news/2026-08/class-method-in-block-free-var-capture.md`).
-        // `type_body_written_lexicals` above covers only the WRITES, and does
-        // so through a separate, name-keyed runtime lane
-        // (`note_type_body_written_lexicals`) that never populates the capture
-        // set a block value carries.
         if !cc.free_var_syms.is_empty() {
             self.code
                 .nested_routine_free_reads
@@ -1019,81 +1005,6 @@ mod d3_8a_byte_parity_tests {
                        class UsesGreeter does Greeter2 { }";
         let (main_pass, runtime) = compiled_code_pair(source, "Greeter2", "hello");
         assert_eq!(main_pass, runtime);
-    }
-
-    /// The outer-frame lexicals a compilation unit's class/role method bodies
-    /// write, as recorded in `CompiledCode::type_body_written_lexicals`.
-    fn type_body_written_lexicals(source: &str) -> Vec<String> {
-        let (stmts, _) =
-            crate::parse_dispatch::parse_source(source).expect("fixture source parses");
-        let (code, _) = super::Compiler::new().compile(&stmts);
-        let mut names: Vec<String> = code
-            .type_body_written_lexicals
-            .iter()
-            .map(|s| {
-                s.resolve()
-                    .trim_start_matches(['$', '@', '%', '&'])
-                    .to_string()
-            })
-            .collect();
-        names.sort();
-        names.dedup();
-        names
-    }
-
-    /// The capture harvest is a byproduct of `compile_method_body`'s single
-    /// compile now (it used to be a second, analysis-only `compile_closure_body`
-    /// per method in `record_type_body_captures`). A frame lexical a method
-    /// writes must still reach `type_body_written_lexicals`, or
-    /// `clone_for_thread_for_block` drops it off the name-keyed shared lane
-    /// (pins: t/destroy-cross-thread-writeback-coherence.t,
-    /// roast/S12-construction/roles-6e.t).
-    ///
-    /// `my $a = 0;` counts as a runtime statement, so `class Foo` here is ALSO
-    /// hoisted into a hoisted forward-reference shell — whose own plan
-    /// deliberately records nothing. This therefore pins both halves: the shell
-    /// staying silent must not cost the real declaration its harvest.
-    #[test]
-    fn class_method_outer_lexical_write_is_recorded() {
-        let names = type_body_written_lexicals("my $a = 0; class Foo { method bump { $a++ } }");
-        assert!(names.contains(&"a".to_string()), "got {names:?}");
-    }
-
-    #[test]
-    fn role_method_outer_lexical_write_is_recorded() {
-        let names = type_body_written_lexicals("my $a = 0; role R { method bump { $a++ } }");
-        assert!(names.contains(&"a".to_string()), "got {names:?}");
-    }
-
-    /// A class declared before any runtime statement is NOT hoisted, so only
-    /// one declaration plan exists — the harvest must come from it alone.
-    #[test]
-    fn unhoisted_class_method_outer_lexical_write_is_recorded() {
-        let names = type_body_written_lexicals("class Foo { method bump { $a++ } }; my $a = 0;");
-        assert!(names.contains(&"a".to_string()), "got {names:?}");
-    }
-
-    /// A computed class name leaves `package_name` `None`, so no main-pass
-    /// method-body compile happens and the analysis-only fallback
-    /// (`record_type_body_captures_uncompiled`) is the only thing that can
-    /// record the write.
-    #[test]
-    fn computed_name_class_method_outer_lexical_write_is_recorded() {
-        let names = type_body_written_lexicals(
-            "my $a = 0; my $n = 'Foo'; class ::($n) { method bump { $a++ } }",
-        );
-        assert!(names.contains(&"a".to_string()), "got {names:?}");
-    }
-
-    /// Compiler-minted temporaries (`__mutsu_call_result_7`, ...) are not frame
-    /// lexicals and their ordinals are not stable across independent compiles,
-    /// so the filter must keep them out.
-    #[test]
-    fn compiler_temporaries_are_not_recorded() {
-        let names = type_body_written_lexicals(
-            "my @a = 1, 2; class Foo { method bump { @a[0] = f(@a[1]) } }; sub f($x) { $x }",
-        );
-        assert!(!names.iter().any(|n| n.starts_with('_')), "got {names:?}");
     }
 
     #[test]

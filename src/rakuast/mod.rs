@@ -81,6 +81,7 @@ pub(crate) mod sections;
 pub(crate) mod signature_expand;
 pub(crate) mod statement_insert;
 mod stmt_call;
+mod term_named;
 mod trait_is_constructor;
 pub(crate) mod unit_finish;
 pub(crate) mod var_queries;
@@ -1662,6 +1663,22 @@ pub(crate) fn declared_package_qualified_name(node: &RakuAstNode) -> Option<Stri
 // Cost: O(1).
 pub(crate) fn declared_multi_candidate(node: &RakuAstNode) -> Option<usize> {
     resolve::multi_candidate_index(node)
+}
+
+/// The scope's `multi` candidates a dispatcher stub (a `proto` resolution of
+/// `$*CU`) carries, for a CHECK-time dispatcher (#17826); `None` for any other
+/// node.
+// Cost: O(c), c = the candidates copied.
+pub(crate) fn dispatcher_stub_candidates(node: &RakuAstNode) -> Option<Vec<Value>> {
+    if node.class != RakuAstClass::Sub
+        || !lower::leaf_str(node, "multiness").is_ok_and(|m| m == "proto")
+    {
+        return None;
+    }
+    match node.origin.2.as_ref()?.view() {
+        crate::value::ValueView::Array(items, _) => Some(items.as_slice().to_vec()),
+        _ => None,
+    }
 }
 
 /// The `(package, name)` of a `Method` of the unit tree `$*CU` answers.
@@ -4057,6 +4074,7 @@ fn is_resolvable_lookup(class: RakuAstClass) -> bool {
             | RakuAstClass::TypeSubset
             | RakuAstClass::TermEnum
             | RakuAstClass::TermName
+            | RakuAstClass::TermNamed
             // A package declaration does `Lookup` too, but nothing resolves it.
             | RakuAstClass::Class
             | RakuAstClass::Role
