@@ -24,6 +24,11 @@ pub(crate) struct VarMarks {
     /// a type written before the name: the RakuAST view renders the trait only.
     /// Not part of [`Self::is_plain`]: it changes no execution path.
     pub(crate) type_from_trait: bool,
+    /// The type came from an `of` trait written after the name with nothing
+    /// before it (`my @a of Int`): the RakuAST view renders a `Trait::Of`, not
+    /// the declaration's `type`. Not part of [`Self::is_plain`]: it changes no
+    /// execution path.
+    pub(crate) type_from_of: bool,
     /// In a `.AST` parse, the colonpairs of the declared name as written
     /// (`:foo<g h>` of `my $today:foo<g h>`); the name itself is canonical.
     pub(crate) name_colonpairs: Option<Box<str>>,
