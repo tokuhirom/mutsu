@@ -19,7 +19,7 @@ is %apply-methods.keys.sort.join(','), 'add-colonpair,args,colonpairs,infix,left
 is RakuAST::Name.^method_table.keys.sort.join(','),
     'base-name,canonicalize,colonpairs,first-part,from-identifier,from-identifier-parts,has-colonpairs,is-anonymous,is-empty,is-global-lookup,is-identifier,is-indirect-lookup,is-installable,is-multi-part,is-package-lookup,is-pseudo-package,is-simple,last-part,new,parts,qualified-with,root-part,simple-identifier,without-colonpairs,without-first-part',
     'named constructor appears in the method table';
-is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,code-statements,new,statements,unshift-statement',
+is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,code-statements,insert-statement,new,statements,unshift-statement',
     'mutable model class exposes construction, mutation, and its accessor';
 is RakuAST::Assignment.^method_table.keys.sort.join(','), 'new',
     'Assignment inherits its operator accessor from Infix';
