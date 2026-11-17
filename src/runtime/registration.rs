@@ -878,7 +878,8 @@ impl Interpreter {
     /// filled it for `name`'s base (the entry is evicted when a key of that
     /// base changes), and pays the full functions-map scan otherwise.
     // Cost: O(k) with the base-name index already filled for `name`, k = keys
-    // sharing its base name; else O(n), n = registered routines.
+    // sharing its base name, when `peek_fn_keys_for_base` answers; else O(n),
+    // n = registered routines.
     pub(crate) fn has_multi_function_unindexed(&self, name: &str) -> bool {
         let packages = self.bare_name_packages_syms();
         // Read the index the `&mut` probes filled, as the sibling
@@ -886,8 +887,7 @@ impl Interpreter {
         // the whole functions map (Red's `wrapped_sub_is_the_callee`, ~50 per
         // `^create`, ~1.5k keys each). `Symbol::lookup`: a base never
         // interned has no keys.
-        let base_keys = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
-            .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
+        let base_keys = self.peek_fn_keys_for_base(name);
         let base_keys = base_keys.as_deref();
         self.registry().has_multi_function(base_keys, &packages, name)
             && (!self.operator_has_import_scope(name)

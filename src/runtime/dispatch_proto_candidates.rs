@@ -54,8 +54,7 @@ impl Interpreter {
         // is the same answer by construction (`indexed_gather_equivalence_tests`).
         // `captured_candidates_are_live` runs it on every call of a dispatcher
         // value, where the full walk was O(registry) per call.
-        let indexed = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
-            .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
+        let indexed = self.peek_fn_keys_for_base(name);
         match indexed {
             Some(keys) => self.multi_candidates_over(name, Some(&keys)),
             None => self.multi_candidates_over(name, None),
