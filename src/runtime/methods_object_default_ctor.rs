@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::attr_build_defaults::DeferredAttrDefault;
 
 impl Interpreter {
     pub(crate) fn build_native_default_instance(
@@ -69,20 +70,6 @@ impl Interpreter {
                 return None;
             }
         }
-        // With a BUILD phase an attribute initializer must run AFTER BUILD and
-        // only where BUILD left the attribute alone (raku's order — see
-        // runtime/attr_build_defaults.rs). That seed-defer-apply dance needs the
-        // interpreter's constructor, so hand any such class over to it rather
-        // than filling the defaults eagerly here.
-        if has_build
-            && class_attrs
-                .iter()
-                .zip(plan.attr_syms.iter())
-                .any(|(attr, &sym)| attr.default.is_some() && !attrs.contains_key(sym))
-        {
-            return None;
-        }
-
         // Fill defaults for missing attributes. Mirror the interpreter's
         // constructor structure: a *literal* default — the common case, since the
         // parser hands every native-typed attribute a `Literal` zero — takes a
@@ -93,6 +80,7 @@ impl Interpreter {
         // non-literal branch keeps earlier (literal or computed) defaults visible
         // to later ones without paying per-construction env churn — the absence of
         // that fast path made a 20k-iteration native-attr loop time out.
+        let mut deferred: Vec<DeferredAttrDefault> = Vec::new();
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
         let mut early_inv: Option<Value> = None;
@@ -106,6 +94,28 @@ impl Interpreter {
             let default_expr = &attr.default;
             let sigil = &attr.sigil;
             if attrs.contains_key(attr_sym) {
+                continue;
+            }
+            // With a BUILD phase an initializer runs AFTER BUILD, and only
+            // where BUILD left the attribute alone (raku's order): seed the
+            // slot now and defer the initializer, exactly as the full
+            // constructor does (runtime/attr_build_defaults.rs). An
+            // `is default(...)` value is not an initializer -- it belongs to
+            // the container, so it holds before BUILD runs.
+            if has_build && default_expr.is_some() && !attr.default_is_trait {
+                let seed = self.native_deferred_seed(cn_resolved, plan, attr_idx);
+                // A seed default already known to evaluate to the very seed
+                // the slot gets: deferring it would put back what is there.
+                let inert = attr.default_is_seed
+                    && plan
+                        .seed_defaults
+                        .get(attr_idx)
+                        .and_then(|m| m.get())
+                        .is_some_and(|known| Self::same_type_object(known, &seed));
+                attrs.insert_seed(attr_sym, seed.clone());
+                if !inert {
+                    deferred.push(DeferredAttrDefault::of(attr, seed, Some(attr_idx)));
+                }
                 continue;
             }
             if plan.attr_binds[attr_idx] && default_expr.is_some() && !attr.default_is_seed {
@@ -349,151 +359,13 @@ impl Interpreter {
                 Value::str(attr_name.clone()),
             );
         }
-        // The gate (`is_native_default_constructible`) allows BUILD/TWEAK-only
-        // classes; the instance is assembled (defaults first) at this point, so
-        // running BUILD then TWEAK here matches the full `.new` path (which also
-        // applies defaults before BUILD). `has_build` was computed above (it
-        // gates the named-arg auto-assignment); the TWEAK check is cheap so the
-        // common no-submethod case pays nothing extra.
-        let has_tweak = plan.has_tweak && !plan.new_skips_phases;
-        // Enforce `where` constraints at attribute-assignment time, i.e. *before*
-        // BUILD/TWEAK run (matches the interpreter's pre-BUILD enforcement): a
-        // provided/defaulted value that fails its `where` is rejected here, and a
-        // later BUILD/TWEAK that would "fix" it never runs. `class_attrs` is the
-        // same `ClassAttributeDef` slice the interpreter uses.
-        let has_where =
-            plan.has_subset_attr || class_attrs.iter().any(|a| a.where_constraint.is_some());
-        if has_where
-            && let Err(e) =
-                self.enforce_attribute_where_constraints(cn_resolved, class_attrs, &attrs)
-        {
-            return Some(Err(e));
-        }
-        // Enforce definedness smileys (`:D`/`:U`) at the same point as `where`
-        // (post-assembly, pre-BUILD/TWEAK): a provided/defaulted value whose
-        // definedness does not match its `:D`/`:U` smiley is rejected here, exactly
-        // as the full constructor does (`enforce_attribute_smiley_constraints`,
-        // which itself skips `is required` attributes). `:_` imposes no constraint.
-        let has_smiley = plan.has_smiley;
-        if has_smiley {
-            // With a BUILD submethod the pre-BUILD attrs are not final — a
-            // provided named arg only reaches its attribute inside BUILD — so
-            // the provided-and-undefined `:D` check must wait (post-BUILD pass).
-            let provided_attr_names: Option<std::collections::HashSet<String>> =
-                (!has_build).then(|| {
-                    args.iter()
-                        .filter_map(|v| match v.view() {
-                            ValueView::Pair(k, _) => Some(k.clone()),
-                            _ => None,
-                        })
-                        .collect()
-                });
-            if let Err(e) = self.enforce_attribute_smiley_constraints(
-                cn_resolved,
-                &attrs,
-                provided_attr_names.as_ref(),
-            ) {
-                return Some(Err(e));
-            }
-        }
-        // Build the instance BEFORE BUILD/TWEAK and thread its shared attribute
-        // cell through them (raku semantics: `self` inside BUILD/TWEAK IS the
-        // constructed object). The post-phase checks re-snapshot the live cell.
-        let inv = match early_inv {
-            Some(inv) => {
-                if let Some(cell) = Self::self_instance_attrs(&inv) {
-                    cell.commit_attrs(attrs);
-                }
-                inv
-            }
-            None => Value::make_instance(class_name, attrs),
-        };
-        if has_build {
-            // Pass the original constructor args so `submethod BUILD(:$x)` binds
-            // them. A `fail` inside BUILD yields a `Failure` instance to return.
-            match self.run_build_phase(class_name, &inv, args) {
-                Ok(Ok(())) => {}
-                Ok(Err(failure)) => return Some(Ok(failure)),
-                Err(e) => return Some(Err(e)),
-            }
-            let attrs = Self::self_instance_attrs(&inv)
-                .map(|c| c.to_map())
-                .unwrap_or_default();
-            // Enforce required attributes after BUILD ran (BUILD may set them),
-            // exactly where the full constructor does its post-BUILD required
-            // check. A still-unset attribute (`None` or `Nil`) raises
-            // `X::Attribute::Required` with the same message and reason.
-            for attr in class_attrs.iter() {
-                let attr_name = &attr.name;
-                if let Some(reason) = &attr.is_required {
-                    let storage_key =
-                        super::attribute_storage_key(class_attrs, attr_name, attr.sigil);
-                    // The pre-BUILD seed for an unset untyped attribute is
-                    // the Any type object (not Nil), so treat it as unset too.
-                    let is_set = !matches!(
-                        attrs.get(storage_key).map(Value::view),
-                        Some(ValueView::Nil) | None
-                    ) && !matches!(
-                        attrs.get(storage_key).map(Value::view),
-                        Some(ValueView::Package(n)) if n == "Any"
-                    );
-                    if !is_set {
-                        let attr_full_name = format!("{}!{}", attr.sigil, attr_name);
-                        return Some(Err(RuntimeError::attribute_required(
-                            &attr_full_name,
-                            reason.as_deref(),
-                        )));
-                    }
-                }
-            }
-            // Re-check smileys after BUILD but BEFORE TWEAK, exactly where the full
-            // constructor does (its post-BUILD pass) — a BUILD that mutates a
-            // `:D`/`:U` attribute into a definedness violation is rejected
-            // identically. The interpreter does NOT re-check smileys after TWEAK
-            // (it relies on the assignment-time check there, which mutsu's
-            // interpreter does not currently perform), so neither do we — a TWEAK
-            // that violates a smiley is left untouched to match the baseline.
-            if has_smiley
-                && let Err(e) = self.enforce_attribute_smiley_constraints(cn_resolved, &attrs, None)
-            {
-                return Some(Err(e));
-            }
-        }
-        if has_tweak {
-            // Pass the original constructor args so `submethod TWEAK(:$y)` binds
-            // them, matching the full `.new` path. A `fail` inside TWEAK yields a
-            // Failure to return, not an error.
-            match self.run_tweak_phase(class_name, &inv, args) {
-                Ok(Ok(())) => {}
-                Ok(Err(failure)) => return Some(Ok(failure)),
-                Err(e) => return Some(Err(e)),
-            }
-        }
-        // Re-check `where` after BUILD/TWEAK: the full constructor enforces
-        // constraints again post-construction, so a BUILD/TWEAK that mutates an
-        // attribute into a `where` violation is rejected identically.
-        if has_where && (has_build || has_tweak) {
-            let attrs = Self::self_instance_attrs(&inv)
-                .map(|c| c.to_map())
-                .unwrap_or_default();
-            if let Err(e) =
-                self.enforce_attribute_where_constraints(cn_resolved, class_attrs, &attrs)
-            {
-                return Some(Err(e));
-            }
-        }
-        // Mix `has $.x does Role` roles into the final attribute values — the
-        // full constructor does this last (after BUILD/TWEAK), so do the same.
-        // Gated on the program declaring ANY attribute `does`/container mixin:
-        // the common case pays no cell snapshot + commit.
-        if (!self.registry().class_attribute_does_roles.is_empty()
-            || !self.registry().class_attribute_container_mixins.is_empty())
-            && let Some(cell) = Self::self_instance_attrs(&inv)
-        {
-            let mut attrs = cell.to_map();
-            self.apply_attribute_does_role_mixins(cn_resolved, &mut attrs);
-            cell.commit_attrs(attrs);
-        }
-        Some(Ok(inv))
+        self.finish_native_default_instance(
+            class_name,
+            args,
+            plan,
+            attrs,
+            early_inv,
+            &deferred,
+        )
     }
 }

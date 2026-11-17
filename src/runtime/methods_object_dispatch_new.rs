@@ -1902,6 +1902,7 @@ impl Interpreter {
                             build_override,
                             seed: seed.clone(),
                             default_is_seed,
+                            plan_index: None,
                         });
                         attrs.insert_seed(storage_key, seed);
                         continue;
@@ -2002,38 +2003,16 @@ impl Interpreter {
                 // here, so it is exempt from both checks — they run again on the
                 // final attributes after the BUILD phase (a deferred initializer
                 // implies a BUILD phase, so that pass always happens).
-                {
-                    let deferred_names: std::collections::HashSet<(&str, char)> = deferred_defaults
-                        .iter()
-                        .map(|d| (d.name.as_str(), d.sigil))
-                        .collect();
-                    let pruned_info: Vec<ClassAttributeDef>;
-                    let pruned_attrs: AttrMap;
-                    let (check_info, check_attrs) = if deferred_names.is_empty() {
-                        (&class_attrs_info[..], &attrs)
-                    } else {
-                        pruned_info = class_attrs_info
-                            .iter()
-                            .filter(|a| !deferred_names.contains(&(a.name.as_str(), a.sigil)))
-                            .cloned()
-                            .collect();
-                        let mut pruned = attrs.clone();
-                        for (name, sigil) in &deferred_names {
-                            let key = super::attribute_storage_key(&class_attrs_info, name, *sigil);
-                            pruned.remove(key);
-                        }
-                        pruned_attrs = pruned;
-                        (&pruned_info[..], &pruned_attrs)
-                    };
-                    self.enforce_attribute_where_constraints(class_key, check_info, check_attrs)?;
-                    self.enforce_attribute_smiley_constraints(
-                        class_key,
-                        check_attrs,
-                        // With a BUILD submethod the pre-BUILD attrs are not final;
-                        // the provided-and-undefined `:D` check must wait.
-                        (!any_build).then_some(&provided_attr_names),
-                    )?;
-                }
+                self.enforce_pre_build_attr_constraints(
+                    class_key,
+                    &class_attrs_info,
+                    &attrs,
+                    &deferred_defaults,
+                    true,
+                    // With a BUILD submethod the pre-BUILD attrs are not final;
+                    // the provided-and-undefined `:D` check must wait.
+                    Some((!any_build).then_some(&provided_attr_names)),
+                )?;
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.
                 // Role type parameters are temporary bindings for this
@@ -2080,6 +2059,7 @@ impl Interpreter {
                         &inv,
                         &deferred_defaults,
                         &build_writes,
+                        None,
                     )?;
                 }
                 // Check required attributes after all BUILDs have run

@@ -1,4 +1,5 @@
 mod methods_object_default_ctor;
+mod methods_object_default_ctor_phases;
 mod constructor_binding;
 mod constructor_assignment;
 mod constructor_named_attrs;

@@ -80,6 +80,33 @@ pub(crate) struct DeferredAttrDefault {
     /// (`ClassAttributeDef::default_is_seed`), so applying it leaves the slot
     /// seeded.
     pub(crate) default_is_seed: bool,
+    /// The attribute's index in the constructing class's `NativeCtorPlan`
+    /// (`class_attrs` order), when construction works from that plan: a seed
+    /// default is then read from, and memoized into, `seed_defaults` instead
+    /// of being evaluated again (see `apply_post_build_attr_defaults`).
+    pub(crate) plan_index: Option<usize>,
+}
+
+impl DeferredAttrDefault {
+    /// Defer `attr`'s own initializer, its slot seeded with `seed`.
+    pub(crate) fn of(
+        attr: &crate::runtime::ClassAttributeDef,
+        seed: Value,
+        plan_index: Option<usize>,
+    ) -> Self {
+        Self {
+            name: attr.name.clone(),
+            sigil: attr.sigil,
+            default: attr.default.clone(),
+            captured_env: attr.captured_env.clone(),
+            captured_unit: attr.captured_unit,
+            declaring_package: attr.declaring_package,
+            build_override: None,
+            seed,
+            default_is_seed: attr.default_is_seed,
+            plan_index,
+        }
+    }
 }
 
 impl Interpreter {
@@ -135,6 +162,7 @@ impl Interpreter {
         inv: &Value,
         deferred: &[DeferredAttrDefault],
         written: &HashSet<Symbol>,
+        plan: Option<&crate::runtime::NativeCtorPlan>,
     ) -> Result<(), RuntimeError> {
         let Some(cell) = Self::self_instance_attrs(inv) else {
             return Ok(());
@@ -153,7 +181,16 @@ impl Interpreter {
                 // slot changed: BUILD owns the value now.
                 _ => continue,
             }
-            let val = if let Some(build_override) = &d.build_override {
+            // A seed default (the parser's synthesized type-object
+            // initializer) evaluates to the same type object every time:
+            // `NativeCtorPlan::seed_defaults` holds it once it has.
+            let seed_memo = plan
+                .zip(d.plan_index)
+                .filter(|_| d.default_is_seed && d.build_override.is_none())
+                .and_then(|(plan, i)| plan.seed_defaults.get(i));
+            let val = if let Some(known) = seed_memo.and_then(|m| m.get()) {
+                Self::coerce_attr_value_by_sigil(known.clone(), d.sigil)
+            } else if let Some(build_override) = &d.build_override {
                 // `(object, type)`, as in the pre-BUILD pass.
                 let attr_type = self
                     .class_attribute_default(class_key, &d.name)
@@ -187,6 +224,25 @@ impl Interpreter {
                         },
                     )?;
                     self.reify_list_attr_value(&val, d.sigil)?;
+                    // The same memo condition as the native constructor's
+                    // eager pass: a type object that passes the attribute's
+                    // own type check.
+                    if let Some(memo) = seed_memo
+                        && matches!(val.view(), ValueView::Package(_))
+                        && class_attrs
+                            .iter()
+                            .find(|a| a.name == d.name && a.sigil == d.sigil)
+                            .and_then(|a| {
+                                super::attribute_type_constraint(
+                                    &class_attrs,
+                                    a,
+                                    &attr_type_constraints,
+                                )
+                            })
+                            .is_none_or(|tc| self.type_matches_value(&tc, &val))
+                    {
+                        let _ = memo.set(val.clone());
+                    }
                     Self::coerce_attr_value_by_sigil(val, d.sigil)
                 }
             } else {
