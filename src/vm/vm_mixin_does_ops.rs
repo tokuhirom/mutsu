@@ -213,10 +213,22 @@ impl Interpreter {
             ValueView::Str(_) => "Str".to_string(),
             ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => "Rat".to_string(),
             ValueView::Complex(..) => "Complex".to_string(),
-            ValueView::Package(name) => name.resolve(),
-            ValueView::Enum { enum_type, .. } => enum_type.resolve(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) => Self::mixin_method_name(name.resolve()),
+            ValueView::Enum { enum_type, .. } => Self::mixin_method_name(enum_type.resolve()),
+            ValueView::Instance { class_name, .. } => Self::mixin_method_name(class_name.resolve()),
             _ => "Any".to_string(),
+        }
+    }
+
+    /// The method a value mixin answers to: its type's name as the program
+    /// wrote it. A lexical type (`my class Bars`) is stored as `Bars\0<id>`,
+    /// and `$o does Bars.new` adds a `.Bars` method, not one under that key.
+    // Cost: O(|name|).
+    fn mixin_method_name(name: String) -> String {
+        if name.contains('\u{0}') {
+            crate::value::display::user_facing_type_name(&name).into_owned()
+        } else {
+            name
         }
     }
 
