@@ -127,6 +127,8 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             body,
             source_regex,
             multi: _,
+            is_my: _,
+            is_our: _,
             is_export: _,
             export_tags: _,
         } => {

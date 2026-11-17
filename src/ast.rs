@@ -2579,6 +2579,12 @@ pub(crate) enum Stmt {
         is_export: bool,
         /// Tags named by `is export(:TAG)`; `["DEFAULT"]` for a bare `is export`.
         export_tags: Vec<String>,
+        /// The scope as written (`my rule foo`, `our rule foo`): the RakuAST
+        /// boundary shows it, as for a `TokenDecl`.
+        #[serde(default)]
+        is_my: bool,
+        #[serde(default)]
+        is_our: bool,
     },
     ProtoToken {
         name: Symbol,

@@ -144,6 +144,8 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             body,
             source_regex,
             multi: _,
+            is_my: _,
+            is_our: _,
             is_export: _,
             export_tags,
         } => {

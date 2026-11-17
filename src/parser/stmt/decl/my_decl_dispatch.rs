@@ -337,6 +337,11 @@ pub(super) fn try_keyword_dispatch(
             is_my: tok_is_my,
             is_our: tok_is_our,
             ..
+        }
+        | Stmt::RuleDecl {
+            is_my: tok_is_my,
+            is_our: tok_is_our,
+            ..
         } = &mut stmt
         {
             *tok_is_our = is_our;

@@ -51,12 +51,19 @@ fn parse_qualified_ident_with_hyphens(input: &str) -> PResult<'_, String> {
 /// Named classes in expression context register the class AND return the type object.
 pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     // Accept optional declarator prefixes used in expression context (e.g. `my class ...`).
-    let input = if let Some(r) = keyword("my", input).or_else(|| keyword("our", input)) {
-        let (r, _) = ws1(r)?;
-        r
-    } else {
-        input
-    };
+    let (input, is_lexical) =
+        if let Some(r) = keyword("my", input).or_else(|| keyword("our", input)) {
+            let (r, _) = ws1(r)?;
+            (r, keyword("my", input).is_some())
+        } else {
+            (input, false)
+        };
+    anon_class_expr_scoped(input, is_lexical)
+}
+
+/// [`anon_class_expr`] after its declarator: `class ...` that a `my` before it
+/// (`is_lexical`) makes a lexical class, as the statement form makes one.
+pub(crate) fn anon_class_expr_scoped(input: &str, is_lexical: bool) -> PResult<'_, Expr> {
     let rest = keyword("class", input).ok_or_else(|| PError::expected("anonymous class"))?;
     let (rest, _) = ws(rest)?;
 
@@ -134,7 +141,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
             parents,
             class_is_rw,
             is_hidden: false,
-            is_lexical: false,
+            is_lexical,
             hidden_parents: Vec::new(),
             does_parents: does_roles,
             repr: None,

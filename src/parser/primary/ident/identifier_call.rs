@@ -27,8 +27,8 @@ use crate::parser::primary::ident::predicates::{
 use crate::parser::primary::ident::statement_terminator::restore_statement_terminator;
 use crate::parser::primary::ident::supply::supply_block;
 use crate::parser::primary::misc::{
-    anon_class_expr, anon_grammar_expr, anon_role_expr, mark_anon_package_decl, parse_block_body,
-    parse_block_body_routine, parse_tracked_block_body,
+    anon_class_expr, anon_class_expr_scoped, anon_grammar_expr, anon_role_expr,
+    mark_anon_package_decl, parse_block_body, parse_block_body_routine, parse_tracked_block_body,
 };
 use crate::parser::stmt::class::token_body::parse_raw_braced_regex_body;
 use crate::parser::stmt::keyword;
@@ -1089,8 +1089,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         .or_else(|| keyword("state", input))
                         && let Ok((after_kw, _)) = ws1(after_kw)
                     {
+                        let is_my = keyword("my", input).is_some();
                         if let Ok(res) = anon_grammar_expr(after_kw)
-                            .or_else(|_| anon_class_expr(after_kw))
+                            .or_else(|_| anon_class_expr_scoped(after_kw, is_my))
                             .or_else(|_| anon_role_expr(after_kw))
                         {
                             return Ok(res);
