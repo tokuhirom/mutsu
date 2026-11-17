@@ -1514,6 +1514,14 @@ impl Compiler {
             let code_var_idx = self.code.add_constant(Value::str(name.clone()));
             let positional_indices = Self::arg_positional_indices(args);
             for (i, arg) in args.iter().enumerate() {
+                // The parser's callsite-line marker (`c()`) is a constant
+                // named Pair: load it whole instead of building it with
+                // `MakeNamedArg` on every call (ADR-15737 D1).
+                if let Some(marker) = Self::callsite_line_marker_const(arg) {
+                    let idx = self.code.add_constant(marker);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    continue;
+                }
                 // ADR-0021: `&code(args)` is a sub call, same call-site
                 // named-ness rule as a regular function call. A
                 // bareword-keyed fat-arrow/colonpair mints the named

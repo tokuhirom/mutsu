@@ -70,3 +70,34 @@ impl Compiler {
         }
     }
 }
+
+impl Compiler {
+    /// The parser's synthetic callsite-line marker
+    /// (`__mutsu_test_callsite_line => LINE`, `callsite_line_arg`) as the
+    /// named Pair `MakeNamedArg` would build from it, or `None` for any other
+    /// argument. Both halves are literals, so the Pair is a constant.
+    // Cost: O(1).
+    pub(super) fn callsite_line_marker_const(arg: &Expr) -> Option<Value> {
+        let Expr::Binary {
+            left,
+            op: TokenKind::FatArrow,
+            right,
+            ..
+        } = arg
+        else {
+            return None;
+        };
+        let (Expr::Literal(key), Expr::Literal(line)) = (left.as_ref(), right.as_ref()) else {
+            return None;
+        };
+        let ValueView::Str(key) = key.view() else {
+            return None;
+        };
+        if key.as_str() != crate::parser::TEST_CALLSITE_LINE_KEY
+            || !matches!(line.view(), ValueView::Int(_))
+        {
+            return None;
+        }
+        Some(Value::pair(key.to_string(), line.clone()))
+    }
+}

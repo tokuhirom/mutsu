@@ -103,7 +103,9 @@ impl Interpreter {
         self.caller_env_stack.push(entry_env.clone());
         // The entry describes the frame this call is being made *from*, so its
         // file is the file the currently-executing routine was defined in.
-        let file = self.executing_source_file().unwrap_or_default();
+        let file = self
+            .executing_source_file_sym()
+            .unwrap_or_else(|| Symbol::intern(""));
         let line = self.cur_source_line;
         let code = code
             .map(CodeFrame::Ready)
@@ -195,7 +197,7 @@ impl Interpreter {
         for _ in 0..2 {
             self.caller_env_stack.push(Env::new());
             self.callframe_stack.push(CallFrameEntry {
-                file: "EVAL".to_string(),
+                file: Symbol::intern("EVAL"),
                 line: 0,
                 code: None,
                 env: Env::new(),

@@ -193,11 +193,26 @@ impl Interpreter {
     /// Owned-`Vec` variant of [`Self::sanitize_call_args`]: when no callsite-line
     /// marker is present (the common case) the caller's `Vec` is returned as-is,
     /// skipping the per-arg clone and the rebuilt `Vec` allocation.
-    pub(crate) fn sanitize_call_args_owned(&self, args: Vec<Value>) -> (Vec<Value>, Option<i64>) {
-        if args.iter().any(Self::is_callsite_line_marker) {
-            return self.sanitize_call_args(&args);
+    /// A marker is removed in place: rebuilding the `Vec` cloned every other
+    /// argument, on every closure call a `c()` site makes.
+    // Cost: O(a), a = arguments.
+    pub(crate) fn sanitize_call_args_owned(
+        &self,
+        mut args: Vec<Value>,
+    ) -> (Vec<Value>, Option<i64>) {
+        if !args.iter().any(Self::is_callsite_line_marker) {
+            return (args, None);
         }
-        (args, None)
+        let mut callsite_line = None;
+        args.retain(|arg| {
+            if Self::is_callsite_line_marker(arg) {
+                callsite_line = Self::callsite_line_of_view(&arg.view());
+                false
+            } else {
+                true
+            }
+        });
+        (args, callsite_line)
     }
 
     pub(crate) fn sanitize_call_args(&self, args: &[Value]) -> (Vec<Value>, Option<i64>) {

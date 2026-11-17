@@ -346,7 +346,9 @@ impl Interpreter {
     // Cost: O(c), c = captured candidates.
     fn dispatcher_has_container_candidate(data: &crate::value::SubData) -> bool {
         matches!(
-            data.env.get("__mutsu_multi_dispatch_candidates").map(Value::view),
+            data.env
+                .get_sym(crate::symbol::wk::multi_dispatch_candidates())
+                .map(Value::view),
             Some(ValueView::Array(cands, _))
                 if cands.iter().any(|c| matches!(c.view(), ValueView::Sub(d) if d.candidate_returns_container()))
         )
@@ -2136,10 +2138,12 @@ impl Interpreter {
         }
         let mut fetch_tail = true;
         let result = if !target.is_nil() {
+            // A family dispatcher hands on the container one of its `is rw`
+            // candidates returns. Asked once: both decisions below need it.
+            let container_dispatcher = matches!(target.view(),
+                ValueView::Sub(data) if Self::dispatcher_has_container_candidate(&data));
             let sub_is_rw = if let ValueView::Sub(data) = target.view() {
-                // A family dispatcher hands on the container one of its `is rw`
-                // candidates returns.
-                !data.returns_container() && !Self::dispatcher_has_container_candidate(&data)
+                !data.returns_container() && !container_dispatcher
             } else {
                 false
             };
@@ -2152,7 +2156,7 @@ impl Interpreter {
                 target.view(),
                 ValueView::Sub(data)
                     if (self.in_lvalue_assignment && data.returns_container())
-                        || Self::dispatcher_has_container_candidate(&data)
+                        || container_dispatcher
             );
             let saved_rw_context = self.rw_return_context;
             self.rw_return_context |= rw_callable;
