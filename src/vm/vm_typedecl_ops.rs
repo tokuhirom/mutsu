@@ -784,6 +784,8 @@ impl Interpreter {
                     &storage_name,
                     method_outer_lexical_slots,
                 );
+                // A grammar's rules close over this frame too (#17872).
+                self.capture_declared_token_envs(code, &storage_name, method_outer_lexical_slots);
                 if reuse_site {
                     // A kept class's methods now close over this entry's frame;
                     // a cached resolution still holds the previous entry's

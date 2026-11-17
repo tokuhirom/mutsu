@@ -817,6 +817,10 @@ pub(crate) struct Registry {
     /// per-resolution candidate merges) are O(n) refcount bumps rather than
     /// deep clones of the token bodies.
     pub(crate) token_defs: std::sync::Arc<TokenDefsMap>,
+    /// Each rule's captured declaring scope (`regex_token_closure`), keyed by
+    /// the rule's qualified name: the shared cells of the declaring frame's
+    /// variables its body names, re-captured on every entry of that frame.
+    pub(crate) token_captures: HashMap<Symbol, std::sync::Arc<Vec<(String, Value)>>>,
     /// `proto sub` declaration markers (existence set). Private: every
     /// mutation must go through the `proto_subs_*` accessors below so the
     /// `proto_gen` invalidation counter for `Interpreter::has_proto_cached`
