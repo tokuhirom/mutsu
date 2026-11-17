@@ -79,6 +79,12 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         // objects.  The latter is what `.HOW.WHAT` reports, while user code
         // (including Method::Protected) compares it with the former.
         (ValueView::Package(a), ValueView::Package(b)) => {
+            // The same name is the same type object; only two different
+            // spellings need their text compared (`a === Node` on a
+            // linked list's sentinel ran two `resolve` allocations per test).
+            if a == b {
+                return true;
+            }
             fn canonical_meta_name(name: &str) -> &str {
                 match name.strip_prefix("Perl6::") {
                     Some(rest) if rest.starts_with("Metamodel::") && rest.ends_with("HOW") => rest,
@@ -235,8 +241,10 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 ..
             },
         ) => {
-            let a_name = a_class.resolve();
-            let b_name = b_class.resolve();
+            // Interned text, no allocation: this arm runs for every `===`
+            // between two instances.
+            let a_name = a_class.as_str();
+            let b_name = b_class.as_str();
             // `===` is `$a.WHICH eq $b.WHICH`. When either side's class
             // overrides `WHICH`, that user answer decides identity — two
             // distinct objects with the same `WHICH` are `===`. The interpreter
@@ -250,7 +258,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 return a_which == b_which;
             }
             if a_name == b_name
-                && (is_stash_class_name(a_name.as_str())
+                && (is_stash_class_name(a_name)
                     || crate::value::supply_class::is_supply_class(a_class)
                     || a_name == "IO::Special")
             {
@@ -282,7 +290,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             {
                 // A Version subclass is a value type, like Version itself.
                 value_which_key(left) == value_which_key(right)
-            } else if a_name == b_name && matches!(a_name.as_str(), "Date" | "DateTime") {
+            } else if a_name == b_name && matches!(a_name, "Date" | "DateTime") {
                 // Date and DateTime are value types: their native WHICH is
                 // derived from the calendar value, not the allocated instance.
                 value_which_key(left) == value_which_key(right)
