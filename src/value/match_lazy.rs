@@ -21,11 +21,11 @@
 //! capture node's shared cell (#12954).
 
 use super::*;
+use crate::symbol::wk;
 use crate::value::regex_caps::{
     CapNode, MatchTarget, NamedSlot, PosSlot, SILENT_ACTION_MARKER_PREFIX,
 };
 use std::sync::OnceLock;
-use crate::symbol::wk;
 
 /// Interned class symbol for `Match`.
 pub(in crate::value) fn match_class_symbol() -> Symbol {
@@ -224,7 +224,10 @@ impl MatchNode {
         if !silent_caps_vals.is_empty() {
             attrs.insert(wk::match_silent_caps(), Value::real_array(silent_caps_vals));
         }
-        attrs.insert(wk::match_orig(), Value::str_arc(Arc::clone(self.target.text())));
+        attrs.insert(
+            wk::match_orig(),
+            Value::str_arc(Arc::clone(self.target.text())),
+        );
         if let Some(sym) = &cap.sym {
             attrs.insert(wk::match_sym_variant(), Value::str(sym.resolve()));
         }
