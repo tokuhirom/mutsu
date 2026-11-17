@@ -6,7 +6,7 @@ use Test;
 # the iterator's own `push-all`; `.sink` and the `sink` prefix call its own
 # `sink-all`.
 
-plan 26;
+plan 28;
 
 my class I does Iterator {
     has @.v = 1..6;
@@ -70,3 +70,7 @@ is $noisy.n, 1, 'the sink prefix calls a user sink method';
 sub fails { fail 'nope' }
 my $f = fails();
 throws-like { sink $f }, X::AdHoc, message => 'nope', 'the sink prefix throws an unhandled Failure';
+
+my $failed = run $*EXECUTABLE, '-e', 'exit 3';
+throws-like { sink $failed }, X::Proc::Unsuccessful, 'the sink prefix throws for an unsuccessful Proc';
+throws-like { $failed.sink }, X::Proc::Unsuccessful, '... as the .sink method does';

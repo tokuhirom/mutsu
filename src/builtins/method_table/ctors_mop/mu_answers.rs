@@ -119,7 +119,8 @@ pub(in crate::builtins::method_table) fn iterator_is_monotonic(
 
 /// `Mu.sink`: evaluate the receiver for its effects and answer `Nil`. A plain
 /// array has nothing to run; an unhandled `Failure` throws its exception (a
-/// handled one is a no-op); a `Seq` whose source is already settled marks itself
+/// handled one is a no-op); an unsuccessful `Proc` throws
+/// `X::Proc::Unsuccessful`; a `Seq` whose source is already settled marks itself
 /// consumed. A `Seq` with a deferred source or a `LazyList` declines: the
 /// interpreter pulls it, since its producer may run compiled code.
 // Cost: O(1), except a reified `Seq`'s O(e) consumption mark, e = elements.
@@ -128,6 +129,12 @@ pub(crate) fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
         return Some(answer);
     }
     match target.view() {
+        // Sinking a finished, unsuccessful `Proc` throws, as the sink
+        // statement does (rakudo's `Proc.sink`).
+        ValueView::Instance { class_name, .. } if class_name == "Proc" => Some(
+            crate::runtime::native_methods::proc_unsuccessful_sink_error(target)
+                .map_or(Ok(Value::NIL), Err),
+        ),
         ValueView::Instance { class_name, .. } if class_name == "Failure" => {
             Some(crate::runtime::Interpreter::unhandled_failure_error(target).map(|()| Value::NIL))
         }
