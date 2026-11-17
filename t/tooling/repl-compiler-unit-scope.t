@@ -8,12 +8,12 @@ use Test;
 # session `sub` of the same spelling is what the name means; a class the
 # session declares is GLOBAL's. Identical under rakudo.
 
-plan 9;
+plan 14;
 
 use ReplSandboxOut;
 
 # A class and an enum of the program running the session (#17642).
-class ReplHost { }
+class ReplHost { method who { 'program' } }
 enum ReplHostColor <ReplRed ReplBlue>;
 
 my $sb = ReplSandbox.new;
@@ -32,3 +32,13 @@ is $sb.run('Out()'), '[1 2]', 'Out(...) calls the session sub';
 like $sb.run('ReplHost.^name'), /^ 'EXC: ' .* 'ReplHost'/, 'a class of the running program is not visible';
 like $sb.run('ReplHostColor.^name'), /^ 'EXC: ' .* 'ReplHostColor'/, 'nor an enum of it';
 is ReplHost.^name, 'ReplHost', 'the program still sees its own class';
+
+# A session may declare a type of the same name as one of the program's: it
+# is the session's own and lives alongside the program's (#17652).
+is $sb.run('class ReplHost { method hi { 42 } }; ReplHost.hi'), '42',
+    'a session declares a class named like one of the program\'s';
+is $sb.run('ReplHost.new.hi'), '42', 'a later unit sees the session\'s class';
+like $sb.run('my $c = ReplHost; $c.^name'), /^ ['GLOBAL::']? 'ReplHost' $/,
+    'which is named as declared';
+is ReplHost.who, 'program', 'the program\'s own class is untouched';
+is ReplHost.^name, 'ReplHost', 'and keeps its name';

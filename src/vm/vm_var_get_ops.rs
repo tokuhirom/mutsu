@@ -182,13 +182,19 @@ impl Interpreter {
     /// ADR-11136; the main program's, from a REPL session unit, #17642). The
     /// type is hidden, not the name: a routine of that spelling in scope here
     /// is what the term means (a REPL session's `sub Out`, run from a module
-    /// that declares `class Out`, #17087). Otherwise the name is undeclared.
-    // Cost: an env probe and a routine resolution, plus the call.
+    /// that declares `class Out`, #17087). So is a lexical type of that
+    /// spelling in scope: a session's own `class ReplHost`, declared apart from
+    /// the program's (#17652). Otherwise the name is undeclared.
+    // Cost: two env probes and a routine resolution, plus the call.
     pub(crate) fn push_hidden_type_name(
         &mut self,
         name: &str,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        if let Some(own) = self.lexical_type_in_scope(name) {
+            self.stack.push(own);
+            return Ok(());
+        }
         let lexical = self
             .env()
             .get(&format!("&{name}"))
