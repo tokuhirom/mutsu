@@ -172,38 +172,36 @@ impl Interpreter {
             let key = MetaNs::CallableId.key_pair_for_strs("GLOBAL", &func_name);
             self.registration_callable_id(key)
         });
-        let mut sub_id = data.id;
         // The wrap tables are keyed by bare name, so the callable-id ledger
         // is keyed by it too -- qualified for a routine of a named package,
         // so a same-named routine of a sibling package keeps its own record.
         let ledger_name = wrap_ledger_name(data.package, &func_name);
-        if let Some((&old_id, _)) = self
-            .dispatch
-            .wrap_sub_names
-            .iter()
-            .find(|(id, n)| **n == func_name && self.wrap_id_is_in_package(**id, data.package))
-        {
-            let stored_callable_id = self
-                .dispatch
-                .wrap_callable_ids
-                .get(&ledger_name)
-                .copied()
-                .flatten();
-            let same_sub = match (stored_callable_id, current_callable_id) {
-                (Some(stored), Some(current)) => stored == current,
-                // If we can't tell, assume same.
-                _ => true,
-            };
-            if same_sub {
-                sub_id = old_id;
-            } else {
-                // Redefined: clear the old wrap chain and mappings.
-                crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).remove(&old_id);
-                self.drop_wrap_name_entries(old_id, &func_name);
+        // One write: the lookup of the routine's existing chain and the update
+        // that follows it must not interleave with another thread's wrap.
+        let sub_id = self.dispatch.wraps.write(|wraps| {
+            let mut sub_id = data.id;
+            if let Some((&old_id, _)) = wraps
+                .sub_names
+                .iter()
+                .find(|(id, n)| **n == func_name && wraps.id_is_in_package(**id, data.package))
+            {
+                let stored_callable_id = wraps.callable_ids.get(&ledger_name).copied().flatten();
+                let same_sub = match (stored_callable_id, current_callable_id) {
+                    (Some(stored), Some(current)) => stored == current,
+                    // If we can't tell, assume same.
+                    _ => true,
+                };
+                if same_sub {
+                    sub_id = old_id;
+                } else {
+                    // Redefined: clear the old wrap chain and mappings.
+                    wraps.chains.remove(&old_id);
+                    wraps.drop_name_entries(old_id, &func_name);
+                }
             }
-        }
-        crate::runtime::cow_table_mut(&mut self.dispatch.wrap_callable_ids)
-            .insert(ledger_name, current_callable_id);
+            wraps.callable_ids.insert(ledger_name, current_callable_id);
+            sub_id
+        });
         (sub_id, func_name)
     }
 
@@ -220,70 +218,28 @@ impl Interpreter {
     ) {
         self.invalidate_fn_resolution();
         if !func_name.is_empty() {
-            self.dispatch
-                .wrap_sub_names
-                .insert(sub_id, func_name.clone());
             let package = match Self::unwrap_callable_mixin(target.clone()).view() {
                 ValueView::Sub(d) => d.package,
                 _ => crate::symbol::wk::global_package(),
             };
-            self.dispatch.wrap_sub_packages.insert(sub_id, package);
-            // The first Sub value for a bare name is the one kept under it: it
-            // carries the chain's key. A routine of a named package is also
-            // recorded under its qualified name, which is what tells it from
-            // a same-named routine of a sibling package.
-            if !crate::qualified::is_global_package(package) {
-                self.dispatch
-                    .wrap_name_to_sub
-                    .entry(wrap_ledger_name(package, &func_name))
+            self.dispatch.wraps.write(|wraps| {
+                wraps.sub_names.insert(sub_id, func_name.clone());
+                wraps.sub_packages.insert(sub_id, package);
+                // The first Sub value for a bare name is the one kept under
+                // it: it carries the chain's key. A routine of a named package
+                // is also recorded under its qualified name, which is what
+                // tells it from a same-named routine of a sibling package.
+                if !crate::qualified::is_global_package(package) {
+                    wraps
+                        .name_to_sub
+                        .entry(wrap_ledger_name(package, &func_name))
+                        .or_insert_with(|| target.clone());
+                }
+                wraps
+                    .name_to_sub
+                    .entry(func_name)
                     .or_insert_with(|| target.clone());
-            }
-            self.dispatch
-                .wrap_name_to_sub
-                .entry(func_name)
-                .or_insert_with(|| target.clone());
-        }
-    }
-
-    /// Whether the wrapped routine `sub_id` is declared in `package`. A chain
-    /// recorded without a package (none is, once noted) matches any.
-    // Cost: O(1).
-    pub(crate) fn wrap_id_is_in_package(&self, sub_id: u64, package: Symbol) -> bool {
-        self.dispatch
-            .wrap_sub_packages
-            .get(&sub_id)
-            .is_none_or(|p| {
-                *p == package
-                    || (crate::qualified::is_global_package(*p)
-                        && crate::qualified::is_global_package(package))
-            })
-    }
-
-    /// Forget routine `sub_id`'s name-keyed wrap records. The bare-name entry
-    /// is only removed when it is this routine's own (a same-named routine of
-    /// another package may hold it).
-    // Cost: O(1).
-    pub(crate) fn drop_wrap_name_entries(&mut self, sub_id: u64, func_name: &str) {
-        self.dispatch.wrap_sub_names.remove(&sub_id);
-        let package = self.dispatch.wrap_sub_packages.remove(&sub_id);
-        let sub_ids_of = |v: &Value| match Self::unwrap_callable_mixin(v.clone()).view() {
-            ValueView::Sub(d) => Some(d.id),
-            _ => None,
-        };
-        if let Some(package) = package
-            && !crate::qualified::is_global_package(package)
-        {
-            self.dispatch
-                .wrap_name_to_sub
-                .remove(&wrap_ledger_name(package, func_name));
-        }
-        if self
-            .dispatch
-            .wrap_name_to_sub
-            .get(func_name)
-            .is_none_or(|v| sub_ids_of(v).is_none_or(|id| id == sub_id))
-        {
-            self.dispatch.wrap_name_to_sub.remove(func_name);
+            });
         }
     }
 
@@ -300,7 +256,8 @@ impl Interpreter {
                 .find(|(h, _)| *h == DO_BODY_HANDLE)
                 .map(|(_, body)| body.clone());
         }
-        if self.dispatch.wrap_chains.is_empty() {
+        let wraps = self.dispatch.wraps.read();
+        if wraps.chains.is_empty() {
             return None;
         }
         let name = data
@@ -308,13 +265,12 @@ impl Interpreter {
             .get("__mutsu_wrap_name")
             .map(Value::to_string_value)
             .unwrap_or_else(|| data.name.resolve());
-        let sub_id = self
-            .dispatch
-            .wrap_sub_names
+        let sub_id = wraps
+            .sub_names
             .iter()
             .find(|(_, n)| !name.is_empty() && **n == name)
             .map_or(data.id, |(&id, _)| id);
-        let chain = self.dispatch.wrap_chains.get(&sub_id)?;
+        let chain = wraps.chains.get(&sub_id)?;
         chain
             .iter()
             .find(|(h, _)| *h == DO_BODY_HANDLE)
@@ -408,11 +364,11 @@ impl Interpreter {
             return Ok(());
         }
         let (sub_id, func_name) = self.routine_wrap_key(data);
-        let chain = crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains)
-            .entry(sub_id)
-            .or_default();
-        chain.retain(|(h, _)| *h != DO_BODY_HANDLE);
-        chain.insert(0, (DO_BODY_HANDLE, body));
+        self.dispatch.wraps.write(|wraps| {
+            let chain = wraps.chains.entry(sub_id).or_default();
+            chain.retain(|(h, _)| *h != DO_BODY_HANDLE);
+            chain.insert(0, (DO_BODY_HANDLE, body));
+        });
         self.note_routine_wrap_chain(sub_id, func_name, target);
         Ok(())
     }

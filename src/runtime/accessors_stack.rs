@@ -22,6 +22,20 @@ impl Interpreter {
     /// `MUTSU_VM_STATS=1`'s `fn-resolve-gen-bumps` line attributes every
     /// generation *change* to its source location, so a new one is visible.
     #[track_caller]
+    /// Drop this thread's routine-resolution memos when the shared `.wrap`
+    /// tables moved since they were filled -- by a wrap on any thread
+    /// (ADR-17216 §2.3). Called at the entry of the named call ops, whose
+    /// name-keyed caches do not consult the wrap tables on a hit.
+    // Cost: O(1), one atomic load, unless the tables moved.
+    #[inline]
+    pub(crate) fn sync_world_wraps(&mut self) {
+        let generation = self.dispatch.wraps.generation();
+        if generation != self.caches.wraps_gen_seen {
+            self.caches.wraps_gen_seen = generation;
+            self.invalidate_fn_resolution();
+        }
+    }
+
     pub(crate) fn invalidate_fn_resolution(&mut self) {
         self.clear_fn_resolution_memos();
         crate::vm::vm_stats::record_fn_keys_base_invalidation(self.dispatch.fn_keys_by_base.len());

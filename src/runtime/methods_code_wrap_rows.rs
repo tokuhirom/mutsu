@@ -34,8 +34,7 @@ impl Interpreter {
                     let Some(wrapper) = args.first().cloned() else {
                         return Some(Err(RuntimeError::new("wrap requires a wrapper argument")));
                     };
-                    self.dispatch.wrap_handle_counter += 1;
-                    let handle_id = self.dispatch.wrap_handle_counter;
+                    let handle_id = crate::runtime::dispatch_state::next_wrap_handle_id();
                     self.registry_mut()
                         .push_method_wrap(&package, &name, 0, handle_id, wrapper);
                     let attrs = method_wrap_handle_attrs(&package, &name, 0, handle_id, target);
@@ -102,10 +101,11 @@ impl Interpreter {
             .get("__mutsu_wrap_name")
             .map(Value::to_string_value)
             .unwrap_or_else(|| data.name.resolve());
-        self.dispatch
-            .wrap_sub_names
+        let wraps = self.dispatch.wraps.read();
+        wraps
+            .sub_names
             .iter()
-            .find(|(id, n)| **n == func_name && self.wrap_id_is_in_package(**id, data.package))
+            .find(|(id, n)| **n == func_name && wraps.id_is_in_package(**id, data.package))
             .map(|(id, _)| *id)
             .unwrap_or(data.id)
     }
@@ -132,10 +132,7 @@ impl Interpreter {
                     .method_wrap_chain(&cls, &meth, idx)
                     .is_some_and(|chain| !chain.is_empty())
             } else {
-                self.dispatch
-                    .wrap_chains
-                    .get(&self.wrapped_sub_id(data))
-                    .is_some_and(|chain| !chain.is_empty())
+                self.has_wrap_chain(self.wrapped_sub_id(data))
             };
             return Some(Ok(Value::truth(wrapped)));
         }
@@ -146,8 +143,7 @@ impl Interpreter {
             } else {
                 return Some(Err(RuntimeError::new("wrap requires a wrapper argument")));
             };
-            self.dispatch.wrap_handle_counter += 1;
-            let handle_id = self.dispatch.wrap_handle_counter;
+            let handle_id = crate::runtime::dispatch_state::next_wrap_handle_id();
             // Method candidate wrap: if this Sub came from ^lookup().candidates[N],
             // store the wrap chain in method_wrap_chains instead.
             if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
@@ -167,10 +163,13 @@ impl Interpreter {
             // `&foo` creates a fresh Sub, so the chain is keyed by name once a
             // routine is wrapped (see `routine_wrap_key`).
             let (sub_id, func_name) = self.routine_wrap_key(data);
-            crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains)
-                .entry(sub_id)
-                .or_default()
-                .push((handle_id, wrapper));
+            self.dispatch.wraps.write(|wraps| {
+                wraps
+                    .chains
+                    .entry(sub_id)
+                    .or_default()
+                    .push((handle_id, wrapper))
+            });
             self.note_routine_wrap_chain(sub_id, func_name, target);
             // Return a WrapHandle instance
             let mut attrs = std::collections::HashMap::new();
@@ -225,22 +224,20 @@ impl Interpreter {
             }
             let sub_id = self.wrapped_sub_id(data);
             if args.is_empty() {
-                // unwrap with no args on a never-wrapped sub should error
-                if !self.dispatch.wrap_chains.contains_key(&sub_id)
-                    || self.dispatch.wrap_chains[&sub_id].is_empty()
-                {
+                // Pop the outermost wrapper; unwrap with no args on a
+                // never-wrapped sub errors.
+                let popped = self.dispatch.wraps.write(|wraps| {
+                    let chain = wraps.chains.get_mut(&sub_id)?;
+                    chain.pop()?;
+                    if chain.is_empty() {
+                        wraps.cleanup_name_entries(sub_id);
+                    }
+                    Some(())
+                });
+                if popped.is_none() {
                     return Some(Err(routine_unwrap_error(
                         "Cannot unwrap routine: not wrapped",
                     )));
-                }
-                // Pop the outermost wrapper
-                if let Some(chain) =
-                    crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).get_mut(&sub_id)
-                {
-                    chain.pop();
-                    if chain.is_empty() {
-                        self.cleanup_wrap_name_entries(sub_id);
-                    }
                 }
                 // Invalidate light-call caches so the sub re-resolves (see wrap).
                 self.invalidate_fn_resolution();
@@ -254,22 +251,31 @@ impl Interpreter {
                     "Cannot unwrap routine: invalid wrap handle",
                 )));
             };
-            let chain =
-                crate::runtime::cow_table_mut(&mut self.dispatch.wrap_chains).get_mut(&sub_id);
-            if let Some(chain) = chain {
+            // `None`: not wrapped; `Some(false)`: no such handle.
+            let removed = self.dispatch.wraps.write(|wraps| {
+                let chain = wraps.chains.get_mut(&sub_id)?;
                 let before_len = chain.len();
                 chain.retain(|(hid, _)| *hid != handle_id);
                 if chain.len() == before_len {
+                    return Some(false);
+                }
+                if chain.is_empty() {
+                    wraps.cleanup_name_entries(sub_id);
+                }
+                Some(true)
+            });
+            match removed {
+                Some(false) => {
                     return Some(Err(routine_unwrap_error(
                         "Cannot unwrap routine: invalid wrap handle",
                     )));
                 }
-                if chain.is_empty() {
-                    self.cleanup_wrap_name_entries(sub_id);
+                Some(true) => {
+                    // Invalidate light-call caches so the sub re-resolves (see wrap).
+                    self.invalidate_fn_resolution();
+                    return Some(Ok(Value::TRUE));
                 }
-                // Invalidate light-call caches so the sub re-resolves (see wrap).
-                self.invalidate_fn_resolution();
-                return Some(Ok(Value::TRUE));
+                None => {}
             }
             return Some(Err(RuntimeError::new(
                 "Cannot unwrap a sub that has not been wrapped",

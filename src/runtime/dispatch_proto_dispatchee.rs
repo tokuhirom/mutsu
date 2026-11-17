@@ -346,7 +346,7 @@ impl Interpreter {
         let (rw_params, trust_constraints) = match candidate.view() {
             ValueView::Sub(data) => (
                 super::builtins_dispatch_next::rw_scalar_positional_params(&data.param_defs),
-                !self.dispatch.wrap_chains.contains_key(&data.id)
+                !self.has_wrap_chain_entry(data.id)
                     && data
                         .param_defs
                         .iter()
@@ -368,7 +368,7 @@ impl Interpreter {
                         !pd.named && !pd.slurpy && !pd.double_slurpy && !pd.is_variadic()
                     })
                     && !args.iter().any(|a| a.unwrap_varref().is_any_pair_value())
-                    && !self.dispatch.wrap_chains.contains_key(&data.id) =>
+                    && !self.has_wrap_chain_entry(data.id) =>
             {
                 Some(data.id)
             }

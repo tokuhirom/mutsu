@@ -17,6 +17,98 @@ pub(crate) struct LexicalOperatorScope {
     pub(crate) depth: usize,
 }
 
+/// The routine `.wrap` state of the program (ADR-17216: world, shared by
+/// every thread through [`DispatchState::wraps`]).
+#[derive(Clone, Default)]
+pub(crate) struct WrapTables {
+    /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
+    pub(crate) chains: HashMap<u64, Vec<(u64, Value)>>,
+    /// Maps sub_id to function name for named call wrap chain lookup.
+    pub(crate) sub_names: HashMap<u64, String>,
+    /// Maps sub_id to the package the wrapped routine is declared in. Wrap
+    /// state is recorded under the routine's bare name, so two routines of
+    /// different packages sharing it (`class A { sub nc ... }` and
+    /// `class B { sub nc ... }`, each with a bound `$!do`) are told apart by
+    /// this table, not merged into one chain.
+    pub(crate) sub_packages: HashMap<u64, Symbol>,
+    /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
+    /// when dispatching named function calls through the wrap chain.
+    pub(crate) name_to_sub: ValueMap,
+    /// Maps function name to the callable_id at the time wrap was first called.
+    /// Used to detect sub redefinition (e.g. `sub foo` in a new block).
+    pub(crate) callable_ids: HashMap<String, Option<i64>>,
+}
+
+impl WrapTables {
+    /// Whether the wrapped routine `sub_id` is declared in `package`. A chain
+    /// recorded without a package (none is, once noted) matches any.
+    // Cost: O(1).
+    pub(crate) fn id_is_in_package(&self, sub_id: u64, package: Symbol) -> bool {
+        self.sub_packages.get(&sub_id).is_none_or(|p| {
+            *p == package
+                || (crate::qualified::is_global_package(*p)
+                    && crate::qualified::is_global_package(package))
+        })
+    }
+
+    /// Forget routine `sub_id`'s name-keyed wrap records, under whatever name
+    /// they were noted.
+    // Cost: O(1).
+    pub(crate) fn cleanup_name_entries(&mut self, sub_id: u64) {
+        if let Some(name) = self.sub_names.get(&sub_id).cloned() {
+            self.drop_name_entries(sub_id, &name);
+        }
+    }
+
+    /// Forget routine `sub_id`'s name-keyed wrap records. The bare-name entry
+    /// is only removed when it is this routine's own (a same-named routine of
+    /// another package may hold it).
+    // Cost: O(1).
+    pub(crate) fn drop_name_entries(&mut self, sub_id: u64, func_name: &str) {
+        self.sub_names.remove(&sub_id);
+        let package = self.sub_packages.remove(&sub_id);
+        let sub_ids_of = |v: &Value| match Interpreter::unwrap_callable_mixin(v.clone()).view() {
+            ValueView::Sub(d) => Some(d.id),
+            _ => None,
+        };
+        if let Some(package) = package
+            && !crate::qualified::is_global_package(package)
+        {
+            self.name_to_sub
+                .remove(&super::code_do_attr::wrap_ledger_name(package, func_name));
+        }
+        if self
+            .name_to_sub
+            .get(func_name)
+            .is_none_or(|v| sub_ids_of(v).is_none_or(|id| id == sub_id))
+        {
+            self.name_to_sub.remove(func_name);
+        }
+    }
+}
+
+impl Interpreter {
+    /// An owned copy of `sub_id`'s wrap chain, if it has one: a caller runs
+    /// the wrappers, which may wrap or unwrap in turn.
+    // Cost: O(c), c = wrappers in the chain.
+    pub(crate) fn wrap_chain_of(&self, sub_id: u64) -> Option<Vec<(u64, Value)>> {
+        self.dispatch.wraps.read().chains.get(&sub_id).cloned()
+    }
+
+    /// Whether `sub_id` has a wrap-chain entry at all (possibly empty).
+    // Cost: O(1).
+    pub(crate) fn has_wrap_chain_entry(&self, sub_id: u64) -> bool {
+        self.dispatch.wraps.read().chains.contains_key(&sub_id)
+    }
+}
+
+/// A wrap handle id no other wrap of this process has had, on any thread.
+// Cost: O(1), one atomic increment.
+pub(crate) fn next_wrap_handle_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Default)]
 pub(crate) struct DispatchState {
     pub(crate) operator_assoc: std::sync::Arc<HashMap<String, String>>,
@@ -130,24 +222,10 @@ pub(crate) struct DispatchState {
     /// `samewith_depth` ties each entry to its samewith frame so the shared
     /// pop helper knows whether the top entry belongs to the frame being popped.
     pub(crate) metamodel_dispatch_stack: Vec<(usize, String, String, Vec<Value>)>,
-    /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
-    pub(crate) wrap_chains: std::sync::Arc<HashMap<u64, Vec<(u64, Value)>>>,
-    /// Maps sub_id to function name for named call wrap chain lookup.
-    pub(crate) wrap_sub_names: HashMap<u64, String>,
-    /// Maps sub_id to the package the wrapped routine is declared in. Wrap
-    /// state is recorded under the routine's bare name, so two routines of
-    /// different packages sharing it (`class A { sub nc ... }` and
-    /// `class B { sub nc ... }`, each with a bound `$!do`) are told apart by
-    /// this table, not merged into one chain.
-    pub(crate) wrap_sub_packages: HashMap<u64, Symbol>,
-    /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
-    /// when dispatching named function calls through the wrap chain.
-    pub(crate) wrap_name_to_sub: ValueMap,
-    /// Maps function name to the callable_id at the time wrap was first called.
-    /// Used to detect sub redefinition (e.g. `sub foo` in a new block).
-    pub(crate) wrap_callable_ids: std::sync::Arc<HashMap<String, Option<i64>>>,
-    /// Counter for generating unique wrap handle IDs.
-    pub(crate) wrap_handle_counter: u64,
+    /// The routine `.wrap` tables: a world table shared live by every thread
+    /// (ADR-17216 slice 3), so a wrap made on any thread is seen by a call on
+    /// every other. Read with `wraps.read()`, write with `wraps.write(|w| ..)`.
+    pub(crate) wraps: super::world_cell::WorldCell<WrapTables>,
     /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
     pub(crate) wrap_dispatch_stack: Vec<WrapDispatchFrame>,
     /// Monotonic counter stamped onto `wrap_dispatch_stack`/`method_dispatch_stack`/
@@ -274,20 +352,15 @@ pub(crate) struct DispatchState {
 
 impl DispatchState {
     /// The state a spawned thread starts with: no dispatch in progress, but
-    /// the program's operator tables and `.wrap` chains carried over (a
-    /// wrapped routine stays wrapped on every thread).
-    // Cost: O(w + n), w = `wrap_sub_names` entries, n = `wrap_name_to_sub`
-    // entries; the `Arc`-held tables are refcount bumps.
+    /// the program's operator tables carried over and its `.wrap` tables
+    /// shared (a wrap made on any thread is seen on every thread).
+    // Cost: O(1) for the shared wrap tables; the `Arc`-held operator tables
+    // are refcount bumps.
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self {
             operator_assoc: self.operator_assoc.clone(),
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
-            wrap_chains: self.wrap_chains.clone(),
-            wrap_sub_names: self.wrap_sub_names.clone(),
-            wrap_sub_packages: self.wrap_sub_packages.clone(),
-            wrap_name_to_sub: self.wrap_name_to_sub.clone(),
-            wrap_callable_ids: self.wrap_callable_ids.clone(),
-            wrap_handle_counter: self.wrap_handle_counter,
+            wraps: self.wraps.share(),
             // Stub-site knowledge is declaration-shape knowledge, not run
             // state: carry it into the thread so a routine registered on the
             // parent (stub hoisted, then defined) does not re-raise

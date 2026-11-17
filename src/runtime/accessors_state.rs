@@ -289,7 +289,9 @@ impl Interpreter {
     /// Check whether a sub has an active (non-empty) wrap chain.
     pub(crate) fn has_wrap_chain(&self, sub_id: u64) -> bool {
         self.dispatch
-            .wrap_chains
+            .wraps
+            .read()
+            .chains
             .get(&sub_id)
             .is_some_and(|c| !c.is_empty())
     }
@@ -305,12 +307,14 @@ impl Interpreter {
     /// Find the sub_id and Sub value for a function name that has an active wrap chain.
     /// Returns the sub_id if a wrap chain exists for the given function name.
     pub(crate) fn wrap_sub_id_for_name(&self, name: &str) -> Option<u64> {
-        for (sub_id, sub_name) in &self.dispatch.wrap_sub_names {
-            if sub_name == name && self.has_wrap_chain(*sub_id) {
-                return Some(*sub_id);
-            }
-        }
-        None
+        let wraps = self.dispatch.wraps.read();
+        wraps
+            .sub_names
+            .iter()
+            .find(|(sub_id, sub_name)| {
+                *sub_name == name && wraps.chains.get(sub_id).is_some_and(|c| !c.is_empty())
+            })
+            .map(|(sub_id, _)| *sub_id)
     }
 
     /// The wrapped routine a call spelled `name` runs, if it is wrapped: the
@@ -334,7 +338,9 @@ impl Interpreter {
             // qualified name.
             return self
                 .dispatch
-                .wrap_name_to_sub
+                .wraps
+                .read()
+                .name_to_sub
                 .iter()
                 .filter(|(key, _)| {
                     key.as_str() != name
@@ -420,7 +426,7 @@ impl Interpreter {
     /// question.
     #[inline]
     pub(crate) fn any_routine_wrapped(&self) -> bool {
-        !self.dispatch.wrap_name_to_sub.is_empty()
+        !self.dispatch.wraps.read().name_to_sub.is_empty()
     }
 
     /// The wrapper chain of `value`, a routine a lexical import bound as a
@@ -448,13 +454,13 @@ impl Interpreter {
 
     /// Whether the routine `name` currently carries a wrapper.
     pub(crate) fn routine_is_wrapped(&self, name: &str) -> bool {
-        self.dispatch.wrap_name_to_sub.contains_key(name)
+        self.dispatch.wraps.read().name_to_sub.contains_key(name)
     }
 
     /// Get the original wrapped Sub value for a function name.
     /// Returns the Sub value stored when wrap was called, preserving the original sub_id.
     pub(crate) fn get_wrapped_sub(&self, name: &str) -> Option<Value> {
-        self.dispatch.wrap_name_to_sub.get(name).cloned()
+        self.dispatch.wraps.read().name_to_sub.get(name).cloned()
     }
 
     /// A package variable by its qualified key. A key of a package not

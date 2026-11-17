@@ -188,6 +188,12 @@ pub(crate) struct ResolutionCaches {
     /// back — which is what lets a memo outlive the excursion that a
     /// routine-local `my sub` makes of every call (#8314).
     pub(crate) fn_resolve_gen: u64,
+    /// The generation of the shared `.wrap` tables (`DispatchState::wraps`)
+    /// this thread's resolution memos were filled under. A wrap or unwrap on
+    /// any thread moves it; a call op that sees it moved drops the memos
+    /// (`Interpreter::sync_world_wraps`), so a warm call site cannot keep
+    /// running a routine another thread wrapped (ADR-17216 §2.3).
+    pub(crate) wraps_gen_seen: u64,
     /// Memo of the declared-type conformance relation multi ranking asks for
     /// (`Interpreter::nominal_type_conforms`); see `type_conformance`.
     pub(crate) type_conformance: crate::runtime::type_conformance::ConformanceCache,
