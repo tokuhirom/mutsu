@@ -2674,6 +2674,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             if name.as_str() == crate::ast::quote_processing::FORMAT {
                 return super::quoted_string::view_format(names, args);
             }
+            if name.as_str() == crate::ast::quote_processing::EXEC {
+                return super::quoted_string::view_exec(names, args);
+            }
             if is_desugar_marker(name.as_str()) {
                 return Err(desugared(name.as_str()));
             }

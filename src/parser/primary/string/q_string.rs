@@ -2,7 +2,6 @@ use super::*;
 use crate::ast::Expr;
 use crate::ast::parsed::{WordItem, WordSource};
 use crate::parser::parse_result::{PError, PResult};
-use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 use super::helpers::literal_str;
@@ -163,14 +162,7 @@ fn apply_plain_post_processing<'a>(
 ) -> PResult<'a, Expr> {
     // Wrap in execute if :x
     if flags.execute {
-        return Ok((
-            after,
-            Expr::Call {
-                name: Symbol::intern("QX"),
-                args: vec![expr],
-                listop: false,
-            },
-        ));
+        return Ok((after, crate::ast::quote_processing::exec(expr)));
     }
 
     // Handle :w/:ww word splitting

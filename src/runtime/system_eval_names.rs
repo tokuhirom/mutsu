@@ -185,6 +185,7 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "prompt",
     "push",
     "quietly",
+    "qx",
     "raku",
     "rand",
     "redo",
