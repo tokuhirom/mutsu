@@ -441,6 +441,16 @@ impl Interpreter {
     /// paths share.
     // Cost: O(m), m = mixin layers of `self_val` (bounded by 8); O(1) for a
     // plain instance: a few attribute-map probes, no registry access.
+    /// The `?CLASS` of the running frame's fixture record (a method's, or the
+    /// creator's record a closure's call continues), as a type name.
+    // Cost: O(1).
+    fn frame_fixture_class_sym(&self) -> Option<crate::symbol::Symbol> {
+        match self.frame_fixtures()?.class.as_ref()?.view() {
+            ValueView::Package(name) => Some(name),
+            _ => None,
+        }
+    }
+
     pub(crate) fn with_self_attr<R>(
         &self,
         self_val: &Value,
@@ -480,7 +490,12 @@ impl Interpreter {
         }
         if let Some(attributes) = inner_cell {
             let map = attributes.as_map();
-            if let Some(key) = Self::attr_key_in_map(owner, bare, is_private, sigil, &map) {
+            // A closure a method made, run after the method returned, has no
+            // method on the dispatch stack, but it carries its creator's
+            // `?CLASS`: a shadowed `$!x` is that class's copy, not the
+            // most-derived one (#17936).
+            let key_owner = owner.or_else(|| self.frame_fixture_class_sym());
+            if let Some(key) = Self::attr_key_in_map(key_owner, bare, is_private, sigil, &map) {
                 if let Some((code, idx)) = site {
                     Self::fill_attr_site(code, idx, &map, key, bare, is_private);
                 }
