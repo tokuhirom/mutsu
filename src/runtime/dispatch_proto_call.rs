@@ -188,13 +188,21 @@ impl Interpreter {
                 ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
                 _ => crate::value::AttrMap::new(),
             };
-            let resolved = self.resolve_proto_redispatch_cached(
+            let resolved = match self.resolve_proto_redispatch_cached(
                 &receiver_class_name,
                 &proto_name,
                 &args,
                 &ctx.invocant,
                 Symbol::intern(&owner),
-            );
+            ) {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    // No candidate runs to consume the call-site sources set
+                    // above for it.
+                    self.set_pending_call_arg_sources(None);
+                    return Err(e);
+                }
+            };
             // A `.wrap` on the dispatcher was entered where the proto body was
             // intercepted (`try_proto_method_body`), before this `{*}`; the
             // winning candidate must not enter that chain a second time

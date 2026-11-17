@@ -912,7 +912,9 @@ impl Interpreter {
                 super::methods_qualified::split_method_qualifier_last(method)
         {
             // First try explicit method resolution
-            if let Some(method_def) = self.resolve_method(qualifier, actual_method, &method_args, &target) {
+            if let Some(method_def) =
+                self.resolve_method(qualifier, actual_method, &method_args, &target)?
+            {
                 if !Self::method_is_rw_capable(&method_def) {
                     return Err(RuntimeError::new(format!(
                         "X::Assignment::RO: method '{}' is not rw",
@@ -1069,7 +1071,7 @@ impl Interpreter {
         if let Some(var_name) = target_var
             && !method_args.is_empty()
             && !matches!(method, "AT-KEY" | "AT-POS")
-            && !self.setter_convention_would_preempt_lvalue_return(&target, method, &method_args)
+            && !self.setter_convention_would_preempt_lvalue_return(&target, method, &method_args)?
         {
             if let Some(result) =
                 self.try_accessor_setter_assign(var_name, &target, method, std::slice::from_ref(&value))
@@ -1338,7 +1340,7 @@ impl Interpreter {
         if method_args.is_empty()
             && !accessor_wins
             && self
-                .resolve_method(&class_name.resolve(), method, &method_args, &target)
+                .resolve_method(&class_name.resolve(), method, &method_args, &target)?
                 .is_none()
             && !self
                 .collect_class_attributes(&class_name.resolve())
@@ -1380,7 +1382,7 @@ impl Interpreter {
         if method_args.is_empty()
             && !accessor_wins
             && self
-                .resolve_method(&class_name.resolve(), method, &method_args, &target)
+                .resolve_method(&class_name.resolve(), method, &method_args, &target)?
                 .is_none()
             && !self
                 .collect_class_attributes(&class_name.resolve())
@@ -1391,7 +1393,7 @@ impl Interpreter {
                 "FALLBACK",
                 &[Value::str(method.to_string())],
                 &target,
-            )
+            )?
             && Self::method_is_rw_capable(&fallback)
         {
             let invocant = Value::instance_parts(class_name, attributes.clone(), target_id);
@@ -1409,6 +1411,7 @@ impl Interpreter {
         }
         let method_def = if let Some(def) = (!accessor_wins)
             .then(|| self.resolve_method(&class_name.resolve(), method, &method_args, &target))
+            .transpose()?
             .flatten()
         {
             def

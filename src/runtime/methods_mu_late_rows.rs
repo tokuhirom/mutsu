@@ -55,8 +55,13 @@ impl Interpreter {
                         attributes,
                         ..
                     } = value.view()
-                        && let Some((owner, method_def)) =
-                            self.resolve_method_with_owner(&class_name.resolve(), "raku", &[])
+                        // A probe: this rendering already answers any failure of
+                        // the element's `raku` with the fallback below, which
+                        // resolves (and reports) the call itself.
+                        && let Some((owner, method_def)) = self
+                            .resolve_method_with_owner(&class_name.resolve(), "raku", &[])
+                            .ok()
+                            .flatten()
                     {
                         let attrs_map = attributes.to_map();
                         // Reuse the resolved (owner, method_def) instead of

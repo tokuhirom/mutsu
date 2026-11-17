@@ -290,10 +290,7 @@ impl Interpreter {
             return Ok(None);
         }
         let tier_bind_check = matches.first().is_some_and(|(rank, _)| rank.tier_bind_check);
-        let matches = match self.prune_incomparable_matches(name, args, matches) {
-            Ok(matches) => matches,
-            Err(err) => return Err(err),
-        };
+        let matches = self.prune_incomparable_matches(name, args, matches)?;
         let key_decided = program.steps.iter().all(|s| s.checks.is_empty());
         let settled = self.settle_ranked_matches(
             name,

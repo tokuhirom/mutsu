@@ -2072,17 +2072,6 @@ pub struct Interpreter {
     routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,
     pending_call_arg_sources: Option<std::sync::Arc<Vec<Option<String>>>>,
-    /// An exception thrown while *evaluating a `where` constraint* during
-    /// candidate matching. Raku propagates such an exception out of the whole
-    /// dispatch (the `where` block is ordinary code); mutsu's matchers are
-    /// `bool`-returning predicates, so they cannot return it directly. They
-    /// stash it here instead and the dispatch funnels
-    /// (`resolve_function_with_types`, `choose_best_matching_candidate`) stop
-    /// scanning; `Interpreter::exec_one` is the backstop that turns a stash no
-    /// funnel drained into the error it always was, so it can never be silently
-    /// dropped. Only genuine exceptions are recorded -- a control-flow signal
-    /// (`return`/`next`/...) is not an exception and still reads as "no match".
-    pub(crate) pending_where_exception: Option<Box<RuntimeError>>,
     /// Set right before binding the winning candidate of a value-dependent
     /// `multi` (one carrying a `where` clause or a user-subset-typed
     /// parameter) whose resolution already ran fresh, against these exact

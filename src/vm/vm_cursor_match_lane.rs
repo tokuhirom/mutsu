@@ -57,7 +57,11 @@ impl Interpreter {
             return ok.then_some(Receiver::instance(DispatchShape::Match));
         }
         let target = target.clone();
-        let ok = !self.user_shadows_builtin(&target, method, &[], false)
+        // A probe: a dying resolution declines the lane; the generic call
+        // path resolves the method again and reports it.
+        let ok = !self
+            .user_shadows_builtin(&target, method, &[], false)
+            .unwrap_or(true)
             && !self.native_lever_a_user_override_sym(&target, method);
         if self.dispatch.native_base_bypass.is_none() {
             self.caches

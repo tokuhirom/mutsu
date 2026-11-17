@@ -569,7 +569,13 @@ impl Interpreter {
                     && !(matches!(right.view(), ValueView::Package(_))
                         && self.registry().roles.contains_key(class_name.as_str()))
                     && self.has_user_method(&class_name.resolve(), "ACCEPTS")
-                    && self.user_accepts_applies(&class_name.resolve(), right, left) =>
+                    && match self.user_accepts_applies(&class_name.resolve(), right, left) {
+                        Ok(applies) => applies,
+                        Err(e) => {
+                            err.get_or_insert(e);
+                            false
+                        }
+                    } =>
             {
                 match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
                     Ok(v) => v.truthy(),

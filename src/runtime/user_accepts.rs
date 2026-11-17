@@ -21,17 +21,17 @@ impl Interpreter {
         class_name: &str,
         matcher: &Value,
         topic: &Value,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         if self
             .resolve_method_with_owner_invocant(
                 class_name,
                 "ACCEPTS",
                 std::slice::from_ref(topic),
                 matcher,
-            )
+            )?
             .is_some()
         {
-            return true;
+            return Ok(true);
         }
         let mro = self.class_mro(class_name);
         let only_multis = mro.iter().all(|owner| {
@@ -39,6 +39,6 @@ impl Interpreter {
                 .user_method_overloads(owner.as_str(), "ACCEPTS")
                 .is_none_or(|defs| defs.iter().all(|def| def.is_multi))
         });
-        !only_multis
+        Ok(!only_multis)
     }
 }

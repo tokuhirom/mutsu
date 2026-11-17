@@ -683,7 +683,8 @@ impl Interpreter {
             }
 
             // Handle delegation methods: forward the call to the delegate
-            if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args, &target)
+            if let Some(method_def) =
+                self.resolve_method(&class_name.resolve(), method, &args, &target)?
                 && method_def.delegation.is_some()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(

@@ -1273,8 +1273,8 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(cn) = user_bool_owner
-                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
-                && loan_env!(self, resolve_method_with_owner(&cn, method, &[])).is_none()
+                && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[]))?.is_some()
+                && loan_env!(self, resolve_method_with_owner(&cn, method, &[]))?.is_none()
             {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethodmut",
@@ -1580,7 +1580,7 @@ impl Interpreter {
         // a method of that name: `$x."WHICH"()` on an `Int` is `Int|5`
         // (#13055). A quoted `VAR` always skips.
         let mut skip_native = (quoted && method == "VAR")
-            || self.user_shadows_builtin(&target, method_sym, &args, quoted);
+            || self.user_shadows_builtin(&target, method_sym, &args, quoted)?;
         let is_junction_target = match target.view() {
             ValueView::Junction { .. } => true,
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),

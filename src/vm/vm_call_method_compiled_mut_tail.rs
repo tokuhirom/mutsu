@@ -72,7 +72,7 @@ impl Interpreter {
             && let Some(class_sym) = class_sym_opt
             && !accessor_wins
             && let Some((owner_class, method_def)) =
-                self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)
+                self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)?
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
@@ -100,7 +100,7 @@ impl Interpreter {
             )> = if method_def.compiled_code.is_some() {
                 Some((owner_class, method_def))
             } else if !method_def.body.is_empty() {
-                self.populate_uncompiled_method(cn, owner_class.as_str(), method, &args, &target)
+                self.populate_uncompiled_method(cn, owner_class.as_str(), method, &args, &target)?
             } else {
                 None
             };
@@ -133,7 +133,7 @@ impl Interpreter {
                         invocant_for_dispatch,
                         Some((owner_class, &method_def))
                     )
-                );
+                )?;
                 let invocant = Some(target);
                 let empty_fns = CompiledFns::default();
                 let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);

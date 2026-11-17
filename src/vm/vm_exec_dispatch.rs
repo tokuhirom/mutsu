@@ -179,11 +179,11 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let at = *ip;
         let result = self.exec_one_dispatch(code, ip, compiled_fns);
-        // `finish_op_result` returns an `Ok` unchanged unless a `where`
-        // exception is pending, and moving the (large) `Result` through its
-        // by-value parameter and back was ~36 instructions per executed op
-        // (#12151). The success path decides it here and moves nothing.
-        if result.is_ok() && self.pending_where_exception.is_none() {
+        // `finish_op_result` returns an `Ok` unchanged, and moving the (large)
+        // `Result` through its by-value parameter and back was ~36
+        // instructions per executed op (#12151). The success path decides it
+        // here and moves nothing.
+        if result.is_ok() {
             return Ok(());
         }
         self.exec_one_failed(code, at, ip, result)
@@ -215,8 +215,7 @@ impl Interpreter {
 
     /// What [`Self::exec_one`] does with an instruction's result, for a JIT
     /// shim that runs the instruction's handler directly (`check_read_only`):
-    /// the pending-`where` backstop, then a backtrace located at `ip` on a
-    /// genuine runtime error.
+    /// a backtrace located at `ip` on a genuine runtime error.
     // Cost: O(1) on success; the error path attaches a backtrace, O(s),
     // s = routine-stack depth.
     pub(crate) fn finish_op_result(
@@ -225,17 +224,6 @@ impl Interpreter {
         ip: usize,
         mut result: Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        // Backstop for a `where`-constraint exception recorded during candidate
-        // matching (`pending_where_exception`). The dispatch funnels raise it
-        // before invoking a winner; this catches any matching path that has no
-        // funnel of its own, so the exception can never be silently dropped.
-        // It happened *before* whatever this instruction went on to do, so it
-        // wins over a later error too.
-        if self.pending_where_exception.is_some()
-            && let Some(e) = self.take_where_exception()
-        {
-            result = Err(e);
-        }
         // Only genuine runtime errors get a backtrace here: control-flow
         // signals (return/next/warn/fail/...) and parse errors (which carry
         // their own line/column and render as ===SORRY!===) are excluded.

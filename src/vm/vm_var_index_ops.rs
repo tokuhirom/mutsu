@@ -1329,8 +1329,11 @@ impl Interpreter {
                     // The metamethod takes (type, args...): thread only when
                     // the parameter the Junction binds to would.
                     let how_args = [target.clone(), index.clone()];
-                    match self.resolve_method_with_owner(name.as_str(), "^parameterize", &how_args)
-                    {
+                    match self.resolve_method_with_owner(
+                        name.as_str(),
+                        "^parameterize",
+                        &how_args,
+                    )? {
                         Some((_, def)) => self
                             .autothread_indices_for_params(&how_args, &[1], &def.param_defs)
                             .is_empty(),

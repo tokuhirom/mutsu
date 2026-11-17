@@ -176,20 +176,20 @@ impl Interpreter {
         target: &Value,
         method: &str,
         args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let ValueView::Package(class_name) = target.view() else {
-            return false;
+            return Ok(false);
         };
         let class_name = class_name.resolve();
         if !self.has_user_method(&class_name, method) {
-            return false;
+            return Ok(false);
         }
         if matches!(method, "gist" | "raku") && args.is_empty() {
-            return self
-                .resolve_method_with_owner_invocant(&class_name, method, args, target)
-                .is_some();
+            return Ok(self
+                .resolve_method_with_owner_invocant(&class_name, method, args, target)?
+                .is_some());
         }
-        true
+        Ok(true)
     }
 
     /// ADR-0019 E4b design decision 3's "receiver-state facts become

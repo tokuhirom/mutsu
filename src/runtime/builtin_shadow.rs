@@ -47,32 +47,32 @@ impl Interpreter {
         method: Symbol,
         args: &[Value],
         quoted: bool,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let name = method.as_str();
         // A deferral (`nextsame`/`callsame`) into the built-in method runs it
         // for exactly this receiver: nothing shadows it there.
         if self.native_base_bypass_hit(target, method) {
-            return false;
+            return Ok(false);
         }
         if is_mop_pseudo_method(name) {
-            return quoted
+            return Ok(quoted
                 && match target.view() {
                     ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
                         self.grammar_has_user_method_memo(class_name, method)
                     }
                     _ => false,
-                };
+                });
         }
         // A lazy Match dispatches under its cursor's class (a grammar's own
         // methods come first); `view()` would materialize it.
         if target.is_lazy_match_value() {
             let owner = Symbol::intern(target.match_dispatch_class());
-            return self.instance_class_shadows_builtin(owner, method, args);
+            return Ok(self.instance_class_shadows_builtin(owner, method, args));
         }
         match target.view() {
             ValueView::Instance { class_name, .. } => {
                 if self.instance_class_shadows_builtin(class_name, method, args) {
-                    return true;
+                    return Ok(true);
                 }
             }
             ValueView::Package(class_name) => {
@@ -82,27 +82,28 @@ impl Interpreter {
             // its own `augment`ed type comes first too.
             ValueView::Mixin(..) => {
                 if self.native_lever_a_user_override_sym(target, method) {
-                    return true;
+                    return Ok(true);
                 }
             }
             // An enum member: a role its enum composes (`enum E does R`)
             // comes before the enumeration roles' own rows.
             ValueView::Enum { .. } => {
-                return self.enum_composes_role_method(target, name)
-                    || self.native_lever_a_user_override_sym(target, method);
+                return Ok(self.enum_composes_role_method(target, name)
+                    || self.native_lever_a_user_override_sym(target, method));
             }
             // A plain built-in receiver (`Array`, `Str`, a `Range`, ...): only
             // an `augment` or a `.wrap` of its type comes first.
             _ => {
-                return self.native_lever_a_user_override_sym(target, method) && {
+                return Ok(self.native_lever_a_user_override_sym(target, method) && {
                     // An `augment`ed `multi` is ranked with the built-in
                     // candidates of the method (#12751).
                     let owner = self.dispatch_owner_name(target);
-                    !self.builtin_candidate_outranks_user(target, owner, name, args)
-                };
+                    !self.builtin_candidate_outranks_user(target, owner, name, args)?
+                });
             }
         }
-        self.mixin_role_has_method(target, name) || self.mixin_wrapped_instance_has_method(target, name)
+        Ok(self.mixin_role_has_method(target, name)
+            || self.mixin_wrapped_instance_has_method(target, name))
     }
 
     /// [`Self::user_shadows_builtin`] for an instance of `class`.
@@ -145,15 +146,15 @@ impl Interpreter {
         class: Symbol,
         method: Symbol,
         args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let cn = class.as_str();
         let name = method.as_str();
-        (self.grammar_has_user_method_memo(class, method)
+        Ok((self.grammar_has_user_method_memo(class, method)
             && (!matches!(name, "gist" | "raku")
                 || !args.is_empty()
                 || self
-                    .resolve_method_with_owner_invocant(cn, name, args, target)
+                    .resolve_method_with_owner_invocant(cn, name, args, target)?
                     .is_some()))
-            || self.class_scoped_accessor_shadows(cn, name, args)
+            || self.class_scoped_accessor_shadows(cn, name, args))
     }
 }

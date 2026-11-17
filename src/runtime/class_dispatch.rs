@@ -147,7 +147,7 @@ impl Interpreter {
             method_name,
             &args,
             &inv_value,
-        );
+        )?;
         // ADR-0019 Phase E box E7 (first consumer family, see
         // `Self::run_instance_method_at`'s doc comment): shadow-check this
         // carrier's ad-hoc MRO walk against the E4 resolver's
@@ -429,7 +429,7 @@ impl Interpreter {
                 &method_def,
                 &args,
                 make_invocant_for_dispatch(&invocant, attributes),
-            )
+            )?
         {
             let mut call_args = vec![inv_value.clone()];
             call_args.extend(args);
@@ -458,7 +458,7 @@ impl Interpreter {
             &method_def,
             &inv_value,
             !grammar_parse,
-        ) {
+        )? {
             super::method_dispatch_lazy_tail::DeferralTail::Empty => (Vec::new(), None),
             super::method_dispatch_lazy_tail::DeferralTail::Lazy(lazy) => (Vec::new(), Some(lazy)),
             super::method_dispatch_lazy_tail::DeferralTail::Eager(tail) => (tail, None),

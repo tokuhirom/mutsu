@@ -149,7 +149,7 @@ impl Interpreter {
         }
         let target = self.nqp_create(Value::package(Symbol::intern("IterationBuffer")))?;
         let Some((_, def)) =
-            self.resolve_method_with_owner(&class_name, "push-all", std::slice::from_ref(&target))
+            self.resolve_method_with_owner(&class_name, "push-all", std::slice::from_ref(&target))?
         else {
             return Ok(false);
         };

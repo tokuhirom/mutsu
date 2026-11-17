@@ -769,7 +769,13 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 let class_name = class_name.resolve();
                 self.has_user_method(&class_name, "ACCEPTS")
-                    && self.user_accepts_applies(&class_name, right, left)
+                    && match self.user_accepts_applies(&class_name, right, left) {
+                        Ok(applies) => applies,
+                        Err(e) => {
+                            err.get_or_insert(e);
+                            false
+                        }
+                    }
             }
             // An allomorph matcher reads an object through its `.Str` and
             // `.Numeric` (`Allomorph.ACCEPTS`, §9.191).

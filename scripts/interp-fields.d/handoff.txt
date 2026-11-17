@@ -24,7 +24,6 @@ pending_rw_writeback_slots
 pending_rw_writeback_sources
 pending_sigilless_store
 pending_skip_constraint_recheck
-pending_where_exception
 recorded_free_var_writes
 rw_return_context
 shaped_decl_context

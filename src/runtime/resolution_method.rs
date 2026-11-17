@@ -397,7 +397,7 @@ impl Interpreter {
                         &mut all_matches,
                         &mut unverified,
                         &mut rivals,
-                    );
+                    )?;
                 }
                 let mut first_visible_non_multi: Option<MethodDef> = None;
                 // Check if all overloads are submethods on an ancestor class

@@ -761,7 +761,7 @@ impl Interpreter {
                             &canonical_owner,
                             pm_name,
                             &args,
-                        ),
+                        )?,
                     )
                 } else {
                     (
@@ -771,7 +771,7 @@ impl Interpreter {
                             &class_name.resolve(),
                             private_rest,
                             &args,
-                        ),
+                        )?,
                     )
                 };
                 // Nothing matched by signature. That is not the same as "no such
@@ -1613,12 +1613,12 @@ impl Interpreter {
                         &canonical_owner,
                         pm_name,
                         &args,
-                    );
+                    )?;
                     (pm_name, resolved, Some(canonical_owner))
                 } else {
                     (
                         private_rest,
-                        self.resolve_private_method_any_owner(&name.resolve(), private_rest, &args),
+                        self.resolve_private_method_any_owner(&name.resolve(), private_rest, &args)?,
                         None,
                     )
                 };
@@ -1670,7 +1670,7 @@ impl Interpreter {
             }
             // Package (type object) dispatch -- check user-defined methods
             if self.grammar_has_user_method(&name.resolve(), method)
-                || self.package_has_applicable_user_method(&target, method, &args)
+                || self.package_has_applicable_user_method(&target, method, &args)?
             {
                 // ADR-0019 F6: VM-level direct-dispatch path first (see
                 // `try_dispatch_compiled_method_direct`'s doc comment).

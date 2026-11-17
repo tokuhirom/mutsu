@@ -431,6 +431,10 @@ impl Interpreter {
                 self,
                 resolve_private_method_for_vm_sym(class_sym, method_sym, args)
             );
+            let resolved = match resolved {
+                Ok(resolved) => resolved,
+                Err(e) => return Some(Err(e)),
+            };
             if let Some((owner_class, method_def)) = resolved {
                 let caller_allowed = self.can_fast_dispatch_private_method_vm(owner_class.as_str());
                 // A wrapped private method (`.^find_private_method(..).wrap`,
@@ -472,6 +476,10 @@ impl Interpreter {
                             Some((owner_class, &method_def))
                         )
                     );
+                    let pushed_dispatch = match pushed_dispatch {
+                        Ok(pushed) => pushed,
+                        Err(e) => return Some(Err(e)),
+                    };
                     let invocant = Some(target.clone());
                     let empty_fns = CompiledFns::default();
                     let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);

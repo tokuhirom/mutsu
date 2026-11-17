@@ -197,7 +197,10 @@ impl Interpreter {
         if method_sym.as_str() == "flat"
             && args.is_empty()
             && Self::flat_may_hold_iterable_instance(target)
-            && !self.user_shadows_builtin(target, method_sym, args, false)
+            && !match self.user_shadows_builtin(target, method_sym, args, false) {
+                Ok(shadows) => shadows,
+                Err(e) => return Some(Err(e)),
+            }
         {
             // The pure flattener answers what is left: the expanded list
             // holds no instance any more, and one that holds an instance with
@@ -261,8 +264,10 @@ impl Interpreter {
         // a user method or accessor (`.WHICH`/`.WHY` included: they are
         // ordinary, overridable methods), a role mixed in, an `augment` or
         // `.wrap` of a built-in type. The one shadow query (ADR-11276 §2.3).
-        if self.user_shadows_builtin(target, method_sym, args, false) {
-            return None;
+        match self.user_shadows_builtin(target, method_sym, args, false) {
+            Ok(true) => return None,
+            Ok(false) => {}
+            Err(e) => return Some(Err(e)),
         }
         if let Some(value) = self.inherited_adhoc_method(target, method_name, args) {
             return Some(Ok(value));

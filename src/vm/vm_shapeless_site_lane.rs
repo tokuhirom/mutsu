@@ -83,7 +83,11 @@ impl Interpreter {
             return row;
         }
         let target = self.stack[base].clone();
-        let row = if self.user_shadows_builtin(&target, method, &[], false)
+        // A probe: a dying resolution declines the lane; the generic call
+        // path resolves the method again and reports it.
+        let row = if self
+            .user_shadows_builtin(&target, method, &[], false)
+            .unwrap_or(true)
             || self.native_lever_a_user_override_sym(&target, method)
         {
             None

@@ -702,10 +702,13 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
         target: &Value,
-    ) -> Option<(
-        crate::symbol::Symbol,
-        std::sync::Arc<crate::runtime::MethodDef>,
-    )> {
+    ) -> Result<
+        Option<(
+            crate::symbol::Symbol,
+            std::sync::Arc<crate::runtime::MethodDef>,
+        )>,
+        RuntimeError,
+    > {
         self.refresh_method_caches_for_generation();
         // Non-multi resolution depends only on (class, method) — not on arg
         // types/values — so it can be memoized. This mirrors the cache hierarchy
@@ -722,7 +725,7 @@ impl Interpreter {
             && cm == method_sym
             && !cd.is_multi
         {
-            return Some((co, cd.clone()));
+            return Ok(Some((co, cd.clone())));
         }
         // 2. Non-multi HashMap cache.
         if let Some(hit) = self
@@ -734,7 +737,7 @@ impl Interpreter {
             && !def.is_multi
         {
             self.caches.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
-            return hit;
+            return Ok(hit);
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
         if let Some(mut arg_keys) = self.multi_arg_type_keys_with_named(args)
@@ -754,25 +757,25 @@ impl Interpreter {
             }
             let mkey = (class_sym, method_sym, arg_keys);
             if let Some(hit) = self.caches.multi_resolve_cache.get(&mkey) {
-                return hit.clone();
+                return Ok(hit.clone());
             }
             // ADR-0019 E3: resolve via the cached candidate sequence instead
             // of a live per-call MRO walk. See
             // adr0019-e2-e4-resolver-core (#7540) design decision 5.
-            let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
+            let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target)?;
             let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
             if !self.dispatch.dispatch_ambiguous {
                 self.caches
                     .multi_resolve_cache
                     .insert(mkey, resolved_arc.clone());
             }
-            return resolved_arc;
+            return Ok(resolved_arc);
         }
         // 4. Resolve fresh; cache the result when it is non-multi.
         // ADR-0019 E3: resolve via the cached candidate sequence instead of a
         // live per-call MRO walk. See
         // adr0019-e2-e4-resolver-core (#7540) design decision 5.
-        let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
+        let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target)?;
         let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
         if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
             self.caches
@@ -782,7 +785,7 @@ impl Interpreter {
                 self.caches.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
             }
         }
-        resolved_arc
+        Ok(resolved_arc)
     }
 
     /// [`Self::resolve_method_within_boundary`] for a `proto method`'s `{*}`
@@ -802,7 +805,7 @@ impl Interpreter {
         args: &[Value],
         invocant: &Value,
         boundary_owner: crate::symbol::Symbol,
-    ) -> Option<(crate::symbol::Symbol, crate::runtime::MethodDef)> {
+    ) -> crate::runtime::MethodResolved {
         self.refresh_method_caches_for_generation();
         let class_sym = crate::symbol::Symbol::intern(class_name);
         let method_sym = crate::symbol::Symbol::intern(method);
@@ -817,7 +820,7 @@ impl Interpreter {
             let mkey = (class_sym, method_sym, arg_keys);
             if let Some(hit) = self.caches.multi_resolve_cache.get(&mkey) {
                 self.dispatch.dispatch_ambiguous = false;
-                return hit.as_ref().map(|(owner, def)| (*owner, (**def).clone()));
+                return Ok(hit.as_ref().map(|(owner, def)| (*owner, (**def).clone())));
             }
             let resolved = self.resolve_method_within_boundary(
                 class_name,
@@ -825,7 +828,7 @@ impl Interpreter {
                 args,
                 Some(invocant),
                 Some(boundary_owner),
-            );
+            )?;
             if !self.dispatch.dispatch_ambiguous {
                 self.caches.multi_resolve_cache.insert(
                     mkey,
@@ -834,7 +837,7 @@ impl Interpreter {
                         .map(|(owner, def)| (*owner, std::sync::Arc::new(def.clone()))),
                 );
             }
-            return resolved;
+            return Ok(resolved);
         }
         self.resolve_method_within_boundary(
             class_name,
@@ -863,24 +866,30 @@ impl Interpreter {
         method: &str,
         args: &[Value],
         target: &Value,
-    ) -> Option<(
-        crate::symbol::Symbol,
-        std::sync::Arc<crate::runtime::MethodDef>,
-    )> {
+    ) -> Result<
+        Option<(
+            crate::symbol::Symbol,
+            std::sync::Arc<crate::runtime::MethodDef>,
+        )>,
+        RuntimeError,
+    > {
         // Both compile passes are no-ops if the name is absent from the
         // respective registry, so calling both safely covers class- and
         // role-owned methods. Neither re-enters user code (pure compilation),
         // so the registry re-entrancy discipline (②) is respected.
         self.compile_class_methods(owner_class);
         self.compile_role_methods(owner_class);
-        let (owner, def) = loan_env!(
+        let Some((owner, def)) = loan_env!(
             self,
             resolve_method_with_owner_invocant(cn, method, args, target)
-        )?;
+        )?
+        else {
+            return Ok(None);
+        };
         if def.compiled_code.is_some() {
-            Some((owner, std::sync::Arc::new(def)))
+            Ok(Some((owner, std::sync::Arc::new(def))))
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -946,7 +955,7 @@ impl Interpreter {
                     invocant_for_dispatch,
                     Some((owner_class, method_def))
                 )
-            );
+            )?;
             let result = self.call_compiled_method_fast(
                 cn,
                 owner_class,
@@ -976,7 +985,7 @@ impl Interpreter {
                     invocant_for_dispatch,
                     Some((owner_class, method_def))
                 )
-            );
+            )?;
             let invocant = Some(target);
             let result = self.call_compiled_method(
                 cn,
@@ -1065,7 +1074,7 @@ impl Interpreter {
                 target.clone(),
                 Some((crate::symbol::Symbol::intern(owner_class), method_def))
             )
-        );
+        )?;
         let invocant = Some(target);
         let result = self.call_compiled_method(
             cn,

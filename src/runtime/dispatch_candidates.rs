@@ -477,10 +477,7 @@ impl Interpreter {
             }
         }
         let tier_bind_check = matches.first().is_some_and(|(rank, _)| rank.tier_bind_check);
-        let matches = match self.prune_incomparable_matches(name, args, matches) {
-            Ok(matches) => matches,
-            Err(err) => return Err(err),
-        };
+        let matches = self.prune_incomparable_matches(name, args, matches)?;
         self.settle_ranked_matches(name, args, matches, threw, tier_bind_check)
     }
 

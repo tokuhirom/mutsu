@@ -180,7 +180,10 @@ impl Interpreter {
                     self.resolve_private_method_any_owner(&class_name, private_rest, args),
                 ),
             };
-        let (owner, method_def) = resolved?;
+        let (owner, method_def) = match resolved {
+            Ok(resolved) => resolved?,
+            Err(e) => return Some(Err(e)),
+        };
         if !self.private_owner_trusts_caller(caller_class.as_deref(), &owner)
             && !self.lexical_self_allows_private(&owner)
         {
@@ -656,7 +659,17 @@ impl Interpreter {
                 // in picking the candidate: `Foo.^lookup('h')($obj, 2)` over
                 // `multi method h(Foo:U: $x)` / `multi method h(Foo:D: $x)`
                 // is the `:D` one.
-                self.resolve_method_with_owner_invocant(qualifier, actual_method, &args, target)
+                match self.resolve_method_with_owner_invocant(qualifier, actual_method, &args, target)
+                {
+                    Ok(resolved) => resolved,
+                    Err(e) => {
+                        // Drop the role-default overlay before propagating.
+                        if let Some(saved) = saved_role_default_env {
+                            self.env = saved;
+                        }
+                        return Some(Err(e));
+                    }
+                }
             };
         // ADR-0019 Phase E box E7 (second consumer family, qualified dispatch —
         // see `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 2"):
@@ -1226,7 +1239,10 @@ impl Interpreter {
                 if actual_method == "new" && qualifier != inst_cn_str && !qualifier_has_user_new {
                     None
                 } else {
-                    self.resolve_method_with_owner(qualifier, actual_method, &args)
+                    match self.resolve_method_with_owner(qualifier, actual_method, &args) {
+                        Ok(resolved) => resolved,
+                        Err(e) => return Some(Err(e)),
+                    }
                 };
             if let Some((_owner, def)) = resolved {
                 // Use the inner instance's attributes so the method body can read
@@ -1356,7 +1372,10 @@ impl Interpreter {
                 if actual_method == "new" && qualifier != pkg_name && !qualifier_has_user_new {
                     None
                 } else {
-                    self.resolve_method_with_owner(qualifier, actual_method, &args)
+                    match self.resolve_method_with_owner(qualifier, actual_method, &args) {
+                        Ok(resolved) => resolved,
+                        Err(e) => return Some(Err(e)),
+                    }
                 };
             if let Some((_owner, def)) = resolved {
                 let res = self.run_resolved_method_compiled_or_treewalk(

@@ -1425,7 +1425,7 @@ impl Interpreter {
                                     "new",
                                     &args,
                                     &Value::package(*class_name),
-                                )
+                                )?
                                 .is_none()
                         {
                             Err(super::methods_signature_errors::multi_no_match_signal("new"))

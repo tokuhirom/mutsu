@@ -801,7 +801,7 @@ impl Interpreter {
             };
             if !has_native_assign
                 && self
-                    .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
+                    .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))?
                     // A `handles <AT-KEY>` forwarder owns the element container
                     // its delegate hands back, so it is lvalue-capable too.
                     .is_some_and(|(_, def)| def.is_rw || def.is_raw || def.delegation.is_some())
@@ -884,7 +884,7 @@ impl Interpreter {
                         bind_method,
                         &[idx_arg.clone(), Value::NIL],
                         &target,
-                    )
+                    )?
                     .is_some();
             let method = if bind_method_available {
                 Some(bind_method)
@@ -978,7 +978,7 @@ impl Interpreter {
                     _ => idx.clone(),
                 };
                 let rw_indexed = if self.has_user_method(&cls, at_method) {
-                    self.resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
+                    self.resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))?
                         .and_then(|(_, def)| Self::rw_method_indexed_attr_target(&def.body))
                 } else {
                     None

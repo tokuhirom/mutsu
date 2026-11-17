@@ -789,7 +789,10 @@ impl Interpreter {
         // default constructor is the one called (ADR-14162 §4).
         if self.buildplan_replaced_in_mro(class_name)
             && (!self.mro_declares_user_new(class_name)
-                || self.user_new_declines(class_name, args))
+                || match self.user_new_declines(class_name, args) {
+                    Ok(declines) => declines,
+                    Err(e) => return Some(Err(e)),
+                })
         {
             return self.construct_by_buildplan(class_name, args);
         }
@@ -800,13 +803,19 @@ impl Interpreter {
                     match plan.noarg_user_new_declines.get() {
                         Some(&d) => d,
                         None => {
-                            let d = self.user_new_declines(class_name, args);
+                            let d = match self.user_new_declines(class_name, args) {
+                                Ok(d) => d,
+                                Err(e) => return Some(Err(e)),
+                            };
                             let _ = plan.noarg_user_new_declines.set(d);
                             d
                         }
                     }
                 } else {
-                    self.user_new_declines_memo(&plan, class_name, args)
+                    match self.user_new_declines_memo(&plan, class_name, args) {
+                        Ok(d) => d,
+                        Err(e) => return Some(Err(e)),
+                    }
                 })
         {
             return None;
@@ -846,7 +855,11 @@ impl Interpreter {
     /// `CSV::Field.new` (its one `new` candidate takes a `Str(Cool)`) is this
     /// shape, once per parsed field (#9494).
     // Cost: O(m * c), m = MRO length, c = `new` candidates (the resolution).
-    fn user_new_declines(&mut self, class_name: Symbol, args: &[Value]) -> bool {
+    fn user_new_declines(
+        &mut self,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Result<bool, RuntimeError> {
         self.user_new_declines_uncached(class_name, args)
     }
 
@@ -860,7 +873,7 @@ impl Interpreter {
         plan: &NativeCtorPlan,
         class_name: Symbol,
         args: &[Value],
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         if !args.iter().all(|a| matches!(a.view(), ValueView::Pair(..))) {
             return self.user_new_declines_uncached(class_name, args);
         }
@@ -877,26 +890,30 @@ impl Interpreter {
             return self.user_new_declines_uncached(class_name, args);
         };
         if let Some(&d) = plan.named_user_new_declines.lock().unwrap().get(&keys) {
-            return d;
+            return Ok(d);
         }
-        let d = self.user_new_declines_uncached(class_name, args);
+        let d = self.user_new_declines_uncached(class_name, args)?;
         plan.named_user_new_declines.lock().unwrap().insert(keys, d);
-        d
+        Ok(d)
     }
 
-    fn user_new_declines_uncached(&mut self, class_name: Symbol, args: &[Value]) -> bool {
+    fn user_new_declines_uncached(
+        &mut self,
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Result<bool, RuntimeError> {
         let cn = class_name.as_str();
         // A punned role constructs through `dispatch_new`'s pun path, which
         // marks the instance as its role's pun; keep it there.
-        !self.is_role(cn)
+        Ok(!self.is_role(cn)
             && args
                 .iter()
                 .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             && self.lookup_proto_method(cn, "new").is_none()
             && self.has_visible_user_method(cn, "new")
             && self
-                .resolve_method_with_owner_invocant(cn, "new", args, &Value::package(class_name))
-                .is_none()
+                .resolve_method_with_owner_invocant(cn, "new", args, &Value::package(class_name))?
+                .is_none())
     }
 
     /// Apply `has $.x does Role` attribute traits: mix each declared role into
