@@ -195,17 +195,17 @@ impl Interpreter {
                             .map(|(b, _)| b)
                             .unwrap_or(role_name.as_str());
                         if level_seen.insert(base_role.to_string()) {
-                            seen.insert(base_role.to_string());
                             result.push(Value::package(Symbol::intern(base_role)));
                             // Add role's sub-roles (from `does` inside the role)
                             self.add_role_parents_to_mro(
                                 base_role,
                                 &base_mro,
                                 &mut result,
-                                &mut seen,
+                                &mut level_seen,
                             );
                         }
                     }
+                    seen.extend(level_seen);
                 }
             }
         }
