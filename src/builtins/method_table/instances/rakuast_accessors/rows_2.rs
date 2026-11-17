@@ -2,6 +2,8 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Transliteration", "destructive"),
+    row!("RakuAST::Transliteration", "left"),
     row!("RakuAST::Transliteration", "right"),
     interp_row!(
         "RakuAST::Type::Capture",
