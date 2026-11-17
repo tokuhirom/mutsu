@@ -46,6 +46,12 @@ pub(crate) struct Unit {
     /// tree that differs from it at the end of the CHECK phase was rewritten
     /// by a CHECK phaser or check closure (#17501).
     check_baseline: Option<u64>,
+    /// The package a module file's unit is compiled from (`GLOBAL`). The
+    /// restart of a CHECK-rewritten module compiles its tree from there too,
+    /// so the tree's own `unit module X` declares `X`, not `X::X`; it runs
+    /// in the package the module stopped in, where the first compile
+    /// registered its routines. `None` for the main unit and an EVAL.
+    outer_package: Option<Rc<str>>,
 }
 
 thread_local! {
@@ -75,6 +81,7 @@ impl UnitSourceTextGuard {
                 late_imports: std::collections::HashSet::new(),
                 rewritten: false,
                 check_baseline: None,
+                outer_package: None,
             });
         });
         Self
@@ -88,9 +95,16 @@ impl UnitSourceTextGuard {
         let guard = Self::enter("");
         let rewritten = NEXT_TREE_REWRITTEN.with(|flag| flag.replace(false));
         UNITS.with(|units| {
-            if let Some(unit) = units.borrow_mut().last_mut() {
+            let mut units = units.borrow_mut();
+            // The restart compiles from the package the restarted unit did.
+            let outer_package = match units.len().checked_sub(2) {
+                Some(below) if rewritten => units[below].outer_package.clone(),
+                _ => None,
+            };
+            if let Some(unit) = units.last_mut() {
                 unit.tree = Some(tree);
                 unit.rewritten = rewritten;
+                unit.outer_package = outer_package;
             }
         });
         guard
@@ -427,6 +441,29 @@ pub(crate) fn is_late_import(name: &str) -> bool {
         active_index(&units)
             .and_then(|i| units.get(i))
             .is_some_and(|unit| unit.late_imports.contains(name))
+    })
+}
+
+/// The innermost unit is a module file compiled from `package`.
+// Cost: O(1).
+pub(crate) fn set_outer_package(package: &str) {
+    UNITS.with(|units| {
+        if let Some(unit) = units.borrow_mut().last_mut() {
+            unit.outer_package = Some(Rc::from(package));
+        }
+    });
+}
+
+/// The package the innermost unit compiles from when it is the restart of a
+/// module file whose CHECK phase rewrote `$*CU` (`set_outer_package`).
+// Cost: O(1).
+pub(crate) fn restart_compile_package() -> Option<Rc<str>> {
+    UNITS.with(|units| {
+        let units = units.borrow();
+        let unit = units.last()?;
+        (unit.rewritten && !unit.compiled)
+            .then(|| unit.outer_package.clone())
+            .flatten()
     })
 }
 

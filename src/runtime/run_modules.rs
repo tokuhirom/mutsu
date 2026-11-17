@@ -1023,6 +1023,8 @@ impl Interpreter {
         };
         // `$*CU` while this module compiles (`unit_source_text`).
         let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&source_text);
+        // A module file compiles from GLOBAL (see `set_current_package` below).
+        crate::unit_source_text::set_outer_package("GLOBAL");
         let path_text = source_path.to_string_lossy().into_owned();
         let (mut module_ast, facts, effects, precompiled) = match &entry {
             Some(entry) => {
@@ -1055,6 +1057,10 @@ impl Interpreter {
                     None => order(&mut stmts),
                 };
                 crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
+                let prologue_len = crate::runtime::begin_prologue::insert_module_run_check_code(
+                    &mut stmts,
+                    prologue_len,
+                );
                 let facts = super::module_load_facts::ModuleLoadFacts::compute(
                     &stmts,
                     prologue_len,

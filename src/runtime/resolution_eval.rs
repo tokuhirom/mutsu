@@ -384,6 +384,11 @@ impl Interpreter {
             // scope (e.g., "PackageTest" instead of "PackageTest::&pkg").
             compiler.enclosing_package = Some(frame.package.resolve());
             format!("{}::&{}", frame.package, frame.name)
+        } else if let Some(package) = is_eval_unit
+            .then(crate::unit_source_text::restart_compile_package)
+            .flatten()
+        {
+            package.to_string()
         } else {
             self.current_package()
         };
