@@ -59,19 +59,19 @@ impl Compiler {
     /// synthetic block (`stmts`), is the block's result list made of plain
     /// reads of the declared variables, so that evaluating and sinking it is
     /// unobservable and the sunk form may omit it.
-    // Cost: O(n), n = statements of the block plus the list's elements.
+    // Cost: O(1) for any statement but a block's trailing list; O(n) for that
+    // one, n = statements of the block plus the list's elements.
     pub(super) fn destructure_result_is_unobservable(stmts: &[Stmt], stmt: &Stmt) -> bool {
-        if !crate::ast::signature_decl::is_destructure_block(stmts)
-            || !std::ptr::eq(
-                stmts.last().map_or(std::ptr::null(), |s| s as *const Stmt),
-                stmt,
-            )
-        {
-            return false;
-        }
+        // Cheapest first: the shape of `stmt`, then its position, then the
+        // block's (a scan of its leading declarations).
         let Stmt::Expr(Expr::ArrayLiteral(items)) = stmt else {
             return false;
         };
+        if !stmts.last().is_some_and(|last| std::ptr::eq(last, stmt))
+            || !crate::ast::signature_decl::is_destructure_block(stmts)
+        {
+            return false;
+        }
         items.iter().all(|item| match item {
             Expr::Var(name) => crate::value::attr_twigil_base(name).is_none(),
             Expr::ArrayVar(_) | Expr::HashVar(_) => true,
