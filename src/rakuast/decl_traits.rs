@@ -242,9 +242,10 @@ pub(super) fn lower_with_of(
             let type_node = super::lower::named_child_or_positional(t)?;
             if t.fields.len() != 1
                 || !matches!(
-                type_node.class,
-                RakuAstClass::TypeSimple | RakuAstClass::TypeParameterized
-            ) {
+                    type_node.class,
+                    RakuAstClass::TypeSimple | RakuAstClass::TypeParameterized
+                )
+            {
                 return Err(refuse());
             }
             of_type = Some(super::type_lower::type_constraint(names, t, type_node)?);
