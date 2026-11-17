@@ -454,9 +454,28 @@ fn is_begin_time_effect(stmt: &Stmt) -> bool {
         Stmt::SyntheticBlock(inner) => is_will_begin_group(inner),
         // A user `trait_mod:<is>` runs when the declaration is compiled, so its
         // argument sees the unit's lexicals in their static state (#14146).
-        Stmt::ClassDecl { custom_traits, .. }
-        | Stmt::RoleDecl { custom_traits, .. }
-        | Stmt::Package { custom_traits, .. } => !custom_traits.is_empty(),
+        Stmt::ClassDecl { custom_traits, .. } | Stmt::Package { custom_traits, .. } => {
+            !custom_traits.is_empty()
+        }
+        // A role body's `my constant` is initialised when the role is
+        // compiled (#16255), so its initializer sees the unit's lexicals in
+        // their static state, like a unit-level `constant`.
+        Stmt::RoleDecl {
+            custom_traits,
+            body,
+            ..
+        } => {
+            !custom_traits.is_empty()
+                || crate::ast::scope_members(body).any(|member| {
+                    matches!(
+                        member,
+                        Stmt::VarDecl {
+                            constant: Some(_),
+                            ..
+                        }
+                    )
+                })
+        }
         _ => false,
     }
 }
