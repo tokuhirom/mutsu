@@ -307,6 +307,20 @@ impl Compiler {
         self.with_import_scope_region(stmts, |c| c.compile_block_inline_body(stmts));
     }
 
+    /// The value of a statement modifier's body (`(EXPR if COND)`,
+    /// `(EXPR given X)`) used as a term. A modifier is no block: an expression
+    /// body is compiled in the enclosing scope, so `OUTER::` from it is the
+    /// enclosing scope's `OUTER::` (#17902). Any other body keeps the inline
+    /// block path.
+    // Cost: as compiling the body.
+    pub(super) fn compile_modifier_body_value(&mut self, stmts: &[Stmt]) {
+        if let [Stmt::Expr(expr)] = stmts {
+            self.compile_expr(expr);
+        } else {
+            self.compile_block_inline(stmts);
+        }
+    }
+
     /// [`Compiler::compile_block_inline`] for a caller that has already
     /// opened the block's import scope itself.
     pub(super) fn compile_block_inline_body(&mut self, stmts: &[Stmt]) {

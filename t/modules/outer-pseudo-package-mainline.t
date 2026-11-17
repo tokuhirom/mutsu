@@ -4,7 +4,7 @@ use Test;
 # the mainline's lexicals (#17898). A statement modifier `given` opens no
 # scope; a `for` modifier, a block or a routine does.
 
-plan 8;
+plan 12;
 
 my $x = 1;
 constant foo = 3;
@@ -21,3 +21,10 @@ is (OUTER::<$x> for 1).head, 1, 'a for modifier runs its statement as a block';
 sub f { OUTER::<$x> }
 is f(), 1, 'OUTER:: from a routine is the mainline';
 { my $x = 2; is OUTER::<$x>, 1, 'OUTER:: skips the shadowing block scope' }
+
+# A parenthesized statement modifier used as a term opens no scope either
+# (#17902).
+is-deeply (OUTER::<$x> given 1), Nil, '(STMT given X) opens no scope';
+is-deeply (OUTER::<$x> if 1), Nil, '(STMT if COND) opens no scope';
+is ((.uc given 'a')), 'A', 'its value is still the statement\'s';
+{ is-deeply (OUTER::<$x> if 1), 1, 'and from a block it reads the mainline' }
