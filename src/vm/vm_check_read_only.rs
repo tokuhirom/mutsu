@@ -170,6 +170,26 @@ impl Interpreter {
                 .is_some_and(|v| !v.is_container_ref() && !v.is_proxy_value() && !v.is_varref())
     }
 
+    /// Whether local `slot`, a sigilless term named `sym`, carries the
+    /// `__mutsu_sigilless_readonly::` marker its bind writes when the bound
+    /// source was not a writable container (`MarkSigillessBind`). Such a term
+    /// IS its value: a callee receives that value, not a container.
+    // Cost: O(1): a flag-word read when no sigilless marker exists anywhere,
+    // else one env probe.
+    pub(super) fn marked_readonly_term(
+        &self,
+        code: &CompiledCode,
+        slot: u32,
+        sym: crate::symbol::Symbol,
+    ) -> bool {
+        slot != u32::MAX
+            && crate::env::sigilless_readonly_keys_possible()
+            && crate::runtime::term_names::term_spelling(sym.as_str()).is_some()
+            && code.readonly_sym(slot as usize).is_some_and(|key| {
+                matches!(self.env().get_sym(key).map(Value::view), Some(ValueView::Bool(true)))
+            })
+    }
+
     /// An assignment to a lean readonly term: what the env-marker branch of
     /// [`Self::exec_check_read_only_op`] decides for a marked term. A term
     /// bound to a mutable aggregate or to an object with a user `STORE`

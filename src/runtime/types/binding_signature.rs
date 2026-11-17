@@ -3401,12 +3401,14 @@ impl Interpreter {
                         // forwarding it to an `is rw` parameter hands over no
                         // container, so a multi candidate with `is rw` must not
                         // match (PDF::COS::Coercer's `$obj is rw` candidates).
+                        // So is a sigilless term bound to a plain value (`my
+                        // \h = $map<a>`), marked readonly by its bind (#17677).
                         if is_rw
                             && arg_source_name.as_deref().is_some_and(|name| {
                                 matches!(
                                     self.readonly_kind(name),
                                     Some(crate::ast::ReadonlyKind::Immutable)
-                                )
+                                ) || self.sigilless_name_marked_readonly(name)
                             })
                             && !arg_is_container_ref
                         {

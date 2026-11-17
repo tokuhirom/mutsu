@@ -1083,8 +1083,15 @@ impl Interpreter {
         if self.readonly_term_holds_value(code, slot) {
             return;
         }
-        let mut value = self.stack.pop().unwrap_or(Value::NIL);
         let sym = code.const_sym(name_idx);
+        // The same for a term bound at run time to a plain value (`my \h =
+        // $map<a>`, whose bind took a non-writable verdict and left the
+        // readonly marker): an `is rw` parameter must refuse it, not box
+        // the caller's slot (#17677).
+        if self.marked_readonly_term(code, slot, sym) {
+            return;
+        }
+        let mut value = self.stack.pop().unwrap_or(Value::NIL);
         // `$.x` names whatever container `self.x` returns. A user `x` method
         // that returns a `Proxy` hands back its own container: binding the
         // name to it must not alias the attribute `x` (a later read of the
