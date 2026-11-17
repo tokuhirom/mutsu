@@ -91,7 +91,7 @@ pub(crate) fn use_lib_args(expr: &Expr) -> impl Iterator<Item = &Expr> {
 /// Try to extract a library path from a `use lib` expression at parse time.
 /// Handles string literals and `$*PROGRAM.parent(N).add("path")` patterns.
 pub(crate) fn try_add_parse_time_lib_path(expr: &Expr) {
-    if let Some(path) = extract_lib_path(expr) {
+    if let Some(path) = extract_lib_path(expr).map(absolute_parse_time_lib_path) {
         LIB_PATHS.with(|p| {
             let mut paths = p.borrow_mut();
             if !paths.contains(&path) {
@@ -99,6 +99,28 @@ pub(crate) fn try_add_parse_time_lib_path(expr: &Expr) {
             }
         });
     }
+}
+
+/// A relative `use lib` directory, made absolute against the process's
+/// working directory -- what the runtime's `use lib` does against `$*CWD`
+/// (`Interpreter::absolute_lib_spec`), so the parser's module probes and the
+/// unit's own loads name each module file by one path (#17690). A spec that
+/// names a repository kind (`inst#...`) is kept as written.
+// Cost: O(n), n = length of the path.
+fn absolute_parse_time_lib_path(path: String) -> String {
+    let pb = std::path::Path::new(&path);
+    if path.contains('#') || pb.is_absolute() {
+        return path;
+    }
+    let Ok(cwd) = std::env::current_dir() else {
+        return path;
+    };
+    let clean: std::path::PathBuf = cwd
+        .join(pb)
+        .components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect();
+    clean.to_string_lossy().into_owned()
 }
 
 /// Extract a concrete path from a `use lib` expression.
