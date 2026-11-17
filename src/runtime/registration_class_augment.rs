@@ -1430,6 +1430,7 @@ impl Interpreter {
                 Self::collect_role_body_declared_names(&parent.deferred_body, &mut declared);
             }
         }
+        let saved_constants = self.save_role_body_constant_bindings(&role_def.deferred_body);
         self.run_role_body_for_composition(
             role_name,
             role_name,
@@ -1439,6 +1440,7 @@ impl Interpreter {
         )?;
         self.run_composed_role_ancestor_bodies(role_name, role_name, false)?;
         self.persist_role_body_lexicals(role_name, &declared);
+        self.restore_role_body_constant_bindings(saved_constants);
         Ok(())
     }
 
@@ -1507,6 +1509,7 @@ impl Interpreter {
                 .get(&ancestor)
                 .map(|r| (r.deferred_body.clone(), r.decl_file.clone()))
                 .unwrap_or_default();
+            let saved_constants = self.save_role_body_constant_bindings(&ops);
             if let Err(error) = self.run_role_body_for_composition(
                 &ancestor,
                 regex_owner,
@@ -1527,6 +1530,7 @@ impl Interpreter {
             let mut declared: HashSet<String> = HashSet::new();
             Self::collect_role_body_declared_names(&ops, &mut declared);
             self.persist_role_body_lexicals(regex_owner, &declared);
+            self.restore_role_body_constant_bindings(saved_constants);
         }
         Ok(())
     }
@@ -1569,6 +1573,8 @@ impl Interpreter {
             return Ok(());
         }
         let decl_file = sibling.role_def.decl_file.clone();
+        let saved_constants =
+            self.save_role_body_constant_bindings(&sibling.role_def.deferred_body);
         if let Err(error) = self.run_role_body_for_composition(
             base_role_name,
             owner,
@@ -1582,6 +1588,7 @@ impl Interpreter {
         let mut declared: HashSet<String> = HashSet::new();
         Self::collect_role_body_declared_names(&sibling.role_def.deferred_body, &mut declared);
         self.persist_role_body_lexicals(owner, &declared);
+        self.restore_role_body_constant_bindings(saved_constants);
         Ok(())
     }
 

@@ -268,6 +268,49 @@ impl Interpreter {
     /// are referenced by composed methods, so we must keep their
     /// effects on the env (only clean up the type capture markers).
     /// Put `key` back to `saved` (or remove it when it was unset).
+    /// What the composing scope binds under the names of a role body's
+    /// sigilless `my constant`s (the name and its term key), to put back once
+    /// the body's own bindings are persisted: the constant is the role body's
+    /// lexical, not the composing scope's (#17833). A sigiled one stays, as a
+    /// body `my @x` does (the body's subs still reach it through the env).
+    // Cost: O(s), s = body statements.
+    pub(crate) fn save_role_body_constant_bindings(
+        &self,
+        ops: &[crate::opcode::DeferredBodyOp],
+    ) -> Vec<(String, Option<Value>)> {
+        let mut saved = Vec::new();
+        for op in ops {
+            if let Stmt::VarDecl {
+                name,
+                constant: Some(_),
+                is_our: false,
+                ..
+            } = &op.raw
+                && !name.starts_with(['$', '@', '%', '&'])
+            {
+                for key in [
+                    name.clone(),
+                    format!("{}{}", crate::term_names::TERM_PREFIX, name),
+                ] {
+                    let value = self.env.get(&key).cloned();
+                    saved.push((key, value));
+                }
+            }
+        }
+        saved
+    }
+
+    /// Put back what [`Self::save_role_body_constant_bindings`] saved.
+    // Cost: O(c), c = saved entries.
+    pub(crate) fn restore_role_body_constant_bindings(
+        &mut self,
+        saved: Vec<(String, Option<Value>)>,
+    ) {
+        for (key, value) in saved {
+            Self::restore_env_entry(&mut self.env, &key, value);
+        }
+    }
+
     pub(super) fn restore_env_entry(env: &mut crate::env::Env, key: &str, saved: Option<Value>) {
         match saved {
             Some(value) => {
@@ -674,6 +717,11 @@ impl Interpreter {
             .iter()
             .map(|name| (name.clone(), self.env.get(name).cloned()))
             .collect();
+        let saved_constant_bindings = if role_arg_values.is_empty() {
+            self.save_role_body_constant_bindings(&role.deferred_body)
+        } else {
+            Vec::new()
+        };
         for op in &role.deferred_body {
             // A lexical `my constant` is initialised once per role, not once
             // per composing class (#16255): a later composition of a
@@ -960,6 +1008,7 @@ impl Interpreter {
                     Self::restore_env_entry(&mut self.env, &name, saved);
                 }
             }
+            self.restore_role_body_constant_bindings(saved_constant_bindings);
         }
         // Rename each newly-declared nested class to its
         // per-composition parameterized name and record an alias so a
