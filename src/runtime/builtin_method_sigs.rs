@@ -67,6 +67,13 @@ fn lookup(type_name: &str, method: &str) -> Option<&'static Entry> {
         .find_map(|ty| table.get(*ty)?.get(method))
 }
 
+/// Whether rakudo's core type `type_name` (or an ancestor up to `Any`/`Mu`)
+/// declares `method`, as an only method or a multi.
+// Cost: O(a) hash probes, a = the ancestry length of `type_name`.
+pub(crate) fn declares(type_name: &str, method: &str) -> bool {
+    lookup(type_name, method).is_some()
+}
+
 /// The candidate signatures `method` has on the core type `type_name`: the
 /// list of the first type in its ancestry that declares the method. `None`
 /// when that type declares it as an only method (its bind failure is not a

@@ -321,6 +321,15 @@ pub(crate) fn builtin_multi_arity_mismatch(
     Some(make_builtin_method_no_match_error(target, method_name, profile))
 }
 
+/// Whether rakudo's type of `target` declares `method_name` at all: a call
+/// that misses every one of mutsu's rows only reports an arity mismatch then
+/// (a `%?RESOURCES` entry has an `IO::Path` shape but no `sibling`).
+// Cost: O(a), a = the ancestry length of the invocant's type.
+pub(crate) fn builtin_type_declares(target: &Value, method_name: &str) -> bool {
+    let type_name = builtin_receiver_type_name(target);
+    super::builtin_method_sigs::declares(declared_class_name(&type_name), method_name)
+}
+
 /// The `X::Multi::NoMatch` a built-in multi method raises for a call with
 /// `args` on `target`, listing rakudo's candidates from the generated table
 /// (`builtin_method_sigs.tsv`). `profile` is the argument types as the message

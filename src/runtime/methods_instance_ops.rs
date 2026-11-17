@@ -2461,6 +2461,7 @@ impl Interpreter {
                         Symbol::intern(method),
                     )
                     && args.iter().filter(|arg| !arg.is_string_pair_value()).count() < min
+                    && super::methods_signature_errors::builtin_type_declares(&target, method)
                 {
                     if let Some(err) =
                         super::methods_signature_errors::builtin_multi_arity_mismatch(
