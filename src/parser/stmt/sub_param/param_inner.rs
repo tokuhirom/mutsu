@@ -218,9 +218,6 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
             let (r, _) = ws(r)?;
-            if sub_params.len() == 1 {
-                return Ok((r, sub_params[0].clone()));
-            }
             let mut p = ParamDef::destructure(sub_params, false);
             // An anonymous capture `|(...)` consumes ALL remaining arguments;
             // mark it slurpy+sigilless (like the named `|c(...)` form) so it is
