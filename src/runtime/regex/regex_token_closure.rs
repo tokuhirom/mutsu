@@ -71,9 +71,9 @@ pub(crate) fn pattern_names_var(pattern: &str, key: &str) -> bool {
 }
 
 impl Interpreter {
-    /// Bind the captured declaring scope of rule candidate `def` in `env`,
-    /// for a caller that restores `env` afterwards (the body render in
-    /// `eval_token_def`).
+    /// Bind the captured declaring scope of rule candidate `def` in `env` where
+    /// `env` has no binding of that name, for a caller that restores `env`
+    /// afterwards (the body render in `eval_token_def`).
     // Cost: O(c), c = the captured variables; one relaxed load when no rule
     // has a capture.
     pub(crate) fn install_token_def_capture(&mut self, def: &FunctionDef) {
@@ -86,12 +86,14 @@ impl Interpreter {
             .get(&crate::qualified::qualified(def.package, def.name))
             .cloned();
         for (key, value) in captured.iter().flat_map(|c| c.iter()) {
-            self.env.insert(key.clone(), value.clone());
+            if !self.env.contains_key(key) {
+                self.env.insert(key.clone(), value.clone());
+            }
         }
     }
 
-    /// Bind rule `name`'s captured declaring scope for its resolve-and-match
-    /// window, appending the shadowed bindings to `prior` (restored by
+    /// Bind rule `name`'s captured declaring scope, where `env` has no binding
+    /// of that name, for its resolve-and-match window, appending the shadowed bindings to `prior` (restored by
     /// [`Self::restore_subrule_dynamic_params`]). Each captured variable is
     /// the declaring frame's shared cell, so a write in the rule reaches it.
     // Cost: O(c) to bind, c = the captured variables of the rule's
@@ -124,10 +126,19 @@ impl Interpreter {
         }
         let mut saved = prior.unwrap_or_default();
         for (key, value) in captured {
-            saved.push((key.clone(), self.env.get(&key).cloned()));
+            // A binding the env already has is the declaring scope's own
+            // (still live) or a rebinding of it (`:temp`, `:let`), which wins.
+            // TODO: a same-named lexical of an unrelated caller also wins; the
+            // correct lookup resolves the rule's names through its captured
+            // scope first, which needs `:temp`/`:let` to write through the
+            // variable's cell instead of rebinding the env key.
+            if self.env.contains_key(&key) {
+                continue;
+            }
+            saved.push((key.clone(), None));
             self.env.insert(key, value);
         }
-        Some(saved)
+        (!saved.is_empty()).then_some(saved)
     }
 }
 
