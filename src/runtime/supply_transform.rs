@@ -81,7 +81,7 @@ impl Interpreter {
                 let status_sid = status_supplier_id;
                 let vals = source_values;
                 let blk = block;
-                let mut thread_interp = self.clone_for_thread_for_block(&blk);
+                let mut thread_interp = self.clone_for_thread();
                 // Runs a full interpreter (VM safepoints park it during
                 // execution): registered GC mutator; the control wait and the
                 // worker joins are quiescent safe regions. Pooled (ADR-0020
@@ -200,7 +200,7 @@ impl Interpreter {
                         Arc::new(std::sync::Mutex::new((0..vals.len()).map(|_| None).collect()));
                     let mut handles = Vec::with_capacity(n_workers);
                     for _ in 0..n_workers {
-                        let mut winterp = self.clone_for_thread_for_block(&block);
+                        let mut winterp = self.clone_for_thread();
                         let (vals, gate, slots) =
                             (Arc::clone(&vals), Arc::clone(&gate), Arc::clone(&slots));
                         let blk = block.clone();
@@ -507,7 +507,7 @@ impl Interpreter {
 
         // Run the block asynchronously. Pooled (ADR-0020 slice 3): fires per
         // emitted value — the hottest supply spawner, warm reuse pays here.
-        let mut thread_interp = self.clone_for_thread_for_block(&callable);
+        let mut thread_interp = self.clone_for_thread();
         crate::runtime::worker_pool::submit(move || {
             let result_val = thread_interp
                 .call_supply_callback(callable, vec![value])

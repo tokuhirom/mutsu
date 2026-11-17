@@ -451,8 +451,11 @@ impl Interpreter {
         // A blanket locals -> env mirror is a coherence pass over THIS frame's
         // slots, not an assignment: the bare-name lane must not be republished
         // from it (see `suppress_shared_publish`).
+        // A user lexical has no store entry to update (ADR-16595, #17837):
+        // another thread reaches it through its cell.
         if self.threads.shared_vars_active
             && !self.threads.suppress_shared_publish
+            && !crate::runtime::shared_store::is_user_lexical_key(key)
         {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS

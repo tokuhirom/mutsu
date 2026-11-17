@@ -396,7 +396,7 @@ impl Interpreter {
                     // `Interpreter` by value is a large struct each move
                     // copies (~18k instructions per move per cue).
                     let mut thread_interp =
-                        Box::new(self.clone_for_thread_for_block(&params.callback));
+                        Box::new(self.clone_for_thread());
                     // Track the spawned task so `$*SCHEDULER.loads` reflects it
                     // until the callback finishes (mark started before spawn so a
                     // racing `.loads` never undercounts).
@@ -618,7 +618,7 @@ impl Interpreter {
         // Block-aware clone: the callback's own captured scalars go through
         // per-binding closure cells, not the bare-name shared lane, matching
         // the `start` spawn path.
-        let thread_interp = self.clone_for_thread_for_block(&params.callback);
+        let thread_interp = self.clone_for_thread();
         // Track the cue so `$*SCHEDULER.loads` reflects it until it dies.
         state_scheduler::scheduler_task_started();
         let state = Arc::new(std::sync::Mutex::new((thread_interp, params)));

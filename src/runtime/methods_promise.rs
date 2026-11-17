@@ -116,7 +116,7 @@ impl Interpreter {
             // name-keyed shared lane, or a same-named lexical written on any
             // other thread (a caller's loop `my $job`) is pulled over the
             // callback's capture at its next sync point (`sleep`, `.result`).
-            let mut thread_interp = self.clone_for_thread_for_block(&block);
+            let mut thread_interp = self.clone_for_thread();
             let orig_for_waiter = orig.clone();
             // Queue this callback on `orig` rather than spawning our own
             // thread that blocks on `orig.wait()`: whichever `keep`/

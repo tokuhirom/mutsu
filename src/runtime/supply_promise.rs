@@ -611,7 +611,7 @@ impl Interpreter {
         // Enter react-like context to collect whenever registrations. Keep
         // `on_demand_cb` around (cheap `Value` clone) — the trailing
         // background drive below needs it to build a correctly-scoped
-        // thread-clone via `clone_for_thread_for_block`.
+        // thread-clone via `clone_for_thread`.
         let (cb_result, emitted, _) =
             self.run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id));
 
@@ -899,11 +899,8 @@ impl Interpreter {
         // resolution branches) stays on the calling thread; only the
         // long-lived poll moves off it.
         //
-        // `clone_for_thread_for_block(&on_demand_cb)` (not a bare
-        // `clone_for_thread`) keeps the callback's own captured scalars off
-        // the cross-thread bare-name lane the same way `start {}` does (see
-        // ADR-0023 if any captured name is also an active for-loop parameter
-        // at the coercion site). The helper thread is GC-registered
+        // `clone_for_thread()`: the callback reaches its captured lexicals
+        // through their cells, as a `start {}` block does (ADR-16595). The helper thread is GC-registered
         // (`spawn_user_thread`) per the Gc-thread registration rule — never a
         // raw `std::thread::spawn`. This must be `spawn_user_thread`, not
         // `try_spawn_gc_helper_thread`: `drive_react_subscriptions` below runs the
@@ -942,7 +939,7 @@ impl Interpreter {
                 .collect();
             crate::runtime::native_methods::supplier_sinks_register_batch(&regs, &waker)
         };
-        let mut thread_interp = self.clone_for_thread_for_block(&on_demand_cb);
+        let mut thread_interp = self.clone_for_thread();
         // Nested `whenever`s the static replay registered belong to the drive
         // loop, which adopts them on its first round.
         thread_interp.async_state.pending_react_subscriptions.extend(
@@ -953,7 +950,7 @@ impl Interpreter {
         // Hand any stream consumer(s) `register_nested_on_demand_source`
         // registered above (on `self`, the calling thread) over to the
         // interpreter that will actually observe the async events —
-        // `clone_for_thread_for_block` starts `thread_interp` with an empty
+        // `clone_for_thread` starts `thread_interp` with an empty
         // `supply_stream_consumers`, so a nested stage's live-forwarding
         // wiring would otherwise vanish and its `emit`s would never reach
         // the consuming `whenever`'s callback.

@@ -1,11 +1,14 @@
 use Test;
 
-plan 8;
+# The capture oracle these tests once consulted is gone (ADR-16595, #17837):
+# no user lexical can reach the lineage store, so only the results remain.
+
+plan 3;
 
 # ADR-12204 S2: an `@`/`%` lexical that a `start` block references and that
 # lives in a shared cell is captured by that cell and gets no name-keyed lane
 # entry. Pins mutsu's guarantee (no lane write for a cell-captured name), via
-# the MUTSU_SPAWN_CAPTURE_CHECK oracle, and the Raku-visible results.
+# and the Raku-visible results.
 
 my $code = q:to/RAKU/;
 my @cellarr;
@@ -17,23 +20,16 @@ await start { @whole = (7, 8) };
 say @cellarr.raku, ' ', %cellhash.sort.map(*.raku).join(','), ' ', @whole.raku;
 RAKU
 
-sub run-with(Str $level) {
+sub run-with() {
     my %env = %*ENV;
-    %env<MUTSU_SPAWN_CAPTURE_CHECK> = $level if $level.defined;
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err, :env(%env);
     (out => $p.out.slurp(:close).trim, err => $p.err.slurp(:close).trim).Map
 }
 
 my $expect = '[9, 2] :j(4),:k(3) [7, 8]';
-my %off = run-with(Str);
+my %off = run-with();
 is %off<out>, $expect, "child writes reach the parent through the cell";
 
-my %on = run-with("all");
-is %on<out>, $expect, "oracle on: output unchanged";
-like %on<err>, /'cell-captured @cellarr'/, "@cellarr is cell-captured";
-like %on<err>, /'cell-captured %cellhash'/, "%cellhash is cell-captured";
-like %on<err>, /'cell-captured @whole'/, "@whole is cell-captured";
-unlike %on<err>, /'cell-captured-lane-write'/, "no lane write for a cell-captured name";
 
 # Two bindings of one name stay separate cells.
 sub f(Int $n) {
