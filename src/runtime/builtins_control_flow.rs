@@ -29,6 +29,9 @@ impl Interpreter {
         default_message: &str,
         is_fail: bool,
     ) -> RuntimeError {
+        // Under `use fatal` a `fail` throws its exception at once: it is no
+        // longer a return a CATCH lets through.
+        let is_fail = is_fail && !self.module.fatal_mode && !self.module.lexical_fatal_mode;
         if value.is_nil() {
             let mut err = RuntimeError::new(default_message.to_string());
             if is_fail {

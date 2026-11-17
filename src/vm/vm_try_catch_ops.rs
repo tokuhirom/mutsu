@@ -238,14 +238,17 @@ impl Interpreter {
             // does not see it (`sub f { CATCH {...}; fail "x" }` is a Failure,
             // as is a `fail` in a closure called through a routine holding a
             // CATCH). Only `try`, which is fatal, and `use fatal` turn it into
-            // the exception CATCH handles. (A CONTROL block, which would see
+            // the exception CATCH handles, and so does a `fail` with no routine
+            // to return from (`{ fail "x"; CATCH {...} }` in a mainline).
+            // (A CONTROL block, which would see
             // it as the `CX::Return` it is, keeps the older routing.)
             Err(e)
                 if e.is_fail()
                     && !traps
                     && control_begin >= end
                     && !self.module.fatal_mode
-                    && !self.module.lexical_fatal_mode =>
+                    && !self.module.lexical_fatal_mode
+                    && self.fail_returns_past_catch(code, &e) =>
             {
                 self.discard_let_saves(let_mark);
                 Err(e)
@@ -786,5 +789,19 @@ impl Interpreter {
         let r = f(self);
         self.control.catch_handlers.pop();
         r
+    }
+
+    /// Whether the `fail` signal `e` reaching a CATCH region of `code` is a
+    /// return from a routine that is still running, which the CATCH must let
+    /// through. A closure stamps the routine its `fail` leaves on the way out
+    /// (`vm_closure_dispatch`); an unstamped one was raised in this code's own
+    /// frame, so it returns from a routine exactly when this code lexically
+    /// lies inside one (`.fail` counts: rakudo fails its caller's routine).
+    // Cost: O(r) for a stamped signal, r = routine-stack depth; O(1) otherwise.
+    fn fail_returns_past_catch(&self, code: &CompiledCode, e: &RuntimeError) -> bool {
+        match e.fail_target_callable_id() {
+            Some(target) => self.return_target_is_live(target),
+            None => code.is_routine || code.lexically_in_routine,
+        }
     }
 }
