@@ -69,7 +69,7 @@ impl Interpreter {
         let decl_unit = self.unit_of_source(Some(source_path));
         let mut own = OwnFamilies::default();
         {
-            let registry = self.registry();
+            let registry = self.routines();
             // The hook of a module with a `sub EXPORT` reads its own imports
             // too, and the next importer's scope holds none of them.
             if !self.export_routine_candidates().is_empty() {
@@ -134,26 +134,26 @@ impl Interpreter {
             return added;
         };
         for (key, def) in own.functions {
-            if !self.registry().functions.contains_key(&key) {
-                self.registry_mut().functions_mut().insert(key, def);
+            if !self.routines().functions.contains_key(&key) {
+                self.routines_mut().functions_mut().insert(key, def);
                 added.functions.push(key);
             }
         }
         for (key, def) in own.imported {
-            if !self.registry().functions.contains_key(&key) {
-                self.registry_mut().functions_mut().insert(key, def);
+            if !self.routines().functions.contains_key(&key) {
+                self.routines_mut().functions_mut().insert(key, def);
                 added.functions.push(key);
             }
         }
         for (key, def) in own.protos {
-            if !self.registry().proto_functions.contains_key(&key) {
-                self.registry_mut().proto_functions_mut().insert(key, def);
+            if !self.routines().proto_functions.contains_key(&key) {
+                self.routines_mut().proto_functions_mut().insert(key, def);
                 added.protos.push(key);
             }
         }
         for key in own.proto_subs {
-            if !self.registry().proto_subs_contains(&key) {
-                self.registry_mut().proto_subs_insert(key.clone());
+            if !self.routines().proto_subs_contains(&key) {
+                self.routines_mut().proto_subs_insert(key.clone());
                 added.proto_subs.push(key);
             }
         }
@@ -170,13 +170,13 @@ impl Interpreter {
             return;
         }
         for key in &added.functions {
-            self.registry_mut().functions_mut().remove(key);
+            self.routines_mut().functions_mut().remove(key);
         }
         for key in &added.protos {
-            self.registry_mut().proto_functions_mut().remove(key);
+            self.routines_mut().proto_functions_mut().remove(key);
         }
         let gone: HashSet<&String> = added.proto_subs.iter().collect();
-        self.registry_mut().proto_subs_retain(|key| !gone.contains(key));
+        self.routines_mut().proto_subs_retain(|key| !gone.contains(key));
         self.invalidate_fn_resolution();
     }
 
@@ -236,7 +236,7 @@ impl Interpreter {
     fn scope_multi_families_of_unit(&mut self, decl_unit: Symbol, wanted: impl Fn(&str) -> bool) {
         let mut names: HashSet<Symbol> = HashSet::new();
         {
-            let registry = self.registry();
+            let registry = self.routines();
             let routines = registry
                 .functions
                 .iter()
@@ -275,7 +275,7 @@ impl Interpreter {
         let main = crate::runtime::main_unit();
         let mut contested_main: HashSet<Symbol> = HashSet::new();
         if decl_unit != main {
-            let registry = self.registry();
+            let registry = self.routines();
             for (key, def) in registry.functions.iter() {
                 let ks = key.as_str();
                 let base = function_key_base_name(ks);
@@ -344,7 +344,7 @@ impl Interpreter {
         let Some(families) = self.module.operator_import_units.get(&name_sym) else {
             return Vec::new();
         };
-        self.registry()
+        self.routines()
             .functions
             .iter()
             .filter(|(key, def)| {
@@ -375,7 +375,7 @@ impl Interpreter {
         name: &str,
     ) -> bool {
         let name_sym = Symbol::intern(name);
-        let registry = self.registry();
+        let registry = self.routines();
         let visible = |key: &Symbol, def: &Arc<FunctionDef>| {
             packages
                 .iter()
@@ -411,7 +411,7 @@ impl Interpreter {
         let sym = Symbol::intern(name);
         let generation = (
             self.caches.fn_resolve_gen,
-            self.registry().proto_generation(),
+            self.routines().proto_generation(),
         );
         if self.caches.scoped_visible_memo_gen != generation {
             self.caches.scoped_visible_memo.clear();
@@ -440,7 +440,7 @@ impl Interpreter {
     // Cost: O(p * e), p = search packages, e = EVAL nesting depth.
     pub(crate) fn scoped_proto_visible(&self, packages: &[Symbol], name: &str) -> bool {
         let name_sym = Symbol::intern(name);
-        let registry = self.registry();
+        let registry = self.routines();
         packages.iter().any(|pkg| {
             dispatch_key::qualified_lookup(pkg.as_str(), name)
                 .and_then(|key| registry.proto_functions.get(&key))

@@ -234,7 +234,7 @@ impl Interpreter {
         // checks against `functions` consult. Interned `Symbol`s, so no strings
         // are allocated to take it.
         crate::runtime::registration_sub::push_eval_outer_routine_keys(
-            self.registry().functions.keys().copied(),
+            self.routines().functions.keys().copied(),
         );
         crate::runtime::registration_sub::push_eval_routine_depth(self.routine_stack.len());
         self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
@@ -278,7 +278,7 @@ impl Interpreter {
         self.restore_routine_registry_eval(routine_snapshot);
         self.restore_hidden_local_subsets(hidden_local_subsets);
         let eval_main_keys: Vec<Symbol> = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .filter(|key| {
@@ -289,7 +289,7 @@ impl Interpreter {
             .copied()
             .collect();
         if !eval_main_keys.is_empty() {
-            let mut registry = self.registry_mut();
+            let mut registry = self.routines_mut();
             for key in &eval_main_keys {
                 registry.functions_mut().remove(key);
             }

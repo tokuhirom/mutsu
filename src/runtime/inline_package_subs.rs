@@ -366,7 +366,7 @@ impl Interpreter {
         let single = crate::qualified::qualified(Symbol::intern(source), name_sym);
         let prefix = format!("{}/", single.as_str());
         let entries: Vec<(Option<String>, Arc<FunctionDef>)> = self
-            .registry()
+            .routines()
             .functions
             .iter()
             .filter_map(|(key, def)| {
@@ -391,7 +391,7 @@ impl Interpreter {
                     Some(suffix) => Symbol::intern(&format!("{name}/{suffix}")),
                     None => name_sym,
                 };
-                self.registry_mut()
+                self.routines_mut()
                     .functions_mut()
                     .entry(crate::qualified::qualified(tag_pkg, member))
                     .or_insert_with(|| def.clone());

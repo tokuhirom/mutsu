@@ -104,7 +104,7 @@ impl Interpreter {
             // build (and drop) an owned `String` for every key in the registry
             // on every `.parse` call.
             let defs: Vec<(String, std::sync::Arc<FunctionDef>)> = self
-                .registry()
+                .routines()
                 .token_defs
                 .iter()
                 .filter(|(k, _)| {

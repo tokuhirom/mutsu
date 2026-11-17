@@ -191,7 +191,7 @@ impl Interpreter {
         let mut fixed_arity = 0usize;
         let mut slurpy_min: Option<usize> = None;
 
-        for (key, def) in self.registry().functions.iter() {
+        for (key, def) in self.routines().functions.iter() {
             let key_s = key.resolve();
             let loose_match = key_s.contains(&format!("::{name}/"));
             if !key_s.starts_with(&local_prefix)
@@ -244,7 +244,7 @@ impl Interpreter {
             crate::qualified::qualified_text(package, name).as_str()
         );
         let global_prefix = format!("GLOBAL::{name}/");
-        self.registry().functions.keys().any(|key| {
+        self.routines().functions.keys().any(|key| {
             let ks = key.resolve();
             ks.starts_with(&local_prefix)
                 || ks.starts_with(&global_prefix)

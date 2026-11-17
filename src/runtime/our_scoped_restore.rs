@@ -48,7 +48,7 @@ impl Interpreter {
         snapshot: &Arc<OurTable>,
     ) -> Arc<[(Symbol, Arc<FunctionDef>)]> {
         let package = self.current_package_sym();
-        let registry = self.registry();
+        let registry = self.routines();
         let table = &registry.our_scoped_functions;
         let untouched = Arc::ptr_eq(snapshot, table);
         if untouched {
@@ -71,7 +71,7 @@ impl Interpreter {
         let table = table.clone();
         drop(registry);
         if untouched {
-            self.registry_mut().our_scoped_restore_memo = OurScopedRestoreMemo {
+            self.routines_mut().our_scoped_restore_memo = OurScopedRestoreMemo {
                 table: Some(table),
                 functions_version: functions.version(),
                 package: Some(package),

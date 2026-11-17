@@ -111,6 +111,7 @@ impl Interpreter {
             return table;
         }
         let registry = self.registry();
+        let routines = self.routines();
         let Some(class_def) = registry.classes.get(class_name) else {
             // A core type with no registry ClassDef (Int, Str, Num, ...): its
             // methods are the built-in catalog entries, the same source
@@ -191,11 +192,11 @@ impl Interpreter {
         // under the composing class (`registration_class_compose_body`).
         // Cost: O(t), t = all registered token/rule keys (scans the tables).
         let class_sym = Symbol::intern(class_name);
-        for key in registry
+        for key in routines
             .token_defs
             .keys()
             .copied()
-            .chain(registry.proto_tokens.iter().map(|k| Symbol::intern(k)))
+            .chain(routines.proto_tokens.iter().map(|k| Symbol::intern(k)))
         {
             if crate::qualified::package_parent(key) != Some(class_sym) {
                 continue;
@@ -404,7 +405,7 @@ impl Interpreter {
     /// (Rakudo prints the declaration source). The body is re-rendered from the
     /// source-level regex tree, so its spacing is normalized rather than verbatim.
     fn token_declaration_source(&self, owner: &str, name: &str) -> Option<String> {
-        let registry = self.registry();
+        let registry = self.routines();
         let key =
             crate::qualified::qualified(Symbol::intern(owner), Symbol::intern(name)).resolve();
         let Some(first) = registry

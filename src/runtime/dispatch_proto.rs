@@ -31,7 +31,7 @@ impl Interpreter {
         let packages = self.bare_name_packages_syms();
         packages
             .iter()
-            .any(|pkg| self.registry().has_proto(pkg.as_str(), name))
+            .any(|pkg| self.routines().has_proto(pkg.as_str(), name))
             && (!self.operator_has_import_scope(name) || self.scoped_proto_visible(&packages, name))
     }
 
@@ -59,7 +59,7 @@ impl Interpreter {
                 let keys = self.fn_keys_for_base(name);
                 let packages = self.bare_name_packages_syms();
                 let found = self
-                    .registry()
+                    .routines()
                     .has_multi_candidates(Some(&keys), &packages, name);
                 self.caches.multi_candidates_cache.insert(
                     generation,
@@ -104,7 +104,7 @@ impl Interpreter {
         let base_keys = self.peek_fn_keys_for_base(name);
         let base_keys = base_keys.as_deref();
         let in_registry = memo.unwrap_or_else(|| {
-            self.registry()
+            self.routines()
                 .has_multi_candidates(base_keys, &packages, name)
         });
         in_registry
@@ -154,14 +154,14 @@ impl Interpreter {
                 return None;
             }
             return self
-                .registry()
+                .routines()
                 .proto_functions
                 .get(&Symbol::intern(name))
                 .cloned();
         }
         for pkg in self.bare_name_packages_syms().iter() {
             if let Some(def) = dispatch_key::qualified_lookup(pkg.as_str(), name)
-                .and_then(|key| self.registry().proto_functions.get(&key).cloned())
+                .and_then(|key| self.routines().proto_functions.get(&key).cloned())
                 .and_then(|def| self.visible_operator_def(name, def))
             {
                 return Some(def);

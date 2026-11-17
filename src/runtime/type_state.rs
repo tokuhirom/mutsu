@@ -78,6 +78,9 @@ pub(crate) struct TypeState {
     /// gets its own outer `Arc<RwLock<...>>`, so declarations never leak between
     /// threads — only the initial snapshot is lazily shared.
     pub(crate) registry: Arc<RwLock<Arc<Registry>>>,
+    /// This execution context's routine tables (ADR-17216 §3.2): lexical
+    /// state, forked copy-on-write per spawn like the registry snapshot.
+    pub(crate) routines: Arc<RwLock<Arc<super::routine_tables::RoutineTables>>>,
     /// Monotonic counter bumped on every `registry_mut()` acquisition, i.e. every
     /// time the declaration registry may have been mutated. Several resolution
     /// caches consult it to detect "did anything write the registry since I last
@@ -311,6 +314,7 @@ impl TypeState {
             defining_class: None,
             type_metadata: Default::default(),
             registry: Arc::new(RwLock::new(Interpreter::shared_builtin_registry())),
+            routines: Arc::new(RwLock::new(Arc::default())),
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
             attr_type_constraint_cache: Default::default(),
             class_does_role_memo: Default::default(),
@@ -375,6 +379,9 @@ impl TypeState {
             // `RegistryWriteGuard::deref_mut`). In spawn-heavy loops where neither
             // side writes the registry, the deep clone (and its drop) never happens.
             registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
+            routines: Arc::new(RwLock::new(Arc::clone(
+                &crate::runtime::routine_tables::RoutinesReadGuard::new(&self.routines).clone_arc(),
+            ))),
             // The snapshot is the parent's registry content, so the child
             // starts at the parent's generation: the memos the parent filled
             // in shared chunks are current for it (`registry_gen`).

@@ -49,7 +49,7 @@ impl Interpreter {
         // back to the plan's own compiled routine (below), and only to
         // its AST body if that too is unresolved.
         let single_key = crate::qualified::qualified(self.current_package_sym(), plan.name);
-        let registered = self.registry().functions.get(&single_key).cloned();
+        let registered = self.routines().functions.get(&single_key).cloned();
         Some(if let Some(def) = registered {
             // Flatten: a Sub returned as a value is dispatched cross-scope.
             let mut captured = self.clone_env();

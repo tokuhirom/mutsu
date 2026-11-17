@@ -383,11 +383,11 @@ impl Interpreter {
         let name_sym = self.qualified_token_identity(name_sym);
         let name = name_sym.as_str();
         let mut out = Vec::new();
-        if let Some(defs) = self.registry().token_defs.get(&name_sym) {
+        if let Some(defs) = self.routines().token_defs.get(&name_sym) {
             out.extend(defs.clone());
         }
         for &key in self.proto_variant_keys_sorted(name).iter() {
-            if let Some(defs) = self.registry().token_defs.get(&key) {
+            if let Some(defs) = self.routines().token_defs.get(&key) {
                 out.extend(defs.clone());
             }
         }

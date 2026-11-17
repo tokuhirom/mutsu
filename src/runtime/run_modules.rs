@@ -833,7 +833,7 @@ impl Interpreter {
         let prefix = format!("{module}::");
         self.is_known_package(module)
             || self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .any(|k| k.as_str().starts_with(&prefix))
@@ -876,8 +876,8 @@ impl Interpreter {
         // imported into the caller's scope.
         let saved_suppress = std::mem::replace(&mut self.module.suppress_exports, false);
         let saved_no_import = std::mem::replace(&mut self.module.loading_without_import, true);
-        let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
-        let proto_keys_before = std::sync::Arc::clone(&self.registry().proto_functions);
+        let func_keys_before: HashSet<Symbol> = self.routines().functions.keys().copied().collect();
+        let proto_keys_before = std::sync::Arc::clone(&self.routines().proto_functions);
         let result = self.load_module_inner(module, Some((source_path, None)));
         self.module.suppress_exports = saved_suppress;
         self.module.loading_without_import = saved_no_import;
@@ -890,7 +890,7 @@ impl Interpreter {
             // inside a bare block) dropped e.g. `Gen::helper`, and a later call
             // into the module died with "Unknown function".
             let module_funcs: Vec<Symbol> = self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .filter(|k| !func_keys_before.contains(k))
@@ -1296,7 +1296,7 @@ impl Interpreter {
             // leaks these the same way. See `collect_module_own_dynamic_names`.
             let module_own_dynamic_names = facts.own_dynamic_names.clone();
             let before_function_keys: std::collections::HashSet<crate::symbol::Symbol> =
-                self.registry().functions.keys().copied().collect();
+                self.routines().functions.keys().copied().collect();
             // Capture the module's compiled sub bodies (keyed by fingerprint) so a
             // caller can dispatch a `state`-bearing module sub through one shared
             // body across threads instead of re-OTF-compiling it per thread (which
@@ -1362,7 +1362,7 @@ impl Interpreter {
             // with -- or silently overwrite -- a same-named one the loading
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
-            let functions_before_body = std::sync::Arc::clone(&self.registry().functions);
+            let functions_before_body = std::sync::Arc::clone(&self.routines().functions);
             // The importer's hoisted `multi`s are already registered; they are
             // lexical to it and must not take part in this module's dispatch
             // (#11310).
@@ -1991,7 +1991,7 @@ impl Interpreter {
                     matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. })
                 });
             Self::remove_leaked_main_routines(
-                self.registry_mut().functions_mut(),
+                self.routines_mut().functions_mut(),
                 &before_function_keys,
                 main_exported,
             );

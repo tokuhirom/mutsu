@@ -388,7 +388,7 @@ impl Interpreter {
             let token_key = crate::qualified::qualified_text(owner_str, method_name)
                 .as_str()
                 .to_string();
-            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))
+            if let Some(defs) = self.routines().token_defs.get(&Symbol::intern(&token_key))
                 && let Some(first) = defs.first()
             {
                 // `Code.line`/`Code.file`: report the first-declared
@@ -412,7 +412,7 @@ impl Interpreter {
             // A `proto token p {*}` has no `token_defs` entry of its own (only
             // its `:sym<..>` candidates do), but it is still a method of the
             // grammar that `.wrap` can target.
-            if self.registry().proto_tokens.contains(&token_key) {
+            if self.routines().proto_tokens.contains(&token_key) {
                 return Some(self.make_native_method_object_ex_loc(
                     method_name,
                     owner_str,

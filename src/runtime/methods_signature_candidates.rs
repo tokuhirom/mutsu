@@ -308,7 +308,7 @@ impl Interpreter {
             }
         }
         // A top-level `my token`/`my regex`/`my rule` (or one declared `our`)
-        // has no entry in `registry().functions` at all — its `FunctionDef`
+        // has no entry in `routines().functions` at all — its `FunctionDef`
         // lives in `Registry::token_defs` instead (ADR-0009: no compiled
         // body). `&top-tok.line` reaches here as a by-name `Routine` value the
         // same way a bare sub reference does, so check that table too,
@@ -316,7 +316,7 @@ impl Interpreter {
         // multi-dispatcher convention above).
         let exact_local = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
         let exact_global = Symbol::intern(&format!("GLOBAL::{name}"));
-        let registry = self.registry();
+        let registry = self.routines();
         if let Some(def) = registry
             .token_defs
             .get(&exact_local)

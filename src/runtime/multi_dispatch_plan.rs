@@ -213,7 +213,7 @@ impl Interpreter {
                 .routine_stack()
                 .last()
                 .and_then(|frame| frame.lexical_package),
-            proto_generation: self.registry().proto_generation(),
+            proto_generation: self.routines().proto_generation(),
             subsets: self.registry().subsets.len(),
             visibility,
             units,
@@ -245,7 +245,7 @@ impl Interpreter {
             .collect();
         let base_keys = self.fn_keys_for_base(name);
         let mut candidates: Vec<(String, Arc<FunctionDef>)> = {
-            let registry = self.registry();
+            let registry = self.routines();
             base_keys
                 .iter()
                 .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
@@ -430,7 +430,8 @@ impl Interpreter {
                     .and_then(|frame| frame.lexical_package)
             && {
                 let registry = self.registry();
-                key.proto_generation == registry.proto_generation()
+                let routines = self.routines();
+                key.proto_generation == routines.proto_generation()
                     && key.subsets == registry.subsets.len()
             }
     }

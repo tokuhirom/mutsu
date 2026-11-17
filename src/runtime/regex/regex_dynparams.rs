@@ -254,17 +254,17 @@ impl Interpreter {
     /// [`Self::has_proto_token_in_pkg`].
     // Cost: O(s * m), s = enclosing scopes of pkg, m = MRO length.
     fn proto_token_params_in_pkg(&self, name: &str, pkg: Symbol) -> Option<Arc<Vec<ParamDef>>> {
-        if self.registry().proto_token_params.is_empty() {
+        if self.routines().proto_token_params.is_empty() {
             return None;
         }
         let name_sym = Symbol::intern(name);
         if crate::qualified::is_qualified(name_sym) {
-            return self.registry().proto_token_params.get(name).cloned();
+            return self.routines().proto_token_params.get(name).cloned();
         }
         for scope in self.qualified_name_scopes(pkg) {
             for owner in self.mro_readonly(scope.as_str()) {
                 let found = crate::runtime::dispatch_key::with_qualified(&owner, name, |key| {
-                    self.registry().proto_token_params.get(key).cloned()
+                    self.routines().proto_token_params.get(key).cloned()
                 });
                 if found.is_some() {
                     return found;
@@ -272,7 +272,7 @@ impl Interpreter {
             }
         }
         crate::runtime::dispatch_key::with_qualified("GLOBAL", name, |key| {
-            self.registry().proto_token_params.get(key).cloned()
+            self.routines().proto_token_params.get(key).cloned()
         })
     }
 

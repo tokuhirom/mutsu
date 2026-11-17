@@ -879,13 +879,13 @@ impl Interpreter {
                         self.current_package_sym(),
                         Symbol::intern(lookup_name),
                     );
-                    self.registry()
+                    self.routines()
                         .our_scoped_functions
                         .get(&fq)
                         .map(|d| (**d).clone())
                         .or_else(|| {
                             let global_fq = format!("GLOBAL::{}", lookup_name);
-                            self.registry()
+                            self.routines()
                                 .our_scoped_functions
                                 .get(&Symbol::intern(&global_fq))
                                 .map(|d| (**d).clone())

@@ -14,7 +14,7 @@
 //! interpreter they are already required to stay correct across any amount
 //! of execution, because the program state they do not key on (env, frames,
 //! the current package) changes all the time. What they cannot survive is a
-//! different registry. So the handoff is gated on registry identity:
+//! different registry. So the handoff is gated on registry (and routine-table) identity:
 //!
 //! - after a task, the worker keeps its caches only if the task left the
 //!   registry it was forked with untouched -- the very `Arc` the fork
@@ -39,8 +39,10 @@ use crate::runtime::resolution_caches::ResolutionCaches;
 
 /// What a task leaves for the next task on the same worker thread.
 struct WarmCaches {
-    /// The registry the task was forked with and left untouched.
+    /// The registry and routine tables the task was forked with and left
+    /// untouched.
     registry: Arc<Registry>,
+    routines: Arc<RoutineTables>,
     /// Its registry write generation at the end.
     registry_write_gen: u64,
     caches: ResolutionCaches,
@@ -56,7 +58,9 @@ thread_local! {
 
 /// The registry a task was forked with, from [`Interpreter::adopt_worker_warm_caches`]
 /// to [`Interpreter::leave_worker_warm_caches`].
-pub(crate) struct TaskRegistry(Arc<Registry>);
+pub(crate) struct TaskRegistry(Arc<Registry>, Arc<RoutineTables>);
+
+use crate::runtime::routine_tables::RoutineTables;
 
 impl Interpreter {
     /// The registry `Arc` this interpreter currently reads.
@@ -71,14 +75,22 @@ impl Interpreter {
         )
     }
 
+    /// The routine-tables `Arc` this interpreter currently reads.
+    // Cost: O(1), one read-lock acquisition.
+    fn routines_arc(&self) -> Arc<RoutineTables> {
+        crate::runtime::routine_tables::RoutinesReadGuard::new(&self.types.routines).clone_arc()
+    }
+
     /// Run at the start of a pool task on a freshly forked interpreter: take
     /// over the caches the previous task on this worker left, when both were
     /// forked with the same registry (see the module docs).
     // Cost: O(1); the caches move, nothing is copied.
     pub(crate) fn adopt_worker_warm_caches(&mut self) -> TaskRegistry {
         let registry = self.registry_arc();
+        let routines = self.routines_arc();
         if let Some(warm) = WARM.with(|w| w.borrow_mut().take())
             && Arc::ptr_eq(&warm.registry, &registry)
+            && Arc::ptr_eq(&warm.routines, &routines)
         {
             self.caches = warm.caches;
             self.types.attr_type_constraint_cache = warm.attr_type_constraint_cache;
@@ -88,16 +100,19 @@ impl Interpreter {
                 .registry_write_gen
                 .store(warm.registry_write_gen, Ordering::Relaxed);
         }
-        TaskRegistry(registry)
+        TaskRegistry(registry, routines)
     }
 
     /// Run at the end of a pool task: leave this interpreter's caches for the
     /// next task on this worker, unless the task wrote its registry.
     // Cost: O(1); the caches move, nothing is copied.
     pub(crate) fn leave_worker_warm_caches(&mut self, forked_with: TaskRegistry) {
-        let TaskRegistry(registry) = forked_with;
-        let warm = Arc::ptr_eq(&self.registry_arc(), &registry).then(|| WarmCaches {
+        let TaskRegistry(registry, routines) = forked_with;
+        let untouched = Arc::ptr_eq(&self.registry_arc(), &registry)
+            && Arc::ptr_eq(&self.routines_arc(), &routines);
+        let warm = untouched.then(|| WarmCaches {
             registry,
+            routines,
             registry_write_gen: self.types.registry_write_gen.load(Ordering::Relaxed),
             caches: std::mem::take(&mut self.caches),
             attr_type_constraint_cache: std::mem::take(&mut self.types.attr_type_constraint_cache),

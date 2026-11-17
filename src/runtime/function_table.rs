@@ -1,6 +1,6 @@
 //! The registry's function map and the version stamp that travels with it.
 //!
-//! [`Registry::functions`](crate::runtime::registry::Registry::functions) is a
+//! [`Registry::functions`](crate::runtime::routine_tables::RoutineTables::functions) is a
 //! copy-on-write `Arc`: a block- or routine-scope snapshot clones the `Arc`
 //! (a refcount bump), every write goes through `Arc::make_mut`, and a scope
 //! restore puts the *saved `Arc` itself* back. Name-keyed dispatch caches are
@@ -19,7 +19,7 @@
 //! So the version lives **in the map**, not beside it. [`FunctionTable`] is the
 //! map plus a `version` drawn from a process-global counter; the stamp is
 //! renewed by [`FunctionTable::map_mut`], which
-//! [`Registry::functions_mut`](crate::runtime::registry::Registry::functions_mut)
+//! [`Registry::functions_mut`](crate::runtime::routine_tables::RoutineTables::functions_mut)
 //! is the only caller of, and which is in turn the only way to write the map.
 //! Two properties follow *by construction*, without any call site having to
 //! cooperate:

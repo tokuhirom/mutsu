@@ -286,7 +286,7 @@ mod tests {
         // names a file, and the two units are told apart.
         let mut seen_module = false;
         let mut seen_script = false;
-        for def in interp.registry().functions.values() {
+        for def in interp.routines().functions.values() {
             let Some(compiled) = def.compiled_fn() else {
                 continue;
             };

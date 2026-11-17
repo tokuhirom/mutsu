@@ -76,7 +76,7 @@ impl Interpreter {
         source_path: Option<&str>,
     ) {
         let key = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
-        let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
+        let Some(def) = self.routines_mut().functions_mut().remove(&key) else {
             return;
         };
         let unit = self.unit_of_source(source_path.or(def.source_file.as_deref()));
@@ -120,7 +120,7 @@ impl Interpreter {
         if let Some(def) = removed {
             let class_key = Symbol::intern(crate::qualified::qualified_text(class, name).as_str());
             let role_key = Symbol::intern(crate::qualified::qualified_text(role_name, name).as_str());
-            self.registry_mut().functions_mut().entry(role_key).or_insert(def);
+            self.routines_mut().functions_mut().entry(role_key).or_insert(def);
             self.invalidate_fn_resolution_for_keys([class_key, role_key]);
         }
     }
@@ -152,7 +152,7 @@ impl Interpreter {
         module: Option<&str>,
     ) {
         let candidates: Vec<(Symbol, String)> = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .filter_map(|k| {
@@ -207,13 +207,13 @@ impl Interpreter {
             if self.module.prelude_sub_names.contains(&name_sym) {
                 continue;
             }
-            let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
+            let Some(def) = self.routines_mut().functions_mut().remove(&key) else {
                 continue;
             };
             if own_export && let Some(module) = module {
-                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+                std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                     .remove(&key);
-                self.registry_mut()
+                self.routines_mut()
                     .functions_mut()
                     .entry(crate::qualified::qualified(
                         Symbol::intern(module),
@@ -297,13 +297,13 @@ impl Interpreter {
                 }
                 Some((*key, Symbol::intern(name)))
             })
-            .filter(|(key, _)| self.registry().functions.contains_key(key))
+            .filter(|(key, _)| self.routines().functions.contains_key(key))
             .collect();
         if candidates.is_empty() {
             return;
         }
         let multi_names: std::collections::HashSet<String> = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .filter_map(|k| {
@@ -330,15 +330,15 @@ impl Interpreter {
             // other scope the load happened to run inside) left the importer's
             // bodies with "Unknown function" (#10232).
             let def = if self.module.module_registered_functions.contains(&key) {
-                let Some(def) = self.registry().functions.get(&key).cloned() else {
+                let Some(def) = self.routines().functions.get(&key).cloned() else {
                     continue;
                 };
                 def
             } else {
-                let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
+                let Some(def) = self.routines_mut().functions_mut().remove(&key) else {
                     continue;
                 };
-                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+                std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                     .remove(&key);
                 def
             };

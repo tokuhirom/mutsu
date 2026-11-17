@@ -127,7 +127,7 @@ impl Interpreter {
         if self.operator_has_import_scope_sym(name_sym) {
             return self.has_proto_memoized(name, name_sym);
         }
-        let pgen = self.registry().proto_generation();
+        let pgen = self.routines().proto_generation();
         if self.caches.has_proto_cache_gen != pgen {
             self.caches.has_proto_cache.clear();
             self.caches.has_proto_cache_gen = pgen;

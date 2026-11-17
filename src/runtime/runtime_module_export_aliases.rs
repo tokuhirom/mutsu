@@ -165,14 +165,14 @@ impl Interpreter {
             }
         }
         {
-            let registry = self.registry();
+            let registry = self.routines();
             planned.retain(|(key, _)| registry.functions.get(key).is_none());
         }
         if planned.is_empty() {
             return;
         }
         {
-            let mut registry = self.registry_mut();
+            let mut registry = self.routines_mut();
             let functions = registry.functions_mut();
             for (key, idx) in &planned {
                 functions
@@ -209,7 +209,7 @@ impl Interpreter {
         let fq_sym = crate::qualified::qualified_text(package, name);
         // Hoist the clone to a `let` so the read guard drops before the
         // registry_mut writes below (read->write on the same lock deadlocks).
-        let def = self.registry().functions.get(&fq_sym).cloned();
+        let def = self.routines().functions.get(&fq_sym).cloned();
         // Multi candidates are stored under an arity-qualified key, so there
         // is no exact `package::name` entry to use for the EXPORT aliases.
         // Snapshot that family before taking mutable registry access. These
@@ -234,14 +234,14 @@ impl Interpreter {
                     crate::qualified_tail_index::names_in_family(family).into()
                 }
                 _ => self
-                    .registry()
+                    .routines()
                     .functions
                     .keys()
                     .copied()
                     .collect::<Vec<_>>()
                     .into(),
             };
-            let registry = self.registry();
+            let registry = self.routines();
             family_keys
                 .iter()
                 .filter_map(|key| {

@@ -317,7 +317,7 @@ impl Interpreter {
         // the whole functions map (#17553).
         let base_keys = self.fn_keys_for_base(name);
         let mut candidates: Vec<(String, Arc<FunctionDef>)> = Vec::new();
-        let registry = self.registry();
+        let registry = self.routines();
         for key in base_keys.iter() {
             let Some(def) = registry.functions.get(key) else {
                 continue;
@@ -409,7 +409,7 @@ impl Interpreter {
         });
         let generation = (
             self.caches.fn_resolve_gen,
-            self.registry().proto_generation(),
+            self.routines().proto_generation(),
         );
         if self.caches.proto_winner_memo_gen != generation {
             self.caches.proto_winner_memo.clear();
@@ -430,7 +430,7 @@ impl Interpreter {
         let resolved = self.resolve_function_with_types_keyed(name, arg_values, Some(&key.4))?;
         // A resolution that itself registered something is not remembered.
         if let Some(def) = &resolved
-            && (self.caches.fn_resolve_gen, self.registry().proto_generation()) == generation
+            && (self.caches.fn_resolve_gen, self.routines().proto_generation()) == generation
         {
             self.caches.proto_winner_memo.insert(key, def.clone());
         }
@@ -564,7 +564,7 @@ impl Interpreter {
         let global_prefix = format!("GLOBAL::{}/", name);
         let bare_prefix = format!("{}/", name);
         let mut seen_sigs = std::collections::HashSet::new();
-        let registry = self.registry();
+        let registry = self.routines();
         let mut candidates: Vec<_> = registry
             .functions
             .iter()

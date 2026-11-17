@@ -22,7 +22,7 @@ impl Interpreter {
     pub(super) fn export_routine_candidates(
         &self,
     ) -> Vec<(crate::symbol::Symbol, Arc<FunctionDef>)> {
-        self.registry()
+        self.routines()
             .functions
             .iter()
             .filter(|(k, _)| Self::is_export_routine_key(&k.resolve()))
@@ -60,7 +60,7 @@ impl Interpreter {
         &mut self,
     ) -> Vec<(crate::symbol::Symbol, Arc<FunctionDef>)> {
         let keys: Vec<crate::symbol::Symbol> = self
-            .registry()
+            .routines()
             .functions
             .keys()
             .filter(|k| Self::is_export_routine_key(&k.resolve()))
@@ -71,7 +71,7 @@ impl Interpreter {
         }
         let mut hidden = Vec::with_capacity(keys.len());
         for key in keys {
-            if let Some(def) = self.registry_mut().functions_mut().remove(&key) {
+            if let Some(def) = self.routines_mut().functions_mut().remove(&key) {
                 hidden.push((key, def));
             }
         }
@@ -90,7 +90,7 @@ impl Interpreter {
             return;
         }
         for (key, def) in hidden {
-            self.registry_mut().functions_mut().insert(key, def);
+            self.routines_mut().functions_mut().insert(key, def);
         }
         // Invalidate name-keyed resolution caches.
         self.invalidate_fn_resolution();
@@ -109,7 +109,7 @@ impl Interpreter {
     /// GLOBAL, so the key is `GLOBAL::EXPORT`; be liberal in case a package
     /// prefix was used) so it does not leak into the caller as `EXPORT()`.
     pub(super) fn remove_export_routine(&mut self) {
-        self.registry_mut()
+        self.routines_mut()
             .functions_mut()
             .retain(|key, _| !Self::is_export_routine_key(&key.resolve()));
         // Invalidate name-keyed resolution caches.

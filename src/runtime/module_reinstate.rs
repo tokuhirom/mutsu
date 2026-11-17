@@ -68,7 +68,7 @@ impl Interpreter {
         }
         let tracked = &self.module.module_registered_functions;
         if self
-            .registry()
+            .routines()
             .module_functions_present
             .as_ref()
             .is_some_and(|(set, version)| {
@@ -80,14 +80,14 @@ impl Interpreter {
         if tracked.iter().all(|key| functions.contains_key(key)) {
             // Holding the set keeps its address from naming another one.
             let present = (tracked.clone(), functions.version());
-            self.registry_mut().module_functions_present = Some(present);
+            self.routines_mut().module_functions_present = Some(present);
             return;
         }
         let mut missing: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = Vec::new();
         // Built on first need only: a key is missing from `functions` just
         // after a scope that loaded a module exits, not on an ordinary one.
         let mut exported: Option<std::collections::HashSet<String>> = None;
-        let registry = self.registry();
+        let registry = self.routines();
         for key in self.module.module_registered_functions.iter() {
             if functions.contains_key(key) {
                 continue;
@@ -147,7 +147,7 @@ impl Interpreter {
         before: &rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
     ) {
         let new_keys: Vec<Symbol> = self
-            .registry()
+            .routines()
             .proto_functions
             .keys()
             .filter(|key| !before.contains_key(*key))
@@ -179,7 +179,7 @@ impl Interpreter {
         if self.module.module_registered_protos.is_empty() {
             return Vec::new();
         }
-        let registry = self.registry();
+        let registry = self.routines();
         self.module
             .module_registered_protos
             .iter()

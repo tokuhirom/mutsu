@@ -23,7 +23,7 @@ impl Interpreter {
         }
         let owner_sym = Symbol::intern(owner);
         let rules: Vec<(Symbol, Vec<String>)> = {
-            let registry = self.registry();
+            let registry = self.routines();
             registry
                 .token_defs
                 .iter()
@@ -100,7 +100,7 @@ impl Interpreter {
                 return;
             }
             crate::runtime::regex::regex_token_closure::note_token_capture();
-            self.registry_mut()
+            self.routines_mut()
                 .token_captures
                 .insert(key, std::sync::Arc::new(entries));
         }

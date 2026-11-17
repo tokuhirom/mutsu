@@ -58,7 +58,7 @@ impl Interpreter {
                 .keys()
                 .any(|k| k.starts_with(&prefix))
             || self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .any(|k| k.as_str().starts_with(&prefix))
@@ -731,7 +731,7 @@ impl Interpreter {
             .chain(self.module.module_toplevel.package_symbols.keys())
             .any(|k| k.starts_with(&prefix))
             || self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .any(|k| k.as_str().starts_with(&prefix))

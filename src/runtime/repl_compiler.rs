@@ -460,7 +460,7 @@ impl Interpreter {
             self.install_context_routines(ctx);
         }
         let base = (
-            Arc::clone(&self.registry().functions),
+            Arc::clone(&self.routines().functions),
             Arc::clone(&self.dispatch.user_declared_infix_ops),
         );
         let saved_base = self.repl_compiler.capture_base.replace(base);
@@ -540,7 +540,7 @@ impl Interpreter {
         if !ctx.routines.is_empty() {
             let keys: Vec<Symbol> = ctx.routines.iter().map(|(k, _)| *k).collect();
             {
-                let mut registry = self.registry_mut();
+                let mut registry = self.routines_mut();
                 let functions = registry.functions_mut();
                 for (key, def) in &ctx.routines {
                     functions.insert(*key, def.clone());
@@ -588,7 +588,7 @@ impl Interpreter {
             return;
         };
         let routines: Vec<(Symbol, Arc<FunctionDef>)> = self
-            .registry()
+            .routines()
             .functions
             .iter()
             .filter(|(key, def)| before.get(*key).is_none_or(|old| !Arc::ptr_eq(old, def)))

@@ -474,7 +474,7 @@ impl Interpreter {
             } else if capture.core_extending.contains(&name) {
                 None
             } else {
-                self.registry()
+                self.routines()
                     .function_def(crate::qualified::qualified(package, name))
                     .map(LexicalImport::Routine)
             };

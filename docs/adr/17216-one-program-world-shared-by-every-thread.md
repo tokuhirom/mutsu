@@ -133,6 +133,51 @@ outside its lock (`docs/security.md`).
 Order: slice 1 is independent and goes first; slices 2-4 each depend only on the shared
 generation-counter pattern slice 2 establishes; slice 5 needs 1-4.
 
+### 3.2 Slice 2 refinement: the routine tables are lexical, the type tables are world
+
+Found while starting slice 2 (2026-11-17). `Registry` holds two kinds of state:
+
+- **Package-scoped declarations** — classes, roles, enums, subsets, the method tables
+  and method wrap chains, attribute and build-plan metadata, the HOW and representation
+  tables. A `class`/`role`/`enum`/`subset` is `our`-scoped: rakudo installs it in its
+  package, once per process. This is world state (§2.1).
+- **The routine tables** — `functions`, `proto_functions`, `proto_subs`,
+  `our_scoped_functions`, `token_defs`, `proto_tokens` and their indexes and memos
+  (`fn_transitions`, `module_functions_present`, `our_scoped_restore_memo`,
+  `token_captures`, `proto_token_params`, `proto_gen`). mutsu uses them as a *lexical
+  scope emulator*: a routine scope or `EVAL` snapshots them and puts the snapshot back
+  when it ends (`snapshot_routine_registry` / `restore_routine_registry`), and an import
+  scope undoes its routine installs at block exit (`ImportScopeSnapshot::import_writes`).
+  ADR-0113 and ADR-8751 retired the commonest cases into frame lexicals and lexical
+  import sets; the rest remain.
+
+Shared as world state, the routine tables would be wrong in two ways a synchronised
+program can observe: a routine scope on one thread would install its inner `my sub`
+where a concurrent call of the same routine on another thread resolves it (each
+thread then runs the other's closure), and a wholesale restore would delete a
+declaration another thread made meanwhile. So slice 2 splits `Registry`:
+
+1. The routine tables move into their own per-execution-context structure (`RoutineTables`,
+   reached as `routines()` / `routines_mut()`), forked copy-on-write per spawn exactly as
+   the whole registry is today. A routine is lexical in Raku; what a thread can call is
+   what its closures' scopes declared, which the fork carries.
+2. Everything else in `Registry` becomes one world table (§2.1-2.3), behind a
+   `WorldCell`-style slot shared by every interpreter: reads take the thread's snapshot,
+   writes publish under the lock and move the process-wide generation.
+3. Per-thread memos that live inside `Registry` today and are written on read paths
+   (`mixin_what_cache`, `proto_compiled_cache`, `lexical_key_scans`, ...) move out of
+   the world table into the thread's caches, so a memo fill is not a world write.
+4. An import scope's class rollback (`ImportScopeSnapshot::scope_classes`) undoes the
+   keys the scope added instead of putting a whole class table back, so it cannot drop
+   another thread's declaration.
+
+Out of this refinement, left for slice 4: an `our sub` created at run time on a worker
+(`EVAL 'our sub f {...}'`, a `require` on a worker) is published to the package's world
+stash; until then it stays visible on the thread that made it.
+
+Slice 2 lands in two PRs: 2a moves the routine tables out (no behaviour change), 2b
+shares what is left of `Registry`.
+
 ## 4. Consequences
 
 - `start` and every other spawn see the program rakudo would show them: declarations, wraps,

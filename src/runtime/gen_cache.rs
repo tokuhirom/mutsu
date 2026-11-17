@@ -3,7 +3,7 @@
 //! generation moves.
 //!
 //! Every name-keyed dispatch memo answers a question about
-//! [`Registry::functions`](crate::runtime::registry::Registry::functions), so
+//! [`Registry::functions`](crate::runtime::routine_tables::RoutineTables::functions), so
 //! it has to be invalidated when that map changes. The cheap way to do that is
 //! one generation stamp per *table*: compare it on the way in, `clear()` on a
 //! mismatch. That is correct, and it is what these caches used to do — but it

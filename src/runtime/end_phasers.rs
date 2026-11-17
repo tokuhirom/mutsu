@@ -278,7 +278,7 @@ impl Interpreter {
             return Default::default();
         };
         let added: Vec<(Symbol, std::sync::Arc<crate::ast::FunctionDef>)> = self
-            .registry()
+            .routines()
             .functions
             .iter()
             .filter(|(key, def)| {
@@ -299,7 +299,7 @@ impl Interpreter {
         routines: &[(Symbol, std::sync::Arc<crate::ast::FunctionDef>)],
     ) -> Option<crate::runtime::RoutineRegistrySnapshot> {
         let missing: Vec<&(Symbol, std::sync::Arc<crate::ast::FunctionDef>)> = {
-            let registry = self.registry();
+            let registry = self.routines();
             routines
                 .iter()
                 .filter(|(key, _)| !registry.functions.contains_key(key))
@@ -311,8 +311,8 @@ impl Interpreter {
         let snapshot = self.snapshot_routine_registry();
         let keys: Vec<Symbol> = missing.iter().map(|(key, _)| *key).collect();
         for (key, def) in missing {
-            self.registry_mut()
-                .routine_tables_mut()
+            self.routines_mut()
+                .deref_mut_tables()
                 .install_function(*key, def.clone());
         }
         self.invalidate_fn_resolution_for_keys(keys);

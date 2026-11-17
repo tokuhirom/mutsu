@@ -239,7 +239,7 @@ impl Interpreter {
     pub(super) fn hide_dynamic_callers_local_subs(&mut self) -> Vec<(String, Arc<SubsetDef>)> {
         let none = Vec::new();
         {
-            let registry = self.registry();
+            let registry = self.routines();
             if registry.routine_local_subs.is_empty() && registry.routine_local_subsets.is_empty()
             {
                 return none;
@@ -250,20 +250,21 @@ impl Interpreter {
         };
         let (hidden, hidden_subsets): (Vec<Symbol>, Vec<String>) = {
             let registry = self.registry();
+            let routines = self.routines();
             (
-                registry
+                routines
                     .routine_local_subs
                     .iter()
                     .filter(|(key, (order, depth))| {
                         *depth <= plain_idx
-                            && registry
+                            && routines
                                 .functions
                                 .get(key)
                                 .is_some_and(|def| def.decl_order == *order)
                     })
                     .map(|(key, _)| *key)
                     .collect(),
-                registry
+                routines
                     .routine_local_subsets
                     .iter()
                     .filter(|(name, (def, depth))| {
@@ -281,8 +282,9 @@ impl Interpreter {
             return none;
         }
         let mut registry = self.registry_mut();
+        let mut routines = self.routines_mut();
         for key in hidden {
-            registry.functions_mut().remove(&key);
+            routines.functions_mut().remove(&key);
         }
         hidden_subsets
             .into_iter()
@@ -334,7 +336,7 @@ impl Interpreter {
     /// Insert a multi-overload `def` into the function registry under `base_key`,
     /// falling back to the first free `base_key__m{N}` suffix when `base_key` is
     /// already taken. Uses a SINGLE write guard for all probes — the previous
-    /// `match self.registry_mut().functions.entry(..) { Occupied => self.registry_mut()... }`
+    /// `match self.routines_mut().functions.entry(..) { Occupied => self.registry_mut()... }`
     /// shape acquired a second write lock inside the arm and deadlocked (the
     /// borrow checker cannot see it because each `registry_mut()` is a fresh guard).
     ///
@@ -348,7 +350,7 @@ impl Interpreter {
         let def = std::sync::Arc::new(def);
         let mut redeclared = self.dispatch.rewritten_unit_candidates.take();
         let installed = {
-            let mut registry = self.registry_mut();
+            let mut registry = self.routines_mut();
             let funcs = registry.functions_mut();
             let mut key = Symbol::intern(base_key);
             let mut idx = 1usize;
@@ -984,7 +986,7 @@ impl Interpreter {
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.
-            if !multi && self.registry().functions.contains_key(&global_key) {
+            if !multi && self.routines().functions.contains_key(&global_key) {
                 return Ok(SubRegisterOutcome::Unchanged);
             }
             if !self.current_package_is_global_name() {
@@ -1094,7 +1096,7 @@ impl Interpreter {
                 .is_some_and(|(fp, installed)| {
                     *fp == site_fp
                         && self
-                            .registry()
+                            .routines()
                             .functions
                             .get(&fq_sym)
                             .is_some_and(|current| std::sync::Arc::ptr_eq(current, installed))
@@ -1121,7 +1123,7 @@ impl Interpreter {
         // `prepared_fn_defs` yet) — but a routine-scope restore puts the
         // multi's candidate keys straight back (the whole `functions` map is
         // swapped back to its pre-call snapshot), so every call after the
-        // first found `!self.registry().functions.contains_key(&fq_sym)` true
+        // first found `!self.routines().functions.contains_key(&fq_sym)` true
         // again and took THIS path, which never re-runs that `retain` and so
         // left the shadowed multi visible again from the second call on
         // (issue #9080).
@@ -1145,7 +1147,7 @@ impl Interpreter {
                 .iter()
                 .any(|k| k.as_str().starts_with(&multi_prefix));
             if !shadows_outer_multi
-                && !self.registry().functions.contains_key(&fq_sym)
+                && !self.routines().functions.contains_key(&fq_sym)
                 && let Some(cached) = self
                     .dispatch
                     .prepared_fn_defs
@@ -1158,8 +1160,8 @@ impl Interpreter {
                 // installed, so the map lands in a state it has already been in
                 // and the version stamp should say so rather than name a new one
                 // (#8314, `runtime::function_table`).
-                self.registry_mut()
-                    .routine_tables_mut()
+                self.routines_mut()
+                    .deref_mut_tables()
                     .install_function(fq_sym, cached.clone());
                 self.note_main_unit_routine(&pkg, name);
                 // Invalidate name-keyed resolution caches. Exactly one key
@@ -1394,7 +1396,7 @@ impl Interpreter {
             // present. (`lexical_hoist` only marks block-scope hoists; the
             // mainline hoist sets `hoisted` instead.)
             let is_hoisted = is_lexical_hoist || pass.hoisted;
-            if is_our_scoped && !is_hoisted && !self.registry().proto_subs_contains(&single_key) {
+            if is_our_scoped && !is_hoisted && !self.routines().proto_subs_contains(&single_key) {
                 let mut attrs = ValueMap::default();
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
                 attrs.insert(
@@ -1520,7 +1522,7 @@ impl Interpreter {
         }
         let single_key = self.current_package_qualified(name).to_string();
         let single_key_sym = Symbol::intern(&single_key);
-        let has_single = self.registry().functions.contains_key(&single_key_sym);
+        let has_single = self.routines().functions.contains_key(&single_key_sym);
         // `method foo is export` installs a synthetic, arity-qualified
         // function candidate so `import Class` can expose `foo($obj)`.  It is
         // not a package-level multi declaration, and Raku permits a later
@@ -1528,7 +1530,7 @@ impl Interpreter {
         // export bridge trigger the ordinary sub-vs-multi redeclaration rule;
         // real multi candidates remain part of the check.
         let has_multi = {
-            let functions = &self.registry().functions;
+            let functions = &self.routines().functions;
             // A `MAIN` family another compunit exported into a lexical scope
             // (`{ use App::Stouch; }` ahead of the script's own `BEGIN sub
             // MAIN(|) { }`, as App::Stouch's tests do) is lexical to that
@@ -1546,7 +1548,7 @@ impl Interpreter {
                 })
             })
         };
-        let has_proto = self.registry().proto_subs_contains(&single_key);
+        let has_proto = self.routines().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0
             || in_nested_scope
             || self.in_inlined_block_frame())
@@ -1606,7 +1608,7 @@ impl Interpreter {
         let has_user_custom_traits = custom_traits.iter().any(|(t, _)| !t.starts_with("__"));
         // Clone the existing def out so the guard drops before mutating self.env
         // (registration cold path, so the FunctionDef clone is cheap enough).
-        let existing = self.registry().functions.get(&single_key_sym).cloned();
+        let existing = self.routines().functions.get(&single_key_sym).cloned();
         let mut redeclares_hoisted_twin = false;
         if let Some(existing) = existing {
             // The same declaration is one compilation unit's: an identical
@@ -1650,7 +1652,7 @@ impl Interpreter {
             if same
                 && new_def.compiled.is_some()
                 && existing.compiled.is_none()
-                && let Some(slot) = self.registry_mut().functions_mut().get_mut(&single_key_sym)
+                && let Some(slot) = self.routines_mut().functions_mut().get_mut(&single_key_sym)
             {
                 std::sync::Arc::make_mut(slot)
                     .compiled
@@ -1699,7 +1701,7 @@ impl Interpreter {
             }
         }
         let existing_is_stub = self
-            .registry()
+            .routines()
             .functions
             .get(&single_key_sym)
             .is_some_and(|existing| existing.is_stub);
@@ -1716,7 +1718,7 @@ impl Interpreter {
         let shadows_outer_eval_single = is_in_eval && is_outer_routine_key(single_key_sym);
         let shadows_outer_eval_multi = is_in_eval
             && self
-                .registry()
+                .routines()
                 .functions
                 .family_keys(single_key_sym.as_str())
                 .into_iter()
@@ -1784,7 +1786,7 @@ impl Interpreter {
         if !multi && (allow_lexical_shadow || imported_routine_alias) && !is_our_scoped {
             let lexical_single = self.current_package_qualified(name).to_string();
             let lexical_multi_prefix = format!("{}::{}/", self.current_package(), name);
-            self.registry_mut().functions_mut().retain(|key, _| {
+            self.routines_mut().functions_mut().retain(|key, _| {
                 let resolved = key.resolve();
                 resolved != lexical_single && !resolved.starts_with(&lexical_multi_prefix)
             });
@@ -1810,7 +1812,7 @@ impl Interpreter {
                 self.current_package_sym(),
                 crate::qualified::known_symbol(name),
             );
-            self.registry_mut().functions_mut().remove(&lexical_single);
+            self.routines_mut().functions_mut().remove(&lexical_single);
             self.invalidate_fn_resolution();
         }
         if let Some(assoc) = associativity {
@@ -1872,7 +1874,7 @@ impl Interpreter {
                 } else {
                     let fq_sym = Symbol::intern(&fq);
                     let mut redeclared = self.dispatch.rewritten_unit_candidates.take();
-                    match self.registry_mut().functions_mut().entry(fq_sym) {
+                    match self.routines_mut().functions_mut().entry(fq_sym) {
                         std::collections::hash_map::Entry::Vacant(entry) => {
                             entry.insert(std::sync::Arc::new(def.clone()));
                             installed_multi_keys.push(fq_sym);
@@ -1948,7 +1950,7 @@ impl Interpreter {
             // EVAL-local redeclaration replaces the registry entry; named
             // call dispatch otherwise finds the stale chain by name.
             self.clear_wrap_chains_for_name(Symbol::intern(&package), name);
-            self.registry_mut().functions_mut().insert(fq_sym, arc);
+            self.routines_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches — one key moved (#8314).
             self.invalidate_fn_resolution_for_keys([fq_sym]);
             self.note_main_unit_routine(&package, name);
@@ -1996,7 +1998,7 @@ impl Interpreter {
             let prefix = format!("GLOBAL::{}/", name);
             let unit = self.declaring_unit_sym();
             let keys: Vec<Symbol> = self
-                .registry()
+                .routines()
                 .functions
                 .keys()
                 .filter(|k| k.as_str().starts_with(&prefix))
@@ -2017,9 +2019,9 @@ impl Interpreter {
             let fq = self.current_package_qualified(name).to_string();
             // Share the `Arc` already held in `functions` (read->write on the
             // same lock would deadlock, so clone the handle out first).
-            let f = self.registry().functions.get(&Symbol::intern(&fq)).cloned();
+            let f = self.routines().functions.get(&Symbol::intern(&fq)).cloned();
             if let Some(f) = f {
-                std::sync::Arc::make_mut(&mut self.registry_mut().our_scoped_functions)
+                std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                     .insert(Symbol::intern(&fq), f);
             }
         }
@@ -2041,7 +2043,7 @@ impl Interpreter {
             // C6e-3). Falls back to the raw declaration shape on a lookup
             // miss (e.g. a multi keyed under `name/arity`).
             let installed = self
-                .registry()
+                .routines()
                 .functions
                 .get(&Symbol::intern(self.current_package_qualified(name)))
                 .cloned();
@@ -2159,7 +2161,7 @@ impl Interpreter {
                 // C6e-3) can only run through `compiled_routine`. A multi
                 // candidate (keyed under `name/arity`) keeps the plain build.
                 let installed_def = self
-                    .registry()
+                    .routines()
                     .functions
                     .get(&Symbol::intern(self.current_package_qualified(name)))
                     .cloned();
@@ -2508,13 +2510,13 @@ impl Interpreter {
         }
         if !allow_lexical_shadow && !is_prepass_reregistration {
             if self
-                .registry()
+                .routines()
                 .functions
                 .contains_key(&Symbol::intern(&key))
             {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
-            if self.registry().proto_subs_contains(&key) {
+            if self.routines().proto_subs_contains(&key) {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
         }
@@ -2535,7 +2537,7 @@ impl Interpreter {
                 "",
             ]))
             .is_some();
-        self.registry_mut()
+        self.routines_mut()
             .functions_mut()
             .retain(|existing, _def| {
                 let resolved = existing.resolve();
@@ -2543,7 +2545,7 @@ impl Interpreter {
             });
         // Invalidate name-keyed resolution caches.
         self.invalidate_fn_resolution();
-        self.registry_mut().proto_subs_insert(key);
+        self.routines_mut().proto_subs_insert(key);
         let fq = self.current_package_qualified(name).to_string();
         // `proto bar {*}` declares an empty signature; record it so dispatch
         // can reject calls with arguments ("will never work with signature of
@@ -2558,7 +2560,7 @@ impl Interpreter {
                 .empty_sig_proto_names
                 .insert(Symbol::intern(name));
         }
-        self.registry_mut().proto_functions_mut().insert(
+        self.routines_mut().proto_functions_mut().insert(
             Symbol::intern(&fq),
             std::sync::Arc::new(FunctionDef {
                 is_cached: false,
@@ -2607,7 +2609,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let key = format!("GLOBAL::{}", name);
         if self
-            .registry()
+            .routines()
             .functions
             .contains_key(&Symbol::intern(&key))
         {
@@ -2622,7 +2624,7 @@ impl Interpreter {
                 return Err(RuntimeError::redeclaration_routine(name));
             }
         }
-        if self.registry().proto_subs_contains(&key) {
+        if self.routines().proto_subs_contains(&key) {
             // A proto with this name is already visible in GLOBAL. This happens
             // when `is export` on a GLOBAL proto hits both local/global paths,
             // or when an outer (mainline) `proto sub` of the same name already
@@ -2632,7 +2634,7 @@ impl Interpreter {
             // be a spurious redeclaration error, so skip it.
             return Ok(());
         }
-        self.registry_mut().proto_subs_insert(key.clone());
+        self.routines_mut().proto_subs_insert(key.clone());
         let proto_empty_sig = params.is_empty() && param_defs.is_empty() && {
             let (use_pos, use_named) = crate::method_signature_shared::auto_signature_uses(body);
             !use_pos && !use_named
@@ -2642,7 +2644,7 @@ impl Interpreter {
                 .empty_sig_proto_names
                 .insert(Symbol::intern(name));
         }
-        self.registry_mut().proto_functions_mut().insert(
+        self.routines_mut().proto_functions_mut().insert(
             Symbol::intern(&key),
             std::sync::Arc::new(FunctionDef {
                 is_cached: false,
@@ -2688,11 +2690,11 @@ impl Interpreter {
         if param_defs.iter().any(|pd| !pd.named && !pd.slurpy) {
             crate::runtime::regex::regex_dynparams::note_token_def_params(param_defs);
             let params = std::sync::Arc::new(param_defs.to_vec());
-            self.registry_mut()
+            self.routines_mut()
                 .proto_token_params
                 .insert(key.clone(), params);
         }
-        std::sync::Arc::make_mut(&mut self.registry_mut().proto_tokens).insert(key);
+        std::sync::Arc::make_mut(&mut self.routines_mut().proto_tokens).insert(key);
     }
 
     /// The registry key -- the type identity -- of an enum declared as `name`

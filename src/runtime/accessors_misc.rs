@@ -56,7 +56,7 @@ impl Interpreter {
 
     pub(crate) fn snapshot_routine_registry(&self) -> RoutineRegistrySnapshot {
         // Single guard for all six reads (avoids stacking read guards).
-        let registry = self.registry();
+        let registry = self.routines();
         (
             std::sync::Arc::clone(&registry.functions),
             std::sync::Arc::clone(&registry.proto_functions),
@@ -86,7 +86,7 @@ impl Interpreter {
     // Cost: O(1).
     fn routine_registry_unchanged_since(&self, snapshot: &RoutineRegistrySnapshot) -> bool {
         use std::sync::Arc;
-        let registry = self.registry();
+        let registry = self.routines();
         Arc::ptr_eq(&snapshot.0, &registry.functions)
             && Arc::ptr_eq(&snapshot.1, &registry.proto_functions)
             && Arc::ptr_eq(&snapshot.2, &registry.proto_subs_snapshot())
@@ -115,7 +115,7 @@ impl Interpreter {
             return;
         }
         let tokens_unchanged = {
-            let registry = self.registry();
+            let registry = self.routines();
             std::sync::Arc::ptr_eq(&snapshot.3, &registry.token_defs)
                 && std::sync::Arc::ptr_eq(&snapshot.4, &registry.proto_tokens)
         };
@@ -181,11 +181,12 @@ impl Interpreter {
         // token table (the snapshot's own `Arc`) has none to find.
         if !tokens_unchanged {
             let registry = self.registry();
+            let routines = self.routines();
             let token_owned_by_package = |defs: &[std::sync::Arc<FunctionDef>]| {
                 defs.iter()
                     .any(|d| registry.classes.contains_key(&d.package.resolve()))
             };
-            for (key, defs) in registry.token_defs.iter() {
+            for (key, defs) in routines.token_defs.iter() {
                 if token_defs.contains_key(key) {
                     continue;
                 }
@@ -193,13 +194,13 @@ impl Interpreter {
                     new_tokens.push((*key, defs.clone()));
                 }
             }
-            for pt in registry.proto_tokens.iter() {
+            for pt in routines.proto_tokens.iter() {
                 if proto_tokens.contains(pt) {
                     continue;
                 }
                 // Keep a proto declaration exactly when its candidates survive.
                 let kept = is_eval
-                    || registry
+                    || routines
                         .token_defs
                         .get(&Symbol::intern(pt))
                         .is_some_and(|defs| token_owned_by_package(defs))
@@ -227,7 +228,7 @@ impl Interpreter {
         // (#9073).
         let mut touched_keys: Vec<Symbol> = Vec::new();
         let installed = {
-            let registry = self.registry();
+            let registry = self.routines();
             registry
                 .fn_transitions
                 .keys_installed_since(functions.version(), registry.functions.version())
@@ -235,7 +236,7 @@ impl Interpreter {
         if let Some(keys) = installed {
             touched_keys = keys;
         } else {
-            let registry = self.registry();
+            let registry = self.routines();
             for key in registry.functions.keys() {
                 if !functions.contains_key(key) {
                     touched_keys.push(*key);
@@ -266,7 +267,7 @@ impl Interpreter {
         let new_exported: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = match owned_exports {
             None => Vec::new(),
             Some(owned) => {
-                let registry = self.registry();
+                let registry = self.routines();
                 touched_keys
                     .iter()
                     .filter(|key| !functions.contains_key(key))
@@ -276,10 +277,8 @@ impl Interpreter {
             }
         };
         let module_protos = self.module_protos_missing_from(&proto_functions);
-        let mut guard = self.registry_mut();
-        // Every write below is to the routine/token tables, never to the four
-        // type maps, so the lexical type-name index survives the restore.
-        let registry = guard.routine_tables_mut();
+        let mut guard = self.routines_mut();
+        let registry = guard.deref_mut_tables();
         registry.functions = functions;
         registry.proto_functions = proto_functions;
         registry.token_defs = token_defs;
@@ -309,7 +308,8 @@ impl Interpreter {
         // native_ctor_plan_cache, multi_resolve_cache, resolved_seq_cache,
         // private_zeroarg_method_cache, ...) self-invalidates through its own
         // read-site refresh instead of depending on the separate eager clear below.
-        registry.bump_method_generation();
+        // (Done after the routine guard drops: the method generation lives in
+        // the registry.)
         // Re-apply only newly added our-scoped functions so they survive block scope exit.
         // In EVAL context, our-scoped functions should NOT leak into the outer lexical
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
@@ -327,6 +327,7 @@ impl Interpreter {
             registry.functions_mut().insert(key, def);
         }
         drop(guard);
+        self.registry_mut().bump_method_generation();
         // The routine registry just changed: a lexical (`my sub`) registered
         // inside the block was removed. Bump the function-namespace generation
         // so a subsequent call to that name re-resolves against the restored

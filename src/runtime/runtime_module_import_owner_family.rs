@@ -22,7 +22,7 @@ impl Interpreter {
             return false;
         };
         let owner = Symbol::intern(owner);
-        let registry = self.registry();
+        let registry = self.routines();
         let functions = &registry.functions;
         functions
             .family_keys(target_single)
