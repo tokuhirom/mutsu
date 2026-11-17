@@ -476,6 +476,12 @@ impl Interpreter {
                     .map(LexicalImport::Routine)
             };
             if let Some(binding) = binding {
+                // A family an earlier `use` of the scope handed out as a
+                // dispatcher value (a `sub EXPORT` hook) is the same family.
+                let is_family = !capture.hook_routines.contains_key(&name)
+                    && multi_defs.contains_key(&name);
+                let binding =
+                    self.merge_earlier_import_dispatchers(binding, name, &earlier_sets, is_family);
                 set.insert(name, binding);
             }
         }
