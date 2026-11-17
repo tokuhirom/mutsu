@@ -883,6 +883,25 @@ impl Interpreter {
             }
             // Backslash escape: \x
             '\\' if chars.len() > 1 => 2,
+            // A variable (`$sep`, `$*sep`, `$kebab-name`): one interpolation
+            // atom, read at match time, not the `$` end anchor followed by a
+            // name.
+            '$' if chars
+                .get(1)
+                .is_some_and(|c| c.is_alphabetic() || matches!(c, '_' | '*' | '?')) =>
+            {
+                let mut j = 2;
+                while j < chars.len() {
+                    let kebab = chars[j] == '-'
+                        && chars.get(j + 1).is_some_and(|n| n.is_alphabetic() || *n == '_');
+                    if chars[j].is_alphanumeric() || chars[j] == '_' || kebab {
+                        j += 1;
+                    } else {
+                        break;
+                    }
+                }
+                j
+            }
             // Single character atom
             _ => 1,
         };
