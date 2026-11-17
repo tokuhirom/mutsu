@@ -1062,11 +1062,21 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             }
             external_setting(&name)
         }
-        // `True`, `Inf`, ... : a core enum value, constant of the setting.
+        // `True`, `Less`, ... : a core enum value, a symbol of the setting.
         C::TermEnum => external(
-            "RakuAST::Declaration::External::Constant",
+            "RakuAST::Declaration::External::Setting",
             &type_node_name(node).or_else(|| leaf(node, "name"))?,
         ),
+        // `pi`, `Empty`, `IterationEnd`: a term of the setting, unless the unit
+        // declares the name itself.
+        C::TermName => {
+            let name = type_node_name(node).or_else(|| leaf(node, "name"))?;
+            if let Some(declared) = scopes.find(&name) {
+                return Some(declared.clone());
+            }
+            (super::core_term_names::kind(&name).is_some() && !(scopes.shadowed)(&name))
+                .then(|| external("RakuAST::Declaration::External::Setting", &name))?
+        }
         C::TypeSimple | C::TypeSetting => {
             let name = type_node_name(node)?;
             if let Some(package) = scopes.find(&name) {

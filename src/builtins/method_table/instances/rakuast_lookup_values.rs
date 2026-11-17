@@ -103,7 +103,7 @@ pub(super) fn lookup_value(
             };
             format!("'{name}' has not been resolved.")
         }),
-        RakuAstClass::VarLexical => {
+        RakuAstClass::VarLexical | RakuAstClass::TermName | RakuAstClass::TermEnum => {
             resolution_of(target, |_| "This element has not been resolved.".into())
         }
         _ => return None,
