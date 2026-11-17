@@ -283,7 +283,7 @@ impl Interpreter {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
                 Stmt::VarDecl { constant, .. } if is_constant_decl(*constant) => {
-                    run_constants
+                    (run_constants || initializer_is_self_contained(&op.raw))
                         && (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
                         && !stmt_mentions_role_params(&op.raw, &body_routines)
                 }
@@ -461,6 +461,58 @@ fn stmt_mentions_role_params(stmt: &Stmt, params: &[String]) -> bool {
     };
     m.visit_stmt(stmt);
     m.found
+}
+
+/// Whether a declaration's initializer reads nothing from its surroundings
+/// and calls nothing (`my constant name = 'r' ~ 'second'`): evaluating it in
+/// a hoisted forward-reference registration, before the unit's lexicals
+/// exist, gives the value the real declaration would and has no side effect
+/// to repeat. The hoisted role needs it when the constant names one of its
+/// methods (`method ::(name) { ... }`).
+///
+/// Cost: O(n), n = size of `stmt`'s AST.
+fn initializer_is_self_contained(stmt: &Stmt) -> bool {
+    use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
+
+    #[derive(Default)]
+    struct Reaches {
+        found: bool,
+    }
+    impl<'ast> Visit<'ast> for Reaches {
+        fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+            if !self.found {
+                walk_stmt(self, stmt);
+            }
+        }
+        fn visit_expr(&mut self, expr: &'ast Expr) {
+            if !self.found {
+                walk_expr(self, expr);
+            }
+        }
+        fn visit_name(&mut self, _name: &str, kind: NameKind) {
+            self.found |= matches!(
+                kind,
+                NameKind::Call
+                    | NameKind::UserRoutineCall
+                    | NameKind::Method
+                    | NameKind::CodeVar
+                    | NameKind::Var
+                    | NameKind::ArrayVar
+                    | NameKind::HashVar
+                    | NameKind::CaptureVar
+                    | NameKind::Term
+                    | NameKind::Symbolic
+                    | NameKind::Source
+            );
+        }
+    }
+
+    let Stmt::VarDecl { expr, .. } = stmt else {
+        return false;
+    };
+    let mut r = Reaches::default();
+    r.visit_expr(expr);
+    !r.found
 }
 
 /// Whether a `VarDecl` is a `constant` declaration.
