@@ -2328,9 +2328,38 @@ impl Interpreter {
                 self.call_method_with_values(left.clone(), "Str", vec![])
                     .is_ok_and(|v| *s == v.to_string_value())
             }
-            // Blob/Buf (and Array) ~~ Numeric compares the element count.
-            (ValueView::Array(..) | ValueView::Instance { .. }, _)
-                if let Some(result) =
+            // A Seq whose elements are not there yet, matched by a number or a
+            // Range, numifies to its element count (#17915): reify it -- it
+            // stays readable, as `.elems` leaves it -- and match again.
+            (ValueView::Seq(body), _)
+                if body.needs_touch()
+                    && ((crate::vm::vm_smart_match::is_numericish_matcher(right)
+                        && !matches!(right.view(), ValueView::Mixin(..)))
+                        || right.is_range()) =>
+            {
+                let body = Arc::clone(&body);
+                match self.reify_seq_body(&body) {
+                    Ok(_) if !body.needs_touch() => self.smart_match_inner(left, right, err),
+                    Ok(_) => false,
+                    Err(e) => {
+                        err.get_or_insert(e);
+                        false
+                    }
+                }
+            }
+            // A list, buffer, hash, QuantHash or Seq ~~ Numeric compares its
+            // `.Numeric` (#17915); `positional_numeric_smart_match` decides
+            // which topics take part.
+            (
+                ValueView::Array(..)
+                | ValueView::Instance { .. }
+                | ValueView::Hash(..)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..)
+                | ValueView::Seq(..),
+                _,
+            ) if let Some(result) =
                     crate::vm::vm_smart_match::positional_numeric_smart_match(left, right) =>
             {
                 result
