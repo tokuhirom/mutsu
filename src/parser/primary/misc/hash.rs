@@ -77,11 +77,15 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             continue;
         }
 
-        if let Ok((r_key, key)) = parse_simple_hash_key(r) {
+        if let Ok((r_key, (key, written))) = parse_simple_hash_key(r) {
             let (after_key, _) = ws_inner(r_key);
             if let Some(after_arrow) = after_key.strip_prefix("=>") {
                 let (after_arrow, _) = ws_inner(after_arrow);
                 let (r_val, val) = expression(after_arrow)?;
+                let val = match &written {
+                    Some((written, form)) => written_key_value(written, val, *form),
+                    None => val,
+                };
                 pairs.push((key, Some(val)));
                 let (r_val, _) = ws_inner(r_val);
                 if let Some(stripped) = r_val.strip_prefix(',') {
@@ -189,25 +193,34 @@ fn hash_args_from_pairs(pairs: Vec<(String, Option<Expr>)>) -> Vec<Expr> {
         .collect()
 }
 
-fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
+/// A literal hash key: its string, and, unless it is a bare identifier, the
+/// key as written with the form of its pair (`"a"` is a `QuotedKey`, `1` an
+/// ordinary `Infix` over an `Int`).
+type SimpleHashKey = (String, Option<(Expr, crate::ast::BinaryForm)>);
+
+fn parse_simple_hash_key(input: &str) -> PResult<'_, SimpleHashKey> {
+    use crate::ast::BinaryForm;
     if let Ok((r, name)) = crate::parser::stmt::ident_pub(input) {
-        return Ok((r, name));
+        return Ok((r, (name, None)));
     }
     if let Ok((r, Expr::Literal(lit))) = crate::parser::primary::number::integer(input)
         && let ValueView::Int(n) = lit.view()
     {
-        return Ok((r, n.to_string()));
+        let key = n.to_string();
+        return Ok((r, (key, Some((Expr::Literal(lit), BinaryForm::Infix)))));
     }
     if let Ok((r, Expr::Literal(lit))) = crate::parser::primary::number::integer(input)
         && let ValueView::BigInt(n) = lit.view()
     {
-        return Ok((r, n.to_string()));
+        let key = n.to_string();
+        return Ok((r, (key, Some((Expr::Literal(lit), BinaryForm::Infix)))));
     }
     if let Ok((r, Expr::Literal(lit))) =
         single_quoted_string(input).or_else(|_| double_quoted_string(input))
         && let ValueView::Str(s) = lit.view()
     {
-        return Ok((r, s.to_string()));
+        let key = s.to_string();
+        return Ok((r, (key, Some((Expr::Literal(lit), BinaryForm::QuotedKey)))));
     }
     Err(PError::expected("hash key"))
 }
@@ -222,15 +235,38 @@ fn hash_key_from_expr(expr: Expr) -> Result<String, PError> {
     }
 }
 
+/// The value of a hash-literal entry, marked with its key as written when the
+/// key is not a bare identifier (`"a" => 1`, `1 => 2`): the entry keeps only
+/// the key's string, and RakuAST keeps the written key.
+// Cost: O(1).
+fn written_key_value(key: &Expr, value: Expr, form: crate::ast::BinaryForm) -> Expr {
+    use crate::ast::BinaryForm;
+    let written = match form {
+        BinaryForm::QuotedKey => true,
+        BinaryForm::Infix => matches!(key, Expr::Literal(v) if v.as_str().is_none()),
+        _ => false,
+    };
+    if !written {
+        return value;
+    }
+    Expr::spelled(value, || crate::ast::spelled::Spelling::HashPairKey {
+        key: Box::new(key.clone()),
+        form,
+    })
+}
+
 fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
     match expr {
         Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
-            ..
+            form,
         } => match hash_key_from_expr((**left).clone()) {
-            Ok(key) => Ok(Some((key, (**right).clone()))),
+            Ok(key) => Ok(Some((
+                key,
+                written_key_value(left, (**right).clone(), *form),
+            ))),
             // A key that is not a compile-time literal (e.g. an interpolated
             // string `"{ $_ }B" => …`) cannot be stored as a static key; return
             // `None` so the caller routes the whole `=>` pair through the
