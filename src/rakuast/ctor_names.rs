@@ -67,3 +67,10 @@ pub(super) fn declares(class_name: &str, name: &str) -> bool {
             .get(class_name)
             .is_some_and(|declared| declared.contains(&name))
 }
+
+/// The named parameter `name` of `class_name`'s `new` in rakudo, as the
+/// table's own `'static` spelling: the attribute it initializes (#17327).
+// Cost: O(n), n = named parameters of the class.
+pub(super) fn declared_name(class_name: &str, name: &str) -> Option<&'static str> {
+    TABLE.get(class_name)?.iter().copied().find(|declared| *declared == name)
+}

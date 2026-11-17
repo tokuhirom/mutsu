@@ -630,6 +630,7 @@ pub(crate) mod label;
 pub(crate) mod lazy_attrs;
 mod lex_import_site;
 mod method_site;
+mod rakuast_attr;
 mod regex_source;
 mod type_decl_site;
 pub mod user_key_map;

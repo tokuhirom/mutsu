@@ -337,7 +337,8 @@ impl Interpreter {
             // The typed variants coerce first: an nqp `int`/`num`/`str`
             // attribute holds a native value, and code that reads it back with
             // `getattr_i` expects one.
-            // Cost: O(1); O(e) for a '$!reified'/'$!storage' bind, e = elements copied from the storage.
+            // Cost: O(1); O(e) for a '$!reified'/'$!storage' bind, e = elements copied from the storage;
+            // O(f) on a RakuAST node, f = its fields.
             // MoarVM: O(1) -- see #9134.
             "bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
@@ -466,7 +467,7 @@ impl Interpreter {
             // than a per-class slot table. (A private attribute of the same
             // name in two classes of one hierarchy would therefore collide;
             // that is the same limitation `$!name` access already has.)
-            // Cost: O(1); getattr_s adds O(n), n = chars of the value.
+            // Cost: O(1); getattr_s adds O(n), n = chars of the value; O(f) on a RakuAST node, f = its fields.
             "getattr" | "getattr_i" | "getattr_n" | "getattr_s" => {
                 let nil = Value::NIL;
                 let obj = args.first().unwrap_or(&nil);
@@ -573,6 +574,13 @@ impl Interpreter {
             return Err(RuntimeError::new(format!(
                 "nqp::{op}: empty attribute name"
             )));
+        }
+        // A RakuAST node's attribute is its model field, bound in place for
+        // every holder of the node (#17327).
+        if crate::runtime::types::unwrap_varref_value(obj.clone())
+            .rakuast_bind_attribute(attr, val.clone())
+        {
+            return Ok(());
         }
         if attr_key == "descriptor" && Self::nqp_container_descriptor(obj).is_some() {
             return Self::nqp_bind_container_descriptor(obj, &val);
@@ -683,6 +691,12 @@ impl Interpreter {
     }
 
     pub(super) fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
+        // A RakuAST node's attribute is its model field (#17327).
+        if let Some(field) =
+            crate::runtime::types::unwrap_varref_value(obj.clone()).rakuast_get_attribute(name)
+        {
+            return Some(field);
+        }
         // A Block's phaser table (`Block`'s `$!phasers`).
         if name == "$!phasers"
             && let Some(table) = Self::block_phaser_table(obj)
