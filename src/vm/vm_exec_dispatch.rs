@@ -6874,9 +6874,7 @@ impl Interpreter {
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
-                if !lexically_in_routine
-                    || self.module.fatal_mode
-                    || self.module.lexical_fatal_mode
+                if !lexically_in_routine || self.module.fatal_mode || self.module.lexical_fatal_mode
                 {
                     err.control = None;
                 }
