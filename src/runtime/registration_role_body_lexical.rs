@@ -325,12 +325,20 @@ impl Interpreter {
                 } if !parameterized => Some(name.as_str()),
                 _ => None,
             };
+            // The constant is the role body's lexical, not the declaring
+            // scope's (#17833): its env binding lasts only while it is
+            // evaluated and recorded.
+            let outer_bindings = constant_name.map(|name| self.save_constant_bindings(name));
             if let Some(name) = constant_name
                 && self.reuse_role_evaluated_constant(role_name, name)
             {
+                self.scope_role_body_constant(role_name, name, outer_bindings);
                 continue;
             }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
+                if let Some(saved) = outer_bindings {
+                    self.restore_constant_bindings(saved);
+                }
                 self.restore_role_type_bindings(saved_types);
                 self.set_current_package(saved_package);
                 return Err(error);
@@ -340,6 +348,7 @@ impl Interpreter {
             // it instead of running the initializer again.
             if let Some(name) = constant_name {
                 self.record_role_evaluated_constant(role_name, name);
+                self.scope_role_body_constant(role_name, name, outer_bindings);
             }
             if matches!(op.kind, crate::opcode::DeferredBodyOpKind::TypeDecl) {
                 Self::collect_role_body_declared_names(
@@ -393,6 +402,54 @@ impl Interpreter {
                 .role_evaluated_constants
                 .entry((role.to_string(), name.to_string()))
                 .or_insert(bindings);
+        }
+    }
+
+    /// The declaring scope's env bindings of a role body constant's name and
+    /// term key, to put back once the role's own binding is recorded.
+    // Cost: O(1) amortized (two env lookups).
+    fn save_constant_bindings(&self, name: &str) -> Vec<(String, Option<Value>)> {
+        [
+            name.to_string(),
+            format!("{}{}", crate::term_names::TERM_PREFIX, name),
+        ]
+        .into_iter()
+        .map(|k| {
+            let v = self.env.get(&k).cloned();
+            (k, v)
+        })
+        .collect()
+    }
+
+    // Cost: O(1) amortized (two env writes).
+    fn restore_constant_bindings(&mut self, saved: Vec<(String, Option<Value>)>) {
+        for (k, v) in saved {
+            match v {
+                Some(v) => {
+                    self.env.insert(k, v);
+                }
+                None => {
+                    self.env.remove(&k);
+                }
+            }
+        }
+    }
+
+    /// Keep a role body constant `name` the role's own lexical (#17833): file
+    /// its binding under the role's body lexicals, where the role's methods
+    /// and subs read it, and put back what the declaring scope had under the
+    /// name.
+    // Cost: O(e), e = env entries scanned by the persist step.
+    fn scope_role_body_constant(
+        &mut self,
+        role_name: &str,
+        name: &str,
+        outer: Option<Vec<(String, Option<Value>)>>,
+    ) {
+        let declared: HashSet<String> = std::iter::once(name.to_string()).collect();
+        self.persist_role_body_lexicals(role_name, &declared);
+        if let Some(saved) = outer {
+            self.restore_constant_bindings(saved);
         }
     }
 

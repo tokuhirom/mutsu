@@ -220,7 +220,29 @@ impl Interpreter {
                 .get(chunk_idx)
                 .and_then(|c| c.as_ref())
                 .expect("method_name_chunks misaligned with role body walk");
-            self.run_decl_expr(chunk)?.to_string_value()
+            // A computed name may read the role body's own `my constant`
+            // (`my constant rname = 'b'; method ::(rname) { ... }`), which is
+            // the role's lexical and not left in the declaring env (#17833):
+            // show the recorded bindings for the evaluation.
+            let constants: Vec<(String, Value)> = self
+                .registry()
+                .role_evaluated_constants
+                .iter()
+                .filter(|((role, _), _)| role == name)
+                .flat_map(|(_, bindings)| bindings.iter().cloned())
+                .collect();
+            let saved: Vec<(String, Option<Value>)> = constants
+                .iter()
+                .map(|(k, _)| (k.clone(), self.env.get(k).cloned()))
+                .collect();
+            for (k, v) in constants {
+                self.env.insert(k, v);
+            }
+            let evaluated = self.run_decl_expr(chunk);
+            for (k, v) in saved {
+                Self::restore_env_entry(&mut self.env, &k, v);
+            }
+            evaluated?.to_string_value()
         } else {
             decl.name.resolve()
         };
