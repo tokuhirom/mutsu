@@ -10,6 +10,7 @@ mod rw_writeback_slots;
 mod supply_interval;
 mod synth_closure;
 pub(crate) use synth_closure::{install_value_layer_compiler, synthesized_closure_code};
+mod lexical_package_keys;
 mod tolerance;
 mod unmerged_package_vars;
 /// A per-package table of per-name entries: `package -> name -> V`, carrying

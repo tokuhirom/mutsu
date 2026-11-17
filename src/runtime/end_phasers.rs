@@ -834,6 +834,33 @@ impl<'ast> Visit<'ast> for EndWalker<'_> {
                 let params: Vec<&str> = params.iter().map(String::as_str).collect();
                 self.param_scope(&params, body);
             }
+            // A lexical package is stored under its declaration's mangled
+            // name (`X\0<id>`), so its `our` symbols are keyed under that
+            // (#17449): the facing spelling `X::v` is another declaration's
+            // as much as this one's.
+            Stmt::Package {
+                name,
+                body,
+                is_my: true,
+                decl_id,
+                ..
+            }
+            | Stmt::ClassDecl {
+                name,
+                body,
+                is_lexical: true,
+                decl_id,
+                ..
+            }
+            | Stmt::RoleDecl {
+                name,
+                body,
+                is_lexical: true,
+                decl_id,
+                ..
+            } if *decl_id != 0 && !crate::qualified::is_qualified(*name) => {
+                self.in_package(&format!("{}\u{0}{decl_id}", name.resolve()), body)
+            }
             Stmt::Package { name, body, .. }
             | Stmt::ClassDecl { name, body, .. }
             | Stmt::RoleDecl { name, body, .. }
