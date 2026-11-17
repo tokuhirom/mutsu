@@ -62,7 +62,9 @@ pub(crate) fn is_call_chain_term(name: &str) -> bool {
 impl Interpreter {
     // Cost: O(1) on a memo hit (one lock, two `env` probes, one provenance
     // probe; a module-published name adds the O(d) merge check, d = EVAL
-    // parent-chain depth); a miss costs one bareword resolution, O(p*|name|),
+    // parent-chain depth; a package-relative answer adds the O(f)
+    // running-package fingerprint, f = routine frames walked to the nearest
+    // non-block one); a miss costs one bareword resolution, O(p*|name|),
     // p = packages on the bare-name search path.
     pub(super) fn exec_get_bare_word_op(
         &mut self,
@@ -73,7 +75,9 @@ impl Interpreter {
         let generation = self.registry_write_generation();
         let sites = code.constants.len();
         let idx = name_idx as usize;
-        if let Some(value) = code.bareword_sites.cached(sites, idx, generation) {
+        if let Some((value, context)) = code.bareword_sites.cached(sites, idx, generation)
+            && context.is_none_or(|context| context == self.running_package_context())
+        {
             let name_sym = code.const_sym(name_idx);
             let env_ok = match value.view() {
                 ValueView::Package(sym) => {
@@ -163,7 +167,23 @@ impl Interpreter {
         // re-checks that binding (`lexical_memo_still_in_scope`). That is the
         // shape of a role or class body's `my class` read from its methods
         // (AttrX::Mooish's `AttrProxy`, `NO-VALUE-YET`).
+        // A type object of the name's own spelling under a package (`Cell`
+        // read in `unit module M` resolving to `M::Cell`) was found relative to
+        // the running package, so it is remembered together with that context
+        // and answered only under an equal one (`running_package_context`).
+        let mut context = None;
         let memoizable = match self.stack.last().map(Value::view) {
+            Some(ValueView::Package(sym))
+                if sym != name
+                    && !crate::qualified::is_qualified(name_sym)
+                    && crate::qualified::is_qualified(sym)
+                    && crate::qualified::unqualified_part(sym) == name_sym =>
+            {
+                context = Some(self.running_package_context());
+                bareword_memoizable(name)
+                    && self.env_leaves_type_name_as(name_sym, sym)
+                    && self.smiley_base_unbound(name_sym)
+            }
             Some(ValueView::Package(sym)) => {
                 (sym == name
                     || (is_lexical_storage_of(sym, name)
@@ -216,7 +236,8 @@ impl Interpreter {
             _ => false,
         };
         if memoizable && let Some(value) = self.stack.last().cloned() {
-            code.bareword_sites.remember(sites, idx, generation, value);
+            code.bareword_sites
+                .remember(sites, idx, generation, value, context);
         }
         Ok(())
     }

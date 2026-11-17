@@ -11,14 +11,25 @@
 //!
 //! What the memo may assume, and what it re-checks on every hit, is decided
 //! by the reader (`Interpreter::exec_get_bare_word_op`); this type only stores
-//! `(generation, value)`: the type object, or a package-qualified enum value
-//! (`Order::Less`), which names one immutable value just as stably.
+//! `(generation, value, context)`: the type object, or a package-qualified enum
+//! value (`Order::Less`), which names one immutable value just as stably. A
+//! type object found relative to the running package (`Cell` read in
+//! `unit module M` naming `M::Cell`) also carries the [`SiteContext`] it was
+//! resolved under, and is answered only under an equal one.
 
+use crate::symbol::Symbol;
 use crate::value::Value;
 use std::sync::{Mutex, OnceLock};
 
-/// One site's memo: the generation it was resolved under, and the value.
-type Word = Mutex<Option<(u64, Value)>>;
+/// The packages a bare name was resolved relative to (the running method's
+/// class, the scope's lexical package, the frame's package, the current
+/// package, the frame's lexical package): see
+/// `Interpreter::running_package_context`.
+pub(crate) type SiteContext = [Option<Symbol>; 5];
+
+/// One site's memo: the generation it was resolved under, the value, and the
+/// running-package context a package-relative answer depends on.
+type Word = Mutex<Option<(u64, Value, Option<SiteContext>)>>;
 
 /// One memo per string constant of a chunk, plus one fact about the chunk
 /// the reader asks on every hit of a lexical-type memo: whether the chunk
@@ -56,12 +67,18 @@ impl BarewordSiteCaches {
     }
 
     /// The value constant `idx` resolved to under `generation`, if the site
-    /// remembered one then.
+    /// remembered one then, with the running-package context it holds only
+    /// under (`None`: it holds under any).
     // Cost: O(1), one uncontended lock.
     #[inline]
-    pub(crate) fn cached(&self, sites: usize, idx: usize, generation: u64) -> Option<Value> {
+    pub(crate) fn cached(
+        &self,
+        sites: usize,
+        idx: usize,
+        generation: u64,
+    ) -> Option<(Value, Option<SiteContext>)> {
         match &*self.words(sites).get(idx)?.lock().ok()? {
-            Some((g, value)) if *g == generation => Some(value.clone()),
+            Some((g, value, context)) if *g == generation => Some((value.clone(), *context)),
             _ => None,
         }
     }
@@ -97,13 +114,21 @@ impl BarewordSiteCaches {
 
     /// Remember that constant `idx` resolved to `value` under
     /// `generation` (read before the resolution ran, so a resolution that
-    /// itself declared something is not remembered past it).
+    /// itself declared something is not remembered past it), and, for an
+    /// answer relative to the running package, under `context` only.
     // Cost: O(1), one uncontended lock.
-    pub(crate) fn remember(&self, sites: usize, idx: usize, generation: u64, value: Value) {
+    pub(crate) fn remember(
+        &self,
+        sites: usize,
+        idx: usize,
+        generation: u64,
+        value: Value,
+        context: Option<SiteContext>,
+    ) {
         if let Some(word) = self.words(sites).get(idx)
             && let Ok(mut w) = word.lock()
         {
-            *w = Some((generation, value));
+            *w = Some((generation, value, context));
         }
     }
 }

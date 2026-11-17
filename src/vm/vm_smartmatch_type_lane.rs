@@ -54,9 +54,12 @@ impl Interpreter {
         }
         // The conditions `exec_get_bare_word_op` serves its memo under.
         let generation = self.registry_write_generation();
-        let value =
+        let (value, context) =
             code.bareword_sites
                 .cached(code.constants.len(), name_idx as usize, generation)?;
+        if context.is_some_and(|context| context != self.running_package_context()) {
+            return None;
+        }
         // Only a type object: a memoized constant term (a `Regex`, say)
         // takes the general op, whose match may bind `$/`.
         let env_ok = match value.view() {
