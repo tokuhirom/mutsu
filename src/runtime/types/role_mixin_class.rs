@@ -333,11 +333,16 @@ impl Interpreter {
             .map(|n| Value::package(Symbol::intern(n)))
             .collect();
         self.types.adopting_mixins.push(class_name.to_string());
-        let composed = self.ensure_parametric_role_pun_class_for(
-            &recipe.base_name,
-            &type_args,
-            recipe.from_defaults,
-        );
+        // A recipe without type arguments is a plain role's pun.
+        let composed = if type_args.is_empty() {
+            self.ensure_plain_role_pun_class(&recipe.base_name)
+        } else {
+            self.ensure_parametric_role_pun_class_for(
+                &recipe.base_name,
+                &type_args,
+                recipe.from_defaults,
+            )
+        };
         self.types.adopting_mixins.retain(|n| n != class_name);
         matches!(composed, Ok(Some(name)) if name == class_name)
     }

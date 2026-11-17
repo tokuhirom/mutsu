@@ -13,6 +13,9 @@
 //! moves the generation, and an entry from an older one is not served. Only a
 //! redirect to a pun class (a `Package`) is recorded.
 //!
+//! A plain role (`role Q { method m {...} }; Q.m`) redirects the same way, to
+//! its one persistent pun class (`runtime/role_plain_pun.rs`, #17408).
+//!
 //! The two method-call entries -- the plain `CallMethod` one and the
 //! container-aware `CallMethodMut` one -- both ask this one helper, so a role
 //! type object puns to its default parameterization through either. The plain
@@ -34,10 +37,10 @@ impl Interpreter {
     }
 
     /// The pun class a call of `method` on the role type object `target`
-    /// (named `role`) re-dispatches to, when the role is a parametric role
-    /// whose type parameters all have defaults and it provides `method`.
-    /// `None` for any other receiver or method, and for a role not punned
-    /// to a default parameterization.
+    /// (named `role`) re-dispatches to, when the role provides `method` and is
+    /// either a parametric role whose type parameters all have defaults or a
+    /// plain role (its persistent `role\0pun` class, `role_plain_pun.rs`;
+    /// not for `new` / `CALL-ME`). `None` for any other receiver or method.
     // Cost: O(1) on a memo hit; otherwise O(m), m = the role and its parents'
     // method tables, plus the first pun's composition.
     pub(crate) fn role_default_pun_redirect(
@@ -58,8 +61,17 @@ impl Interpreter {
         {
             return Ok(None);
         }
-        let Some(punned) = self.default_parametric_role_pun(target)? else {
-            return Ok(None);
+        let punned = match self.default_parametric_role_pun(target)? {
+            Some(punned) => punned,
+            // A plain role puns to its one persistent pun class (#17408);
+            // `new` and `CALL-ME` keep their own construction / coercion paths.
+            None if !matches!(method_name, "new" | "CALL-ME") => {
+                match self.ensure_plain_role_pun_class(name)? {
+                    Some(pun) => Value::package(Symbol::intern(&pun)),
+                    None => return Ok(None),
+                }
+            }
+            None => return Ok(None),
         };
         if let ValueView::Package(pun) = punned.view() {
             // Read after the pun was made: composing it moved the generation.
