@@ -261,7 +261,13 @@ impl Interpreter {
         foreign_unit: bool,
     ) -> Result<(), RuntimeError> {
         let mut route = super::vm_bareword_site::BarewordRoute::Resolved;
-        self.push_bare_word_value_routed(name_sym, compiled_fns, over_scalar, foreign_unit, &mut route)
+        self.push_bare_word_value_routed(
+            name_sym,
+            compiled_fns,
+            over_scalar,
+            foreign_unit,
+            &mut route,
+        )
     }
 
     /// [`Self::push_bare_word_value_in`], also reporting in `route` whether
