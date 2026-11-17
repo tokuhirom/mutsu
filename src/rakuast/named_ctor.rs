@@ -246,6 +246,14 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
         "RakuAST::Stub::Die" => (C::StubDie, &[("args", Node, Omit)]),
         "RakuAST::Stub::Fail" => (C::StubFail, &[("args", Node, Omit)]),
         "RakuAST::Stub::Warn" => (C::StubWarn, &[("args", Node, Omit)]),
+        "RakuAST::Term::RadixNumber" => (
+            C::TermRadixNumber,
+            &[
+                ("radix", Node, Required),
+                ("multi-part", Node, DefaultFalse),
+                ("value", Node, Required),
+            ],
+        ),
         "RakuAST::Term::Reduce" => (
             C::TermReduce,
             &[

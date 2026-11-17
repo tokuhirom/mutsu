@@ -634,6 +634,9 @@ RakuAST::Term::Name	resolution	RakuAST::Term::Name
 RakuAST::Term::Named	is-resolved	RakuAST::Term::Named
 RakuAST::Term::Named	name	RakuAST::Term::Named
 RakuAST::Term::Named	resolution	RakuAST::Term::Named
+RakuAST::Term::RadixNumber	multi-part	RakuAST::Term::RadixNumber
+RakuAST::Term::RadixNumber	radix	RakuAST::Term::RadixNumber
+RakuAST::Term::RadixNumber	value	RakuAST::Term::RadixNumber
 RakuAST::Term::Reduce	args	RakuAST::Term::Reduce
 RakuAST::Term::Reduce	infix	RakuAST::Term::Reduce
 RakuAST::Term::Reduce	triangle	RakuAST::Term::Reduce

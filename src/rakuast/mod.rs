@@ -126,6 +126,7 @@ mod doc_phaser;
 mod doc_source;
 mod doc_str;
 mod imaginary_literal;
+mod radix_number;
 mod topic_postfix;
 pub(crate) use doc_str::legacy_row_text;
 mod dynamic_method;
@@ -585,6 +586,7 @@ pub enum RakuAstClass {
     PostcircumfixLiteralHashIndex,
     // Phase 2 slice 25: reduction metaoperator.
     TermReduce,
+    TermRadixNumber,
     // Phase 2 slice 30: `True`/`False` (and other enum) literals.
     TermEnum,
     // Phase 2 slice 31: parenthesised expressions (`($x = 5)`).
@@ -961,6 +963,7 @@ impl RakuAstClass {
             PostcircumfixHashIndex => "RakuAST::Postcircumfix::HashIndex",
             PostcircumfixLiteralHashIndex => "RakuAST::Postcircumfix::LiteralHashIndex",
             TermReduce => "RakuAST::Term::Reduce",
+            TermRadixNumber => "RakuAST::Term::RadixNumber",
             TermEnum => "RakuAST::Term::Enum",
             CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
             ParameterSlurpyFlattened => "RakuAST::Parameter::Slurpy::Flattened",
@@ -1503,6 +1506,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::PostcircumfixHashIndex,
     RakuAstClass::PostcircumfixLiteralHashIndex,
     RakuAstClass::TermReduce,
+    RakuAstClass::TermRadixNumber,
     RakuAstClass::TermEnum,
     RakuAstClass::CircumfixParentheses,
     RakuAstClass::ParameterSlurpyFlattened,
@@ -4304,6 +4308,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TermName
             | RakuAstClass::TermNamed
             | RakuAstClass::TermTopicCall
+            | RakuAstClass::TermRadixNumber
             | RakuAstClass::TermWhatever
             | RakuAstClass::TermEmptySet
             | RakuAstClass::TermRand

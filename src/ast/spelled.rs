@@ -125,6 +125,9 @@ pub(crate) enum Spelling {
     /// The `$!` a bare `die` / `fail` throws again: the parser supplies it as
     /// the argument, while RakuAST keeps the call without arguments.
     ImplicitError,
+    /// `:5($n)`: a radix conversion the parser runs as `UNBASE(5, $n)`, which
+    /// RakuAST keeps as a `Term::RadixNumber`.
+    RadixNumber,
     /// Where the term was written (ADR-10723 Stage 2, expression families):
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),

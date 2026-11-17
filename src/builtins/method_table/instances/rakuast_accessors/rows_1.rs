@@ -180,6 +180,9 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Term::Named", "is-resolved"),
     row!("RakuAST::Term::Named", "name"),
     row!("RakuAST::Term::Named", "resolution"),
+    row!("RakuAST::Term::RadixNumber", "multi-part"),
+    row!("RakuAST::Term::RadixNumber", "radix"),
+    interp_row!("RakuAST::Term::RadixNumber", "value", node_value),
     row!("RakuAST::Term::Reduce", "args"),
     row!("RakuAST::Term::Reduce", "infix"),
     row!("RakuAST::Term::Reduce", "triangle"),
@@ -202,7 +205,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Trait::Trusts", "type"),
     row!("RakuAST::Trait::Type", "type"),
     row!("RakuAST::Trait::Will", "IMPL-TRAIT-NAME"),
-    row!("RakuAST::Trait::Will", "block"),
-    row!("RakuAST::Trait::Will", "phase"),
-    row!("RakuAST::Trait::WillBuild", "IMPL-TRAIT-NAME"),
 ];
