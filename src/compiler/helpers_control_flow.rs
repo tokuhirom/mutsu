@@ -562,7 +562,7 @@ impl Compiler {
         // re-cloned per execution — see `OpCode::ResetStateLocals`.
         let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
         self.compile_if_value_branch(then_branch, |c| {
-            if Self::has_block_enter_leave_phasers(then_branch) {
+            if Self::has_inline_scope_phasers(then_branch) {
                 c.compile_phaser_block_scope(then_branch, PhaserBlockResult::Push);
             } else {
                 c.rw_tail_branch = rw_branch;
@@ -585,7 +585,7 @@ impl Compiler {
         } else {
             let else_state_reset = self.emit_branch_state_reset(else_branch, is_statement_modifier);
             self.compile_if_value_branch(else_branch, |c| {
-                if Self::has_block_enter_leave_phasers(else_branch) {
+                if Self::has_inline_scope_phasers(else_branch) {
                     c.compile_phaser_block_scope(else_branch, PhaserBlockResult::Push);
                 } else {
                     c.rw_tail_branch = rw_branch;
@@ -1310,7 +1310,16 @@ impl Compiler {
         // explode it here either (`try { $f }` where `$f` was made without
         // `use fatal` lives, even though `$f` is textually the try's tail).
         let mut tail_is_bare_container_read = false;
-        if Self::has_block_enter_leave_phasers(&main_stmts) {
+        // A braced `try { ... }` (`traps`) is an inlined block like a bare
+        // one, so a `FIRST` in it runs on every entry from a phaser scope
+        // (#17992). An implicit try region is a callable body or a block's
+        // CATCH region, whose `FIRST` is handled by that body.
+        let inline_scope_phasers = if traps {
+            Self::has_inline_scope_phasers(&main_stmts)
+        } else {
+            Self::has_block_enter_leave_phasers(&main_stmts)
+        };
+        if inline_scope_phasers {
             // The body is a real phaser block scope whose trailing value stays
             // on the stack. Routing it through the statement-position block
             // discarded the value and read the enclosing `$_` instead, so a

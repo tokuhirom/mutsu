@@ -114,7 +114,28 @@ impl Compiler {
     /// the phaser scope (`compile_try_region`), so it takes that path instead.
     // Cost: O(s), s = the block's statements.
     pub(super) fn needs_phaser_block_scope(stmts: &[Stmt]) -> bool {
-        Self::has_block_enter_leave_phasers(stmts) && !Self::has_catch_or_control(stmts)
+        Self::has_inline_scope_phasers(stmts) && !Self::has_catch_or_control(stmts)
+    }
+
+    /// Whether a block inlined into its enclosing code (a bare block, an
+    /// `if`/`when`/`try` body) must run as a real phaser block scope: it has
+    /// `ENTER`/`LEAVE`/... phasers, or a `FIRST`. Such a block is a fresh
+    /// clone on every entry, so its `FIRST` runs on every entry, from the
+    /// block scope's prologue (`emit_first_phasers`, #17992). A callable's
+    /// own body and a loop body handle `FIRST` themselves and keep
+    /// [`Self::has_block_enter_leave_phasers`].
+    // Cost: O(s), s = the block's statements.
+    pub(super) fn has_inline_scope_phasers(stmts: &[Stmt]) -> bool {
+        Self::has_block_enter_leave_phasers(stmts)
+            || stmts.iter().any(|s| {
+                matches!(
+                    s,
+                    Stmt::Phaser {
+                        kind: PhaserKind::First,
+                        ..
+                    }
+                )
+            })
     }
 
     pub(super) fn has_block_enter_leave_phasers(stmts: &[Stmt]) -> bool {

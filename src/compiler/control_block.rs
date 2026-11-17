@@ -167,7 +167,7 @@ impl BlockPlan {
     fn analyze(stmts: &[Stmt], position: BlockPosition) -> Self {
         let shape = if Compiler::has_catch_or_control(stmts) {
             BlockShape::ImplicitTry
-        } else if Compiler::has_block_enter_leave_phasers(stmts) {
+        } else if Compiler::has_inline_scope_phasers(stmts) {
             BlockShape::PhaserScope
         } else if position.owns_let_scope() && Compiler::has_let_deep(stmts) {
             BlockShape::LetScope
