@@ -438,7 +438,9 @@ fn block_flat(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             if SPECIAL.contains(&kind) {
                 return None;
             }
-            let config = config(lines, &rest[kind.len()..])?;
+            let (config, head) = config_lines(lines, i, &rest[kind.len()..])?;
+            // The block's body follows its last configuration line.
+            let i = head;
             if kind == "table" {
                 let form = if name == "for" {
                     Form::For
@@ -693,6 +695,27 @@ fn formula_block(lines: &Lines, i: usize, rest: &str, from: usize) -> Option<(Bl
 /// block's type, with the node each value is; `None` for text that is not
 /// such a list.
 // Cost: O(n), n = length of the text, plus the parse of each value.
+/// The configuration of the directive at line `i`: the pairs of `text` (the
+/// directive line's rest) and of each continuation line after it (`=` and a
+/// blank, then more pairs), and the last line they take.
+// Cost: O(c), c = length of the configuration lines, plus each value's parse.
+fn config_lines(
+    lines: &Lines,
+    i: usize,
+    text: &str,
+) -> Option<(Vec<(String, RakuAstNode)>, usize)> {
+    let mut pairs = config(lines, text)?;
+    let mut last = i;
+    while let Some(line) = lines.text.get(last + 1)
+        && let Some(more) = line.trim_start().strip_prefix('=')
+        && more.starts_with([' ', '\t'])
+    {
+        pairs.extend(config(lines, more)?);
+        last += 1;
+    }
+    Some((pairs, last))
+}
+
 fn config(lines: &Lines, text: &str) -> Option<Vec<(String, RakuAstNode)>> {
     let mut pairs = Vec::new();
     let mut rest = text.trim_start();

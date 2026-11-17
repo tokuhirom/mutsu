@@ -14,7 +14,10 @@
 //!   the cell). A table with no gap anywhere is one cell per row.
 //! - Pipe tables: a `|` with a blank or the line's edge on both sides is a
 //!   divider, each row has its own offsets (two past each divider) and its
-//!   cells are the text between the dividers minus one blank on each side.
+//!   cells are the text between the dividers minus the blank next to each
+//!   divider.
+//! - An indented table without a blank line is read without the indentation
+//!   its lines share; an indented one with a blank line is not read.
 //! - A blank line or a rule line (`--`, `==`, `-- --`, `--+--`) is a
 //!   separator, kept as a string. Exactly one separator with rows on both
 //!   sides makes the rows before it one multi-line row and adds
@@ -57,11 +60,26 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
     {
         return None;
     }
-    // An indented table drops the indentation of a table of columns and keeps
-    // it in a single column: only unindented tables are read.
-    if raw.iter().any(|l| l.starts_with(' ') && !blank(l)) {
-        return None;
-    }
+    // An indented table of consecutive lines is read without the indentation
+    // all its lines share (rule lines included): a line indented further keeps
+    // the rest. One with a blank line inside keeps its indentation, in its
+    // first cells.
+    let margin = raw
+        .iter()
+        .filter(|l| !blank(l))
+        .map(|l| l.len() - l.trim_start_matches(' ').len())
+        .min()?;
+    let margin = if raw.iter().any(blank) { 0 } else { margin };
+    let dedented: Vec<&str> = raw
+        .iter()
+        .map(|l| if blank(l) { *l } else { &l[margin..] })
+        .collect();
+    let raw = &dedented[..];
+    // A table with a `|` divider also divides at a `+` with a blank on both
+    // sides (`Zebra  +   4  + Cookies` under an `Animal | Legs | Eats`).
+    let piped = raw
+        .iter()
+        .any(|l| l.contains('|') && !is_rule(l).unwrap_or(true));
     let mut lines = Vec::with_capacity(raw.len());
     for l in raw {
         lines.push(if l.is_empty() {
@@ -71,7 +89,10 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
             return None;
         } else if is_rule(l)? {
             Line::Separator(l)
-        } else if l.ends_with(' ') || l.contains(['-', '=', '_', '+']) {
+        } else if l.ends_with(' ')
+            || l.contains(['-', '=', '_'])
+            || (l.contains('+') && !(piped && plus_dividers_only(l)))
+        {
             // Rule characters inside a row change how rakudo reads the table.
             return None;
         } else {
@@ -88,7 +109,6 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
     if rows.is_empty() {
         return None;
     }
-    let piped = rows.iter().any(|r| r.contains('|'));
     let mut built = if piped {
         rows.iter()
             .map(|r| pipe_row(r))
@@ -131,15 +151,16 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
     }
     match interior[..] {
         [at] => header(parts, at, separators == 1, piped),
-        // Two different separators make the first a header's; two equal ones
-        // rule every row off alike.
-        [one, two] if separators == 2 && single_rows(&parts) => {
+        // Between several separators each run of rows is one multi-line row.
+        // A first separator unlike the second makes the first row a header's;
+        // equal ones rule every row off alike.
+        [one, two, ..] if separators == interior.len() && (!piped || single_rows(&parts)) => {
             let same = match (&parts[one], &parts[two]) {
                 (TablePart::Separator(a), TablePart::Separator(b)) => a == b,
                 _ => return None,
             };
             Some(Table {
-                parts,
+                parts: merge_groups(parts),
                 header_row: !same,
             })
         }
@@ -155,8 +176,26 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
     }
 }
 
-/// Whether no two rows are adjacent: the only shapes measured around several
-/// separators.
+/// `parts` with each run of adjacent rows joined into one multi-line row.
+// Cost: O(n), n = size of the rows.
+fn merge_groups(parts: Vec<TablePart>) -> Vec<TablePart> {
+    let mut out: Vec<TablePart> = Vec::with_capacity(parts.len());
+    for part in parts {
+        match (part, out.last_mut()) {
+            (TablePart::Row(row), Some(TablePart::Row(above))) => {
+                for (n, cell) in above.cells.iter_mut().enumerate() {
+                    cell.push('\n');
+                    cell.push_str(row.cells.get(n).map_or("", String::as_str));
+                }
+            }
+            (part, _) => out.push(part),
+        }
+    }
+    out
+}
+
+/// Whether no two rows are adjacent: the only shapes of a pipe table
+/// measured around several separators.
 // Cost: O(n), n = parts.
 fn single_rows(parts: &[TablePart]) -> bool {
     parts
@@ -164,8 +203,20 @@ fn single_rows(parts: &[TablePart]) -> bool {
         .all(|w| !(matches!(w[0], TablePart::Row(_)) && matches!(w[1], TablePart::Row(_))))
 }
 
+/// Whether every `+` of `line` is a divider: a blank or the line's edge on
+/// both sides.
+// Cost: O(l), l = length of the line.
+fn plus_dividers_only(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.iter().enumerate().all(|(i, &b)| {
+        b != b'+'
+            || ((i == 0 || bytes[i - 1] == b' ') && (i + 1 == bytes.len() || bytes[i + 1] == b' '))
+    })
+}
+
 /// Whether the line is a rule (`None` for a line without letters or digits
-/// that is not one of the measured rules).
+/// that is not one of the measured rules). A rule crosses a pipe table's
+/// dividers with `+` or `|` (`--+--`, `==|==`).
 // Cost: O(l).
 fn is_rule(line: &str) -> Option<bool> {
     if line.chars().any(char::is_alphanumeric) {
@@ -173,7 +224,7 @@ fn is_rule(line: &str) -> Option<bool> {
     }
     let rule = line
         .chars()
-        .all(|c| matches!(c, '-' | '=' | '_' | '+' | ' '))
+        .all(|c| matches!(c, '-' | '=' | '_' | '+' | '|' | ' '))
         && line.contains(['-', '=', '_']);
     rule.then_some(true)
 }
@@ -193,9 +244,8 @@ fn header(parts: Vec<TablePart>, at: usize, alone: bool, piped: bool) -> Option<
             header_row: true,
         });
     }
-    // Only whitespace tables with a lone separator were measured with a
-    // multi-line header.
-    if piped || !alone {
+    // Only a lone separator was measured with a multi-line header.
+    if !alone {
         return None;
     }
     let mut parts = parts.into_iter();
@@ -205,15 +255,28 @@ fn header(parts: Vec<TablePart>, at: usize, alone: bool, piped: bool) -> Option<
             head.push(row);
         }
     }
+    // The lines of a pipe header share their dividers (`Superhero | Secret |`
+    // over `          | Identity | Superpower`).
+    if piped
+        && head
+            .iter()
+            .any(|row| row.dividers != head[0].dividers || row.offsets != head[0].offsets)
+    {
+        return None;
+    }
     let Row {
         dividers,
         offsets,
         mut cells,
     } = head.remove(0);
-    for row in head {
-        for (cell, more) in cells.iter_mut().zip(row.cells) {
+    for (line, row) in head.into_iter().enumerate() {
+        // A line with more cells starts the extra ones empty on the lines above.
+        while cells.len() < row.cells.len() {
+            cells.push("\n".repeat(line));
+        }
+        for (n, cell) in cells.iter_mut().enumerate() {
             cell.push('\n');
-            cell.push_str(&more);
+            cell.push_str(row.cells.get(n).map_or("", String::as_str));
         }
     }
     let mut out = vec![TablePart::Row(Row {
@@ -228,13 +291,15 @@ fn header(parts: Vec<TablePart>, at: usize, alone: bool, piped: bool) -> Option<
     })
 }
 
-/// The rows of a whitespace table: every row's cells start at the same
-/// offsets.
-// Cost: O(n), n = size of the rows.
+/// The rows of a whitespace table. A column starts after a run of two or
+/// more blanks in any row (not the run a line is indented by); of two starts
+/// one column apart the later one is the column's. Every row is cut at the
+/// same offsets, a cell running up to two characters before the next one.
+// Cost: O(n log n), n = size of the rows.
 fn space_rows(rows: &[&str]) -> Option<Vec<Row>> {
     let starts = |row: &str| -> Vec<usize> {
         let bytes = row.as_bytes();
-        let mut starts = vec![0];
+        let mut starts = Vec::new();
         let mut i = 0;
         while i < bytes.len() {
             if bytes[i] == b' ' {
@@ -242,7 +307,7 @@ fn space_rows(rows: &[&str]) -> Option<Vec<Row>> {
                 while j < bytes.len() && bytes[j] == b' ' {
                     j += 1;
                 }
-                if j - i >= 2 && j < bytes.len() {
+                if i > 0 && j - i >= 2 && j < bytes.len() {
                     starts.push(j);
                 }
                 i = j;
@@ -252,23 +317,43 @@ fn space_rows(rows: &[&str]) -> Option<Vec<Row>> {
         }
         starts
     };
-    let first = starts(rows[0]);
-    if rows.iter().any(|r| starts(r) != first) {
-        return None;
+    let mut all: Vec<usize> = rows.iter().flat_map(|r| starts(r)).collect();
+    all.sort_unstable();
+    all.dedup();
+    // `aa  bb` over `ddd  ee`: of two starts one column apart the later one
+    // is the column's.
+    let kept: Vec<usize> = all
+        .iter()
+        .copied()
+        .filter(|s| all.binary_search(&(s + 1)).is_err())
+        .collect();
+    let mut offsets: Vec<usize> = vec![0];
+    for start in kept {
+        // Starts two apart were not measured.
+        if start - offsets.last().copied().unwrap_or(0) <= 2 {
+            return None;
+        }
+        offsets.push(start);
     }
+    let cell = |row: &str, from: usize, to: Option<usize>| -> String {
+        let to = to.map_or(row.len(), |t| t.min(row.len()));
+        if from >= to {
+            String::new()
+        } else {
+            row[from..to].to_string()
+        }
+    };
     Some(
         rows.iter()
             .map(|row| {
-                let mut cells = Vec::with_capacity(first.len());
-                for (n, &s) in first.iter().enumerate() {
-                    cells.push(match first.get(n + 1) {
-                        Some(&next) => row[s..next - 2].to_string(),
-                        None => row[s..].to_string(),
-                    });
-                }
+                let cells = offsets
+                    .iter()
+                    .enumerate()
+                    .map(|(n, &s)| cell(row, s, offsets.get(n + 1).map(|&next| next - 2)))
+                    .collect();
                 Row {
                     dividers: None,
-                    offsets: first.iter().map(|&s| s as i64).collect(),
+                    offsets: offsets.iter().map(|&s| s as i64).collect(),
                     cells,
                 }
             })
@@ -282,7 +367,7 @@ fn pipe_row(row: &str) -> Option<Row> {
     let bytes = row.as_bytes();
     let mut dividers = Vec::new();
     for (i, &b) in bytes.iter().enumerate() {
-        if b == b'|' {
+        if b == b'|' || b == b'+' {
             let before = i == 0 || bytes[i - 1] == b' ';
             let after = i + 1 == bytes.len() || bytes[i + 1] == b' ';
             if !(before && after) {
@@ -291,34 +376,39 @@ fn pipe_row(row: &str) -> Option<Row> {
             dividers.push(i);
         }
     }
-    let mut segments: Vec<&str> = Vec::new();
+    // Each segment, and whether a divider precedes it.
+    let mut segments: Vec<(&str, bool)> = Vec::new();
     let mut from = 0;
     for &d in &dividers {
-        segments.push(&row[from..d]);
+        segments.push((&row[from..d], from > 0));
         from = d + 1;
     }
-    segments.push(&row[from..]);
-    if segments.first().is_some_and(|s| s.is_empty()) {
+    segments.push((&row[from..], from > 0));
+    if segments.first().is_some_and(|(s, _)| s.is_empty()) {
         segments.remove(0);
     }
-    if segments.last().is_some_and(|s| s.is_empty()) {
+    if segments.last().is_some_and(|(s, _)| s.is_empty()) {
         segments.pop();
     }
     let mut cells = Vec::with_capacity(segments.len());
-    for seg in segments {
-        let cell = seg.strip_prefix(' ').unwrap_or(seg);
+    for (seg, after_divider) in segments {
+        // The blank next to a divider is the divider's; a row indented past
+        // the table's margin keeps its leading blanks.
+        let cell = if after_divider {
+            seg.strip_prefix(' ').unwrap_or(seg)
+        } else {
+            seg
+        };
         let cell = cell.strip_suffix(' ').unwrap_or(cell);
-        if cell.trim().is_empty() {
-            return None;
-        }
         cells.push(cell.to_string());
     }
-    // A lone divider (`| a`) is read as part of a cell by rakudo.
-    if cells.len() < 2 {
+    // A lone divider (`| a`) is read as part of a cell by rakudo; one that
+    // ends the line (`a |`, `| a |`) divides a row of one cell.
+    if cells.len() < 2 && dividers.last() != Some(&(bytes.len() - 1)) {
         return None;
     }
     Some(Row {
-        dividers: Some("|".repeat(dividers.len())),
+        dividers: Some(dividers.iter().map(|&d| char::from(bytes[d])).collect()),
         offsets: dividers.iter().map(|&d| d as i64 + 2).collect(),
         cells,
     })
