@@ -396,16 +396,8 @@ impl Interpreter {
             }
         }
         // 4. Enum members.
-        if let Some(variants) = self.registry().enum_types.get(&package_name)
-            && let Some(index) = variants.iter().position(|(name, _)| name == key)
-        {
-            let (name, value) = &variants[index];
-            return Some(Some(Value::enum_parts(
-                Symbol::intern(package_name.as_str()),
-                Symbol::intern(name),
-                value.clone(),
-                index,
-            )));
+        if let Some(member) = self.enum_variant_value(&package_name, key) {
+            return Some(Some(member));
         }
         // The remaining stores (classes, roles, the `EXPORT` member) only ever
         // contribute unsigiled keys.

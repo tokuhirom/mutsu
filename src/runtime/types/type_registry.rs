@@ -1532,6 +1532,24 @@ impl Interpreter {
         self.registry().enum_types.contains_key(name)
     }
 
+    /// The member `variant_name` of the registered enum `enum_name`, built from
+    /// the registry: what the member's own binding holds, for a reader the
+    /// binding is not visible to (a lexical package's enum read by a routine
+    /// of its module from another scope, #17720).
+    // Cost: O(v), v = the enum's members.
+    pub(crate) fn enum_variant_value(&self, enum_name: &str, variant_name: &str) -> Option<Value> {
+        let registry = self.registry();
+        let variants = registry.enum_types.get(enum_name)?;
+        let index = variants.iter().position(|(name, _)| name == variant_name)?;
+        let (name, value) = &variants[index];
+        Some(Value::enum_parts(
+            Symbol::intern(enum_name),
+            Symbol::intern(name),
+            value.clone(),
+            index,
+        ))
+    }
+
     pub(crate) fn has_enum_variant(&self, enum_name: &str, variant_name: &str) -> bool {
         self.registry()
             .enum_types

@@ -155,7 +155,8 @@ impl Interpreter {
     // Cost: as `push_bare_word_value`.
     /// `real`, a qualified name under a lexical package's storage name
     /// (`Pk\0<id>::E`, #17477): the type, package or enum value it names.
-    // Cost: O(1) expected, a few registry and env probes.
+    // Cost: O(1) expected, a few registry and env probes; O(v) when the
+    // registry builds an enum member, v = the enum's members.
     pub(super) fn lexical_package_member(&self, real: &str) -> Option<Value> {
         let base = crate::runtime::types::strip_type_smiley(real).0;
         if self.has_type(base) || self.is_known_package(base) {
@@ -163,13 +164,19 @@ impl Interpreter {
         }
         let (enum_name, variant) = crate::qualified::split_qualified(Symbol::intern(real))?;
         if self.has_enum_variant(enum_name.as_str(), variant.as_str()) {
+            // Once the package's scope is gone neither store holds the
+            // member: build it from the registry (#17720).
             return self
                 .env()
                 .get(real)
                 .cloned()
-                .or_else(|| self.get_our_var(real).cloned());
+                .or_else(|| self.get_our_var(real).cloned())
+                .or_else(|| self.enum_variant_value(enum_name.as_str(), variant.as_str()));
         }
-        None
+        // An `our constant` of the package: a package symbol (#17720).
+        self.toplevel_package_symbol(real)
+            .or_else(|| self.get_our_var(real))
+            .cloned()
     }
     /// A bare name whose type is not visible here (a module's not merged here,
     /// ADR-11136; the main program's, from a REPL session unit, #17642). The
