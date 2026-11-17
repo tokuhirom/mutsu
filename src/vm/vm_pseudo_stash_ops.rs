@@ -186,7 +186,9 @@ impl Interpreter {
             let target = self
                 .term_binding(package)
                 .or_else(|| self.get_env_with_main_alias(package))
-                .and_then(|v| match v.view() {
+                // A binding a reflective closure shares is held in a cell
+                // (ADR-12529 phase 3); the package is what the cell holds.
+                .and_then(|v| match v.deref_container().view() {
                     ValueView::Package(sym) => Some(
                         self.resolve_type_in_current_package(&sym.resolve())
                             .unwrap_or_else(|| sym.resolve()),

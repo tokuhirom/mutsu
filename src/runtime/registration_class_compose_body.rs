@@ -933,17 +933,6 @@ impl Interpreter {
                 role_param_values.keys().map(|k| k.to_string()).collect();
             declared.extend(bound.iter().cloned());
             self.persist_role_body_lexicals_except(cx.name, &declared, &bound);
-            // The body is these names' whole scope: their authoritative copy is
-            // the composing class's static store, which method dispatch binds.
-            // Left in the env, a role-body `my $n` outlived the composition
-            // and answered a later, unrelated `$n` -- another class body's
-            // static, read from the env ahead of that class's own cell, became
-            // a per-thread copy on a worker (ADR-16595 slice 5).
-            for (name, saved) in saved_body_bindings {
-                if !bound.contains(&name) {
-                    Self::restore_env_entry(&mut self.env, &name, saved);
-                }
-            }
             // A parametric composition re-declares the subs only when it has
             // value parameters for them to close over; otherwise the
             // declaration under the role's lexical package serves.
@@ -961,6 +950,21 @@ impl Interpreter {
                     &declared,
                     &value_params,
                 )?;
+            }
+            // The body is these names' whole scope: their authoritative copy is
+            // the composing class's static store, which method dispatch binds.
+            // Left in the env, a role-body `my $n` outlived the composition
+            // and answered a later, unrelated `$n` -- another class body's
+            // static, read from the env ahead of that class's own cell, became
+            // a per-thread copy on a worker (ADR-16595 slice 5).
+            // An `@`/`%`/`&` stays: the body's subs still reach such a
+            // lexical through this env binding, which shares the static's
+            // node (TODO(#17854): resolve a role body sub's aggregate through
+            // the composing class's static store, then restore these too).
+            for (name, saved) in saved_body_bindings {
+                if !bound.contains(&name) && !name.starts_with(['@', '%', '&']) {
+                    Self::restore_env_entry(&mut self.env, &name, saved);
+                }
             }
         }
         // Rename each newly-declared nested class to its

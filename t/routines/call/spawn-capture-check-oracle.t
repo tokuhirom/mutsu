@@ -28,6 +28,8 @@ is %off<err>, "", "unset: nothing is reported";
 
 my %on = run-with("1");
 is %on<out>, "11", "set: the program output is unchanged";
-like %on<err>, /'uncaptured-lane-write name=@s op=set'/,
-    "a lane write by a registered method's body (invisible to the capture analysis) is reported";
+# ADR-16595 slice 5: a registered method's body writes `@s` through the
+# declaring frame's cell, so it no longer reaches the name lane at all.
+unlike %on<err>, /'uncaptured-lane-write name=@s'/,
+    "a registered method's body writes its cell, not the lane";
 unlike %on<err>, /'uncaptured-lane-write name=%r'/, "a name the spawned block itself captures is not reported";
