@@ -186,7 +186,10 @@ impl Interpreter {
             && crate::env::sigilless_readonly_keys_possible()
             && crate::runtime::term_names::term_spelling(sym.as_str()).is_some()
             && code.readonly_sym(slot as usize).is_some_and(|key| {
-                matches!(self.env().get_sym(key).map(Value::view), Some(ValueView::Bool(true)))
+                matches!(
+                    self.env().get_sym(key).map(Value::view),
+                    Some(ValueView::Bool(true))
+                )
             })
     }
 
