@@ -173,7 +173,8 @@ impl Interpreter {
     /// Whether local `slot`, a sigilless term named `sym`, carries the
     /// `__mutsu_sigilless_readonly::` marker its bind writes when the bound
     /// source was not a writable container (`MarkSigillessBind`). Such a term
-    /// IS its value: a callee receives that value, not a container.
+    /// IS its value: a callee receives that value, not a container. A slot
+    /// that holds a container, a Proxy or a variable reference is excluded.
     // Cost: O(1): a flag-word read when no sigilless marker exists anywhere,
     // else one env probe.
     pub(super) fn marked_readonly_term(
@@ -185,6 +186,13 @@ impl Interpreter {
         slot != u32::MAX
             && crate::env::sigilless_readonly_keys_possible()
             && crate::runtime::term_names::term_spelling(sym.as_str()).is_some()
+            // The slot holds the value itself: a term bound to a container,
+            // a Proxy (a sigilless `\SELF` parameter) or a variable keeps
+            // handing that on, as `readonly_term_holds_value` decides.
+            && self
+                .locals
+                .get(slot as usize)
+                .is_some_and(|v| !v.is_container_ref() && !v.is_proxy_value() && !v.is_varref())
             && code.readonly_sym(slot as usize).is_some_and(|key| {
                 matches!(
                     self.env().get_sym(key).map(Value::view),
