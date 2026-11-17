@@ -2483,7 +2483,7 @@ impl Interpreter {
                 // that reaches here with a positional none of mutsu's paths
                 // took fails their dispatch (`1.print(2)`), not the lookup.
                 if args.iter().any(|arg| !arg.is_string_pair_value())
-                    && super::builtin_method_sigs::candidate_signatures("Mu", method).is_some()
+                    && super::builtin_method_sigs::declares_multi_locally("Mu", method)
                     && let Some(err) = super::methods_signature_errors::builtin_multi_arity_mismatch(
                         &target, method, &args,
                     )
