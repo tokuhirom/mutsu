@@ -97,6 +97,30 @@ fn edit<R>(
     Some(Interpreter::nqp_with_elems_mut("push", target, f))
 }
 
+/// Inserts `values` at the front of the receiver's element storage in place,
+/// through `ArrayData`'s head-aware prepend (the same node [`edit`] edits).
+/// `None` for a receiver that is no instance.
+// Cost: O(a) amortized, a = values inserted.
+fn edit_front(target: &Value, values: Vec<Value>) -> Option<Result<(), RuntimeError>> {
+    if !matches!(target.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    let mut values = Some(values);
+    let done = crate::runtime::nqp_backing::with_nqp_backing_array(target, |array| {
+        crate::runtime::nqp_backing::with_list_data_mut(array, |data| {
+            data.prepend_values(values.take().unwrap_or_default());
+        })
+    })
+    .flatten();
+    if done.is_some() {
+        return Some(Ok(()));
+    }
+    let values = values.unwrap_or_default();
+    Some(Interpreter::nqp_with_elems_mut("unshift", target, |items| {
+        items.splice(0..0, values);
+    }))
+}
+
 /// The elements an `append`/`prepend` argument contributes: another buffer's
 /// elements, or the argument as a list.
 // Cost: O(n), n = elements.
@@ -170,12 +194,12 @@ fn push(target: &Value, args: &[Value]) -> Answer {
     Some(pushed.map(|()| args.last().cloned().unwrap_or(Value::NIL)))
 }
 
-/// `IterationBuffer.unshift(*@values)`: answers the last value given.
-// Cost: O(n + a), n = elements, a = arguments. MoarVM: O(a) amortized -- see #17658.
+/// `IterationBuffer.unshift(*@values)`: answers the last value given. The
+/// storage keeps front slack (`ArrayData`'s head offset), as MoarVM's VMArray
+/// keeps a start offset.
+// Cost: O(a) amortized, a = arguments.
 fn unshift(target: &Value, args: &[Value]) -> Answer {
-    let unshifted = edit(target, |items| {
-        items.splice(0..0, args.iter().cloned());
-    })?;
+    let unshifted = edit_front(target, args.to_vec())?;
     Some(unshifted.map(|()| args.last().cloned().unwrap_or(Value::NIL)))
 }
 
@@ -188,12 +212,9 @@ fn append(target: &Value, args: &[Value]) -> Answer {
 }
 
 /// `IterationBuffer.prepend(@values)`: answers the buffer.
-// Cost: O(n + a), n = elements, a = elements prepended. MoarVM: O(a) amortized -- see #17658.
+// Cost: O(a) amortized, a = elements prepended.
 fn prepend(target: &Value, args: &[Value]) -> Answer {
-    let prepended = argument_items(&args[0]);
-    let done = edit(target, |items| {
-        items.splice(0..0, prepended);
-    })?;
+    let done = edit_front(target, argument_items(&args[0]))?;
     Some(done.map(|()| target.clone()))
 }
 
@@ -230,10 +251,18 @@ fn slip(target: &Value, _args: &[Value]) -> Answer {
     items(target).map(|items| Ok(Value::slip(items)))
 }
 
-/// `IterationBuffer.Seq`.
-// Cost: O(n), n = elements (copied). Rakudo: O(1) (the Seq iterates the buffer) -- see #17658.
-fn seq(target: &Value, _args: &[Value]) -> Answer {
-    items(target).map(|items| Ok(Value::seq(items)))
+/// `IterationBuffer.Seq`: a lazy Seq over the buffer's own storage (Rakudo's
+/// `Seq.new(Rakudo::Iterator.ReifiedList(self))`), so an element pushed
+/// before the Seq is read shows through.
+// Cost: O(1); O(1) per element pulled.
+fn seq(target: &Value, args: &[Value]) -> Answer {
+    let list = list(target, args)?;
+    Some(list.map(|list| {
+        Value::seq_list_gen(
+            crate::value::ListGen::positional(list, crate::value::PositionalMode::Values, false),
+            false,
+        )
+    }))
 }
 
 /// `IterationBuffer.iterator`: an iterator over the elements.
