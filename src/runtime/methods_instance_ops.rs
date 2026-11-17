@@ -181,10 +181,17 @@ impl Interpreter {
         {
             return Some(Ok(Value::str_from("IterationEnd")));
         }
-        let has_coercion_gist = target.does_check("Real")
-            || target.does_check("Numeric")
-            || target.does_check("Stringy")
-            || self.has_user_method(&class_name.resolve(), "Bridge");
+        // Only `raku`, `gist` and `perl` with no arguments render here; every
+        // other method reaching the instance fallback leaves at once, before
+        // the role and MRO probes below.
+        if !args.is_empty() || !matches!(method, "raku" | "gist" | "perl") {
+            return None;
+        }
+        let has_coercion_gist = method == "gist"
+            && (target.does_check("Real")
+                || target.does_check("Numeric")
+                || target.does_check("Stringy")
+                || self.has_user_method(&class_name.resolve(), "Bridge"));
         let is_callable_instance = matches!(
             class_name.resolve().as_str(),
             "Method"

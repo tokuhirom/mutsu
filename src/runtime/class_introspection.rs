@@ -568,7 +568,27 @@ impl Interpreter {
     /// for an untyped rw attribute). `None` means the accessor is not rw — a
     /// want-ref read must NOT promote the slot (raku returns the decont'd value
     /// there, so `my $r := $obj.ro-attr; $r = v` stays an immutable-value error).
+    // Cost: O(1) amortized: memoized per `(class, accessor)` for one method
+    // generation; a miss is O(a + d), a = attributes over the MRO, d = MRO depth.
     pub(crate) fn rw_accessor_type_constraint(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<Option<String>> {
+        // Read on every container-wanting accessor call (`my $v := $o.x`,
+        // `$o."$name"()` bound): collecting the class's attributes clones
+        // every attribute definition along the MRO (#17811).
+        self.refresh_method_caches_for_generation();
+        let key = (Symbol::intern(class_name), Symbol::intern(method_name));
+        if let Some(answer) = self.caches.rw_accessor_constraint.get(&key) {
+            return answer.clone();
+        }
+        let answer = self.rw_accessor_type_constraint_uncached(class_name, method_name);
+        self.caches.rw_accessor_constraint.insert(key, answer.clone());
+        answer
+    }
+
+    fn rw_accessor_type_constraint_uncached(
         &mut self,
         class_name: &str,
         method_name: &str,

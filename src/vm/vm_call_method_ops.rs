@@ -351,13 +351,16 @@ impl Interpreter {
         quoted: bool,
         want_ref: bool,
     ) -> Option<Value> {
-        // A quoted name (`$obj."$name"()`) still addresses the same accessor;
-        // this fast path only takes it when a container was asked for, which
-        // nothing but this path can hand back.
-        if !args.is_empty() || has_modifier || (quoted && !want_ref) {
+        // A quoted name (`$obj."$name"()`) addresses the same accessor as the
+        // bare one, except for a MOP pseudo-method name, which a quoted call
+        // sends to a user method of that name: that one is taken here only
+        // when a container was asked for, which nothing but this path can
+        // hand back.
+        let method = method_sym.as_str();
+        if !args.is_empty() || has_modifier || (Self::quoting_matters(quoted, method) && !want_ref)
+        {
             return None;
         }
-        let method = method_sym.as_str();
         let ValueView::Instance {
             attributes,
             class_name,
