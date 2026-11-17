@@ -22,8 +22,10 @@ fn container_id(value: &Value) -> Option<usize> {
 
 /// Whether stringifying `value` with `.Str` needs the interpreter: it is, or
 /// (through nested lists and hashes, at any position) contains, an instance or
-/// mixin whose `.Str` may be user-defined. It walks every element, because
-/// `.Str`/`.join` render all of them. Cycle-guarded.
+/// mixin whose `.Str` may be user-defined, or a `.map`/`.grep`/`gather` Seq
+/// that has not run yet (its body is an empty seed until the VM runs its
+/// callback, so the pure renderer would print it as nothing). It walks every
+/// element, because `.Str`/`.join` render all of them. Cycle-guarded.
 // Cost: O(t), t = nodes reachable from `value`.
 pub(crate) fn str_needs_dispatch(value: &Value) -> bool {
     fn walk(v: &Value, seen: &mut std::collections::HashSet<usize>, depth: usize) -> bool {
@@ -39,6 +41,12 @@ pub(crate) fn str_needs_dispatch(value: &Value) -> bool {
             return !matches!(class_name.as_str(), "ObjAt" | "ValueObjAt");
         }
         if matches!(v.view(), ValueView::Mixin(..)) {
+            return true;
+        }
+        if v.is_seq_value()
+            && matches!(v.view(), ValueView::Seq(body)
+                if body.is_map_grep_source() || body.is_gather_source())
+        {
             return true;
         }
         if let Some(id) = container_id(v)
