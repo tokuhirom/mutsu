@@ -317,11 +317,13 @@ pub(crate) fn order_unit(stmts: &mut Vec<Stmt>) -> usize {
 }
 
 /// Mark where a module's compile phase ends (`Stmt::RunCheckCode`): after its
-/// last top-level CHECK phaser, or after its BEGIN prologue when it has none.
-/// The closures `$*CU.add-check-code` queued run there, and a `$*CU` its
-/// CHECK phase rewrote is what the rest of the module runs from, as for the
-/// main unit (`run.rs`) and an EVAL. A module with neither compiles nothing
-/// at CHECK time and gets no marker.
+/// last top-level CHECK phaser. The closures `$*CU.add-check-code` queued run
+/// there, and a `$*CU` its CHECK phase rewrote is what the rest of the module
+/// runs from, as for the main unit (`run.rs`) and an EVAL. A module with no
+/// CHECK phaser gets no marker: a marker after a mere BEGIN prologue (its
+/// `use` lines) made Red's `unit role Red::Driver::Cache` lose the candidates
+/// of the `database` it imports (Red t/021; the underlying role-import bug
+/// is #17962).
 /// Returns the prologue's length, which grows when the marker lands in it.
 // Cost: O(s), s = top-level statements of the module.
 pub(crate) fn insert_module_run_check_code(stmts: &mut Vec<Stmt>, prologue_len: usize) -> usize {
@@ -339,8 +341,6 @@ pub(crate) fn insert_module_run_check_code(stmts: &mut Vec<Stmt>, prologue_len: 
         if last < prologue_len {
             return prologue_len + 1;
         }
-    } else if prologue_len > 0 {
-        stmts.insert(prologue_len, Stmt::RunCheckCode);
     }
     prologue_len
 }
