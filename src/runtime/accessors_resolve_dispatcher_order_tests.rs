@@ -31,7 +31,7 @@ fn captured_candidates_are_in_declaration_order() {
     i.run("multi f(Int $x) { 1 }\nmulti f(Str $x) { 2 }\nmulti f(Num $x) { 3 }\n")
         .expect("setup program runs");
     let mut defs: Vec<std::sync::Arc<crate::runtime::FunctionDef>> = i
-        .registry()
+        .routines()
         .functions
         .iter()
         .filter(|(key, _)| key.as_str().starts_with("GLOBAL::f/"))
