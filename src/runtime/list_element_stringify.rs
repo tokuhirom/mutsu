@@ -85,12 +85,24 @@ impl crate::Interpreter {
         matches!(
             item.view(),
             ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Proxy { .. }
-        ) || (matches!(item.view(), ValueView::Package(_))
+        ) || Self::is_unrun_nested_seq(item)
+            || (matches!(item.view(), ValueView::Package(_))
             && crate::runtime::find_method_intercept::any_user_find_method())
             || Self::list_str_needs_interpreter(item)
             // A `Pair`/`Hash` element holding a `Proxy` renders its FETCHed
             // value (#15772).
             || (item.is_pair_or_hash_value() && Self::value_has_proxy(item))
+    }
+
+    /// A nested `.map`/`.grep` or `gather` Seq that has not run yet: its
+    /// body holds only an empty seed, so the pure renderer would print it as
+    /// nothing (`(((1,2).map(*+1),),).join` gave `""`). Rakudo calls `.Str`
+    /// on the element, which iterates it; here the resolver reifies it first.
+    // Cost: O(1), a tag probe and a source-state read.
+    fn is_unrun_nested_seq(item: &Value) -> bool {
+        item.is_seq_value()
+            && matches!(item.view(), ValueView::Seq(body)
+                if body.is_map_grep_source() || body.is_gather_source())
     }
 
     /// Replace every `Instance` element with the string its class's `Str`
@@ -105,6 +117,10 @@ impl crate::Interpreter {
         }
         let value = value.deref_container();
         let value = value.descalarize();
+        // A nested un-run `.map`/`gather` element must run before its
+        // elements can be read (`is_unrun_nested_seq`); reification fills
+        // each body in place.
+        self.reify_nested_map_grep_for_read(value)?;
         match value.view() {
             ValueView::Array(items, kind) => {
                 let resolved = self.resolve_elements(items.iter())?;
