@@ -451,21 +451,13 @@ impl Interpreter {
             return Some(Err(err));
         }
         if let Some(threaded) = crate::builtins::thread_junctions_in_items(&resolved, &|c| {
-            Value::str(
-                c.iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join(&sep),
-            )
+            let parts: Vec<String> = c.iter().map(|v| v.to_str_context()).collect();
+            Value::str(crate::builtins::str_prim::join(&parts, &sep))
         }) {
             return Some(Ok(threaded));
         }
-        let joined = resolved
-            .iter()
-            .map(|v| v.to_str_context())
-            .collect::<Vec<_>>()
-            .join(&sep);
-        Some(Ok(Value::str(joined)))
+        let parts: Vec<String> = resolved.iter().map(|v| v.to_str_context()).collect();
+        Some(Ok(Value::str(crate::builtins::str_prim::join(&parts, &sep))))
     }
 
     /// Dispatch the "eager" method.

@@ -126,7 +126,7 @@ impl Interpreter {
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
                 let parts = args.get(1).map(Self::nqp_list_strings).unwrap_or_default();
-                Ok(Value::str(parts.join(&sep)))
+                Ok(Value::str(crate::builtins::str_prim::join(&parts, &sep)))
             }
             // Cost: O(n * m), n = chars of $str, m = chars of $sep (grapheme-boundary hits only, str_prim::split); plus O(k) values produced.
             "split" => {
