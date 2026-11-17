@@ -563,9 +563,8 @@ impl Interpreter {
                     .collect(),
                 _ => vec![value.to_string_value().into_bytes()],
             };
-            if let Some(state) = self.io_handles_mut().map.get_mut(&id) {
-                state.line_separators = new_seps;
-            }
+            self.io_handles()
+                .with_mut(id, |state| state.line_separators = new_seps);
             return Ok(value);
         }
         // nl-in / nl-out setter for a USER SUBCLASS of IO::Handle (overrides
@@ -601,9 +600,8 @@ impl Interpreter {
         {
             let id = handle_id as usize;
             let new_nl_out = value.to_string_value();
-            if let Some(state) = self.io_handles_mut().map.get_mut(&id) {
-                state.nl_out = new_nl_out;
-            }
+            self.io_handles()
+                .with_mut(id, |state| state.nl_out = new_nl_out);
             return Ok(value);
         }
         // chomp setter for IO::Handle
@@ -619,9 +617,8 @@ impl Interpreter {
         {
             let hid = handle_id as usize;
             let new_chomp = value.truthy();
-            if let Some(state) = self.io_handles_mut().map.get_mut(&hid) {
-                state.line_chomp = new_chomp;
-            }
+            self.io_handles()
+                .with_mut(hid, |state| state.line_chomp = new_chomp);
             // Also update instance attribute so .open can inherit it
             let mut new_attrs = attributes.to_map();
             new_attrs.insert("chomp".to_string(), Value::truth(new_chomp));

@@ -390,8 +390,6 @@ impl Interpreter {
         promise.mark_vowed();
         let ret = Value::promise(promise.clone());
         let thread_interp = self.clone_for_thread_for_block(&block);
-        let parent_handles_snapshot: std::collections::HashSet<usize> =
-            self.io_handles().map.keys().copied().collect();
 
         let block = Self::strip_start_block_topics(block);
 
@@ -415,27 +413,6 @@ impl Interpreter {
                 let result =
                     crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
                 thread_interp.leave_worker_warm_caches(forked_with);
-                // Transfer any handles opened by this thread back to the awaiter.
-                let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
-                let new_ids: Vec<usize> = thread_interp
-                    .io_handles()
-                    .map
-                    .keys()
-                    .copied()
-                    .filter(|id| !parent_handles_snapshot.contains(id))
-                    .collect();
-                for id in new_ids {
-                    if let Some(state) = thread_interp.io_handles_mut().map.remove(&id) {
-                        new_handles.push((id, state));
-                    }
-                }
-                let next_id = thread_interp.io_handles().next_id;
-                if !new_handles.is_empty() {
-                    promise.set_thread_payload(Box::new(ThreadPromisePayload {
-                        new_handles,
-                        next_handle_id: next_id,
-                    }));
-                }
                 match result {
                     Ok(result) => {
                         let output = std::mem::take(&mut thread_interp.output_sink_mut().output);

@@ -676,13 +676,12 @@ impl Interpreter {
         crate::runtime::registry::RegistryWriteGuard::new(&self.types.registry, "registry")
     }
 
-    /// Read access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
-    /// Same guard discipline as [`Self::registry`]: never hold the returned guard
-    /// across a call that re-enters another handle operation (`RwLock` is not
-    /// reentrant). Use as `self.io_handles().map.get(&id)`.
+    /// The process-wide IO handle table (ADR-17216 §2.4). Look a handle up with
+    /// [`io_handles::IoHandleTable::with`] / [`io_handles::IoHandleTable::with_mut`],
+    /// which confine the handle's lock to a closure.
     #[inline]
-    pub(crate) fn io_handles(&self) -> io_handles::IoHandlesReadGuard<'_> {
-        io_handles::IoHandlesReadGuard::new(&self.io.io_handles, "io_handles")
+    pub(crate) fn io_handles(&self) -> &io_handles::IoHandleTable {
+        &self.io.io_handles
     }
 
     /// Read access to the shared [`OutputSink`]. Same guard discipline as
@@ -708,23 +707,12 @@ impl Interpreter {
         self.output_sink_mut().last_handle_result.take()
     }
 
-    /// Write access to the shared [`IoHandleTable`](io_handles::IoHandleTable).
-    /// Same guard discipline as [`Self::io_handles`].
-    #[inline]
-    pub(crate) fn io_handles_mut(&self) -> io_handles::IoHandlesWriteGuard<'_> {
-        io_handles::IoHandlesWriteGuard::new(&self.io.io_handles, "io_handles")
-    }
-
     /// Allocate a fresh handle id, store `state` under it, and return the id.
     /// Build `state` fully (including anything that needs `&self`, e.g.
-    /// `default_line_separators()`) *before* calling this, since the short write
-    /// guard taken here must not be held across other `self` operations.
+    /// `default_line_separators()`) *before* calling this.
+    // Cost: O(1) amortised.
     pub(super) fn insert_handle_state(&mut self, state: IoHandleState) -> usize {
-        let mut table = self.io_handles_mut();
-        let id = table.next_id;
-        table.next_id += 1;
-        table.map.insert(id, state);
-        id
+        self.io.io_handles.insert(state)
     }
 
     /// Normalize a scoped `state`-variable storage key into a form stable across

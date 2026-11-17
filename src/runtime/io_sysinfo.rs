@@ -137,7 +137,8 @@ impl Interpreter {
     pub(super) fn make_handle_instance_with_bin(&self, handle_id: usize, bin: bool) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("handle".to_string(), Value::int(handle_id as i64));
-        if let Some(state) = self.io_handles().map.get(&handle_id) {
+        if let Some(handle) = self.io_handles().get(handle_id) {
+            let state = io_handles::read(&handle);
             if let Some(path) = &state.path {
                 attrs.insert("path".to_string(), Value::str(path.clone()));
             }

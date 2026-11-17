@@ -4247,10 +4247,6 @@ struct PromiseState {
     output: String, // captured stdout from thread
     stderr_output: String,
     class_name: Symbol, // "Promise" or subclass name
-    /// Opaque payload transferred from the worker thread to the awaiting
-    /// thread. Used e.g. to hand off newly-opened IO handle state that
-    /// lives inside the per-thread Interpreter.
-    thread_payload: Option<Box<dyn std::any::Any + Send>>,
     /// Callbacks queued by `.then`/`.andthen`/`.orelse` while `Planned`,
     /// drained and run **in registration order** by whichever `keep`/
     /// `break_with` call resolves this promise. See `on_resolve` for why:

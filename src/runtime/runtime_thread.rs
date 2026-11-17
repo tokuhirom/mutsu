@@ -55,49 +55,19 @@ impl Interpreter {
             self.io.tap.ensure_state();
         }
         // Collapse a scoped (multi-tier overlay) env to a flat one first: the
-        // handle walk and the child's env clone below iterate the env
-        // overlay-only, which would miss parent-chain lexicals on a scoped env.
+        // child's env clone below iterates the env overlay-only, which would
+        // miss parent-chain lexicals on a scoped env.
         // The parent keeps its scoped env: flattening it in place merged a
         // routine's `my $n` with a caller's same-named `$n`, and the routine
         // read the caller's value back once its scope was restored (#17747).
         let flat_env = self.env.is_scoped().then(|| self.env.flattened());
-        let mut referenced_handle_ids = std::collections::HashSet::new();
-        // The built-in dynamics live in the per-interpreter base tier, which
-        // `&self.env` (map-only) does not yield (ADR-0086) — but `$*OUT` /
-        // `$*ERR` / `$*IN` / `$*ARGFILES` are exactly the handles the child
-        // must be able to keep using, so collect their ids explicitly.
-        if let Some(base) = self.env.dyn_base() {
-            for val in base.values() {
-                if let Some(id) = Self::handle_id_from_value(val) {
-                    referenced_handle_ids.insert(id);
-                }
-            }
-        }
-        // The env walk below looks for the handles the child must be handed a
-        // clone of (`IoState::fork_for_thread` clones exactly the open handles
-        // whose ids are collected). When every open handle is already
-        // collected -- the usual case: only `$*IN`/`$*OUT`/`$*ERR` are open,
-        // and they came from the dynamics tier above -- the walk can add
-        // nothing, and it costs a three-object-deep descent of every env
-        // value on every spawn (~80k instructions per cued batch in ParaSeq).
-        let handle_walk_needed = self
-            .io_handles()
-            .map
-            .iter()
-            .any(|(id, handle)| !handle.closed && !referenced_handle_ids.contains(id));
         // ADR-16595 slice 5: the spawn publishes no lexical. A scalar or
         // `@`/`%` the spawned code reaches lives in its frame's slot, in the
         // declaration-site `ContainerRef` cell every escaping capture holds, or
         // in a package/compunit static store whose cells the child's tables
         // share; the child's env clone below carries the cells (or the shared
-        // object itself). The env walk only collects the handles the child
-        // must be handed a clone of.
-        if handle_walk_needed {
-            let walked_env = flat_env.as_ref().unwrap_or(&self.env);
-            for (_, val) in walked_env {
-                Self::collect_handle_ids(val, 3, &mut referenced_handle_ids);
-            }
-        }
+        // object itself). The IO handle table is shared by every thread
+        // (ADR-17216 §2.4), so no handle needs collecting or copying either.
         // Track C: migrate the parent's `state` variables into shared cells.
         // Incremental: only the keys created since the previous spawn.
         let shared = Arc::clone(&self.threads.shared_vars);
@@ -108,7 +78,7 @@ impl Interpreter {
             literal_native_args: 0,
             static_call_args: false,
             env: flat_env.unwrap_or_else(|| self.env.clone()),
-            io: self.io.fork_for_thread(&referenced_handle_ids),
+            io: self.io.fork_for_thread(),
             control: self.control.fork_for_thread(),
             main_hidden_from_usage: self.main_hidden_from_usage.clone(),
             explicit_run_main: self.explicit_run_main,

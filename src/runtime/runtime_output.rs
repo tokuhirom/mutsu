@@ -53,13 +53,9 @@ impl Interpreter {
         let exposed = crate::grapheme_break::unescape_literal_marker(text);
         let text: &str = &exposed;
         let byte_count = text.len() as i64;
-        if let Some(stdout_handle) = self
-            .io_handles_mut()
-            .map
-            .values_mut()
-            .find(|h| matches!(h.target, IoHandleTarget::Stdout))
-        {
-            stdout_handle.bytes_written += byte_count;
+        let table = self.io_handles();
+        if let Some(stdout_id) = table.std_id(IoHandleTarget::Stdout) {
+            table.with_mut(stdout_id, |state| state.bytes_written += byte_count);
         }
         // The Stdout `bytes_written` accounting above touches `io_handles`; the
         // write decision + buffers live in `output_sink`.
@@ -420,7 +416,9 @@ impl Interpreter {
     }
 
     pub fn flush_all_handles(&mut self) {
-        for state in self.io_handles_mut().map.values_mut() {
+        for handle in self.io_handles().snapshot() {
+            let mut guard = io_handles::write(&handle);
+            let state = &mut *guard;
             if state.closed {
                 continue;
             }

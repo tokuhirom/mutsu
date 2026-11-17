@@ -31,18 +31,6 @@ impl SeqFileReader {
             skip_bom: skip_utf8_bom,
         }
     }
-
-    /// A copy for a thread's handle table (`runtime_thread.rs`). Like the
-    /// `fs::File::try_clone` the other handles use there, the two copies share
-    /// the kernel file offset; the bytes already buffered are copied.
-    pub(crate) fn try_clone(&self) -> Option<Self> {
-        Some(Self {
-            file: self.file.try_clone().ok()?,
-            buf: self.buf.clone(),
-            pos: self.pos,
-            skip_bom: self.skip_bom,
-        })
-    }
 }
 
 impl SeqFileReader {

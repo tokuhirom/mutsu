@@ -164,16 +164,15 @@ impl Interpreter {
 
     /// Whether the cloned env carries a usable inherited entry for the dynamic
     /// IO var `name` (or its bare `alias`): a user object (the output-capture
-    /// redirection idiom), or a default handle whose id survived the referenced-
-    /// handle clone in `clone_for_thread_excluding`. A handle id that did NOT
-    /// survive (e.g. the parent closed it) reports unusable so the caller
-    /// rebuilds the default, preserving the pre-slice-6 behavior for that edge.
+    /// redirection idiom), or a default handle registered in the process-wide
+    /// handle table (ADR-17216 §2.4). A handle id the table does not know
+    /// reports unusable so the caller rebuilds the default.
     fn inherited_io_entry_usable(&self, name: &str, alias: &str) -> bool {
         let Some(v) = self.env.get(name).or_else(|| self.env.get(alias)) else {
             return false;
         };
         match Self::handle_id_from_value(v) {
-            Some(id) => self.io_handles().map.contains_key(&id),
+            Some(id) => self.io_handles().contains(id),
             None => !v.is_nil(),
         }
     }

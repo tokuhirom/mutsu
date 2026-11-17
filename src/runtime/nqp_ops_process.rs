@@ -377,15 +377,7 @@ impl Interpreter {
     /// `$*OUT`/`$*ERR`/`$*IN` dynamic variables (which a caller may have
     /// rebound). Lowest id wins, so it is the one created at startup.
     pub(super) fn std_handle(&mut self, target: IoHandleTarget) -> Value {
-        let existing = {
-            let table = self.io_handles();
-            table
-                .map
-                .iter()
-                .filter(|(_, state)| state.target == target)
-                .map(|(id, _)| *id)
-                .min()
-        };
+        let existing = self.io_handles().std_id(target);
         match existing {
             Some(id) => self.make_handle_instance(id),
             // No startup handle (a bare embedding of the interpreter): make one

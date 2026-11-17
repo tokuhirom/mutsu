@@ -42,59 +42,6 @@ impl Interpreter {
         }
     }
 
-    /// Collect the ids of the IO handles `value` reaches: the value itself, or
-    /// a handle held in an object's attributes, `depth` objects deep. A
-    /// worker thread is handed a clone of every handle its spawning env
-    /// references (`clone_for_thread_excluding`); a handle an object keeps in
-    /// an attribute (`has IO::Handle $!log-h`, Log::Dispatch::File) is
-    /// referenced just as much, and without this the worker's
-    /// `$!log-h.print` died "Invalid IO::Handle". Only objects are descended:
-    /// a list or hash in `env` can be arbitrarily large, and this runs per
-    /// spawn.
-    // Cost: O(a^depth * w), a = attributes per object reached (depth is small),
-    // w = container layers around a value (bounded by MAX_UNWRAP).
-    pub(crate) fn collect_handle_ids(
-        value: &Value,
-        depth: u32,
-        out: &mut std::collections::HashSet<usize>,
-    ) {
-        // Scalar wrappers and container references are unwrapped in a loop,
-        // not by recursion: each layer used to cost a stack frame, so a long or
-        // cyclic chain (#17483's self-containing cell, which ParaSeq's batches
-        // built) overflowed the stack on every spawn.
-        // A cell reachable from itself is a bug elsewhere, but must not hang
-        // every spawn: past `MAX_UNWRAP` layers the walk gives up, as
-        // `Value::with_deref`'s chain walk does.
-        const MAX_UNWRAP: usize = 4096;
-        let mut value = value.clone();
-        for _ in 0..MAX_UNWRAP {
-            if let Some(id) = Self::handle_id_from_value(&value) {
-                out.insert(id);
-                return;
-            }
-            let next = match value.view() {
-                ValueView::Scalar(inner) => inner.clone(),
-                ValueView::ContainerRef(_) => value.deref_container(),
-                _ => break,
-            };
-            value = next;
-        }
-        match value.view() {
-            ValueView::Instance { attributes, .. } if depth > 0 => {
-                // The read guard is released before recursing: an object
-                // graph that reaches this instance again (a parent holding
-                // its children, each holding the parent) would otherwise
-                // take a second read lock on the same `RwLock`, which blocks
-                // for good once another thread queues a write in between.
-                let attrs: Vec<Value> = attributes.as_map().values().cloned().collect();
-                for attr in &attrs {
-                    Self::collect_handle_ids(attr, depth - 1, out);
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub(crate) fn handle_id_from_value(value: &Value) -> Option<usize> {
         if let ValueView::Instance {
             class_name,
@@ -127,17 +74,14 @@ impl Interpreter {
     ) -> Result<R, RuntimeError> {
         let id = Self::handle_id_from_value(handle_value)
             .ok_or_else(|| RuntimeError::new("Expected IO::Handle"))?;
-        // The write guard is held across `f`, which may perform blocking IO but
-        // (by construction — `f` only receives `&mut IoHandleState`, never
-        // `self`) cannot re-enter another handle op. Per-thread snapshot
-        // semantics make holding the lock across blocking IO deadlock-free; the
-        // debug reentry guard catches any same-thread re-acquire.
-        let mut table = self.io_handles_mut();
-        let state = table
-            .map
-            .get_mut(&id)
-            .ok_or_else(|| RuntimeError::new("Invalid IO::Handle"))?;
-        f(state)
+        // The handle's write guard is held across `f`, which may perform
+        // blocking IO but (by construction — `f` only receives
+        // `&mut IoHandleState`, never `self`) cannot re-enter another handle
+        // op. Only this handle waits for it; the debug reentry guard catches
+        // any same-thread re-acquire.
+        self.io_handles()
+            .with_mut(id, f)
+            .unwrap_or_else(|| Err(RuntimeError::new("Invalid IO::Handle")))
     }
 
     /// Like [`Self::with_handle_mut`], but yields `Ok(None)` when the value is not a
@@ -152,11 +96,7 @@ impl Interpreter {
         let Some(id) = Self::handle_id_from_value(handle_value) else {
             return Ok(None);
         };
-        let mut table = self.io_handles_mut();
-        let Some(state) = table.map.get_mut(&id) else {
-            return Ok(None);
-        };
-        f(state).map(Some)
+        self.io_handles().with_mut(id, f).transpose()
     }
 
     pub(super) fn write_to_handle_value(
@@ -314,9 +254,8 @@ impl Interpreter {
     pub(crate) fn is_seq_private_handle(&self, handle_value: &Value) -> bool {
         Self::handle_id_from_value(handle_value).is_some_and(|id| {
             self.io_handles()
-                .map
-                .get(&id)
-                .is_some_and(|state| state.seq_reader.is_some())
+                .with(id, |state| state.seq_reader.is_some())
+                .unwrap_or(false)
         })
     }
 
