@@ -696,8 +696,8 @@ impl Interpreter {
             // scalar-variable operands (`($a,$b) X=:= ($c,$d)`) are intercepted
             // by `eval_reduction_operator_values` before reaching here so their
             // binding roots decide identity; only non-variable values fall here.
-            "=:=" => Ok(Value::truth(super::values_identical(left, right))),
-            "!=:=" => Ok(Value::truth(!super::values_identical(left, right))),
+            "=:=" => Ok(Value::truth(super::values_same_object(left, right))),
+            "!=:=" => Ok(Value::truth(!super::values_same_object(left, right))),
             "===" => Ok(Value::truth(super::values_identical(left, right))),
             "!===" => Ok(Value::truth(!super::values_identical(left, right))),
             // ADR-0021 I2: data-minted pairs default positional.
