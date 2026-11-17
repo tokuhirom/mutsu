@@ -380,6 +380,21 @@ impl Interpreter {
             return base_type == "Mu" || own.is_some_and(|own| own.as_str() == base_type);
         }
 
+        // A Proxy subclass's `.VAR` object (the only way an unread Proxy gets
+        // here) is an instance of its class: it matches that class's MRO
+        // (`Proxy`, `Any`, `Mu` included) and the roles it composes (#17459).
+        if let ValueView::Proxy {
+            subclass: Some((class, _)),
+            ..
+        } = left.view()
+        {
+            if smiley == Some(":U") {
+                return false;
+            }
+            let class = class.resolve();
+            return self.class_mro(&class).iter().any(|c| c.as_str() == base_type)
+                || self.class_does_role(&class, base_type);
+        }
         // Every enum type object and every enum value does the
         // `Enumeration` role (`E ~~ Enumeration`, `E.pick ~~ Enumeration`).
         // A non-enum LHS falls through to the ordinary role check

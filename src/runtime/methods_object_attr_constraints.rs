@@ -546,9 +546,15 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Construct a Proxy subclass instance: extracts FETCH/STORE from args,
-    /// initializes subclass attributes (with defaults), and returns a Proxy
-    /// with shared mutable subclass attrs.
+    /// Construct a Proxy subclass instance: extracts FETCH/STORE from args and
+    /// seeds the subclass attributes, returning a Proxy with shared mutable
+    /// subclass attrs.
+    ///
+    /// `Proxy.new` builds the container directly: it binds only `FETCH` and
+    /// `STORE`, so another named argument is refused, and no `BUILDALL` runs,
+    /// so an attribute's default expression is not evaluated (#17459). Each
+    /// attribute still holds what an ordinary unset one does — its type object,
+    /// or its `is default` value (#14259).
     pub(crate) fn construct_proxy_subclass(
         &mut self,
         class_name: &str,
@@ -563,31 +569,31 @@ impl Interpreter {
                 match key.as_str() {
                     "FETCH" => fetcher = value.clone(),
                     "STORE" => storer = value.clone(),
-                    _ => {
-                        extra_attrs.insert(key.clone(), value.clone());
+                    other => {
+                        return Err(RuntimeError::new(format!(
+                            "Unexpected named argument '{other}' passed"
+                        )));
                     }
                 }
             }
         }
 
-        // Initialize subclass attributes with defaults; an attribute without
-        // one is seeded as an ordinary instance's is (its type object, or its
-        // `is default` value), not left `Nil` (#14259).
         let class_attrs_info = self.class_attributes_shared(class_name);
         let attr_type_constraints = self.attribute_type_constraints_shared(class_name);
         for attr in class_attrs_info.iter() {
-            let attr_name = &attr.name;
-            let default_expr = &attr.default;
-            let sigil = &attr.sigil;
-            if !extra_attrs.contains_key(attr_name) {
-                let default_val = if let Some(arg) = default_expr {
-                    let result = self.eval_decl_trait_arg(arg)?;
-                    Self::coerce_attr_value_by_sigil(result, *sigil)
-                } else {
-                    self.seed_attr_value(class_name, attr_name, *sigil, &attr_type_constraints)
-                };
-                extra_attrs.insert(attr_name.clone(), default_val);
-            }
+            // `is default(...)` is recorded under the class that declares the
+            // attribute (a parent Proxy subclass, for an inherited one).
+            let declarer = attr
+                .declaring_package
+                .map_or_else(|| class_name.to_string(), |p| p.resolve());
+            let seeded = match self
+                .class_attribute_default(&declarer, &attr.name)
+                .or_else(|| self.class_attribute_default(class_name, &attr.name))
+            {
+                Some(is_default) if attr.sigil == '$' => is_default,
+                _ => self.seed_attr_value(class_name, &attr.name, attr.sigil, &attr_type_constraints),
+            };
+            extra_attrs.insert(attr.name.clone(), seeded);
         }
         self.enforce_attribute_where_constraints(class_name, &class_attrs_info, &extra_attrs)?;
 

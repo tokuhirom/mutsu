@@ -91,6 +91,25 @@ impl Interpreter {
     /// role's pun or the class MRO. `None` for any other receiver.
     // Cost: O(s + m), s = subset chain length, m = MRO length.
     pub(crate) fn mu_isa_late(&mut self, target: &Value, isa_arg: &Value) -> Option<Value> {
+        // A Proxy subclass's `.VAR` object is an instance of its class: `isa`
+        // walks that class's MRO (#17459).
+        if let ValueView::Proxy {
+            subclass: Some((class, _)),
+            ..
+        } = target.view()
+        {
+            let target_name = match isa_arg.view() {
+                ValueView::Package(name) => name.resolve(),
+                ValueView::Str(name) => name.to_string(),
+                _ => crate::value::types::what_type_name(isa_arg),
+            };
+            let class = class.resolve();
+            return Some(Value::truth(
+                self.class_mro(&class)
+                    .iter()
+                    .any(|c| c.as_str() == target_name),
+            ));
+        }
         let ValueView::Package(name) = target.view() else {
             return None;
         };

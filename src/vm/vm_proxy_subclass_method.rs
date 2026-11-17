@@ -58,6 +58,9 @@ impl Interpreter {
         if !self.has_user_method_sym(class, method_sym) || self.is_native_method(class, method) {
             return None;
         }
-        self.try_dispatch_compiled_method_direct_as(class_sym, target, method, args)
+        // `self` is the Proxy as a container: reading it FETCHes, its `.VAR`
+        // is the Proxy object again (#17459).
+        let invocant = target.proxy_container_of_var_object();
+        self.try_dispatch_compiled_method_direct_as(class_sym, &invocant, method, args)
     }
 }

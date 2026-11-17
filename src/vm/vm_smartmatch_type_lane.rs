@@ -95,7 +95,12 @@ impl Interpreter {
         };
         // As the general op: the left side is read, so a `Proxy` FETCHes.
         let left = self.stack.pop().unwrap_or(Value::NIL);
-        let left = self.auto_fetch_proxy(&left)?;
+        // A Proxy's `.VAR` object is matched as the Proxy itself (#17459).
+        let left = if left.is_proxy_var_object() {
+            left
+        } else {
+            self.auto_fetch_proxy(&left)?
+        };
         self.pending_local_updates.clear();
         let out = match self.direct_native_lhs_match(
             lhs_var,

@@ -21,6 +21,28 @@ impl Value {
         }
     }
 
+    /// The container form of a Proxy `.VAR` object: the same FETCH/STORE pair
+    /// and subclass attributes, read through FETCH again. What `self` is in a
+    /// Proxy subclass's method: Rakudo decontainerizes the invocant on use, so
+    /// `self.^name` FETCHes while `self.VAR` is the Proxy (#17459).
+    pub(crate) fn proxy_container_of_var_object(&self) -> Self {
+        match self.clone().into_repr() {
+            ValueRepr::Proxy {
+                fetcher,
+                storer,
+                subclass,
+                ..
+            } => Value::from_repr(ValueRepr::Proxy {
+                fetcher,
+                storer,
+                subclass,
+                decontainerized: false,
+                var_object: false,
+            }),
+            other => Value::from_repr(other),
+        }
+    }
+
     // ---- Arc-wrapping convenience constructors ----
     pub fn bigint(n: NumBigInt) -> Self {
         Value::BigInt(Arc::new(n))

@@ -31,6 +31,10 @@ fn isa(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
         // A built-in class with a shape (`Date`) knows its own type chain.
         ValueView::Instance { .. } if target.dispatch_shape().is_none() => return None,
         ValueView::Package(_) => return None,
+        // A Proxy subclass's class chain is the registry's (`mu_isa_late`).
+        ValueView::Proxy {
+            subclass: Some(_), ..
+        } => return None,
         ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Instance { .. }) => {
             return None;
         }
