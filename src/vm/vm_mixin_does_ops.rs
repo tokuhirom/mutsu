@@ -141,9 +141,6 @@ impl Interpreter {
         let Some(application) = self.extract_role_application(right) else {
             return Ok(None);
         };
-        if !self.role_has_attribute_trait_hooks(&application.0) {
-            return Ok(None);
-        }
         let copy = Value::make_instance(class_name, attributes.as_map().clone());
         self.does_rebless_instance(&copy, &[application])
     }
