@@ -241,6 +241,13 @@ impl TrirCompiler<'_> {
             self.note_decline(|| format!("nqp::{o} needs its operand's container"));
             return None;
         }
+        // `nqp::eqaddr` compares its operands as given (`=:=`, #17620): a `$`
+        // variable or an element is its container, which a TRIR operand never
+        // is. Only operands that are never a container keep the routine here.
+        if op == "eqaddr" && !args.iter().all(|a| self.never_a_container(a)) {
+            self.note_decline(|| "nqp::eqaddr needs its operand's container".to_string());
+            return None;
+        }
         // Everything else in the namespace goes through the ordinary
         // implementation with boxed operands. That is not a fallback arm: an
         // `nqp::` op is a primitive either way, and boxing its operands is
@@ -364,6 +371,20 @@ impl TrirCompiler<'_> {
 
     /// Compile one operand of an `nqp::` op. A sigilless parameter is
     /// admitted exactly here (see the `BareWord` arm of `compile_expr`).
+    /// Whether `nqp::eqaddr` sees `e`'s value rather than a container. A `$`
+    /// variable and an element are containers, and so may be a bareword that
+    /// names a sigilless local (bound to a caller's container); a literal, an
+    /// `@`/`%` variable (the collection itself), a type-object bareword and
+    /// an operator's or routine's result are values.
+    // Cost: O(1).
+    fn never_a_container(&self, e: &Expr) -> bool {
+        match e.peel_parens() {
+            Expr::Var(_) | Expr::Index { .. } => false,
+            Expr::BareWord(n) => self.binding_of(n).is_none(),
+            _ => true,
+        }
+    }
+
     pub(super) fn compile_nqp_operand(&mut self, a: &Expr) -> Option<TrKind> {
         self.nqp_operand = matches!(a, Expr::BareWord(_));
         let got = self.compile_expr(a);

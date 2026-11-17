@@ -1087,6 +1087,7 @@ mod call_arg_index_assign;
 pub(crate) mod compile_inputs;
 pub(crate) mod compile_session;
 mod const_fold;
+mod container_identity;
 pub(crate) mod control_block;
 mod control_block_placeholder;
 mod control_block_scope;

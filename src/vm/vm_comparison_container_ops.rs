@@ -12,7 +12,8 @@ impl Interpreter {
     /// are non-reference types (no `Arc` identity), the two stack
     /// values can never be the same container, so we return `False`.
     /// Reference types (Array, Hash, Sub, Instance, …) have `Arc`
-    /// pointer identity which `values_identical` already checks.
+    /// pointer identity, which `values_same_object` (the `nqp::eqaddr`
+    /// identity) already checks.
     pub(super) fn exec_container_eq_op(&mut self, flags: u8) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -36,7 +37,7 @@ impl Interpreter {
             // value can never be the same container as any other expression.
             false
         } else {
-            crate::runtime::values_identical(&left, &right)
+            crate::runtime::utils::values_same_object(&left, &right)
         };
         self.stack.push(Value::truth(result));
     }
@@ -55,7 +56,7 @@ impl Interpreter {
     /// distinct containers (uninitialized scalars store Nil pre-PLAN-8.5-step-3),
     /// so they must not compare identical. The `X =:= Nil` literal form is
     /// compiled with `flags == 0` instead (see `compile_binary`'s `=:=` arm),
-    /// which routes to `values_identical` where Nil == Nil holds.
+    /// which routes to object identity, where Nil is Nil.
     fn is_value_non_reference(left: &Value, right: &Value) -> bool {
         fn is_non_ref(v: &Value) -> bool {
             if v.is_any_type_object() {
@@ -156,7 +157,7 @@ impl Interpreter {
                 (ValueView::Array(..) | ValueView::Hash(..) | ValueView::Instance { .. }, _) => {
                     !self.operand_denotes_scalar_container(code, left_name)
                         && !self.operand_denotes_scalar_container(code, right_name)
-                        && crate::runtime::values_identical(&left, &right)
+                        && crate::runtime::utils::values_same_object(&left, &right)
                 }
                 // A RakuAST node is an immutable reference object, like a
                 // Package or Sub: the same node reached through two names (or
@@ -213,7 +214,7 @@ impl Interpreter {
         let result = if denotes_container {
             false
         } else {
-            crate::runtime::values_identical(&left, &right)
+            crate::runtime::utils::values_same_object(&left, &right)
         };
         self.stack.push(Value::truth(result));
     }
@@ -428,7 +429,7 @@ impl Interpreter {
             false
         } else {
             // Both are the same value identity (for non-hash-ref cases)
-            crate::runtime::values_identical(a, b)
+            crate::runtime::utils::values_same_object(a, b)
         }
     }
 
