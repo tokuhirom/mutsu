@@ -157,7 +157,7 @@ impl Interpreter {
                     let floor = self.lookbehind_start_floor_in(pattern, chars, pos, pkg);
                     // Matched as rakudo does, reversed, where the pattern
                     // flips; it runs no code, so it writes no lexicals.
-                    match self.lookbehind_flipped(pattern, chars, pos, floor, pkg) {
+                    match self.lookbehind_flipped(pattern, chars, pos, floor, program.markless, pkg) {
                         Some(true) => Some(RegexCaptures::default()),
                         Some(false) => None,
                         None => (floor..=pos)

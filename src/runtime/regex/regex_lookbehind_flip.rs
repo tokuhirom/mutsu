@@ -116,7 +116,8 @@ fn reversed_clusters(chars: &[char], lo: usize, hi: usize) -> Vec<char> {
 impl Interpreter {
     /// Whether the look-behind `pattern` matches ending at `pos`, matched as
     /// rakudo does (see the module doc); `None` when the pattern is not one
-    /// this flips, and the caller searches forward instead.
+    /// this flips, and the caller searches forward instead. `markless`: the
+    /// enclosing program ignores marks, so the body does too.
     ///
     /// Only the part of the subject the flipped match can reach is reversed:
     /// from one cluster before the earliest start the pattern can match from
@@ -131,13 +132,22 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         floor: usize,
+        markless: bool,
         pkg: Symbol,
     ) -> Option<bool> {
-        let flipped: Arc<RegexPattern> = pattern
+        let mut flipped: Arc<RegexPattern> = pattern
             .derived
             .flipped
             .get_or_init(|| flip_pattern(pattern).map(Arc::new))
             .clone()?;
+        // The body of a markless program compares bases, as the forward
+        // search's markless body does.
+        if markless && !flipped.ignore_mark {
+            let mut copy = (*flipped).clone();
+            copy.ignore_mark = true;
+            copy.derived = Default::default();
+            flipped = Arc::new(copy);
+        }
         let lo = super::regex_lookbehind::step_back_one_grapheme(chars, floor.min(pos));
         let hi = if pos < chars.len() {
             grapheme_end(chars, pos).max(pos + 1).min(chars.len())

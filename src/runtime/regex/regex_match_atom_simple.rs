@@ -355,7 +355,7 @@ impl Interpreter {
                     // per-line look-behind O(n^2) (#7576).
                     let floor = self.lookbehind_start_floor_in(pattern, chars, pos, pkg);
                     if let Some(matched) =
-                        self.lookbehind_flipped(pattern, chars, pos, floor, pkg)
+                        self.lookbehind_flipped(pattern, chars, pos, floor, false, pkg)
                     {
                         let pass = if *negated { !matched } else { matched };
                         return if pass { Some(pos) } else { None };
