@@ -29,10 +29,11 @@ impl Interpreter {
                 _ => None,
             })
             .collect();
+        let type_name = crate::runtime::utils::value_type_name(target);
         let message = format!(
-            "Cannot resolve caller grep({}{smiley}: {}); none of these signatures matches:\n    ($:: Bool:D $t, *%_)\n    ($:: Mu $t, *%_)",
-            crate::runtime::utils::value_type_name(target),
+            "Cannot resolve caller grep({type_name}{smiley}: {}); none of these signatures matches:{}",
             named.join(", "),
+            crate::runtime::builtin_method_sigs::candidate_lines(type_name, "grep"),
         );
         Self::multi_no_match_exception("grep", message)
     }

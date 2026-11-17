@@ -86,6 +86,16 @@ pub(crate) fn candidate_signatures(type_name: &str, method: &str) -> Option<&'st
         .map(|entry| entry.sigs.as_slice())
 }
 
+/// The candidate list of a `X::Multi::NoMatch` message for `method` on
+/// `type_name`: one `\n    <signature>` line per candidate, empty when the
+/// table lists none.
+// Cost: O(a + c), a = the ancestry length of `type_name`, c = candidates.
+pub(crate) fn candidate_lines(type_name: &str, method: &str) -> String {
+    candidate_signatures(type_name, method)
+        .map(|sigs| sigs.iter().map(|sig| format!("\n    {sig}")).collect())
+        .unwrap_or_default()
+}
+
 /// The positional bounds (required, maximum; invocant included) of the proto
 /// a multi `method` on `type_name` binds first, when it is bounded: a call
 /// with more positionals fails the proto's bind ("Too many positionals

@@ -303,10 +303,11 @@ impl Interpreter {
             })
             .collect();
         let message = format!(
-            "Cannot resolve caller {}({}:D: {}); none of these signatures matches:\n    (Mu: *%_)",
+            "Cannot resolve caller {}({}:D: {}); none of these signatures matches:{}",
             method,
             invocant_type,
-            arg_profile.join(", ")
+            arg_profile.join(", "),
+            crate::runtime::builtin_method_sigs::candidate_lines(&invocant_type, method),
         );
         let mut positional = vec![target.clone()];
         for a in args {
