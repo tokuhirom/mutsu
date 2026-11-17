@@ -307,9 +307,14 @@ impl Interpreter {
     // Cost: O(k + c), k = interned qualified names ending in the key's bare
     // name (`qualified_tail_index`), c = this routine's multi candidates;
     // plus O(e), e = the package's members, when it is an enum. O(1) for a
-    // `$`/`@`/`%` key of GLOBAL (`global_stash_variable`).
+    // `$`/`@`/`%` key of GLOBAL (`global_stash_variable`); as `core_stash_member`
+    // for `CORE` / `SETTING`.
     pub(crate) fn package_stash_symbol(&self, package: &str, key: &str) -> Option<Option<Value>> {
         let package_name = Self::normalize_stash_package(package);
+        // The core stash's entries are decided by the key alone (#17698).
+        if matches!(package_name.as_str(), "CORE" | "SETTING") {
+            return Some(self.core_stash_member(&package_name, key));
+        }
         if Self::stash_needs_whole_build(package, &package_name) {
             // The root stash answers a sigiled `$x` / `@x` / `%x` key per key
             // too (#9171); every other whole-build package, and `GLOBAL`'s
