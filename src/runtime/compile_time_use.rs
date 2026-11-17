@@ -73,6 +73,22 @@ impl CompileTimeLoader for Interpreter {
             &mut self.module.pending_use_export_args,
             request.literal_args.clone(),
         );
+        // A `use` in a module's own compile imports into the module's package,
+        // as it does from the module's prologue (`import_target_package_for_load`
+        // reads the `unit module` name there): the type aliases its load
+        // records belong to the module, not to the unit that loads it.
+        let in_module_compile = self
+            .module
+            .module_loading_unit_stack
+            .last()
+            .is_some_and(|&(_, depth)| depth == self.routine_stack_len());
+        let replaced_import_target = match (&request.package, in_module_compile) {
+            (Some(package), true) => Some(std::mem::replace(
+                &mut self.module.import_target_package,
+                Some(package.clone()),
+            )),
+            _ => None,
+        };
         let saved_hook_depth = self
             .module
             .parse_time_hook_depth
@@ -89,6 +105,9 @@ impl CompileTimeLoader for Interpreter {
             self.without_use_attach_depth(|interp| interp.preload_module(module))
         };
         self.module.parse_time_hook_depth = saved_hook_depth;
+        if let Some(saved) = replaced_import_target {
+            self.module.import_target_package = saved;
+        }
         self.module.pending_use_export_args = saved_export_args;
         drop(suspended);
         self.module.lib_paths = saved_lib_paths;

@@ -7,9 +7,10 @@ use Test;
 # was cached for the next importer (Qwiratry::Test::Location after
 # Qwiratry::Test::Format, t/00-use.rakutest).
 #
-# EhCycMid's `use` sits in a sub body: the scan follows it, the runtime does
-# not, so the slang scan is truncated by the recursion guard and is first
-# cached by the runtime's canonical scan instead.
+# EhCycMid once `use`d EhCycSlang from a sub body to truncate the slang's scan
+# through a module cycle; rakudo rejects that cycle ("Circular module loading
+# detected"), and so does mutsu since a `use` loads at compile time
+# (ADR-17558), so the fixture no longer closes it. Checked against rakudo.
 
 plan 2;
 

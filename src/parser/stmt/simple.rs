@@ -127,6 +127,7 @@ pub(in crate::parser) use pragma_preseed::{
 /// sub-hoisting order (#8657).
 pub(crate) use pragma_preseed::{is_user_declared_enum_value, is_user_declared_type};
 pub(crate) use pragma_preseed::{is_user_declared_sub, term_keywords_shadowable};
+pub(in crate::parser) use pragma_preseed::{note_unit_package, statement_package};
 pub(crate) use registry::lookup_custom_infix_precedence;
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label, lookup_op_prec,
@@ -321,6 +322,9 @@ thread_local! {
     /// `X::Foo::Missing` as a known type. Raku installs nested declarations under
     /// the composed name, so the parser must recognise that spelling too.
     static PACKAGE_PATH: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// The package the unit's `unit module` / `unit class` declaration names
+    /// (`pragma_preseed::note_unit_package`).
+    static UNIT_PACKAGE: RefCell<Option<String>> = const { RefCell::new(None) };
 
     /// Library search paths set before parsing, mirroring the runtime's lib_paths.
     static LIB_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -526,6 +530,7 @@ pub(crate) fn settle_core_type_fold() {
 pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
     unit.take(&SCOPES, vec![LexicalScope::default()]);
     unit.take(&PACKAGE_PATH, Vec::new());
+    unit.take(&UNIT_PACKAGE, None);
     unit.take(&LIB_PATHS, Vec::new());
     unit.take(&PRELOAD_MODULES, Vec::new());
     unit.take(&PROGRAM_PATH, None);
