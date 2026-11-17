@@ -33,7 +33,4 @@ my $out = $proc.out.slurp(:close);
 my $err = $proc.err.slurp(:close);
 is $proc.exitcode, 0, 'the process exits cleanly';
 is $err, '', 'nothing on stderr (no Gc::drop strong-count underflow)';
-# The released objects may run their DESTROY on the way out (the `but` copy is
-# a real `Driver+{Scoped}` instance since #17765); rakudo leaves them to a GC
-# that never comes. Either way the program ran to its last statement.
-like $out, / ^ "1\n" .* "end\n" ["destroy\n"]* $ /, 'the program ran to the end';
+like $out, / ^ "1\n" .* "end\n" $ /, 'the program ran to the end';
