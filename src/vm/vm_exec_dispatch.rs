@@ -8297,7 +8297,7 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1).
-            OpCode::MarkSigillessBindSource(name_idx) => {
+            OpCode::MarkSigillessBindSource => {
                 // The bind SOURCE, still on the stack: this op is emitted
                 // immediately before the declaration's own store, so the value
                 // about to be bound is the top of the stack.
@@ -8380,7 +8380,15 @@ impl Interpreter {
                                 | ValueView::HashEntryRef { .. }
                         )
                 });
-                self.sigilless_bind_source = Some((code.const_sym(*name_idx), writable));
+                // Below the source the store pops, for the paired
+                // `MarkSigillessBind { from_stack: true }`.
+                let source = self.stack.pop().unwrap_or(Value::NIL);
+                self.stack
+                    .push(if writable { Value::TRUE } else { Value::FALSE });
+                self.stack.push(source);
+                if !writable {
+                    self.bound_value_context().set(true);
+                }
                 *ip += 1;
             }
             _ => unreachable!("opcode routed to the wrong exec_ops group"),
@@ -8404,16 +8412,14 @@ impl Interpreter {
         match &code.ops[*ip] {
             // Cost: O(1) amortized (the paired MarkSigillessBindSource verdict, else one probe of
             // the chunk's name index).
-            OpCode::MarkSigillessBind(name_idx) => {
+            OpCode::MarkSigillessBind {
+                name_idx,
+                from_stack,
+            } => {
                 let name_sym = code.const_sym(*name_idx);
                 // The verdict `MarkSigillessBindSource` took from the bind
                 // source, if this declaration emitted one.
-                let recorded = match self.sigilless_bind_source.take() {
-                    Some((sym, writable)) if sym == name_sym => Some(writable),
-                    // A store that re-entered user code left someone else's
-                    // verdict here; it is gone now and this one has none.
-                    _ => None,
-                };
+                let recorded = from_stack.then(|| self.stack.pop().is_some_and(|v| v.truthy()));
                 let writable = recorded.unwrap_or_else(|| {
                     // Fallback for a `MarkSigillessBind` with no paired source
                     // op: read the RAW binding (not a dereferenced value) — the

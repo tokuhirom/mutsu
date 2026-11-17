@@ -420,7 +420,7 @@ impl Interpreter {
             | OpCode::GetOuterCapture { .. }
             | OpCode::GetOuterVar { .. }
             | OpCode::GetScalarContainer { .. }
-            | OpCode::MarkSigillessBindSource(..)
+            | OpCode::MarkSigillessBindSource
             | OpCode::PublishExportStashVar { .. }
             | OpCode::ReactScope { .. }
             | OpCode::RegisterSubset { .. }
@@ -438,7 +438,7 @@ impl Interpreter {
             | OpCode::LetSave { .. }
             | OpCode::LetSaveElem { .. }
             | OpCode::LetSaveElemVivified { .. }
-            | OpCode::MarkSigillessBind(..)
+            | OpCode::MarkSigillessBind { .. }
             | OpCode::MarkVarReadonly(..)
             | OpCode::SetTermMark { .. } => self.exec_ops_group_16(code, ip, compiled_fns),
         }

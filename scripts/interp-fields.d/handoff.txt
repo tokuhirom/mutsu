@@ -26,7 +26,6 @@ pending_skip_constraint_recheck
 recorded_free_var_writes
 rw_return_context
 shaped_decl_context
-sigilless_bind_source
 static_call_args
 subset_where_fail
 test_pending_callsite_line

@@ -94,9 +94,9 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::LetSave { .. }
             | OpCode::LetSaveElem { .. }
             | OpCode::LetSaveElemVivified { .. }
-            | OpCode::MarkSigillessBind(_)
+            | OpCode::MarkSigillessBind { .. }
             | OpCode::SetTermMark { .. }
-            | OpCode::MarkSigillessBindSource(_)
+            | OpCode::MarkSigillessBindSource
             | OpCode::MarkVarReadonly(..)
             | OpCode::CheckDynamicVarDeclared(_)
             // A declaration's type check. Straight-line like the

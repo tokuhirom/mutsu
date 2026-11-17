@@ -215,7 +215,7 @@ impl Interpreter {
         let Some(term_sym) = code.locals_sym.get(idx).copied() else {
             return false;
         };
-        if self.sigilless_bind_source != Some((term_sym, false)) {
+        if !self.bound_value_context().get() {
             return false;
         }
         let Some(name) = code.locals.get(idx) else {

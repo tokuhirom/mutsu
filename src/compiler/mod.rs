@@ -1710,6 +1710,11 @@ pub(crate) struct Compiler {
     /// denotes, as for an `is rw` routine, but no other tail shape is
     /// (an assignment, `if`/`given` branches and ternaries stay values).
     rw_tail_block: bool,
+    /// How many `MarkSigillessBindSource` writability verdicts the code
+    /// emitted so far leaves on the stack unpaired. `compile_stmt` notes the
+    /// count before a declaration, so its `end_term_decl` knows whether this
+    /// declaration left one, to pair with `MarkSigillessBind { from_stack }`.
+    sigilless_bind_verdicts: usize,
     /// The plain (non-`rw`/`raw`/`copy`) scalar parameters of a Block body:
     /// a bare tail naming one reads its value (see [`Self::rw_tail_block`]).
     block_value_params: std::collections::HashSet<String>,
@@ -2277,6 +2282,7 @@ impl Compiler {
             rw_tail: false,
             rw_tail_elems_only: false,
             rw_tail_block: false,
+            sigilless_bind_verdicts: 0,
             block_value_params: std::collections::HashSet::new(),
             rw_tail_branch: false,
             pending_rw_arg_list_callee: None,

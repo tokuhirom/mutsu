@@ -48,6 +48,7 @@ pub(crate) mod bit {
     pub(crate) const SHAPED_DECL: u16 = 1 << 10;
     pub(crate) const TRAIT_INIT: u16 = 1 << 11;
     pub(crate) const SIGILLESS_STORE: u16 = 1 << 12;
+    pub(crate) const BOUND_VALUE: u16 = 1 << 13;
 }
 
 /// The whole mark-context flag family in one allocation.
@@ -105,7 +106,8 @@ impl MarkContextState {
         | bit::DECL_TYPECHECKED
         | bit::SHAPED_DECL
         | bit::TRAIT_INIT
-        | bit::SIGILLESS_STORE;
+        | bit::SIGILLESS_STORE
+        | bit::BOUND_VALUE;
 
     /// Whether *no* store-flavour mark is pending: the next store is a plain
     /// `=` into an already-declared variable, with no bind, rebind, `constant`,
@@ -158,7 +160,8 @@ impl MarkContextState {
             | bit::DECL_TYPECHECKED
             | bit::CONSTANT
             | bit::BIND
-            | bit::TRAIT_INIT;
+            | bit::TRAIT_INIT
+            | bit::BOUND_VALUE;
         let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
         pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
     }
@@ -372,6 +375,14 @@ impl crate::runtime::Interpreter {
         MarkFlag::new(&self.mark_ctx.flags, bit::SIGILLESS_STORE)
     }
 
+    /// Set by `MarkSigillessBindSource` when a sigilless declaration's bind
+    /// source is a plain value (no container to alias), for the store that
+    /// follows: its bound-term lane takes only such a declaration.
+    #[inline]
+    pub(crate) fn bound_value_context(&self) -> MarkFlag<'_> {
+        MarkFlag::new(&self.mark_ctx.flags, bit::BOUND_VALUE)
+    }
+
     /// The one non-`Copy` member of the family — see
     /// `MarkContextState::share_source`.
     #[inline]
@@ -420,6 +431,7 @@ mod tests {
             bit::SHAPED_DECL,
             bit::TRAIT_INIT,
             bit::SIGILLESS_STORE,
+            bit::BOUND_VALUE,
         ];
         let mut seen: u16 = 0;
         for b in all {

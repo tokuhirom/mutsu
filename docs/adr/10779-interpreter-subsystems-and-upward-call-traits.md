@@ -308,3 +308,8 @@ these preconditions:
   RHS, immediately before the store it guards (rakudo's evaluation order), so its "assign
   through the bound value" verdict is the mark-context bit `SIGILLESS_STORE` that store
   consumes. The name the field carried only told stores apart; adjacency does that now.
+- D3, `sigilless_bind_source` (2026-11-17): one field fewer. The pair crosses the store, so
+  the verdict rides the stack under the bind source to the `MarkSigillessBind { from_stack }`
+  the compiler pairs with it (the PR-2 `vardecl_init_raw` form), and the store lane's question
+  is the mark-context bit `BOUND_VALUE`. The "statement boundary" noted in the first batch is
+  only the compiler's: both ops are emitted within the declaration's own `compile_stmt`.
