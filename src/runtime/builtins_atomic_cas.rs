@@ -244,30 +244,34 @@ impl Interpreter {
                     // object: Concurrent::Stack.pop assigns its captured `$taken`
                     // an Instance, and filtering those values out loses the object
                     // even though the closure changed the lexical binding.
+                    // The names are read as interned text (`as_str`), not
+                    // resolved into a fresh `String` per env entry: this
+                    // snapshot and the diff below run on every `cas` call
+                    // (#11482).
                     let cas_pre_env: Option<
-                        std::collections::HashMap<crate::symbol::Symbol, Value>,
+                        rustc_hash::FxHashMap<crate::symbol::Symbol, Value>,
                     > = Some(
                         self.env
                             .iter()
                             .filter(|(k, v)| {
                                 Self::is_writeback_safe_scalar(v)
-                                    || crate::env::is_plain_user_lexical(&k.resolve())
+                                    || crate::env::is_plain_user_lexical(k.as_str())
                             })
                             .map(|(k, v)| (*k, v.clone()))
                             .collect(),
                     );
                     let result = self.call_sub_value(code.clone(), call_args)?;
                     if let Some(cas_pre_env) = cas_pre_env {
-                        let changed: Vec<String> = self
+                        let changed: Vec<&'static str> = self
                             .env
                             .iter()
                             .filter(|(k, v)| {
-                                let kn = k.resolve();
+                                let kn = k.as_str();
                                 kn != "_"
                                     && kn != "$_"
                                     && kn != name
                                     && (Self::is_writeback_safe_scalar(v)
-                                        || crate::env::is_plain_user_lexical(&kn))
+                                        || crate::env::is_plain_user_lexical(kn))
                                     && cas_pre_env
                                         .get(*k)
                                         .map(|p| {
@@ -275,10 +279,10 @@ impl Interpreter {
                                         })
                                         .unwrap_or(true)
                             })
-                            .map(|(k, _)| k.resolve())
+                            .map(|(k, _)| k.as_str())
                             .collect();
                         for n in changed {
-                            self.record_caller_var_writeback(&n);
+                            self.record_caller_var_writeback(n);
                         }
                     }
                     match saved_topic {
