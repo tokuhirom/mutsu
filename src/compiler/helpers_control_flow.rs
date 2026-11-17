@@ -1026,19 +1026,20 @@ impl Compiler {
     /// literal is not one: Rakudo's `Rat.ACCEPTS` answers `False` instead.
     // Cost: O(1).
     pub(super) fn is_int_or_num_literal(expr: &Expr) -> bool {
+        // `Inf`/`NaN` are terms, folded to a `Num` literal: not numbers
+        // written in the source.
+        let number = |v: &crate::value::Value| match v.view() {
+            crate::value::ValueView::Int(_) | crate::value::ValueView::BigInt(_) => true,
+            crate::value::ValueView::Num(n) => n.is_finite(),
+            _ => false,
+        };
         match expr {
-            // `Inf`/`NaN` are terms, folded to a `Num` literal: not numbers
-            // written in the source.
-            Expr::Literal(v) => match v.view() {
-                crate::value::ValueView::Int(_) | crate::value::ValueView::BigInt(_) => true,
-                crate::value::ValueView::Num(n) => n.is_finite(),
-                _ => false,
-            },
+            Expr::Literal(v) => number(v),
             Expr::Unary {
                 op: crate::token_kind::TokenKind::Minus | crate::token_kind::TokenKind::Plus,
                 expr,
                 ..
-            } => matches!(expr.as_ref(), Expr::Literal(_)) && Self::is_int_or_num_literal(expr),
+            } => matches!(expr.as_ref(), Expr::Literal(v) if number(v)),
             _ => false,
         }
     }
