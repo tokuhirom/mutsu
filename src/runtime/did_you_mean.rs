@@ -28,6 +28,41 @@ pub(crate) fn levenshtein_distance(a: &str, b: &str) -> usize {
     prev_row[b_len]
 }
 
+/// [`levenshtein_distance`] when the answer only matters up to `max`: the
+/// exact distance when it is at most `max`, otherwise some value above `max`.
+/// A row's minimum never decreases down the table, so once a whole row
+/// exceeds `max` the distance does too.
+// Cost: O(a * b), a and b = chars of the two strings; stops at the first row
+// whose minimum exceeds `max`.
+pub(crate) fn bounded_levenshtein_distance(a: &str, b: &str, max: usize) -> usize {
+    let a_len = a.chars().count();
+    let b_len = b.chars().count();
+    if a_len.abs_diff(b_len) > max {
+        return max + 1;
+    }
+    if a_len == 0 || b_len == 0 {
+        return a_len.max(b_len);
+    }
+    let mut prev_row: Vec<usize> = (0..=b_len).collect();
+    let mut curr_row = vec![0; b_len + 1];
+    for (i, a_ch) in a.chars().enumerate() {
+        curr_row[0] = i + 1;
+        let mut row_min = curr_row[0];
+        for (j, b_ch) in b.chars().enumerate() {
+            let cost = usize::from(a_ch != b_ch);
+            curr_row[j + 1] = (prev_row[j + 1] + 1)
+                .min(curr_row[j] + 1)
+                .min(prev_row[j] + cost);
+            row_min = row_min.min(curr_row[j + 1]);
+        }
+        if row_min > max {
+            return max + 1;
+        }
+        std::mem::swap(&mut prev_row, &mut curr_row);
+    }
+    prev_row[b_len]
+}
+
 /// `owner -> names` of the methods Rakudo declares directly on each built-in
 /// owner (the `declared` lines of the committed Rakudo oracle snapshot).
 fn declared_by_owner() -> &'static std::collections::HashMap<&'static str, Vec<&'static str>> {
@@ -46,16 +81,45 @@ fn declared_by_owner() -> &'static std::collections::HashMap<&'static str, Vec<&
     })
 }
 
+/// Catalog-MRO address -> its candidate names (see [`candidate_names`]).
+type CandidateMemo = std::collections::HashMap<usize, std::sync::Arc<[&'static str]>>;
+
 /// Every public method name a built-in `type_name` answers to: what Rakudo
 /// declares on each class of its MRO and on the roles those classes compose
 /// (its `.^methods(:all)`). A type the catalog does not list (a user class)
 /// is offered the `Any`/`Mu` names.
-// Cost: O(m + n), m = MRO levels and composed roles, n = names collected (a dedup scan per name; error path only).
-pub(crate) fn candidate_names(type_name: &str) -> Vec<&'static str> {
-    use crate::builtin_types::catalog::{builtin_type_mro_strs, builtin_type_roles_strs};
+///
+/// The answer depends only on the catalog MRO the name selects, a `'static`
+/// slice, so it is built once per MRO: every type the catalog does not list
+/// shares the `Any`/`Mu` one. A program that probes a missing method of a user
+/// class with `.?name` builds a `X::Method::NotFound` per probe, and this
+/// table was rebuilt for each (~126k instructions, #17693).
+// Cost: O(1) expected after the first call for the MRO; the first call is
+// O(m + n^2), m = MRO levels and composed roles, n = names collected.
+pub(crate) fn candidate_names(type_name: &str) -> std::sync::Arc<[&'static str]> {
+    use crate::builtin_types::catalog::builtin_type_mro_strs;
     // A type the catalog does not list (a user class, `Any`, `Mu`) answers to
     // what every object does: the `Any` and `Mu` methods.
-    let mro = builtin_type_mro_strs(type_name).unwrap_or(&["Any", "Mu"]);
+    static ANY_MU: [&str; 2] = ["Any", "Mu"];
+    let mro: &'static [&'static str] = builtin_type_mro_strs(type_name).unwrap_or(&ANY_MU);
+    static MEMO: std::sync::OnceLock<std::sync::Mutex<CandidateMemo>> = std::sync::OnceLock::new();
+    let memo = MEMO.get_or_init(Default::default);
+    // The catalog's slices are distinct statics, so the address names the MRO.
+    let key = mro.as_ptr() as usize;
+    if let Some(names) = memo.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return names.clone();
+    }
+    let names: std::sync::Arc<[&'static str]> = collect_candidate_names(mro).into();
+    memo.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(key, names.clone());
+    names
+}
+
+/// [`candidate_names`]' table for one catalog MRO.
+// Cost: O(m + n^2), m = MRO levels and composed roles, n = names collected.
+fn collect_candidate_names(mro: &'static [&'static str]) -> Vec<&'static str> {
+    use crate::builtin_types::catalog::builtin_type_roles_strs;
     let table = declared_by_owner();
     let mut names: Vec<&'static str> = Vec::new();
     let mut push_owner = |owner: &str| {
@@ -165,6 +229,7 @@ fn compute_suggestions(method: &str, type_name: &str, extra: &[String]) -> Vec<S
         _ => {}
     }
     let folded = method.to_lowercase();
+    let folded_len = folded.chars().count();
     let long = method.chars().count() > 5;
     let candidates = candidate_names(type_name);
     for name in candidates
@@ -176,12 +241,25 @@ fn compute_suggestions(method: &str, type_name: &str, extra: &[String]) -> Vec<S
         if name == method {
             continue;
         }
+        // The edit distance is at least the difference in length, and only a
+        // name at least as long can contain `folded`: a candidate failing both
+        // can match neither way, so it is skipped before the O(l^2) distance
+        // (most of a user class's ~200 candidates are, #17693). Lengths are
+        // of the lowercased spellings, which the matches below compare.
+        let name_len = if name.is_ascii() {
+            name.len()
+        } else {
+            name.chars().flat_map(char::to_lowercase).count()
+        };
+        if name_len.abs_diff(folded_len) > max_length && !(long && name_len >= folded_len) {
+            continue;
+        }
         let name_folded = name.to_lowercase();
         if long && name_folded.contains(&folded) {
             found.insert(name, 0);
             continue;
         }
-        let dist = levenshtein_distance(&folded, &name_folded);
+        let dist = bounded_levenshtein_distance(&folded, &name_folded, max_length);
         if dist <= max_length {
             found.insert(name, dist);
         }
@@ -292,6 +370,38 @@ mod tests {
         assert_eq!(levenshtein_distance("kitten", "sitting"), 3);
         assert_eq!(levenshtein_distance("uppercase", "upercase"), 1);
         assert_eq!(levenshtein_distance("push", "pus"), 1);
+    }
+
+    #[test]
+    fn bounded_distance_agrees_with_the_exact_one_up_to_the_bound() {
+        let words = [
+            "", "a", "push", "pus", "kitten", "sitting", "uppercase", "upercase",
+            "xml-namespace-prefix", "namespace", "elems", "elemz", "Ünïcode", "unicode",
+        ];
+        for a in words {
+            for b in words {
+                for max in 0..4 {
+                    let exact = levenshtein_distance(a, b);
+                    let bounded = bounded_levenshtein_distance(a, b, max);
+                    if exact <= max {
+                        assert_eq!(bounded, exact, "{a:?} {b:?} max {max}");
+                    } else {
+                        assert!(bounded > max, "{a:?} {b:?} max {max}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn candidate_names_are_shared_per_mro() {
+        let a = candidate_names("SomeUserClass");
+        let b = candidate_names("AnotherUserClass");
+        assert!(std::sync::Arc::ptr_eq(&a, &b), "unlisted types share the Any/Mu table");
+        assert!(a.contains(&"say"));
+        assert_eq!(&*candidate_names("Int"), &*collect_candidate_names(
+            crate::builtin_types::catalog::builtin_type_mro_strs("Int").unwrap()
+        ));
     }
 
     #[test]
