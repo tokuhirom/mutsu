@@ -325,24 +325,34 @@ impl Interpreter {
     /// spelling unchanged.
     ///
     /// The steps that can say otherwise without a registry write are asked
-    /// on every call, and are two loads in the common program: a bound `::T`
-    /// capture (`any_type_capture_seen`, process-global latch) and a module
-    /// package alias (`package_type_aliases`, empty unless one was imported).
+    /// on every call, and are two loads in the common program: a `::T`
+    /// capture bound under the constraint's own name (`has_type_capture_binding`:
+    /// a per-name filter word, plus one env probe only when a capture of a
+    /// name with that filter bit was ever bound) and a module package alias
+    /// (`package_type_aliases`, empty unless one was imported).
     /// A constant alias cannot rename a known type (`type_alias_target`
     /// answers `None` for every `is_known_type_constraint` name before it looks
     /// at any binding). What remains — a user `subset`/`enum`/`role` declared
     /// under the builtin name — lives in the registry, so the answer is
     /// memoized per site for one registry write generation
     /// ([`crate::value::TypeDeclSiteCaches`]).
-    // Cost: O(1) on a memo hit; a miss adds O(|name|) for the spelling checks
-    // plus three registry probes.
+    // Cost: O(|name|) on a memo hit (the capture filter hashes the name; an
+    // env probe on a filter hit); a miss adds O(|name|) for the spelling
+    // checks plus three registry probes.
     pub(super) fn type_decl_constraint_is_plain_builtin(
         &self,
         code: &CompiledCode,
         tc_idx: u32,
         constraint: &str,
     ) -> bool {
-        if Self::any_type_capture_seen() || !self.types.package_type_aliases.is_empty() {
+        // A bound `::T` capture under THIS constraint's name is what the
+        // capture step would substitute, so that is what is asked -- through
+        // the per-name filter, an env probe only when a capture of a name
+        // hashing alike was ever bound. The process-global "any capture was
+        // ever bound" latch alone turned the memo off for every declaration
+        // of a program one of whose dependencies binds some `::T`.
+        if self.has_type_capture_binding(constraint) || !self.types.package_type_aliases.is_empty()
+        {
             return false;
         }
         let generation = self.registry_write_generation();
