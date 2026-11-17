@@ -58,7 +58,7 @@ impl Interpreter {
             let coerced = self.atomic_assign_coerced_value(&name, new_val)?;
             if let Some((attrs, key)) = attr_cell {
                 let (current, swapped) = attrs.compare_and_swap(
-                    &key,
+                    key,
                     |cur| Self::cas_retry_matches(cur, expected),
                     coerced.clone(),
                 );

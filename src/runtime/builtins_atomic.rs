@@ -365,7 +365,7 @@ impl Interpreter {
         // Phase 3 cell-CAS: attribute targets read the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(name) {
             self.refuse_narrow_attribute(name)?;
-            let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::NIL);
+            let val = attrs.as_map().get(key).cloned().unwrap_or(Value::NIL);
             return Ok(val);
         }
         // A binding that already lives in a shared cell reads through it — see
@@ -433,7 +433,7 @@ impl Interpreter {
         self.check_readonly_for_modify(&name)?;
         // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
-            let (_, next) = attrs.fetch_update(&key, |cur| {
+            let (_, next) = attrs.fetch_update(key, |cur| {
                 let base = match cur.view() {
                     ValueView::Nil | ValueView::Package(_) => Value::int(0),
                     _ => cur.clone(),
@@ -480,7 +480,7 @@ impl Interpreter {
         self.check_readonly_for_modify(&name)?;
         // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
-            let (old, next) = attrs.fetch_update(&key, |cur| {
+            let (old, next) = attrs.fetch_update(key, |cur| {
                 let base = match cur.view() {
                     ValueView::Nil | ValueView::Package(_) => Value::int(0),
                     _ => cur.clone(),
@@ -525,7 +525,7 @@ impl Interpreter {
         // cell under its write lock — atomic across every alias and thread.
         if name.starts_with('!') || name.starts_with('.') {
             if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
-                let (old, next) = attrs.fetch_update(&key, |cur| {
+                let (old, next) = attrs.fetch_update(key, |cur| {
                     let base = match cur.view() {
                         ValueView::Nil | ValueView::Package(_) => Value::int(0),
                         _ => cur.clone(),

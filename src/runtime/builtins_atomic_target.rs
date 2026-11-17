@@ -330,7 +330,7 @@ impl Interpreter {
         }
         let value = if target.starts_with(['!', '.']) {
             self.self_attr_cell_target(target)
-                .and_then(|(attrs, key)| attrs.as_map().get(&key).cloned())
+                .and_then(|(attrs, key)| attrs.as_map().get(key).cloned())
         } else {
             self.env
                 .get(target)
