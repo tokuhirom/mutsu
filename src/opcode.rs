@@ -2101,6 +2101,13 @@ pub(crate) enum OpCode {
         /// parentheses really does answer `True` there — so the check is on the
         /// syntactic shape, not on whether the RHS happens to read the topic.
         rhs_is_bare_topic: bool,
+        /// True when the RHS is written as an `Int` or `Num` literal (`~~ 2`,
+        /// `~~ -2`, `~~ 2e0`). Rakudo compiles that match as a numeric
+        /// comparison against the topic's `.Numeric(:fail-or-nil)`, so a
+        /// topic with no defined `Numeric` (a `Block`, a `Pair`, a plain
+        /// object) dies and a `Failure` topic throws, where the same match
+        /// against a variable answers `False` (#16750).
+        rhs_numeric_literal: bool,
     },
     /// Scalarize a multi-match regex result: Nil -> 0, Positional -> elems, Match -> 1.
     ScalarizeRegexMatchResult,

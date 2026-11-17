@@ -15,10 +15,21 @@ pub(crate) fn numeric_no_match_error(type_name: &str) -> RuntimeError {
 /// class with no such method matches nothing.
 // Cost: O(1)
 pub(crate) fn mu_coercion_no_match_error(method: &str, type_name: &str) -> RuntimeError {
+    mu_coercion_no_match_error_named(method, type_name, "")
+}
+
+/// [`mu_coercion_no_match_error`] for a call that also passed named
+/// arguments, spelled as Rakudo lists them after the invocant (`:fail-or-nil`).
+// Cost: O(1)
+pub(crate) fn mu_coercion_no_match_error_named(
+    method: &str,
+    type_name: &str,
+    named: &str,
+) -> RuntimeError {
     RuntimeError::typed_msg(
         "X::Multi::NoMatch",
         format!(
-            "Cannot resolve caller {method}({type_name}:D: ); none of these signatures matches:{}",
+            "Cannot resolve caller {method}({type_name}:D: {named}); none of these signatures matches:{}",
             crate::runtime::builtin_method_sigs::candidate_lines("Mu", method),
         ),
     )

@@ -81,6 +81,7 @@ impl Interpreter {
         lhs_is_literal: bool,
         rhs_pure_regex: bool,
         rhs_is_bare_topic: bool,
+        rhs_numeric_literal: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         use crate::opcode::SmartMatchLhs;
@@ -135,6 +136,9 @@ impl Interpreter {
         // answers False for every type — including the one the FETCH returns.
         let left = self.stack.pop().unwrap();
         let left = loan_env!(self, auto_fetch_proxy(&left))?;
+        if rhs_numeric_literal {
+            self.numeric_literal_topic_check(&left)?;
+        }
         let rhs_start = *ip + 1;
         let rhs_end = rhs_end as usize;
         // Slice 6.3 step 2: clear the regex engine's caller-variable write log so
