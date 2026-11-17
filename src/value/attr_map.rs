@@ -428,6 +428,17 @@ impl AttrMap {
         Self::default()
     }
 
+    /// An empty layout-less map with room for `n` keys, so a builder that
+    /// knows its key count (`MatchNode::materialize_map`) does not rehash as
+    /// it fills.
+    // Cost: O(n), n = the reserved capacity.
+    pub(crate) fn with_capacity(n: usize) -> Self {
+        Self {
+            extra: FxHashMap::with_capacity_and_hasher(n, Default::default()),
+            ..Self::default()
+        }
+    }
+
     /// An empty map over `layout`: every declared slot present but absent.
     pub(crate) fn with_layout(layout: Arc<ClassLayout>) -> Self {
         Self {

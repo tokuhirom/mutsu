@@ -200,7 +200,9 @@ impl MatchNode {
             sub_named.insert(key.resolve(), Value::named_slot_value(slot, &self.target));
         }
 
-        let mut attrs = AttrMap::new();
+        // The fixed keys below plus the optional ones: sized up front so the
+        // map does not rehash as it fills.
+        let mut attrs = AttrMap::with_capacity(14);
         // A grammar cursor's class name is the GRAMMAR's, so it can no longer
         // double as the "this Instance is a Match" signal. Record the fact in
         // the attribute map instead: every eager derivative of this Match (the
