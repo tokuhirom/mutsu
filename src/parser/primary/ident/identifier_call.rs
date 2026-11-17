@@ -1996,20 +1996,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::Literal(Value::package(Symbol::intern(&format!("{name}(Any)")))),
             ));
         }
-        if let Some((package, member)) = name.rsplit_once("::")
-            && matches!(package, "MY" | "OUTER")
-            && !member.is_empty()
-            && !member.contains("::")
-        {
+        if let Some(entry) = pseudo_stash_member(&name) {
             return Ok((
                 rest,
                 Expr::CallOn {
-                    target: Box::new(Expr::Index {
-                        target: Box::new(Expr::PseudoStash(format!("{package}::"))),
-                        index: Box::new(Expr::Literal(Value::str(member.to_string()))),
-                        is_positional: false,
-                        spelling: Default::default(),
-                    }),
+                    target: Box::new(entry),
                     args,
                 },
             ));
@@ -2879,6 +2870,32 @@ fn control_flow_label(input: &str) -> (&str, Option<String>) {
         return (r, Some(label));
     }
     (input, None)
+}
+
+/// The callee of a call `PSEUDO::name(...)`: the pseudo-stash lookup
+/// `PSEUDO::<name>` with the *sigilless* key, as rakudo reads it. For a routine
+/// name that key is absent (only `&name` is in the stash), so the call dies
+/// with Nil's `CALL-ME` failure, as on rakudo (whose `CORE::`/`SETTING::`
+/// spelling dies too, with an internal `BOOTCode` error); `&CORE::uc(...)` is
+/// the way to call the routine. `GLOBAL::` names an ordinary package (and
+/// reports its own "Could not find symbol"), `PROCESS::` and `COMPILING::`
+/// resolve through their own paths, and a member with a further `::`
+/// (`CORE::X::AdHoc`) is a nested package name, not a stash key.
+fn pseudo_stash_member(name: &str) -> Option<Expr> {
+    let (package, member) = name.split_once("::")?;
+    if member.is_empty()
+        || member.contains("::")
+        || matches!(package, "GLOBAL" | "PROCESS" | "COMPILING")
+        || !crate::parser::primary::var::is_pseudo_package(package)
+    {
+        return None;
+    }
+    Some(Expr::Index {
+        target: Box::new(Expr::PseudoStash(format!("{package}::"))),
+        index: Box::new(Expr::Literal(Value::str(member.to_string()))),
+        is_positional: false,
+        spelling: Default::default(),
+    })
 }
 
 /// The index expression for `MY::<...>`-style angle subscripts: several
