@@ -597,10 +597,19 @@ impl Interpreter {
         let _ = self.reify_map_grep_prefix(val, 1);
         match val.view() {
             ValueView::Package(name) => {
-                let class_name = name.resolve();
+                let class_name = name.as_str();
+                // No level of the type's MRO declares `Bool` -- the common
+                // case, a missing element read as `Any` (#17429) -- so the
+                // resolution below could only answer `None`: skip its walk.
+                // `adopt_published_mixin` first, as the resolution does, so a
+                // mixin type composed on another thread is seen here too.
+                self.adopt_published_mixin(class_name);
+                if self.method_candidate_levels(class_name, "Bool").is_empty() {
+                    return val.truthy();
+                }
                 // A probe: a type object's `Bool` that dies keeps the old
                 // answer (below), and so does one whose resolution dies.
-                if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[]))
+                if loan_env!(self, resolve_method_with_owner(class_name, "Bool", &[]))
                     .is_ok_and(|resolved| resolved.is_some())
                 {
                     // Slice F: a user `Bool` method run by this internal coercion

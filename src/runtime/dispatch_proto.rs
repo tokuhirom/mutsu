@@ -86,7 +86,8 @@ impl Interpreter {
     /// runs for each by-name `&name` read -- paid that walk per call (ADR-12529
     /// phase 2 profile: ~190k instructions a probe on FunctionalParsers).
     // Cost: O(k) with the index filled, k = registered keys sharing `name`'s
-    // base; else O(n), n = registered routines.
+    // base, when `peek_fn_keys_for_base` answers (an entry, or a complete
+    // index); else O(n), n = registered routines.
     pub(crate) fn has_multi_candidates_unindexed(&self, name: &str) -> bool {
         // The registry half is the memo the `&mut` probes fill (see
         // `has_multi_candidates`): read it, so `resolve_function` -- ~250 of
@@ -100,8 +101,7 @@ impl Interpreter {
             )
         });
         let packages = self.bare_name_packages_syms();
-        let base_keys = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
-            .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
+        let base_keys = self.peek_fn_keys_for_base(name);
         let base_keys = base_keys.as_deref();
         let in_registry = memo.unwrap_or_else(|| {
             self.registry()

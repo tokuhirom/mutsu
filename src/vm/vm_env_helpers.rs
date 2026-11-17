@@ -1874,7 +1874,14 @@ impl Interpreter {
         // Raku allows underscore variants of kebab-case identifiers
         // (e.g. $*EXECUTABLE_NAME is equivalent to $*EXECUTABLE-NAME).
         // Try the kebab-case equivalent first if the name contains underscores.
-        if name.contains('_') {
+        // Only a dynamic name has such a variant: `$a_b` and `$a-b` are two
+        // lexicals, and `$_` -- read by name in every statement-modifier
+        // loop -- paid a `-` lookup per read (#17429).
+        if name.contains('_')
+            && name
+                .trim_start_matches(['$', '@', '%', '&'])
+                .starts_with('*')
+        {
             let kebab = name.replace('_', "-");
             if let Some(val) = self.get_env_with_main_alias_inner(&kebab, Symbol::intern(&kebab)) {
                 return Some(val);

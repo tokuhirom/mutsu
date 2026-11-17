@@ -151,6 +151,35 @@ impl Interpreter {
         evicted
     }
 
+    /// The index's answer for `name`'s base name, read without filling it, for
+    /// a `&self` caller that cannot run [`Interpreter::fn_keys_for_base`]:
+    /// the entry when there is one; on a complete index (every base name with
+    /// a registered key has an entry or is dirty), no keys for a clean base
+    /// name and the qualified-name tail index's answer for a dirty one;
+    /// `None` when only a scan of the functions map can tell. Without the
+    /// complete-index answers, every `&name` read of a block-declared
+    /// `my sub` -- re-registered, so dirty, on each call of the routine that
+    /// declares it -- walked the whole functions map, and `use Test` alone
+    /// made each such read cost its ~400 routines (#17429).
+    // Cost: O(|name|) (base-name reduction, one symbol lookup, two hash
+    // probes) for an indexed or clean base name; O(k + u) for a dirty one, as
+    // `fn_keys_from_tail_index`; independent of the registry's size.
+    pub(crate) fn peek_fn_keys_for_base(&self, name: &str) -> Option<Arc<[Symbol]>> {
+        let base = function_key_base_name(name);
+        let base_sym = Symbol::lookup(base)?;
+        if let Some(keys) = self.dispatch.fn_keys_by_base.get(&base_sym) {
+            return Some(keys.clone());
+        }
+        let index = &self.dispatch.fn_keys_index;
+        if !index.complete {
+            return None;
+        }
+        if index.dirty.contains(base) {
+            return self.tail_index_keys(base);
+        }
+        Some(Arc::from([]))
+    }
+
     /// Drop the whole index, completeness included.
     // Cost: O(b), b = indexed base names.
     pub(crate) fn clear_fn_keys_index(&mut self) {
@@ -210,24 +239,41 @@ impl Interpreter {
     // unqualified keys recorded for `base` (each probed once in the functions
     // map), independent of the registry's size.
     fn fn_keys_from_tail_index(&mut self, base: &'static str) -> Option<Arc<[Symbol]>> {
+        let keys = self.tail_index_keys(base)?;
+        // Drop the recorded unqualified keys that are no longer registered.
+        let registry =
+            crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry");
+        let index = &mut self.dispatch.fn_keys_index;
+        if let Some(unqualified) = index.unqualified_by_base.get_mut(base) {
+            unqualified.retain(|key| registry.functions.contains_key(key));
+            if unqualified.is_empty() {
+                index.unqualified_by_base.remove(base);
+            }
+        }
+        Some(keys)
+    }
+
+    /// The read half of [`Self::fn_keys_from_tail_index`]: the same keys, with
+    /// no bookkeeping, so a `&self` reader can answer a dirty base name.
+    // Cost: O(k + u), as `fn_keys_from_tail_index`.
+    fn tail_index_keys(&self, base: &str) -> Option<Arc<[Symbol]>> {
         if !crate::qualified_tail_index::lists_every_name_ending_in(base) {
             return None;
         }
-        let index = &mut self.dispatch.fn_keys_index;
-        let registry =
-            crate::runtime::registry::RegistryReadGuard::new(&self.types.registry, "registry");
+        let registry = self.registry();
         let mut keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
             .into_iter()
             .filter(|key| {
                 registry.functions.contains_key(key) && function_key_base_name(key.as_str()) == base
             })
             .collect();
-        if let Some(unqualified) = index.unqualified_by_base.get_mut(base) {
-            unqualified.retain(|key| registry.functions.contains_key(key));
-            keys.extend(unqualified.iter().copied());
-            if unqualified.is_empty() {
-                index.unqualified_by_base.remove(base);
-            }
+        if let Some(unqualified) = self.dispatch.fn_keys_index.unqualified_by_base.get(base) {
+            keys.extend(
+                unqualified
+                    .iter()
+                    .copied()
+                    .filter(|key| registry.functions.contains_key(key)),
+            );
         }
         Some(Arc::from(keys))
     }
@@ -277,180 +323,5 @@ impl Interpreter {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn indexed(i: &Interpreter, base: &str) -> bool {
-        i.dispatch
-            .fn_keys_by_base
-            .contains_key(&Symbol::intern(base))
-    }
-
-    /// The first miss after a clear is a single-name scan; the second builds
-    /// the complete index, after which an unregistered name is answered
-    /// without a scan and evicted names refill together.
-    #[test]
-    fn evicted_base_names_refill_in_one_pass() {
-        let mut i = Interpreter::new();
-        i.run("sub alpha() { 1 }\nsub beta() { 2 }\nsub gamma() { 3 }\n")
-            .expect("setup program runs");
-        i.invalidate_fn_resolution();
-
-        // First miss: that name only, index still incomplete.
-        assert!(!i.fn_keys_for_base("alpha").is_empty());
-        assert!(!indexed(&i, "beta"));
-        assert!(!i.dispatch.fn_keys_index.complete);
-
-        // Second miss: the complete index, every base name at once.
-        assert!(!i.fn_keys_for_base("beta").is_empty());
-        assert!(i.dispatch.fn_keys_index.complete);
-        assert!(indexed(&i, "gamma"));
-        assert!(i.fn_keys_for_base("never-declared").is_empty());
-
-        // Evicting two names marks both dirty; a plain base name is refilled
-        // on its own from the qualified-name tail index (#9170), the other
-        // one staying dirty until its own lookup.
-        let gamma = i.fn_keys_for_base("gamma");
-        i.invalidate_fn_resolution_for_keys([gamma[0]]);
-        let alpha = i.fn_keys_for_base("alpha");
-        i.invalidate_fn_resolution_for_keys([alpha[0]]);
-        assert!(!indexed(&i, "alpha") && !indexed(&i, "gamma"));
-        assert_eq!(&*i.fn_keys_for_base("alpha"), &*alpha);
-        assert!(!indexed(&i, "gamma"), "only the looked-up name is refilled");
-        assert_eq!(&*i.fn_keys_for_base("gamma"), &*gamma);
-        assert!(i.dispatch.fn_keys_index.dirty.is_empty());
-
-        // A dirty name the tail index cannot list (spelled with `/`) still
-        // refills every dirty name in one pass.
-        i.invalidate_fn_resolution_for_keys([alpha[0], gamma[0]]);
-        i.evict_fn_keys_base(Symbol::intern("GLOBAL::infix:</>"));
-        assert!(i.fn_keys_for_base("infix:</>").is_empty());
-        assert!(
-            indexed(&i, "alpha") && indexed(&i, "gamma"),
-            "the pass refilled the other dirty names too"
-        );
-        assert!(i.dispatch.fn_keys_index.dirty.is_empty());
-    }
-
-    /// An unqualified registry key does not make every later dirty base name
-    /// refill by a pass (#9170): the index records unqualified keys per base
-    /// name and adds them to what the tail index lists.
-    #[test]
-    fn an_unqualified_key_is_refilled_without_a_pass() {
-        let mut i = Interpreter::new();
-        i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
-            .expect("setup program runs");
-        i.invalidate_fn_resolution();
-        i.fn_keys_for_base("alpha");
-        i.fn_keys_for_base("beta");
-        assert!(i.dispatch.fn_keys_index.complete);
-
-        // An unqualified key of `alpha`, announced as every write is.
-        let def = {
-            let alpha = i.fn_keys_for_base("alpha");
-            i.registry().functions.get(&alpha[0]).cloned().unwrap()
-        };
-        let bare = Symbol::intern("alpha");
-        i.registry_mut().functions_mut().insert(bare, def);
-        i.invalidate_fn_resolution_for_keys([bare]);
-        let beta = i.fn_keys_for_base("beta");
-        i.invalidate_fn_resolution_for_keys([beta[0]]);
-
-        // Both dirty names refill on their own: no pass ran, which would have
-        // refilled the other one as well.
-        let alpha = i.fn_keys_for_base("alpha");
-        assert!(alpha.contains(&bare), "the unqualified key is listed");
-        let sorted = |keys: &[Symbol]| {
-            let mut v: Vec<&str> = keys.iter().map(|k| k.as_str()).collect();
-            v.sort_unstable();
-            v
-        };
-        assert_eq!(sorted(&alpha), sorted(&i.collect_fn_keys_for_base("alpha")));
-        assert!(!indexed(&i, "beta"), "only the looked-up name is refilled");
-        assert_eq!(&*i.fn_keys_for_base("beta"), &*beta);
-
-        // A recorded key that is gone again is not listed.
-        i.registry_mut().functions_mut().remove(&bare);
-        i.invalidate_fn_resolution_for_keys([bare]);
-        assert!(!i.fn_keys_for_base("alpha").contains(&bare));
-    }
-
-    /// The debug audit compares an index entry with a full scan only when the
-    /// functions map moved to a state it has not audited that base name under
-    /// ([#12119](https://github.com/tokuhirom/mutsu/issues/12119)); every other
-    /// call is a memo hit, however many routines are registered.
-    #[cfg(debug_assertions)]
-    #[test]
-    fn the_audit_scans_once_per_functions_map_state() {
-        let mut i = Interpreter::new();
-        i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
-            .expect("setup program runs");
-
-        assert!(i.fn_base_name_registered("alpha"));
-        let first = i.dispatch.fn_keys_index.audit_scans;
-        for _ in 0..100 {
-            assert!(i.fn_base_name_registered("alpha"));
-        }
-        assert_eq!(
-            i.dispatch.fn_keys_index.audit_scans, first,
-            "an unchanged functions map and entry audit once, not per call"
-        );
-
-        // A base name nobody audited yet is audited once.
-        assert!(i.fn_base_name_registered("beta"));
-        assert!(i.fn_base_name_registered("beta"));
-        assert_eq!(i.dispatch.fn_keys_index.audit_scans, first + 1);
-
-        // A registration moves the map to a new state: the entry that
-        // survived it (`alpha`'s is not evicted) is compared again, once.
-        i.run("sub gamma() { 3 }\n").expect("second program runs");
-        let before = i.dispatch.fn_keys_index.audit_scans;
-        assert!(i.fn_base_name_registered("alpha"));
-        assert!(i.fn_base_name_registered("alpha"));
-        assert_eq!(i.dispatch.fn_keys_index.audit_scans, before + 1);
-    }
-
-    /// The audit keeps its teeth: a functions-map write that never announced
-    /// itself (no `invalidate_fn_resolution_for_keys`) leaves the index entry
-    /// stale, and the next gate call panics even though the entry was audited
-    /// under the map's previous state.
-    #[cfg(debug_assertions)]
-    #[test]
-    #[should_panic(expected = "stale fn_keys_by_base entry")]
-    fn a_functions_map_write_that_missed_its_invalidation_fails_the_audit() {
-        let mut i = Interpreter::new();
-        i.run("sub alpha() { 1 }\n").expect("setup program runs");
-        assert!(i.fn_base_name_registered("alpha"));
-
-        let existing = i.fn_keys_for_base("alpha")[0];
-        let def = i
-            .registry()
-            .functions
-            .get(&existing)
-            .cloned()
-            .expect("alpha is registered");
-        let extra = Symbol::intern("GLOBAL::alpha/9");
-        i.registry_mut().functions_mut().insert(extra, def);
-
-        i.fn_base_name_registered("alpha");
-    }
-
-    /// A name registered after the index became complete is found: its
-    /// registration evicts (dirties) its base name, so the complete index
-    /// does not answer "no keys" for it.
-    #[test]
-    fn a_name_registered_after_completion_is_found() {
-        let mut i = Interpreter::new();
-        i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
-            .expect("setup program runs");
-        i.invalidate_fn_resolution();
-        i.fn_keys_for_base("alpha");
-        i.fn_keys_for_base("beta");
-        assert!(i.dispatch.fn_keys_index.complete);
-
-        i.run("sub delta() { 4 }\n").expect("second program runs");
-        let fresh = i.collect_fn_keys_for_base("delta");
-        assert!(!fresh.is_empty(), "delta is registered");
-        assert_eq!(&*i.fn_keys_for_base("delta"), &*fresh);
-    }
-}
+#[path = "fn_keys_index_tests.rs"]
+mod tests;

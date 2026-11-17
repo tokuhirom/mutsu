@@ -20,7 +20,8 @@ impl Interpreter {
     /// - a positional, non-negative `Int` subscript, no `=`-element share;
     /// - a plain user lexical `$` name the chunk declares untyped at
     ///   `target_slot`, with no sigilless alias, `:=` bind pair, `is default`
-    ///   or readonly binding redirecting it, and whose env mirror (if any)
+    ///   or immutable binding redirecting it (a readonly alias -- a parameter,
+    ///   a `for` alias -- still has its Array behind it), and whose env mirror (if any)
     ///   holds the same node;
     /// - the slot holds a plain mutable `Array`/`ItemArray` without embedded
     ///   type metadata (no element type, native backing or default);
@@ -30,9 +31,10 @@ impl Interpreter {
     /// - a bind's source container already exists: the bound value is itself
     ///   a `ContainerRef` (an element source, promoted by the compiler's
     ///   autovivify terminal), or its single source variable already holds
-    ///   one. A first bind of a plain variable, which has to promote the
-    ///   variable's value into a fresh cell and install it back, stays on the
-    ///   generic path.
+    ///   one, or it is a readonly `&code` variable with no cell (the element
+    ///   then holds the code object read-only). A first bind of a plain
+    ///   variable, which has to promote the variable's value into a fresh
+    ///   cell and install it back, stays on the generic path.
     // Cost: O(1) amortized (an in-place slot write, or a growth of the array
     // to the index, O(g) for g new slots).
     pub(crate) fn try_fast_slot_array_element_store(
@@ -117,7 +119,13 @@ impl Interpreter {
             .is_some()
             || self.bind_pair_names_container(code, var_name)
             || self.var_default(var_name).is_some()
-            || self.is_readonly_sym(var_sym)
+            // A readonly ALIAS (a parameter, a `for` alias) has a container
+            // behind it, and an element store does not write the variable:
+            // the generic path stores into its Array the same way. The
+            // immutable kinds stay on the generic path.
+            || self
+                .readonly_kind_sym(var_sym)
+                .is_some_and(|kind| kind != crate::ast::ReadonlyKind::Alias)
         // No unit-lexical or `our` probe for a slot: the generic store
         // reaches a compunit's file-scope cell only through a slot holding
         // that cell (`unit_lexical_container_cell_at`), and the slot here
@@ -159,6 +167,16 @@ impl Interpreter {
                 match self.env().get(source).map(Value::view) {
                     Some(ValueView::ContainerRef(cell)) => {
                         (Value::container_ref(cell.clone()), value, false)
+                    }
+                    // A readonly `&code` source with no cell (`my &f := {...}`,
+                    // a `my sub`) has no container to share: the element
+                    // holds the code object, read-only, exactly as the
+                    // generic path's `readonly_code_source_without_cell` binds it.
+                    _ if source.starts_with('&')
+                        && self.is_readonly(source)
+                        && !matches!(value.view(), ValueView::HashEntryRef { .. }) =>
+                    {
+                        (Value::bound_element(value.clone()), value, true)
                     }
                     _ => return None,
                 }
