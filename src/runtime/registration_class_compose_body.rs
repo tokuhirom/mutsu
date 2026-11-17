@@ -682,7 +682,12 @@ impl Interpreter {
                 _ => None,
             };
             if let Some((role, name)) = &constant_key
-                && self.reuse_role_evaluated_constant(role, name)
+                && (self.reuse_role_evaluated_constant(role, name)
+                    // A unit-level forward-reference shell runs before the
+                    // role's own declaration has initialised the constant; the
+                    // real declaration's run is the one that counts, so the
+                    // shell leaves the initializer alone.
+                    || cx.is_hoisted_shell == crate::runtime::HoistedShell::Forward)
             {
                 continue;
             }
