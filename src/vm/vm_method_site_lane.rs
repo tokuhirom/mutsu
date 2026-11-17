@@ -142,7 +142,16 @@ impl Interpreter {
             return None;
         }
         let base = self.stack.len().checked_sub(arity + 1)?;
-        let Some(receiver) = Receiver::of(&self.stack[base]) else {
+        let shaped = match Receiver::of(&self.stack[base]) {
+            Some(receiver) => Some(receiver),
+            // A grammar cursor answers as a `Match` when its grammar leaves
+            // the method to `Match` (`vm_cursor_match_lane`).
+            None if arity == 0 && self.stack[base].is_lazy_match_value() => Some(
+                self.cursor_match_lane_receiver(code.const_sym(name_idx), base)?,
+            ),
+            None => None,
+        };
+        let Some(receiver) = shaped else {
             // A receiver with no shape: a type object or instance of a user
             // class, a role type object, `Any` (`vm_shapeless_site_lane`).
             if arity != 0 {

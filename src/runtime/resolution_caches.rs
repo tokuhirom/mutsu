@@ -141,6 +141,12 @@ pub(crate) struct ResolutionCaches {
         (Symbol, bool, Symbol),
         (u64, Option<crate::builtins::method_table::RowId>),
     >,
+    /// The cursor-Match lane's verdicts (`vm_cursor_match_lane`): whether a
+    /// grammar cursor of the keyed grammar class may take the `Match` rows
+    /// for the keyed method (no user method of that name in the grammar's
+    /// MRO, no `augment`), for one registry write generation. Starts empty
+    /// per thread (a pure recomputable memo).
+    pub(crate) cursor_match_site_lane: rustc_hash::FxHashMap<(Symbol, Symbol), (u64, bool)>,
     /// Per-package memo of the table `establish_grammar_dynamic_vars` computes,
     /// keyed by the `TOKEN_DEFS_GEN` generation it was computed under. A grammar's
     /// `.parse`/subparse is re-entered many times against a stable token registry
