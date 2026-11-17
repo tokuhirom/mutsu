@@ -330,6 +330,7 @@ pub(crate) fn reset_user_subs() {
         }
     });
     DECLARE_KEYWORDS.with(|m| m.borrow_mut().clear());
+    UNIT_BEGIN_SEEN.with(|seen| seen.set(false));
     EXPORTHOW_ERRORS.with(|e| e.borrow_mut().clear());
     super::slang_modes::reset_slang_modes();
     super::slang_hooks::reset_hooks();
@@ -547,4 +548,10 @@ pub(crate) fn current_language_version() -> String {
 /// a tight loop.
 pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
     CURRENT_LANGUAGE_VERSION.with(|v| v.borrow().starts_with(prefix))
+}
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&EXPORTHOW_ERRORS, HashMap::new());
 }

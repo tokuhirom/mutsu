@@ -6,6 +6,13 @@ pub(crate) mod precedence_meta_ops;
 mod whatever;
 mod whatever_wrap;
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&EXPR_MEMO_TLS, HashMap::default());
+    postfix::suspend_unit_state(unit);
+}
+
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

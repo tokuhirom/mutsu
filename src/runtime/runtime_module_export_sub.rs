@@ -323,8 +323,8 @@ impl Interpreter {
                 self.restore_export_routines(candidates);
                 let d = self.resolve_export_hook(&export_args);
                 self.remove_export_routine();
-                self.restore_export_routines(hidden);
                 let Some(d) = d else {
+                    self.restore_export_routines(hidden);
                     return Ok(());
                 };
                 let empty_fns = crate::opcode::CompiledFns::default();
@@ -346,6 +346,10 @@ impl Interpreter {
                 self.module.module_scope_runs -= 1;
                 self.remove_reinstated_families(reinstated);
                 self.current_unit = saved_unit;
+                // Calling the hook registers it again: drop it, as the first
+                // load's call does, before the importer's own hooks come back.
+                self.remove_export_routine();
+                self.restore_export_routines(hidden);
                 r
             }
             ModuleExportDef::Value(v) => {

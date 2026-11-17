@@ -86,6 +86,12 @@ fn at_top_level(read: &str) -> bool {
     depth == 0
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&STOPPER, None);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

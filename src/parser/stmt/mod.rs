@@ -403,6 +403,18 @@ pub(super) fn lowered_program(input: &str) -> PResult<'_, Vec<Stmt>> {
     Ok((rest, stmts))
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&STMT_MEMO_TLS, HashMap::default());
+    unit.take(&STMT_ANON_STATES_TLS, HashMap::default());
+    simple::suspend_unit_state(unit);
+    sub_param::suspend_unit_state(unit);
+    sub::suspend_unit_state(unit);
+    modifier::suspend_unit_state(unit);
+    trace::suspend_unit_state(unit);
+}
+
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

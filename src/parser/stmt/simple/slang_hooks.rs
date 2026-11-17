@@ -802,6 +802,14 @@ pub(crate) fn parse_slang_pointy_block(text: &str) -> Option<(&str, Expr)> {
     crate::parser::primary::misc::arrow_lambda(text).ok()
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&HOOKS, SlangHooks::default());
+    unit.take(&HOOK_MEMO, std::collections::HashMap::new());
+    unit.take_cell(&WRAPPER_BACK_CALL, false);
+}
+
 #[cfg(test)]
 mod prefix_tests {
     use super::leading_literal;

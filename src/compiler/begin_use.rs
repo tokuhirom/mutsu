@@ -180,7 +180,21 @@ pub(crate) fn preloadable_module_name<'a>(
     condition: Option<&Expr>,
     arg: Option<&Expr>,
 ) -> Option<&'a str> {
-    if condition.is_some() || arg.is_some() {
+    preloadable_use_shape(module, tags, condition.is_some(), arg.is_some())
+}
+
+/// [`preloadable_module_name`] from the shape of the `use` alone: whether it
+/// has a `:if` condition and a positional argument list. Also what the
+/// compile-time loader takes (ADR-17558): the same `use`s load ahead of their
+/// position, at parse time instead of in the prologue.
+// Cost: O(t), t = tags.
+pub(crate) fn preloadable_use_shape<'a>(
+    module: &'a str,
+    tags: &[String],
+    has_condition: bool,
+    has_arg: bool,
+) -> Option<&'a str> {
+    if has_condition || has_arg {
         return None;
     }
     if tags.iter().any(|t| t == "from") {

@@ -158,6 +158,7 @@ pub(crate) mod stmt_ending_brace;
 pub(crate) mod term_boundary;
 pub(crate) mod term_origins;
 pub(crate) mod unit_revisions;
+pub(crate) mod unit_state;
 mod whenever_scope;
 use std::sync::OnceLock;
 
@@ -577,6 +578,17 @@ struct InheritedScopes {
 
 /// Install the scope state [`parse_nested_block_fragment`] armed, if any
 /// (one-shot: a parse nested inside the fragment starts fresh).
+/// The parse-level thread-locals of this module, for [`unit_state::suspend`].
+// Cost: O(1).
+fn suspend_unit_state(unit: &mut unit_state::SuspendedUnit) {
+    unit.take_cell(&PARSER_NESTING, 0);
+    unit.take(&PARSE_WARNINGS, Vec::new());
+    unit.take(&VCS_CONFLICT_MARKERS, Vec::new());
+    unit.take_cell(&EVAL_VALUE_TAIL, false);
+    unit.take_cell(&SUPPRESS_SINK_WARNINGS, false);
+    unit.take(&INHERITED_SCOPES, None);
+}
+
 fn apply_inherited_scopes() {
     let Some(inherited) = INHERITED_SCOPES.with(|slot| slot.borrow_mut().take()) else {
         return;

@@ -30,3 +30,9 @@ pub(in crate::parser) use loop_::parse_superscript_exp;
 pub(crate) use loop_::without_pending_prefix;
 pub(in crate::parser) use loop_::{brace_newline_state, consumed_span};
 pub(in crate::parser) use loop_::{postfix_expr_continue, postfix_expr_continue_from};
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    loop_::suspend_unit_state(unit);
+}

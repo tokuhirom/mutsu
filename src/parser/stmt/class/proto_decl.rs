@@ -15,6 +15,7 @@ pub(crate) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResult<'_, Stmt> {
     let rest = keyword("proto", input).ok_or_else(|| PError::expected("proto declaration"))?;
     let (rest, _) = ws1(rest)?;
+    crate::parser::stmt::simple::note_unit_compile_time_effect();
     // proto token | proto rule | proto regex | proto sub | proto method
     // `proto token` / `proto rule` / `proto regex` all declare a proto REGEX
     // (an LTM dispatcher over `name:sym<...>` candidates), never a proto sub.

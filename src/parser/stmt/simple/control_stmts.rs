@@ -510,6 +510,9 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Ok((rest, Stmt::Expr(Expr::Literal(v))));
     }
+    if kind == PhaserKind::Begin {
+        super::note_unit_compile_time_effect();
+    }
     let condition = matches!(kind, PhaserKind::Pre | PhaserKind::Post).then(|| {
         let consumed = condition_src.len() - rest.len();
         crate::symbol::Symbol::intern(&condition_src[..consumed])

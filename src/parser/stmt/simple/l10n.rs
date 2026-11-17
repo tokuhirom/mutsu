@@ -535,6 +535,14 @@ fn match_spelling<'a>(spelling: &str, input: &'a str) -> Option<&'a str> {
     }
 }
 
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take_cell(&L10N_ACTIVE, false);
+    unit.take(&L10N_VOCABULARY, None);
+    unit.take(&L10N_PRESEED, None);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -182,3 +182,10 @@ pub(crate) fn replay(snapshot: &Snapshot) {
         LAST_BLOCK_TERM.with(|m| m.set(Some(p)));
     }
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take_cell(&MARK, None);
+    unit.take_cell(&LAST_BLOCK_TERM, None);
+}

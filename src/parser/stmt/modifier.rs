@@ -316,3 +316,9 @@ fn starts_with_term_char(input: &str) -> bool {
                 | '\u{201E}'
         )
 }
+
+/// This module's per-unit thread-locals, for [`crate::parser::unit_state::suspend`].
+// Cost: O(1).
+pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
+    unit.take(&PENDING_EXTRA_MODIFIER, None);
+}
