@@ -958,6 +958,13 @@ impl Interpreter {
         } else {
             target
         };
+        if let Some(err) = Self::failure_print_no_match(method, &target, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "failure-print-nomatch",
+            );
+            return Err(err);
+        }
         // Unhandled Failure explosion: calling a non-Failure method on an
         // unhandled Failure should throw before native dispatch can mistake
         // the Failure for an ordinary Cool value (for example, `Failure.lines`
