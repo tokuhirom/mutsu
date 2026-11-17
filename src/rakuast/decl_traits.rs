@@ -212,9 +212,23 @@ pub(super) fn lower(
     node: &RakuAstNode,
 ) -> Result<(CustomTraits, Option<Option<Expr>>), RuntimeError> {
     match lower_with_of(names, node)? {
-        (traits, dynamic, None) => Ok((traits, dynamic)),
-        (_, _, Some(_)) => Err(super::lower::unsupported(node)),
+        LoweredTraits {
+            traits,
+            dynamic,
+            of_type: None,
+        } => Ok((traits, dynamic)),
+        _ => Err(super::lower::unsupported(node)),
     }
+}
+
+/// A variable declaration's lowered `traits` ([`lower_with_of`]).
+pub(super) struct LoweredTraits {
+    /// The `custom_traits` entries, in order.
+    pub(super) traits: CustomTraits,
+    /// The `is dynamic` among them: `None` without one, else its written argument.
+    pub(super) dynamic: Option<Option<Expr>>,
+    /// The type of a leading `Trait::Of` (`my @a of Int`).
+    pub(super) of_type: Option<String>,
 }
 
 /// [`lower`] for a variable declaration, whose first trait may be the
@@ -223,10 +237,14 @@ pub(super) fn lower(
 pub(super) fn lower_with_of(
     names: &NameScope,
     node: &RakuAstNode,
-) -> Result<(CustomTraits, Option<Option<Expr>>, Option<String>), RuntimeError> {
+) -> Result<LoweredTraits, RuntimeError> {
     let refuse = || super::lower::unsupported(node);
     let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) else {
-        return Ok((Vec::new(), None, None));
+        return Ok(LoweredTraits {
+            traits: Vec::new(),
+            dynamic: None,
+            of_type: None,
+        });
     };
     let RakuAstFieldValue::List(items) = &field.value else {
         return Err(refuse());
@@ -304,7 +322,11 @@ pub(super) fn lower_with_of(
             _ => return Err(refuse()),
         }
     }
-    Ok((traits, dynamic, of_type))
+    Ok(LoweredTraits {
+        traits,
+        dynamic,
+        of_type,
+    })
 }
 
 /// Whether `name` is a class trait the view renders as a `Trait::Is` by

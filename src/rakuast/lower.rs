@@ -3402,7 +3402,11 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         Some(f) => Some(simple_type_name(names, node, child_node(&f.value)?)?),
         None => None,
     };
-    let (custom_traits, dynamic_trait, of_type) = super::decl_traits::lower_with_of(names, node)?;
+    let super::decl_traits::LoweredTraits {
+        traits: custom_traits,
+        dynamic: dynamic_trait,
+        of_type,
+    } = super::decl_traits::lower_with_of(names, node)?;
     let mut marks = crate::ast::var_marks::VarMarks::default();
     // `my @a of Int`: the `Trait::Of` is the declaration's type.
     let type_constraint = match (type_constraint, of_type) {
