@@ -159,6 +159,16 @@ pub(crate) fn has_compile_time_value(node: &RakuAstNode) -> Value {
         "RakuAST::Circumfix::Parentheses" => children(node)
             .first()
             .map_or_else(|| Value::int(0), of_value),
+        // A setting term (`pi`, `True`) the unit resolved has its value at
+        // compile time; rakudo answers the `Int` `1`. A hand-built one has
+        // no resolution.
+        "RakuAST::Term::Name" | "RakuAST::Term::Enum" => {
+            if node.origin.2.is_some() {
+                Value::int(1)
+            } else {
+                Value::truth(false)
+            }
+        }
         "RakuAST::ColonPair::Value" => {
             named_node(node, "value").map_or_else(|| Value::truth(false), |v| of_value(&v))
         }
