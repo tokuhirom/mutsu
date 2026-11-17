@@ -2,10 +2,9 @@
 //!
 //! An interpreter row: the encoding registry (`find_encoding`, the user's
 //! registered encodings) and the newline mode are the interpreter's. The body
-//! is [`Interpreter::decode_buf`], which the cascade's `dispatch_decode` also
-//! ends in for a receiver with no shape, so there is one decoder; the pure
-//! cascade copies (the 0- and 1-argument arms) and the callers' newline
-//! translation of their answer are gone.
+//! is [`Interpreter::decode_buf`], the one decoder; the pure cascade copies
+//! (the 0- and 1-argument arms), the callers' newline translation of their
+//! answer and the VM's `try_native_encode_decode` entry are gone.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;

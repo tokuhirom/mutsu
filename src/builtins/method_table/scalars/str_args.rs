@@ -1,6 +1,7 @@
 //! `Str`'s and `Cool`'s text methods that take an argument or return another
 //! type (ADR-11276 §9.74): `samecase`, `samemark`, `indent` and `encode` on
-//! both owners; `parse-base`, `substr-eq`, `naive-word-wrapper`, `Date` and
+//! both owners (with an encoding, a normalization form and `:replacement`, an
+//! interpreter row); `parse-base`, `substr-eq`, `naive-word-wrapper`, `Date` and
 //! `DateTime` on `Str`; `encode` on `Uni`.
 //!
 //! As in `str.rs`, a `Cool` row points at the `Str` row's handler, which reads
@@ -12,6 +13,7 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::grapheme_index::{with_str, with_str_index};
 use crate::builtins::method_table::Named;
+use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -24,6 +26,27 @@ macro_rules! row {
             handler: $handler,
             flags: RowFlags::NONE,
             named: &[],
+        }
+    };
+}
+
+/// The named arguments `encode` binds (`Str.encode`'s signature);
+/// `translate-nl` and `strict` are accepted, the platform newline mode decides
+/// the translation, as the cascade always did.
+const ENCODE_NAMED: &[&str] = &["replacement", "strict", "translate-nl"];
+
+/// `.encode($encoding)` and `.encode($encoding, $nf)`: an interpreter row, as
+/// `Blob.decode` is (the encoding registry and the newline mode are the
+/// interpreter's).
+macro_rules! encode_row {
+    ($owner:literal, $arity:literal) => {
+        MethodRow {
+            owner: $owner,
+            name: "encode",
+            arity: $arity,
+            handler: Handler::Interp(encode_with),
+            flags: RowFlags::NONE,
+            named: ENCODE_NAMED,
         }
     };
 }
@@ -44,6 +67,8 @@ macro_rules! shared_rows {
                 named: &[],
             },
             row!($owner, "encode", 0, Handler::Pure(encode)),
+            encode_row!($owner, 1),
+            encode_row!($owner, 2),
         ]
     };
 }
@@ -148,6 +173,22 @@ pub(crate) fn encode(target: &Value, args: &[Value]) -> Result<Value, RuntimeErr
         let exposed = crate::grapheme_break::unescape_literal_marker(s);
         crate::value::value_buf::make_buf_from_bytes(Symbol::intern("utf8"), exposed.as_bytes())
     }))
+}
+
+/// `.encode($encoding, $nf?, :$replacement)`:
+/// [`Interpreter::dispatch_encode`], the one encoder the late `Cool.encode`
+/// row (a type object, a receiver with no shape) also calls.
+// Cost: O(n + p + r), n = input bytes, p = replacement bytes, r = output bytes.
+fn encode_with(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let mut all = Vec::with_capacity(args.len() + named.pairs().len());
+    all.extend(args.iter().cloned());
+    all.extend(named.pairs().iter().cloned());
+    Some(interp.dispatch_encode(target, &all))
 }
 
 /// `Uni.encode`: the codepoints as they are (no normalization), UTF-8

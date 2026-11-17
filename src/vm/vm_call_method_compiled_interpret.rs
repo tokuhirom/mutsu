@@ -841,14 +841,6 @@ impl Interpreter {
         {
             return result;
         }
-        // Native `.encode` (Cool scalar -> Buf) / `.decode` (Buf/Blob -> Str) —
-        // pure transformation via the VM-owned encoding registry, no `io_handles`
-        // (ledger §D). Single impl shared with the interpreter catch-all.
-        if !lever_a_blocked
-            && let Some(result) = self.try_native_encode_decode(&target, method, &args)
-        {
-            return result;
-        }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).
         // User-defined Instance methods now always run as bytecode (compiled at
         // registration, or on demand above via `populate_uncompiled_method`), so
