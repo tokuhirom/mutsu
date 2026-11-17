@@ -31,7 +31,9 @@ impl Interpreter {
                     return Some(Ok(Value::array(builtin)));
                 }
             }
-            return Some(Ok(Value::array(declared)));
+            return Some(Ok(Value::array(self.with_joined_setting_candidates(
+                package, name, declared,
+            ))));
         }
         None
     }
@@ -90,7 +92,11 @@ impl Interpreter {
                             }
                         }
                     }
-                    return Some(Ok(Value::array(union)));
+                    return Some(Ok(Value::array(self.with_joined_setting_candidates(
+                        &data.package.resolve(),
+                        disp_name.as_str(),
+                        union,
+                    ))));
                 }
             }
             // Fall back to captured candidates (for out-of-scope multi subs)
@@ -229,7 +235,12 @@ impl Interpreter {
                     self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
                 if !name_based.is_empty() {
                     let call_args = Self::capture_to_call_args(&args[0]);
-                    return Some(self.cando_matching(name_based, &call_args));
+                    let family = self.with_joined_setting_candidates(
+                        &data.package.resolve(),
+                        disp_name.as_str(),
+                        name_based,
+                    );
+                    return Some(self.cando_matching(family, &call_args));
                 }
             }
             // Fall back to captured candidates
@@ -261,6 +272,25 @@ impl Interpreter {
             return Some(self.cando_matching(std::iter::once(target.clone()), &call_args));
         }
         None
+    }
+
+    /// `declared`, the program's own candidates of `package`/`name`, behind
+    /// the setting candidates its `multi`s join
+    /// ([`Self::joined_setting_candidates`]), as rakudo's derived proto lists
+    /// them.
+    // Cost: as `joined_setting_candidates`, plus O(d), d = `declared`.
+    fn with_joined_setting_candidates(
+        &self,
+        package: &str,
+        name: &str,
+        declared: Vec<Value>,
+    ) -> Vec<Value> {
+        let mut family = self.joined_setting_candidates(package, name);
+        if family.is_empty() {
+            return declared;
+        }
+        family.extend(declared);
+        family
     }
 
     /// The `candidates` a `cando` capture binds, as an Array. A `where` that
