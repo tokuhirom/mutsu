@@ -125,7 +125,6 @@ impl Interpreter {
     /// consume or replace the candidate first.
     // Cost: O(p * a) once per key and registry generation (the gate), p =
     // parameters, a = arguments; O(1) when no candidate is pending.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn install_method_call_plan(
         &mut self,
         class_sym: Symbol,

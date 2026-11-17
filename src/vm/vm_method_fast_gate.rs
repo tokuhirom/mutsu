@@ -27,7 +27,6 @@ impl Interpreter {
     /// Reads only the method's signature and compiled code, the argument
     /// list, the receiver (`base`) and its attribute cell; writes nothing.
     // Cost: O(p * a), p = parameters, a = arguments.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn method_fast_gate(
         &mut self,
         method_def: &crate::runtime::MethodDef,
@@ -55,7 +54,7 @@ impl Interpreter {
             .any(|pd| pd.binds_caller_container() || pd.is_does_target())
             // A sigilless parameter given a value binds as a read-only term
             // on the fast path below (`vm_call_light_sigilless.rs`).
-            && !self.method_sigilless_args_light(method_def, &args);
+            && !self.method_sigilless_args_light(method_def, args);
         // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
         // container by alias (Raku readonly-container semantics): `.push`,
         // element assign, and whole-container `=` all propagate to the caller.
@@ -74,7 +73,7 @@ impl Interpreter {
         // stores in place, so binding the caller's container itself already
         // propagates every one of those mutations, and the fast binder does
         // that (`method_aggregate_args_light`).
-        let light_aggregates = Self::method_aggregate_args_light(method_def, &args);
+        let light_aggregates = Self::method_aggregate_args_light(method_def, args);
         let has_aliasable_container_params = !light_aggregates
             && method_def.param_defs.iter().any(|pd| {
                 !pd.is_invocant
@@ -94,7 +93,7 @@ impl Interpreter {
         // path, so such a call must avoid the fast path and the merge skip —
         // mirroring how `has_aliasable_container_params` handles `@`/`%` params.
         let shares_scalar_container =
-            self.method_shares_container_into_scalar_param(method_def, &args);
+            self.method_shares_container_into_scalar_param(method_def, args);
         // `cc.has_calls` (not just `has_env_writes`): a body that calls a CLOSURE
         // (`my $f = { $*x = 1 }; $f()` — `CallOnValue`/`CallOnCodeVar`) or any other
         // call op NOT listed in `has_env_writes` (CallDefined) can
@@ -142,7 +141,7 @@ impl Interpreter {
                 pd.is_invocant && (pd.type_constraint.is_some() || pd.type_capture.is_some())
             }) && !Self::fast_invocant_constraints_trivial(
                 method_def,
-                &base,
+                base,
                 owner_class,
                 role_blind,
             );
@@ -195,7 +194,7 @@ impl Interpreter {
                 }
                 Self::named_param_fast_eligible(
                     pd,
-                    &args,
+                    args,
                     base_is_instance,
                     method_def.named_fast(idx),
                 )
@@ -213,7 +212,7 @@ impl Interpreter {
                     _ => false,
                 });
             let named_container_share = has_named_args
-                && self.method_shares_container_into_named_scalar_param(method_def, &args);
+                && self.method_shares_container_into_named_scalar_param(method_def, args);
             // Every named argument must have somewhere to land: a named slurpy
             // (`*%_` — implicit, or explicit) absorbing leftovers, or an
             // eligible named param consuming its key. An `is hidden` class's
@@ -314,7 +313,7 @@ impl Interpreter {
                 && !has_complex_params
                 && !needs_default_eval
                 && !has_arg_mismatch
-                && !Self::method_binds_seq_into_array_param(method_def, &args)
+                && !Self::method_binds_seq_into_array_param(method_def, args)
                 // A `Proxy` without a subclass cell has no attribute store to
                 // read; a subclass instance's lives in the same kind of cell
                 // an ordinary instance carries (`self_instance_attrs`).
