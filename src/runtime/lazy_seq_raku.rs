@@ -31,9 +31,13 @@ impl Interpreter {
         let mut items = self.force_lazy_list_vm_n(ll, LAZY_SEQ_RAKU_PREFIX + 1)?;
         let more = items.len() > LAZY_SEQ_RAKU_PREFIX;
         items.truncate(LAZY_SEQ_RAKU_PREFIX);
+        // Rakudo renders the prefix through `my @elements = self.head(101)`
+        // (`List.raku`), so each element is read back out of an Array's
+        // `Scalar`: a list, array, hash or Seq renders itemized (`$(1, 3)`,
+        // `${:a(1)}`) and `Nil` as the element default `Any` (#16139).
         let body = items
             .iter()
-            .map(|item| self.raku_element_repr(item))
+            .map(|item| self.raku_element_repr(&as_array_element(item)))
             .collect::<Vec<_>>()
             .join(", ");
         let dots = if more { "..." } else { "" };
@@ -51,5 +55,17 @@ impl Interpreter {
         } else {
             text
         })
+    }
+}
+
+/// `value` as an Array element reads back: a positional, a hash or a `Seq`
+/// is held in a `Scalar` (itemized), `Nil` becomes the element default `Any`,
+/// anything else is itself.
+// Cost: O(1).
+fn as_array_element(value: &Value) -> Value {
+    match value.view() {
+        ValueView::Nil => Value::package(crate::symbol::wk::any()),
+        ValueView::Array(..) | ValueView::Hash(_) | ValueView::Seq(_) => value.clone().item(),
+        _ => value.clone(),
     }
 }
