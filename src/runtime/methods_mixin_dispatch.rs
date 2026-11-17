@@ -840,15 +840,13 @@ impl Interpreter {
                 // not declaration order: the most specific of the class's multis
                 // is the next candidate (`callsame` out of a mixed-in role's
                 // method, Red's `ScopedDriver.map-exception`).
-                self.matched_deferral_candidates(bc, lookup_name, &args, target, None)
+                let ranked: Vec<(Symbol, MethodDef)> = self
+                    .matched_deferral_candidates(bc, lookup_name, &args, target, None)
                     .into_iter()
                     .filter(|(_, d)| d.is_private == is_private_call)
-                    .map(|(owner, def)| super::DeferralEntry::Candidate {
-                        owner,
-                        def: Box::new(def),
-                        wraps_spliced: false,
-                    })
-                    .collect()
+                    .collect();
+                // `method` keeps a private call's `!`, so no `Mu` base answers it.
+                self.mixin_role_base_deferral(mixins, method, ranked)
             } else {
                 // A native inner value has no `MethodDef`s: the builtin on it
                 // is the one candidate behind the role's method.

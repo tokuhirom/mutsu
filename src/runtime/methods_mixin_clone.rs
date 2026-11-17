@@ -3,8 +3,31 @@ use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// The built-in `.clone` of a role mixin, unless a mixed-in role declares
+    /// its own `clone`: that one runs first, and its `nextwith`/`callsame`
+    /// reaches [`Interpreter::clone_role_mixin`] as the `Mu.clone` base
+    /// (`mixin_role_base_deferral`).
     // Cost: O(a + r + c), a = attributes, r = mixed-in roles, c = inner clone cost.
     pub(crate) fn try_clone_role_mixin(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Mixin(_, mixins) = target.view() else {
+            return None;
+        };
+        if Self::mixin_role_applications(mixins)
+            .iter()
+            .any(|(role, _)| self.role_or_parent_has_method(role, "clone"))
+        {
+            return None;
+        }
+        self.clone_role_mixin(target, args)
+    }
+
+    /// `Mu.clone` of a role mixin.
+    // Cost: O(a + r + c), a = attributes, r = mixed-in roles, c = inner clone cost.
+    pub(crate) fn clone_role_mixin(
         &mut self,
         target: &Value,
         args: &[Value],
@@ -21,10 +44,7 @@ impl Interpreter {
         // marker, and apply each `:attr(val)` override to the new role cell.
         // Restricted to role mixins (a `__mutsu_role__`/`__mutsu_attr__` marker is
         // present) so allomorph / non-role `but` mixins keep their existing path.
-        if !Self::mixin_role_applications(mixins)
-                .iter()
-                .any(|(role, _)| self.role_or_parent_has_method(role, "clone"))
-            && mixins
+        if mixins
                 .keys()
                 .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
         {
@@ -41,10 +61,17 @@ impl Interpreter {
             let mut inner_args: Vec<Value> = Vec::new();
             for arg in args {
                 if let ValueView::Pair(key, val) = arg.view()
-                    && let std::collections::hash_map::Entry::Occupied(mut e) =
-                        new_mixins.entry(MetaNs::Attr.owned_key_for_str(key))
+                    && new_mixins.contains_key(&MetaNs::Attr.owned_key_for_str(key))
                 {
-                    e.insert(val.clone());
+                    // Assigned as `Mu.clone` assigns: a list into an `@`
+                    // attribute becomes that attribute's own Array.
+                    let val = match self.mixin_role_attribute_sigil(mixins, key) {
+                        Some(sigil) => {
+                            Self::coerce_provided_attr_value_by_sigil(val.clone(), sigil)
+                        }
+                        None => val.clone(),
+                    };
+                    new_mixins.insert(MetaNs::Attr.owned_key_for_str(key), val.clone());
                     let attr = Symbol::intern(key);
                     if new_mixins.set_role_attribute_by_name(key, val.clone()) {
                         continue;

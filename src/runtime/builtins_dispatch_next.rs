@@ -557,6 +557,15 @@ impl Interpreter {
             // `Mu.bless` is the base candidate of a user `method bless`
             // (`callsame` / `nextsame` / `callwith` inside it).
             "bless" => Some(self.dispatch_bless(&invocant, args.to_vec())),
+            // A role mixin's `Mu.clone` keeps the composition (`R.new`'s
+            // `method clone { nextwith(...) }`).
+            "clone" if matches!(invocant.view(), ValueView::Mixin(..)) => self
+                .clone_role_mixin(&invocant, args)
+                .or_else(|| {
+                    let mut full = vec![invocant.clone()];
+                    full.extend_from_slice(args);
+                    crate::builtins::method_table::invoke_base(self, "Mu", "clone", &full)
+                }),
             "clone" | "new" => {
                 let mut full = vec![invocant];
                 full.extend_from_slice(args);
