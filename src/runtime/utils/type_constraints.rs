@@ -18,41 +18,40 @@ pub(crate) use crate::known_types::is_known_type_constraint;
 /// spec of that value, as its bare spelling is (#18010).
 // Cost: O(1) expected after the first call builds the table.
 pub(crate) fn is_qualified_builtin_enum_value(name: &str) -> bool {
-    static NAMES: std::sync::OnceLock<std::collections::HashSet<String>> =
-        std::sync::OnceLock::new();
-    NAMES
+    type Table = std::collections::HashMap<&'static str, std::collections::HashSet<String>>;
+    static TABLE: std::sync::OnceLock<Table> = std::sync::OnceLock::new();
+    let Some((enum_name, value)) =
+        crate::qualified::split_qualified(crate::symbol::Symbol::intern(name))
+    else {
+        return false;
+    };
+    let keys = |variants: Vec<(String, crate::value::EnumValue)>| {
+        variants.into_iter().map(|(key, _)| key).collect()
+    };
+    TABLE
         .get_or_init(|| {
-            let qualify = |enum_name: &str, variants: Vec<(String, crate::value::EnumValue)>| {
-                variants
-                    .into_iter()
-                    .map(move |(key, _)| format!("{enum_name}::{key}"))
-                    .collect::<Vec<_>>()
-            };
-            let mut names: std::collections::HashSet<String> =
-                ["Bool::True".to_string(), "Bool::False".to_string()].into();
-            for (enum_name, variants) in [
-                ("Endian", crate::runtime::Interpreter::endian_enum_variants()),
+            Table::from([
+                ("Bool", ["True".to_string(), "False".to_string()].into()),
+                ("Endian", keys(crate::runtime::Interpreter::endian_enum_variants())),
                 (
                     "ProtocolFamily",
-                    crate::runtime::Interpreter::protocol_family_enum_variants(),
+                    keys(crate::runtime::Interpreter::protocol_family_enum_variants()),
                 ),
-                ("Order", crate::runtime::Interpreter::order_enum_variants()),
-                ("SeekType", crate::runtime::Interpreter::seek_type_enum_variants()),
-                ("Signal", crate::runtime::Interpreter::signal_enum_variants()),
+                ("Order", keys(crate::runtime::Interpreter::order_enum_variants())),
+                ("SeekType", keys(crate::runtime::Interpreter::seek_type_enum_variants())),
+                ("Signal", keys(crate::runtime::Interpreter::signal_enum_variants())),
                 (
                     "FileChangeEvent",
-                    crate::runtime::Interpreter::file_change_event_enum_variants(),
+                    keys(crate::runtime::Interpreter::file_change_event_enum_variants()),
                 ),
                 (
                     "PromiseStatus",
-                    crate::runtime::Interpreter::promise_status_enum_variants(),
+                    keys(crate::runtime::Interpreter::promise_status_enum_variants()),
                 ),
-            ] {
-                names.extend(qualify(enum_name, variants));
-            }
-            names
+            ])
         })
-        .contains(name)
+        .get(enum_name.as_str())
+        .is_some_and(|values| values.contains(value.as_str()))
 }
 
 pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
