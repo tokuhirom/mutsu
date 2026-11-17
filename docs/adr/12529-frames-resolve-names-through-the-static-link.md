@@ -1769,6 +1769,15 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    closes over, `escaping_our_env_params`) and a `use`. Pinned by
    `t/routines/signature/for-loop-param-slot-with-nested-decls.t`.
 
+   **Slice 54 done** (`refactor/12529-loop-param-slot-sigils`): a sigilless
+   pointy `for` parameter (`-> \x`) gets the slot too, reads and writes
+   through it included. An `@`/`%` parameter stays by name: given a slot, a
+   whole-container assignment through it (`for (%ao,) -> %a { %a = %r }`)
+   replaced the bound object hash with a plain `Hash` and stopped writing
+   through to `%ao` (`t/collections/hash/hash-cell-writethrough-object-hash.t`),
+   so the slot store needs the by-name path's container-identity rule first.
+   Pinned by `t/routines/signature/for-loop-sigil-param-slot.t`.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
