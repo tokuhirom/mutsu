@@ -3553,18 +3553,23 @@ impl Interpreter {
         // holds the fully-shaped, metadata-tagged value; we reuse that shape but
         // keep the original pointer. Skip when the pointer is already the same
         // (e.g. a self-referential `@a = @a`), which needs no copy.
+        // An assignment keeps the container's own type: a slot whose code
+        // declares no type for it (a loop or routine parameter bound to an
+        // object hash `%h{Any}`) shapes the new contents as a plain `Hash`,
+        // and the container keeps the key/value type it was created with
+        // (ADR-12529 slice 55).
         if let Some(old_gc) = &inplace_old_array
             && let ValueView::Array(new_gc, kind) = self.locals[idx].view()
             && !crate::gc::Gc::ptr_eq(old_gc, &new_gc)
         {
             let (new_gc, kind) = (new_gc.clone(), kind);
-            self.locals[idx] = Self::array_inplace_reassign(old_gc, &new_gc, kind);
+            self.locals[idx] = Self::array_inplace_reassign_inheriting_meta(old_gc, &new_gc, kind);
         } else if let Some(old_gc) = &inplace_old_hash
             && let ValueView::Hash(new_gc) = self.locals[idx].view()
             && !crate::gc::Gc::ptr_eq(old_gc, &new_gc)
         {
             let new_gc = new_gc.clone();
-            self.locals[idx] = Self::hash_inplace_reassign(old_gc, &new_gc);
+            self.locals[idx] = Self::hash_inplace_reassign_inheriting_meta(old_gc, &new_gc);
         } else if inplace_old_array.is_none()
             && inplace_old_hash.is_none()
             && !is_bind

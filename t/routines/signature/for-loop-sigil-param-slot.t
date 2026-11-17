@@ -1,11 +1,12 @@
 use Test;
 
-# A sigilless pointy `for` parameter (`\x`) is a local slot of the loop
-# body, like a `$` one (ADR-12529). Binding, writes through it, nested
-# shadows and closures behave as before; the `@`/`%` rows pin the by-name
-# parameters next to it. Every expectation was checked against rakudo.
+# A pointy `for` parameter with an `@`, `%` or no sigil (`\x`) is a local
+# slot of the loop body, like a `$` one (ADR-12529). Binding, writes through
+# it, nested shadows and closures behave as before, and a whole-container
+# assignment through an `@`/`%` parameter keeps the bound container's own
+# type. Every expectation was checked against rakudo.
 
-plan 9;
+plan 13;
 
 my @r;
 for 1, 2 -> \x { @r.push: x * 10 }
@@ -42,3 +43,12 @@ is-deeply %h, {a => 2}, 'an increment through a sigilless parameter over .values
 my @outer = 7;
 for [1], [2] -> @outer { }
 is-deeply @outer, [7], 'the enclosing same-named array is untouched after the loop';
+
+my %ao{Any} = a => 1;
+my %reset{Any} = b => 2;
+for (%ao,) -> %a { %a = %reset; is %a.WHAT.raku, 'Hash[Any,Any]', 'an assigned object-hash parameter keeps its type' }
+is %ao.raku, '(my Any %{Any} = :b(2))', 'and the assignment reached the bound hash';
+
+my Int @ints = 1, 2;
+for (@ints,) -> @a { @a = 3, 4; is @a.WHAT.raku, 'Array[Int]', 'an assigned typed-array parameter keeps its type' }
+is-deeply @ints, Array[Int].new(3, 4), 'and the assignment reached the bound array';
