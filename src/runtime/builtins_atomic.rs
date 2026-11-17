@@ -20,6 +20,17 @@ fn is_user_visible_atomic_name(name: &str) -> bool {
         && !name.starts_with('&')
 }
 
+/// Whether an atomic target name spells an attribute (`!head`, `.count`): the
+/// twigil, then an identifier start. The same shape `self_attr_cell_target`
+/// accepts.
+// Cost: O(1).
+fn is_attribute_spelling(name: &str) -> bool {
+    name.strip_prefix('!')
+        .or_else(|| name.strip_prefix('.'))
+        .and_then(|bare| bare.chars().next())
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+}
+
 impl Interpreter {
     /// VM-native dispatch for the atomic var/element RMW markers (`__mutsu_atomic_*`
     /// / `__mutsu_cas_*`) the parser emits for the `⚛`-operators (`⚛=`/`⚛+=`/`⚛++`/
@@ -64,11 +75,25 @@ impl Interpreter {
         Some(r)
     }
 
+    /// The name an atomic helper's target is known by: `raw_name` itself when
+    /// it is bound in the frame env or spells an attribute, else the user
+    /// variable whose value is identical to `target_value` (an alias).
+    ///
+    /// An attribute spelling (`!head`, `.count`) names the invocant's
+    /// attribute cell (`self_attr_cell_target`), never a lexical, so it skips
+    /// the alias search: the search walked the whole env on every `cas
+    /// $!attr` / `$!n⚛++` (#11482), and could have answered with an unrelated
+    /// lexical that happened to hold the same object.
+    // Cost: O(1) for a bound name or an attribute spelling; O(e) otherwise,
+    // e = entries in the frame env.
     pub(super) fn canonical_atomic_var_name(
         &self,
         raw_name: &str,
         target_value: Option<&Value>,
     ) -> String {
+        if is_attribute_spelling(raw_name) {
+            return raw_name.to_string();
+        }
         if is_user_visible_atomic_name(raw_name) && self.env.contains_key(raw_name) {
             return raw_name.to_string();
         }
