@@ -330,19 +330,31 @@ impl Interpreter {
     /// scans no text (#11507).
     // Cost: O(1) amortized (flag-table reads and one memo probe).
     pub(super) fn package_qualified_candidate(name: Symbol, cur: Symbol) -> Option<Symbol> {
-        if crate::qualified::is_qualified(name)
+        if !Self::name_has_package_candidates(name)
             || crate::qualified::is_global_package(cur)
             || crate::qualified::is_routine_scoped_package(cur)
         {
             return None;
         }
-        let bare_first = name.as_str().trim_start_matches(['$', '@', '%', '&']);
-        let first_ch = bare_first.chars().next()?;
-        if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=') || first_ch.is_ascii_digit()
-        {
-            return None;
-        }
         Some(crate::qualified::qualified_var(cur, name))
+    }
+
+    /// The half of [`Self::package_qualified_candidate`] decided by the name
+    /// alone: whether ANY package could hold it as a package variable. An
+    /// already-qualified name, a twigil variable (`@!attr`, `$.attr`, `$*dyn`,
+    /// `$?FILE`, `$=pod`, `$/`), a `_`-led name or a positional capture never
+    /// is, whatever the package -- so a caller walking several packages asks
+    /// this once instead of once per package.
+    // Cost: O(1) (one flag-table read and the first char of the name).
+    pub(super) fn name_has_package_candidates(name: Symbol) -> bool {
+        if crate::qualified::is_qualified(name) {
+            return false;
+        }
+        let bare_first = name.as_str().trim_start_matches(['$', '@', '%', '&']);
+        bare_first.chars().next().is_some_and(|first_ch| {
+            !(matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=')
+                || first_ch.is_ascii_digit())
+        })
     }
 
     /// Resolve a bare enum-member name through the current package chain
@@ -436,7 +448,7 @@ impl Interpreter {
     /// always wins. Never falls through to the bare (GLOBAL) name — the
     /// lexical alias for `our` is block-scoped.
     pub(crate) fn package_chain_var_fallback(&self, name: Symbol) -> Option<Value> {
-        if crate::qualified::is_qualified(name) {
+        if !Self::name_has_package_candidates(name) {
             return None;
         }
         // Both questions are decided by the package name's TEXT, so they are
@@ -449,12 +461,6 @@ impl Interpreter {
             return None;
         }
         let name_str = name.as_str();
-        let bare_first = name_str.trim_start_matches(['$', '@', '%', '&']);
-        let first_ch = bare_first.chars().next()?;
-        if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=') || first_ch.is_ascii_digit()
-        {
-            return None;
-        }
         // Each step's `<sigil><pkg>::<rest>` key and the walk itself are
         // memoized per symbol: no `format!` and no `"::"` search per read.
         for pkg in crate::qualified::package_ancestors(cur_sym) {
