@@ -470,7 +470,17 @@ impl Interpreter {
             _ => {}
         }
         let class_key = class_name.resolve();
-        let display_name = crate::value::user_facing_type_name(&class_key);
+        // A type renamed with `.^set_name` renders its instances by the new
+        // name, as `.^name` reports it (`$obj does R; $obj.^set_name(...)`).
+        let display_name: std::borrow::Cow<'_, str> = match self
+            .types
+            .type_metadata
+            .get(&class_key)
+            .and_then(|m| m.get("__set_name__"))
+        {
+            Some(name) => std::borrow::Cow::Owned(name.to_string_value()),
+            None => crate::value::user_facing_type_name(&class_key),
+        };
         // A CStruct's fields live in C memory (a body it owns, or the memory C
         // handed back): read them out before rendering them.
         self.seed_cstruct_fields_for_method(&class_key, Some(target));
