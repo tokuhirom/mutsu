@@ -472,16 +472,39 @@ impl Interpreter {
     /// stash (`module_name_hidden_here`) -- is not run for a miss. A bareword
     /// probing `Pkg::name` for every running package hit that per read
     /// (App::Moneymoor, #17265).
-    // Cost: O(1) amortized for a key the store holds under neither spelling;
-    // otherwise `unmerged_our_var_key`'s.
+    // Cost: O(1) amortized for a key the store holds, or whose unqualified part
+    // it never held (one intern and one index probe); otherwise
+    // `unmerged_our_var_key`'s / `lexical_package_key`'s.
     pub(crate) fn get_our_var(&self, key: &str) -> Option<&Value> {
-        if !self.lexicals.our_vars.contains_key(key)
-            && (!crate::qualified::is_qualified_str(key)
-                || !self.unmerged_store_entry_exists(Symbol::intern(key)))
-        {
+        if !self.lexicals.our_vars.contains_key(key) {
+            // Every key the store holds put its unqualified part (`<sigil>` +
+            // the segment after the last `::`) into the append-only
+            // `our_var_unqualified` index, and both redirects below -- the
+            // unmerged-store spelling and a lexical package's storage-name
+            // member -- keep the key's unqualified part. So a key whose
+            // unqualified part was never stored misses all three lookups;
+            // answering that from the index skips the redirects' interning,
+            // splitting and env probes (~2.9k instructions per miss; term
+            // probes such as `\Real` walk a package chain of them per type
+            // check, App::Moneymoor).
+            let key_sym = Symbol::intern(key);
+            if !self
+                .lexicals
+                .our_var_unqualified
+                .contains(&crate::qualified::unqualified_part(key_sym))
+            {
+                return None;
+            }
+            if crate::qualified::is_qualified(key_sym) && self.unmerged_store_entry_exists(key_sym)
+            {
+                return match self.unmerged_our_var_key(key) {
+                    Some(redirected) => self.lexicals.our_vars.get(redirected.as_str()),
+                    None => self.lexicals.our_vars.get(key),
+                };
+            }
             // `tmp::Foo` of a lexical package: its declaration's own member
             // (#17449).
-            return crate::qualified::is_qualified_str(key)
+            return crate::qualified::is_qualified(key_sym)
                 .then(|| self.lexical_package_key(key))
                 .flatten()
                 .and_then(|real| self.lexicals.our_vars.get(real.as_str()));
