@@ -392,3 +392,38 @@ the module's parse). Until 2b lands, a module whose exports the scan cannot
 see (a computed export stash, a BEGIN-time `EXPORTHOW` merge) is known to the
 parse only through the static scan when it is `use`d in one of those
 positions, or after a `BEGIN`/`multi` of the importer (slice 5).
+
+### 7.8 Slice 2b as built (2026-11-17)
+
+- **Hook modules load at parse time.** A module that imports through a
+  `sub EXPORT` hook (its own, or the `&EXPORT` it took from another module)
+  loads when the parser reaches its `use`; the hook runs then, once, with
+  the `use`'s arguments. The map it returns, and the declarations it merged
+  into the `use`'s block, are kept (`ModuleState::parse_time_hook_results`,
+  by module and arguments, one entry per run in source order) and the
+  `use`'s import in position installs them instead of running the hook a
+  second time. Declarations merged into the unit (`set-unit`) are bound at
+  once for a block's `use`, as the BEGIN-time preload binds them. A hook
+  that attaches a phaser to its importing scope through `$*R` keeps running
+  at the import, where mutsu performs the attach (`runtime::attach_target`).
+  A slang module (one that `use`s Slangify) still loads at run time; slice 4
+  moves it.
+- **A `use` with a literal argument list** (`use M <a b>`, `use M 'x', 2`)
+  loads at parse time, its values handed to the hook as the run-time `use`
+  would hand them. An argument list that has to be evaluated, a `:if`
+  condition and an empty import list (`use M ()`, which loads like `need`)
+  still load at run time.
+- **A module's own compile parses with the loader.** Its `use`s load as its
+  parser reaches them. What those loads attribute to their importer is the
+  module's, as when they ran in its prologue: the module is the loading
+  compunit for the extent of its parse (the #7797 visibility grants), a
+  `use` imports into the package the module's `unit` declaration names (the
+  parser now records it, `UNIT_PACKAGE`), and the bindings the loads left in
+  the shared env are parked and put back inside the module's body window.
+  A module cycle closed through a `use` (`A → B → A`, even from a routine
+  body) is now reported at compile time, as rakudo reports it ("Circular
+  module loading detected").
+- Left for later: a `require`d file's own `use`s still load in its prologue;
+  a `use` inside a block that is entered more than once runs its hook again
+  on each later entry (the first entry installs the parse-time map), where
+  rakudo runs it once at compile time.
