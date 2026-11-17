@@ -488,9 +488,7 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
                 .scopes
                 .last()
                 .is_some_and(|scope| scope.contains_key(&key));
-        let outer = (is_multi && !has_dispatcher)
-            .then(|| outer_dispatcher(&name, &key, scopes))
-            .unwrap_or(false);
+        let outer = is_multi && !has_dispatcher && outer_dispatcher(&name, &key, scopes);
         let implies_proto = is_multi && !has_dispatcher && !outer;
         if is_multi {
             let mut candidate = RakuAstNode::clone(held);
