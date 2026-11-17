@@ -40,16 +40,20 @@ pub(super) fn contextualized_self_call<'a>(
             quoted: false,
             sugar: false,
         };
+        let sigil = if context == "list" { '@' } else { '%' };
         (
             r,
-            Expr::MethodCall {
-                target: Box::new(call),
-                name: Symbol::intern(context),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-                sugar: context == "list",
-            },
+            Expr::spelled(
+                Expr::MethodCall {
+                    target: Box::new(call),
+                    name: Symbol::intern(context),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: context == "list",
+                },
+                || crate::ast::spelled::Spelling::AttributeCall(sigil),
+            ),
         )
     }))
 }

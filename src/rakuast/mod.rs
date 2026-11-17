@@ -113,6 +113,7 @@ mod anon_body_origins;
 pub(crate) mod apply_queries;
 pub(crate) mod arg_invocant;
 pub(crate) mod arg_list_queries;
+mod attribute_call;
 pub(crate) mod block_queries;
 pub(crate) mod compile_time_value;
 mod declare_how;
