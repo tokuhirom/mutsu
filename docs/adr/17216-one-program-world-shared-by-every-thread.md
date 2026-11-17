@@ -1,6 +1,6 @@
 # ADR-17216: One program world, shared live by every thread
 
-- **Status**: Proposed
+- **Status**: Accepted (by the maintainer, 2026-11-17)
 - **Date**: 2026-11-17
 - **Carrier issue**: #17216 (correctness), with #17217 (cost) as its perf close condition
 - **Implements**: ADR-15967 §4.1 "one world, long-lived execution contexts, small tasks", whose
@@ -111,6 +111,27 @@ Each slice is its own PR, gated by the full `t/`, the whitelisted roast and the 
 5. **Delete the fork.** `fork_for_thread` keeps only execution state; `spawn_clone` stops
    copying world tables. This is #17216's close condition ("the spawn no longer forks the type
    registry or the handle table").
+
+### 3.1 Implementation slices (accepted plan)
+
+The maintainer accepted this ADR on 2026-11-17. The slices below refine §3 into PRs; each is
+claimed on #17216 as its own branch, carries the regression tests named in its row (each a
+`t/concurrency/` file whose expected output was checked against `raku`), a `news/` entry, and an
+ecosystem re-run of the thread-heavy distributions (Red, Monad, ParaSeq, MCP::Server*,
+Concurrent::*) against the branch's build before it is published. A slice may not add a
+slow-path fallback, an `unsafe impl Send`/`Sync`, or a `&self → &mut` access to a world table
+outside its lock (`docs/security.md`).
+
+| Slice | Scope | Acceptance |
+| ---: | --- | --- |
+| 1 | IO handle table (§2.4): one process-wide table shared by `Arc`, an `AtomicUsize` id allocator, each handle's state behind its own lock; delete `ThreadPromisePayload`'s handle transfer and the merge on `await` | sibling workers' handles get distinct ids; a handle opened on a worker is usable (and closable) on the main thread after any form of `await`, including an array of promises; a close or seek on an inherited handle is seen by its owner |
+| 2 | Type registry, routine table, method tables and method wrap chains (§2.1-2.3): the outer `RwLock` is shared, not re-created per spawn; `registry_write_gen` becomes one process-wide atomic; every `registry_mut` read-modify-write that spans two guard scopes is folded into one | `await start { EVAL 'class FromThread {...}' }` then `::('FromThread').hi` on the main thread; a method added through the MOP on a worker is dispatched on the main thread; a single-thread read-heavy benchmark does not regress in Ir |
+| 3 | `types.*` side tables, `dispatch.*` (routine wrappers, operator tables, `wrap_sub_names`) and `module.*` (loaded modules, exports, lib paths, unit pads) | `&f.wrap(...)` inside a `start` is seen by `f()` on the main thread; a module `require`d on a worker is usable on the main thread |
+| 4 | `our` variables (`lexicals.our_vars`) and package/compunit statics (`package_lexicals`, `unit_lexicals`) | an `our` declared or rebound on one thread is visible on another; a package static created by `EVAL` on a worker is visible on the main thread |
+| 5 | Delete the fork: `fork_for_thread` keeps only execution state, `spawn_clone` copies no world table; measure the spawn cost and close #17217 by its own condition | #17216's close condition; #17217's stated ratio |
+
+Order: slice 1 is independent and goes first; slices 2-4 each depend only on the shared
+generation-counter pattern slice 2 establishes; slice 5 needs 1-4.
 
 ## 4. Consequences
 
