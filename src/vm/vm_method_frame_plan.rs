@@ -85,6 +85,11 @@ pub(crate) struct MethodFramePlan {
     code_addr: usize,
     /// One entry per local slot of that code.
     pub(crate) locals: Box<[LocalInit]>,
+    /// Per slot, its plan had it named no parameter: what a
+    /// [`LocalInit::Param`] slot reads when the call bound no value for that
+    /// parameter (the implicit `*%_`, which the fast binder leaves in the
+    /// env). Never itself a `Param`.
+    pub(crate) unbound_param: Box<[LocalInit]>,
 }
 
 impl MethodFramePlan {
@@ -107,10 +112,16 @@ impl MethodFramePlan {
             .iter()
             .map(|local_name| Self::plan_local(owner, local_name, binding_names))
             .collect();
+        let unbound_param = cc
+            .locals
+            .iter()
+            .map(|local_name| Self::plan_local(owner, local_name, &[]))
+            .collect();
         Self {
             owner,
             code_addr: cc as *const CompiledCode as usize,
             locals,
+            unbound_param,
         }
     }
 

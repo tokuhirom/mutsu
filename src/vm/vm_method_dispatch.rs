@@ -2605,21 +2605,37 @@ impl Interpreter {
             // the by-name search the plan replaced.
             let params_by_index = param_values.len() == method_def.params.len();
             for (i, init) in plan.locals.iter().enumerate() {
-                self.locals[i] = match *init {
-                    LocalInit::Invocant => base.clone(),
-                    LocalInit::Class => class_val.clone(),
-                    LocalInit::Role => role_context.map_or(Value::NIL, Value::package),
-                    LocalInit::Nil => Value::NIL,
+                let init = match *init {
                     LocalInit::Param(idx) => {
-                        if params_by_index {
-                            param_values[idx as usize].2.clone()
+                        let bound = if params_by_index {
+                            Some(&param_values[idx as usize].2)
                         } else {
                             let name = cc.locals[i].as_str();
                             param_values
                                 .iter()
                                 .find(|(n, _, _)| *n == name)
-                                .map_or(Value::NIL, |(_, _, val)| val.clone())
+                                .map(|(_, _, val)| val)
+                        };
+                        match bound {
+                            Some(val) => {
+                                self.locals[i] = val.clone();
+                                continue;
+                            }
+                            // A parameter the fast binder bound nothing for
+                            // (the implicit `*%_`, which lives in the env)
+                            // reads as if it were no parameter.
+                            None => plan.unbound_param[i],
                         }
+                    }
+                    other => other,
+                };
+                self.locals[i] = match init {
+                    LocalInit::Invocant => base.clone(),
+                    LocalInit::Class => class_val.clone(),
+                    LocalInit::Role => role_context.map_or(Value::NIL, Value::package),
+                    LocalInit::Nil => Value::NIL,
+                    LocalInit::Param(_) => {
+                        unreachable!("an unbound parameter slot has a non-parameter plan")
                     }
                     LocalInit::Topic => any_val.clone(),
                     LocalInit::AttrPrivate { qualified, bare } => attr_get(qualified)
