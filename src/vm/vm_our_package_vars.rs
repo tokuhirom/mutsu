@@ -80,6 +80,15 @@ impl Interpreter {
         if crate::runtime::utils::has_anon_marker(name) {
             return None;
         }
+        // A twigil name (`@!attr`, read on every attribute access in a method
+        // body) or another spelling no package can qualify yields no candidate
+        // under any of the packages below, so the walk is skipped outright. The
+        // name can still be in the unqualified index: `SetGlobal` mirrors every
+        // global write, an attribute's included, into `our_vars`.
+        let name_sym = Symbol::intern(name);
+        if !Self::name_has_package_candidates(name_sym) {
+            return None;
+        }
         if self.running_frame_declares_local(name) {
             return None;
         }
@@ -95,12 +104,6 @@ impl Interpreter {
         // an `rsplit_once` per step — both are decided by text the source
         // fixed once (#8899).
         let cur_sym = self.current_package_sym();
-        let name_sym = Symbol::intern(name);
-        // An explicitly-written `@Other::x` is already the package variable it
-        // names. Asked of the symbol, only past the cheap index miss above.
-        if crate::qualified::is_qualified(name_sym) {
-            return None;
-        }
         let frame = self.routine_stack().last();
         let candidates = [
             frame.and_then(|f| f.lexical_package),
