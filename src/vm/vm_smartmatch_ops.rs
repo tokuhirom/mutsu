@@ -135,7 +135,13 @@ impl Interpreter {
         // a library exactly that way). Without this the match sees a `Proxy` and
         // answers False for every type — including the one the FETCH returns.
         let left = self.stack.pop().unwrap();
-        let left = loan_env!(self, auto_fetch_proxy(&left))?;
+        // A Proxy's `.VAR` object is the Proxy itself, matched as an object
+        // (`$p.VAR ~~ P`, #17459), not a container to read.
+        let left = if left.is_proxy_var_object() {
+            left
+        } else {
+            loan_env!(self, auto_fetch_proxy(&left))?
+        };
         if rhs_numeric_literal {
             self.numeric_literal_topic_check(&left)?;
         }
