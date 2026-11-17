@@ -1778,6 +1778,17 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    so the slot store needs the by-name path's container-identity rule first.
    Pinned by `t/routines/signature/for-loop-sigil-param-slot.t`.
 
+   **Slice 55 done** (`refactor/12529-loop-param-slot-containers`): `@`/`%`
+   loop parameters get the slot as well, so every single-parameter loop
+   reads its parameter from a slot unless the body has an `our` routine, a
+   proto or a `use`. The blocker slice 54 recorded was in the whole-container
+   in-place reassign (`array_inplace_reassign` / `hash_inplace_reassign`):
+   it gave the container the typing of the shaped new contents, and a slot
+   whose code declares no type (a parameter) shapes them untyped. The
+   destination now keeps its element/key/declared type when the new
+   contents carry none, beside its descriptor name and `is default`, which
+   it already kept.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
