@@ -3487,6 +3487,13 @@ impl Compiler {
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
     /// `OUTER::<$x>`, and their `OUTER::OUTER::` chains).
     fn emit_outer_var_access(&mut self, bare: String, depth: usize) {
+        if self.outer_is_setting(depth) {
+            // The unit mainline's `OUTER::` is outside the unit: none of the
+            // program's lexicals is there, and rakudo answers Nil (#17898).
+            let idx = self.code.add_constant(Value::NIL);
+            self.code.emit(OpCode::LoadConst(idx));
+            return;
+        }
         if self.try_emit_outer_capture_read(&bare, depth) {
             return;
         }
@@ -3579,6 +3586,19 @@ impl Compiler {
 
     /// The index, in the full (enclosing ++ local) scope chain, of this
     /// compilation unit's outermost scope — the scope `UNIT::` resolves against.
+    /// Whether `OUTER::` at `depth` from the code being compiled names the
+    /// setting: the code is a unit's own mainline (not a routine, closure or
+    /// `EVAL`, whose outer scopes live outside this compilation) and `depth`
+    /// reaches past its outermost scope.
+    // Cost: O(1).
+    fn outer_is_setting(&self, depth: usize) -> bool {
+        !self.in_eval_unit
+            && !self.is_routine
+            && self.enclosing_scopes.is_empty()
+            && self.unit_root_scope == 0
+            && depth >= self.local_scopes.len()
+    }
+
     fn unit_root_index(&self) -> usize {
         self.enclosing_scopes.len() + self.unit_root_scope
     }
