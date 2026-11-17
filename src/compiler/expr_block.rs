@@ -176,7 +176,14 @@ impl Compiler {
                     body_end: 0,
                     restore_outer_topic,
                 });
-                self.compile_if_value_branch(body, |c| c.compile_block_inline(body));
+                let is_statement_modifier = *is_statement_modifier;
+                self.compile_if_value_branch(body, |c| {
+                    if is_statement_modifier {
+                        c.compile_modifier_body_value(body)
+                    } else {
+                        c.compile_block_inline(body)
+                    }
+                });
                 self.code.patch_body_end(given_idx);
             }
             // A sigil-less target is a term (ADR-12441): the statement

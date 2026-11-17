@@ -300,7 +300,11 @@ impl Compiler {
             // `compile_block_inline` covers everything that reaches here.
             IfPosition::Value => {
                 self.compile_if_value_branch_scoped(branch, is_statement_modifier, |c| {
-                    c.compile_block_inline(branch)
+                    if is_statement_modifier {
+                        c.compile_modifier_body_value(branch)
+                    } else {
+                        c.compile_block_inline(branch)
+                    }
                 })
             }
             IfPosition::Statement => {
