@@ -97,7 +97,7 @@ impl Interpreter {
         {
             return Some(candidate.role_def.clone());
         }
-        self.registry().roles.get(role_name).cloned()
+        self.registry().roles.get(role_name).map(|r| RoleDef::clone(r))
     }
 
     /// Whether the role `role_name` composed into `mixins` declares the
@@ -157,7 +157,7 @@ impl Interpreter {
         {
             return Some(f(&candidate.role_def));
         }
-        registry.roles.get(role_name).map(f)
+        registry.roles.get(role_name).map(|r| f(r))
     }
 
     pub(crate) fn resolve_parametric_role_runtime(
@@ -165,7 +165,7 @@ impl Interpreter {
         base_name: &str,
         type_args: &[Value],
     ) -> Option<(RoleDef, Vec<String>)> {
-        let mut selected_role = self.registry().roles.get(base_name).cloned();
+        let mut selected_role = self.registry().roles.get(base_name).map(|r| RoleDef::clone(r));
         let mut selected_param_names = self
             .registry()
             .role_type_params
@@ -758,7 +758,7 @@ impl Interpreter {
         let resolved_type_arg_values = resolved.as_ref().map(|(_, _, values)| values.clone());
         let role = match &resolved {
             Some((role_def, _, _)) => Some(role_def.clone()),
-            None => self.registry().roles.get(role_name).cloned(),
+            None => self.registry().roles.get(role_name).map(|r| RoleDef::clone(r)),
         };
         // Role type-parameter keys used for composition are normalized
         // (sigil-less), but a declaration expression still reads the spelling

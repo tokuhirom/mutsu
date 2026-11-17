@@ -162,6 +162,32 @@ impl<K: TypeKey, V: Clone, S: std::hash::BuildHasher> TypeTable
     }
 }
 
+impl<K: TypeKey, V: Clone> TypeTable
+    for crate::runtime::registry_sharded_map::ShardedMap<K, V>
+{
+    type Item = (K, V);
+    // Cost: as for a `HashMap`.
+    fn entries_of(&self, names: &TypeNames) -> Vec<(K, V)> {
+        match K::exact(names) {
+            Some(keys) => keys
+                .into_iter()
+                .filter_map(|k| self.get(&k).map(|v| (k, v.clone())))
+                .collect(),
+            None => self
+                .iter()
+                .filter(|(k, _)| k.owned_by(names))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        }
+    }
+    // Cost: O(i), i = items, plus the shard copies.
+    fn insert_absent(&mut self, items: Vec<(K, V)>) {
+        for (k, v) in items {
+            self.entry(k).or_insert(v);
+        }
+    }
+}
+
 impl<K: TypeKey, S: std::hash::BuildHasher> TypeTable for std::collections::HashSet<K, S> {
     type Item = K;
     // Cost: as for a map.

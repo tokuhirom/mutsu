@@ -70,19 +70,19 @@ impl Interpreter {
         // table does not list (`grammar_has_user_method_sym` reads it the same
         // way); a punned role's type object is the role itself.
         let registry = self.registry();
-        if !registry.roles.values().any(declares_public_perl) {
+        if !registry.roles.values().any(|r| declares_public_perl(r)) {
             return false;
         }
         self.mro_readonly(&owner).iter().any(|ancestor| {
             self.registry()
                 .roles
                 .get(ancestor.as_str())
-                .is_some_and(declares_public_perl)
+                .is_some_and(|r| declares_public_perl(r))
         }) || self
             .registry()
             .roles
             .get(owner.as_str())
-            .is_some_and(declares_public_perl)
+            .is_some_and(|r| declares_public_perl(r))
     }
 }
 

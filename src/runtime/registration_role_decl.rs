@@ -330,7 +330,7 @@ impl Interpreter {
                 self.registry_mut()
                     .note_raw_invocant_methods(Symbol::intern(method_name), defs);
             }
-            self.registry_mut().roles.insert(name.to_string(), role_def);
+            self.registry_mut().roles.insert(name.to_string(), role_def.into());
             self.registry_mut()
                 .user_declared_roles
                 .insert(name.to_string());

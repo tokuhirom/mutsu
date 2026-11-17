@@ -856,6 +856,7 @@ impl Interpreter {
                 // already made of it.
                 if !core_effects.is_empty() {
                     if let Some(role_def) = self.registry_mut().roles.get_mut(&role) {
+                        let role_def: &mut crate::runtime::RoleDef = role_def;
                         core_effects.fold_into(
                             &mut role_def.attributes,
                             &mut role_def.attribute_built,

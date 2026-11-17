@@ -2579,7 +2579,7 @@ impl Interpreter {
         registry.classes = classes
             .into_iter()
             .map(|(name, def)| (name, def.into()))
-            .collect::<rustc_hash::FxHashMap<_, _>>()
+            .collect::<crate::runtime::registry_sharded_map::ShardedMap<_, _>>()
             .into();
         // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
         // now lives in the shared Registry instead of an Interpreter field).
@@ -3026,7 +3026,11 @@ impl Interpreter {
                     },
                 );
             }
-            roles.into()
+            roles
+                .into_iter()
+                .map(|(name, def): (String, RoleDef)| (name, def.into()))
+                .collect::<crate::runtime::registry_sharded_map::ShardedMap<_, _>>()
+                .into()
         };
         // ADR-0029: role-to-role composition among the 16 `X::` marker
         // roles above, re-verified against real rakudo (2026-08-19,

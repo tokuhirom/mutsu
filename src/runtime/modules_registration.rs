@@ -38,6 +38,8 @@ mod registration_subset;
 mod registry;
 pub(crate) mod routine_tables;
 pub(crate) mod registry_cow_table;
+/// Registry tables split into copy-on-write shards (ADR-17216 §4).
+pub(crate) mod registry_sharded_map;
 mod registry_method_table;
 pub(crate) mod repl_compiler;
 mod repl_compiler_prelude;
