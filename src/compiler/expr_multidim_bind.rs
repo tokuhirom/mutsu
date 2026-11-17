@@ -1,6 +1,35 @@
 use super::*;
 
 impl Compiler {
+    /// Push the source-variable names an indexed `:=` hands
+    /// [`OpCode::IndexBindValue`]. They are `Str`/`Nil` literals fixed at
+    /// compile time, so they load as one constant list rather than being
+    /// rebuilt by a `MakeArray` on every bind (a dispatch-table build binds
+    /// thousands of elements, #17429). Every consumer only reads the list.
+    // Cost: O(s) at compile time, s = sources; O(1) per execution.
+    pub(super) fn emit_index_bind_sources(&mut self, rhs: &Expr) {
+        let sources = crate::parser::bind_source_metadata_expr(rhs);
+        let literals = match &sources {
+            Expr::ArrayLiteral(items) => items
+                .iter()
+                .map(|item| match item {
+                    Expr::Literal(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>(),
+            _ => None,
+        };
+        let Some(literals) = literals else {
+            self.compile_call_arg(&sources);
+            return;
+        };
+        let idx = self.code.add_constant(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(literals)),
+            crate::value::ArrayKind::List,
+        ));
+        self.code.emit(OpCode::LoadConst(idx));
+    }
+
     /// Semicolon subscripts bind the RHS value, unlike chained subscripts.
     // Cost: O(n + d), n = RHS expression size, d = dimensions.
     pub(super) fn compile_multidim_value_bind(

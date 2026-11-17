@@ -1592,7 +1592,7 @@ impl Compiler {
                 // The VM takes the bound value and its source variables; the
                 // sources derive from the RHS.
                 self.compile_call_arg(rhs);
-                self.compile_call_arg(&crate::parser::bind_source_metadata_expr(rhs));
+                self.emit_index_bind_sources(rhs);
                 self.code.emit(OpCode::IndexBindValue);
             }
             Expr::PositionalPair(inner) => {
