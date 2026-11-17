@@ -288,6 +288,10 @@ pub(crate) struct ResolutionCaches {
     pub(crate) scoped_visible_memo: crate::runtime::ScopedVisibleMemo,
     /// `(fn_resolve_gen, proto_gen)` the memo above was filled under.
     pub(crate) scoped_visible_memo_gen: (u64, u64),
+    /// The bare-name `proto` lookups (`has_proto`, the trivial-proto
+    /// resolution) per search context and deciding units, under the registry
+    /// write generation (`runtime/proto_resolve_memo.rs`).
+    pub(crate) proto_resolve_memo: crate::runtime::ProtoResolveMemo,
     /// Keyed by `(callee name, callsite package)` for the same reason as
     /// [`Self::pos_light_call_cache`] below.
     ///

@@ -122,9 +122,10 @@ impl Interpreter {
     /// re-hash a string constant it already had ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
     pub(crate) fn has_proto_cached_sym(&mut self, name: &str, name_sym: Symbol) -> bool {
         // A scoped family's answer depends on the executing compunit, which
-        // the key does not carry (#11004, `runtime/unit_multi_scope.rs`).
+        // this key does not carry (#11004, `runtime/unit_multi_scope.rs`);
+        // the memo keyed by the deciding units answers it (#15786).
         if self.operator_has_import_scope_sym(name_sym) {
-            return self.has_proto(name);
+            return self.has_proto_memoized(name, name_sym);
         }
         let pgen = self.registry().proto_generation();
         if self.caches.has_proto_cache_gen != pgen {
