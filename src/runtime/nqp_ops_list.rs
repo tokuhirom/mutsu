@@ -514,7 +514,12 @@ impl Interpreter {
                     return Some(Err(crate::builtins::str_prim::codepoint::surrogate_error(cp)));
                 }
                 match u32::try_from(cp).ok().and_then(char::from_u32) {
-                    Some(c) => Ok(Value::str(c.to_string())),
+                    Some(c) => {
+                        // A literal U+10FFFD is escaped (ADR-17800).
+                        let mut s = String::with_capacity(8);
+                        crate::grapheme_break::push_codepoint(&mut s, c);
+                        Ok(Value::str(s))
+                    }
                     None => Err(RuntimeError::new(format!(
                         "nqp::chr: {cp} is not a valid Unicode codepoint"
                     ))),

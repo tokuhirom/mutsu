@@ -361,7 +361,8 @@ fn normalization_text(target: &Value) -> String {
                 })
                 .collect()
         }
-        _ => target.to_string_value(),
+        // A doubled marker is one literal U+10FFFD (ADR-17800).
+        _ => crate::grapheme_break::unescape_literal_marker(&target.to_string_value()).into_owned(),
     }
 }
 

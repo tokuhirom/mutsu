@@ -71,7 +71,10 @@ pub(crate) fn elems(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErr
 pub(crate) fn str(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     use unicode_normalization::UnicodeNormalization;
     let uni = uni_of(target)?;
-    Ok(Value::str(uni.text().nfc().collect::<String>()))
+    // A literal U+10FFFD is escaped as it enters the `Str` (ADR-17800).
+    Ok(Value::str(
+        crate::grapheme_break::escape_literal_marker_owned(uni.text().nfc().collect::<String>()),
+    ))
 }
 
 /// `Uni.list`, `.List` and `.values`: the codepoints as `Int`s in a `Seq`

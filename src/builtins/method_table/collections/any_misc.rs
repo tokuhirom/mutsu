@@ -184,7 +184,11 @@ pub(crate) fn chrs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
     };
     let mut s = String::with_capacity(items.len());
     for &code in &items {
-        s.push(crate::builtins::str_prim::codepoint::chr_char(code)?);
+        // A literal U+10FFFD is escaped (ADR-17800).
+        crate::grapheme_break::push_codepoint(
+            &mut s,
+            crate::builtins::str_prim::codepoint::chr_char(code)?,
+        );
     }
     Ok(Value::str(s))
 }

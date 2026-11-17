@@ -103,7 +103,11 @@ pub(crate) fn native_function_variadic(
                     ValueView::Num(f) => f as i64,
                     _ => v.to_string_value().parse::<i64>().unwrap_or(-1),
                 };
-                result.push(crate::builtins::str_prim::codepoint::chr_char(code)?);
+                // A literal U+10FFFD is escaped (ADR-17800).
+                crate::grapheme_break::push_codepoint(
+                    result,
+                    crate::builtins::str_prim::codepoint::chr_char(code)?,
+                );
                 Ok(())
             };
             for arg in args {

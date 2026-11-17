@@ -430,7 +430,11 @@ impl Interpreter {
                 }
                 "getc" => {
                     return Some(match self.read_user_io_char(target) {
-                        Ok(Some(c)) => Ok(Value::str(crate::builtins::nfc(c))),
+                        Ok(Some(c)) => Ok(Value::str(
+                            crate::grapheme_break::escape_literal_marker_owned(
+                                crate::builtins::nfc(c),
+                            ),
+                        )),
                         Ok(None) => Ok(Value::NIL),
                         Err(e) => Err(e),
                     });
@@ -457,7 +461,9 @@ impl Interpreter {
                             Err(e) => return Some(Err(e)),
                         }
                     }
-                    return Some(Ok(Value::str(crate::builtins::nfc(s))));
+                    return Some(Ok(Value::str(
+                        crate::grapheme_break::escape_literal_marker_owned(crate::builtins::nfc(s)),
+                    )));
                 }
                 "lines" => {
                     let seps = Self::user_io_line_separators(target);

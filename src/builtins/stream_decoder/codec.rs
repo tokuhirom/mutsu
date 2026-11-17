@@ -94,7 +94,7 @@ impl Codec {
             },
             Codec::Utf8C8 => match utf8_unit(bytes) {
                 Ok(Utf8Unit::Char(c, n)) => {
-                    out.push(c);
+                    crate::grapheme_break::push_codepoint(out, c);
                     Ok(Some(n))
                 }
                 Ok(Utf8Unit::Incomplete) => Ok(None),

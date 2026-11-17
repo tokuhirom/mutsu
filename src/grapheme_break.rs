@@ -39,6 +39,36 @@ pub(crate) fn escape_literal_marker(s: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(out)
 }
 
+/// [`escape_literal_marker`] for a `String` the caller owns: no copy when it
+/// holds no marker.
+// Cost: O(n), n = bytes of `s`.
+pub(crate) fn escape_literal_marker_owned(s: String) -> String {
+    match escape_literal_marker(&s) {
+        std::borrow::Cow::Borrowed(_) => s,
+        std::borrow::Cow::Owned(escaped) => escaped,
+    }
+}
+
+/// Escape the markers in `s[from..]` only: the text a decoder has just
+/// appended to a buffer whose earlier part is already escaped.
+// Cost: O(n), n = bytes of `s[from..]`.
+pub(crate) fn escape_literal_marker_from(s: &mut String, from: usize) {
+    if s[from..].contains(SYNTHETIC_MARKER) {
+        let tail = s.split_off(from);
+        s.push_str(&escape_literal_marker(&tail));
+    }
+}
+
+/// Append the codepoint `ch` to a `Str`'s text, escaping a literal
+/// `U+10FFFD` as the doubled marker (`chr`, `chrs`, codepoint escapes).
+// Cost: O(1).
+pub(crate) fn push_codepoint(text: &mut String, ch: char) {
+    text.push(ch);
+    if ch == SYNTHETIC_MARKER {
+        text.push(ch);
+    }
+}
+
 /// The inverse of [`escape_literal_marker`]: the codepoints a `Str` exposes
 /// (`.ords`, an encoder). A doubled marker is one literal `U+10FFFD`; a
 /// synthetic `U+10FFFD x H H` keeps its four codepoints, as rakudo exposes it.
