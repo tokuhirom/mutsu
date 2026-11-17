@@ -359,3 +359,36 @@ prologue, each with the slice that moves it:
 A parse-time load prepends the unit's parse-time `use lib` paths to the search
 chain for that load only; the prologue's `use lib` registers them for good, in
 `$*REPO` too, at their own positions.
+
+### 7.7 Slice 2 as built (2026-11-17)
+
+Slice 2 is split in two. **2a** (this change) makes the parser read the loaded
+unit and deletes the probe:
+
+- After a `use` the loader took, the parser asks it for the unit's facts
+  (`CompileTimeLoader::loaded_facts`): the routines the module exports under
+  the tags the `use` imports (`DEFAULT` for none, the named tags plus
+  `MANDATORY`, everything for `:ALL` or a `use` with arguments), each
+  operator's `Routine.prec` record, and the module's `EXPORTHOW` declarators,
+  a BEGIN-time merge included. They are registered in the `use`'s scope next
+  to what the static scan registered, so block scoping is unchanged.
+- `runtime/parse_time_exports.rs` and the `begin_calls_loaded_routine` scan
+  flag are deleted, and with them the second interpreter and thread per
+  probed `use` (the construction allowlist loses its entry). The
+  `dynamic_export_stash` scan field stays, but only as what it also always
+  was: a note that the scan does not know all the module's exported
+  variables and types. It no longer gates anything.
+- A module's static export scan no longer leaks the scanned module's own
+  `BEGIN` or `multi` into the importer's "compile-time effect seen" state
+  (§7.6), nor clears the importer's: a module with a `BEGIN` of its own had
+  sent every later `use` of its importer back to the prologue.
+
+**2b** widens the loader to the `use`s §7.6 still leaves to the prologue for
+slice 2: a module that imports through a `sub EXPORT` hook (the hook runs at
+parse time with the `use`'s arguments and its map is installed at the
+import), a `use` with arguments or `:if`, and the `use`s of a module's own
+compile and of a `require`d file (the load's importer snapshots move before
+the module's parse). Until 2b lands, a module whose exports the scan cannot
+see (a computed export stash, a BEGIN-time `EXPORTHOW` merge) is known to the
+parse only through the static scan when it is `use`d in one of those
+positions, or after a `BEGIN`/`multi` of the importer (slice 5).
