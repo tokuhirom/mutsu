@@ -1,8 +1,8 @@
-//! [`WorldCell`]: one world table of the program, shared live by every thread
+//! [`WorldCell`](crate::runtime::world_cell::WorldCell): one world table of the program, shared live by every thread
 //! (ADR-17216 §2.1-2.3).
 //!
 //! The world (the declarations, wrappers, module state a program builds) exists
-//! once per process. A table of it lives in a [`WorldCell`]: every thread's
+//! once per process. A table of it lives in a [`WorldCell`](crate::runtime::world_cell::WorldCell): every thread's
 //! interpreter holds the same shared slot, and a spawn shares the slot instead
 //! of copying the table.
 //!
