@@ -22,15 +22,29 @@ impl Interpreter {
         source: &SeqSource,
         out: &mut PullOut,
     ) -> Result<(), RuntimeError> {
-        if let SeqSource::Iterator(iterator) = source
-            && self.push_all_user_iterator_into(iterator, out)?
-        {
-            return Ok(());
-        }
-        self.pull_seq_source(source, out)
+        self.without_pending_call_arg_sources(|this| {
+            if let SeqSource::Iterator(iterator) = source
+                && this.push_all_user_iterator_into(iterator, out)?
+            {
+                return Ok(());
+            }
+            this.pull_seq_source_unparked(source, out)
+        })
     }
 
+    /// Pull every element of `source` into `out`. The user code a source runs
+    /// (an iterator's methods, a deferred `.map` block) belongs to no call
+    /// site, so it runs with the pending call-argument names parked
+    /// ([`Self::without_pending_call_arg_sources`]).
     pub(crate) fn pull_seq_source(
+        &mut self,
+        source: &SeqSource,
+        out: &mut PullOut,
+    ) -> Result<(), RuntimeError> {
+        self.without_pending_call_arg_sources(|this| this.pull_seq_source_unparked(source, out))
+    }
+
+    fn pull_seq_source_unparked(
         &mut self,
         source: &SeqSource,
         out: &mut PullOut,
