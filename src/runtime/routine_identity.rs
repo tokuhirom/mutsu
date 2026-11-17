@@ -102,7 +102,12 @@ impl Interpreter {
     // Cost: O(1); one atomic load for a routine never mixed into.
     pub(crate) fn routine_current_view(value: &Value) -> Option<Value> {
         let (inner, current) = match value.view() {
-            ValueView::Sub(data) => (Arc::new(value.clone()), data.routine_cell.get()?),
+            // The cell is asked first: a routine never mixed into (nearly
+            // every closure call) must not pay the `Arc` allocation.
+            ValueView::Sub(data) => {
+                let current = data.routine_cell.get()?;
+                (Arc::new(value.clone()), current)
+            }
             ValueView::Mixin(inner, overrides) => {
                 let ValueView::Sub(data) = inner.view() else {
                     return None;

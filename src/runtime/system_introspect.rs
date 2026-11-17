@@ -84,7 +84,7 @@ impl Interpreter {
         let my_hash = self.build_lexical_hash(&entry.env, Some(depth), entry.package);
         let mut attrs = ValueMap::default();
         attrs.insert("line".to_string(), Value::int(entry.line));
-        attrs.insert("file".to_string(), Value::str(entry.file.clone()));
+        attrs.insert("file".to_string(), Value::str(entry.file.resolve()));
         Self::insert_callframe_code_attrs(&mut attrs, &code);
         attrs.insert("code".to_string(), code);
         attrs.insert("my".to_string(), my_hash);
@@ -125,7 +125,7 @@ impl Interpreter {
                 && !claimed(k)
             {
                 out.push(CallFrameEntry {
-                    file: f.file.map(|s| s.resolve()).unwrap_or_default(),
+                    file: f.file.unwrap_or_else(|| Symbol::intern("")),
                     line: f.line.map_or(0, i64::from),
                     code: None,
                     env: Env::new(),
@@ -162,7 +162,7 @@ impl Interpreter {
             _ => {
                 return Self::bare_block_code(
                     Symbol::intern("<unit>"),
-                    Some(entry.file.clone()),
+                    Some(entry.file.resolve()),
                     Some(1),
                 );
             }

@@ -1602,7 +1602,10 @@ pub(crate) struct IoHandleState {
 /// Entry in the callframe stack, tracking state for each call frame.
 #[derive(Clone)]
 pub(crate) struct CallFrameEntry {
-    pub file: String,
+    /// The call site's file, interned: a closure call pushes one of these,
+    /// and resolving the name to a `String` per push was an allocation per
+    /// call (ADR-15737 D1).
+    pub file: Symbol,
     pub line: i64,
     pub code: Option<CodeFrame>,
     pub env: Env,
