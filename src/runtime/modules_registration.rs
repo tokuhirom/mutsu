@@ -38,6 +38,7 @@ mod registry;
 pub(crate) mod registry_cow_table;
 mod registry_method_table;
 pub(crate) mod repl_compiler;
+mod module_check_restart;
 mod repl_compiler_prelude;
 mod require_stub;
 pub(crate) mod resolution;

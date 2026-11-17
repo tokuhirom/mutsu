@@ -232,6 +232,18 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     if matches!(node.class, C::Method | C::Submethod) && !scopes.packages.is_empty() {
         node.origin.2 = Some(Value::str(scopes.packages.join("::")));
     }
+    // A plain named `sub` remembers the package that declares it (a `unit
+    // module`'s body), for `compile-time-value`.
+    if node.class == C::Sub
+        && !scopes.packages.is_empty()
+        && node.fields.iter().any(|f| f.name == Some("name"))
+        && !super::lower::leaf_str(node, "multiness").is_ok_and(|m| !m.is_empty())
+    {
+        node.origin.2 = Some(Value::str(format!(
+            "{SUB_PACKAGE_PREFIX}{}",
+            scopes.packages.join("::")
+        )));
+    }
     // A `multi sub` remembers which candidate of its name it declares.
     if node.class == C::Sub
         && super::lower::leaf_str(node, "multiness").is_ok_and(|m| m == "multi")
@@ -500,6 +512,13 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
                 && let Some(field) = stub.fields.iter_mut().find(|f| f.name == Some("multiness"))
             {
                 field.value = RakuAstFieldValue::Node(Value::str("proto".to_string()));
+            }
+            // The resolution's declaration remembers its package too.
+            if !is_multi && !scopes.packages.is_empty() && stub.origin.2.is_none() {
+                stub.origin.2 = Some(Value::str(format!(
+                    "{SUB_PACKAGE_PREFIX}{}",
+                    scopes.packages.join("::")
+                )));
             }
             scopes.declare(key, Value::rakuast(Box::new(stub)));
         }
@@ -1189,6 +1208,21 @@ pub(super) fn multi_candidate_index(node: &RakuAstNode) -> Option<usize> {
         .strip_prefix("multi:")?
         .parse()
         .ok()
+}
+
+/// The tag of a plain named `sub`'s recorded declaring package.
+const SUB_PACKAGE_PREFIX: &str = "package:";
+
+/// The package a plain named `sub` of the unit tree `$*CU` answers is declared
+/// in; `None` outside any package declaration (the unit's `GLOBAL`).
+// Cost: O(k), k = length of the package name.
+pub(super) fn sub_declaring_package(node: &RakuAstNode) -> Option<String> {
+    node.origin
+        .2
+        .as_ref()?
+        .to_string_value()
+        .strip_prefix(SUB_PACKAGE_PREFIX)
+        .map(str::to_string)
 }
 
 /// The qualified name of a package declaration of the unit tree `$*CU` answers.

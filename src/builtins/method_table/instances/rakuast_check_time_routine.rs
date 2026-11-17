@@ -8,7 +8,8 @@
 //! at CHECK time it is neither a lexical nor in the function table. The value
 //! here is the routine compiled from the node itself, as an anonymous sub (so
 //! nothing is installed), carrying the declaration's identity: its name, the
-//! unit's package, file and declaration line. `Code.static_id` keys a named
+//! package declaring it (a `unit module`'s, else `GLOBAL`), file and
+//! declaration line. `Code.static_id` keys a named
 //! routine on exactly those (`code::static_id`), so Red's
 //! `validate-code($actual, $expected)` compares it equal to the routine the
 //! block binds.
@@ -70,7 +71,11 @@ pub(super) fn check_time_routine(
     };
     let mut routine = crate::value::SubData::clone(&data);
     routine.name = Symbol::intern(name);
-    routine.package = Symbol::intern("GLOBAL");
+    routine.package = Symbol::intern(
+        crate::rakuast::declared_sub_package(node)
+            .as_deref()
+            .unwrap_or("GLOBAL"),
+    );
     routine.source_file = crate::unit_source_file::current().map(|file| file.resolve().to_string());
     routine.source_line = line;
     routine.source_file_sym_cache = Default::default();

@@ -1019,7 +1019,11 @@ impl Interpreter {
         // `Sub` for every ordinary `sub` declaration.
         let declarator = pass.declarator;
         let is_method_value_decl = declarator != crate::ast::RoutineDeclarator::Sub;
-        let allow_redeclare = supersede || is_method_value_decl;
+        // A unit restarted from its CHECK-rewritten tree declares again what
+        // its first compile declared (and already judged): each declaration
+        // replaces its first-compile twin.
+        let restarting_unit = self.dispatch.rewritten_unit_candidates.is_some();
+        let allow_redeclare = supersede || is_method_value_decl || restarting_unit;
         let is_our_scoped = scope == crate::ast::SubScope::Our;
         let is_lexical_hoist = pass.lexical_hoist;
         // Declared in a scope nested in its compilation unit's or routine's
@@ -1070,7 +1074,6 @@ impl Interpreter {
         // routines again: each is a new routine over the restarted mainline's
         // scope, not the first compile's, which closed over a mainline that
         // never ran.
-        let restarting_unit = self.dispatch.rewritten_unit_candidates.is_some();
         if let Some(site_fp) = site_fingerprint
             && !restarting_unit
             && !multi
@@ -1590,6 +1593,7 @@ impl Interpreter {
             if !matches!(existing.view(), ValueView::Mixin(..))
                 && !(multi && Self::is_family_dispatcher_of(existing, name))
                 && !shadows_outer_eval_name
+                && !restarting_unit
                 && !allow_lexical_shadow
                 && !imported_routine_alias
                 && !is_our_scoped

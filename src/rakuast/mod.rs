@@ -1658,6 +1658,13 @@ pub(crate) fn declared_package_qualified_name(node: &RakuAstNode) -> Option<Stri
     resolve::package_qualified_name(node)
 }
 
+/// The package a plain named `sub` of the unit tree `$*CU` answers is
+/// declared in (`None`: the unit's `GLOBAL`).
+// Cost: O(k), k = length of the package name.
+pub(crate) fn declared_sub_package(node: &RakuAstNode) -> Option<String> {
+    resolve::sub_declaring_package(node)
+}
+
 /// Which candidate of its name's dispatcher a `multi sub` of the unit tree `$*CU`
 /// answers declares.
 // Cost: O(1).

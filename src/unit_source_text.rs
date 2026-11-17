@@ -46,6 +46,8 @@ pub(crate) struct Unit {
     /// tree that differs from it at the end of the CHECK phase was rewritten
     /// by a CHECK phaser or check closure (#17501).
     check_baseline: Option<u64>,
+    /// The unit is a module being loaded (`UnitSourceTextGuard::enter_module`).
+    module: bool,
 }
 
 thread_local! {
@@ -75,6 +77,7 @@ impl UnitSourceTextGuard {
                 late_imports: std::collections::HashSet::new(),
                 rewritten: false,
                 check_baseline: None,
+                module: false,
             });
         });
         Self
@@ -82,6 +85,18 @@ impl UnitSourceTextGuard {
 }
 
 impl UnitSourceTextGuard {
+    /// Publishes a module's source as the unit being compiled.
+    // Cost: O(n) to copy the source, n = source length.
+    pub(crate) fn enter_module(source: &str) -> Self {
+        let guard = Self::enter(source);
+        UNITS.with(|units| {
+            if let Some(unit) = units.borrow_mut().last_mut() {
+                unit.module = true;
+            }
+        });
+        guard
+    }
+
     /// Publishes an EVAL'd RakuAST tree as the unit being compiled.
     // Cost: O(1).
     pub(crate) fn enter_tree(tree: Value) -> Self {
@@ -435,6 +450,12 @@ pub(crate) fn is_late_import(name: &str) -> bool {
 // Cost: O(1).
 pub(crate) fn mark_next_tree_rewritten() {
     NEXT_TREE_REWRITTEN.with(|flag| flag.set(true));
+}
+
+/// Whether the innermost unit is a module being loaded.
+// Cost: O(1).
+pub(crate) fn innermost_unit_is_module() -> bool {
+    UNITS.with(|units| units.borrow().last().is_some_and(|unit| unit.module))
 }
 
 /// The `$*CU` tree of the innermost unit when its CHECK phase changed it

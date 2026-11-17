@@ -464,9 +464,14 @@ impl Interpreter {
     /// Marks where the closures `$*CU.add-check-code` queued run: after the
     /// unit's last CHECK phaser, or at the end of its BEGIN prologue when it
     /// has none (as the main unit does, `run.rs`). A unit with neither queued
-    /// nothing.
+    /// nothing. `prologue_marked`: a `Stmt::BeginPrologueEnd` follows the
+    /// prologue (an EVAL unit's); a module's prologue has none.
     // Cost: O(s), s = statements of the unit.
-    fn insert_run_check_code(stmts: &mut Vec<Stmt>, prologue_len: usize) {
+    pub(crate) fn insert_run_check_code(
+        stmts: &mut Vec<Stmt>,
+        prologue_len: usize,
+        prologue_marked: bool,
+    ) {
         let is_check = |stmt: &Stmt| {
             matches!(
                 stmt,
@@ -479,7 +484,7 @@ impl Interpreter {
         if let Some(last) = stmts.iter().rposition(is_check) {
             stmts.insert(last + 1, Stmt::RunCheckCode);
         } else if prologue_len > 0 {
-            stmts.insert(prologue_len + 1, Stmt::RunCheckCode);
+            stmts.insert(prologue_len + usize::from(prologue_marked), Stmt::RunCheckCode);
         } else if let Some(last) = stmts.iter().rposition(|stmt| match stmt {
             Stmt::Phaser {
                 kind: crate::ast::PhaserKind::Begin,
@@ -537,7 +542,7 @@ impl Interpreter {
     /// initializer runs its initializer (run-time code), writing through to the
     /// adopted binding.
     // Cost: O(n), n = top-level statements.
-    fn adopt_rewritten_restart_toplevel_decls(stmts: &mut Vec<Stmt>) {
+    pub(crate) fn adopt_rewritten_restart_toplevel_decls(stmts: &mut Vec<Stmt>) {
         stmts.retain(|stmt| {
             let Stmt::VarDecl {
                 name,
@@ -607,7 +612,7 @@ impl Interpreter {
         if prologue_len > 0 {
             stmts.insert(prologue_len, Stmt::BeginPrologueEnd);
         }
-        Self::insert_run_check_code(&mut stmts, prologue_len);
+        Self::insert_run_check_code(&mut stmts, prologue_len, prologue_len > 0);
         // An `our` in a branch that never runs still has its package symbol.
         self.preinstall_unit_our_symbols(&stmts);
         // An `our` routine is installed in its package when the unit is

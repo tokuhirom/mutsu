@@ -7916,6 +7916,7 @@ impl Interpreter {
                     // separate code object cannot reach by name, so publish the
                     // frame's locals into `env` first, where the restart's
                     // free-variable reads resolve them.
+                    let module_restart = crate::unit_source_text::innermost_unit_is_module();
                     self.sync_env_from_locals(code);
                     // The main program that ends here leaves its END phasers
                     // to the tree, which declares them again (a module or
@@ -7935,7 +7936,12 @@ impl Interpreter {
                         .dispatch
                         .rewritten_unit_candidates
                         .replace(Default::default());
-                    let result = self.eval_rakuast_node(&cu);
+                    // A module's restart is the module: what it declares stays.
+                    let result = if module_restart {
+                        self.run_module_check_restart(&cu, code)
+                    } else {
+                        self.eval_rakuast_node(&cu).map(drop)
+                    };
                     self.dispatch.rewritten_unit_candidates = outer_candidates;
                     self.module.suppress_cross_eval_class_redeclaration_check = outer;
                     // Its LEAVE phasers too (`run_unit` reads the flag).
