@@ -11,12 +11,24 @@ pub(crate) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
     // recognition through `paren_expr` (wrapping it in `Expr::Grouped`) and
     // then correctly continues the infix/postfix precedence chain, exactly
     // like the plain `=` statement path already does. See #6953.
-    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input)
-        && (!input.starts_with('(') || paren_assign_rhs_is_complete(rest))
-    {
+    if let Some((rest, assign_expr)) = chained_assign_expr(input) {
         return Ok((rest, assign_expr));
     }
     parse_comma_or_expr(input)
+}
+
+/// The chained assignment `input` starts with, if any. A parenthesized one
+/// (`($b = 2)`) is taken only when a clean terminator follows its `)`, and is
+/// kept [`Expr::Grouped`] as `paren_expr` keeps it: the parentheses end the
+/// assignment's list (`my @a = (@b = 1), 2` leaves `@b` `[1]`), and RakuAST
+/// keeps them (`10 R+= ($a ||= 42)`).
+// Cost: O(n), n = length of the assignment.
+fn chained_assign_expr(input: &str) -> Option<(&str, Expr)> {
+    let (rest, assign_expr) = try_parse_assign_expr(input).ok()?;
+    if !input.starts_with('(') {
+        return Some((rest, assign_expr));
+    }
+    paren_assign_rhs_is_complete(rest).then(|| (rest, Expr::Grouped(Box::new(assign_expr))))
 }
 
 /// No-word-logical twin of [`parse_assign_expr_or_comma`]: the same
@@ -30,9 +42,7 @@ pub(crate) fn parse_assign_expr_or_comma_no_word_logical(input: &str) -> PResult
     // See the matching comment in `parse_assign_expr_or_comma` above (#6953):
     // only take the parenthesized-assignment shortcut when nothing but a
     // clean terminator follows the `)`.
-    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input)
-        && (!input.starts_with('(') || paren_assign_rhs_is_complete(rest))
-    {
+    if let Some((rest, assign_expr)) = chained_assign_expr(input) {
         let (r, _) = ws(rest)?;
         // Chained *list* assignment to an `@`/`%` container absorbs the comma list
         // on its right (see [`parse_assign_expr_or_comma`]).

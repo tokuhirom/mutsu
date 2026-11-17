@@ -159,6 +159,7 @@ roast/S03-buf/read-write-bits.t	6
 roast/S03-metaops/misc.t	0
 roast/S03-metaops/misc.t	1
 roast/S03-metaops/misc.t	2
+roast/S03-metaops/misc.t	3
 roast/S03-metaops/misc.t	4
 roast/S03-operators/autoincrement.t	0
 roast/S03-operators/autoincrement.t	1
