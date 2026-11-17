@@ -156,7 +156,7 @@ fn grow(
         | ValueView::Bool(_)
         | ValueView::Rat(..)
         | ValueView::Complex(..) => {
-            return Some(Err(builtin_method_no_match(&value, method, args)));
+            return Some(Err(builtin_method_no_match(value, method, args)));
         }
         _ => return None,
     }
