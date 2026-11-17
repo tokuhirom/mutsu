@@ -162,6 +162,15 @@ impl Compiler {
         // back to a plain-value snapshot that a same-named parameter in
         // whatever frame later happens to call the closure could shadow
         // (#8663).
+        // A sigilless term bound to a plain value is readonly through its
+        // binding's marker, which only `CheckReadOnly` consults. The
+        // statement form emits it before every assignment; the expression
+        // form -- a compound `h += 1` and a parenthesized `(h = 1)` -- needs
+        // it too, or the store replaced the term's value (#17677).
+        if name.starts_with('\\') {
+            let name_idx = self.code.add_constant(Value::str(name.to_string()));
+            self.code.emit(OpCode::CheckReadOnly(name_idx));
+        }
         self.with_escape(true, |c| c.compile_expr(expr));
         // An `@` target whose RHS is a `$` scalar variable itemizes, exactly as
         // the statement-position store does: `(@j = $c)` must be one element,

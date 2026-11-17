@@ -604,6 +604,21 @@ impl Interpreter {
         self.name_is_readonly_binding_for(name, None)
     }
 
+    /// Whether the sigilless term `name` carries the
+    /// `__mutsu_sigilless_readonly::` marker its bind writes when the source
+    /// was a plain value, not a writable container (`my \h = $map<a>`).
+    // Cost: O(1): a flag-word read when no such marker exists, else one env probe.
+    pub(crate) fn sigilless_name_marked_readonly(&self, name: &str) -> bool {
+        crate::env::sigilless_readonly_keys_possible()
+            && crate::runtime::term_names::term_spelling(name).is_some()
+            && matches!(
+                self.env()
+                    .get_sym(crate::runtime::utils::sigilless_readonly_key(name))
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+    }
+
     /// [`Self::name_is_readonly_binding`] for a caller that already holds
     /// `name`'s interned form — every in-place `++`/`--`/`OP=` op reaches this
     /// through a constant-pool name operand, and [`CompiledCode::const_sym`]
