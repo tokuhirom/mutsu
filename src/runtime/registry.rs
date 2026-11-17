@@ -149,44 +149,40 @@ pub(crate) const DISPATCHER_WRAP_IDX: usize = usize::MAX;
 /// Note: no `Debug` derive — `ClassDef` (and its `MethodDef`/AST graph) is not
 /// `Debug`, and nothing needs to format the registry.
 /// A memo of the lexical-type-key scan (see [`Registry::lexical_key_scans`]).
-/// Cloning a registry starts the copy with an empty memo.
-#[derive(Default)]
+/// Its answers depend only on the key sets of the four type tables, so every
+/// version of the registry shares one memo, tagged with the
+/// [`TypeKeysStamp`] its answers were found under: a version with other keys
+/// sees a miss, and the first insert under a new stamp starts it over.
+#[derive(Default, Clone)]
 pub(crate) struct LexicalKeyScans(
-    std::sync::Mutex<rustc_hash::FxHashMap<Box<str>, Option<String>>>,
+    Arc<std::sync::Mutex<(TypeKeysStamp, rustc_hash::FxHashMap<Box<str>, Option<String>>)>>,
 );
-
-impl Clone for LexicalKeyScans {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
 
 impl LexicalKeyScans {
     // Cost: O(1) expected.
-    pub(crate) fn get(&self, qualified: &str) -> Option<Option<String>> {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(qualified)
-            .cloned()
+    pub(crate) fn get(&self, stamp: TypeKeysStamp, qualified: &str) -> Option<Option<String>> {
+        let memo = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if memo.0 != stamp {
+            return None;
+        }
+        memo.1.get(qualified).cloned()
     }
 
-    // Cost: O(1) expected.
-    pub(crate) fn insert(&self, qualified: &str, answer: Option<String>) {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(qualified.into(), answer);
-    }
-
-    // Cost: O(entries).
-    fn clear(&mut self) {
-        self.0
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
+    // Cost: O(1) expected; O(entries) to drop a memo of other keys.
+    pub(crate) fn insert(&self, stamp: TypeKeysStamp, qualified: &str, answer: Option<String>) {
+        let mut memo = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if memo.0 != stamp {
+            memo.0 = stamp;
+            memo.1.clear();
+        }
+        memo.1.insert(qualified.into(), answer);
     }
 }
+
+/// Names the key sets of the four type tables (classes, roles, enums,
+/// subsets): two registries with equal stamps hold the same type keys. See
+/// [`Registry::type_keys_stamp`].
+pub(crate) type TypeKeysStamp = (u64, u64, (usize, u64), (usize, u64));
 
 /// The `augment`ed candidates a class's own multi dispatcher does not see
 /// (#16049): the MRO level of the nearest class declaring `multi` candidates
@@ -210,8 +206,12 @@ impl AugmentCutoff {
 /// `source-facing name -> the mangled type keys carrying it`; see
 /// [`Registry::lexical_type_keys_for`].
 type LexicalTypeNameIndex = rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>>;
+/// The index and the [`TypeKeysStamp`] it was built under.
+type StampedLexicalTypeNames = (TypeKeysStamp, LexicalTypeNameIndex);
 /// `short name -> class key`; see [`Registry::class_key_by_short_name`].
 type ClassShortNameIndex = rustc_hash::FxHashMap<Box<str>, Box<str>>;
+/// The index and the class table key generation it was built under.
+type StampedClassShortNames = (u64, ClassShortNameIndex);
 
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
@@ -799,13 +799,13 @@ pub(crate) struct Registry {
     /// Behind an `Arc` (as is [`Self::class_short_names`]) so the copy-on-write
     /// clone of a registry a worker thread's first write makes shares the
     /// built index instead of deep-copying it (#17337).
-    lexical_type_names: std::sync::OnceLock<std::sync::Arc<LexicalTypeNameIndex>>,
+    lexical_type_names: std::sync::OnceLock<std::sync::Arc<StampedLexicalTypeNames>>,
     /// `short name -> class key` for every class whose key is qualified: the
     /// part after the LAST `::` of the key, pointing at the smallest key with
     /// that tail. Built on first query and dropped by
     /// [`RegistryWriteGuard`]'s `DerefMut` together with
     /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
-    class_short_names: std::sync::OnceLock<std::sync::Arc<ClassShortNameIndex>>,
+    class_short_names: std::sync::OnceLock<std::sync::Arc<StampedClassShortNames>>,
     /// `source-facing name -> mangled registry key` answers of the four-map
     /// scan in `Interpreter::resolve_lexical_type_key`, dropped on every
     /// registry write with the other indexes above.
@@ -889,32 +889,59 @@ impl Registry {
     /// themselves does not walk every type key either.
     // Cost: O(1) expected once built; the first query after a registry write
     // is O(t), t = registered type keys.
-    pub(crate) fn lexical_type_keys_for(&self, unmangled: &str) -> &[Box<str>] {
-        self.lexical_type_names
-            .get_or_init(|| {
-                let mut index: rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>> =
-                    rustc_hash::FxHashMap::default();
-                for key in self
-                    .classes
-                    .keys()
-                    .chain(self.roles.keys())
-                    .chain(self.enum_types.keys())
-                    .chain(self.subsets.keys())
-                {
-                    // Every NUL-terminated prefix: a type nested in a
-                    // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
-                    // and a scan for `Outer\0<id>::Inner` is a prefix of it.
-                    for (at, _) in key.match_indices('\u{0}') {
-                        index
-                            .entry(Box::<str>::from(&key[..at]))
-                            .or_default()
-                            .push(Box::<str>::from(key.as_str()));
-                    }
-                }
-                std::sync::Arc::new(index)
-            })
-            .get(unmangled)
-            .map_or(&[], Vec::as_slice)
+    pub(crate) fn lexical_type_keys_for(
+        &self,
+        unmangled: &str,
+    ) -> std::borrow::Cow<'_, [Box<str>]> {
+        let stamp = self.type_keys_stamp();
+        let built = self
+            .lexical_type_names
+            .get_or_init(|| std::sync::Arc::new((stamp, self.build_lexical_type_names())));
+        if built.0 == stamp {
+            return std::borrow::Cow::Borrowed(built.1.get(unmangled).map_or(&[], Vec::as_slice));
+        }
+        // Only inside a write guard that changed the keys after the index
+        // was built (the guard's drop refreshes it): answer from the tables.
+        std::borrow::Cow::Owned(
+            self.build_lexical_type_names()
+                .remove(unmangled)
+                .unwrap_or_default(),
+        )
+    }
+
+    /// The index behind [`Self::lexical_type_keys_for`].
+    // Cost: O(t), t = registered type keys.
+    fn build_lexical_type_names(&self) -> LexicalTypeNameIndex {
+        let mut index: LexicalTypeNameIndex = rustc_hash::FxHashMap::default();
+        for key in self
+            .classes
+            .keys()
+            .chain(self.roles.keys())
+            .chain(self.enum_types.keys())
+            .chain(self.subsets.keys())
+        {
+            // Every NUL-terminated prefix: a type nested in a
+            // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
+            // and a scan for `Outer\0<id>::Inner` is a prefix of it.
+            for (at, _) in key.match_indices('\u{0}') {
+                index
+                    .entry(Box::<str>::from(&key[..at]))
+                    .or_default()
+                    .push(Box::<str>::from(key.as_str()));
+            }
+        }
+        index
+    }
+
+    /// The key sets the type-name indexes summarise; see [`TypeKeysStamp`].
+    // Cost: O(1).
+    pub(crate) fn type_keys_stamp(&self) -> TypeKeysStamp {
+        (
+            self.classes.key_generation(),
+            self.roles.key_generation(),
+            self.enum_types.state_id(),
+            self.subsets.state_id(),
+        )
     }
 
     /// The registry key of a class declared as `...::short` (a name `short`
@@ -932,37 +959,65 @@ impl Registry {
     /// index is a `OnceLock` that the write guard's `DerefMut` drops.
     // Cost: O(1) expected; the first query after a registry write builds the index in O(k), k = classes.
     pub(crate) fn class_key_by_short_name(&self, short: &str) -> Option<&str> {
-        self.class_short_names
-            .get_or_init(|| {
-                let mut index: rustc_hash::FxHashMap<Box<str>, Box<str>> =
-                    rustc_hash::FxHashMap::default();
-                for key in self.classes.keys() {
-                    let Some((_, tail)) =
-                        crate::qualified::split_qualified(crate::qualified::known_symbol(key))
-                    else {
-                        continue;
-                    };
-                    match index.get_mut(tail.as_str()) {
-                        Some(held) if **held <= **key => {}
-                        Some(held) => *held = key.as_str().into(),
-                        None => {
-                            index.insert(tail.as_str().into(), key.as_str().into());
-                        }
-                    }
-                }
-                std::sync::Arc::new(index)
+        let stamp = self.classes.key_generation();
+        let built = self
+            .class_short_names
+            .get_or_init(|| std::sync::Arc::new((stamp, self.build_class_short_names())));
+        if built.0 == stamp {
+            return built.1.get(short).map(|key| &**key);
+        }
+        // Only inside a write guard that changed the keys after the index
+        // was built (the guard's drop refreshes it): answer from the table.
+        self.classes
+            .keys()
+            .filter(|key| {
+                crate::qualified::split_qualified(crate::qualified::known_symbol(key))
+                    .is_some_and(|(_, tail)| tail.as_str() == short)
             })
-            .get(short)
-            .map(|key| &**key)
+            .min()
+            .map(String::as_str)
+    }
+
+    /// The index behind [`Self::class_key_by_short_name`].
+    // Cost: O(k), k = classes.
+    fn build_class_short_names(&self) -> ClassShortNameIndex {
+        let mut index: ClassShortNameIndex = rustc_hash::FxHashMap::default();
+        for key in self.classes.keys() {
+            let Some((_, tail)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(key))
+            else {
+                continue;
+            };
+            match index.get_mut(tail.as_str()) {
+                Some(held) if **held <= **key => {}
+                Some(held) => *held = key.as_str().into(),
+                None => {
+                    index.insert(tail.as_str().into(), key.as_str().into());
+                }
+            }
+        }
+        index
     }
 
     /// Drop the [`Self::has_lexical_type_key_for`] and
     /// [`Self::class_key_by_short_name`] caches. Called from the write guard's
     /// `DerefMut`, which is the only way to reach `&mut Registry`.
     fn invalidate_lexical_type_names(&mut self) {
-        self.lexical_type_names.take();
-        self.class_short_names.take();
-        self.lexical_key_scans.clear();
+        // The name indexes depend on the key sets only: keep them while the
+        // keys are the ones they were built from, so a write that declares
+        // nothing (or one on another thread) does not make every thread
+        // rebuild them.
+        let stamp = self.type_keys_stamp();
+        if self.lexical_type_names.get().is_some_and(|built| built.0 != stamp) {
+            self.lexical_type_names.take();
+        }
+        if self
+            .class_short_names
+            .get()
+            .is_some_and(|built| built.0 != stamp.0)
+        {
+            self.class_short_names.take();
+        }
         static NEXT_STAMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         self.type_stamp = NEXT_STAMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
@@ -2191,12 +2246,26 @@ impl std::ops::Deref for RegistryReadGuard<'_> {
 /// publishes the result to every thread. See [`crate::runtime::world_cell`].
 pub(crate) struct RegistryWriteGuard<'a> {
     inner: crate::runtime::world_cell::WorldWriteGuard<'a, Registry>,
+    /// Whether a `&mut Registry` was handed out.
+    written: bool,
 }
 
 impl<'a> RegistryWriteGuard<'a> {
     pub(crate) fn new(cell: &'a crate::runtime::world_cell::WorldCell<Registry>) -> Self {
         Self {
             inner: cell.write_guard(),
+            written: false,
+        }
+    }
+}
+
+impl Drop for RegistryWriteGuard<'_> {
+    fn drop(&mut self) {
+        // Drop the name indexes the writes made stale before the version is
+        // published, so readers on other threads find them current or absent.
+        if self.written {
+            let registry: &mut Registry = &mut self.inner;
+            registry.invalidate_lexical_type_names();
         }
     }
 }
@@ -2215,6 +2284,7 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
         if self.inner.is_shared() {
             crate::vm::vm_stats::record_registry_cow_clone();
         }
+        self.written = true;
         let registry: &mut Registry = &mut self.inner;
         // This is the ONLY way to reach a `&mut Registry`, so dropping the
         // derived name caches here is what makes them impossible to

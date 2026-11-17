@@ -30,6 +30,10 @@ pub(crate) const SHARDS: usize = 32;
 pub(crate) struct ShardedMap<K, V> {
     shards: Box<[Arc<FxHashMap<K, V>>; SHARDS]>,
     len: usize,
+    /// Replaced by a process-unique value whenever a key is added or
+    /// removed: an index derived from the key set is current exactly while
+    /// this has not moved (see [`Self::key_generation`]).
+    key_gen: u64,
 }
 
 impl<K, V> Clone for ShardedMap<K, V> {
@@ -38,6 +42,7 @@ impl<K, V> Clone for ShardedMap<K, V> {
         Self {
             shards: Box::new(std::array::from_fn(|i| Arc::clone(&self.shards[i]))),
             len: self.len,
+            key_gen: self.key_gen,
         }
     }
 }
@@ -48,6 +53,7 @@ impl<K, V> Default for ShardedMap<K, V> {
         Self {
             shards: Box::new(std::array::from_fn(|_| Arc::new(FxHashMap::default()))),
             len: 0,
+            key_gen: crate::runtime::registry_gen::next_generation(),
         }
     }
 }
@@ -80,6 +86,14 @@ impl<K: Hash + Eq, V> ShardedMap<K, V> {
         Q: Hash + Eq + ?Sized,
     {
         self.shards[shard_of(key)].contains_key(key)
+    }
+
+    /// Names the current key set: equal values mean the same keys (values
+    /// may differ).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn key_generation(&self) -> u64 {
+        self.key_gen
     }
 
     // Cost: O(1).
@@ -137,6 +151,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
         let old = self.shard_mut(shard_of(&key)).insert(key, value);
         if old.is_none() {
             self.len += 1;
+            self.key_gen = crate::runtime::registry_gen::next_generation();
         }
         old
     }
@@ -154,6 +169,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
         let old = self.shard_mut(index).remove(key);
         if old.is_some() {
             self.len -= 1;
+            self.key_gen = crate::runtime::registry_gen::next_generation();
         }
         old
     }
@@ -165,6 +181,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
         ShardedEntry {
             entry: shard.entry(key),
             len: &mut self.len,
+            key_gen: &mut self.key_gen,
         }
     }
 
@@ -177,6 +194,9 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
             }
             Arc::make_mut(shard).retain(|k, v| f(k, v));
             len += shard.len();
+        }
+        if len != self.len {
+            self.key_gen = crate::runtime::registry_gen::next_generation();
         }
         self.len = len;
     }
@@ -228,6 +248,7 @@ impl<K: Hash + Eq + Clone, V: Clone> IntoIterator for ShardedMap<K, V> {
 pub(crate) struct ShardedEntry<'a, K, V> {
     entry: Entry<'a, K, V>,
     len: &'a mut usize,
+    key_gen: &'a mut u64,
 }
 
 impl<'a, K, V> ShardedEntry<'a, K, V> {
@@ -235,6 +256,7 @@ impl<'a, K, V> ShardedEntry<'a, K, V> {
     pub(crate) fn or_insert_with(self, f: impl FnOnce() -> V) -> &'a mut V {
         if matches!(self.entry, Entry::Vacant(_)) {
             *self.len += 1;
+            *self.key_gen = crate::runtime::registry_gen::next_generation();
         }
         self.entry.or_insert_with(f)
     }
@@ -280,6 +302,15 @@ mod tests {
         assert_eq!(a.get("k5"), Some(&6));
         assert_eq!(a.get("fresh"), Some(&8));
         assert_eq!(a.len(), 202);
+        let keys = a.key_generation();
+        *a.get_mut("k5").unwrap() = 1;
+        *a.entry("k5".to_string()).or_insert(0) += 1;
+        assert_eq!(a.key_generation(), keys, "a value write keeps the key set");
+        a.insert("k5".to_string(), 3);
+        assert_eq!(a.key_generation(), keys);
+        a.insert("k-new".to_string(), 3);
+        assert_ne!(a.key_generation(), keys, "a new key moves it");
+        a.remove("k-new");
         a.retain(|k, _| k.starts_with("k1"));
         assert_eq!(a.len(), a.iter().count());
         assert_eq!(a.remove("k1"), Some(1));
