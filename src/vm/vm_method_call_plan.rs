@@ -32,9 +32,10 @@
 //!   plan is installed only where the gate's reading is fixed by the argument
 //!   type keys: no parameter that may alias the caller's container (sigilless,
 //!   `is rw`, `is raw`, a `does` target, which bind by whether the argument
-//!   came from a variable); no `Pair` argument (named arguments); no
-//!   `Array`/`Hash`/`List`/`Seq` argument (whose container sharing also
-//!   depends on the argument sources); no container. The receiver must be an
+//!   came from a variable); no `Array`/`Hash`/`List`/`Seq` argument or named
+//!   argument value (whose container sharing also depends on the argument
+//!   sources); no container. A named argument with a scalar value is keyed by
+//!   its name and its value's type. The receiver must be an
 //!   ordinary instance, whose only per-instance gate input, sigilless-alias
 //!   metadata on the attribute cell, is re-checked on every replay.
 //!
@@ -61,6 +62,23 @@ pub(crate) struct MethodCallPlan {
 /// An argument whose fast-path gate reading is fixed by its type key.
 // Cost: O(1).
 fn plan_arg_kind_ok(arg: &Value) -> bool {
+    // A named argument: a string-keyed Pair (not an internal `__mutsu_*` one,
+    // which the gate refuses) whose value is itself scalar-like. The lane key
+    // holds its name and its value's type key; the gate's named-parameter
+    // reading (`named_param_fast_eligible`'s type check, `named_args_all_land`)
+    // depends on nothing else for such a value, and container sharing into a
+    // named parameter only arises for an Array/Hash value.
+    if arg.is_string_pair_value()
+        && let ValueView::Pair(key, value) = arg.view()
+    {
+        return !key.starts_with("__mutsu_") && plan_scalar_kind_ok(value);
+    }
+    plan_scalar_kind_ok(arg)
+}
+
+/// A positional value whose gate reading is fixed by its type key.
+// Cost: O(1).
+fn plan_scalar_kind_ok(arg: &Value) -> bool {
     matches!(
         arg.view(),
         ValueView::Int(_)
