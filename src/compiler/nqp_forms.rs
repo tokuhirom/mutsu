@@ -273,6 +273,16 @@ impl Compiler {
                 self.compile_expr(&call);
                 true
             }
+            // nqp::eqaddr(a, b) — are the operands, as given, the same object?
+            // It is `a =:= b` as an int: rakudo's `infix:<=:=>` is this op on
+            // its raw operands, so a `$x` holding `@a` is a Scalar, not `@a`
+            // (#17620; `container_identity.rs`).
+            // Cost: O(1) plus the identity opcode's cost (stated on its arm).
+            "nqp::eqaddr" if args.len() == 2 => {
+                self.compile_container_identity(&args[0], &args[1]);
+                self.code.emit(OpCode::NumCoerce);
+                true
+            }
             // The container tests: they ask about the operand's binding,
             // which the compiler keeps (`nqp_container_test.rs`, ADR-11553
             // §3.2).
