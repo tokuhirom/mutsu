@@ -1169,7 +1169,11 @@ impl Interpreter {
             // its capture ahead of its callers; a `gather`/`whenever` body
             // runs against the live env and keeps the plain copy.
             let at_program_scope = cc.static_name_lookup && !self.env().chain_has_frame_root();
-            if cc.static_name_lookup && !at_program_scope {
+            // At program scope too: the closure's frame links to the live
+            // program scope, but on another thread (`start { EVAL ... }`)
+            // that scope is the worker's env copy, so only a shared cell
+            // carries a write back (ADR-16595 slice 5).
+            if cc.static_name_lookup {
                 self.box_locals_for_reflective_capture(code, None);
             }
             // At program scope the closure's frame links to the live program

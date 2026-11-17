@@ -181,7 +181,6 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         needs_cell_unvouched_locals,
         needs_cell_captured_containers,
         needs_cell_regex,
-        type_body_written_lexicals,
         authoritative_free_vars,
         routine_scoped_free,
         self_capture_decl_locals,

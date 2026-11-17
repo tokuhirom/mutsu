@@ -596,14 +596,12 @@ impl Compiler {
     /// of the package, mirroring D3-1's `method_name_chunks` fallback for
     /// the same case.
     ///
-    /// This pass is also where a class/role body's outer-lexical WRITES are
-    /// harvested for `CompiledCode::type_body_written_lexicals`:
-    /// [`Self::compile_method_body`] records them as a byproduct of the one
-    /// compile it already does, and the methods it skips fall back to
+    /// This pass is also where a class/role body's outer-lexical captures are
+    /// harvested: [`Self::compile_method_body`] records them as a byproduct of
+    /// the one compile it already does, and the methods it skips fall back to
     /// [`Self::record_type_body_captures_uncompiled`]. `is_hoisted_shell`
     /// suppresses even that fallback — the shell is superseded by the real,
-    /// source-position declaration, whose own pass records the identical set
-    /// into the same (per-`CompiledCode`) vec.
+    /// source-position declaration, whose own pass records the identical set.
     #[allow(clippy::too_many_arguments)]
     fn compile_method_body_keys(
         &mut self,
@@ -865,9 +863,6 @@ impl Compiler {
             }
         }
         self.bubble_decl_time_free_reads(reads);
-        if !writes.is_empty() {
-            self.record_type_body_written_lexicals(writes);
-        }
         if !cells.is_empty() {
             self.code.named_sub_captures.push((cells, Vec::new()));
         }
