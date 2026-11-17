@@ -139,11 +139,12 @@ impl Interpreter {
         }
         match value.view() {
             ValueView::Instance { class_name, .. } => {
-                let class_name = class_name.resolve();
                 // A `has $.WHICH` accessor overrides the identity as well as an
-                // explicit `method WHICH` does.
-                if !self.has_user_method(&class_name, "WHICH")
-                    && !self.has_public_accessor(&class_name, "WHICH")
+                // explicit `method WHICH` does. Both probes are memoized per
+                // class for the registry generation.
+                let which = crate::symbol::wk::which_method();
+                if !self.has_user_method_memo(class_name, which)
+                    && !self.has_public_accessor_memo(class_name, which)
                 {
                     return;
                 }
