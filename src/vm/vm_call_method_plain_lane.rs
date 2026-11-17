@@ -275,9 +275,10 @@ impl Interpreter {
                 Vec::new(),
             ));
         }
-        if self.stack[target_idx + 1..].iter().any(|a| {
-            matches!(a.view(), ValueView::VarRef { .. }) || a.needs_hllize_for_binding()
-        }) {
+        if self.stack[target_idx + 1..]
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::VarRef { .. }) || a.needs_hllize_for_binding())
+        {
             return None;
         }
         // The stretch's own decode: `true` means a `|` spread at the call site.
