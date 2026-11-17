@@ -136,24 +136,68 @@ impl Interpreter {
         iterator: &Value,
         out: &mut crate::value::PullOut,
     ) -> Result<bool, RuntimeError> {
+        let Some(class_name) = self.user_iterator_class_with(iterator, "push-all") else {
+            return Ok(false);
+        };
+        let target = self.nqp_create(Value::package(Symbol::intern("IterationBuffer")))?;
+        if self.is_iterator_role_default(&class_name, "push-all", std::slice::from_ref(&target))? {
+            return Ok(false);
+        }
+        self.try_compiled_method_or_interpret(iterator.clone(), "push-all", vec![target.clone()])?;
+        out.produced
+            .extend(Self::nqp_elems_of(&target).unwrap_or_default());
+        Ok(true)
+    }
+
+    /// rakudo's `Seq.sink`: `self.iterator.sink-all`. When the iterator's
+    /// class writes its own `sink-all`, that one call runs the Seq for its
+    /// side effects (#17628); `false` (nothing run) otherwise, and the caller
+    /// pulls the iterator to its end, which is what the `Iterator` role's
+    /// default `sink-all` does.
+    // Cost: O(1) plus the user `sink-all`.
+    pub(crate) fn sink_all_user_iterator(&mut self, iterator: &Value) -> Result<bool, RuntimeError> {
+        let Some(class_name) = self.user_iterator_class_with(iterator, "sink-all") else {
+            return Ok(false);
+        };
+        if self.is_iterator_role_default(&class_name, "sink-all", &[])? {
+            return Ok(false);
+        }
+        self.try_compiled_method_or_interpret(iterator.clone(), "sink-all", vec![])?;
+        Ok(true)
+    }
+
+    /// The class of `iterator` when it is an instance of a user class that
+    /// declares or inherits a user `method` -- `None` for a built-in iterator.
+    // Cost: O(1) amortized (the memoized user-method probe).
+    fn user_iterator_class_with(&mut self, iterator: &Value, method: &str) -> Option<String> {
         let class_name = match iterator.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => return Ok(false),
+            _ => return None,
         };
         if matches!(
             class_name.as_str(),
             "Iterator" | "FromLoopIterator" | "HeadIterator"
-        ) || !self.class_has_user_method(&class_name, "push-all")
+        ) || !self.class_has_user_method(&class_name, method)
         {
-            return Ok(false);
+            return None;
         }
-        let target = self.nqp_create(Value::package(Symbol::intern("IterationBuffer")))?;
-        let Some((_, def)) =
-            self.resolve_method_with_owner(&class_name, "push-all", std::slice::from_ref(&target))?
-        else {
-            return Ok(false);
+        Some(class_name.to_string())
+    }
+
+    /// Whether the `method` candidate `class_name` dispatches for `args` is
+    /// the default the `Iterator`/`PredictiveIterator` role supplies (or no
+    /// candidate binds), rather than one the class writes itself.
+    // Cost: O(m * c), m = MRO length, c = candidates of `method`.
+    fn is_iterator_role_default(
+        &mut self,
+        class_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Result<bool, RuntimeError> {
+        let Some((_, def)) = self.resolve_method_with_owner(class_name, method, args)? else {
+            return Ok(true);
         };
-        let from_role_default = [def.original_role.as_deref(), def.role_origin.as_deref()]
+        Ok([def.original_role.as_deref(), def.role_origin.as_deref()]
             .into_iter()
             .flatten()
             .any(|role| {
@@ -161,13 +205,6 @@ impl Interpreter {
                     role.strip_prefix("GLOBAL::").unwrap_or(role),
                     "Iterator" | "PredictiveIterator"
                 )
-            });
-        if from_role_default {
-            return Ok(false);
-        }
-        self.try_compiled_method_or_interpret(iterator.clone(), "push-all", vec![target.clone()])?;
-        out.produced
-            .extend(Self::nqp_elems_of(&target).unwrap_or_default());
-        Ok(true)
+            }))
     }
 }

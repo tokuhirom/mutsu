@@ -128,23 +128,9 @@ pub(crate) fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
         return Some(answer);
     }
     match target.view() {
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Failure" => {
-            if target.is_failure_handled() {
-                return Some(Ok(Value::NIL));
-            }
-            match attributes.as_map().get("exception") {
-                Some(ex) => {
-                    let mut err = RuntimeError::new(ex.to_string_value());
-                    err.exception = Some(Box::new(ex.clone()));
-                    Some(Err(err))
-                }
-                None => Some(Ok(Value::NIL)),
-            }
-        }
+        ValueView::Instance { class_name, .. } if class_name == "Failure" => Some(
+            crate::runtime::Interpreter::unhandled_failure_error(target).map(|()| Value::NIL),
+        ),
         ValueView::Seq(body) => {
             if body.has_deferred_source() && !body.is_cached() {
                 return None;

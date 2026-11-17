@@ -169,35 +169,7 @@ fn element_needs_method_dispatch_seen(
 /// it (`say 1.0000001 ** 10**90000` dies with X::Numeric::Overflow,
 /// A01-limits/overflow.t). A handled Failure renders normally.
 fn check_unhandled_failure(v: &Value) -> Result<(), RuntimeError> {
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = v.view()
-        && class_name == "Failure"
-    {
-        // The one "is this Failure handled?" answer (`.handled`, method-call
-        // explosion and sinking all ask it): `.so`/`.Bool`/`.handled = True`
-        // record it by instance id, which the `handled` attribute alone misses.
-        if !v.is_failure_handled()
-            && let Some(ex) = attributes.as_map().get("exception").cloned()
-        {
-            let ex = crate::runtime::Interpreter::as_exception_value(ex);
-            let mut err = RuntimeError::new(ex.to_string_value());
-            // Keep the Failure's origin separate from its unthrown exception.
-            if let Some(orig) = crate::runtime::Interpreter::attach_failure_origin_on_throw(
-                &ex,
-                attributes
-                    .as_map()
-                    .get(crate::runtime::Interpreter::FAILURE_ORIGIN_BACKTRACE_ATTR),
-            ) {
-                err.set_failure_original_backtrace(Some(orig));
-            }
-            err.exception = Some(Box::new(ex));
-            return Err(err);
-        }
-    }
-    Ok(())
+    crate::runtime::Interpreter::unhandled_failure_error(v)
 }
 
 /// Throw X::Numeric::DivideByZero when `v` is, or (inside a plain aggregate)
