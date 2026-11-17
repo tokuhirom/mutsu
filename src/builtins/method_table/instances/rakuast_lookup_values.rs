@@ -1,5 +1,7 @@
 //! `compile-time-value` / `maybe-compile-time-value` of the lookups whose value
-//! is their resolution's (#14916): a type name (`Type::Simple`, `Type::Setting`;
+//! is their resolution's (#14916), and of the derived types built from them
+//! (`Type::Definedness`, `Type::Parameterized`, `Type::Coercion`): a type name
+//! (`Type::Simple`, `Type::Setting`;
 //! rakudo's `RakuAST::Meta` / `RakuAST::CompileTimeValue`) and a lexical
 //! variable (`Var::Lexical.maybe-compile-time-value`).
 //!
@@ -106,6 +108,9 @@ pub(super) fn lookup_value(
         RakuAstClass::VarLexical | RakuAstClass::TermName | RakuAstClass::TermEnum => {
             resolution_of(target, |_| "This element has not been resolved.".into())
         }
+        RakuAstClass::TypeDefinedness
+        | RakuAstClass::TypeParameterized
+        | RakuAstClass::TypeCoercion => return derived_type_value(interp, target, node),
         _ => return None,
     };
     let resolution = match resolution {
@@ -113,6 +118,50 @@ pub(super) fn lookup_value(
         Err(err) => return Some(Err(err)),
     };
     Some(resolution_value(interp, &resolution).unwrap_or(Ok(Value::NIL)))
+}
+
+/// `Int:D`, `Array[Int]`, `Str(Int)`: the type a derived type node names. As
+/// in rakudo, every type name in it must be resolved first (an unresolved one
+/// raises its own "has not been resolved"), the parameterization's arguments
+/// before its base, a definedness's or coercion's base before its constraint;
+/// the type itself is then built by evaluating the node.
+// Cost: O(t) for the t type names in the node, plus building the type.
+fn derived_type_value(
+    interp: &mut Interpreter,
+    target: &Value,
+    node: &crate::rakuast::RakuAstNode,
+) -> Option<Result<Value, RuntimeError>> {
+    let mut parts: Vec<Value> = Vec::new();
+    let field = |name: &str| crate::rakuast::node_accessor(node, name);
+    if node.class == RakuAstClass::TypeParameterized {
+        if let Some(args) = field("args")
+            && let ValueView::RakuAst(args) = args.view()
+            && let Some(list) = crate::rakuast::node_accessor(args, "args")
+            && let ValueView::Array(items, _) = list.view()
+        {
+            parts.extend(items.iter().cloned());
+        }
+        parts.extend(field("base-type"));
+    } else {
+        parts.extend(field("base-type"));
+        parts.extend(field("constraint"));
+    }
+    for part in &parts {
+        if let ValueView::RakuAst(inner) = part.view()
+            && matches!(
+                inner.class,
+                RakuAstClass::TypeSimple
+                    | RakuAstClass::TypeSetting
+                    | RakuAstClass::TypeDefinedness
+                    | RakuAstClass::TypeParameterized
+                    | RakuAstClass::TypeCoercion
+            )
+            && let Some(Err(err)) = lookup_value(interp, part)
+        {
+            return Some(Err(err));
+        }
+    }
+    Some(interp.eval_rakuast_node(target))
 }
 
 /// The one `maybe-compile-time-value` row of a plain RakuAST node (every
@@ -181,6 +230,41 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     lookup_row!(
         "RakuAST::Var::Lexical",
+        "maybe-compile-time-value",
+        maybe_value
+    ),
+    lookup_row!(
+        "RakuAST::Term::Name",
+        "maybe-compile-time-value",
+        maybe_value
+    ),
+    lookup_row!(
+        "RakuAST::Type::Definedness",
+        "compile-time-value",
+        compiled_value
+    ),
+    lookup_row!(
+        "RakuAST::Type::Definedness",
+        "maybe-compile-time-value",
+        maybe_value
+    ),
+    lookup_row!(
+        "RakuAST::Type::Parameterized",
+        "compile-time-value",
+        compiled_value
+    ),
+    lookup_row!(
+        "RakuAST::Type::Parameterized",
+        "maybe-compile-time-value",
+        maybe_value
+    ),
+    lookup_row!(
+        "RakuAST::Type::Coercion",
+        "compile-time-value",
+        compiled_value
+    ),
+    lookup_row!(
+        "RakuAST::Type::Coercion",
         "maybe-compile-time-value",
         maybe_value
     ),
