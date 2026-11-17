@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.08,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.28,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.26,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,11 +48,11 @@
       "cmp": "no_baseline",
       "path": "test/10-parser.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-fijonujb/dist/input/hierarchy-with-root.md: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-m9gep8e7/dist/input/hierarchy-with-root.md: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.33,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -66,7 +66,7 @@
         "nok": 18,
         "ok": 0,
         "plan": 18,
-        "secs": 1.08,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -82,7 +82,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

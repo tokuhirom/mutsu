@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.13,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.6,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",
@@ -50,7 +50,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/SL/DSL_EXAMPLES/2ff96be239bcde5a143cec6b57da763d458fc0c7.tar.gz"
+    "url": "https://360.zef.pm/D/SL/DSL_EXAMPLES/2aa5b0b51e1e2fa594670d1ba3da6f5bbddde6c9.tar.gz"
   },
   "status": "green",
   "totals": {
@@ -60,5 +60,5 @@
     "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.0.7"
+  "version": "0.0.8"
 }

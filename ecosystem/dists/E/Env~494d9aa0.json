@@ -12,9 +12,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 122,
-        "plan": 122,
-        "secs": 0.12,
+        "ok": 121,
+        "plan": 121,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -22,8 +22,8 @@
       "path": "t/01-all.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 122,
-        "plan": 122,
+        "ok": 121,
+        "plan": 121,
         "secs": 0.66,
         "skip": 0,
         "todo": 0,
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.06,
+        "secs": 0.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",
@@ -74,9 +74,9 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 137,
+    "baseline_assertions": 136,
     "baseline_files": 2,
-    "mutsu_assertions": 137,
+    "mutsu_assertions": 136,
     "parity_files": 2,
     "regressed_files": 0
   },

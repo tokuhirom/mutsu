@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.t",
       "raku": {
-        "first_failure": "touch: cannot touch '/tmp/7860819295823958.txt': Read-only file system",
+        "first_failure": "touch: cannot touch '/tmp/3322334445217935.txt': Read-only file system",
         "nok": 3,
         "ok": 3,
         "plan": null,
-        "secs": 1.84,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -31,7 +31,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

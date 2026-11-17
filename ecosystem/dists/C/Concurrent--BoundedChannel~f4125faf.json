@@ -12,21 +12,20 @@
       "cmp": "no_baseline",
       "flaky": true,
       "mutsu": {
-        "first_failure": "not ok 27 -",
-        "nok": 4,
-        "ok": 35,
+        "nok": 0,
+        "ok": 39,
         "plan": 39,
-        "secs": 7.3,
+        "secs": 7.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-sanity.rakutest",
       "raku": {
         "nok": 0,
         "ok": 39,
         "plan": 39,
-        "secs": 8.83,
+        "secs": 8.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +37,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

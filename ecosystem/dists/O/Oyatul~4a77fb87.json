@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.18,
+        "secs": 0.22,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.59,
+        "secs": 0.69,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.66,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 95,
         "plan": 95,
-        "secs": 0.29,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 95,
         "plan": 95,
-        "secs": 0.82,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 0.13,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 1.29,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,11 +102,11 @@
       "cmp": "no_baseline",
       "path": "t/040-synopsis.t",
       "raku": {
-        "first_failure": "run /home/runner/.cache/mutsu-ecosystem/run/ecosweep-e99nxypc/dist/Oyatul-0.0.9/t/010-use.t",
+        "first_failure": "run /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4vhei2hu/dist/Oyatul-0.0.9/t/010-use.t",
         "nok": 3,
         "ok": 2,
         "plan": 5,
-        "secs": 4.26,
+        "secs": 5.16,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -118,7 +118,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

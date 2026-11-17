@@ -36,11 +36,11 @@
       "cmp": "no_baseline",
       "path": "t/01-paste.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/8qQdEQX4Y0: Read-only file system",
+        "first_failure": "Failed to open file /tmp/zQiH33vHdh: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 2.93,
+        "secs": 3.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

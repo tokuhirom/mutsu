@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.31,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.94,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.42,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 8.6,
+        "secs": 8.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,11 +72,11 @@
       "cmp": "no_baseline",
       "path": "t/01-no-reset.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/77867D519050E98914F8B5F25FADCA6555BBFA2D93FD156A895CAF6F30931DAF: Read-only file system",
+        "first_failure": "Failed to open file /tmp/5213F9CEAD9E54C1AD725671441019E242B2DD7DE9795CC49FFF782D605A1598: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 9.82,
+        "secs": 10.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -86,11 +86,11 @@
       "cmp": "no_baseline",
       "path": "t/02-imports.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/56F53C68291B64A48A6CCF8DD272F346920147DF6AC1852BE319192A8C276A1E: Read-only file system",
+        "first_failure": "Failed to open file /tmp/1CAEC3989C7BCD34C0CC0879406BB6906C9C6E746ECDDF319ABBC4742F678E1E: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.81,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.69,
+        "secs": 5.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 32.74,
+        "secs": 33.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +124,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

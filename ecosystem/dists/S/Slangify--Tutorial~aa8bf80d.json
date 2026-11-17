@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.85,
+        "secs": 1.44,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.67,
+        "secs": 1.96,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -66,7 +66,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

@@ -44,11 +44,11 @@
       "cmp": "no_baseline",
       "path": "t/00-pg-test-runner.rakutest",
       "raku": {
-        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-555266': Failed to delete file: read-only file system",
+        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-515185': Failed to delete file: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.4,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 73.99,
+        "secs": 99.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.8,
+        "secs": 6.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -88,7 +88,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.24,
+        "secs": 5.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 64.73,
+        "secs": 88.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.84,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.74,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +133,7 @@
         "nok": 1,
         "ok": 9,
         "plan": 10,
-        "secs": 6.89,
+        "secs": 10.65,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 12.76,
+        "secs": 18.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,7 +161,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

@@ -16,11 +16,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-i9ni_xyr/sbxhome/.rawm-config/rawm-config.yaml: No such file or directory [at CLI-Wordpress-Migrator-0.0.1/t/01-basic.rakutest:2]",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-4i2crbuz/sbxhome/.rawm-config/rawm-config.yaml: No such file or directory [at CLI-Wordpress-Migrator-0.0.1/t/01-basic.rakutest:2]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.29,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -36,7 +36,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.58,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.66,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -80,7 +80,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",
@@ -92,7 +92,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/N/OD/NODE_ETHEREUM_KZG/841d15057cef561b4d6fd9ffb5608f18e08af12e.tar.gz"
+    "url": "https://360.zef.pm/N/OD/NODE_ETHEREUM_KZG/051612169fb80e18b2b1282aa9bbe3a2c9c2b62c.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -102,5 +102,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.0.33"
+  "version": "0.0.35"
 }

@@ -22,11 +22,11 @@
       "cmp": "no_baseline",
       "path": "t/01-tst.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7lo0jcri/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-u8hbgjrf/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 0.97,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -36,11 +36,11 @@
       "cmp": "no_baseline",
       "path": "t/02-dim.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7lo0jcri/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-u8hbgjrf/sbxhome/.raph-config/Unit/Definitions/en_SI/base.yaml: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 0.82,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.08,
+        "secs": 0.09,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.4,
+        "secs": 0.46,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

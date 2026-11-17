@@ -38,11 +38,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.t",
       "raku": {
-        "first_failure": "There's an error in the API request: Error response (HANDLED) Please install IO::Socket::SSL in order to fetch https sites",
+        "first_failure": "Failed to open file /tmp/_Q1hATotsx: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.78,
+        "secs": 2.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -55,7 +55,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

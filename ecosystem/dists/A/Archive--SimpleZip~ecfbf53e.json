@@ -32,7 +32,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.14,
+        "secs": 1.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.49,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,11 +52,11 @@
       "cmp": "no_baseline",
       "path": "t/002-basic.t",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/XWZWdY_8V8' with mode '0o700': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/7HOkriLbhT' with mode '0o700': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 4.87,
+        "secs": 5.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.42,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +78,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.19,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.34,
+        "secs": 3.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -100,7 +100,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 21.53,
+        "secs": 24.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +114,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

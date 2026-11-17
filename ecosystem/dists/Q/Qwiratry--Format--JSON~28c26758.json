@@ -21,7 +21,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 11.43,
+        "secs": 10.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -31,7 +31,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 5.44,
+        "secs": 49.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,7 +43,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.69,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.52,
+        "secs": 3.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.09,
+        "secs": 0.06,
         "skip": 6,
         "todo": 0,
         "verdict": "pass"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.82,
+        "secs": 0.73,
         "skip": 6,
         "todo": 0,
         "verdict": "pass"
@@ -85,11 +85,11 @@
       "cmp": "no_baseline",
       "path": "t/03-location-json.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/qwiratry-fmt-loc-json-2-1794847950' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/qwiratry-fmt-loc-json-2-1794883354' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 3.65,
+        "secs": 3.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -101,7 +101,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.71,
+        "secs": 5.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,7 +111,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 8.87,
+        "secs": 8.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +124,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

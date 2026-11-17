@@ -16,11 +16,11 @@
       "cmp": "no_baseline",
       "path": "t/01-run.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-_87s5fs2/sbxhome/.raws-config/aws-ec2-launch.yaml: No such file or directory [at dist/t/01-run.rakutest:4]",
+        "first_failure": "Failed to open file /home/runner/.cache/mutsu-ecosystem/run/ecosweep-j9dqz1_7/sbxhome/.raws-config/aws-ec2-launch.yaml: No such file or directory [at dist/t/01-run.rakutest:4]",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.73,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -32,7 +32,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

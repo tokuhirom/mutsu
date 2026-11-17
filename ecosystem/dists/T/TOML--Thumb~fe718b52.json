@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 177,
         "plan": 187,
-        "secs": 0.41,
+        "secs": 0.35,
         "skip": 0,
         "todo": 10,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 177,
         "plan": 187,
-        "secs": 0.82,
+        "secs": 0.72,
         "skip": 0,
         "todo": 10,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 176,
         "plan": 194,
-        "secs": 0.62,
+        "secs": 0.52,
         "skip": 0,
         "todo": 18,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 176,
         "plan": 194,
-        "secs": 1.2,
+        "secs": 1.18,
         "skip": 0,
         "todo": 18,
         "verdict": "pass"
@@ -58,7 +58,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",

@@ -42,7 +42,7 @@
         "nok": 3,
         "ok": 0,
         "plan": 3,
-        "secs": 2.26,
+        "secs": 2.76,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -52,11 +52,11 @@
       "cmp": "no_baseline",
       "path": "t/10-Pleroma.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/pGco1u0Nzk: Read-only file system",
+        "first_failure": "Failed to open file /tmp/GaQCoQP2Gs: Read-only file system",
         "nok": 2,
         "ok": 0,
         "plan": null,
-        "secs": 2.5,
+        "secs": 2.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,7 +68,7 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
     "mutsu_commit": "f3f3e482",
