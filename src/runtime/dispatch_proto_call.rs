@@ -496,6 +496,10 @@ impl Interpreter {
                     _ => a,
                 };
                 arg.with_deref(|arg| match arg.view() {
+                    // A `Bool` named argument reads as its colonpair (`:k`, `:!k`).
+                    ValueView::Pair(key, value) if matches!(value.view(), ValueView::Bool(_)) => {
+                        format!(":{}{}", if value.truthy() { "" } else { "!" }, key)
+                    }
                     ValueView::Pair(key, value) => {
                         // A list literal is a `List` here as in the positional arm below.
                         let type_name = match value.view() {

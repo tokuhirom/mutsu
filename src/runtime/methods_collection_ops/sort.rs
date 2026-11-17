@@ -730,29 +730,55 @@ impl Interpreter {
 /// other arg is taken as the callable. Shaped multi-dim arrays sort over leaves;
 /// non-collection targets pass through unchanged. The VM gates which target shapes
 /// it accepts before calling here (Shaped / Instance / Supply still fall back).
-/// The `X::Multi::NoMatch` of `target.sort(*)`: `Any.sort` and the list
-/// type's own `sort` have no candidate for a `Whatever` comparator.
+/// The `X::Multi::NoMatch` of a `.sort` call no candidate binds: two or more
+/// positionals (`(1,2).sort(1,2)`), or one that is not `Callable`
+/// (`.sort(*)`, `.sort(1)`). The candidates are rakudo's (the generated
+/// `builtin_method_sigs.tsv`): `Any`'s, and the list or map type's own. A
+/// `Seq` redispatches to `self.list.sort`, so rakudo names it `List`.
+// Cost: O(n + c), n = arguments, c = candidate signatures.
+pub(crate) fn sort_no_match(target: &Value, args: &[Value]) -> RuntimeError {
+    let type_name = match crate::runtime::utils::value_type_name(target) {
+        "Seq" => "List",
+        other => other,
+    };
+    let call = crate::runtime::Interpreter::multi_call_profile("sort", args);
+    let profile = call
+        .strip_prefix("sort(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or("");
+    crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
+        "sort", type_name, true, profile, &[],
+    )
+}
+
+/// Whether a positional `.sort` argument can never bind the `&by` parameter:
+/// a plain data value or a `Whatever`, which is not `Callable`.
 // Cost: O(1).
-pub(crate) fn sort_whatever_no_match(target: &Value) -> RuntimeError {
-    let type_name = crate::runtime::utils::value_type_name(target);
-    let mut msg = format!(
-        "Cannot resolve caller sort({type_name}:D: Whatever:D); none of these signatures matches:\n    (Any:U $:: |c)\n    (Any:D $:: *%_)\n    (Any:D $:: &by, *%_)"
-    );
-    if matches!(
-        target.view(),
-        ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
-    ) {
-        msg.push_str(
-            "\n    (List:D $:: *%_ --> Seq:D)\n    (List:D $:: &by?, :$k!, *%_)\n    (List:D $:: &by, *%_ --> Seq:D)",
-        );
-    }
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
-    attrs.insert("name".to_string(), Value::str("sort".to_string()));
-    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-    let mut err = RuntimeError::new(msg);
-    err.exception = Some(Box::new(ex));
-    err
+fn is_non_callable_sort_arg(arg: &Value) -> bool {
+    matches!(
+        arg.view(),
+        ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Str(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Complex(..)
+            | ValueView::Array(..)
+            | ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
+            | ValueView::Seq(_)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::Whatever
+            | ValueView::HyperWhatever
+    )
 }
 
 pub(crate) fn sort_value_generic(
@@ -781,12 +807,12 @@ pub(crate) fn sort_value_generic(
         }
     }
 
-    // A bare Whatever is not a comparator: no `sort` candidate takes it.
-    if callable
-        .as_ref()
-        .is_some_and(|c| matches!(c.view(), ValueView::Whatever))
-    {
-        return Err(sort_whatever_no_match(&target));
+    // No `sort` candidate takes two positionals, nor one that is not
+    // `Callable` (a bare `Whatever`, a number).
+    let mut positionals = args.iter().filter(|arg| !arg.is_string_pair_value());
+    let first = positionals.next();
+    if positionals.next().is_some() || first.is_some_and(is_non_callable_sort_arg) {
+        return Err(sort_no_match(&target, args));
     }
     let arity = caller.callable_arity(callable.as_ref())?;
     let callable_ref = callable.as_ref();
