@@ -186,16 +186,22 @@ impl Interpreter {
     /// Only declarative statement kinds are eagerly run — never a plain
     /// statement or expression, whose side effects must not replay both here
     /// and at composition.
+    ///
+    /// `run_constants` is false for a hoisted forward-reference registration:
+    /// it runs before the unit's lexicals exist, so a `my constant` waits for
+    /// the real declaration, which initialises it once (#16255).
     pub(crate) fn register_role_body_lexical_types(
         &mut self,
         role_name: &str,
         deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         type_params: &[String],
+        run_constants: bool,
     ) -> Result<(), RuntimeError> {
         self.register_role_body_lexical_types_where(
             role_name,
             deferred_body_ops,
             type_params,
+            run_constants,
             |_| true,
         )
     }
@@ -228,6 +234,7 @@ impl Interpreter {
             role_name,
             deferred_body_ops,
             type_params,
+            true,
             names_parent,
         )
     }
@@ -237,6 +244,7 @@ impl Interpreter {
         role_name: &str,
         deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         type_params: &[String],
+        run_constants: bool,
         wanted: impl Fn(&Stmt) -> bool,
     ) -> Result<(), RuntimeError> {
         let parameterized = !type_params.is_empty();
@@ -275,7 +283,8 @@ impl Interpreter {
                     !parameterized || !stmt_mentions_role_params(&op.raw, type_params)
                 }
                 Stmt::VarDecl { constant, .. } if is_constant_decl(*constant) => {
-                    (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
+                    run_constants
+                        && (!parameterized || !stmt_mentions_role_params(&op.raw, type_params))
                         && !stmt_mentions_role_params(&op.raw, &body_routines)
                 }
                 // A sigilless or bind declaration arrives as the group
