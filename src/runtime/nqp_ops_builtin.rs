@@ -33,7 +33,7 @@ impl Interpreter {
         if let Some(result) = self.nqp_queue_op(op, args) {
             return result;
         }
-        super::nqp_repr_check::check_operand_named(op, args)?;
+        super::nqp_repr_check::check_operand_named(self, op, args)?;
         self.dispatch_nqp_op_unchecked(op, args)
     }
 
@@ -85,7 +85,7 @@ impl Interpreter {
         if let Some(result) = self.nqp_queue_op(op, args) {
             return result;
         }
-        super::nqp_repr_check::check_operand(id, args)?;
+        super::nqp_repr_check::check_operand(self, id, args)?;
         let claimed = match crate::runtime::nqp_op_ids::nqp_op_table(id) {
             NqpOpTable::Builtin => self.call_nqp_interpreter_op(op, args),
             NqpOpTable::Value => self.call_nqp_op(op, args),

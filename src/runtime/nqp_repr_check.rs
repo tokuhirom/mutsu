@@ -104,14 +104,68 @@ fn refused_type(v: &Value, positional: bool) -> Option<&'static str> {
 /// Die as Rakudo does when op `id`'s first operand lacks the REPR the op
 /// needs. Every other operand, and every non-positional op, passes.
 // Cost: O(1).
-pub(crate) fn check_operand(id: u16, args: &[Value]) -> Result<(), RuntimeError> {
-    check(need_of_id(id), args)
+pub(crate) fn check_operand(
+    interp: &crate::runtime::Interpreter,
+    id: u16,
+    args: &[Value],
+) -> Result<(), RuntimeError> {
+    let need = need_of_id(id);
+    check(need, args)?;
+    check_opaque_iteration_buffer(interp, need, args)
 }
 
 /// [`check_operand`] for a call that only has the op's name.
 // Cost: O(m), m = chars of the name.
-pub(crate) fn check_operand_named(op: &str, args: &[Value]) -> Result<(), RuntimeError> {
-    check(need_of(op), args)
+pub(crate) fn check_operand_named(
+    interp: &crate::runtime::Interpreter,
+    op: &str,
+    args: &[Value],
+) -> Result<(), RuntimeError> {
+    let need = need_of(op);
+    check(need, args)?;
+    check_opaque_iteration_buffer(interp, need, args)
+}
+
+/// A class declared `is IterationBuffer` without `is repr('VMArray')` is
+/// `P6opaque` in Rakudo: it inherits the methods, not the representation, so
+/// the positional ops refuse its instances (#17627). Such an instance has no
+/// element storage (`create_instance` seeds it only for a `VMArray` class),
+/// which keeps the check off the hot path: an `IterationBuffer` or a
+/// `VMArray` subclass answers on the first test.
+// Cost: O(1) for an operand with storage; O(d) otherwise, d = MRO depth.
+fn check_opaque_iteration_buffer(
+    interp: &crate::runtime::Interpreter,
+    need: Need,
+    args: &[Value],
+) -> Result<(), RuntimeError> {
+    if matches!(need, Need::None | Need::Iterate) {
+        return Ok(());
+    }
+    let Some(ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    }) = args.first().map(Value::view)
+    else {
+        return Ok(());
+    };
+    if class_name == "IterationBuffer"
+        || attributes
+            .as_map()
+            .contains_key(crate::runtime::nqp_ops_list::iteration_buffer_items_key())
+        || !interp.is_opaque_iteration_buffer_class(class_name.as_str())
+    {
+        return Ok(());
+    }
+    let what = if need == Need::Positional {
+        "positional operations"
+    } else {
+        "elems"
+    };
+    Err(RuntimeError::new(format!(
+        "This type ({}) does not support {what}",
+        crate::value::user_facing_type_name(&class_name.resolve())
+    )))
 }
 
 // Cost: O(1).
