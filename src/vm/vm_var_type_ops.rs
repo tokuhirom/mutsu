@@ -329,7 +329,7 @@ impl Interpreter {
     /// capture bound under the constraint's own name (`has_type_capture_binding`:
     /// a per-name filter word, plus one env probe only when a capture of a
     /// name with that filter bit was ever bound) and a module package alias
-    /// (`package_type_aliases`, empty unless one was imported).
+    /// of this very spelling (`package_type_aliases`' alias-key union).
     /// A constant alias cannot rename a known type (`type_alias_target`
     /// answers `None` for every `is_known_type_constraint` name before it looks
     /// at any binding). What remains — a user `subset`/`enum`/`role` declared
@@ -351,7 +351,12 @@ impl Interpreter {
         // hashing alike was ever bound. The process-global "any capture was
         // ever bound" latch alone turned the memo off for every declaration
         // of a program one of whose dependencies binds some `::T`.
-        if self.has_type_capture_binding(constraint) || !self.types.package_type_aliases.is_empty()
+        // Likewise a package alias renames a short spelling only when some
+        // package aliases exactly this name: `package_type_alias` answers
+        // `None` for a name outside the alias-key union, so that union is the
+        // gate, not whether any module imported any alias at all.
+        if self.has_type_capture_binding(constraint)
+            || self.types.package_type_aliases.contains_name(constraint)
         {
             return false;
         }
