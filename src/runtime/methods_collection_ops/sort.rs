@@ -290,7 +290,9 @@ pub(crate) fn sort_keys_batched(
     (keys.len() == items.len()).then_some(keys)
 }
 
-/// [`SortCaller`] backed by the tree-walking interpreter.
+/// The [`SortCaller`]: every `.sort` (the `Any`/`Map`/`Seq` rows'
+/// `dispatch_sort_method`) calls the user's comparator, mapper and key methods
+/// through it.
 pub(crate) struct InterpCaller<'a>(pub(crate) &'a mut Interpreter);
 
 impl SortCaller for InterpCaller<'_> {
@@ -303,13 +305,23 @@ impl SortCaller for InterpCaller<'_> {
             .map(crate::runtime::utils::pair_as_positional)
             .collect();
         self.0
-            .eval_call_on_value(callable.clone(), args)
+            .vm_call_on_value(callable.clone(), args, None)
             .unwrap_or(Value::NIL)
     }
 
     fn call_method(&mut self, recv: Value, name: &str) -> Value {
+        // Schwartzian key extraction (`.sort(*.elems)`/`{ .elems }`,
+        // `{ $^a.foo <=> $^b.foo }`) reads `recv` as a plain value: a
+        // `ContainerRef`-wrapped element (e.g. an inner `@component` pushed
+        // into an outer array, which itemizes it into a shared cell) must be
+        // transparent here exactly as it is for every other read path
+        // (`.map`, a hyper method call, a plain `for` loop). Dispatched on the
+        // cell itself, a generic fallback answered it as a single opaque value
+        // (`.elems == 1` for every element regardless of its real size), so
+        // the Schwartzian sort compared all keys equal and left the input
+        // order untouched (#9009).
         self.0
-            .call_method_with_values(recv, name, vec![])
+            .try_compiled_method_or_interpret(recv.deref_container(), name, vec![])
             .unwrap_or(Value::NIL)
     }
 
@@ -719,17 +731,15 @@ impl Interpreter {
 ///
 /// Shared `.sort` entry point — engine-agnostic argument parsing + target-shape
 /// dispatch, on top of the shared [`sort_items_generic`] / [`sort_indices_generic`]
-/// orchestration. Both engines call this with their own [`SortCaller`]:
-/// `InterpCaller` for the tree-walking interpreter (EVAL / regex carrier / `sort()`
-/// builtin / top-level `.sort` method) and `VmSortCaller` for the bytecode VM
-/// (`try_native_sort`). This removes the duplicate arg-parse + shape-dispatch
-/// wrapper that previously lived once per engine.
+/// orchestration. Every caller (the `sort()` builtin and the `.sort` rows'
+/// `dispatch_sort_method`) passes the one [`SortCaller`], `InterpCaller`
+/// (ADR-11276: the VM's former name-matching `try_native_sort` interceptor
+/// and its own caller are gone).
 ///
 /// Behavior is identical to the former `Interpreter::dispatch_sort`: `:k` selects
 /// index mode, `:by` names the callable, other named args are ignored, and any
 /// other arg is taken as the callable. Shaped multi-dim arrays sort over leaves;
-/// non-collection targets pass through unchanged. The VM gates which target shapes
-/// it accepts before calling here (Shaped / Instance / Supply still fall back).
+/// non-collection targets pass through unchanged.
 /// The `X::Multi::NoMatch` of a `.sort` call no candidate binds: two or more
 /// positionals (`(1,2).sort(1,2)`), or one that is not `Callable`
 /// (`.sort(*)`, `.sort(1)`). The candidates are rakudo's (the generated

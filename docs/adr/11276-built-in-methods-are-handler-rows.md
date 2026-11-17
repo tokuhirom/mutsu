@@ -5903,3 +5903,22 @@ and only inherits Any's conversion method; the generator explicitly records
 the mutsu declaration separately, without altering the measured snapshot.
 Block topic/exception flags also retain the measured undefined Bool defaults
 when omitted, including through PointyBlock inheritance.
+
+### 9.203 Slice 5: `.sort`'s VM interceptor (2026-11-17)
+
+`refactor/11276-sort-one-caller` removes `try_native_sort`, a
+`method == "sort"` interceptor that the compiled-call and mut-tail paths ran
+before the method table. Every shape it accepted (a plain `Array`/`List`, a
+`Seq`, a `Slip`, a `Hash`, the QuantHashes and the `Range` family) already
+has a `sort` row (`Any`, `Map`, `Seq`; `dispatch_sort_method`), and both paths
+ran the same `sort_value_generic`. They differed only in their `SortCaller`.
+The VM's caller ran a compiled callable through `vm_call_on_value` and keyed a
+container-wrapped element by its value (#9009). The rows' `InterpCaller` used
+the tree-walking `eval_call_on_value` and `call_method_with_values`.
+
+That single `SortCaller` now behaves as the VM's did, and the interceptor,
+its module and its caller are deleted. Two VM name-matching branches go
+away, and one slow-path call (`call_method_with_values`) leaves the sort
+orchestration. `t/collections/transform/sort-one-caller-shapes.t` pins each
+former interceptor shape with a block, a WhateverCode, a routine and a
+user key method.

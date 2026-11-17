@@ -63,7 +63,7 @@ impl Interpreter {
         let target = self.resource_split_target(target, method)?;
         // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines`) whose
         // source has not been pulled yet (ADR-0034 §2.3). Several native
-        // interceptors below (`try_native_sort`, `.Seq`/`.Map` coercions, ...)
+        // interceptors below (`.Seq`/`.Map` coercions, ...)
         // read the target's items directly and would yield nothing — reify
         // or consume it here first, same as every other dispatch entry.
         let target = self.reify_or_consume_seq_target(target, method)?;
@@ -758,10 +758,6 @@ impl Interpreter {
         let lever_a_blocked = self.native_lever_a_user_override_sym(&target, method_sym);
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
         if !lever_a_blocked && let Some(result) = self.try_native_subst(&target, method, &args) {
-            return result;
-        }
-        // Native `.sort` over a plain array with no/simple comparator (lever A).
-        if !lever_a_blocked && let Some(result) = self.try_native_sort(&target, method, &args) {
             return result;
         }
         // Native `.min` / `.max` over a plain list, including `:by` blocks.
