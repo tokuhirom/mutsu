@@ -79,6 +79,7 @@ mod regex_origins;
 mod regex_symbolic_origins;
 pub(crate) mod sections;
 pub(crate) mod signature_expand;
+pub(crate) mod statement_insert;
 mod stmt_call;
 mod trait_is_constructor;
 pub(crate) mod unit_finish;

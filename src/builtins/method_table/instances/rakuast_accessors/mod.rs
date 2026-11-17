@@ -104,7 +104,7 @@ fn read(target: &Value, name: &str, args: &[Value]) -> Option<Result<Value, Runt
 }
 
 // Cost: O(d + f) plus evaluating the node, d = payload wrappers, f = fields of an `Import`.
-fn compiled_value(
+pub(in super::super) fn compiled_value(
     interp: &mut Interpreter,
     target: &Value,
     args: &[Value],

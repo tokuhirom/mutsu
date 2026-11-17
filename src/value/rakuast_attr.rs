@@ -1,8 +1,9 @@
-//! `nqp::getattr` / `nqp::bindattr` on a RakuAST node value (#17327): the
-//! attribute is the node's model field, and a bind writes through the node
-//! shared by every holder ([`crate::rakuast::attr_bind`]).
+//! In-place edits of a RakuAST node value that write through the node shared
+//! by every holder: `nqp::getattr` / `nqp::bindattr` of a node's attribute
+//! (#17327, [`crate::rakuast::attr_bind`]) and `StatementList.insert-statement`
+//! (#14916, [`crate::rakuast::statement_insert`]).
 
-use super::{Value, ValueView};
+use super::{RuntimeError, Value, ValueView};
 
 impl Value {
     /// The attribute `attr` (`$!left`) of this RakuAST node: `None` when this
@@ -25,5 +26,24 @@ impl Value {
                 crate::rakuast::attr_bind::bind_attribute(node, attr, value)
             })
             .unwrap_or(false)
+    }
+
+    /// `StatementList.insert-statement($index, $statement)`, in place. `None`
+    /// when this is no RakuAST node.
+    // Cost: as [`crate::rakuast::statement_insert::insert_statement`].
+    pub(crate) fn rakuast_insert_statement(
+        &self,
+        index: &Value,
+        statement: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if let ValueView::Instance { attributes, .. } = self.view()
+            && let Some(base) = attributes.rakuast_base()
+        {
+            return base.rakuast_insert_statement(index, statement);
+        }
+        let index = crate::value::numeric_coerce::to_int(index);
+        self.0.with_rakuast_inplace(|node| {
+            crate::rakuast::statement_insert::insert_statement(node, index, statement.clone())
+        })
     }
 }
