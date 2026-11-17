@@ -37,9 +37,15 @@
 //!   install saw. That plan is dropped at every class-shape mutation site (the
 //!   MOP mutators clear it without a generation bump), so a replay whose plan
 //!   is not the very same `Arc` misses instead of trusting an old verdict;
-//! * **user code** is ruled out on the install side: a class with a `BUILD` or
-//!   `TWEAK` anywhere in its MRO, a CUnion, a class the program did not declare,
-//!   and a class with a builtin base never enter.
+//! * **what the lane does not prove** is ruled out on the install side: a
+//!   CUnion, a class the program did not declare, and a class with a builtin
+//!   base never enter.
+//!
+//! A class with a `BUILD` or `TWEAK` in its MRO enters too (#17361): the
+//! replay runs the same `try_native_default_construct`, BUILD and TWEAK
+//! included, as the tail of the chain does. Those submethods are user code,
+//! so the replay leaves the dispatch impure, as the chain's tail does
+//! (`mro_has_build_or_tweak`), and collapses a scoped overlay env first.
 //!
 //! A miss, or a replay the constructor declines, falls through to the whole
 //! chain unchanged.
@@ -100,13 +106,15 @@ impl Interpreter {
         // lexicals, so a transient scoped overlay env is collapsed first, as
         // the full path does before its dispatch tail. A class whose
         // initializers are all literal evaluates none (#9494).
-        if !installed.evaluates_no_decl_expr() {
+        // A BUILD/TWEAK body is user code too.
+        let runs_submethods = installed.has_build || installed.has_tweak;
+        if runs_submethods || !installed.evaluates_no_decl_expr() {
             self.flatten_scoped_env();
         }
         let result = loan_env!(self, try_native_default_construct(class_sym, args))?;
-        // No BUILD/TWEAK (checked on install), so the construction cannot
-        // write the caller's env.
-        self.dispatch.method_dispatch_pure = true;
+        // Without a BUILD/TWEAK the construction cannot write the caller's
+        // env; with one it is impure, exactly as the chain's tail leaves it.
+        self.dispatch.method_dispatch_pure = !runs_submethods;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "ctor-lane");
         Some(result)
     }
@@ -131,8 +139,6 @@ impl Interpreter {
         // whether the user `new` declines the replay's own arguments and
         // returns `None` (the whole chain) when one accepts them.
         if !(plan.eligible || plan.eligible_when_user_new_declines)
-            || plan.has_build
-            || plan.has_tweak
             || !plan.attrs_fully_known
             || !self.plain_method_lane_class_eligible(class_sym)
         {
