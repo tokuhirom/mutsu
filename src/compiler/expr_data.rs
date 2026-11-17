@@ -641,7 +641,9 @@ impl Compiler {
             let bare: String = match key.chars().next() {
                 Some('&') => String::clone(&key),
                 Some('$' | '@' | '%') => key.chars().skip(1).collect(),
-                _ => String::clone(&key),
+                // A sigil-less key names a term: a constant's binding is its
+                // term key (#9962, #17846).
+                _ => crate::runtime::term_names::term_key(&key),
             };
             // Immediate-block `CALLERS::<$x>` is the lexical `OUTERS::` walk, the
             // stash twin of the `$CALLERS::x` routing in `emit_var_read`.
@@ -675,7 +677,8 @@ impl Compiler {
         {
             let bare: String = match key.chars().next() {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
-                _ => String::clone(&key),
+                // A sigil-less key names a term (#9962, #17846).
+                _ => crate::runtime::term_names::term_key(&key),
             };
             // Immediate-block `CALLER::<$x>` resolves lexically, the stash twin of
             // the `$CALLER::x` routing in `emit_var_read`.
