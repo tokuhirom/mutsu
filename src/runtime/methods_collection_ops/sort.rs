@@ -794,11 +794,10 @@ pub(crate) fn sort_value_generic(
             ValueView::Pair(key, val) if key == "k" => {
                 return_indices = val.truthy();
             }
-            ValueView::Pair(key, val) if key == "by" => {
-                callable = Some(val.clone());
-            }
             // Every method carries an implicit `*%_`: a named argument other
-            // than `:k`/`:by` (`.sort(:zzz)`) is swallowed, not a comparator.
+            // than `:k` (`.sort(:zzz)`) is swallowed, not a comparator. That
+            // includes `:by`: no `sort` candidate declares it (rakudo sorts
+            // `(3,1,2).sort(:by(-*))` in the default order).
             // Only the named flavour is dropped; a positional `Pair` stays data.
             _ if arg.is_string_pair_value() => {}
             _ => {
