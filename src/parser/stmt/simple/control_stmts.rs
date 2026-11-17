@@ -100,6 +100,12 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(stmt) = invocant_stmt {
         return parse_statement_modifier(after_invocant, stmt);
     }
+    // A written `Nil` argument is not a bare `return` (RakuAST keeps it).
+    let expr = if matches!(&expr, Expr::Literal(v) if v.is_nil()) {
+        Expr::spelled(expr, || crate::ast::spelled::Spelling::WrittenNil)
+    } else {
+        expr
+    };
     let stmt = Stmt::Return(expr);
     parse_statement_modifier(rest, stmt)
 }
