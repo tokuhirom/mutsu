@@ -48,13 +48,19 @@ impl Interpreter {
         // [`ParamDef::binds_caller_container`]. Skipping the binder for it is
         // what made `method set(\p) { $!s := p }` bind a value copy, so a later
         // `$!s = v` never reached the caller's variable.
-        let has_rw_params = method_def
+        let binds_container = method_def
             .param_defs
             .iter()
-            .any(|pd| pd.binds_caller_container() || pd.is_does_target())
-            // A sigilless parameter given a value binds as a read-only term
-            // on the fast path below (`vm_call_light_sigilless.rs`).
-            && !self.method_sigilless_args_light(method_def, args);
+            .any(|pd| pd.binds_caller_container() || pd.is_does_target());
+        // A sigilless or `is raw` parameter whose argument is a value, a
+        // shared cell, a Proxy or a promotable caller variable binds on the
+        // fast path below (`vm_method_container_params.rs`) -- but only on
+        // it: a call the rest of this gate keeps off the fast path still
+        // needs the general binder's by-name alias and exit writeback, so
+        // `has_rw_params` is settled once `fast` is known.
+        let container_light =
+            binds_container && self.method_container_args_light(method_def, cc, args);
+        let has_rw_params = binds_container && !container_light;
         // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
         // container by alias (Raku readonly-container semantics): `.push`,
         // element assign, and whole-container `=` all propagate to the caller.
@@ -103,8 +109,7 @@ impl Interpreter {
         // change is lost). The closure dispatch already gates on
         // `has_calls || has_env_writes` (vm_closure_dispatch.rs); the method fast
         // path dropped `has_calls`. #3658.
-        let can_skip_merge = !has_rw_params
-            && !has_aliasable_container_params
+        let can_skip_merge_if_light = !has_aliasable_container_params
             && !shares_scalar_container
             && !cc.has_env_writes
             && !cc.has_calls;
@@ -322,6 +327,9 @@ impl Interpreter {
                 fast = true;
             }
         }
+        // The container binds above happen only on the fast path.
+        let has_rw_params = has_rw_params || (container_light && !fast);
+        let can_skip_merge = !has_rw_params && can_skip_merge_if_light;
         MethodFastGate {
             has_rw_params,
             can_skip_merge,
