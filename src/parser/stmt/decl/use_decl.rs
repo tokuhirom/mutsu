@@ -288,29 +288,25 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let empty_import = module != "lib"
         && arg.as_ref().is_some_and(Expr::is_empty_import_list)
         && use_tags.is_empty();
-    let imports = if empty_import {
+    // Positional arguments go to the module's `sub EXPORT`, which may import
+    // anything; only a tag-only `use` selects `is export` traits.
+    let import_tags = arg.is_none().then_some(use_tags.as_slice());
+    let mut imports = if empty_import {
         super::super::simple::register_module_type_names(&module);
         Vec::new()
     } else {
         // Register exported function names so they are recognized as calls
         // without parens.
-        // Positional arguments go to the module's `sub EXPORT`, which may
-        // import anything; only a tag-only `use` selects `is export` traits.
-        let import_tags = arg.is_none().then_some(use_tags.as_slice());
         super::super::simple::register_use_exports(&module, import_tags)
     };
-    let if_imports = if condition.is_some() {
-        imports.clone()
-    } else {
-        Vec::new()
-    };
     // The module loads now, in the interpreter compiling this unit, as rakudo
-    // loads it at BEGIN time (ADR-17558); the scan above still supplies the
-    // names it exports (slice 2 reads them from the loaded unit). Until the
-    // unit's own compile-time effects (a `BEGIN`, a `multi`/`proto`) happen at
-    // parse time too (§7.1), a `use` after one loads in the prologue, so the
-    // module never runs, or installs candidates, ahead of what was written
-    // before it.
+    // loads it at BEGIN time (ADR-17558), and the parse reads what the loaded
+    // unit provides beyond what the static scan above could see: routines
+    // whose names the module computed, operator precedence, declarators an
+    // `EXPORTHOW` merge gave it. Until the unit's own compile-time effects
+    // (a `BEGIN`, a `multi`/`proto`) happen at parse time too (§7.1), a `use`
+    // after one loads in the prologue, so the module never runs, or installs
+    // candidates, ahead of what was written before it.
     if module != "lib" && !super::super::simple::unit_compile_time_effect_seen() {
         let lib_paths = super::super::simple::parser_lib_paths();
         let spec = format!("{module}{dist_selectors}");
@@ -323,14 +319,28 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             through_hook: super::super::simple::module_imports_through_hook(&module),
             lib_paths: &lib_paths,
         };
-        if let crate::compile_time_loader::LoadOutcome::Failed(error) =
-            crate::compile_time_loader::load_use(&request)
-        {
-            let message = error.message.to_string();
-            crate::compile_time_loader::note_failure(error);
-            return Err(PError::fatal_at(message, input));
+        match crate::compile_time_loader::load_use(&request) {
+            crate::compile_time_loader::LoadOutcome::Failed(error) => {
+                let message = error.message.to_string();
+                crate::compile_time_loader::note_failure(error);
+                return Err(PError::fatal_at(message, input));
+            }
+            crate::compile_time_loader::LoadOutcome::Loaded if !empty_import => {
+                for name in super::super::simple::register_loaded_use_exports(&module, import_tags)
+                {
+                    if !imports.contains(&name) {
+                        imports.push(name);
+                    }
+                }
+            }
+            _ => {}
         }
     }
+    let if_imports = if condition.is_some() {
+        imports.clone()
+    } else {
+        Vec::new()
+    };
     // A slang-activating module (its source `use`s Slangify) executes at
     // parse time so its slang registration can switch parser modes for the
     // rest of this compilation unit (ADR-0026 §2.1). Activation failure —

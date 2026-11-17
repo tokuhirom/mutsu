@@ -4,19 +4,18 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 mod decl_scan;
-mod dynamic_stash;
 mod enum_values;
 mod export_hook;
 pub(crate) mod exported_types;
 pub(crate) mod exported_vars;
 mod import_tags;
 mod installed_repo;
+mod loaded_facts;
 mod nested_imports;
 mod scanned_exports;
 mod source_scan;
 
 use decl_scan::scan_module_decls;
-use dynamic_stash::probe_dynamic_exports;
 use enum_values::import_admits;
 use export_hook::{
     collect_export_hook_literal_keys, collect_export_hook_operator_subs,
@@ -24,6 +23,7 @@ use export_hook::{
     collect_export_hook_value_terms, collect_unit_scope_routines, declares_export_sub,
 };
 pub(crate) use import_tags::register_import_tags;
+pub(crate) use loaded_facts::register_loaded_unit_facts;
 use scanned_exports::record_scanned_exports;
 pub(crate) use scanned_exports::{CanonicalScans, canonical_export_scans};
 
@@ -90,16 +90,13 @@ struct ModuleScanResult {
     declares_export_hook: bool,
     /// Whether the module binds into an export stash under a computed key
     /// (`OUR::{'&postfix:<' ~ $code ~ '>'} := ...` in a loop — Moneys). The
-    /// names exist only once the module has run, so a `use` of it runs the
-    /// module at parse time to learn them (#9500). Defaulted for the same
-    /// cache-compatibility reason as `declares_export_hook`.
+    /// names exist only once the module has run, so the scan does not know
+    /// all its exported variables and types; a compiling parse reads the
+    /// routines from the loaded unit (`loaded_facts.rs`, ADR-17558 §2.2).
+    /// Defaulted for the same cache-compatibility reason as
+    /// `declares_export_hook`.
     #[serde(default)]
     dynamic_export_stash: bool,
-    /// Whether a BEGIN phaser calls a routine of a module the module loads,
-    /// which can change what it provides at BEGIN time (#17557): a `use` of it
-    /// runs the module at parse time, as for `dynamic_export_stash`.
-    #[serde(default)]
-    begin_calls_loaded_routine: bool,
     /// The `our` variables the module exports (`exported_vars.rs`).
     /// Defaulted for the same cache-compatibility reason as
     /// `declares_export_hook`.
@@ -333,7 +330,7 @@ pub(crate) fn module_declared_types(module: &str) -> Vec<String> {
 /// for the scope of the `use`: one the `use` introduces ends with its block,
 /// as a lexical import does (a unit-level `use` keeps it for the unit).
 // Cost: O(1).
-fn register_scoped_declare_keyword(module: &str, keyword: &str) {
+pub(super) fn register_scoped_declare_keyword(module: &str, keyword: &str) {
     let introduced = !super::registry::is_declare_keyword(keyword);
     register_declare_keyword(module, keyword, false);
     if introduced && super::registry::is_declare_keyword(keyword) {
@@ -399,18 +396,6 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         });
         nested_imports::record(&scan);
         apply_module_exports(&scan.exports);
-        if scan.dynamic_export_stash || scan.begin_calls_loaded_routine {
-            let probed = probe_dynamic_exports(module);
-            apply_module_exports(&probed.exports);
-            // Declarators a BEGIN-time merge gave the module (#17557).
-            for (directive, keyword) in &probed.declarators {
-                match directive.as_str() {
-                    "DECLARE" => register_scoped_declare_keyword(module, keyword),
-                    "SUPERSEDE" => register_scoped_supersede_keyword(module, keyword),
-                    _ => {}
-                }
-            }
-        }
         for (keyword, _how_type) in &scan.declare_keywords {
             register_scoped_declare_keyword(module, keyword);
         }
@@ -512,7 +497,7 @@ fn apply_scan_types(scan: &ModuleScanResult, import_tags: Option<&[String]>) {
 }
 
 /// Register a module's exported subs into the importer's current scope.
-fn apply_module_exports(exports: &[InlineModuleExport]) {
+pub(super) fn apply_module_exports(exports: &[InlineModuleExport]) {
     if exports.is_empty() {
         return;
     }
@@ -925,8 +910,13 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     let inline_exports_before: Vec<String> =
         INLINE_MODULE_EXPORTS.with(|m| m.borrow().keys().cloned().collect());
     let skips_before = super::super::partial_parse_skips();
+    // A `BEGIN` or `multi` of the scanned module is that module's compile-time
+    // effect, not one of the importer's: it must not keep the importer's later
+    // `use`s from loading at parse time (ADR-17558 §7.6).
+    let saved_effect_seen = UNIT_BEGIN_SEEN.with(|seen| seen.replace(false));
     let ((stmts, _), nested) =
         nested_imports::collect(|| crate::parser::parse_program_partial_spelled(source));
+    UNIT_BEGIN_SEEN.with(|seen| seen.set(saved_effect_seen));
     // A best-effort parse silently drops every statement it cannot parse — a
     // `class`/`constant` among them. The names in such a statement are missing
     // from this scan, so the importer's view of the module is partial and it
@@ -1178,7 +1168,6 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         uses_slangify,
         declares_export_hook,
         dynamic_export_stash: decls.dynamic_export_stash,
-        begin_calls_loaded_routine: decls.begin_calls_loaded_routine,
         exported_vars: decls.exported_vars,
         exported_types: decls.exported_types,
         unlisted_exported_vars: decls.unlisted_exported_vars,
@@ -1375,17 +1364,6 @@ mod test_exports_tests {
             "<test>",
         );
         assert!(registered.uses_slangify);
-    }
-
-    #[test]
-    fn a_begin_call_of_a_loaded_routine_runs_the_module_at_parse_time() {
-        let merging = super::scan_module_source(
-            "use CompUnit::Util :re-export;\nneed exports-stuff;\nBEGIN re-exporthow('exports-stuff');\n",
-            "<test>",
-        );
-        assert!(merging.begin_calls_loaded_routine);
-        let plain = super::scan_module_source("use Some::Util; BEGIN say 1;", "<test>");
-        assert!(!plain.begin_calls_loaded_routine);
     }
 
     #[test]

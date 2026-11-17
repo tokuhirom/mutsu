@@ -12,7 +12,9 @@
 //! the import runs it, once per `use`, as rakudo does.
 
 use super::*;
-use crate::compile_time_loader::{CompileTimeLoader, LoadOutcome, LoaderGuard, UseRequest};
+use crate::compile_time_loader::{
+    CompileTimeLoader, LoadOutcome, LoadedExport, LoadedFacts, LoaderGuard, UseRequest,
+};
 
 impl CompileTimeLoader for Interpreter {
     // Cost: O(p) for a module already loaded or not taken, p = search path
@@ -84,6 +86,32 @@ impl CompileTimeLoader for Interpreter {
             Err(err) => LoadOutcome::Failed(err),
         }
     }
+
+    // Cost: O(s + v + k), s = exported subs of `module`, v = its exported
+    // symbols, k = registered candidates of its exported operators.
+    fn loaded_facts(&mut self, module: &str, import_tags: Option<&[String]>) -> LoadedFacts {
+        let (bare, _) = Self::split_dist_selectors(module);
+        let exports = self
+            .module_exported_routine_names(bare, import_tags)
+            .into_iter()
+            .map(|name| {
+                let op_prec = self.declared_op_prec_of_name(&name);
+                LoadedExport { name, op_prec }
+            })
+            .collect();
+        // The `EXPORTHOW` declarators the load recorded for the module, a
+        // BEGIN-time merge included (#17557).
+        let declarators = self
+            .module
+            .exporthow_declares
+            .get(bare)
+            .cloned()
+            .unwrap_or_default();
+        LoadedFacts {
+            exports,
+            declarators,
+        }
+    }
 }
 
 impl Interpreter {
@@ -110,5 +138,61 @@ impl Interpreter {
             (Err(_), Some(failure)) => Err(failure),
             (result, _) => result,
         }
+    }
+}
+
+impl Interpreter {
+    /// The `Routine.prec` hash declared on the operator routine `name`, found
+    /// through the registry's candidates for that name.
+    // Cost: O(k), k = registered candidates of `name`.
+    pub(crate) fn declared_op_prec_of_name(&mut self, name: &str) -> Option<crate::op_prec::OpPrec> {
+        crate::op_prec::split_op_name(name)?;
+        let keys = self.fn_keys_for_base(name);
+        keys.iter().find_map(|key| {
+            self.routines()
+                .functions
+                .get(key)
+                .and_then(|def| def.op_prec.clone())
+        })
+    }
+
+    /// Every routine name `module` exports under a tag `import_tags` imports
+    /// (`None`: every tag): its exported subs, plus the `&`-sigiled entries of
+    /// its exported symbols (a closure bound into an export stash is recorded
+    /// as an exported `&name` variable). A `use` with no tags imports
+    /// `DEFAULT`, one with tags imports those; `MANDATORY` always comes, and
+    /// `:ALL` takes everything. Sorted and deduplicated.
+    // Cost: O(s + v), s = exported subs of `module`, v = its exported symbols.
+    pub(crate) fn module_exported_routine_names(
+        &self,
+        module: &str,
+        import_tags: Option<&[String]>,
+    ) -> Vec<String> {
+        let admits = |tags: &dyn Fn(&str) -> bool| match import_tags {
+            None => true,
+            Some(requested) if requested.iter().any(|tag| tag == "ALL") => true,
+            Some([]) => tags("DEFAULT") || tags("MANDATORY"),
+            Some(requested) => tags("MANDATORY") || requested.iter().any(|tag| tags(tag)),
+        };
+        let mut names: Vec<String> = Vec::new();
+        if let Some(subs) = self.module.exported_subs.get(module) {
+            names.extend(
+                subs.iter()
+                    .filter(|(_, tags)| admits(&|tag| tags.contains(tag)))
+                    .map(|(name, _)| name.clone()),
+            );
+        }
+        if let Some(vars) = self.module.exported_vars.get(module) {
+            names.extend(
+                vars.iter()
+                    .filter(|(_, tags)| admits(&|tag| tags.contains(tag)))
+                    .filter_map(|(name, _)| name.strip_prefix('&'))
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string),
+            );
+        }
+        names.sort();
+        names.dedup();
+        names
     }
 }

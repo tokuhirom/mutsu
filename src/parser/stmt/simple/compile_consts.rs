@@ -348,6 +348,17 @@ pub(in crate::parser) fn register_use_exports(
     capture_imported_functions(|| super::register_module_exports_with_tags(module, import_tags))
 }
 
+/// Register what the unit a `use` of `module` loaded at parse time provides
+/// (ADR-17558 §2.2), and return the function names it imported into the
+/// current scope, as [`register_use_exports`] does for the scan.
+// Cost: O(k) plus the registration, k = names imported into the scope so far.
+pub(in crate::parser) fn register_loaded_use_exports(
+    module: &str,
+    import_tags: Option<&[String]>,
+) -> Vec<String> {
+    capture_imported_functions(|| super::register_loaded_unit_facts(module, import_tags))
+}
+
 /// Run `register` (a `use`'s export registration) and return exactly the
 /// function names it imported into the current scope, including ones an
 /// earlier `use` had already imported there. Registration only ever inserts,

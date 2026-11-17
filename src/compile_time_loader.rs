@@ -56,10 +56,33 @@ pub(crate) enum LoadOutcome {
     Failed(RuntimeError),
 }
 
+/// One routine a loaded module exports to a `use`: its name (sigil-less,
+/// `postfix:<USD>`) and, for an operator declared with `is tighter` / `is
+/// looser` / `is equiv` / `is assoc`, its `Routine.prec` record.
+pub(crate) struct LoadedExport {
+    pub(crate) name: String,
+    pub(crate) op_prec: Option<crate::op_prec::OpPrec>,
+}
+
+/// What a loaded unit provides to the parse of the `use` that loaded it
+/// (ADR-17558 §2.2): the routines it exports under the tags the `use`
+/// imports, and the `(directive, declarator)` pairs of its `EXPORTHOW`
+/// (`DECLARE`/`SUPERSEDE`), a BEGIN-time merge included.
+#[derive(Default)]
+pub(crate) struct LoadedFacts {
+    pub(crate) exports: Vec<LoadedExport>,
+    pub(crate) declarators: Vec<(String, String)>,
+}
+
 /// Implemented by the interpreter that compiles and will run a unit.
 pub(crate) trait CompileTimeLoader {
     /// Load the module `request` names, without importing it.
     fn load_use(&mut self, request: &UseRequest<'_>) -> LoadOutcome;
+
+    /// The facts of `module`, which this loader has loaded, that a `use` of
+    /// it with `import_tags` imports (`None`: the `use`'s arguments go to a
+    /// `sub EXPORT`, so every tag counts).
+    fn loaded_facts(&mut self, module: &str, import_tags: Option<&[String]>) -> LoadedFacts;
 }
 
 thread_local! {
@@ -120,30 +143,43 @@ impl Drop for LoaderGuard {
 /// Ask this thread's current loader to load the module of a finished `use`.
 // Cost: O(1) when there is no loader; the module load otherwise.
 pub(crate) fn load_use(request: &UseRequest<'_>) -> LoadOutcome {
+    with_loader(|loader| loader.load_use(request)).unwrap_or(LoadOutcome::NotTaken)
+}
+
+/// The facts of `module`, which this thread's current loader loaded for the
+/// `use` being parsed; `None` when no loader is reachable.
+// Cost: O(1) when there is no loader; the loader's fact read otherwise.
+pub(crate) fn loaded_facts(module: &str, import_tags: Option<&[String]>) -> Option<LoadedFacts> {
+    with_loader(|loader| loader.loaded_facts(module, import_tags))
+}
+
+/// Run `call` on this thread's innermost loader, if one is reachable: none
+/// while a `NoExecuteGuard` is held, none for a parse that pushed no loader or
+/// a suppressing entry.
+// Cost: O(1) besides `call`.
+fn with_loader<T>(call: impl FnOnce(&mut dyn CompileTimeLoader) -> T) -> Option<T> {
     if crate::parser::no_execute::no_execute() {
-        return LoadOutcome::NotTaken;
+        return None;
     }
     // Take the innermost loader out for the extent of the call, so the
     // re-borrow below is the only path to it.
-    let Some((index, loader)) = LOADERS.with(|stack| {
+    let (index, loader) = LOADERS.with(|stack| {
         let mut stack = stack.borrow_mut();
         let index = stack.len().checked_sub(1)?;
         stack[index].take().map(|loader| (index, loader))
-    }) else {
-        return LoadOutcome::NotTaken;
-    };
+    })?;
     // SAFETY: the pointer was pushed by `LoaderGuard::push`, whose contract
     // keeps it valid and otherwise unused while its guard lives; the guard
     // outlives this call (it is dropped only after the parse that called us
     // returns). The entry is `None` until we put it back, so no other call
     // can re-borrow it while this `&mut` is live.
-    let outcome = unsafe { (*loader).load_use(request) };
+    let outcome = call(unsafe { &mut *loader });
     LOADERS.with(|stack| {
         if let Some(slot) = stack.borrow_mut().get_mut(index) {
             *slot = Some(loader);
         }
     });
-    outcome
+    Some(outcome)
 }
 
 /// Record the load failure that is failing the parse in progress.
