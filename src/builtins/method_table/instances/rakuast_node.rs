@@ -422,7 +422,11 @@ pub(super) fn sub_value(
             return Some(Ok(Value::package(Symbol::intern(&name))));
         }
         // A type name's value is the type its resolution names (#14916).
-        K::TypeSimple | K::TypeSetting => {
+        K::TypeSimple
+        | K::TypeSetting
+        | K::TypeDefinedness
+        | K::TypeParameterized
+        | K::TypeCoercion => {
             return super::rakuast_lookup_values::lookup_value(interp, target);
         }
         // A constant's value is its initializer's, evaluated now.
