@@ -1,9 +1,9 @@
 use Test;
 
-# A pointy `for` parameter with an `@`, `%` or no sigil (`\x`) is a local
-# slot of the loop body, like a `$` one (ADR-12529). Binding, writes through
-# a sigilless parameter, nested shadows and closures behave as before. Every
-# expectation was checked against rakudo.
+# A sigilless pointy `for` parameter (`\x`) is a local slot of the loop
+# body, like a `$` one (ADR-12529). Binding, writes through it, nested
+# shadows and closures behave as before; the `@`/`%` rows pin the by-name
+# parameters next to it. Every expectation was checked against rakudo.
 
 plan 9;
 

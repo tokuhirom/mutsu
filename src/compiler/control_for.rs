@@ -336,20 +336,23 @@ impl Compiler {
         // If the for-loop parameter name already has a local slot (e.g. from a
         // prior `my $i` in an enclosing scope), tell the VM so it can keep the
         // local in sync with the env on each iteration and on redo.
-        // A scalar, array, hash or sigilless parameter with no slot yet gets
-        // one for the loop (#17530): the VM binds it into `param_local` as well
-        // as `env` on every
+        // A scalar or sigilless parameter with no slot yet gets one for the
+        // loop (#17530): the VM binds it into `param_local` as well as `env` on
+        // every
         // iteration, so a body read is a slot read instead of a by-name scope
         // walk. The slot is retired after the loop (as a multi-parameter loop's
         // fresh names are), so a later read of the name is the enclosing
         // binding again. A body that declares an `our` routine, a proto or a
-        // `use` keeps the by-name binding (`loop_param_slot_hazard`).
+        // `use` keeps the by-name binding (`loop_param_slot_hazard`). An `@`/`%`
+        // parameter keeps it too: a whole-container assignment through a slot
+        // replaces a bound object hash with a plain `Hash`
+        // (`t/collections/hash/hash-cell-writethrough-object-hash.t`).
         let fresh_single_param = param
             .as_ref()
             .filter(|p| {
                 !p.is_empty()
                     && p.as_str() != "_"
-                    && !p.starts_with(['&', '^', '!', '.', '*', '?'])
+                    && !p.starts_with(['@', '%', '&', '^', '!', '.', '*', '?'])
                     && !p.contains("::")
                     && !self.local_map.contains_key(p.as_str())
                     && !super::body_scans::loop_param_slot_hazard(&loop_body)
