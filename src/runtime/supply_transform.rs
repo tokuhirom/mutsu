@@ -421,7 +421,7 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
         {
             if method == "stable" {
                 let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);

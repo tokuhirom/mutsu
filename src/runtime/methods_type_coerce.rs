@@ -31,7 +31,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Supply" => {
+            } if crate::value::supply_class::is_supply_class(class_name) => {
                 if Self::supply_lists_lazily(&attributes.as_map()) {
                     return self.supply_lazy_values(&target, true);
                 }

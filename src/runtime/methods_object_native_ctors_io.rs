@@ -374,11 +374,17 @@ impl Interpreter {
         }
         attrs.insert(
             "stdout".to_string(),
-            Value::make_instance(Symbol::intern("Supply"), stdout_supply_attrs),
+            Value::make_instance(
+                Symbol::intern(crate::value::supply_class::PROC_ASYNC_PIPE),
+                stdout_supply_attrs,
+            ),
         );
         attrs.insert(
             "stderr".to_string(),
-            Value::make_instance(Symbol::intern("Supply"), stderr_supply_attrs),
+            Value::make_instance(
+                Symbol::intern(crate::value::supply_class::PROC_ASYNC_PIPE),
+                stderr_supply_attrs,
+            ),
         );
         attrs.insert(
             "supply".to_string(),

@@ -724,7 +724,7 @@ impl Interpreter {
                         attributes: arg_attrs,
                         ..
                     } = arg.view()
-                        && class_name == "Supply"
+                        && crate::value::supply_class::is_supply_class(class_name)
                     {
                         source_attrs.push(arg_attrs.to_map());
                     }
@@ -1617,7 +1617,7 @@ impl Interpreter {
                             attributes,
                             ..
                         } = arg.view()
-                            && class_name == "Supply"
+                            && crate::value::supply_class::is_supply_class(class_name)
                         {
                             other_values.push(self.supply_get_values(&(attributes).as_map())?);
                         }

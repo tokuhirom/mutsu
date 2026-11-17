@@ -82,7 +82,7 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
             && crate::runtime::native_methods::supplier_id_from_attrs(&attributes.as_map())
                 .is_some()
         {
@@ -145,7 +145,7 @@ impl Interpreter {
         _args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         if let ValueView::Package(class_name) = target.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
         {
             return Some(Err(RuntimeError::new(
                 "Cannot call .grab on a Supply type object",

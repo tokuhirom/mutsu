@@ -119,7 +119,8 @@ fn snitch(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answe
 /// `Supply.snip(*@tests)`.
 // Cost: O(v) test calls, v = values of the supply.
 fn supply_snip(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
-    if !matches!(t.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") {
+    if !matches!(t.view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
+    {
         return None;
     }
     Some(i.dispatch_supply_transform(t.clone(), "snip", args))

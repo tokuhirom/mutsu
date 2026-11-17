@@ -127,7 +127,7 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
         {
             return self.dispatch_supply_first(&(attributes).as_map(), func, has_end);
         }

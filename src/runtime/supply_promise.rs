@@ -640,7 +640,7 @@ impl Interpreter {
         for item in emitted {
             let is_supply_sub = if let ValueView::Array(arr, ..) = item.view() {
                 arr.len() == 5
-                    && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+                    && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
             } else {
                 false
             };

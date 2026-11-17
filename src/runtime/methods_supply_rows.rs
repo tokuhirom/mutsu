@@ -140,7 +140,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Supply" => attributes,
+            } if crate::value::supply_class::is_supply_class(class_name) => attributes,
             ValueView::Package(name) if name == "Supply" => {
                 return match op {
                     SupplyOp::Merge => Some(self.dispatch_supply_merge(&args)),

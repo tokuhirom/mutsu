@@ -250,7 +250,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
         {
             return None;
         }

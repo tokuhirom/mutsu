@@ -1533,7 +1533,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
             && let Some(ValueView::Int(sid)) = attributes.as_map().get("supply_id").map(Value::view)
             && sid >= 0
         {

@@ -145,7 +145,7 @@ impl Interpreter {
             matches!(
                 items[0].view(),
                 ValueView::Instance { class_name, .. }
-                    if class_name == "Supply"
+                    if crate::value::supply_class::is_supply_class(class_name)
                         || class_name == "Supplier"
                         || class_name == "Supplier::Preserving"
             ) || matches!(

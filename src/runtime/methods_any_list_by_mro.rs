@@ -131,7 +131,7 @@ impl Interpreter {
         // answers of the native paths and of the cascades after this walk;
         // a `Supply` materializes through its own `list` (§9.136).
         if matches!(method, "list" | "Array")
-            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+            && !matches!(target.view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name))
         {
             return None;
         }

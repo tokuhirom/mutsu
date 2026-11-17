@@ -292,7 +292,7 @@ impl Interpreter {
             attributes,
             ..
         } = supply_val.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
             && crate::runtime::native_methods::proc_async_merged_supply_started(
                 &attributes.as_map(),
             )
@@ -436,7 +436,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = supply_val.view()
-                && class_name == "Supply"
+                && crate::value::supply_class::is_supply_class(class_name)
             {
                 if let Some(ValueView::Int(sid)) =
                     attributes.as_map().get("supply_id").map(Value::view)
@@ -484,7 +484,7 @@ impl Interpreter {
         // closing (or completing) the block closes it too (#12864).
         let parent_emitter_id = own_emitter.as_ref().and_then(Self::emitter_supplier_id_of);
         if let ValueView::Instance { class_name, .. } = supply_val.view()
-            && class_name == "Supply"
+            && crate::value::supply_class::is_supply_class(class_name)
         {
             let mut tap_args = vec![callback];
             let mut done_chain: Vec<Value> = last_callbacks.first().cloned().into_iter().collect();

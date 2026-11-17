@@ -244,6 +244,25 @@ impl Interpreter {
                 class_level_attrs: ValueMap::default(),
             },
         );
+        // `Proc::Async.stdout` / `.stderr` (#16667): rakudo's core `Supply`
+        // subclass. The instance is a supply underneath, answered by the
+        // `Supply` rows (`DispatchShape::Supply`, `value::supply_class`).
+        classes.insert(
+            crate::value::supply_class::PROC_ASYNC_PIPE.to_string(),
+            ClassDef {
+                parents: vec!["Supply".to_string()],
+                attributes: Vec::new(),
+                native_methods: HashSet::new(),
+                mro: sym_mro(&[crate::value::supply_class::PROC_ASYNC_PIPE, "Supply"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: HashSet::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: ValueMap::default(),
+            },
+        );
         classes.insert(
             "utf8".to_string(),
             ClassDef {

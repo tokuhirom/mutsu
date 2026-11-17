@@ -262,7 +262,7 @@ impl Interpreter {
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "Supply" => {
+                    } if crate::value::supply_class::is_supply_class(class_name) => {
                         // Find the supply channel
                         // A `signal()` Supply the watcher retired (its
                         // previous taps all gone) re-arms here, so a `whenever`

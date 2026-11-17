@@ -238,7 +238,7 @@ impl Interpreter {
                 | "list"
                 | "Array"
                 | "Seq"
-        ) && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
+        ) && matches!(target.view(), ValueView::Instance { class_name, .. } if crate::value::supply_class::is_supply_class(class_name)))
             || (method == "elems" && matches!(target.view(), ValueView::Instance { .. }))
             // `.gist`/`.Str`/`.Stringy` render
             // `$exc.message`; the native fast path can only read the stored

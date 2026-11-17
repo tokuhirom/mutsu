@@ -689,6 +689,7 @@ mod str_body;
 pub(crate) mod str_increment;
 mod str_iter;
 pub(crate) mod str_numeric;
+pub(crate) mod supply_class;
 mod sync_cell;
 pub(crate) mod temporal_core;
 pub(crate) mod to_list;

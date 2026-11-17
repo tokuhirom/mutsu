@@ -117,7 +117,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Supply" => {
+            } if crate::value::supply_class::is_supply_class(class_name) => {
                 // On-demand source: the filtered supply taps it per tap of its
                 // own (see `native_methods::supply_derive`).
                 // A `head(N)` stage over a channel-backed source keeps its limit
