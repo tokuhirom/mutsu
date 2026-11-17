@@ -13,6 +13,47 @@ pub(crate) use crate::known_types::is_known_type_constraint;
 /// SeekFromBeginning { ... } }` read the bareword as a listop call that
 /// gobbled the block, and the whole compilation unit failed with "Function
 /// 'SeekFromBeginning' needs arguments" (IO::String, #7954).
+/// Whether `name` spells a core enum value with its enum's name
+/// (`Bool::True`, `Order::Less`, `Endian::LittleEndian`): a definite return
+/// spec of that value, as its bare spelling is (#18010).
+// Cost: O(1) expected after the first call builds the table.
+pub(crate) fn is_qualified_builtin_enum_value(name: &str) -> bool {
+    type Table = std::collections::HashMap<&'static str, std::collections::HashSet<String>>;
+    static TABLE: std::sync::OnceLock<Table> = std::sync::OnceLock::new();
+    let Some((enum_name, value)) =
+        crate::qualified::split_qualified(crate::symbol::Symbol::intern(name))
+    else {
+        return false;
+    };
+    let keys = |variants: Vec<(String, crate::value::EnumValue)>| {
+        variants.into_iter().map(|(key, _)| key).collect()
+    };
+    TABLE
+        .get_or_init(|| {
+            Table::from([
+                ("Bool", ["True".to_string(), "False".to_string()].into()),
+                ("Endian", keys(crate::runtime::Interpreter::endian_enum_variants())),
+                (
+                    "ProtocolFamily",
+                    keys(crate::runtime::Interpreter::protocol_family_enum_variants()),
+                ),
+                ("Order", keys(crate::runtime::Interpreter::order_enum_variants())),
+                ("SeekType", keys(crate::runtime::Interpreter::seek_type_enum_variants())),
+                ("Signal", keys(crate::runtime::Interpreter::signal_enum_variants())),
+                (
+                    "FileChangeEvent",
+                    keys(crate::runtime::Interpreter::file_change_event_enum_variants()),
+                ),
+                (
+                    "PromiseStatus",
+                    keys(crate::runtime::Interpreter::promise_status_enum_variants()),
+                ),
+            ])
+        })
+        .get(enum_name.as_str())
+        .is_some_and(|values| values.contains(value.as_str()))
+}
+
 pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
     static NAMES: std::sync::OnceLock<std::collections::HashSet<String>> =
         std::sync::OnceLock::new();

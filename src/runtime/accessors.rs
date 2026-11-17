@@ -150,7 +150,10 @@ impl Interpreter {
         // twin check in `Compiler::is_definite_return_spec`, which consults
         // the parser's enum-value registry instead (no interpreter access
         // there); this checks the actual runtime enum-key namespace.
-        if crate::runtime::utils::is_builtin_enum_value(s) || self.enum_bare_value(s).is_some() {
+        if crate::runtime::utils::is_builtin_enum_value(s)
+            || crate::runtime::utils::is_qualified_builtin_enum_value(s)
+            || self.enum_bare_value(s).is_some()
+        {
             return true;
         }
         // The bare spelling of a value of an enum declared in a module the
@@ -611,7 +614,7 @@ impl Interpreter {
         hits.next().is_none().then(|| first.clone())
     }
 
-    fn evaluate_definite_return_value(&mut self, spec: &str) -> Result<Value, RuntimeError> {
+    pub(crate) fn evaluate_definite_return_value(&mut self, spec: &str) -> Result<Value, RuntimeError> {
         if let Some(name) = Self::return_spec_scalar_name(spec) {
             return Ok(self.env.get(&name).cloned().unwrap_or(Value::NIL));
         }
