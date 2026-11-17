@@ -36,7 +36,7 @@ impl CompileTimeLoader for Interpreter {
             request.module,
             request.tags,
             request.has_condition,
-            request.has_arg,
+            request.has_arg && request.literal_args.is_none(),
         ) else {
             return LoadOutcome::NotTaken;
         };
@@ -67,6 +67,12 @@ impl CompileTimeLoader for Interpreter {
         // for this `use`, as rakudo does at compile time; the map it returns
         // is kept for the `use`'s import in position, which installs it
         // instead of running the hook again (`rerun_module_export`).
+        // A literal argument list goes to the hook as the run-time `use`
+        // would hand it over, so the import finds the map under the same key.
+        let saved_export_args = std::mem::replace(
+            &mut self.module.pending_use_export_args,
+            request.literal_args.clone(),
+        );
         let saved_hook_depth = self
             .module
             .parse_time_hook_depth
@@ -83,6 +89,7 @@ impl CompileTimeLoader for Interpreter {
             self.without_use_attach_depth(|interp| interp.preload_module(module))
         };
         self.module.parse_time_hook_depth = saved_hook_depth;
+        self.module.pending_use_export_args = saved_export_args;
         drop(suspended);
         self.module.lib_paths = saved_lib_paths;
         match result {

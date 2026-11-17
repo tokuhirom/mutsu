@@ -314,6 +314,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             module: &spec,
             tags: &use_tags,
             has_arg: arg.is_some(),
+            // An empty import list loads like `need`, at run time for now.
+            // TODO: load it at parse time through the `need` path (ADR-17558
+            // §7.2: `use M ()` loads at compile time).
+            literal_args: arg
+                .as_ref()
+                .filter(|_| !empty_import)
+                .and_then(literal_use_args),
             has_condition: condition.is_some(),
             nested: super::super::simple::in_nested_scope(),
             activates_slang: super::super::simple::module_activates_slang(&module),
@@ -381,6 +388,25 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         use_stmt
     };
     Ok((rest, stmt))
+}
+
+/// The positional arguments of a `use` whose elements are all literals, as
+/// the values its `sub EXPORT` receives (an `ArrayLiteral` is the list the
+/// `use` flattens into positional arguments). `None` when one has to be
+/// evaluated.
+// Cost: O(n), n = arguments.
+fn literal_use_args(arg: &Expr) -> Option<Vec<crate::value::Value>> {
+    match arg {
+        Expr::Literal(value) => Some(vec![value.clone()]),
+        Expr::ArrayLiteral(items) => items
+            .iter()
+            .map(|item| match item {
+                Expr::Literal(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => None,
+    }
 }
 
 /// Recognise `::('Name')` / `::("Name")` after `use`. Returns `None` when the

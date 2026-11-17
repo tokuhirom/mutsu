@@ -7,7 +7,7 @@ use Test;
 # hook again. Each case runs a child process so the order of the module's
 # output is visible; every expectation is what rakudo prints.
 
-plan 4;
+plan 5;
 
 sub run-code(Str $code) {
     my $proc = run $*EXECUTABLE, '-I', 't/lib', '-e', $code, :out, :err;
@@ -42,4 +42,14 @@ sub run-code(Str $code) {
     is %r<out>, "HookRunsOncePerUse loaded\nEXPORT ran with ()\n",
         'the hook has run when a later syntax error is found';
     isnt %r<exitcode>, 0, 'the syntax error still fails the program';
+}
+
+{
+    my %r = run-code(q:to/CODE/);
+        say "mainline";
+        use HookRunsOncePerUse <a b>;
+        say hook-runs-once();
+        CODE
+    is %r<out>, "HookRunsOncePerUse loaded\nEXPORT ran with (a,b)\nmainline\nimported\n",
+        'a literal argument list reaches the compile-time run of the hook';
 }

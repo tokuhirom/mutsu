@@ -28,6 +28,10 @@ pub(crate) struct UseRequest<'a> {
     pub(crate) tags: &'a [String],
     /// Whether the `use` carries a positional argument list (for `sub EXPORT`).
     pub(crate) has_arg: bool,
+    /// That argument list's values, when every element is a literal the
+    /// parser can hand over as it stands (`use M <a b>`, `use M 'x', 2`);
+    /// `None` for an argument list that has to be evaluated.
+    pub(crate) literal_args: Option<Vec<crate::value::Value>>,
     /// Whether the `use` carries a `:if(...)` condition.
     pub(crate) has_condition: bool,
     /// Whether the `use` is inside a block rather than at the unit's top
