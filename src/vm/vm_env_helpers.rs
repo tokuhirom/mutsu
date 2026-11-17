@@ -3458,15 +3458,20 @@ impl Interpreter {
     }
 
     /// Whether the running code reads `name` as a free variable an enclosing
-    /// routine declares (`CompiledCode::routine_scoped_free`): a closure in a
+    /// routine declares (`CompiledCode::routine_scoped_free`) and reaches
+    /// through its capture: a closure in a
     /// module routine naming the routine's `my $x` (or its loop parameter)
     /// means that binding, never the module's same-named file-scope or `our`
     /// variable (#17466).
     // Cost: O(f), f = |routine_scoped_free| of the running code (0 outside a
     // routine); plus a symbol lookup when `name_sym` is `None` and f > 0.
     pub(crate) fn running_code_routine_scoped(&self, name: &str, name_sym: Option<Symbol>) -> bool {
+        // A nested named sub reaches its declaring routine's lexicals through
+        // those very stores (ADR-0024's captured cells, `lexsub_alias_*`), so
+        // only a closure, whose capture is its `env`, skips them.
         self.running_code().is_some_and(|code| {
             !code.routine_scoped_free.is_empty()
+                && !code.declared_in_routine
                 && code.is_routine_scoped_free(
                     name_sym.unwrap_or_else(|| crate::qualified::known_symbol(name)),
                 )
