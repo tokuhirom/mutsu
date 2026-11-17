@@ -113,7 +113,12 @@ pub(crate) fn is_builtin_dynamic_var(name: &str) -> bool {
 /// that variable is not declared `is dynamic`. `name` is the bare variable name
 /// without sigil; the reported `symbol` re-adds the `$` sigil.
 pub(crate) fn caller_not_dynamic_error(name: &str) -> RuntimeError {
-    let symbol = format!("${name}");
+    // A sigil-less constant is named by its term key (`\foo`) and reported as
+    // the term it spells.
+    let symbol = match crate::runtime::term_names::term_spelling(name) {
+        Some(term) => term.to_string(),
+        None => format!("${name}"),
+    };
     let msg =
         format!("Cannot access '{symbol}' through CALLER, because it is not declared as dynamic");
     let mut attrs = ValueMap::default();
