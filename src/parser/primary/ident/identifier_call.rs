@@ -1870,16 +1870,6 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         (r, full_name)
     };
 
-    // A bare `PSEUDO::name` term is the pseudo-stash lookup `PSEUDO::<name>`.
-    // A following `(` (or unspace `\(`) is the call form, handled with the
-    // other calls below, and a `[` / `:` continues a type name
-    // (`CORE::Array[Int]`, `CORE::Int:D`).
-    if !consume_unspace(rest).starts_with(['(', '[', ':'])
-        && let Some(entry) = pseudo_stash_member(&name)
-    {
-        return Ok((rest, entry));
-    }
-
     if matches!(name.as_str(), "qx" | "qqx")
         && rest.starts_with('=')
         && let Ok(parsed) = crate::parser::primary::string::qx_string(input)
@@ -2882,18 +2872,19 @@ fn control_flow_label(input: &str) -> (&str, Option<String>) {
     (input, None)
 }
 
-/// `PSEUDO::name` written as a plain long name, read as the pseudo-stash
-/// lookup `PSEUDO::<name>` it means in Raku: the *sigilless* key, so
-/// `constant foo = 3; MY::foo` is 3 and `CORE::uc` is Nil (only `&uc` is in
-/// CORE). A call `PSEUDO::name(...)` invokes that value, which for a routine
-/// name is Nil's `CALL-ME` failure, as on rakudo. `GLOBAL::` names an ordinary
-/// package (and reports its own "Could not find symbol"), `PROCESS::` and
-/// `COMPILING::` resolve through their own paths, and a member with a further
-/// `::` (`CORE::X::AdHoc`) is a nested package name, not a stash key.
+/// The callee of a call `PSEUDO::name(...)`: the pseudo-stash lookup
+/// `PSEUDO::<name>` with the *sigilless* key, as rakudo reads it. For a routine
+/// name that key is absent (only `&name` is in the stash), so the call dies
+/// with Nil's `CALL-ME` failure, as on rakudo (whose `CORE::`/`SETTING::`
+/// spelling dies too, with an internal `BOOTCode` error); `&CORE::uc(...)` is
+/// the way to call the routine. `GLOBAL::` names an ordinary package (and
+/// reports its own "Could not find symbol"), `PROCESS::` and `COMPILING::`
+/// resolve through their own paths, and a member with a further `::`
+/// (`CORE::X::AdHoc`) is a nested package name, not a stash key.
 fn pseudo_stash_member(name: &str) -> Option<Expr> {
     let (package, member) = name.split_once("::")?;
     if member.is_empty()
-        || member.contains(':')
+        || member.contains("::")
         || matches!(package, "GLOBAL" | "PROCESS" | "COMPILING")
         || !crate::parser::primary::var::is_pseudo_package(package)
     {
