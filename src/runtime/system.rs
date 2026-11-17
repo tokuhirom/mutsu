@@ -394,7 +394,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // A lowered tree was not parsed here: when its imports follow a
         // `use lib` they are unknown until it runs.
-        let imports_unseen = lowered && super::undeclared_routines::imports_follow_use_lib(&stmts);
+        let imports_unseen = (lowered
+            && super::undeclared_routines::imports_follow_use_lib(&stmts))
+            || crate::unit_source_file::recompiling_unit_declaration();
         // The hook maps the pre-run recorded are replayed by the
         // unit's own `use`s and end with the unit.
         let outer_hook_results = std::mem::take(&mut self.module.eval_hook_results);

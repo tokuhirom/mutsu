@@ -1169,6 +1169,9 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance(*class_name, attrs));
             }
+            if let Some(result) = self.try_native_objat_subclass_construct(*class_name, &args) {
+                return result;
+            }
             // The native constructor of a builtin class (`native_ctor`): the
             // arms of what used to be a `match` on this name. A user
             // declaration of the same name bypassed it (`constructor_dispatch_name`).

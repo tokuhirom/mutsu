@@ -26,15 +26,14 @@
 //!
 //! The structure is [`super::unicode_gc`]'s, and for the same reasons: a
 //! 128-byte direct-index table for ASCII, a two-stage trie over 64-codepoint
-//! blocks for the rest of the BMP, and a binary search over 780 runs above it.
-//! ~18 KB of `.rodata` in total, with no heap, no lock and no lazy
-//! initialisation.
+//! blocks for the rest of the BMP, and a binary search over constant-script
+//! runs above it. It is generated from the pinned Unicode 17 UCD.
 
 use super::unicode_script_data as data;
 
 /// A Unicode Script, as an index into [`data::SCRIPT_NAMES`].
 ///
-/// A newtype rather than a 162-variant enum: nothing branches on a particular
+/// A newtype rather than a large enum: nothing branches on a particular
 /// script the way `is_cclass` branches on a category, so the name is the whole
 /// interface.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]

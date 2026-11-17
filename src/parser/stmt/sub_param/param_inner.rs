@@ -4,7 +4,9 @@ use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::value::ValueView;
 
 pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
+    let anon_states_before = crate::parser::stmt::simple::current_scope_anon_state_count();
     let (mut rest, mut p) = parse_single_param_inner(input)?;
+    super::helpers::forget_anonymous_param_state(anon_states_before, &p);
     // A capture parameter (`|`, `|c`) takes no default, but rakudo parses one
     // and rejects it as `X::Parameter::Default` rather than as a syntax error,
     // so read it here and leave the verdict to the signature validator.

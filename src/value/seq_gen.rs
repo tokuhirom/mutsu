@@ -49,8 +49,8 @@ pub(crate) struct SeqGen {
     pub(crate) use_codepoint: bool,
     /// Zero-padded digit strings step in this radix.
     pub(crate) digit_string_radix: Option<u32>,
-    /// Strings of one repeated character step over this alphabet.
-    pub(crate) uniform_string_alphabet: Option<Vec<char>>,
+    /// Equal-width strings step through each character's range in product order.
+    pub(crate) string_product: bool,
     /// An exact fractional arithmetic step.
     pub(crate) rat_step: Option<(i64, i64)>,
     /// The generator closure of a `SeqMode::Closure` sequence.

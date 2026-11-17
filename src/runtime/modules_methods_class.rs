@@ -65,6 +65,7 @@ mod methods_grammar_action_env;
 mod methods_grammar_method_start;
 mod methods_grammar_wrapped_start;
 pub(crate) mod methods_instance_ops;
+mod methods_instance_clone;
 pub(crate) mod module_merge;
 mod main_unit_routines;
 mod repl_session_scope;

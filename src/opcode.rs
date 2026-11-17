@@ -1389,14 +1389,14 @@ pub(crate) enum OpCode {
     /// set. With no such binding live (a role method run on the bare role
     /// type object) it resolves as [`Self::GetBareWord`] does.
     GetTypeCapture(u32),
-    /// Whether the scalar named by the constant has a container that can be
-    /// assigned through: `false` for a read-only parameter or binding, `true`
-    /// otherwise. Stack: `[] → [Bool]`.
+    /// Whether the scalar named by the constant retains a container:
+    /// `true` for a writable scalar or read-only parameter, `false` for a
+    /// value-bound name. Stack: `[] → [Bool]`.
     ///
     /// The `//=` / `||=` / `&&=` short-circuit desugar branches on it to return
     /// the LHS container or its bare value when it keeps the current value
-    /// (`Interpreter::var_is_writable`).
-    VarIsWritable(u32),
+    /// (`Interpreter::var_has_container`).
+    VarHasContainer(u32),
     /// [`Self::GetBareWord`] for a bare word that spells a `$`-scalar of the
     /// SAME scope (`my $bar = 3; say bar`). Stack: `[] → [value]`.
     ///
@@ -4559,7 +4559,8 @@ pub(crate) enum OpCode {
     /// exception with its backtrace, `line` and `file`, and raises it as a `fail`
     /// error, which the enclosing routine turns into a returned `Failure`. `fail`
     /// in expression position compiles to a `CallFunc` instead.
-    Fail,
+    /// Raise `fail`; the flag says whether its lexical scope has a routine.
+    Fail(bool),
 
     /// A `has`-attribute declaration that reaches runtime (mainline / EVAL'd
     /// source). Registers the attribute onto the class currently being defined,
@@ -7454,6 +7455,15 @@ pub(crate) struct CompiledCode {
     /// code was written in, innermost first: a frame of this code does not
     /// hide what those blocks imported (`hide_unit_names_from_frame`).
     pub(crate) enclosing_import_regions: Vec<Symbol>,
+    /// The routines declared in the scopes around this closure body where it
+    /// was attached to its creating code, in declaration order, and for each
+    /// import set around it how many of them were declared when the set was
+    /// opened: a recompile of the body (a map/grep loop body) keeps a routine
+    /// declared after a set's `use` (a block's own `multi infix:<+>`) winning
+    /// over that set's imports of the name, as the original compile did.
+    pub(crate) enclosing_routine_decls: Vec<Symbol>,
+    /// See [`Self::enclosing_routine_decls`].
+    pub(crate) enclosing_set_decl_marks: Vec<(Symbol, u32)>,
     /// The lexical import chains of this code's `EVAL` calls (one per distinct
     /// chain, innermost first): the sets an EVAL'd unit starts inside
     /// (`Interpreter::eval_lexical_import_chain`). Empty when the code calls
@@ -8755,6 +8765,8 @@ impl CompiledCode {
             lexical_import_chains: Vec::new(),
             enclosing_import_chain: Vec::new(),
             enclosing_import_regions: Vec::new(),
+            enclosing_routine_decls: Vec::new(),
+            enclosing_set_decl_marks: Vec::new(),
             eval_site_chains: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),

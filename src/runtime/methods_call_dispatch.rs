@@ -85,8 +85,8 @@ impl Interpreter {
         let target = Self::lazy_slip_receiver(target, method);
         let target = Self::shaped_iteration_receiver(target, method);
         // `Mu.perl` is `self.raku` (ADR-11276 §9.152).
-        let method = if method == "perl" {
-            self.perl_as_raku(&target, crate::symbol::wk::perl())
+        let method = if matches!(method, "perl" | "Mu::perl") {
+            self.perl_as_raku(&target, Symbol::intern(method))
                 .as_str()
         } else {
             method
@@ -887,6 +887,9 @@ impl Interpreter {
         if Self::should_autothread_method(method)
             && !metamethod_takes_junction
             && !Self::is_metamodel_primitives(&target)
+            // A built-in metaobject's methods take their arguments as `Mu`.
+            && !matches!(target.view(), ValueView::Instance { class_name, .. }
+                if Self::is_metamodel_how(&class_name))
             && let Some((idx, kind, values)) = args.iter().enumerate().find_map(|(idx, arg)| {
                 // Tag probe first: a `view()` on a lazy Match would
                 // materialize it just to see it is not a Junction.

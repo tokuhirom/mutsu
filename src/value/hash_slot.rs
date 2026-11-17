@@ -44,10 +44,11 @@ fn promote_leaf(elem: &mut Value, tag: &PromotionTag) -> Value {
     if elem.is_container_ref() {
         return elem.clone();
     }
-    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(std::mem::replace(
-        elem,
-        Value::Nil,
-    )));
+    // Build the cell from a copy and publish it with ONE store below: a
+    // `mem::replace(elem, Nil)` left a window in which a lock-free reader on
+    // another thread (`@a[1;1]` beside a `cas(@a[1;1], ..)`) saw `Nil` in
+    // the slot (#17781).
+    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(elem.clone()));
     // A typed hash's value constraint rides on the promoted cell (see
     // `array_slot_ref`), named after the bare sigil until the binding site
     // names the container (`retag_element_owner`).

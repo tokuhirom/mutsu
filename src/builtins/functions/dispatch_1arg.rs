@@ -852,6 +852,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         // `native_method_0arg` delegation at the top of this function.)
         "ords" => {
             let s = arg.to_string_value();
+            let s = crate::runtime::utf8_c8::unescape_literal_marker(&s);
             let codes: Vec<Value> = s.chars().map(|ch| Value::int(ch as u32 as i64)).collect();
             // `ords` returns a Seq (like `comb`), not a List.
             Some(Ok(Value::seq(codes)))

@@ -433,6 +433,20 @@ impl Interpreter {
             );
             if let Some((owner_class, method_def)) = resolved {
                 let caller_allowed = self.can_fast_dispatch_private_method_vm(owner_class.as_str());
+                // A wrapped private method (`.^find_private_method(..).wrap`,
+                // a trait that wraps `method !m`) runs its wrapper chain first.
+                if caller_allowed
+                    && let Some(result) = self.check_method_wrap_chain(
+                        cn,
+                        owner_class,
+                        method_sym.as_str().trim_start_matches('!'),
+                        &method_def,
+                        target,
+                        args,
+                    )
+                {
+                    return Some(result);
+                }
                 if caller_allowed && let Some(ref cc) = method_def.compiled_code {
                     // See the lane install in `compiled_mut_resolved_dispatch`.
                     self.note_plain_method_lane_reached(class_sym, method_sym);

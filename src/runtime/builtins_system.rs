@@ -80,6 +80,13 @@ where
     T: Send + 'static,
 {
     use crate::runtime::stack_budget::{initial_stack_bytes, reserve_over_budget, try_reserve};
+    // An injected `ulimit -u` refuses the thread before any stack is tried;
+    // the slot lives as long as the thread's body.
+    let thread_slot = crate::runtime::user_thread_limit::take_slot().map_err(SpawnError::Os)?;
+    let f = move || {
+        let _thread_slot = thread_slot;
+        f()
+    };
     // `Builder::spawn` consumes its closure even when it fails, so the body
     // lives in a slot each attempt borrows from; a refused attempt drops only
     // its handle on the slot.

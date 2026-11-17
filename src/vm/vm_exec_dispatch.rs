@@ -1295,9 +1295,9 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(d), d = env tiers walked by the two read-only probes.
-            OpCode::VarIsWritable(name_idx) => {
-                let writable = self.var_is_writable(Self::const_str(code, *name_idx));
-                self.stack.push(Value::truth(writable));
+            OpCode::VarHasContainer(name_idx) => {
+                let has_container = self.var_has_container(Self::const_str(code, *name_idx));
+                self.stack.push(Value::truth(has_container));
                 *ip += 1;
             }
             // Cost: O(d) on a live capture, d = env tiers walked (two probes);
@@ -6846,7 +6846,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match &code.ops[*ip] {
             // Cost: O(s), s = routine-stack depth (Failure origin capture).
-            OpCode::Fail => {
+            OpCode::Fail(lexically_in_routine) => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // When fail() receives a Failure:D, extract the inner exception
@@ -6874,6 +6874,9 @@ impl Interpreter {
                 let current_line = self.current_source_line();
                 let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Failed", true);
+                if !lexically_in_routine {
+                    err.control = None;
+                }
                 // A direct CATCH sees the fail-site Backtrace. A soft Failure
                 // moves it off the exception in fail_error_to_failure_value.
                 if let Some(ref exc_box) = err.exception

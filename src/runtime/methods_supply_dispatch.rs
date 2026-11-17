@@ -500,13 +500,13 @@ impl Interpreter {
         // this tap registered.
         if let Some(source_sid) = crate::runtime::native_methods::supplier_id_from_attrs(attributes)
         {
-            let (emitted, ..) = crate::runtime::native_methods::supplier_snapshot(source_sid);
+            let (emitted_count, ..) = crate::runtime::native_methods::supplier_status(source_sid);
             let downstream_sid = crate::runtime::native_methods::next_supplier_id();
             crate::runtime::native_methods::register_supplier_elems_transform_tap(
                 source_sid,
                 downstream_sid,
                 interval,
-                emitted.len() as i64,
+                emitted_count as i64,
             );
 
             let mut elems_attrs = HashMap::new();

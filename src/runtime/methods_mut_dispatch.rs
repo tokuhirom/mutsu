@@ -221,10 +221,8 @@ impl Interpreter {
             {
                 return Ok(target);
             }
-            // Also a live property of the CURRENT binding, so probed before the
-            // name-keyed cache as well: `sub h(\p) { p.VAR }; h($x); h(1)` must
-            // answer `Int` for the second call, not the first call's cached
-            // `Scalar` (#9346, `nqp::iscont(p)`).
+            // Probe the live binding before the name-keyed cache (#9346).
+            // A sigilless term bound to an unitemized Array has no Scalar (#17707).
             let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
             let alias_key = crate::runtime::sigilless_alias_key(target_var);
             let has_sigilless_meta =
@@ -253,9 +251,11 @@ impl Interpreter {
                     .env
                     .get_sym(readonly_key)
                     .is_some_and(|v| matches!(v.view(), ValueView::Bool(true)));
-                let itemized_array =
+                let real_array =
                     matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array());
-                if readonly && !itemized_array {
+                let itemized_array =
+                    matches!(target.view(), ValueView::Array(_, kind) if kind.is_itemized());
+                if readonly && (!real_array || (target_var.starts_with('\\') && !itemized_array)) {
                     return Ok(target);
                 }
             }

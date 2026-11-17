@@ -583,7 +583,9 @@ impl Interpreter {
         if let Some(result) = self.try_lexical_operator_candidates(op_name, args.clone()) {
             return result;
         }
-        if let Some((dispatcher, candidates)) = self.exported_captured_family(op_name) {
+        if let Some((dispatcher, mut candidates)) = self.exported_captured_family(op_name) {
+            // The unit's own `multi`s of the operator join the family.
+            candidates.extend(self.unit_declared_operator_candidates(op_name));
             // The family's candidates are ranked by narrowness like any other
             // multi (and compete with the operator's core candidates): a
             // re-exported family lists them in stash order, so taking the first

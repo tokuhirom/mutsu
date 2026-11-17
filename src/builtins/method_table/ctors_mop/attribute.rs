@@ -319,19 +319,14 @@ fn set_value(i: &mut Interpreter, target: &Value, args: &[Value], _named: Named<
     // `set_value` BINDS its value argument (`Mu \value`): a scalar variable
     // naming a container (`Mu $v is raw`, an aliased parameter) is bound as
     // that container, so later writes through the attribute reach it.
-    // An Array/Hash read out of a `$`-variable whose Scalar is not a shared
-    // cell yet is still that Scalar's content: a `@`/`%` attribute is bound to
-    // a Scalar of its own around it, so `get_value` hands out a container and
-    // `nqp::assign` through it stores into the slot (EEL's state copier,
-    // #17418). Rakudo binds the variable's own Scalar; this one is not shared
-    // with the variable.
+    // The VM promotes a named scalar source to a shared cell before this row
+    // runs. An Array/Hash read from a Scalar is bound through that same cell,
+    // so writes through either the attribute or the source reach the other.
     // A `$`-variable `:=`-bound straight to an Array/Hash or to a value
     // (`my $x := Array.new`, a raw parameter) has no Scalar: rakudo binds the
     // aggregate itself, so `get_value(...).VAR` is the Array (AttrX::Mooish's
     // `unbind-proxy`). Only an aggregate that came out of a Scalar — itemized
     // — gets one.
-    // TODO: promote the source variable to a shared cell so later writes
-    // through either side are seen by both.
     let source_cell = i
         .container_of_arg_source(1)
         .filter(|cell| match cell.view() {

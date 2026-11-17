@@ -30,8 +30,9 @@
 //!
 //! Everything else (dynamic variables, unknown names) stays unresolved.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+mod dispatcher;
 mod regex_lookup;
 mod scope;
 pub(crate) use regex_lookup::regex_with_declarations;
@@ -63,6 +64,14 @@ struct Scopes<'a> {
     /// `multi` declarations met so far per routine name: the next one is that
     /// candidate of the name's dispatcher.
     multi_candidates: HashMap<String, usize>,
+    /// The routine names (`&infix:<+>`) whose dispatcher a scope (by depth)
+    /// already holds: its `proto`, or the proto rakudo derives for a `multi`
+    /// once that candidate is complete.
+    dispatchers: HashSet<(String, usize)>,
+    /// The `multi` declarations being walked whose scope (by depth) has no
+    /// dispatcher of their name yet: inside their body the name is the outer
+    /// scope's (#17793).
+    hidden: Vec<(String, usize)>,
 }
 
 impl Scopes<'_> {
@@ -113,6 +122,8 @@ fn annotate_with(
         whatever_args: vec![0],
         anonymous_subsets: 0,
         multi_candidates: HashMap::new(),
+        dispatchers: HashSet::new(),
+        hidden: Vec::new(),
     };
     walk(node, &mut scopes);
 }
@@ -200,6 +211,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     }
     let opened = opens_scope(node.class);
     let node_class = node.class;
+    let hidden_multi = dispatcher::enter_routine(node, scopes);
     if opened {
         scopes.scopes.push(HashMap::new());
         hoist(node, scopes);
@@ -311,6 +323,13 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     }
     if opened {
         scopes.scopes.pop();
+        let depth = scopes.scopes.len();
+        scopes.dispatchers.retain(|(_, at)| *at < depth);
+    }
+    // The multi is complete: its scope now holds the derived proto.
+    if let Some(hidden) = hidden_multi {
+        scopes.hidden.pop();
+        scopes.dispatchers.insert(hidden);
     }
     // `$!name` answers its attribute's declared type as `return-type`.
     if node.class == C::VarAttribute
@@ -368,6 +387,17 @@ fn hoist_child(child: &Value, scopes: &mut Scopes) {
             format!("&{name}"),
             Value::rakuast(Box::new(RakuAstNode::clone(held))),
         );
+    }
+    // A `use` binds what it imports in the pad of the scope it is in:
+    // rakudo's resolver finds `&name` (an operator too) there as a
+    // `Declaration::Import`.
+    if held.class == C::StatementUse {
+        for routine in super::use_stmt::recorded_imports(held) {
+            let name = format!("&{routine}");
+            if let Some(import) = external("RakuAST::Declaration::Import", &name) {
+                scopes.declare(name, import);
+            }
+        }
     }
     if let Some(name) = super::declared_routines::declared_by(held)
         && held.class == C::Sub
@@ -908,8 +938,9 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
         }
         C::Infix => {
             let name = format!("infix:<{}>", leaf(node, "operator")?);
-            // An operator the unit declares itself is that routine.
-            if let Some(declared) = scopes.find(&format!("&{name}")) {
+            // An operator the unit declares itself is that routine (not yet
+            // in the body of the scope's first `multi` of it, #17793).
+            if let Some(declared) = scopes.find_visible(&format!("&{name}")) {
                 return Some(declared.clone());
             }
             (!(scopes.shadowed)(&name)).then(|| external_setting(&name))?
@@ -921,6 +952,10 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                 "postfix"
             };
             let name = format!("{category}:<{}>", leaf(node, "operator")?);
+            // An operator the unit declares or imports is that routine.
+            if let Some(declared) = scopes.find_visible(&format!("&{name}")) {
+                return Some(declared.clone());
+            }
             (!(scopes.shadowed)(&name)).then(|| external_setting(&name))?
         }
         C::PostcircumfixArrayIndex => external_setting("postcircumfix:<[ ]>"),

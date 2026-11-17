@@ -1194,7 +1194,13 @@ impl Interpreter {
         let mut depth = 0;
         while self.types.published_mixins.may_hold(level) {
             let roles = registry.class_composed_roles.get(level)?;
-            if roles.iter().any(|r| r == base) {
+            // A parameterized role is recorded under its application key
+            // (`R[Block]` plus the arguments' identity,
+            // `parameterized_mixin_role_key`); a constraint names the role.
+            if roles
+                .iter()
+                .any(|r| r == base || r.split_once('[').is_some_and(|(role, _)| role == base))
+            {
                 return Some(depth + 1);
             }
             if self.has_role(base) && roles.iter().any(|r| self.role_is_descendant_of(r, base)) {

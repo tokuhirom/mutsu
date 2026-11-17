@@ -138,7 +138,9 @@ fn lines_limit(
 pub(crate) fn ords(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     use unicode_normalization::UnicodeNormalization;
     let ords: Vec<Value> = crate::builtins::grapheme_index::with_str(target, |s| {
-        s.nfc()
+        // A doubled marker is one literal U+10FFFD (ADR-17800).
+        crate::runtime::utf8_c8::unescape_literal_marker(s)
+            .nfc()
             .map(|c| Value::int(i64::from(u32::from(c))))
             .collect()
     });

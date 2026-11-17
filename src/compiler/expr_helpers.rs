@@ -463,6 +463,10 @@ impl Compiler {
         )
     }
 
+    fn is_pseudo_package_value_name(name: &str) -> bool {
+        matches!(name, "?CLASS" | "?ROLE" | "?PACKAGE" | "?MODULE")
+    }
+
     /// Whether `expr` yields a bare value that can never be a Scalar
     /// container: a `.self` call, a literal, or a bareword naming a type
     /// object or term (`IterationEnd`, `Any`) rather than an in-scope
@@ -470,6 +474,9 @@ impl Compiler {
     pub(super) fn expr_is_decontainerized_value(&self, expr: &Expr) -> bool {
         match expr.peel_parens() {
             Expr::Literal(_) => true,
+            // `::?CLASS` and its peers are pseudo-package values, even though
+            // the parser represents them as `Var` for frame-anchored reads.
+            Expr::Var(name) if Self::is_pseudo_package_value_name(name) => true,
             // A sigilless binding (ADR-12441) is a variable, not a bare term.
             Expr::BareWord(name) => {
                 !self.local_map.contains_key(name.as_str()) && !self.names_sigilless_binding(name)
@@ -494,6 +501,7 @@ impl Compiler {
     /// either owns a Scalar or is the value itself.
     pub(super) fn container_eq_decont_name(&self, expr: &Expr) -> Option<String> {
         match expr.peel_parens() {
+            Expr::Var(name) if Self::is_pseudo_package_value_name(name) => None,
             // A sigilless binding is named by its term key (ADR-12441), which
             // is also what tells the VM it is one.
             Expr::BareWord(name)

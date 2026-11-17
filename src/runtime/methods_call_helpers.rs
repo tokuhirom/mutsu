@@ -114,7 +114,10 @@ impl Interpreter {
     /// interpreter's and the VM's two call paths, which each kept their own.
     // Cost: O(n), n = 26 names.
     pub(crate) fn junction_invocant_autothreads(method: &str) -> bool {
-        !JUNCTION_ANSWERS_ITSELF.contains(&method)
+        // A metamethod call `$j.^m(...)` is `$j.HOW.m($j, ...)`: the receiver
+        // is the metaobject, whose methods take the described object as `Mu`,
+        // so the junction is passed whole (`any(1, 2).^isa(Junction)` is 1).
+        !method.starts_with('^') && !JUNCTION_ANSWERS_ITSELF.contains(&method)
     }
 
     /// A junction receiver's own method: `Junction`'s row for it (`gist`,

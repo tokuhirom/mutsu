@@ -398,6 +398,12 @@ impl Interpreter {
                     _ => Self::value_to_list(&pairs),
                 };
                 flat.extend(pair_items);
+            } else if matches!(arg.view(), ValueView::Instance { class_name, .. }
+                if crate::runtime::utils::is_native_elems_class(&class_name.resolve()))
+            {
+                // A Buf/Blob is Positional but not Iterable: `*@args` keeps it
+                // whole (`Map.new("t", Blob.new(1, 2))` is `t => Blob:0x<01 02>`).
+                flat.push(arg.clone());
             } else {
                 // `*@args` flattens nested non-itemized Lists too, so
                 // `Hash.new(((0,1),(1,2)))` is `{0 => 1, 1 => 2}`.

@@ -139,6 +139,8 @@ pub(crate) fn attr_twigil_sigil(name: &str) -> Option<char> {
 /// Attribute under which `Str.WHICH` keeps its invocant (see
 /// [`AttrMap::objat_which`]).
 pub(crate) const OBJAT_STR_PAYLOAD: &str = "__str_which";
+/// Marks a user subclass whose instances inherit ObjAt's identity behavior.
+pub(crate) const OBJAT_SUBCLASS_MARKER: &str = "__objat_subclass";
 
 /// The declared-attribute layout of one composed class (ADR-0121 D2): the
 /// storage key of every attribute its instances carry, in MRO order (parents
@@ -571,6 +573,11 @@ impl AttrMap {
         matches!(class_name, "ObjAt" | "ValueObjAt")
             || class_name.starts_with("ObjAt+{")
             || class_name.starts_with("ValueObjAt+{")
+    }
+
+    // Cost: O(1).
+    pub(crate) fn is_objat_instance(&self, class_name: &str) -> bool {
+        Self::is_objat_class_name(class_name) || self.get(OBJAT_SUBCLASS_MARKER).is_some()
     }
 
     /// The identity text of an `ObjAt` / `ValueObjAt` instance. `Str.WHICH`

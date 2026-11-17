@@ -748,7 +748,8 @@ mod seq_body_shapes;
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
 pub(crate) use attr_map::{
-    AttrBits, AttrKey, AttrMap, ClassLayout, OBJAT_STR_PAYLOAD, attr_twigil_base, attr_twigil_sigil,
+    AttrBits, AttrKey, AttrMap, ClassLayout, OBJAT_STR_PAYLOAD, OBJAT_SUBCLASS_MARKER,
+    attr_twigil_base, attr_twigil_sigil,
 };
 pub(crate) use attr_site::AttrSiteCaches;
 pub(crate) use attr_store_kind::AttrStoreKind;

@@ -316,7 +316,15 @@ fn decode_bytes_with_builtin_encoding(
     if encoding_name == "utf8-c8" {
         return Ok(crate::runtime::utf8_c8::decode_utf8_c8(bytes));
     }
-    decode_bytes_unnormalized(bytes, encoding_name).map(nfc)
+    // A literal U+10FFFD is escaped so it is not read as a utf8-c8 synthetic
+    // (ADR-17800).
+    decode_bytes_unnormalized(bytes, encoding_name).map(|s| {
+        let s = nfc(s);
+        match crate::runtime::utf8_c8::escape_literal_marker(&s) {
+            std::borrow::Cow::Borrowed(_) => s,
+            std::borrow::Cow::Owned(escaped) => escaped,
+        }
+    })
 }
 
 fn decode_bytes_unnormalized(bytes: &[u8], encoding_name: &str) -> Result<String, RuntimeError> {

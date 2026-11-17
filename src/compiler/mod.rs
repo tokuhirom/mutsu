@@ -1112,6 +1112,7 @@ mod expr_incdec_ternary;
 mod expr_index_assign_emit;
 mod expr_index_concat_assign;
 mod expr_method;
+mod expr_method_var_index;
 mod expr_multidim_bind;
 mod expr_ops;
 mod expr_postfix;
@@ -1860,10 +1861,11 @@ pub(crate) struct Compiler {
     /// not a sigilless `\X` of an outer scope (#15806). A later `my \X` of the
     /// same scope drops the name again.
     use_declared_names: std::collections::HashSet<String>,
-    /// True for an `EVAL`'d unit (`mark_as_eval_unit`). It cannot see which
-    /// sigilless bindings its call site holds, so its own `use X` declares `X`
-    /// whether or not one is visible at compile time.
+    /// True for an `EVAL`'d unit (`mark_as_eval_unit`).
     in_eval_unit: bool,
+    /// Term names visible at the EVAL call site. A type the EVAL declares
+    /// under one of these names must outrank the caller's term binding.
+    eval_outer_term_names: std::collections::HashSet<String>,
     /// Bare names of the lexical types (`my class`/`my role`/`my grammar`)
     /// declared in this scope or an enclosing one. A method body's compiler
     /// reads them through `lexical_type_shadows`, so a method names such a
@@ -2298,6 +2300,7 @@ impl Compiler {
             lexical_type_shadows: std::collections::HashSet::new(),
             use_declared_names: std::collections::HashSet::new(),
             in_eval_unit: false,
+            eval_outer_term_names: std::collections::HashSet::new(),
             lexical_types_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
@@ -2867,6 +2870,22 @@ impl Compiler {
         compiled.enclosing_import_chain = self.lexical_import_chain.iter().rev().copied().collect();
         compiled.enclosing_import_regions =
             self.import_region_chain.iter().rev().copied().collect();
+        if !self.lexical_import_chain.is_empty() {
+            compiled.enclosing_routine_decls = self
+                .inherited_scope_routine_decls
+                .iter()
+                .chain(self.scope_routine_decls.iter())
+                .map(|&(_, decl)| decl)
+                .collect();
+            compiled.enclosing_set_decl_marks = self
+                .lexical_import_chain
+                .iter()
+                .filter_map(|id| {
+                    let mark = *self.lexical_set_decl_mark.get(id)?;
+                    Some((*id, u32::try_from(mark).ok()?))
+                })
+                .collect();
+        }
         compiled.free_var_parent_slots = compiled
             .free_var_syms
             .iter()

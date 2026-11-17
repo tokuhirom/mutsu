@@ -12,6 +12,7 @@
 
 /// Marker codepoint for Raku's invalid-byte grapheme representation.
 pub(crate) use crate::grapheme_break::SYNTHETIC_MARKER;
+pub(crate) use crate::grapheme_break::{escape_literal_marker, unescape_literal_marker};
 
 fn append_invalid_byte(result: &mut String, byte: u8) {
     result.push(SYNTHETIC_MARKER);
@@ -41,7 +42,7 @@ pub fn decode_utf8_c8(bytes: &[u8]) -> String {
         match std::str::from_utf8(&bytes[i..]) {
             Ok(s) => {
                 // Remaining bytes are all valid UTF-8.
-                result.push_str(s);
+                result.push_str(&escape_literal_marker(s));
                 break;
             }
             Err(e) => {
@@ -50,7 +51,7 @@ pub fn decode_utf8_c8(bytes: &[u8]) -> String {
                 if valid_up_to > 0 {
                     // Safety: from_utf8 guarantees bytes[i..i+valid_up_to] is valid.
                     let valid = std::str::from_utf8(&bytes[i..i + valid_up_to]).unwrap();
-                    result.push_str(valid);
+                    result.push_str(&escape_literal_marker(valid));
                     i += valid_up_to;
                 }
                 // Now bytes[i] starts an invalid sequence. Emit Raku's marker
@@ -73,6 +74,12 @@ pub fn encode_utf8_c8(s: &str) -> Vec<u8> {
     let mut chars = s.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == SYNTHETIC_MARKER {
+            // A doubled marker is one literal U+10FFFD (ADR-17800).
+            if chars.peek() == Some(&SYNTHETIC_MARKER) {
+                chars.next();
+                result.extend_from_slice(ch.encode_utf8(&mut [0u8; 4]).as_bytes());
+                continue;
+            }
             let mut payload = chars.clone();
             if payload.next() == Some('x')
                 && let (Some(hi), Some(lo)) = (payload.next(), payload.next())

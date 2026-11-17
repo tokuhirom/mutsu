@@ -162,11 +162,18 @@ impl Interpreter {
             // (`P[Any]`): the class inherits the pun's attributes and methods,
             // so composing the role once more would declare its attributes a
             // second time on the mixin class.
+            // A base that is itself a mixin type (`A+{R[..]}` mixed with
+            // another role is `A+{R[..],S[..]}`) is a class, never a role: its
+            // name is not qualified or read as a role's arguments either
+            // (Red's `does` on an attribute a `require` declares again).
             let mixin_base_pun = i == 0
                 && !does_parents.contains(parent)
                 && cx.name.ends_with('}')
-                && cx.name.starts_with(&format!("{resolved_parent_name}+{{"))
-                && self.registry().classes.contains_key(&resolved_parent_name);
+                && ((cx.name.starts_with(&format!("{resolved_parent_name}+{{"))
+                    && self.registry().classes.contains_key(&resolved_parent_name))
+                    || (parent.contains("+{")
+                        && parent.ends_with('}')
+                        && self.registry().classes.contains_key(parent)));
             let resolved_role = if core_grammar_parent || mixin_base_pun {
                 None
             } else {
@@ -341,10 +348,7 @@ impl Interpreter {
             // sigilless name and their `&` code-variable spelling. Role
             // composition stores the parameter bindings directly, so preserve
             // that alias for a role method such as `:&cmp` as well as `cmp(...)`.
-            if matches!(
-                v.view(),
-                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-            ) {
+            if crate::runtime::types::binds_as_code_variable(v) {
                 cx.out
                     .class_role_param_bindings
                     .insert(format!("&{p}"), v.clone());
@@ -367,10 +371,7 @@ impl Interpreter {
                 for (name, value) in role_param_names.iter().zip(role_arg_values.iter()) {
                     bindings.push((name.clone(), value.clone()));
                     bindings.extend(Self::role_type_capture_marker(name, value));
-                    if matches!(
-                        value.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    ) {
+                    if crate::runtime::types::binds_as_code_variable(value) {
                         bindings.push((format!("&{name}"), value.clone()));
                     }
                 }

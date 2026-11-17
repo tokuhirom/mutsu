@@ -543,8 +543,10 @@ impl Interpreter {
             "yada".to_string(),
             Value::truth(!is_dispatcher && Self::sub_body_is_yada_stub(&method_def.body)),
         );
-        attrs.insert("rw".to_string(), Value::truth(method_def.is_rw));
-        attrs.insert("readonly".to_string(), Value::truth(!method_def.is_rw));
+        // rakudo's `is raw` sets the same `rw` flag as `is rw`.
+        let rw = method_def.is_rw || method_def.is_raw;
+        attrs.insert("rw".to_string(), Value::truth(rw));
+        attrs.insert("readonly".to_string(), Value::truth(!rw));
         // `Code.line`/`Code.file` — the declaration site, reported for a
         // `Method` the same way `SubData::source_line`/`source_file` report it
         // for a `Sub`. The line rides on the method's own compiled body

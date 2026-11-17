@@ -46,7 +46,7 @@ impl Interpreter {
             | OpCode::SetCallTemp(..)
             | OpCode::SetGlobal(..)
             | OpCode::SetGlobalRaw { .. }
-            | OpCode::VarIsWritable(..) => self.exec_ops_group_02(code, ip, compiled_fns),
+            | OpCode::VarHasContainer(..) => self.exec_ops_group_02(code, ip, compiled_fns),
             OpCode::Add
             | OpCode::BoolBitNeg
             | OpCode::DeSlip
@@ -323,7 +323,7 @@ impl Interpreter {
             | OpCode::ExistsExpr
             | OpCode::ExistsIndexAdv(..)
             | OpCode::ExistsIndexNamedAdv { .. }
-            | OpCode::Fail
+            | OpCode::Fail(..)
             | OpCode::GetEnvIndex(..)
             | OpCode::NonDestructiveSubst { .. }
             | OpCode::PackageScope { .. }

@@ -20,8 +20,8 @@ use dynamic_stash::probe_dynamic_exports;
 use enum_values::import_admits;
 use export_hook::{
     collect_export_hook_literal_keys, collect_export_hook_operator_subs,
-    collect_export_hook_type_keys, collect_export_hook_value_keys, collect_export_hook_value_terms,
-    collect_unit_scope_routines, declares_export_sub,
+    collect_export_hook_stash_types, collect_export_hook_type_keys, collect_export_hook_value_keys,
+    collect_export_hook_value_terms, collect_unit_scope_routines, declares_export_sub,
 };
 pub(crate) use import_tags::register_import_tags;
 use scanned_exports::record_scanned_exports;
@@ -114,17 +114,14 @@ struct ModuleScanResult {
     /// cache-compatibility reason as `declares_export_hook`.
     #[serde(default)]
     unlisted_exported_vars: bool,
-    /// The variables and lowercase terms a `sub EXPORT` hook names by a
-    /// literal pair key (`export_hook::collect_export_hook_value_keys`), in
-    /// their key spelling. Defaulted for the same cache-compatibility reason
-    /// as `declares_export_hook`.
+    /// Variables and lowercase terms named by literal hook pair keys.
     #[serde(default)]
     hook_value_keys: Vec<String>,
-    /// The type names a `sub EXPORT` hook hands out under literal keys
-    /// (`export_hook::collect_export_hook_type_keys`). Defaulted for the
-    /// same cache-compatibility reason as `declares_export_hook`.
     #[serde(default)]
     hook_type_keys: Vec<String>,
+    /// Types from referenced export stashes, for validation only.
+    #[serde(default)]
+    hook_reexport_type_keys: Vec<String>,
     /// `module Foo { sub bar is export }` blocks declared *inside* the scanned
     /// module. The nested parse registers these in the process-wide inline
     /// export table, which — unlike the scopes — the scan does not restore, so
@@ -1057,6 +1054,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // scope, which is what the dominant `UNIT::`-grep idiom exports verbatim
     // (ADR-0087).
     let mut hook_type_keys = Vec::new();
+    let mut hook_reexport_type_keys = Vec::new();
     let hook_value_keys = if declares_export_hook {
         collect_export_hook_value_keys(&stmts)
     } else {
@@ -1066,6 +1064,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         // A type the hook hands out under a literal key
         // (`'MyAlias' => Int`) is a type name to the importer's parse.
         hook_type_keys = collect_export_hook_type_keys(&stmts);
+        hook_reexport_type_keys = collect_export_hook_stash_types(&stmts);
         for key in &hook_type_keys {
             if !type_names.contains(key) {
                 type_names.push(key.clone());
@@ -1157,6 +1156,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         unlisted_exported_vars: decls.unlisted_exported_vars,
         hook_value_keys,
         hook_type_keys,
+        hook_reexport_type_keys,
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
         // and the file stamp.

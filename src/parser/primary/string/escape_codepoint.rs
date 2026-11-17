@@ -47,6 +47,16 @@ pub(super) fn scalar(value: i64) -> Result<char, String> {
         .ok_or_else(|| format!("chr codepoint {value} (0x{value:X}) is out of bounds"))
 }
 
+/// Append `ch`, escaping a literal `U+10FFFD` as the doubled marker so it is
+/// not read as a utf8-c8 synthetic (ADR-17800).
+// Cost: O(1).
+fn push_escaped(text: &mut String, ch: char) {
+    text.push(ch);
+    if ch == crate::grapheme_break::SYNTHETIC_MARKER {
+        text.push(ch);
+    }
+}
+
 /// Parse the tail of `\x` or `\o`, rejecting an entire malformed escape
 /// before its caller appends any of its codepoints.
 // Cost: O(n), n = source consumed by the escape.
@@ -58,7 +68,7 @@ pub(super) fn numeric_escape(rest: &str, kind: char) -> Result<(&str, String), S
             .find(']')
             .ok_or_else(|| format!("Missing closing bracket for \\{kind}["))?;
         for digits in inner[..end].split(',') {
-            text.push(codepoint(digits.trim(), radix, kind)?);
+            push_escaped(&mut text, codepoint(digits.trim(), radix, kind)?);
         }
         Ok((&inner[end + 1..], text))
     } else {
@@ -72,7 +82,7 @@ pub(super) fn numeric_escape(rest: &str, kind: char) -> Result<(&str, String), S
             }
             end = index + ch.len_utf8();
         }
-        text.push(codepoint(&rest[..end], radix, kind)?);
+        push_escaped(&mut text, codepoint(&rest[..end], radix, kind)?);
         Ok((&rest[end..], text))
     }
 }

@@ -1,8 +1,6 @@
 //! Generator and verifier for [`super::gc_data`].
 //!
-//! Test-only; the shared machinery is in [`super::table_gen`], whose
-//! header explains why deriving from `regex-syntax` makes the table's answers
-//! identical to the ordered-regex probe's by construction. Regenerate with:
+//! Test-only; the shared machinery is in [`super::table_gen`]. Regenerate with:
 //!
 //! ```text
 //! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib ucd::gc_gen
@@ -12,8 +10,8 @@ use super::gc::GeneralCategory;
 use super::gc_data as data;
 use super::table_gen as tbl;
 
-/// The category abbreviations, in the order `unicode_general_category` used to
-/// try them. `Cs` is absent for the reason [`GeneralCategory`] documents.
+/// The category abbreviations, ordered like [`GeneralCategory`]. `Cs` is
+/// absent because Rust `char` cannot represent a surrogate.
 const CATS: [&str; 28] = [
     "Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "Pc", "Pd", "Ps", "Pe", "Pi",
     "Pf", "Po", "Sm", "Sc", "Sk", "So", "Zs", "Zl", "Zp", "Cc", "Cf", "Co",
@@ -28,16 +26,24 @@ const HEADER: &str = "\
 //! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib ucd::gc_gen
 //! ```
 //!
-//! Derived from `regex-syntax`'s Unicode tables -- the same data `regex`'s
-//! `\\p{...}` classes match against -- folded in the priority order the
-//! ordered-regex probe used, so every answer is identical to the
-//! implementation this replaced. `super::gc_gen` re-derives them on
-//! every test run and fails if this file has drifted.
+//! Derived from Unicode 17.0.0 `extracted/DerivedGeneralCategory.txt`.
+//! `super::gc_gen` re-derives and verifies every codepoint on each test run.
 
 ";
 
-fn patterns() -> Vec<String> {
-    CATS.iter().map(|cat| format!(r"\p{{{cat}}}")).collect()
+const UCD: &str = include_str!("data/DerivedGeneralCategory-17.0.0.txt");
+
+fn table() -> Vec<u8> {
+    let mut table = tbl::derive_ucd_table(UCD, &CATS, &["Cn", "Cs"]);
+    assert_eq!(
+        tbl::apply_moar_cjk_tails(
+            &mut table,
+            GeneralCategory::Cn as u8,
+            GeneralCategory::Lo as u8
+        ),
+        22,
+    );
+    table
 }
 
 #[test]
@@ -52,18 +58,9 @@ fn category_names_match_the_enum() {
 }
 
 #[test]
-fn categories_are_disjoint() {
-    let table = tbl::derive_table(&patterns());
-    for (i, pattern) in patterns().iter().enumerate() {
-        for (start, end) in tbl::ranges_for(pattern) {
-            for cp in start..=end {
-                assert_eq!(
-                    table[cp as usize], i as u8,
-                    "U+{cp:04X} is in {pattern} but folded elsewhere"
-                );
-            }
-        }
-    }
+fn unicode_17_extension_j_is_lo() {
+    let table = table();
+    assert_eq!(table[0x323B0], GeneralCategory::Lo as u8);
 }
 
 /// The committed tables must answer exactly what the Unicode data says, for
@@ -71,7 +68,7 @@ fn categories_are_disjoint() {
 /// argument for the lookup, and it is exhaustive rather than sampled.
 #[test]
 fn verify_committed_tables_match_unicode_data() {
-    let table = tbl::derive_table(&patterns());
+    let table = table();
     let built = tbl::build_tables(&table);
     tbl::maybe_regenerate("ucd/gc_data.rs", &built, HEADER, "");
 
@@ -88,57 +85,4 @@ fn verify_committed_tables_match_unicode_data() {
     );
 
     tbl::assert_lookup_matches_table(&table, |ch| super::gc::general_category(ch) as u8);
-}
-
-/// Tie the tables back to the *original* implementation: the ordered
-/// `regex::Regex` probe, run for real. `verify_committed_tables_match_unicode_data`
-/// proves the tables match `regex-syntax`'s data; this proves that data is what
-/// a compiled `regex` actually matches, which is the thing the old code did.
-#[test]
-fn matches_the_ordered_regex_probe_it_replaced() {
-    let regexes: Vec<(&str, regex::Regex)> = CATS
-        .iter()
-        .map(|cat| {
-            (
-                *cat,
-                regex::Regex::new(&format!(r"^\p{{{cat}}}$")).expect("valid regex"),
-            )
-        })
-        .collect();
-    let probe = |ch: char| -> &'static str {
-        let mut buf = [0u8; 4];
-        let s = ch.encode_utf8(&mut buf);
-        for (cat, re) in &regexes {
-            if re.is_match(s) {
-                return cat;
-            }
-        }
-        "Cn"
-    };
-
-    // All of ASCII, every run boundary in the derived table (and the codepoint
-    // either side of it), plus a stride across the rest.
-    let table = tbl::derive_table(&patterns());
-    let mut probes: Vec<u32> = (0..0x80).collect();
-    let mut prev = table[0];
-    for cp in 1..0x110000u32 {
-        if table[cp as usize] != prev {
-            probes.extend([cp.saturating_sub(1), cp, cp + 1]);
-            prev = table[cp as usize];
-        }
-    }
-    probes.extend((0..0x110000u32).step_by(997));
-    probes.sort_unstable();
-    probes.dedup();
-
-    for cp in probes {
-        let Some(ch) = char::from_u32(cp) else {
-            continue;
-        };
-        assert_eq!(
-            super::gc::general_category(ch).as_str(),
-            probe(ch),
-            "U+{cp:04X}"
-        );
-    }
 }

@@ -1042,7 +1042,7 @@ impl Interpreter {
         self.env.get(first_param).cloned()
     }
 
-    fn dispatch_next_candidate(
+    pub(super) fn dispatch_next_candidate(
         &mut self,
         func_name: &str,
         override_args: Option<Vec<Value>>,
@@ -1444,6 +1444,14 @@ impl Interpreter {
                     return Ok(result);
                 }
                 Some(DeferralEntry::Candidate { .. }) => {}
+            }
+            if let Some(result) =
+                self.autothread_wrapped_candidate(frame_idx, func_name, &override_args)?
+            {
+                if tail_call {
+                    return Err(RuntimeError::return_signal(result));
+                }
+                return Ok(result);
             }
             let (
                 receiver_class,
@@ -1974,7 +1982,7 @@ impl Interpreter {
         // Shared per candidate, so the value call compiles the body once
         // rather than on every `nextcallee` (#12875).
         let (params, callable_param_defs) = self.nextcallee_method_signature(owner, def);
-        Value::make_sub_for_routine(
+        let callable = Value::make_sub_for_routine(
             owner,
             Symbol::intern(method_name),
             params,
@@ -1983,7 +1991,17 @@ impl Interpreter {
             def.is_rw,
             self.env.clone(),
             None,
-        )
+        );
+        // An `is raw` candidate hands back its container through the callee
+        // too (`my \r := nextcallee()(self, |c)`), as through a direct call.
+        if def.is_raw
+            && let ValueView::Sub(data) = callable.view()
+        {
+            let mut raw = crate::value::SubData::clone(&data);
+            raw.is_raw = true;
+            return Value::sub_value(crate::gc::Gc::new(raw));
+        }
+        callable
     }
 
     pub(super) fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {

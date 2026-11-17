@@ -129,8 +129,18 @@ impl Interpreter {
                 let candidates = self.classhow_lookup_all_candidates(&cls, &meth, data.package);
                 return Some(Ok(Value::array(candidates)));
             }
-            let builtin =
-                self.builtin_routine_candidates(&data.package.resolve(), &data.name.resolve());
+            // A routine with code of its own is one candidate, even when it is
+            // named like a built-in operator (a block-nested `multi infix:<+>`
+            // the CHECK phase builds from its declaration): its candidates are
+            // itself, as in rakudo.
+            let own_code = !data.body.is_empty()
+                || data.compiled_routine.is_some()
+                || data.compiled_code.is_some();
+            let builtin = if own_code {
+                Vec::new()
+            } else {
+                self.builtin_routine_candidates(&data.package.resolve(), &data.name.resolve())
+            };
             if !builtin.is_empty() {
                 return Some(Ok(Value::array(builtin)));
             }

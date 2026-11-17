@@ -1567,9 +1567,9 @@ impl Value {
                     if matches!(elem.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                         return Some(elem.clone());
                     }
-                    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
-                        std::mem::replace(elem, Value::Nil),
-                    ));
+                    // Built from a copy and published with one store, as in
+                    // `array_slot_ref` (#17781).
+                    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(elem.clone()));
                     // See `array_slot_ref` for why the owner name starts as
                     // the bare sigil.
                     if let Some(tc) = value_type.as_deref() {

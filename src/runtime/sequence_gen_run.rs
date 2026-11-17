@@ -6,6 +6,39 @@ use super::*;
 use crate::value::seq_gen::{EndpointKind, SeqGen, SeqGenOutcome, SeqMode};
 
 impl Interpreter {
+    /// Whether a single string seed has more characters than its endpoint.
+    // Cost: O(w), w = characters in the seed and endpoint.
+    pub(super) fn sequence_longer_string_seed(seeds: &[Value], endpoint: Option<&Value>) -> bool {
+        seeds.len() == 1
+            && matches!(
+                (seeds[0].view(), endpoint.map(Value::view)),
+                (ValueView::Str(seed), Some(ValueView::Str(end)))
+                    if seed.chars().count() > end.chars().count()
+            )
+    }
+
+    /// Advance the rightmost unfinished character range, resetting ranges to its right.
+    // Cost: O(w), w = characters in the string.
+    fn string_product_next(last: &str, seed: &str, endpoint: &str) -> Option<String> {
+        let mut chars: Vec<char> = last.chars().collect();
+        let ranges: Vec<(char, char)> = seed.chars().zip(endpoint.chars()).collect();
+        for i in (0..ranges.len()).rev() {
+            let (start, end) = ranges[i];
+            if chars[i] == end {
+                chars[i] = start;
+                continue;
+            }
+            let delta = if start < end { 1 } else { -1 };
+            let mut code = chars[i] as i64 + delta;
+            while char::from_u32(code as u32).is_none() {
+                code += delta;
+            }
+            chars[i] = char::from_u32(code as u32)?;
+            return Some(chars.into_iter().collect());
+        }
+        None
+    }
+
     /// Append up to `max_gen` generation steps' terms to `result`, which
     /// holds every term so far (the generator and a closure endpoint read its
     /// tail). The outcome says whether the sequence ended within the budget.
@@ -122,7 +155,22 @@ impl Interpreter {
                 }
                 SeqMode::Arithmetic(step) => {
                     if g.is_string_seq {
-                        if *step == 0.0 {
+                        if g.string_product {
+                            let (Some(ValueView::Str(seed)), Some(EndpointKind::Value(ep))) =
+                                (g.first_seed.as_ref().map(Value::view), g.endpoint_kind.as_ref())
+                            else {
+                                break;
+                            };
+                            let (ValueView::Str(last), ValueView::Str(end)) =
+                                (result.last().unwrap().view(), ep.view())
+                            else {
+                                break;
+                            };
+                            let Some(next) = Self::string_product_next(&last, &seed, &end) else {
+                                break;
+                            };
+                            Value::str(next)
+                        } else if *step == 0.0 {
                             // String constant sequence
                             result.last().unwrap().clone()
                         } else if g.use_codepoint {
@@ -145,41 +193,7 @@ impl Interpreter {
                             // String predecessor sequence: use .pred
                             let last = result.last().unwrap();
                             if let ValueView::Str(s) = last.view() {
-                                if let Some(alpha) = g.uniform_string_alphabet.as_ref() {
-                                    let mut idxs: Vec<usize> =
-                                        Vec::with_capacity(s.chars().count());
-                                    for ch in s.chars() {
-                                        let Some(pos) = alpha.iter().position(|a| *a == ch) else {
-                                            idxs.clear();
-                                            break;
-                                        };
-                                        idxs.push(pos);
-                                    }
-                                    if idxs.is_empty() {
-                                        Value::str(Self::string_pred(&s)?)
-                                    } else {
-                                        let mut borrow = true;
-                                        for idx in idxs.iter_mut().rev() {
-                                            if !borrow {
-                                                break;
-                                            }
-                                            if *idx == 0 {
-                                                *idx = alpha.len() - 1;
-                                            } else {
-                                                *idx -= 1;
-                                                borrow = false;
-                                            }
-                                        }
-                                        if borrow {
-                                            return Err(RuntimeError::new(
-                                                "Decrement out of range",
-                                            ));
-                                        }
-                                        Value::str(
-                                            idxs.into_iter().map(|i| alpha[i]).collect::<String>(),
-                                        )
-                                    }
-                                } else if let Some(radix) = g.digit_string_radix {
+                                if let Some(radix) = g.digit_string_radix {
                                     Value::str(Self::digit_string_pred_radix(&s, radix)?)
                                 } else {
                                     Value::str(Self::string_pred(&s)?)
@@ -191,41 +205,7 @@ impl Interpreter {
                             // String succession sequence: use .succ
                             let last = result.last().unwrap();
                             if let ValueView::Str(s) = last.view() {
-                                if let Some(alpha) = g.uniform_string_alphabet.as_ref() {
-                                    let mut idxs: Vec<usize> =
-                                        Vec::with_capacity(s.chars().count());
-                                    for ch in s.chars() {
-                                        let Some(pos) = alpha.iter().position(|a| *a == ch) else {
-                                            idxs.clear();
-                                            break;
-                                        };
-                                        idxs.push(pos);
-                                    }
-                                    if idxs.is_empty() {
-                                        Value::str(Self::string_succ(&s))
-                                    } else {
-                                        let mut carry = true;
-                                        for idx in idxs.iter_mut().rev() {
-                                            if !carry {
-                                                break;
-                                            }
-                                            if *idx + 1 >= alpha.len() {
-                                                *idx = 0;
-                                            } else {
-                                                *idx += 1;
-                                                carry = false;
-                                            }
-                                        }
-                                        if carry {
-                                            return Err(RuntimeError::new(
-                                                "Increment out of range",
-                                            ));
-                                        }
-                                        Value::str(
-                                            idxs.into_iter().map(|i| alpha[i]).collect::<String>(),
-                                        )
-                                    }
-                                } else if let Some(radix) = g.digit_string_radix {
+                                if let Some(radix) = g.digit_string_radix {
                                     Value::str(Self::digit_string_succ_radix(&s, radix))
                                 } else {
                                     Value::str(Self::string_succ(&s))
@@ -348,8 +328,10 @@ impl Interpreter {
                                 should_break = true;
                                 continue;
                             }
-                            // Check if we went past the endpoint (string comparison)
-                            if let (ValueView::Str(ns), ValueView::Str(es)) =
+                            // A product's character ranges may cross the endpoint
+                            // in lexicographic order before reaching its final term.
+                            if !g.string_product
+                                && let (ValueView::Str(ns), ValueView::Str(es)) =
                                 (item.view(), ep.view())
                                 && let SeqMode::Arithmetic(step) = &g.mode
                             {

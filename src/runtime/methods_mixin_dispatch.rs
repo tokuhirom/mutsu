@@ -318,13 +318,8 @@ impl Interpreter {
             }
         }
 
-        // `.clone` on a role mixin (`clone_role_mixin`), unless a mixed-in
-        // role declares its own `clone`: that runs first, and its
-        // `nextwith`/`callsame` reaches this `Mu.clone`
-        // (`mixin_role_base_deferral`).
         if method == "clone"
-            && !self.mixin_role_declares_method(mixins, "clone")
-            && let Some(result) = self.clone_role_mixin(target, &args)
+            && let Some(result) = self.try_clone_role_mixin(target, &args)
         {
             return Some(result);
         }

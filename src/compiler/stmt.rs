@@ -2759,6 +2759,15 @@ impl Compiler {
                             slot: u32::MAX,
                         });
                     } else {
+                        // An attribute bind must seat the source's own cell
+                        // in the instance. An ordinary lexical bind keeps its
+                        // existing name-resolution path through shadowing
+                        // callers and later source rebinds (ADR-0024).
+                        if crate::value::attr_twigil_base(effective_name).is_some()
+                            && let Expr::Var(src) = expr
+                        {
+                            self.register_container_ref_capture_if_free(src);
+                        }
                         self.compile_call_arg(expr);
                     }
                     // The markers are consumed by the store below, so they are
@@ -3336,7 +3345,9 @@ impl Compiler {
             Stmt::Fail(expr) => {
                 // A failed value is stored/propagated -> closure escapes.
                 self.with_escape(true, |c| c.compile_expr(expr));
-                self.code.emit(OpCode::Fail);
+                self.code.emit(OpCode::Fail(
+                    self.return_is_routine() || self.return_lexically_in_routine(),
+                ));
             }
             Stmt::Proceed => {
                 self.code.emit(OpCode::Proceed);
@@ -3469,6 +3480,31 @@ impl Compiler {
                         self.code.ops.last(),
                         Some(OpCode::TagContainerRef(..) | OpCode::TagContainerRefReversed(..))
                     );
+                    // A scalar assignment expression evaluates to its target
+                    // container, just as a bare `$x` does. Its trailing tag
+                    // identifies the writeback source. Array/hash assignments
+                    // still yield read-only topics, and `:=` may bind a scalar
+                    // to an immutable value.
+                    let mut assignment_topic = topic;
+                    while let Expr::Grouped(inner) = assignment_topic {
+                        assignment_topic = inner;
+                    }
+                    let scalar_assignment_topic = match assignment_topic {
+                        Expr::AssignExpr { name, is_bind, .. } => {
+                            !*is_bind
+                                && !name.starts_with('@')
+                                && !name.starts_with('%')
+                                && !name.starts_with('&')
+                        }
+                        Expr::CompoundAssign { expanded, .. } => matches!(
+                            expanded.as_ref(),
+                            Expr::AssignExpr { name, is_bind: false, .. }
+                                if !name.starts_with('@')
+                                    && !name.starts_with('%')
+                                    && !name.starts_with('&')
+                        ),
+                        _ => false,
+                    };
                     // The topic is read-only unless it is a bare scalar variable
                     // (`given $x` aliases `$x` rw), a scalar declaration topic
                     // (`given my $x = ...`), or an `is copy` writable copy.
@@ -3476,7 +3512,8 @@ impl Compiler {
                     // errors on `$_ = ...`).
                     topic_readonly = !is_copy_topic
                         && !matches!(topic, Expr::Var(_))
-                        && topic_decl_scalar.is_none();
+                        && topic_decl_scalar.is_none()
+                        && !(scalar_assignment_topic && tagged_source);
                 }
                 // A pointy block (`given @a -> @p { ... }`) starts with a
                 // parser-generated synthetic declaration containing a bound declaration.

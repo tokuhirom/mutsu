@@ -1327,6 +1327,7 @@ pub(in crate::runtime) fn supplier_emit_collect(
     if !actions.is_empty() {
         supplier_mark_preserved_consumed(supplier_id);
     }
+    super::state::supplier_trim_plain(supplier_id);
     drop(gate);
     if let Some(pending) = pending {
         pending.await_delivery();

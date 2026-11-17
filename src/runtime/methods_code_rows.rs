@@ -339,7 +339,15 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let _ = (target, data, &args);
         if method == "rw" && args.is_empty() {
-            return Some(Ok(Value::truth(data.is_rw)));
+            // rakudo's `is raw` on a routine sets the same `rw` flag as `is rw`
+            // (`trait_mod:<is>(Routine, :raw)`): both return the container.
+            // A declared routine's code object may not carry the traits
+            // itself; its compiled routine does.
+            let declared = data
+                .compiled_routine
+                .as_ref()
+                .is_some_and(|cf| cf.is_rw || cf.is_raw);
+            return Some(Ok(Value::truth(data.is_rw || data.is_raw || declared)));
         }
         None
     }

@@ -320,7 +320,15 @@ impl Interpreter {
     }
 
     pub(super) fn routine_candidate_subs(&self, package: &str, name: &str) -> Vec<Value> {
-        let defs = self.routine_candidate_defs(package, name);
+        self.candidate_subs_from_defs(self.routine_candidate_defs(package, name))
+    }
+
+    /// The code objects of the candidates `defs` ([`Self::routine_candidate_defs`]).
+    // Cost: O(c * e), c = candidates, e = the env each one captures.
+    pub(super) fn candidate_subs_from_defs(
+        &self,
+        defs: Vec<(std::sync::Arc<crate::ast::FunctionDef>, bool)>,
+    ) -> Vec<Value> {
         defs.into_iter()
             .enumerate()
             .map(|(multi_idx, (def, is_multi_key))| {

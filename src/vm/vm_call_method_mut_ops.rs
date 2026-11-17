@@ -646,11 +646,12 @@ impl Interpreter {
         };
         // ADR-0040's store boundary, Proxy half — see
         // `Interpreter::fetch_proxy_mutator_args`.
-        let args = self.fetch_proxy_mutator_args(method, args)?;
+        let mut args = self.fetch_proxy_mutator_args(method, args)?;
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
         let target = self.mixin_lazy_inner(&target, method).unwrap_or(target);
+        self.prepare_attribute_set_value_arg(code, &target, method_sym, &mut args);
         // A plain gather argument of a built-in method is read the way
         // Rakudo's method reads it (ADR-11678 §8.3).
         let mut args = self.method_gather_args(&target, method, args)?;
@@ -854,6 +855,13 @@ impl Interpreter {
         } else {
             let target = Self::lazy_slip_receiver(target, method);
             let target = Self::shaped_iteration_receiver(target, method);
+            // A named Seq receiver takes this mutable opcode even for the
+            // read-only `.first`. Pull its deferred map/grep source only up to
+            // the match, as the plain CallMethod path does.
+            if let Some(found) = self.first_over_map_grep_seq(&target, method, &args)? {
+                self.stack.push(found);
+                return Ok(());
+            }
             let target = match self.take_seq_prefix(&target, method, &args)? {
                 Some(prefix) if Self::is_lazy_head_result(&prefix, method, &args) => {
                     self.stack.push(prefix);

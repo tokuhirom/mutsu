@@ -20,8 +20,12 @@
 
 use super::*;
 
-/// The template's source: the callable hands itself to the builtin.
-const TEMPLATE: &str = "sub (|c) { __mutsu_nextcallee_continue(&?ROUTINE, |c) }";
+/// The template's source: the callable hands itself to the builtin. It is
+/// `is raw`: a dispatcher continuation hands back whatever its candidate
+/// returns, so an `is raw`/`is rw` method's container survives the wrapper
+/// that called it through `nextcallee` (Method::Protected's
+/// `original(self, |c)`).
+const TEMPLATE: &str = "sub (|c) is raw { __mutsu_nextcallee_continue(&?ROUTINE, |c) }";
 
 /// The env key of the chain a continuation carries.
 // Cost: O(1) after the first call (the key is memoized).

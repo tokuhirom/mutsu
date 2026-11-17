@@ -142,6 +142,13 @@ than leaving it to the operator:
    `scripts/dist-compat-sweep.py` already uses). *Both*, because a suite that
    needs the network must fail symmetrically rather than showing up as a mutsu
    regression. A corpus sweep without a sandbox is not a supported mode.
+   Each interpreter has a private cache directory for the duration of one
+   distribution run. It is mounted under the throwaway HOME, reused across
+   that distribution's test files, and removed with the workdir afterward.
+   Untimed load probes warm both interpreters before the timed files. This
+   gives mutsu the same precompilation opportunity that rakudo gets from the
+   distribution's writable `lib/.precomp`, while keeping caches from different
+   distributions and interpreters separate.
 6. **Author tests are excluded by default.** `xt/` is style/pod/meta checking of
    the dist itself, not of the language; `t/` and the dist's declared test paths
    are what `zef test` runs. The exclusion is recorded per dist so it can be
@@ -271,7 +278,7 @@ never hand-edited — a conflict in them is resolved by regenerating, not mergin
     "date": "2026-09-10",
     "mutsu_commit": "66a1e4e", "mutsu_version": "0.23.0",
     "raku_version": "2026.07", "raku_backend": "moar 2026.07",
-    "host": "linux-x86_64", "sandbox": "bwrap", "harness": 2
+    "host": "linux-x86_64", "sandbox": "bwrap", "harness": 3
   },
   "deps": { "mode": "flat-closure", "digest": "sha256:…",
             "resolved": ["Foo::Bar"], "unresolved": [], "bundled_would_supply": [] },

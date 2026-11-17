@@ -111,6 +111,25 @@ pub(crate) fn headroom_exhausted() -> bool {
     floor != 0 && approx_stack_pointer() < floor
 }
 
+/// The stack left above this thread's floor, or `None` on an unguarded
+/// thread (whose depth nothing measures). On a growing thread this is the
+/// headroom of the current segment.
+// Cost: O(1).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn headroom_bytes() -> Option<usize> {
+    let floor = STACK_FLOOR.with(|c| c.get());
+    (floor != 0).then(|| approx_stack_pointer().saturating_sub(floor))
+}
+
+/// The stack a freshly started user-code thread can use before its guard
+/// fires, on the smallest stack one is ever given (`MIN_GUARDABLE_STACK_BYTES`,
+/// ADR-17392): 8 MiB in a debug build, 1 MiB in a release one.
+// Cost: O(1).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const fn fresh_stack_usable_bytes() -> usize {
+    MIN_GUARDABLE_STACK_BYTES - MIN_RESERVE_BYTES
+}
+
 /// The logical stack a user-code thread may recurse through (ADR-17392): the
 /// size of the one stack every such thread had before stacks grew in
 /// segments, so a program reaches the same depth whichever thread it runs on.

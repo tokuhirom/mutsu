@@ -43,6 +43,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Promise", "cause", 0, promise_cause),
     row!("Promise", "Bool", 0, promise_bool),
     row!("Promise", "vow", 0, promise_vow),
+    row!("Promise", "Supply", 0, promise_supply),
     row!("Promise::Vow", "keep", 0, vow_keep),
     row!("Promise::Vow", "keep", 1, vow_keep),
     row!("Promise::Vow", "break", 0, vow_break),
@@ -218,6 +219,12 @@ fn promise_cause(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> A
 // Cost: O(1).
 fn promise_bool(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
     Some(Ok(Value::truth(promise(t)?.is_resolved())))
+}
+
+/// `Promise.Supply`: emits the result then is done, or quits with the cause.
+// Cost: O(1).
+fn promise_supply(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    Some(Ok(Interpreter::make_promise_supply(&promise(t)?)))
 }
 
 /// `Promise.vow`.

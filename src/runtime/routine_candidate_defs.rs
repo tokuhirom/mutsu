@@ -85,4 +85,35 @@ impl Interpreter {
         }
         defs
     }
+
+    /// The candidates of the operator `name` (`infix:<+>`) the running unit
+    /// declares itself, as code objects: what joins a family a `sub EXPORT`
+    /// hook handed the unit when the unit adds a `multi` of its own (a
+    /// block's `multi infix:<+>(Red::AST $l, Int $r)`), as rakudo's
+    /// block-level `multi` derives the dispatcher in scope from the imported
+    /// one. Empty, without a registry scan, when the running unit declares
+    /// no candidate of `name`.
+    // Cost: O(1) when the running unit declares none; else
+    // `routine_candidate_defs` plus building each candidate.
+    pub(crate) fn unit_declared_operator_candidates(&self, name: &str) -> Vec<Value> {
+        let unit = self.executing_unit_sym();
+        let declared_here = self
+            .dispatch
+            .user_declared_infix_ops
+            .get(name)
+            .is_some_and(|files| files.contains(&unit) || files.contains(&self.current_unit));
+        if !declared_here {
+            return Vec::new();
+        }
+        let defs = self
+            .routine_candidate_defs("GLOBAL", name)
+            .into_iter()
+            .filter(|(def, _)| {
+                def.dispatchee.is_none()
+                    && def.source_file.is_some()
+                    && self.unit_of_declaring_file(def.source_file.as_deref()) == unit
+            })
+            .collect();
+        self.candidate_subs_from_defs(defs)
+    }
 }

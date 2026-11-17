@@ -331,6 +331,7 @@ impl Interpreter {
             &def.param_defs,
             &decl.body,
             decl.is_rw,
+            decl.is_raw,
             false,
             decl.return_type.as_deref(),
             &decl.custom_traits,

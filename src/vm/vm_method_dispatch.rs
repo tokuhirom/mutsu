@@ -31,7 +31,8 @@ impl Interpreter {
     /// to a routine its module imported or declared resolved through the
     /// frame-anchored fallback on every call, which no resolution memo can
     /// hold.
-    // Cost: O(1) to enter and leave the unit, plus the body.
+    // Cost: O(c) to leave a lexical type scope when this body declares one,
+    // c = lexical classes it declared, plus the body.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn call_compiled_method(
         &mut self,
@@ -47,6 +48,13 @@ impl Interpreter {
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         let unit = self.unit_of_source_sym(cc.source_file);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        // A method has no surrounding block-scope opcode. Its own `my class`
+        // must leave scope when the call returns, including on an exception.
+        // Most methods have no class declaration and skip both operations.
+        let scopes_lexical_types = !cc.class_decl_plans.is_empty();
+        if scopes_lexical_types {
+            self.push_lexical_class_scope();
+        }
         let result = self.call_compiled_method_in_unit(
             receiver_class_name,
             owner_sym,
@@ -58,6 +66,9 @@ impl Interpreter {
             invocant,
             compiled_fns,
         );
+        if scopes_lexical_types {
+            self.pop_lexical_class_scope();
+        }
         self.current_unit = saved_unit;
         result
     }
@@ -1122,6 +1133,11 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.is_fail() => {
+                    if e.fail_passes_frame(Some(method_callable_id)) {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        result = Err(e);
+                        break;
+                    }
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));
@@ -2065,7 +2081,8 @@ impl Interpreter {
 
     /// The fast twin of [`Self::call_compiled_method`]; it enters the
     /// method's compilation unit the same way.
-    // Cost: O(1) to enter and leave the unit, plus the body.
+    // Cost: O(c) to leave a lexical type scope when this body declares one,
+    // c = lexical classes it declared, plus the body.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn call_compiled_method_fast(
         &mut self,
@@ -2081,6 +2098,10 @@ impl Interpreter {
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         let unit = self.unit_of_source_sym(cc.source_file);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        let scopes_lexical_types = !cc.class_decl_plans.is_empty();
+        if scopes_lexical_types {
+            self.push_lexical_class_scope();
+        }
         let result = self.call_compiled_method_fast_in_unit(
             receiver_class_name,
             owner_sym,
@@ -2092,6 +2113,9 @@ impl Interpreter {
             compiled_fns,
             can_skip_merge,
         );
+        if scopes_lexical_types {
+            self.pop_lexical_class_scope();
+        }
         self.current_unit = saved_unit;
         result
     }
@@ -3057,6 +3081,11 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.is_fail() => {
+                    if e.fail_passes_frame(Some(method_callable_id)) {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        result = Err(e);
+                        break;
+                    }
                     fail_bypass = true;
                     let failure = self.fail_error_to_failure_value(&e);
                     loan_env!(self, restore_let_saves(let_mark));

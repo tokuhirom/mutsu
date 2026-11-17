@@ -212,6 +212,14 @@ impl Interpreter {
         } else {
             current
         };
+        // An accessor answering an immutable `Map` (`has Map:D $.env`) exposes
+        // no writable element: `$o.env<k> = v` dies as `$map<k> = v` does.
+        if current.is_immutable_map() {
+            return Err(super::refuse_map_assignment(
+                current.descalarize(),
+                &index,
+            ));
+        }
         // An element that IS a `Proxy` (`@bound[1] := item(...)`) mediates its
         // own store, whatever handed the aggregate back.
         if !is_bind

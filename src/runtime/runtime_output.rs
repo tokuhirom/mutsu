@@ -49,6 +49,9 @@ impl Interpreter {
 
     /// Write to the output buffer and also flush to real stdout.
     pub(crate) fn emit_output(&mut self, text: &str) {
+        // A doubled marker is one literal U+10FFFD on the wire (ADR-17800).
+        let exposed = crate::grapheme_break::unescape_literal_marker(text);
+        let text: &str = &exposed;
         let byte_count = text.len() as i64;
         if let Some(stdout_handle) = self
             .io_handles_mut()
@@ -240,6 +243,8 @@ impl Interpreter {
     /// otherwise it is emitted directly so `flush_stderr_buffer` does
     /// not duplicate it.
     pub(crate) fn emit_stderr(&mut self, text: &str) {
+        let exposed = crate::grapheme_break::unescape_literal_marker(text);
+        let text: &str = &exposed;
         if self.nested_mode {
             self.output_sink_mut().stderr_output.push_str(text);
         } else {
