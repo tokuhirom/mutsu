@@ -3227,7 +3227,6 @@ impl Interpreter {
             array_share_active: false,
             pending_rw_writeback_sources: Vec::new(),
             pending_caller_var_writeback: rustc_hash::FxHashSet::default(),
-            inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
             rw_param_rebinds: Vec::new(),
             call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],

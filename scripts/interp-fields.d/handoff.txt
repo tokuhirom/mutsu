@@ -7,7 +7,6 @@ element_share_pending
 hash_autovivify
 in_does_rhs
 in_lvalue_assignment
-inline_control_env_writes
 literal_native_args
 local_bind_pairs
 pending_alias_bind_names

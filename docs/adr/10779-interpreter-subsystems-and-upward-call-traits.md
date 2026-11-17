@@ -313,3 +313,6 @@ these preconditions:
   the compiler pairs with it (the PR-2 `vardecl_init_raw` form), and the store lane's question
   is the mark-context bit `BOUND_VALUE`. The "statement boundary" noted in the first batch is
   only the compiler's: both ops are emitted within the declaration's own `compile_stmt`.
+- D3, `inline_control_env_writes` (2026-11-17): one field fewer. Only its length was ever read,
+  and it never shrank; it is `ControlState::inline_env_write_gen`, a counter of resumed
+  CONTROL handlers' env writes that a closure call compares with its value at entry.

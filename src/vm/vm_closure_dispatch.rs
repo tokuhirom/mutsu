@@ -1308,11 +1308,12 @@ impl Interpreter {
             .any(|n| !n.is_empty() && data.env.contains_key(n));
         // A resume-safe CONTROL handler run inline at a warn raise site inside
         // this body writes the *installing* frame's lexicals into this frame's
-        // env, with no call opcode to mark the mutation. Snapshot the log length
-        // so the return path can force the caller-writeback scan a leaf closure
-        // would otherwise skip, AND exempt the names written meanwhile from the
-        // "unchanged capture" skip below. See `Interpreter::inline_control_env_writes`.
-        let inline_control_writes_at_entry = self.inline_control_env_writes.len();
+        // env, with no call opcode to mark the mutation. Snapshot the write
+        // generation so the return path can force the caller-writeback scan a
+        // leaf closure would otherwise skip, and keep the END-phaser refresh
+        // below from narrowing to this frame's own writes. See
+        // `ControlState::inline_env_write_gen`.
+        let inline_control_writes_at_entry = self.control.inline_env_write_gen;
 
         let let_mark = self.let_saves_len();
         // Package-scoped name resolution: run the body under the closure's
@@ -1862,7 +1863,7 @@ impl Interpreter {
             || !rw_bindings.is_empty()
             || cc.has_calls
             || cc.has_env_writes
-            || self.inline_control_env_writes.len() != inline_control_writes_at_entry;
+            || self.control.inline_env_write_gen != inline_control_writes_at_entry;
         // Whether any closure-writeback metadata key (sigilless readonly/alias,
         // state-var, predictive-seq) may exist in any env. The common program
         // creates none, so this stays false and the per-call metadata scans
@@ -2057,7 +2058,7 @@ impl Interpreter {
         let end_refresh_keys: Vec<Symbol> =
             if self.has_end_phasers() && data.env.len_upper_bound() > 0 {
                 if self.pending_runtime_name_writes.is_empty()
-                    && self.inline_control_env_writes.len() == inline_control_writes_at_entry
+                    && self.control.inline_env_write_gen == inline_control_writes_at_entry
                     && self.env().len() < data.env.len_upper_bound()
                 {
                     let captured = data.env.inner();
