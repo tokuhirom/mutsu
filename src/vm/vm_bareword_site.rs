@@ -21,9 +21,12 @@
 //! - **An enum member with the same spelling.** Declaring an enum registers
 //!   its type, which bumps the generation.
 //! - **Spellings the chain rewrites from bindings.** A parameterised name
-//!   (`Box[T]`) or a smiley on a bound type parameter (`T:D`) is substituted
-//!   from `env` under a *different* key than the name, so such names are
-//!   never remembered.
+//!   (`Box[T]`) is substituted from `env` under a *different* key than the
+//!   name, so such names are never remembered. A smiley on a bound type
+//!   parameter (`T:D`) is too, under the base name: a smiley spelling is
+//!   remembered, and its memo used, only while `env` leaves that base name
+//!   unbound or bound to its own type (`smiley_base_unbound`), so the core
+//!   `Str:D` of a hot `~~ Str:D` is not resolved on every execution (#17811).
 //!
 //! The generation is per interpreter, and every interpreter's counter starts
 //! in a range of its own (`Interpreter::fresh_registry_write_gen`), so a memo
@@ -60,7 +63,8 @@ impl Interpreter {
                 }
                 _ => self.env_answers_memo(name_sym, &value),
             };
-            if env_ok && self.bare_name_visible_here(name_sym) {
+            if env_ok && self.smiley_base_unbound(name_sym) && self.bare_name_visible_here(name_sym)
+            {
                 // The sentinel is pushed as a fresh handle, not the shared
                 // memo's: every thread running this chunk would otherwise
                 // bump one refcount.
@@ -118,6 +122,7 @@ impl Interpreter {
                             || self.is_unit_lexical_type_of(code, name_sym, sym))))
                     && bareword_memoizable(name)
                     && self.env_leaves_type_name_as(name_sym, sym)
+                    && self.smiley_base_unbound(name_sym)
             }
             // The `IterationEnd` sentinel, which the chain answers only after
             // every declaration of the name had first refusal: a `sub`,
@@ -163,6 +168,20 @@ impl Interpreter {
             code.bareword_sites.remember(sites, idx, generation, value);
         }
         Ok(())
+    }
+
+    /// For a type-smiley spelling (`Str:D`), whether `env` leaves its base
+    /// name (`Str`) to name its own type: the chain substitutes a bound type
+    /// parameter's smiley (`T:D`) from `env` under the base name, so such a
+    /// site is remembered, and its memo used, only while nothing else is bound
+    /// there. Any other spelling answers `true`.
+    // Cost: O(1), one atomic load plus two `env` probes for a smiley.
+    fn smiley_base_unbound(&self, name: Symbol) -> bool {
+        static BASE: crate::symbol::SymbolSymMemo = crate::symbol::SymbolSymMemo::new();
+        let base = BASE.get(name, |s| {
+            Symbol::intern(crate::runtime::types::strip_type_smiley(s).0)
+        });
+        base == name || self.env_leaves_type_name(base)
     }
 
     /// Whether `env` lets the bareword `name` keep answering `value`, the
@@ -460,7 +479,7 @@ fn chunk_declares_no_types(code: &CompiledCode) -> bool {
 /// comment).
 // Cost: O(|name|).
 fn bareword_memoizable(name: &str) -> bool {
-    !name.contains('[') && crate::runtime::types::strip_type_smiley(name).1.is_none()
+    !name.contains('[')
 }
 
 /// Whether `a` and `b` are the same memoizable bareword answer: one type
