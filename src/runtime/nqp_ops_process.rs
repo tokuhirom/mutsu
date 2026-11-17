@@ -286,14 +286,28 @@ impl Interpreter {
             // `runtime/native_methods/concurrency.rs`); AttrX::Mooish takes
             // this path directly around a `Lock.new` attribute rather than
             // calling the methods.
-            // Cost: O(1) plus a slow-path method dispatch (blocking time excluded).
+            //
+            // A lock object (one carrying a `lock-id`, i.e. a `Lock`, a
+            // `Lock::Async` or a subclass) is operated on directly, as the
+            // MoarVM op takes the mutex without a method call: the by-name
+            // dispatch below walked the whole interpreter cascade (~25k
+            // instructions) to reach the same `lock_lock`/`lock_unlock` the
+            // `Lock` rows call. Anything else keeps that dispatch.
+            // Cost: O(a) attribute snapshot (a = the lock's attributes, two)
+            // plus the wait for the lock.
             "lock" => {
                 let lock = args.first().cloned().unwrap_or(Value::NIL);
+                if let Some(attrs) = Self::nqp_lock_attrs(&lock) {
+                    return Some(self.lock_lock(&attrs));
+                }
                 self.call_method_with_values(lock, "lock", Vec::new())
             }
-            // Cost: O(1) plus a slow-path method dispatch.
+            // Cost: O(a), as `lock` above.
             "unlock" => {
                 let lock = args.first().cloned().unwrap_or(Value::NIL);
+                if let Some(attrs) = Self::nqp_lock_attrs(&lock) {
+                    return Some(self.lock_unlock(&attrs));
+                }
                 self.call_method_with_values(lock, "unlock", Vec::new())
             }
 
@@ -395,6 +409,22 @@ impl Interpreter {
     /// The elements of an nqp list as strings. nqp's `join` takes a VM list;
     /// mutsu represents one as an ordinary `Array`/`List` value, and a single
     /// non-list value counts as a one-element list.
+    /// A snapshot of `value`'s attributes when it is a lock object (a
+    /// `Lock`-family instance carrying its `lock-id`), for `nqp::lock` /
+    /// `nqp::unlock`. A snapshot, as the `Lock` rows take: acquiring may
+    /// block, and no attribute guard may be held across it.
+    // Cost: O(a), a = the instance's attributes.
+    fn nqp_lock_attrs(value: &Value) -> Option<crate::value::AttrMap> {
+        let value = value.deref_container();
+        match value.view() {
+            ValueView::Instance { attributes, .. } => {
+                let attrs = attributes.as_map();
+                attrs.contains_key("lock-id").then(|| attrs.clone())
+            }
+            _ => None,
+        }
+    }
+
     fn nqp_list_strings(value: &Value) -> Vec<String> {
         match value.view() {
             ValueView::Array(items, _) => items.iter().map(|v| v.to_string_value()).collect(),
