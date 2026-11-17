@@ -14,9 +14,9 @@ Legitimate construction sites are few:
   * process entry points (`main.rs`, `lib.rs`, the REPL, `--doc`);
   * spawning a thread (`clone_for_thread`), since each thread owns its
     interpreter;
-  * the parse-time module probes (`slang_activation.rs`,
-    `parse_time_exports.rs`), which run a module on a fresh thread once per
-    `use`;
+  * the parse-time slang activation probe (`slang_activation.rs`), which
+    runs a module on a fresh thread once per `use` (ADR-17558 slice 4 retires
+    it);
   * a `thread_local!` built once per thread (`regex_parse.rs`).
 
 All of them are listed with their per-file counts in

@@ -11,7 +11,6 @@ src/lib.rs                         2  # entry points: library run API
 src/main.rs                        1  # entry point: the mutsu binary
 src/repl.rs                        1  # entry point: REPL
 src/runtime/builtins_system.rs     1  # thread spawn: clone_for_thread
-src/runtime/parse_time_exports.rs  1  # parse-time export probe, fresh thread once per `use`
 src/runtime/regex_parse.rs         1  # thread_local! VALIDATE_INTERP, built once per thread
 src/runtime/slang_activation.rs    1  # parse-time slang activation, fresh thread once per `use`
 src/runtime/supply_promise.rs      1  # thread spawn: clone_for_thread
