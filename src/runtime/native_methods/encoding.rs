@@ -15,6 +15,20 @@ impl Interpreter {
         crate::builtins::method_table::opaque_owners_of(target)
             .or_else(|| crate::builtins::method_table::carried_state_owners_of(target))
             .or_else(|| self.encoding_owners_of(target))
+            .or_else(|| self.opaque_iteration_buffer_owners_of(target))
+    }
+
+    /// An instance of a P6opaque `is IterationBuffer` subclass carries no
+    /// element storage, so the attribute probe misses it; it still inherits
+    /// `IterationBuffer`'s methods, whose rows refuse it as Rakudo's REPR does
+    /// (#17930).
+    // Cost: O(d), d = MRO depth.
+    fn opaque_iteration_buffer_owners_of(&self, target: &Value) -> Option<&'static [&'static str]> {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        self.is_opaque_iteration_buffer_class(&class_name.resolve())
+            .then_some(crate::builtins::method_table::carried_state::ITERATION_BUFFER)
     }
 
     /// The owners whose rows answer an encoding object (ADR-11276 §9.156):

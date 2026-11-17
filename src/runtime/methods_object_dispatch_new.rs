@@ -1787,6 +1787,7 @@ impl Interpreter {
                     &args,
                     &positional_ctor_args,
                 );
+                self.seed_iteration_buffer_storage(class_key, &mut attrs, &class_mro);
                 self.seed_concurrency_payload(&mut attrs, &class_mro, &args);
                 self.seed_repository_state(&mut attrs, &class_mro, &args);
                 // `class C is BagHash { }` and its Set/Mix siblings keep their

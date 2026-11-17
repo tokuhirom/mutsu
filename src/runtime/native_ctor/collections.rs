@@ -12,6 +12,11 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let class_name = &c.class_name;
+        // A plain `is IterationBuffer` subclass is P6opaque (#17627): it gets
+        // no element storage, so its inherited methods refuse it (#17930).
+        if self.is_opaque_iteration_buffer_class(class_name.as_str()) {
+            return Ok(self.create_instance(*class_name));
+        }
             // Shared with the VM's native fast path.
             Ok(Self::build_native_iterationbuffer_value(*class_name, &args))
     }
