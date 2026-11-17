@@ -78,6 +78,9 @@ impl Interpreter {
         data: &crate::value::SubData,
         kind: PhaserKind,
     ) -> Result<(), RuntimeError> {
+        if kind == PhaserKind::First && !self.take_closure_first_flag(data) {
+            return Ok(());
+        }
         for (index, stmt) in data.body.iter().enumerate() {
             let Stmt::Phaser {
                 kind: phaser_kind,
@@ -113,6 +116,9 @@ impl Interpreter {
         kind: PhaserKind,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
+        if kind == PhaserKind::First && !self.take_closure_first_flag(data) {
+            return Ok(());
+        }
         for stmt in data.body.iter() {
             let Stmt::Phaser {
                 kind: phaser_kind,
@@ -148,6 +154,41 @@ impl Interpreter {
                 self.call_block_loop_phasers(&data, PhaserKind::First, vec![first.clone()])
             }
             _ => Ok(()),
+        }
+    }
+
+    /// Take the `FIRST` flag of the closure clone `data`: `true` the first
+    /// time any loop calls this clone, `false` ever after. Rakudo's `FIRST`
+    /// belongs to the code object -- a fresh clone sets the flag, its first
+    /// call takes it (`p6takefirstflag`) -- so a block a variable holds fires
+    /// its `FIRST` once however many `.map`s call it, while a block literal
+    /// re-created on each pass of an enclosing loop fires once per pass
+    /// (#17673). The flag lives in the shared `once` store under the clone's
+    /// state scope, as a `once` block's result does. A block without a
+    /// `FIRST` phaser takes nothing.
+    // Cost: O(s) to scan the block's s top-level statements; a block with a
+    // `FIRST` adds one keyed store probe, O(k), k = key length.
+    fn take_closure_first_flag(&self, data: &crate::value::SubData) -> bool {
+        let has_first = data.body.iter().any(|stmt| {
+            matches!(
+                stmt,
+                Stmt::Phaser {
+                    kind: PhaserKind::First,
+                    ..
+                }
+            )
+        });
+        if !has_first {
+            return false;
+        }
+        let key = format!("FIRST#{}", self.sub_state_scope_id(data));
+        let store = self.once_store();
+        match store.claim(&key) {
+            crate::runtime::once_store::OnceClaim::Cached(_) => false,
+            crate::runtime::once_store::OnceClaim::Claimed => {
+                store.fulfill(&key, Value::NIL);
+                true
+            }
         }
     }
 }
