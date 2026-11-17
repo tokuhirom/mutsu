@@ -9,7 +9,7 @@ use Test;
 # a warm plan (a new method, a wrap, an augment) and for receivers whose
 # shape the plan must not cover.
 
-plan 20;
+plan 28;
 
 class Counter {
     has $.n = 0;
@@ -113,3 +113,34 @@ for ^2 { @ro.push: (try { $sg.set(3, 4); 'ok' }) // 'died' }
 my $sv = 1;
 $sg.set($sv, $_) for 5..6;
 is "{@ro.join(',')} $sv", 'died,died 6', 'a sigilless parameter after a literal call warmed up';
+
+# Named arguments with scalar values share the plan by name and value type.
+class Named {
+    has $.seen = '';
+    method emit(Str:D $text, Bool:D :$space = False) { $!seen ~= ($space ?? ' ' !! '') ~ $text; self }
+    method set-n(:$!seen) { self }
+    method typed(Int :$n = 7) { $n }
+}
+my $nm = Named.new;
+$nm.emit('a');
+$nm.emit($_, :space) for <b c>;
+$nm.emit('d', space => False);
+is $nm.seen, 'a b cd', 'a defaulted and a supplied named Bool, alternating';
+$nm.set-n(seen => "v$_") for ^3;
+is $nm.seen, 'v2', 'an attributive named parameter writes the attribute every call';
+is (^3).map({ $nm.typed(n => $_) }).join(','), '0,1,2', 'a typed named parameter';
+is (^2).map({ $nm.typed }).join(','), '7,7', '... and its default when omitted';
+my @tn;
+for ^2 { @tn.push: (try { $nm.typed(n => 'x') }) // 'died' }
+is @tn.join(','), 'died,died', 'a named argument of another type still type-checks';
+
+# A `:D` named parameter takes a definite value on the fast path and still
+# raises its concreteness error for a type object.
+class Smiley { method m(Str:D :$s = 'dflt') { $s } }
+my $sm = Smiley.new;
+is (^2).map({ $sm.m(s => "v$_") }).join(','), 'v0,v1', 'a :D named argument';
+is (^2).map({ $sm.m }).join(','), 'dflt,dflt', '... its default';
+my @se;
+for ^2 { @se.push: (try { $sm.m(s => Str) }) // $!.^name }
+is @se.join(','), 'X::Parameter::InvalidConcreteness,X::Parameter::InvalidConcreteness',
+    '... and a type object is refused';

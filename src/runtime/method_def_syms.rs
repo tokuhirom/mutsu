@@ -137,6 +137,17 @@ impl super::MethodDef {
 // Cost: O(1).
 pub(crate) fn named_fast_fill(pd: &crate::ast::ParamDef) -> Option<Option<crate::value::Value>> {
     let plan = NamedFast::of_param(pd)?;
+    // The light named-call plan binds without a definiteness check, so a
+    // `:D`/`:U` named parameter keeps the general binder there.
+    if matches!(
+        plan.check,
+        crate::opcode::FastParamCheck::Fast {
+            smiley: Some(_),
+            ..
+        }
+    ) {
+        return None;
+    }
     // `UInt` is a subset of `Int`: an omitted `UInt :$n` binds its refinee
     // `Int`, which only the general binder knows (the light bind would seed
     // the `UInt` type object).
@@ -192,41 +203,46 @@ impl NamedFast {
             return None;
         }
         let check = FastParamCheck::of_param(pd)?;
-        // A `:D`/`:U` named parameter keeps the general binder, which raises
-        // its concreteness error.
-        if matches!(
-            check,
-            FastParamCheck::ImplicitCallable | FastParamCheck::Fast { smiley: Some(_), .. }
-        ) {
+        if matches!(check, FastParamCheck::ImplicitCallable) {
             return None;
         }
+        // A `:D`/`:U` smiley is part of the check: a value that fails it is
+        // refused by `accepts`, so the call keeps the general binder, which
+        // raises the concreteness error.
         let fill = pd
             .default
             .as_ref()
             .and_then(CompiledFunction::constant_default_value)
-            .filter(|value| match check {
-                FastParamCheck::Unconstrained | FastParamCheck::RequiresAny => true,
-                FastParamCheck::ImplicitCallable => false,
-                FastParamCheck::Fast { kind, name_sym, .. } => {
-                    crate::runtime::Interpreter::fast_type_check_tagged(value, kind, name_sym)
-                }
-            });
+            .filter(|value| Self::check_admits(check, value));
         Some(Self { check, fill })
+    }
+
+    /// Whether `value` passes `check`, its definiteness smiley included.
+    // Cost: O(1).
+    fn check_admits(check: crate::opcode::FastParamCheck, value: &crate::value::Value) -> bool {
+        use crate::opcode::FastParamCheck;
+        match check {
+            // A `Mu`-only argument to an untyped parameter is refused by the
+            // caller's `named_mu_only_arg` gate.
+            FastParamCheck::Unconstrained | FastParamCheck::RequiresAny => true,
+            FastParamCheck::ImplicitCallable => false,
+            FastParamCheck::Fast {
+                kind,
+                name_sym,
+                smiley,
+            } => {
+                crate::runtime::Interpreter::fast_type_check_tagged(value, kind, name_sym)
+                    && smiley.is_none_or(|smiley| {
+                        crate::runtime::Interpreter::light_param_smiley_admits(value, smiley)
+                    })
+            }
+        }
     }
 
     /// Whether the supplied `value` satisfies the parameter's type, as far as
     /// the fast path can tell without an interpreter.
     // Cost: O(1).
     pub(crate) fn accepts(&self, value: &crate::value::Value) -> bool {
-        use crate::opcode::FastParamCheck;
-        match self.check {
-            // A `Mu`-only argument to an untyped parameter is refused by the
-            // caller's `named_mu_only_arg` gate.
-            FastParamCheck::Unconstrained | FastParamCheck::RequiresAny => true,
-            FastParamCheck::ImplicitCallable => false,
-            FastParamCheck::Fast { kind, name_sym, .. } => {
-                crate::runtime::Interpreter::fast_type_check_tagged(value, kind, name_sym)
-            }
-        }
+        Self::check_admits(self.check, value)
     }
 }
