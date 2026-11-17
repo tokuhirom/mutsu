@@ -11,12 +11,15 @@
 //! [`Interpreter::call_method_object_instance`] directly, and the owner-bound
 //! call goes straight to the qualified arm (`dispatch_qualified_call`).
 //!
-//! Neither shortcut can change the answer: a Method object is an `Instance`
-//! of the core `Method`/`Submethod` class, whose cascade arms in front of
-//! `CALL-ME` are all keyed on other method names or other receiver classes;
-//! the entry is skipped while any wrap chain or user `^find_method` exists
-//! (those are consulted before dispatch), or when `CALL-ME` has a user
-//! definition on the object's class.
+//! Both shortcuts are taken only for a method a *user* class declares: a
+//! Method object is an `Instance` of the core `Method`/`Submethod` class,
+//! whose cascade arms in front of `CALL-ME` are keyed on other method names
+//! or other receiver classes, and nothing in front of the qualified arm
+//! answers `UserClass::name`. A core type's method object (`Mu.^find_method
+//! ('perl')`, which is `self.raku`) keeps the cascade, whose by-name arms
+//! implement it. The entry is also skipped while any wrap chain or user
+//! `^find_method` exists (those are consulted before dispatch), or when
+//! `CALL-ME` has a user definition on the object's class.
 
 use super::*;
 use crate::symbol::Symbol;
@@ -127,10 +130,16 @@ impl Interpreter {
                             &invocant,
                         )
                     {
-                        // Straight to the cascade's qualified-call arm: nothing in
-                        // front of it answers an owner-qualified name on an
-                        // instance of a user class (see the module docs).
-                        if let Some(result) = self.dispatch_qualified_call(&invocant, qualified.as_str(), &args) {
+                        // Straight to the cascade's qualified-call arm when the
+                        // owner is a user class: nothing in front of that arm
+                        // answers `UserClass::name` on its instance. A core
+                        // owner (`Mu::perl`, `Any::gist`) keeps the cascade,
+                        // whose by-name arms implement those methods.
+                        if self.has_class(owner.as_str())
+                            && !Self::is_builtin_type(owner.as_str())
+                            && let Some(result) =
+                                self.dispatch_qualified_call(&invocant, qualified.as_str(), &args)
+                        {
                             return Some(result);
                         }
                         return Some(self.call_method_with_values(
@@ -191,10 +200,24 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let ValueView::Instance { class_name, .. } = target.view() else {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
             return None;
         };
-        if !matches!(class_name.as_str(), "Method" | "Submethod")
+        // Only a method a user class declares: a core type's method object
+        // (`Mu.^find_method('perl')`) is answered by by-name arms of the
+        // cascade that run before `CALL-ME` is reached.
+        let user_owner = matches!(
+            attributes.as_map().get("__mutsu_lookup_class").map(Value::view),
+            Some(ValueView::Str(owner))
+                if self.has_class(owner.as_str()) && !Self::is_builtin_type(owner.as_str())
+        );
+        if !user_owner
+            || !matches!(class_name.as_str(), "Method" | "Submethod")
             || self.has_any_wrap_chains()
             || crate::runtime::find_method_intercept::any_user_find_method()
             || self.has_user_method(class_name.as_str(), "CALL-ME")
