@@ -64,7 +64,13 @@ impl Interpreter {
                 .iter()
                 .filter(|(sym, _)| {
                     sym.with_str(|name| {
-                        crate::env::is_plain_user_lexical(name)
+                        // A twigil name (`&?ROUTINE`, `$*dyn`, `$?LINE`) is not
+                        // a lexical the rule closes over: its value is the
+                        // rule's own or the dynamic caller's.
+                        !name
+                            .trim_start_matches(['$', '@', '%', '&'])
+                            .starts_with(['?', '*', '!', '.', '^', '=', '~'])
+                            && crate::env::is_plain_user_lexical(name)
                             && patterns.iter().any(|pattern| {
                                 crate::runtime::regex::regex_token_closure::pattern_names_var(
                                     pattern, name,
