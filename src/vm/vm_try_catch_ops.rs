@@ -233,6 +233,23 @@ impl Interpreter {
             Err(e) if Self::is_gather_take_limit_signal(&e) => {
                 Err(self.park_try_catch_gather_suspend(code, try_ip, catch_begin, e))
             }
+            // `fail` lexically inside a routine returns a Failure from that
+            // routine: it is a return, not an exception, so a block's CATCH
+            // does not see it (`sub f { CATCH {...}; fail "x" }` is a Failure,
+            // as is a `fail` in a closure called through a routine holding a
+            // CATCH). Only `try`, which is fatal, and `use fatal` turn it into
+            // the exception CATCH handles. (A CONTROL block, which would see
+            // it as the `CX::Return` it is, keeps the older routing.)
+            Err(e)
+                if e.is_fail()
+                    && !traps
+                    && control_begin >= end
+                    && !self.module.fatal_mode
+                    && !self.module.lexical_fatal_mode =>
+            {
+                self.discard_let_saves(let_mark);
+                Err(e)
+            }
             Ok(()) => {
                 // A `try`/implicit-CATCH region is a block, so it owns the
                 // `let`/`temp` saves its body recorded: `temp` restores here and
