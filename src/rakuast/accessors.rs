@@ -287,6 +287,13 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return Some(Value::str(s));
     }
+    // A stash name keeps its trailing `::` (`EXPORT::DEFAULT::`); the bare
+    // `::` has no identifier part and spells as the empty string, as in rakudo.
+    if method == "canonicalize"
+        && let Some(name_parts::NameShape::Stash(s)) = name_parts::name_shape(node)
+    {
+        return Some(Value::str(if s == "::" { String::new() } else { s }));
+    }
     // A resolution's copy of a routine reads its body from the declaration.
     if method == "body"
         && super::routine_stub::is_stub(node)

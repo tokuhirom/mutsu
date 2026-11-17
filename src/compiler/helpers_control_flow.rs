@@ -1362,6 +1362,27 @@ impl Compiler {
                         main_leaves_value = true;
                         continue;
                     }
+                    // A tail bare `{ ... }` yields its own tail value, as it
+                    // does in a body without a CATCH: `sub f { CATCH {...};
+                    // { 42 } }` is 42, not Nil (Red's grouped `.map`, whose
+                    // CATCH precedes a block holding the projection).
+                    if let Stmt::Block(block_body) = stmt {
+                        // Invoked with no arguments, so a placeholder fails
+                        // its arity check (ADR-0048 D3/D6) and leaves no value.
+                        if self.emit_inlined_body_placeholder_binds(block_body, ArgSupply::None) {
+                            continue;
+                        }
+                        // Its own phasers run around it (inlining drops them).
+                        if Self::needs_phaser_block_scope(block_body) {
+                            let saved_scope = self.push_dynamic_scope_lexical();
+                            self.compile_phaser_block_scope(block_body, PhaserBlockResult::Push);
+                            self.pop_dynamic_scope_lexical(saved_scope);
+                        } else {
+                            self.compile_tail_stmt_value(stmt);
+                        }
+                        main_leaves_value = true;
+                        continue;
+                    }
                     // A tail `given`/`when`/`default` leaves its value on the
                     // stack (ADR-0052) and IS the region's value.
                     if Self::stmt_nets_a_stack_value(stmt) {
