@@ -116,9 +116,13 @@ fn edit_front(target: &Value, values: Vec<Value>) -> Option<Result<(), RuntimeEr
         return Some(Ok(()));
     }
     let values = values.unwrap_or_default();
-    Some(Interpreter::nqp_with_elems_mut("unshift", target, |items| {
-        items.splice(0..0, values);
-    }))
+    Some(Interpreter::nqp_with_elems_mut(
+        "unshift",
+        target,
+        |items| {
+            items.splice(0..0, values);
+        },
+    ))
 }
 
 /// The elements an `append`/`prepend` argument contributes: another buffer's
