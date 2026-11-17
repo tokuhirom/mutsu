@@ -264,6 +264,13 @@ impl Interpreter {
                 Some((owner, def))
             )
         );
+        let pushed_dispatch = match pushed_dispatch {
+            Ok(pushed) => pushed,
+            Err(e) => {
+                self.disarm_raw_invocant_arrival(armed);
+                return Err(e);
+            }
+        };
         // `arm_multi_method_winner_trust` for a non-multi winner, and
         // `call_compiled_method_in_unit`'s entry, which clears the rw
         // writeback list this call's site drains.
