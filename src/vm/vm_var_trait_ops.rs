@@ -492,9 +492,14 @@ impl Interpreter {
             let nil_keys: Vec<_> = stashed_init
                 .as_ref()
                 .filter(|raw| {
+                    // A single Pair initializer arrives as the data flavour a
+                    // literal mints, `ValuePair` (ADR-0021), as well (#17932).
                     matches!(
                         raw.view(),
-                        ValueView::Array(..) | ValueView::Pair(..) | ValueView::Seq(..)
+                        ValueView::Array(..)
+                            | ValueView::Pair(..)
+                            | ValueView::ValuePair(..)
+                            | ValueView::Seq(..)
                     )
                 })
                 .and_then(|raw| crate::builtins::map_hash_coerce::to_map(raw.clone()).ok())
