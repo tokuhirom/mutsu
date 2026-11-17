@@ -1435,8 +1435,9 @@ impl Interpreter {
             role_name,
             &role_def.deferred_body,
             decl_file.as_deref(),
+            false,
         )?;
-        self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+        self.run_composed_role_ancestor_bodies(role_name, role_name, false)?;
         self.persist_role_body_lexicals(role_name, &declared);
         Ok(())
     }
@@ -1474,10 +1475,13 @@ impl Interpreter {
 
     /// Composing a role composes the roles it composes, so their bodies run
     /// too — nearest first, the order Rakudo runs them in.
+    ///
+    /// `forward_shell`: see [`Self::run_role_body_for_composition`].
     pub(crate) fn run_composed_role_ancestor_bodies(
         &mut self,
         role_name: &str,
         regex_owner: &str,
+        forward_shell: bool,
     ) -> Result<(), RuntimeError> {
         for ancestor in self.role_ancestor_names(role_name) {
             // An ancestor can be reached through more than one directly
@@ -1508,6 +1512,7 @@ impl Interpreter {
                 regex_owner,
                 &ops,
                 decl_file.as_deref(),
+                forward_shell,
             ) {
                 // A failed role composition must remain retryable. The direct
                 // role path removes its memo key on the same kind of failure.
@@ -1569,6 +1574,7 @@ impl Interpreter {
             owner,
             &sibling.role_def.deferred_body,
             decl_file.as_deref(),
+            false,
         ) {
             self.registry_mut().composed_role_bodies.remove(&compose_key);
             return Err(error);
@@ -1626,12 +1632,18 @@ impl Interpreter {
     /// composing package is not known until composition — the same
     /// ADR-0009 carve-out D6/D9 apply elsewhere) and falls back to
     /// `run_block_raw` on its `raw` statement.
+    ///
+    /// `forward_shell` is true for a unit-level forward-reference class shell
+    /// (`HoistedShell::Forward`): it runs before the role's own declaration
+    /// has initialised a body `my constant`, so the shell leaves one alone
+    /// unless it was recorded already (#16255).
     pub(crate) fn run_role_body_for_composition(
         &mut self,
         type_owner: &str,
         regex_owner: &str,
         ops: &[crate::opcode::DeferredBodyOp],
         decl_file: Option<&str>,
+        forward_shell: bool,
     ) -> Result<(), RuntimeError> {
         if ops.is_empty() {
             return Ok(());
@@ -1671,7 +1683,7 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(name) = constant_name
-                && self.reuse_role_evaluated_constant(type_owner, name)
+                && (self.reuse_role_evaluated_constant(type_owner, name) || forward_shell)
             {
                 continue;
             }
