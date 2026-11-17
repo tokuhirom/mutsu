@@ -692,9 +692,13 @@ impl Compiler {
             // itself, so a later assignment to `$var` shows in the slot
             // (#12786): hand the op the shared cell, not the decontainerized
             // value.
+            // `nqp::push` / `nqp::unshift` / `nqp::bindkey` store their value
+            // operand as given in the same way (#17658).
             // The `_nd` ("no decont") ops look at the container itself, so
             // they too are handed the variable's shared cell.
-            if (op == "bindpos" && i == 2 || matches!(op, "isconcrete_nd" | "clone_nd") && i == 0)
+            if (matches!(op, "bindpos" | "bindkey") && i == 2
+                || matches!(op, "push" | "unshift") && i == 1
+                || matches!(op, "isconcrete_nd" | "clone_nd") && i == 0)
                 && let Some(cell) = self.return_rw_container_name(arg)
             {
                 self.emit_wrap_var_ref(&cell);
