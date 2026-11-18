@@ -241,7 +241,7 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> (CompiledCode, CompiledFns) {
-        let (mut compiler, compile_unit) = self.block_compiler();
+        let (mut compiler, compile_unit) = self.module_mainline_compiler();
         // A module's mainline runs in the importer's env, and nobody reads its
         // value: delivering the tail through `$_` replaced the importing
         // scope's topic with the module's last statement (#15959).
@@ -252,6 +252,19 @@ impl Interpreter {
         let (mut code, mut fns) = compiler.compile(stmts);
         self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
         (code, fns)
+    }
+
+    /// [`Self::block_compiler`] for a module's mainline, which is the top of
+    /// its own unit whatever loads it: a `require` inside a routine runs the
+    /// load under that routine's frame, but the module's top-level subs are
+    /// not nested in it (#18017; `Compiler::binds_lexsub_free_vars`).
+    // Cost: O(1).
+    fn module_mainline_compiler(
+        &self,
+    ) -> (crate::compiler::Compiler, Option<crate::symbol::Symbol>) {
+        let (mut compiler, compile_unit) = self.block_compiler();
+        compiler.is_mainline = true;
+        (compiler, compile_unit)
     }
 
     /// The canonical export scans of `modules`, each resolved as the load
@@ -304,7 +317,7 @@ impl Interpreter {
         body: MainlineBody<'_>,
         slot: &ModuleCodeSlot,
     ) -> Result<(CompiledCode, CompiledFns), RuntimeError> {
-        let (mut compiler, compile_unit) = self.block_compiler();
+        let (mut compiler, compile_unit) = self.module_mainline_compiler();
         // See `compile_module_mainline_uncached`: the tail value is discarded.
         compiler.unit_tail_discards = true;
         // A module's lexical scope starts empty: the import sets around the
@@ -337,10 +350,7 @@ impl Interpreter {
                 }
                 match cached.inputs.first_changed() {
                     Some((key, was, now)) => {
-                        trace(
-                            slot,
-                            &format!("input changed: {key:?}: {was:?} -> {now:?}"),
-                        );
+                        trace(slot, &format!("input changed: {key:?}: {was:?} -> {now:?}"));
                         false
                     }
                     None => true,

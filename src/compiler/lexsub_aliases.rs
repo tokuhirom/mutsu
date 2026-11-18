@@ -38,9 +38,14 @@ impl Compiler {
     /// alias's call as they answer every other one. A mainline block of
     /// `GLOBAL` keeps ADR-0024's per-block bucket.
     // Cost: O(1).
+    ///
+    /// A compilation unit's mainline is no routine body even when it is
+    /// compiled under a routine's frame: a module `require`d inside a routine
+    /// runs its body there, in that routine's env, but its top-level subs
+    /// read the module's file-scope lexicals, not an alias of a routine
+    /// activation that never declared them (#18017).
     pub(super) fn binds_lexsub_free_vars(&self) -> bool {
-        self.is_routine
-            || self.lexically_in_routine
+        ((self.is_routine || self.lexically_in_routine) && !self.is_mainline)
             || (self.lexically_in_block
                 && !crate::qualified::is_global_package(Symbol::intern(&self.current_package)))
     }
