@@ -299,38 +299,16 @@ impl Interpreter {
                 if crate::rakuast::is_registered_type_object(base_parent) {
                     continue;
                 }
-                // A name that is declared as a `package` (or module) exists but
-                // does not support inheritance: `package A {}; class B is A {}`
-                // is X::Inheritance::Unsupported, not an unknown-parent error.
-                // Checked BEFORE the custom-trait deferral below: a declared
-                // package is not an unknown name, so rakudo passes it to
-                // `trait_mod:<is>` positionally (as the package object) rather
-                // than as the `:Name` named argument the deferral synthesises.
-                if self.module.chain_declared_packages.contains(base_parent)
-                    || self
-                        .module
-                        .chain_declared_packages
-                        .contains(resolved_parent_name.as_str())
-                {
-                    let msg = format!(
-                        "{} does not support inheritance, so {} cannot inherit from it",
-                        resolved_parent_name, name
-                    );
-                    let mut attrs = ValueMap::default();
-                    attrs.insert("child-typename".to_string(), Value::str(name.to_string()));
-                    attrs.insert(
-                        "parent".to_string(),
-                        Value::package(crate::symbol::Symbol::intern(
-                            resolved_parent_name.as_str(),
-                        )),
-                    );
-                    attrs.insert("message".to_string(), Value::str(msg));
-                    return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
-                }
                 // `also is Parent` executes at its position in the class
                 // BODY, so a parent named there is allowed to be unknown right
                 // now: the body itself may be what brings it into scope (a
-                // `use` inside the body, or a type the body declares). Collect
+                // `use` inside the body, or a type the body declares). That
+                // holds for a name that is only a package so far too: the
+                // stub `A::B` a nested `unit module A::B::C::U` made is
+                // replaced by the grammar the body's own `use A::B` loads
+                // (CSS::Specification::Extended's `also is CSS::Specification`).
+                // A parent that is still a package after the body raises
+                // X::Inheritance::Unsupported there. Collect
                 // it and let `apply_deferred_body_parents` re-resolve it once
                 // the body has run.
                 //
@@ -345,6 +323,24 @@ impl Interpreter {
                 if body_parents.contains(parent) {
                     deferred_body_parents.push(parent.clone());
                     continue;
+                }
+                // A name that is declared as a `package` (or module) exists but
+                // does not support inheritance: `package A {}; class B is A {}`
+                // is X::Inheritance::Unsupported, not an unknown-parent error.
+                // Checked BEFORE the custom-trait deferral below: a declared
+                // package is not an unknown name, so rakudo passes it to
+                // `trait_mod:<is>` positionally (as the package object) rather
+                // than as the `:Name` named argument the deferral synthesises.
+                if self.module.chain_declared_packages.contains(base_parent)
+                    || self
+                        .module
+                        .chain_declared_packages
+                        .contains(resolved_parent_name.as_str())
+                {
+                    return Err(inheritance_unsupported_error(
+                        resolved_parent_name.as_str(),
+                        name.as_ref(),
+                    ));
                 }
                 // `is Foo` on a name that is NOT a known type is rakudo's
                 // spelling of the named trait argument `trait_mod:<is>($type,
@@ -457,4 +453,19 @@ impl Interpreter {
             deferred_body_parents,
         })
     }
+}
+
+/// X::Inheritance::Unsupported: `parent` is a package (or module), which a
+/// class cannot inherit from (`package A {}; class B is A {}`).
+// Cost: O(|parent| + |child|).
+pub(super) fn inheritance_unsupported_error(parent: &str, child: &str) -> RuntimeError {
+    let msg = format!("{parent} does not support inheritance, so {child} cannot inherit from it");
+    let mut attrs = ValueMap::default();
+    attrs.insert("child-typename".to_string(), Value::str(child.to_string()));
+    attrs.insert(
+        "parent".to_string(),
+        Value::package(crate::symbol::Symbol::intern(parent)),
+    );
+    attrs.insert("message".to_string(), Value::str(msg));
+    RuntimeError::typed("X::Inheritance::Unsupported", attrs)
 }

@@ -130,6 +130,13 @@ impl Interpreter {
         let mut late_roles: Vec<String> = Vec::new();
         for parent in deferred {
             let Some(resolved) = self.resolve_deferred_body_parent(name, parent) else {
+                // Still only a package after the body ran: not a type.
+                if self.module.chain_declared_packages.contains(parent.as_str()) {
+                    return Err(super::registration_class_parents::inheritance_unsupported_error(
+                        parent,
+                        &user_facing,
+                    ));
+                }
                 // The body never introduced it. Hand it to the same custom
                 // `trait_mod:<is>` dispatch an unknown header parent takes;
                 // when no `trait_mod:<is>` exists at all there is nothing left
