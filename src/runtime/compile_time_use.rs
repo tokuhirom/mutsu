@@ -13,7 +13,8 @@
 
 use super::*;
 use crate::compile_time_loader::{
-    CompileTimeLoader, LoadOutcome, LoadedExport, LoadedFacts, LoaderGuard, UseRequest,
+    CompileTimeLoader, LoadOutcome, LoadedDeclarator, LoadedExport, LoadedFacts, LoaderGuard,
+    UseRequest,
 };
 
 impl CompileTimeLoader for Interpreter {
@@ -141,13 +142,27 @@ impl CompileTimeLoader for Interpreter {
             })
             .collect();
         // The `EXPORTHOW` declarators the load recorded for the module, a
-        // BEGIN-time merge included (#17557).
+        // BEGIN-time merge included (#17557), each with what its HOW object
+        // builds (slice 3).
         let declarators = self
             .module
             .exporthow_declares
             .get(bare)
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(directive, keyword)| {
+                let is_role = directive == "DECLARE"
+                    && self
+                        .declarator_how_type(&keyword)
+                        .is_some_and(|how| self.how_builds_parametric_role(&how));
+                LoadedDeclarator {
+                    directive,
+                    keyword,
+                    is_role,
+                }
+            })
+            .collect();
         LoadedFacts {
             exports,
             declarators,

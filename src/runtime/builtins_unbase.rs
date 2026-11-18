@@ -3,6 +3,7 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    // Cost: O(a * d), a = arguments, d = characters of each argument's string.
     pub(super) fn builtin_unbase(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
             return Err(RuntimeError::new(
@@ -38,8 +39,19 @@ impl Interpreter {
 
         let mut out = Vec::with_capacity(args.len() - 1);
         for arg in args.iter().skip(1) {
+            // An allomorph is a Str: `:16(<78>)` reads the IntStr's string
+            // ("78"), not its number (Compress::Zlib::Raw's test fixture).
+            let text = match arg.view() {
+                ValueView::Mixin(inner, mixins)
+                    if crate::value::types::allomorph_type_name(inner, mixins).is_some() =>
+                {
+                    mixins.get("Str").map(Value::to_string_value)
+                }
+                ValueView::Str(_) => Some(arg.to_string_value()),
+                _ => None,
+            };
             // :N() requires string arguments; non-string throws X::Numeric::Confused
-            if !matches!(arg.view(), ValueView::Str(_)) {
+            let Some(text) = text else {
                 let type_name = match arg.view() {
                     ValueView::Int(_) => "Int",
                     ValueView::Num(_) => "Num",
@@ -72,8 +84,7 @@ impl Interpreter {
                 ));
                 err.exception = Some(Box::new(exception));
                 return Err(err);
-            }
-            let text = arg.to_string_value();
+            };
             // A malformed body is a soft `X::Str::Numeric` Failure, not a throw:
             // `:8($s) // 0` and `:8($s).so` must be usable on bad input.
             let parsed = match unbase_parse_with_overrides(&text, radix) {

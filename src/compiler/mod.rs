@@ -1402,6 +1402,20 @@ pub(crate) struct Compiler {
     /// declaration's env-sync reads are bounded the shell's are too, and the
     /// source-order site marks it bounded with its own plan (#11116).
     hoisted_type_shells: Vec<(u64, u32)>,
+    /// The unit-level shell registrations (`hoist_type_decl_shells`) held
+    /// back until the unit's leading `use`s have compiled, as decl plan
+    /// indices: `Some` while the unit-level hoist collects them. A shell at
+    /// the head of the unit registered its type ahead of those imports, so a
+    /// role body's `sub calloc(size_t ...) is native` saw `size_t` before
+    /// `use NativeCall` imported it (#18092). Right after the last leading
+    /// import, the shell still precedes every statement that runs user code.
+    deferred_type_shells: Option<Vec<u32>>,
+    /// The shells `deferred_type_shells` collected, emitted once the
+    /// top-level statement at address `type_shells_after` has compiled.
+    pending_type_shells: Vec<u32>,
+    /// The address of the unit's last leading `use` (see
+    /// `deferred_type_shells`); 0 when no shells are pending.
+    type_shells_after: usize,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     /// Names declared by a plain `my <native> $x` scalar declaration, which a
@@ -2229,6 +2243,9 @@ impl Compiler {
             lexical_dup_routines: HashSet::new(),
             hoisted_sub_plans: Vec::new(),
             hoisted_type_shells: Vec::new(),
+            deferred_type_shells: None,
+            pending_type_shells: Vec::new(),
+            type_shells_after: 0,
             local_types: HashMap::new(),
             boxed_native_scalars: HashSet::new(),
             atomic_spelling: None,
@@ -5358,7 +5375,17 @@ impl Compiler {
         // mainline statement that runs before the textual declaration can
         // already construct the type (Raku type declarations are compile-time;
         // see `hoist_type_decl_shells`).
-        self.hoist_type_decl_shells(stmts);
+        match Self::leading_import_anchor(stmts) {
+            Some(anchor) => {
+                self.deferred_type_shells = Some(Vec::new());
+                self.hoist_type_decl_shells(stmts);
+                self.pending_type_shells = self.deferred_type_shells.take().unwrap_or_default();
+                if !self.pending_type_shells.is_empty() {
+                    self.type_shells_after = std::ptr::from_ref(anchor).addr();
+                }
+            }
+            None => self.hoist_type_decl_shells(stmts),
+        }
         // Register `our` subs declared inside nested blocks early so they are
         // reachable via `OUR::` before their declaring block runs (Raku
         // installs `our sub`s into the package at compile time).

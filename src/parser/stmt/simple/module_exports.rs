@@ -307,9 +307,9 @@ pub(crate) fn module_declared_types(module: &str) -> Vec<String> {
 /// for the scope of the `use`: one the `use` introduces ends with its block,
 /// as a lexical import does (a unit-level `use` keeps it for the unit).
 // Cost: O(1).
-pub(super) fn register_scoped_declare_keyword(module: &str, keyword: &str) {
+pub(super) fn register_scoped_declare_keyword(module: &str, keyword: &str, is_role: bool) {
     let introduced = !super::registry::is_declare_keyword(keyword);
-    register_declare_keyword(module, keyword, false);
+    register_declare_keyword(module, keyword, is_role);
     if introduced && super::registry::is_declare_keyword(keyword) {
         super::compile_consts::note_slang_declarator(keyword);
     }
@@ -371,8 +371,11 @@ pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Optio
         });
         nested_imports::record(&scan);
         apply_module_exports(&scan.exports);
+        // The scan sees only the HOW's name, so a declarator is taken to build
+        // a class until the loaded unit's facts say what its HOW builds
+        // (`loaded_facts::register_loaded_unit_facts`).
         for (keyword, _how_type) in &scan.declare_keywords {
-            register_scoped_declare_keyword(module, keyword);
+            register_scoped_declare_keyword(module, keyword, false);
         }
         for keyword in &scan.supersede_keywords {
             register_scoped_supersede_keyword(module, keyword);

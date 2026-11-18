@@ -951,6 +951,14 @@ impl Compiler {
         if init_aggregate {
             self.decl_initializer_aggregates.pop();
         }
+        // The unit's type shells register after its last leading import.
+        if self.type_shells_after != 0 && std::ptr::from_ref(stmt).addr() == self.type_shells_after
+        {
+            self.type_shells_after = 0;
+            for idx in std::mem::take(&mut self.pending_type_shells) {
+                self.code.emit(OpCode::RegisterDecl(idx));
+            }
+        }
         let from_stack = self.sigilless_bind_verdicts > verdicts_before;
         self.sigilless_bind_verdicts = verdicts_before;
         match term {

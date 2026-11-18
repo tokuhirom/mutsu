@@ -428,6 +428,24 @@ positions, or after a `BEGIN`/`multi` of the importer (slice 5).
   on each later entry (the first entry installs the parse-time map), where
   rakudo runs it once at compile time.
 
+### 7.9 Slice 3 as built (2026-11-18)
+
+- **Operators** (#18077): an imported operator's `Routine.prec` record
+  reaches the importer's parse, so `is equiv(&infix:<imported>)` and a
+  `multi` candidate of an imported operator relate to its real precedence.
+- **Declarators**: the importer's parse takes a `DECLARE` declarator's kind
+  from the HOW object the loaded unit bound, not from the module's source
+  (`LoadedDeclarator::is_role`). A HOW that is, or inherits from,
+  `Metamodel::ParametricRoleHOW` makes the keyword parse like `role`, a
+  `[...]` signature included; rakudo's `package_def` decides that from the
+  HOW's `archetypes.parametric`, which no other metaclass a declarator can
+  name has. A declarator the module binds while it loads
+  (`BEGIN EXPORTHOW::DECLARE.WHO<kw> := HOW`) is recorded as the loaded
+  unit's, beside the ones its `package EXPORTHOW` declares, so the
+  importer's parse knows the keyword. The analysis paths, which load
+  nothing, still read only the static scan and take every declarator to
+  build a class.
+
 ### 7.10 Slice 4a as built (2026-11-18)
 
 Slice 4 is split. **4a** moves a slang module's activation into the program

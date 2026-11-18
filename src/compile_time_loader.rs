@@ -72,14 +72,27 @@ pub(crate) struct LoadedExport {
     pub(crate) op_prec: Option<crate::op_prec::OpPrec>,
 }
 
+/// One package declarator a loaded module's `EXPORTHOW` provides
+/// (ADR-17558 §6 slice 3): the directive (`DECLARE` / `SUPERSEDE`), the
+/// keyword, and what its HOW object builds.
+pub(crate) struct LoadedDeclarator {
+    pub(crate) directive: String,
+    pub(crate) keyword: String,
+    /// Whether the declarator's HOW builds a parametric role (it is, or
+    /// inherits from, `Metamodel::ParametricRoleHOW`): the declaration then
+    /// parses like `role`, a `[...]` signature included, as rakudo's
+    /// `package_def` decides from the HOW's `archetypes.parametric`.
+    pub(crate) is_role: bool,
+}
+
 /// What a loaded unit provides to the parse of the `use` that loaded it
 /// (ADR-17558 §2.2): the routines it exports under the tags the `use`
-/// imports, and the `(directive, declarator)` pairs of its `EXPORTHOW`
-/// (`DECLARE`/`SUPERSEDE`), a BEGIN-time merge included.
+/// imports, and the declarators of its `EXPORTHOW` (`DECLARE`/`SUPERSEDE`),
+/// a BEGIN-time merge included.
 #[derive(Default)]
 pub(crate) struct LoadedFacts {
     pub(crate) exports: Vec<LoadedExport>,
-    pub(crate) declarators: Vec<(String, String)>,
+    pub(crate) declarators: Vec<LoadedDeclarator>,
 }
 
 /// Implemented by the interpreter that compiles and will run a unit.

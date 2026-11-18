@@ -685,45 +685,43 @@ impl Interpreter {
             let reuse_site = site_stamp
                 .as_ref()
                 .is_some_and(|stamp| self.class_site_is_registered(&storage_name, stamp));
+            let modifiers = crate::runtime::ClassDeclModifiers {
+                class_is_rw: *class_is_rw,
+                is_hidden: *is_hidden,
+                is_lexical: *is_lexical,
+                hidden_parents: &mapped_hidden_parents,
+                does_parents,
+                body_parents: &mapped_body_parents,
+                language_version,
+                is_stub: *is_stub,
+                trusts,
+                own_attribute_names,
+                attr_decls,
+                attr_type_aliases: &attr_type_aliases,
+                method_name_chunks,
+                method_decls,
+                declared_static_names,
+                nested_decl_names,
+                parent_pre_args: &parent_pre_args,
+                compiled_fns,
+                body_plan,
+                is_hoisted_shell: hoisted_shell,
+                traits_ran_in_shell,
+            };
             let deferred_traits = if reuse_site {
+                // A kept type whose body has per-entry statements runs them
+                // (#18070); a purely declarative body has nothing to run.
+                if !code.class_decl_plans[idx as usize].reentry_is_static() {
+                    self.reenter_class_decl(&storage_name, modifiers)?;
+                }
                 Vec::new()
             } else {
-                loan_env!(
-                    self,
-                    register_class_decl(
-                        &storage_name,
-                        &mapped_parents,
-                        crate::runtime::ClassDeclModifiers {
-                            class_is_rw: *class_is_rw,
-                            is_hidden: *is_hidden,
-                            is_lexical: *is_lexical,
-                            hidden_parents: &mapped_hidden_parents,
-                            does_parents,
-                            body_parents: &mapped_body_parents,
-                            language_version,
-                            is_stub: *is_stub,
-                            trusts,
-                            own_attribute_names,
-                            attr_decls,
-                            attr_type_aliases: &attr_type_aliases,
-                            method_name_chunks,
-                            method_decls,
-                            declared_static_names,
-                            nested_decl_names,
-                            parent_pre_args: &parent_pre_args,
-                            compiled_fns,
-                            body_plan,
-                            is_hoisted_shell: hoisted_shell,
-                            traits_ran_in_shell,
-                        },
-                    )
-                )
-                .map_err(|err| {
-                    if declare_how_installed {
-                        self.registry_mut().class_how_values.remove(&storage_name);
-                    }
-                    err
-                })?
+                self.register_class_decl(&storage_name, &mapped_parents, modifiers)
+                    .inspect_err(|_| {
+                        if declare_how_installed {
+                            self.registry_mut().class_how_values.remove(&storage_name);
+                        }
+                    })?
             };
             // The real declaration composes the class here, in source order. An
             // `augment` that ran earlier only saw its hoisted shell and froze the
@@ -1249,7 +1247,7 @@ impl Interpreter {
     /// with: the module's `EXPORTHOW::DECLARE` entry, the `EXPORTHOW::SUPERSEDE`
     /// entry that replaces a built-in declarator's HOW, or a slang's own record.
     // Cost: O(1), a bounded number of env and registry probes.
-    fn declarator_how_type(&mut self, keyword: &str) -> Option<Value> {
+    pub(crate) fn declarator_how_type(&mut self, keyword: &str) -> Option<Value> {
         let probe = |this: &mut Self, package: &str| {
             let name =
                 crate::qualified::qualified(Symbol::intern(package), Symbol::intern(keyword));
