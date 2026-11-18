@@ -409,46 +409,6 @@ impl Interpreter {
         })
     }
 
-    /// Remove the `GLOBAL::MAIN` candidates a module (not the program)
-    /// declared: lexical to the import scope that loaded the module, even when
-    /// they were registered before it opened (see `pop_import_scope`).
-    // Cost: O(k + m), k = interned `GLOBAL::MAIN/…` names, m = symbols interned
-    // since the family index last caught up.
-    fn drop_foreign_global_main_candidates(&mut self, program_path: Option<Symbol>) -> Vec<Symbol> {
-        // The routine table this check last found clean is still the one
-        // installed: versions are never reused, so nothing was added since.
-        let version = self.routines().functions.version();
-        if self.module.foreign_main_clean_version == Some(version) {
-            return Vec::new();
-        }
-        let main = crate::symbol::wk::global_main();
-        let mut keys = crate::qualified_tail_index::names_in_family("GLOBAL::MAIN");
-        keys.push(main);
-        let foreign: Vec<Symbol> = {
-            let reg = self.routines();
-            keys.into_iter()
-                .filter(|key| {
-                    reg.functions.get(key).is_some_and(|def| {
-                        def.source_file
-                            .as_deref()
-                            .map(Symbol::intern)
-                            .is_some_and(|f| Some(f) != program_path)
-                    })
-                })
-                .collect()
-        };
-        if !foreign.is_empty() {
-            let mut reg = self.routines_mut();
-            let functions = reg.functions_mut();
-            for key in &foreign {
-                functions.remove(key);
-            }
-        }
-        let version = self.routines().functions.version();
-        self.module.foreign_main_clean_version = Some(version);
-        foreign
-    }
-
     /// Record a routine-registry write an import is about to make, with the
     /// value it replaces, on the innermost open import scope when it is the
     /// importing unit's own. A top-level import persists, and so does one a
@@ -555,6 +515,7 @@ impl Interpreter {
             let program_path = self.io.program_path_sym;
             let mut changed_keys = self.undo_import_writes(import_writes);
             changed_keys.extend(self.drop_foreign_global_main_candidates(program_path));
+            changed_keys.extend(self.drop_foreign_global_main_proto(program_path));
             self.io.newline_mode = newline_mode;
             self.module.strict_mode = strict_mode;
             self.module.fatal_mode = fatal_mode;
