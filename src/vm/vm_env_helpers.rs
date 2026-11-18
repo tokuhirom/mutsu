@@ -8,9 +8,13 @@ impl Interpreter {
     // Cost: O(n), n = the unit's source text (parsed per call).
     pub(crate) fn compile_time_cu_value(&self) -> Option<Value> {
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        // A type the unit imported resolves as an import, as at the end of
+        // the BEGIN prologue (`OpCode::EndBeginPrologue`): its short name is
+        // no class-table key (`class Foo is export` in `unit module TT` is
+        // `TT::Foo`).
         let cu = crate::unit_source_text::compile_time_cu(
             &|routine| self.unit_routine_imported(routine),
-            &|name| self.has_class(name),
+            &|name| self.has_class(name) || self.slang_minted_type(name),
         );
         crate::parser::clear_parser_lib_paths();
         cu
