@@ -2,14 +2,16 @@
 //!
 //! `our` variables are package state: rakudo keeps one stash per package per
 //! process, so an `our` declared, assigned or rebound on one thread is seen by
-//! every other. mutsu's store ([`OurVarTable`]) is a
+//! every other. mutsu's store
+//! ([`OurVarTable`](crate::runtime::our_var_table::OurVarTable)) is a
 //! [`WorldCell`](crate::runtime::world_cell::WorldCell) shared by every
 //! interpreter of the process: reads work on this thread's snapshot, writes
 //! publish under the table's lock.
 //!
 //! No `&mut Value` into the table ever escapes its lock. The in-place
 //! mutation chokepoint (`env_root_descended_mut`) pins the stored value in the
-//! mutating frame's env ([`Interpreter::our_var_pinned_root`]) and mutates
+//! mutating thread's pin slot
+//! ([`Interpreter::our_var_pinned_root`](crate::runtime::Interpreter::our_var_pinned_root)) and mutates
 //! through the pin: a container (`Array`/`Hash` node, a `ContainerRef` cell)
 //! is shared by the table and the pin, so the mutation lands on the very node
 //! every thread reads, and the pin keeps it alive while another thread may
