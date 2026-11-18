@@ -13,7 +13,7 @@ use crate::value::RuntimeError;
 
 /// The `ApplyPostfix` of the `**` the parser built for a superscript power.
 // Cost: O(n), n = size of the operand.
-pub(super) fn view(names: &NameScope, power: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_power(names: &NameScope, power: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let Expr::Binary {
         left,
         op: TokenKind::StarStar,
@@ -36,7 +36,7 @@ pub(super) fn view(names: &NameScope, power: &Expr) -> Result<RakuAstNode, Runti
 
 /// The `**` a `Postfix::Power` node lowers to over `operand`.
 // Cost: O(1).
-pub(super) fn lower(postfix: &RakuAstNode, operand: Expr) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_power(postfix: &RakuAstNode, operand: Expr) -> Result<Expr, RuntimeError> {
     // Positional (`.new(2)`) or named (`power => 2`).
     let Some(RakuAstFieldValue::Node(power)) = postfix.fields.first().map(|f| &f.value) else {
         return Err(super::lower::unsupported(postfix));

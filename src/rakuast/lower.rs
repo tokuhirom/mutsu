@@ -5755,7 +5755,9 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     })
                 }
                 // `2²`: the superscript power the parser reads as `**`.
-                RakuAstClass::PostfixPower => super::superscript_power::lower(postfix, operand),
+                RakuAstClass::PostfixPower => {
+                    super::superscript_power::lower_power(postfix, operand)
+                }
                 // `$x++` / `$x--` -> Postfix(operator => "++"); a user
                 // operator routine (`5!`, a user `postfix:<++>`) is called.
                 RakuAstClass::Postfix => {
