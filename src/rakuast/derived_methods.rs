@@ -63,7 +63,7 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
         VarDeclarationPlaceholderSlurpyArray | VarDeclarationPlaceholderSlurpyHash => {
             &["lexical-name"]
         }
-        TypeCapture => &["smiley"],
+        TypeCapture => &["smiley", "lexical-name"],
         WhateverCodeArgument => &["is-hyper"],
         FatArrow | ColonPairTrue | ColonPairFalse | ColonPairValue | ColonPairVariable
         | ColonPairNumber => &["named-arg-name", "named-arg-value"],
@@ -304,6 +304,15 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             RakuAstFieldValue::Node(v) => {
                 str_of(v).map(|s| Value::rakuast(Box::new(super::name_parts::qualified_name(&s))))
             }
+            _ => None,
+        }),
+        // The declaration a `Type::Capture` is: its lexical name is its
+        // name's text (`$?CLASS`), as rakudo answers it.
+        (TypeCapture, "lexical-name") => node.fields.first().and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(v) => match v.view() {
+                ValueView::RakuAst(name) => node_accessor(name, "canonicalize"),
+                _ => None,
+            },
             _ => None,
         }),
         (TypeCapture, "smiley") => {

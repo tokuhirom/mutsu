@@ -16,6 +16,10 @@ fn is_class(target: &Value, class: crate::rakuast::RakuAstClass) -> bool {
 // Cost: O(f), f = fields of the node.
 fn lexical_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(match target.view() {
+        // A `Type::Capture`'s lexical name is its name's text (`$?CLASS`).
+        ValueView::RakuAst(node) if node.class == crate::rakuast::RakuAstClass::TypeCapture => {
+            crate::rakuast::node_accessor(node, "lexical-name").unwrap_or(Value::NIL)
+        }
         ValueView::RakuAst(node) => {
             crate::rakuast::node_accessor(node, "name").unwrap_or(Value::NIL)
         }
