@@ -18,7 +18,14 @@ fn lexical_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> 
     Ok(match target.view() {
         // A `Type::Capture`'s lexical name is its name's text (`$?CLASS`).
         ValueView::RakuAst(node) if node.class == crate::rakuast::RakuAstClass::TypeCapture => {
-            crate::rakuast::node_accessor(node, "lexical-name").unwrap_or(Value::NIL)
+            crate::rakuast::node_accessor(node, "name")
+                .and_then(|name| match name.view() {
+                    ValueView::RakuAst(name) => {
+                        crate::rakuast::node_accessor(name, "canonicalize")
+                    }
+                    _ => None,
+                })
+                .unwrap_or(Value::NIL)
         }
         ValueView::RakuAst(node) => {
             crate::rakuast::node_accessor(node, "name").unwrap_or(Value::NIL)
