@@ -357,6 +357,8 @@ impl Interpreter {
             }
             // Cost: O(d) on a hit, d = env tiers walked (overlay -> parent chain -> base);
             // a miss runs the fallback chain, O(d + p*|name|), p = enclosing packages probed.
+            // A routine-nested sub's free variable this call already resolved is
+            // O(c + l), c = cached bindings (at most 16), l = running `for` parameter names.
             OpCode::GetGlobal(name_idx) | OpCode::GetGlobalDeferred(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 // `GetGlobalDeferred` hands a pending `HashEntryRef` bind token
@@ -374,6 +376,13 @@ impl Interpreter {
                         *ip += 1;
                         return Ok(());
                     }
+                }
+                // mutsu#17971: a routine-nested sub's free variable this call
+                // already resolved to its alias cell (`vm_lexsub_free_cache.rs`).
+                if let Some(val) = self.lexsub_free_cache_read(name, code.const_sym(*name_idx)) {
+                    self.stack.push(val);
+                    *ip += 1;
+                    return Ok(());
                 }
                 if self.rw_return_context
                     && !name.starts_with(['@', '%', '&', '*', '!', '?'])
@@ -855,6 +864,9 @@ impl Interpreter {
                 // Auto-deref ContainerRef for stack use (ContainerRef axis of the
                 // decont family; moves through for the common non-container case).
                 let val = val.into_deref();
+                if matches!(code.ops[*ip], OpCode::GetGlobal(_)) {
+                    self.lexsub_free_cache_fill(code, name, code.const_sym(*name_idx), &val);
+                }
                 self.stack.push(val);
                 *ip += 1;
             }

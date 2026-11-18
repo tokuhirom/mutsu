@@ -243,6 +243,10 @@ pub(crate) struct LexicalState {
     /// The latest activation's cell per routine-nested sub free variable
     /// (see `vm::LexSubLatestCells`).
     pub(crate) lexsub_latest_cells: std::sync::Arc<crate::vm::LexSubLatestCells>,
+    /// The alias cells the running routine-nested sub's free-variable reads
+    /// resolved to, keyed by that call's frame (see
+    /// `vm/vm_lexsub_free_cache.rs`). Holds one frame's entries at a time.
+    pub(crate) lexsub_free_cache: crate::vm::LexSubFreeCache,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after
@@ -444,6 +448,7 @@ impl LexicalState {
             mainline_lexical_subs: Default::default(),
             lexsub_free_aliases: Default::default(),
             lexsub_latest_cells: Default::default(),
+            lexsub_free_cache: Default::default(),
             escaped_our_lexical_cells: ValueMap::default(),
             escaping_our_lexical_names: Default::default(),
             escaping_our_env_param_names: Default::default(),
@@ -509,6 +514,8 @@ impl LexicalState {
             mainline_lexical_subs: self.mainline_lexical_subs.clone(),
             lexsub_free_aliases: self.lexsub_free_aliases.clone(),
             lexsub_latest_cells: self.lexsub_latest_cells.clone(),
+            // Per frame of this interpreter: a thread starts with none.
+            lexsub_free_cache: Default::default(),
             escaped_our_lexical_cells: self.escaped_our_lexical_cells.clone(),
             escaping_our_lexical_names: self.escaping_our_lexical_names.clone(),
             escaping_our_env_param_names: self.escaping_our_env_param_names.clone(),
