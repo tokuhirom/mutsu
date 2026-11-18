@@ -69,6 +69,12 @@ impl Interpreter {
     // Cost: O(1) plus the clone of the captured `SubData` fields.
     fn phaser_block(data: &crate::value::SubData, body: Vec<Stmt>) -> Value {
         let mut phaser = data.clone();
+        // A code object of its own, as in rakudo: sharing the block's id would
+        // make a `$!do` bound on the block (ParaSeq binds one on its mapper
+        // for `FIRST`) the body this phaser runs too, since an anonymous
+        // block's wrap chain is keyed by its id (#18024).
+        phaser.id = crate::value::next_instance_id();
+        phaser.routine_cell = phaser.routine_cell.forked();
         phaser.params = std::sync::Arc::new(Vec::new());
         phaser.param_defs = std::sync::Arc::new(Vec::new());
         Self::compile_phaser_body(&mut phaser, body);
