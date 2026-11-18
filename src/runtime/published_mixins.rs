@@ -56,6 +56,11 @@ pub(crate) struct PunRecipe {
 /// The recipes of every mixin type created in this process, keyed by the
 /// type's name. One instance is shared (not snapshotted) by an interpreter and
 /// every thread forked from it.
+///
+/// A mixin's role-body lexicals are not kept here: they live in the world
+/// `package_lexicals` table under the composed type, where every thread finds
+/// them (ADR-17216 slice 4a; the role-name keyed copy this held until then
+/// gave every composition of a role the first one's lexicals).
 #[derive(Default, Debug)]
 pub(crate) struct PublishedMixins {
     /// Set once the first recipe is published, so the miss-path probe of a
