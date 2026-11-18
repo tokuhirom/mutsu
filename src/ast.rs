@@ -2227,7 +2227,12 @@ pub(crate) enum EnumVariantForm {
     Words,
     EmptyWords(Box<str>),
     QuoteWords,
+    /// A `<< >>` / `« »` body with its text as written (spacing, colonpair atoms).
+    WrittenQuoteWords(Box<str>),
     PairList,
+    /// A parenthesized pair list with a colonpair spelling the variants do
+    /// not keep (`:x(1)`, `:y`): how each element was written.
+    WrittenPairs(Vec<BinaryForm>),
     Computed,
 }
 

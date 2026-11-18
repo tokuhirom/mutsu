@@ -61,7 +61,9 @@ pub(super) fn enum_term_node(
             ],
         }),
         EnumVariantForm::QuoteWords => word_term(names, variants, "quotewords"),
+        EnumVariantForm::WrittenQuoteWords(text) => written_quote_words(names, text),
         EnumVariantForm::PairList => pair_list_term(names, variants),
+        EnumVariantForm::WrittenPairs(forms) => written_pairs_term(names, variants, forms),
         EnumVariantForm::Computed => match variants {
             [(name, Some(body))] if name == DYNAMIC => computed_term(names, body),
             _ => Err(super::view::unsupported("enum with a computed body")),
@@ -258,6 +260,59 @@ fn pair_list_term(
             })))
         })
         .collect::<Result<Vec<_>, RuntimeError>>()?;
+    let list = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), plain_infix(",")),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(operands),
+            },
+        ],
+    };
+    Ok(parenthesized(list))
+}
+
+/// The term of a `<< >>` / `« »` body, read again from its written text so
+/// the spacing and the colonpair atoms are the ones the source had.
+// Cost: O(n), n = length of the text.
+fn written_quote_words(names: &NameScope, text: &str) -> Result<RakuAstNode, RuntimeError> {
+    let expr = crate::parser::term_expr(text)
+        .ok_or_else(|| super::view::unsupported("an enum's quote-words body"))?;
+    view_expr(names, &expr)
+}
+
+/// The parenthesized term of a pair list that keeps a colonpair spelling: each
+/// variant is viewed as the pair form it was written in.
+// Cost: O(v), v = variants.
+fn written_pairs_term(
+    names: &NameScope,
+    variants: &[(String, Option<Expr>)],
+    forms: &[crate::ast::BinaryForm],
+) -> Result<RakuAstNode, RuntimeError> {
+    let operands = variants
+        .iter()
+        .zip(forms)
+        .map(|((name, value), form)| {
+            let item = match (value, form) {
+                (None, crate::ast::BinaryForm::Infix) => {
+                    return Ok(Value::rakuast(Box::new(quoted_string(Value::str(
+                        name.clone(),
+                    )))));
+                }
+                (Some(value), form) => (value.clone(), *form),
+                (None, form) => (Expr::Literal(Value::TRUE), *form),
+            };
+            let pair = Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(name.clone()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(item.0),
+                form: item.1,
+            };
+            view_expr(names, &pair).map(|n| Value::rakuast(Box::new(n)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let list = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyListInfix,
