@@ -314,8 +314,7 @@ impl Interpreter {
     /// Look up an `our`-scoped variable by trying the bare (unqualified) name
     /// after stripping pseudo-package prefixes like GLOBAL::, OUR::, etc.
     pub(crate) fn our_var_pseudo_unqualified(&self, name: &str) -> Option<Value> {
-        Self::pseudo_package_unqualified_name(name)
-            .and_then(|bare| self.get_our_var(&bare).cloned())
+        Self::pseudo_package_unqualified_name(name).and_then(|bare| self.get_our_var(&bare))
     }
 
     /// Reconstruct the package-qualified key for a bare free-variable name
@@ -483,7 +482,7 @@ impl Interpreter {
         // memoized per symbol: no `format!` and no `"::"` search per read.
         for pkg in crate::qualified::package_ancestors(cur_sym) {
             let candidate = crate::qualified::qualified_var(pkg, name);
-            if let Some(v) = self.get_our_var(candidate.as_str()).cloned() {
+            if let Some(v) = self.get_our_var(candidate.as_str()) {
                 return Some(v);
             }
             if let Some(v) = self.get_env_with_main_alias(candidate.as_str()) {
@@ -534,7 +533,7 @@ impl Interpreter {
             {
                 if pkg.as_str() != cur.as_str() {
                     if let Some(candidate) = Self::package_qualified_candidate(name_sym, pkg)
-                        && let Some(value) = self.get_our_var(candidate.as_str()).cloned()
+                        && let Some(value) = self.get_our_var(candidate.as_str())
                     {
                         return Some(value);
                     }
@@ -1543,7 +1542,6 @@ impl Interpreter {
         // authoritative Nil — the var is genuinely absent from THIS package.
         Some(
             self.get_our_var(&qkey)
-                .cloned()
                 .or_else(|| self.get_env_with_main_alias(&qkey))
                 .unwrap_or(Value::NIL),
         )
@@ -1607,15 +1605,17 @@ impl Interpreter {
         let cur_sym = self.current_package_sym();
         let cur: &str = cur_sym.as_str();
         if let Some(candidate) = Self::package_qualified_candidate(Symbol::intern(name), cur_sym)
-            && self.get_our_var(candidate.as_str()).is_some()
+            && self.has_our_var(candidate.as_str())
         {
             // A plain `our $x` keeps its value in ONE shared cell that the
             // declaring slot, both env keys and this store all point at
             // (`OpCode::DeclareOurScalar`). Replacing the entry with a plain
             // value would sever this store from that cell, leaving the two
             // holding independent values; write THROUGH it instead.
-            if let Some(ValueView::ContainerRef(cell)) =
-                self.get_our_var(candidate.as_str()).map(Value::view)
+            if let Some(ValueView::ContainerRef(cell)) = self
+                .get_our_var(candidate.as_str())
+                .as_ref()
+                .map(Value::view)
             {
                 Self::cell_store_preserving_container_identity(candidate.as_str(), &cell, val);
                 return true;
@@ -2100,7 +2100,7 @@ impl Interpreter {
             return self
                 .our_pseudo_var_read(name)
                 .filter(|v| !v.is_nil())
-                .or_else(|| self.get_our_var(&bare).cloned());
+                .or_else(|| self.get_our_var(&bare));
         }
         // Placeholder block parameters are stored as "^name". Allow lexical
         // access by the de-careted name inside the same block. Gated on the
@@ -2142,7 +2142,7 @@ impl Interpreter {
             .get(&key)
             .cloned()
             .or_else(|| self.our_pseudo_var_read(&key))
-            .or_else(|| self.get_our_var(&key).cloned())
+            .or_else(|| self.get_our_var(&key))
             .filter(|v| !v.is_nil())
     }
 
@@ -2371,7 +2371,8 @@ impl Interpreter {
         if !fresh_binding
             && !value.is_container_ref()
             && let Some(key) = self.our_pseudo_var_key(name)
-            && let Some(ValueView::ContainerRef(cell)) = self.get_our_var(&key).map(Value::view)
+            && let Some(ValueView::ContainerRef(cell)) =
+                self.get_our_var(&key).as_ref().map(Value::view)
         {
             let cell = cell.clone();
             Self::cell_store_preserving_container_identity(&key, &cell, &value);

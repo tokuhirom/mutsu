@@ -152,7 +152,7 @@ impl Interpreter {
                     .rev()
                     .find(|f| !f.is_block)
                     .and_then(|f| f.def_file)?;
-                self.get_our_var(var_name).cloned()
+                self.get_our_var(var_name)
             })
             .map(Value::into_deref)
     }

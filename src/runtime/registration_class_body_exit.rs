@@ -139,7 +139,6 @@ impl Interpreter {
                     // stale bare declaration-time snapshot.
                     if let Some(qv) = self
                         .get_our_var(&qualified)
-                        .cloned()
                         .or_else(|| self.env.get(&qualified).cloned())
                     {
                         return Some((bare, qv));
@@ -149,7 +148,7 @@ impl Interpreter {
                     // in the qualified `our` store and can be set from outside
                     // the package; a bare declaration-time snapshot here would
                     // stale-shadow it.
-                    if self.get_our_var(&qualified).is_some() || self.env.contains_key(&qualified) {
+                    if self.has_our_var(&qualified) || self.env.contains_key(&qualified) {
                         return None;
                     }
                 }
@@ -197,7 +196,6 @@ impl Interpreter {
             };
             let Some(value) = self
                 .get_our_var(&qualified)
-                .cloned()
                 .or_else(|| self.env.get(&qualified).cloned())
             else {
                 continue;

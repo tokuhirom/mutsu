@@ -38,7 +38,7 @@ impl Interpreter {
                 let key = crate::qualified::qualified_text(cx.name, name);
                 if !self
                     .get_our_var(key.as_str())
-                    .is_some_and(Value::is_container_ref)
+                    .is_some_and(|v| v.is_container_ref())
                 {
                     continue;
                 }

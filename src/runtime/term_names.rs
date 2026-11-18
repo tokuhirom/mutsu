@@ -74,7 +74,7 @@ impl Interpreter {
                 // `package_lexicals` once the block has exited.
                 .or_else(|| self.package_chain_var_fallback(key_sym))
                 // An `our`-scoped constant of a block that has since exited.
-                .or_else(|| self.get_our_var(key).cloned())
+                .or_else(|| self.get_our_var(key))
         })
     }
 

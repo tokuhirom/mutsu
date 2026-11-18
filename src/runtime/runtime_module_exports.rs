@@ -801,10 +801,11 @@ impl Interpreter {
                 .get(module)
                 .and_then(|e| e.get(name))
                 .cloned();
+            let our_value = self.our_table().get(qualified.as_str()).cloned();
             return qualified_binding
                 .filter(|v| !is_type_self_binding(v))
                 .or(package_lexical.as_ref())
-                .or_else(|| self.lexicals.our_vars.get(qualified.as_str()))
+                .or(our_value.as_ref())
                 .or_else(|| {
                     self.module
                         .module_scope_lexicals
@@ -889,8 +890,8 @@ impl Interpreter {
             // module load restores their lexical env entries after the first
             // import, so a later tagged re-import must read the durable
             // package store as well (e.g. Math::Trig's code aliases).
-            .or_else(|| self.lexicals.our_vars.get(&qualified).cloned())
-            .or_else(|| self.lexicals.our_vars.get(name).cloned())
+            .or_else(|| self.our_table().get(&qualified).cloned())
+            .or_else(|| self.our_table().get(name).cloned())
             // Code variables use the routine registry as an additional
             // durable store.  This matters for `our &alias = &routine`: the
             // module's lexical `env` entry is restored after its first load,

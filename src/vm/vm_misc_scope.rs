@@ -31,9 +31,7 @@ impl Interpreter {
                 .get(slot)
                 .is_some_and(|name| crate::runtime::term_names::term_spelling(name).is_some())
             {
-                self.lexicals
-                    .our_term_keys
-                    .insert(Symbol::intern(qualified_name));
+                self.our_table_mark_term(Symbol::intern(qualified_name), true);
             }
         }
         if !self.our_link_owner_in_scope(qualified_name) {
@@ -251,15 +249,11 @@ impl Interpreter {
         if qualified != code.locals[idx]
             && crate::runtime::term_names::term_spelling(&code.locals[idx]).is_some()
         {
-            self.lexicals
-                .our_term_keys
-                .insert(Symbol::intern(&qualified));
+            self.our_table_mark_term(Symbol::intern(&qualified), true);
         } else if qualified != code.locals[idx] && !code.locals[idx].starts_with(['@', '%', '&']) {
             // A `$` scalar's store key carries no sigil either; record it so
             // an uppercase-leading `our $Baz` lists as `$Baz` (#17364).
-            self.lexicals
-                .our_scalar_keys
-                .insert(Symbol::intern(&qualified));
+            self.our_table_mark_term(Symbol::intern(&qualified), false);
         }
         // Persist under the qualified key too, matching what every other
         // `our`/package-qualified store already does (stash introspection,
@@ -1149,7 +1143,7 @@ impl Interpreter {
             if !restored_env.contains_key_sym(local_sym) || fresh_keys.contains(&local_sym) {
                 continue;
             }
-            if let Some(val) = self.get_our_var(qualified).cloned() {
+            if let Some(val) = self.get_our_var(qualified) {
                 if *slot < self.locals.len() {
                     self.locals[*slot] = val.clone();
                 }

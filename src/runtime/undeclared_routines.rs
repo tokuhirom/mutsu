@@ -544,7 +544,7 @@ impl Interpreter {
             || self.lexically_imported_routine(name)
             || self.env().contains_key(&format!("&{}", name))
             || self.env().contains_key(name)
-            || self.get_our_var(name).is_some()
+            || self.has_our_var(name)
             // A sigilless constant in scope: an `EVAL` of a bare term
             // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
             || self.term_binding(name).is_some()

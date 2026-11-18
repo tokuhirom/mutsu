@@ -229,7 +229,6 @@ impl Interpreter {
         if package_array
             && let Some(stored) = self
                 .get_our_var(key)
-                .cloned()
                 .or_else(|| self.our_var_pseudo_unqualified(key))
         {
             // A prior call's env overlay has gone away. Restore the package

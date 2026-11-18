@@ -132,7 +132,7 @@ impl Interpreter {
             // The same exclusions and memoized key used by the VM's read
             // and write paths; no caller-frame names enter this lookup.
             if let Some(key) = Self::package_qualified_candidate(name, package)
-                && self.get_our_var(key.as_str()).is_some()
+                && self.has_our_var(key.as_str())
             {
                 return Some(key);
             }
@@ -154,7 +154,6 @@ impl Interpreter {
         let key = self.our_package_var_key_in(name, owner)?;
         self.get_our_var(key.as_str())
             .filter(|value| value.is_container_ref())
-            .cloned()
     }
 
     /// The shared cell backing a bare `our` SCALAR name, as seen from the
@@ -193,7 +192,7 @@ impl Interpreter {
             return None;
         }
         let key = self.our_package_var_key(name)?;
-        match self.get_our_var(&key).map(Value::view) {
+        match self.get_our_var(&key).as_ref().map(Value::view) {
             Some(ValueView::ContainerRef(cell)) => Some((key, cell.clone())),
             _ => None,
         }
@@ -243,7 +242,9 @@ impl Interpreter {
         let Some(real) = self.package_alias_var_name(name) else {
             return false;
         };
-        if let Some(ValueView::ContainerRef(cell)) = self.get_our_var(&real).map(Value::view) {
+        if let Some(ValueView::ContainerRef(cell)) =
+            self.get_our_var(&real).as_ref().map(Value::view)
+        {
             let cell = cell.clone();
             Self::cell_store_preserving_container_identity(&real, &cell, val);
         } else {
@@ -290,7 +291,7 @@ impl Interpreter {
     pub(crate) fn package_alias_var_read(&self, name: &str) -> Option<Value> {
         let real = self.package_alias_var_name(name)?;
         self.get_env_with_main_alias(&real)
-            .or_else(|| self.get_our_var(&real).cloned())
+            .or_else(|| self.get_our_var(&real))
     }
 
     /// The persisted value of a package-qualified name (`$GLOBAL::n`,
@@ -303,7 +304,7 @@ impl Interpreter {
         if !crate::qualified::is_qualified(name_sym) {
             return None;
         }
-        self.get_our_var(name_sym.as_str()).cloned()
+        self.get_our_var(name_sym.as_str())
     }
 
     /// The by-name scalar write tail shared by the three read-modify-write ops
@@ -359,7 +360,7 @@ impl Interpreter {
     /// package's own container.
     pub(crate) fn our_package_container(&self, name: &str) -> Option<Value> {
         let key = self.our_package_container_key(name)?;
-        self.get_our_var(&key).cloned().map(Value::into_deref)
+        self.get_our_var(&key).map(Value::into_deref)
     }
 
     /// Write companion of [`Self::our_package_container_key`], for the
@@ -396,29 +397,31 @@ impl Interpreter {
     /// [`Interpreter::cell_store_preserving_container_identity`], one
     /// indirection shallower — the mirror is a plain `Value`, not a cell.
     pub(crate) fn our_mirror_store_preserving_identity(&mut self, key: &str, val: &Value) {
-        let Some(slot) = self.get_our_var_mut(key) else {
+        let Some(real) = self.our_var_mut_key(key) else {
             return;
         };
-        let replacement = match (slot.view(), val.view()) {
-            (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
-                if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
-            {
-                Some(Self::hash_inplace_reassign(&old_gc, &new_gc))
-            }
-            (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
-                if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
-            {
-                Some(Self::array_inplace_reassign(&old_gc, &new_gc, kind))
-            }
-            _ => None,
-        };
-        // `hash_inplace_reassign` / `array_inplace_reassign` copy the new
-        // contents INTO the old node and return a `Value` pointing at it, so
-        // re-seating the slot on that result keeps the original `Gc`.
-        let new_slot = replacement.unwrap_or_else(|| val.clone());
-        if let Some(slot) = self.get_our_var_mut(key) {
-            *slot = new_slot;
-        }
+        // One table write (ADR-17216 slice 4b): the mirror is shared by every
+        // thread, so it is never written through a reference held outside
+        // the table's lock.
+        self.our_table_update(real, |slot| {
+            let replacement = match (slot.view(), val.view()) {
+                (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
+                    if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
+                {
+                    Some(Self::hash_inplace_reassign(&old_gc, &new_gc))
+                }
+                (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
+                    if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
+                {
+                    Some(Self::array_inplace_reassign(&old_gc, &new_gc, kind))
+                }
+                _ => None,
+            };
+            // `hash_inplace_reassign` / `array_inplace_reassign` copy the new
+            // contents INTO the old node and return a `Value` pointing at it,
+            // so re-seating the slot on that result keeps the original `Gc`.
+            Some(replacement.unwrap_or_else(|| val.clone()))
+        });
     }
 
     /// Whether the bytecode frame currently executing declares `name` as one

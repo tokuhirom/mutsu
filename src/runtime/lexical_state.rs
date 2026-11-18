@@ -71,43 +71,18 @@ pub(crate) struct LexicalState {
     /// must not record that stale plain copy as a body static, which method
     /// code would read ahead of the cell. See `vm_nested_method_capture`.
     pub(crate) nested_capture_cell_names: HashMap<Symbol, rustc_hash::FxHashSet<Symbol>>,
-    /// Persistent store for `our`-scoped variables.  Values are saved here
-    /// by `SetGlobal` so they survive block-scope restoration (which only
-    /// preserves env keys that existed before the block).
-    /// `FxHashMap`, not the SipHash default: `our_package_var_key` probes this
-    /// store on EVERY `@`/`%` container read once a program declares any `our`
-    /// variable, and hashing the (already short) key cryptographically was a
-    /// measurable slice of that walk (#7571). Same reasoning as `env::SymMap`.
-    pub(crate) our_vars: rustc_hash::FxHashMap<String, Value>,
-    /// The UNQUALIFIED spelling (`@words`, `$x`) of every key ever stored in
-    /// [`Self::our_vars`] — the sigil plus the segment after the last `::`.
-    ///
-    /// `our_package_var_key` reconstructs a package-qualified candidate for a
-    /// bare name by walking up to four candidate packages' `::` chains, one
-    /// `format!` + store probe per step, on EVERY `@`/`%` container read once a
-    /// program declares any `our` variable at all. Every candidate it builds
-    /// ends in `<sigil><bare>`, so a name absent from this set cannot match any
-    /// stored key and the whole walk can be skipped — which is the common case
-    /// even in a module that does declare `our` variables (#7571).
-    ///
-    /// Append-only, exactly like `our_vars` itself (which is only ever inserted
-    /// into, never removed from), so a membership test can never be stale.
-    pub(crate) our_var_unqualified: rustc_hash::FxHashSet<Symbol>,
-    /// The bare keys (`a`, `@arr`, `%h`) of [`Self::our_vars`]: the file-scope
-    /// `our` variables, whose package-qualified spelling collapses to the bare
-    /// name. A `gather` body's captured env keeps only the body's own free
-    /// variables, so a routine it calls would not find these; the gather
-    /// creation copies them in (`exec_make_gather_op`).
-    pub(crate) global_our_names: std::sync::Arc<rustc_hash::FxHashSet<Symbol>>,
-    /// The `our_vars` keys (`Pkg::answer`) that hold a sigil-less `our
-    /// constant`. The store spells such a key like a scalar's, so this is the
-    /// only record that `answer` is a term and not `$answer` (#11877).
-    pub(crate) our_term_keys: rustc_hash::FxHashSet<Symbol>,
-    /// The `our_vars` keys (`Pkg::Baz`) that hold a `$` scalar. The store
-    /// spells a scalar's key without its sigil, and an uppercase-leading tail
-    /// otherwise reads as a type or term, so this is the only record that
-    /// `Baz` is `$Baz` (#17364).
-    pub(crate) our_scalar_keys: rustc_hash::FxHashSet<Symbol>,
+    /// The `our` variables and their name indexes: one world table shared by
+    /// every thread (ADR-17216 slice 4b), so an `our` declared, assigned or
+    /// rebound on one thread is visible on every other. See
+    /// [`OurVarTable`](crate::runtime::our_var_table::OurVarTable).
+    pub(crate) our_vars:
+        crate::runtime::world_cell::WorldCell<crate::runtime::our_var_table::OurVarTable>,
+    /// The `our` variable an in-place mutation is running on, held here while
+    /// the mutation's reference into it lives
+    /// ([`Interpreter::our_var_pinned_root`](crate::runtime::Interpreter::our_var_pinned_root)):
+    /// another thread's rebind of the key cannot free it meanwhile. One slot:
+    /// the next pin replaces it, once the previous reference is gone.
+    pub(crate) our_var_pin: Value,
     /// The process-level dynamics written at run time (`$PROCESS::OUT = ...`,
     /// `PROCESS::<$name> := value`, a `$*name = ...` that lands on the process
     /// binding), keyed by the dynamic-var env key (`*name`/`@*name`/`%*name`).
@@ -440,11 +415,8 @@ impl LexicalState {
             nested_method_captures: Default::default(),
             composed_nested_method_captures: Default::default(),
             nested_capture_cell_names: Default::default(),
-            our_vars: rustc_hash::FxHashMap::default(),
-            our_var_unqualified: rustc_hash::FxHashSet::default(),
-            global_our_names: Default::default(),
-            our_term_keys: rustc_hash::FxHashSet::default(),
-            our_scalar_keys: rustc_hash::FxHashSet::default(),
+            our_vars: Default::default(),
+            our_var_pin: Value::NIL,
             process_dynamics: process_stash::ProcessStash::default(),
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: Default::default(),
@@ -501,15 +473,9 @@ impl LexicalState {
             nested_method_captures: Default::default(),
             composed_nested_method_captures: self.composed_nested_method_captures.clone(),
             nested_capture_cell_names: self.nested_capture_cell_names.clone(),
-            // A package variable the parent persisted (`$GLOBAL::x = ...` made
-            // inside a sub, which no env keeps once the frame returns) is
-            // visible to the worker as of the spawn. Containers keep sharing
-            // their `Gc` with the parent.
-            our_vars: self.our_vars.clone(),
-            our_var_unqualified: self.our_var_unqualified.clone(),
-            global_our_names: self.global_our_names.clone(),
-            our_term_keys: self.our_term_keys.clone(),
-            our_scalar_keys: self.our_scalar_keys.clone(),
+            // ADR-17216 slice 4b: one `our` store for the whole process.
+            our_vars: self.our_vars.share(),
+            our_var_pin: Value::NIL,
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),

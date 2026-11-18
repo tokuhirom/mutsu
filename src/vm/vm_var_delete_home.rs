@@ -135,7 +135,7 @@ impl Interpreter {
         });
         let saved_our_env_entry = our_key.as_ref().map(|key| {
             let saved = self.env().get(&var_name).cloned();
-            let inner = self.get_our_var(key).cloned().unwrap_or(Value::NIL);
+            let inner = self.get_our_var(key).unwrap_or(Value::NIL);
             self.env_mut().insert(var_name.clone(), inner);
             saved
         });
