@@ -6,11 +6,11 @@
 //! IR; its round-trip mode currently exercises that boundary.
 
 mod accessors;
-mod zen_slice;
 mod adverb_origins;
 mod model_methods;
 mod positional_fields;
 mod routine_stub;
+mod zen_slice;
 pub use accessors::node_accessor;
 pub(crate) use doc_source::{origin_pod_source, pod_source};
 #[cfg(test)]
