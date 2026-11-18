@@ -3,17 +3,15 @@
 Three general bugs kept ParaSeq's `t/09-map`, `t/47-deepmap` and `t/49-nodemap`
 from matching rakudo (#18024).
 
-**`=:=` / `nqp::eqaddr` on a bound private attribute.** `$!attr := $value`
-seats the object itself as the attribute, with no Scalar around it. mutsu
-already recorded that on the instance (the `BoundAttr` marker that
-`nqp::isrwcont` reads), but container identity only consulted the method
-frame that did the bind, so in any later method `nqp::eqaddr($!attr, $v)`
-answered 0 even for the very object. ParaSeq marks the batch in which a `last`
-ran with `$!lastsema := $semaphore` and later tests each batch with
-`nqp::eqaddr($next, $!lastsema)`; the test never matched, so every batch after
-the `last` was still delivered. Container identity now asks the instance, and
-two names bound to the same non-container object (a Promise, a Lock, a
-queue) compare identical however they were bound.
+**`=:=` / `nqp::eqaddr` on bound names of other objects.** ParaSeq marks the
+batch in which a `last` ran with `$!lastsema := $semaphore` and later tests each
+batch with `nqp::eqaddr($next, $!lastsema)`. #18084 made a bound attribute its
+value to container identity; the named-operand comparison still answered
+`False` for any object other than an Array, Hash or class instance (a Promise,
+a `ConcBlockingQueue`), so the test never matched and every batch after the
+`last` was still delivered. Two names with no Scalar of their own now compare
+the objects they hold (`my $p := Promise.new; my $q := $p; $p =:= $q` is True,
+as on rakudo).
 
 **`FIRST` in a `.map` callback with ENTER/LEAVE/LAST.** Such a callback is
 compiled as a block scope so its LEAVE-type phasers fire on every exit. Its

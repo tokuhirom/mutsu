@@ -300,13 +300,6 @@ impl Interpreter {
         if self.scalar_name_has_no_container(name) {
             return false;
         }
-        // `$!attr := VALUE` seats the value itself as the attribute, in
-        // whichever method the bind ran; the instance records it
-        // (`BoundAttr`), so a later method's `nqp::eqaddr($!attr, $v)` sees
-        // the value, not a Scalar (ParaSeq's `$!lastsema`, #18024).
-        if name.starts_with('!') && self.private_attr_is_bound(Some(name)) {
-            return false;
-        }
         // A Proxy is an assignable container of its own, rather than a
         // Scalar. A scalar assignment has already FETCHed a Proxy, so this
         // shape belongs to a direct Proxy binding or its aliases.
