@@ -62,19 +62,20 @@ impl Interpreter {
     // loaded module.
     pub(crate) fn record_bound_exporthow_declares(&mut self, module: &str, globals: &[(Symbol, Value)]) {
         let mut found: Vec<(String, String)> = Vec::new();
+        let directives = ["DECLARE", "SUPERSEDE"]
+            .map(|directive| (directive, crate::qualified::qualified_text("EXPORTHOW", directive)));
         for (key, _) in globals {
-            let key = key.resolve();
-            let Some(rest) = key.strip_prefix("EXPORTHOW::") else {
+            let Some(parent) = crate::qualified::package_parent(*key) else {
                 continue;
             };
-            let Some((directive, keyword)) = rest.split_once("::") else {
+            let Some((directive, _)) = directives.iter().find(|(_, package)| *package == parent)
+            else {
                 continue;
             };
-            if !matches!(directive, "DECLARE" | "SUPERSEDE") {
-                continue;
-            }
+            let bare = crate::qualified::unqualified_part(*key);
+            let keyword = bare.as_str();
             let keyword = keyword.strip_prefix('$').unwrap_or(keyword);
-            if keyword.is_empty() || crate::qualified::is_qualified_str(keyword) {
+            if keyword.is_empty() {
                 continue;
             }
             found.push((directive.to_string(), keyword.to_string()));
