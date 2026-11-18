@@ -227,9 +227,16 @@ another thread's rebind cannot free it mid-mutation. TRIR's free-variable
 cache is keyed on the table's world generation as well.
 
 Left for later slices: `our` variables and runtime-created `our` routines
-(4b), and retiring `PublishedMixins::role_lexical`, which needs the role-body
-lexicals of a mixin composed on one thread published under the role's name
-in the shared table.
+(4b), and retiring `PublishedMixins::role_lexical`.
+
+**`PublishedMixins::role_lexical` retired (2026-11-18).** Nothing had to be
+published under the role's name: with `package_lexicals` world state, a
+method of a mixin composed on another thread finds the role body's lexicals
+where the composing thread filed them, as on the composing thread itself.
+The stopgap was also wrong: keyed by role name with the first record
+winning, it gave every later composition of the role (another class mixing
+it in on another thread) the first composition's lexicals, where rakudo runs
+the role body once per composed type.
 
 ## 4. Consequences
 
