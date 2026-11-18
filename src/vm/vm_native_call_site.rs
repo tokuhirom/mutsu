@@ -84,7 +84,7 @@ impl Interpreter {
             .collect();
         if args.iter().any(|arg| {
             let junction = match arg.view() {
-                ValueView::Pair(_, value) => Self::unwrap_junction_value(&value).is_some(),
+                ValueView::Pair(_, value) => Self::unwrap_junction_value(value).is_some(),
                 _ => Self::unwrap_junction_value(arg).is_some(),
             };
             junction || arg.is_proxy_value()
