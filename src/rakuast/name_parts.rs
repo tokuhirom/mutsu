@@ -327,7 +327,10 @@ pub(super) fn written_operator_name(
         .map(|e| super::view::view_expr(names, e).map(|n| Value::rakuast(Box::new(n))))
         .collect::<Result<Vec<_>, _>>()
         .ok()?;
-    let field = node.fields.iter_mut().find(|f| f.name == Some("colonpairs"))?;
+    let field = node
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("colonpairs"))?;
     field.value = RakuAstFieldValue::List(views);
     Some(node)
 }
