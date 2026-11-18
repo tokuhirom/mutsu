@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.27,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.07,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.17,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -66,7 +66,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.24,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -80,21 +80,7 @@
         "nok": 0,
         "ok": 14,
         "plan": null,
-        "secs": 2.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/06-sandbox-agent.t",
-      "raku": {
-        "first_failure": "Failed to create directory '/tmp/v3-agent-t-2' with mode '0o777': Failed to mkdir: read-only file system",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.7,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -108,7 +94,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.23,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +106,7 @@
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 0.21,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +116,7 @@
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 1.21,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -144,7 +130,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.88,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -158,7 +144,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.48,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -172,7 +158,7 @@
         "nok": 0,
         "ok": 30,
         "plan": null,
-        "secs": 1.14,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -184,7 +170,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.12,
+        "secs": 0.07,
         "skip": 11,
         "todo": 0,
         "verdict": "pass"
@@ -194,7 +180,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.75,
+        "secs": 0.87,
         "skip": 11,
         "todo": 0,
         "verdict": "pass"
@@ -206,7 +192,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.34,
+        "secs": 0.38,
         "skip": 17,
         "todo": 0,
         "verdict": "pass"
@@ -216,7 +202,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 1.06,
+        "secs": 0.88,
         "skip": 17,
         "todo": 0,
         "verdict": "pass"
@@ -230,7 +216,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.92,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -242,7 +228,7 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 0.69,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -252,29 +238,7 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 1.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 19,
-        "plan": 19,
-        "secs": 0.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/16-agent-serve.t",
-      "raku": {
-        "nok": 0,
-        "ok": 19,
-        "plan": 19,
-        "secs": 2.2,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -286,7 +250,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.34,
+        "secs": 0.39,
         "skip": 18,
         "todo": 0,
         "verdict": "pass"
@@ -296,7 +260,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.95,
+        "secs": 1.02,
         "skip": 18,
         "todo": 0,
         "verdict": "pass"
@@ -310,7 +274,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.32,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -324,7 +288,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.4,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -334,9 +298,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 56,
-        "plan": 56,
-        "secs": 0.2,
+        "ok": 55,
+        "plan": 55,
+        "secs": 0.14,
         "skip": 20,
         "todo": 0,
         "verdict": "pass"
@@ -344,26 +308,12 @@
       "path": "t/20-data-cursor.t",
       "raku": {
         "nok": 0,
-        "ok": 56,
-        "plan": 56,
-        "secs": 1.44,
+        "ok": 55,
+        "plan": 55,
+        "secs": 1.01,
         "skip": 20,
         "todo": 0,
         "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/21-agent-worker.t",
-      "raku": {
-        "first_failure": "worker 握手成功（启动成本隔离在连接建立阶段）",
-        "nok": 9,
-        "ok": 20,
-        "plan": 29,
-        "secs": 2.57,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "fail"
       }
     },
     {
@@ -372,7 +322,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 0.33,
+        "secs": 0.31,
         "skip": 33,
         "todo": 0,
         "verdict": "pass"
@@ -382,7 +332,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.02,
+        "secs": 0.81,
         "skip": 33,
         "todo": 0,
         "verdict": "pass"
@@ -394,7 +344,7 @@
         "nok": 0,
         "ok": 57,
         "plan": 57,
-        "secs": 0.61,
+        "secs": 0.67,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -404,7 +354,7 @@
         "nok": 0,
         "ok": 57,
         "plan": 57,
-        "secs": 1.25,
+        "secs": 1.05,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -414,9 +364,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 57,
-        "plan": 57,
-        "secs": 0.66,
+        "ok": 54,
+        "plan": 54,
+        "secs": 0.8,
         "skip": 19,
         "todo": 0,
         "verdict": "pass"
@@ -424,26 +374,34 @@
       "path": "t/24-csv-dialect.t",
       "raku": {
         "nok": 0,
-        "ok": 57,
-        "plan": 57,
-        "secs": 1.18,
+        "ok": 54,
+        "plan": 54,
+        "secs": 1.15,
         "skip": 19,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 69,
+        "plan": 69,
+        "secs": 0.9,
+        "skip": 9,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/25-describe-complete.t",
       "raku": {
-        "first_failure": "注册会话 Engine 并建表成功",
-        "nok": 4,
-        "ok": 65,
+        "nok": 0,
+        "ok": 69,
         "plan": 69,
-        "secs": 1.54,
-        "skip": 5,
+        "secs": 1.55,
+        "skip": 9,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       }
     },
     {
@@ -454,7 +412,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.96,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -468,7 +426,7 @@
         "nok": 7,
         "ok": 8,
         "plan": 15,
-        "secs": 45.93,
+        "secs": 46.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -482,7 +440,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.76,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -496,7 +454,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.78,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -510,7 +468,7 @@
         "nok": 10,
         "ok": 0,
         "plan": 10,
-        "secs": 1.06,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -524,7 +482,7 @@
         "nok": 9,
         "ok": 4,
         "plan": 13,
-        "secs": 1.04,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -538,32 +496,281 @@
         "nok": 9,
         "ok": 2,
         "plan": 11,
-        "secs": 65.79,
+        "secs": 65.73,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       }
     },
     {
+      "cmp": "no_baseline",
+      "path": "t/33-colors.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-color-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 69,
+        "plan": null,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/34-userland.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-userland-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 77,
-        "plan": 77,
-        "secs": 0.68,
+        "ok": 52,
+        "plan": 52,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/33-colors.t",
+      "path": "t/35-kernel.t",
       "raku": {
         "nok": 0,
-        "ok": 77,
-        "plan": 77,
-        "secs": 0.97,
+        "ok": 52,
+        "plan": 52,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/36-console-utf8.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rk-cjk-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 15,
+        "plan": null,
+        "secs": 1.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/37-command-table.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-table-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/38-display.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-display-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/40-audit.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/audit-t-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/41-eval-worker.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/42-snapshot.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 48,
+        "plan": null,
+        "secs": 5.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/43-interrupt.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/44-exec-stream.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 25,
+        "plan": null,
+        "secs": 7.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/45-startup.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 41,
+        "plan": null,
+        "secs": 5.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 53,
+        "plan": 53,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/46-stream.t",
+      "raku": {
+        "nok": 0,
+        "ok": 53,
+        "plan": 53,
+        "secs": 2.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/47-pager.t",
+      "raku": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "惰性：只拉了 200000/200000 行（不是整条流）",
+        "nok": 2,
+        "ok": 22,
+        "plan": 24,
+        "secs": 10.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/48-exec-stdin.t",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 4.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/49-merge.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-merge-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/50-interleave-append.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-concat-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
       }
     },
     {
@@ -572,7 +779,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.04,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -582,7 +789,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.89,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -592,9 +799,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 30,
-        "plan": 30,
-        "secs": 1.0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -602,9 +809,176 @@
       "path": "t/52-load-all-modules.t",
       "raku": {
         "nok": 0,
+        "ok": 39,
+        "plan": 39,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/53-line-endings.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/54-job-api.t",
+      "raku": {
+        "first_failure": "bg-exec：后台作业启动成功",
+        "nok": 21,
+        "ok": 0,
+        "plan": 21,
+        "secs": 4.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/55-follow.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-follow-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/56-follow-pty.t",
+      "raku": {
+        "first_failure": "真 PTY：REPL 出现第一个 prompt",
+        "nok": 10,
+        "ok": 0,
+        "plan": 10,
+        "secs": 1.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 58,
+        "plan": 58,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/57-feel-complete.t",
+      "raku": {
+        "nok": 0,
+        "ok": 58,
+        "plan": 58,
+        "secs": 1.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "宽度不变式：strip 后可见宽度 == display-width",
+        "nok": 3,
         "ok": 30,
-        "plan": 30,
-        "secs": 1.14,
+        "plan": 33,
+        "secs": 0.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/58-feel-field.t",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 1.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/59-feel-pty.t",
+      "raku": {
+        "first_failure": "真 PTY：REPL 出现第一个 prompt",
+        "nok": 7,
+        "ok": 0,
+        "plan": 7,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/60-followups.t",
+      "raku": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/61-junction.t",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -612,9 +986,7 @@
     }
   ],
   "load": {
-    "Rakuish::Agent": "ok",
-    "Rakuish::Agent::Server": "ok",
-    "Rakuish::Agent::Worker": "ok",
+    "Rakuish::Audit": "ok",
     "Rakuish::Command": "ok",
     "Rakuish::DSL": "ok",
     "Rakuish::Data": "ok",
@@ -624,11 +996,19 @@
     "Rakuish::Data::Engine::DuckDB": "ok",
     "Rakuish::Data::Engine::SQLite": "ok",
     "Rakuish::Data::Pager": "ok",
+    "Rakuish::Data::Stream": "ok",
     "Rakuish::Data::Table": "ok",
+    "Rakuish::Display": "ok",
+    "Rakuish::Eval": "ok",
+    "Rakuish::Eval::Proxy": "ok",
+    "Rakuish::Eval::Server": "ok",
     "Rakuish::Incomplete": "ok",
+    "Rakuish::Kernel": "ok",
     "Rakuish::REPL::Chrome": "ok",
+    "Rakuish::REPL::Complete": "ok",
     "Rakuish::REPL::Highlight": "ok",
     "Rakuish::REPL::Hints": "ok",
+    "Rakuish::REPL::Introspect": "ok",
     "Rakuish::REPL::Keymap": "ok",
     "Rakuish::REPL::Plugins": "ok",
     "Rakuish::REPL::Session": "ok",
@@ -636,18 +1016,21 @@
     "Rakuish::REPL::SqlComplete": "ok",
     "Rakuish::Result": "ok",
     "Rakuish::Result::Renderer": "ok",
-    "Rakuish::Sandbox": "ok",
+    "Rakuish::Snapshot": "ok",
     "Rakuish::Sys": "ok",
+    "Rakuish::Sys::Console": "ok",
     "Rakuish::Sys::FS": "ok",
+    "Rakuish::Sys::JobTable": "ok",
     "Rakuish::Sys::PosixSpawn": "ok",
-    "Rakuish::Sys::Proc": "ok"
+    "Rakuish::Sys::Proc": "ok",
+    "Rakuish::Sys::Term": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "818f2353",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -656,15 +1039,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/R/AK/RAKUISH/13a6abf86c35fe870f7d5bb071dec2d03c5dc425.tar.gz"
+    "url": "https://360.zef.pm/R/AK/RAKUISH/127a444650482c02cc973c1a0becc48db0784696.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 488,
-    "baseline_files": 13,
-    "mutsu_assertions": 488,
-    "parity_files": 13,
-    "regressed_files": 0
+    "baseline_assertions": 766,
+    "baseline_files": 21,
+    "mutsu_assertions": 761,
+    "parity_files": 19,
+    "regressed_files": 2
   },
-  "version": "0.74.0"
+  "version": "0.101.2"
 }

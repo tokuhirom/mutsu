@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 23.63,
+        "secs": 23.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.31,
+        "secs": 3.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. Two terms in a row [at ra-annotations/t/02-direct.rakutest:8]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.08,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-direct.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.58,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +64,7 @@
     "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "818f2353",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -76,13 +75,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/NN/ANNOTATIONS/1328482a7fccd36a16ed5498e6e4ab2015f611b5.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 2,
-    "mutsu_assertions": 3,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 4,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.1.0"
 }

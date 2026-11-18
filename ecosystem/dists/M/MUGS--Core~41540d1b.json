@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 59.51,
+        "secs": 85.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.17,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.64,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 112,
         "plan": 112,
-        "secs": 0.22,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 112,
         "plan": 112,
-        "secs": 2.11,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -122,11 +122,11 @@
       "cmp": "no_baseline",
       "path": "t/03-file.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/0714AEB4ED1EC6CA73568F66F50D4D257495F308F4FDDB4ADAC4D42AB1396551' with mode '0o700': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/35AE9B79DC28BA2BA6B60EFFFB1F6C6A5FA2A2768F71BE1AD20609A5E81FAD93' with mode '0o700': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 7,
         "plan": 119,
-        "secs": 8.68,
+        "secs": 8.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -136,11 +136,11 @@
       "cmp": "no_baseline",
       "path": "t/04-config.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/BBB1B1112D27C0C1BE7B103B381BE6D1DC54D6A4CE240DD3D024AF5BEBFE299C' with mode '0o700': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/F1DA85539C370CED562BDBB9C03A94B72D81F86B772A62AF49E2FBB0CBB06271' with mode '0o700': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 37,
-        "secs": 2.35,
+        "secs": 2.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.63,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +176,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.05,
+        "secs": 15.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -231,10 +231,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-17",
+    "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "41f9bbd1",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

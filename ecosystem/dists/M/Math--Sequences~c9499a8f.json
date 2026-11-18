@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.59,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.99,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.03,
+        "secs": 0.06,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.61,
+        "secs": 0.5,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.38,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.13,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 177,
         "plan": 177,
-        "secs": 27.59,
+        "secs": 26.39,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -92,29 +92,30 @@
         "nok": 0,
         "ok": 177,
         "plan": 177,
-        "secs": 8.51,
+        "secs": 9.46,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 5,
+        "first_failure": "Infinite reals",
+        "nok": 1,
+        "ok": 0,
         "plan": 5,
-        "secs": 0.08,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/Reals.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.37,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +127,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.05,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +137,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.52,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +149,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 1.35,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +159,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 1.69,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +171,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.03,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +181,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.4,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -192,7 +193,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.4,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +203,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.86,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -219,10 +220,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-17",
+    "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "41f9bbd1",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -233,13 +234,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_SEQUENCES/5ea7ddd2304f712c64aabbf8d73f905538c60fe7.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 269,
     "baseline_files": 9,
-    "mutsu_assertions": 269,
-    "parity_files": 9,
-    "regressed_files": 0
+    "mutsu_assertions": 264,
+    "parity_files": 8,
+    "regressed_files": 1
   },
   "version": "0.1.2"
 }

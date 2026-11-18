@@ -28,11 +28,478 @@
     "unresolved": []
   },
   "dist": "PDF::Content",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/basic.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 26.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/canvas.t",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 5.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/colors.t",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/content-blocks.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/core-font.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 24.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/current-point.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/do.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/extended-ops.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/forms.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.77,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/image-exceptions.t",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 3.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/images.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/op-exceptions.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ops-introspection.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ops.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/page-tree.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/page.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/patterns.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-align.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-bidi.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-direction.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-hyphenation.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-indent.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-margin.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-offset.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-style.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-text-verbatim.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/tags.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/text-box-images.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/text-box.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/threads.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/util-transform-matrix.t",
+      "raku": {
+        "nok": 0,
+        "ok": 25,
+        "plan": 25,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "PDF::Content": "raku_also_fails",
+    "PDF::Content": "ok",
     "PDF::Content::API": "ok",
-    "PDF::Content::Canvas": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Content::Canvas": "ok",
     "PDF::Content::Color": "ok",
     "PDF::Content::Font": "ok",
     "PDF::Content::Font::CoreFont": "ok",
@@ -41,25 +508,25 @@
     "PDF::Content::Font::Encoder": "ok",
     "PDF::Content::Font::Encodings": "ok",
     "PDF::Content::FontObj": "ok",
-    "PDF::Content::Image": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Image::GIF": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Image::JPEG": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Image::PDF": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Image::PNG": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Content::Image": "ok",
+    "PDF::Content::Image::GIF": "ok",
+    "PDF::Content::Image::JPEG": "ok",
+    "PDF::Content::Image::PDF": "ok",
+    "PDF::Content::Image::PNG": "ok",
     "PDF::Content::Interface": "ok",
     "PDF::Content::Matrix": "ok",
-    "PDF::Content::Ops": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Page": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::PageNode": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::PageTree": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Content::Ops": "ok",
+    "PDF::Content::Page": "ok",
+    "PDF::Content::PageNode": "ok",
+    "PDF::Content::PageTree": "ok",
     "PDF::Content::ResourceDict": "ok",
     "PDF::Content::Resourced": "ok",
-    "PDF::Content::Tag": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Text::Block": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Text::Box": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Content::Text::Line": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Content::Tag": "ok",
+    "PDF::Content::Text::Block": "ok",
+    "PDF::Content::Text::Box": "ok",
+    "PDF::Content::Text::Line": "ok",
     "PDF::Content::Text::Style": "ok",
-    "PDF::Content::XObject": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Content::XObject": "ok",
     "X::PDF::Content": "ok"
   },
   "measured": {
@@ -67,7 +534,7 @@
     "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "818f2353",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -78,12 +545,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/DF/PDF_CONTENT/d08934a0c783a280271680c48d2193a73bd1cc9f.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 45,
+    "baseline_files": 4,
+    "mutsu_assertions": 45,
+    "parity_files": 4,
     "regressed_files": 0
   },
   "version": "0.9.11"

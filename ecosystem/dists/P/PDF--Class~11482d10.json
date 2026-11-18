@@ -30,21 +30,640 @@
     "unresolved": []
   },
   "dist": "PDF::Class",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-readme.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/defs.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/embedded-file.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/helloworld.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/html-canvas.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/image-png.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 12.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/load-delegate.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-acroform.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-action.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-annot.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 8.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-catalog.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-cmap.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-colorspace-devicen.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-colorspace.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-destination.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-font-cidfont.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-font-descriptor.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-font.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-function-exponential.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-function-postscript.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-function-sampled.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-function-stitching.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-group.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-lite.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-metadata.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-nametree.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-numbertree.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-optional-content.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-outline.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-outlines.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-page.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-pages.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-pattern.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-resources.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-shading.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-signature.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-struct.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-xobject-form.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/pdf-xobject-image.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 11.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/render.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 13.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/type-extensibility.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 17.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/update.t",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 10.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/util.t",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 1.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "PDF::AcroForm": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action::GoTo": "raku_also_fails",
+    "PDF::AcroForm": "ok",
+    "PDF::Action": "ok",
+    "PDF::Action::GoTo": "ok",
     "PDF::Action::GoToR": "raku_also_fails",
-    "PDF::Action::JavaScript": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action::Launch": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action::Named": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action::Sound": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action::SubmitForm": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action::Thread": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Action::URI": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Action::JavaScript": "ok",
+    "PDF::Action::Launch": "ok",
+    "PDF::Action::Named": "ok",
+    "PDF::Action::Sound": "ok",
+    "PDF::Action::SubmitForm": "ok",
+    "PDF::Action::Thread": "ok",
+    "PDF::Action::URI": "ok",
     "PDF::Annot": "raku_also_fails",
-    "PDF::Annot::AdditionalActions": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Annot::AdditionalActions": "ok",
     "PDF::Annot::Caret": "raku_also_fails",
     "PDF::Annot::Circle": "raku_also_fails",
     "PDF::Annot::FileAttachment": "raku_also_fails",
@@ -60,52 +679,52 @@
     "PDF::Annot::Widget": "raku_also_fails",
     "PDF::Annot::_Markup": "raku_also_fails",
     "PDF::Annot::_TextMarkup": "raku_also_fails",
-    "PDF::Appearance": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Attributes": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Attributes::Layout": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Attributes::List": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Attributes::PrintField": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Attributes::Table": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Attributes::UserProperties": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Bead-Thread": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Appearance": "ok",
+    "PDF::Attributes": "ok",
+    "PDF::Attributes::Layout": "ok",
+    "PDF::Attributes::List": "ok",
+    "PDF::Attributes::PrintField": "ok",
+    "PDF::Attributes::Table": "ok",
+    "PDF::Attributes::UserProperties": "ok",
+    "PDF::Bead-Thread": "ok",
     "PDF::Border": "ok",
     "PDF::CIDSystemInfo": "ok",
-    "PDF::CMap": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::CMap": "ok",
     "PDF::Catalog": "raku_also_fails",
-    "PDF::Catalog::AdditionalActions": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Catalog::AdditionalActions": "ok",
     "PDF::Class": "raku_also_fails",
-    "PDF::Class::Defs": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Class::Defs": "ok",
     "PDF::Class::FieldContainer": "ok",
     "PDF::Class::Image": "ok",
-    "PDF::Class::Loader": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Class::Loader": "ok",
     "PDF::Class::OptionalContent": "ok",
     "PDF::Class::OutlineNode": "ok",
     "PDF::Class::PageRef": "ok",
     "PDF::Class::StructItem": "ok",
     "PDF::Class::ThreeD": "ok",
-    "PDF::Class::Type": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Class::Type": "ok",
     "PDF::Class::Util": "ok",
     "PDF::ColorSpace": "ok",
     "PDF::ColorSpace::CalGray": "ok",
     "PDF::ColorSpace::CalRGB": "ok",
-    "PDF::ColorSpace::DeviceN": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::ColorSpace::ICCBased": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::ColorSpace::Indexed": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::ColorSpace::DeviceN": "ok",
+    "PDF::ColorSpace::ICCBased": "ok",
+    "PDF::ColorSpace::Indexed": "ok",
     "PDF::ColorSpace::Lab": "ok",
-    "PDF::ColorSpace::Pattern": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::ColorSpace::Separation": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::ColorSpace::Pattern": "ok",
+    "PDF::ColorSpace::Separation": "ok",
     "PDF::Destination": "ok",
     "PDF::EmbeddedFile": "ok",
     "PDF::Encoding": "ok",
-    "PDF::ExData::Markup3D": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::ExData::Markup3D": "ok",
     "PDF::ExtGState": "raku_also_fails",
-    "PDF::Field": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Field::AdditionalActions": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Field::Button": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Field::Choice": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Field::Signature": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Field::Text": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Filespec": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Field": "ok",
+    "PDF::Field::AdditionalActions": "ok",
+    "PDF::Field::Button": "ok",
+    "PDF::Field::Choice": "ok",
+    "PDF::Field::Signature": "ok",
+    "PDF::Field::Text": "ok",
+    "PDF::Filespec": "ok",
     "PDF::Font": "raku_also_fails",
     "PDF::Font::CIDFont": "raku_also_fails",
     "PDF::Font::CIDFontType0": "raku_also_fails",
@@ -115,52 +734,52 @@
     "PDF::Font::Type0": "raku_also_fails",
     "PDF::Font::Type1": "raku_also_fails",
     "PDF::Font::Type3": "raku_also_fails",
-    "PDF::FontDescriptor": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::FontDescriptor::CID": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::FontFile": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Function": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Function::Exponential": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Function::PostScript": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Function::Sampled": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Function::Stitching": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Group": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Group::Transparency": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::ICCProfile": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Image": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::FontDescriptor": "ok",
+    "PDF::FontDescriptor::CID": "ok",
+    "PDF::FontFile": "ok",
+    "PDF::Function": "ok",
+    "PDF::Function::Exponential": "ok",
+    "PDF::Function::PostScript": "ok",
+    "PDF::Function::Sampled": "ok",
+    "PDF::Function::Stitching": "ok",
+    "PDF::Group": "ok",
+    "PDF::Group::Transparency": "ok",
+    "PDF::ICCProfile": "ok",
+    "PDF::Image": "ok",
     "PDF::Info": "ok",
     "PDF::MCR": "raku_also_fails",
     "PDF::MarkInfo": "ok",
     "PDF::Mask": "raku_also_fails",
     "PDF::Mask::Alpha": "raku_also_fails",
     "PDF::Mask::Luminosity": "raku_also_fails",
-    "PDF::Metadata::XML": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Metadata::XML": "ok",
     "PDF::NameTree": "ok",
-    "PDF::Names": "raku_also_fails",
-    "PDF::Namespace": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Names": "ok",
+    "PDF::Namespace": "ok",
     "PDF::NumberTree": "ok",
     "PDF::OBJR": "raku_also_fails",
-    "PDF::OCG": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::OCG": "ok",
     "PDF::OCG::PageElement": "ok",
     "PDF::OCG::User": "ok",
-    "PDF::OCMD": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::OCMD": "ok",
     "PDF::Outline": "raku_also_fails",
     "PDF::Outlines": "raku_also_fails",
-    "PDF::OutputIntent": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::OutputIntent": "ok",
     "PDF::Page": "raku_also_fails",
-    "PDF::Page::AdditionalActions": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Page::AdditionalActions": "ok",
     "PDF::Pages": "raku_also_fails",
-    "PDF::Pattern": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Pattern": "ok",
     "PDF::Pattern::Shading": "raku_also_fails",
-    "PDF::Pattern::Tiling": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Resources": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading::Axial": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading::Coons": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading::FreeForm": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading::Function": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading::Lattice": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading::Radial": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
-    "PDF::Shading::Tensor": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "PDF::Pattern::Tiling": "ok",
+    "PDF::Resources": "ok",
+    "PDF::Shading": "ok",
+    "PDF::Shading::Axial": "ok",
+    "PDF::Shading::Coons": "ok",
+    "PDF::Shading::FreeForm": "ok",
+    "PDF::Shading::Function": "ok",
+    "PDF::Shading::Lattice": "ok",
+    "PDF::Shading::Radial": "ok",
+    "PDF::Shading::Tensor": "ok",
     "PDF::Signature": "ok",
     "PDF::Sound": "ok",
     "PDF::StructElem": "raku_also_fails",
@@ -176,7 +795,7 @@
     "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "818f2353",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -187,12 +806,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/DF/PDF_CLASS/467c596dcab634722a0330bb12b3af562f7e37f3.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 28,
+    "baseline_files": 2,
+    "mutsu_assertions": 28,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.5.33"

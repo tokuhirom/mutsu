@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.53,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.99,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot convert 78 to a radix-16 number: please supply a Str value, not a value",
         "nok": 0,
-        "ok": 15,
-        "plan": null,
-        "secs": 0.37,
+        "ok": 19,
+        "plan": 19,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-native-stream.t",
       "raku": {
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.09,
+        "secs": 1.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +60,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 1.94,
+        "secs": 2.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +75,7 @@
     "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "818f2353",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -87,13 +86,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OM/COMPRESS_ZLIB_RAW/27a66ae5c41e3c4a75bc04fb44512ac3816fdc9e.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 26,
     "baseline_files": 2,
-    "mutsu_assertions": 22,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 26,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "2.0.0"
 }

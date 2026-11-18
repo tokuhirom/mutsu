@@ -25,9 +25,90 @@
     "unresolved": []
   },
   "dist": "Archive::SimpleZip",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/001-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/002-basic.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/uA4DP11CXA' with mode '0o700': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 15,
+        "secs": 5.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/004-canonical.t",
+      "raku": {
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/meta.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 22.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Archive::SimpleZip": "Failed to parse module 'Compress::Zlib': Confused. Two terms in a row [at lib/Compress/Zlib.pm6:4]",
+    "Archive::SimpleZip": "ok",
     "Archive::SimpleZip::Headers": "ok",
     "Archive::SimpleZip::Utils": "ok"
   },
@@ -36,7 +117,7 @@
     "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "818f2353",
+    "mutsu_commit": "d3c18092",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -45,15 +126,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/A/RC/ARCHIVE_SIMPLEZIP/77af1ad836accabb32ef966c88f5fc495107a72b.tar.gz"
+    "url": "https://360.zef.pm/A/RC/ARCHIVE_SIMPLEZIP/84fb6e29d250dcd24d9710a9e0fdb9e2ae23c228.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 24,
+    "baseline_files": 3,
+    "mutsu_assertions": 24,
+    "parity_files": 3,
     "regressed_files": 0
   },
-  "version": "0.8.0"
+  "version": "0.8.1"
 }

@@ -1,0 +1,51 @@
+{
+  "axis": "native",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "CSS::Grammar",
+      "CSS::Specification",
+      "Color::Names",
+      "JSON::Fast",
+      "Method::Also"
+    ],
+    "unresolved": []
+  },
+  "dist": "CSS::Specification::Compiler",
+  "files": [],
+  "load": {
+    "CSS::Specification::Compiler": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at CSS/Specification/Compiler.rakumod:26]",
+    "CSS::Specification::Compiler::Actions": "ok",
+    "CSS::Specification::Compiler::External": "ok",
+    "CSS::Specification::Compiler::Grammars": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at Specification/Compiler/Grammars.rakumod:26]",
+    "CSS::Specification::Compiler::Make": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at Specification/Compiler/Make.rakumod:26]",
+    "CSS::Specification::Compiler::Puncuation": "ok",
+    "CSS::Specification::Compiler::Util": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-11-18",
+    "harness": 3,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "d3c18092",
+    "mutsu_version": "0.26.1",
+    "raku_backend": "moar 2026.11",
+    "raku_version": "2026.11",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/C/SS/CSS_SPECIFICATION_COMPILER/329c3c59d9f340d8e830608c0ffa51a760e735f3.tar.gz"
+  },
+  "status": "blocked_load",
+  "totals": {
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}
