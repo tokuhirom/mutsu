@@ -717,11 +717,10 @@ impl Interpreter {
                 Vec::new()
             } else {
                 self.register_class_decl(&storage_name, &mapped_parents, modifiers)
-                    .map_err(|err| {
+                    .inspect_err(|_| {
                         if declare_how_installed {
                             self.registry_mut().class_how_values.remove(&storage_name);
                         }
-                        err
                     })?
             };
             // The real declaration composes the class here, in source order. An
