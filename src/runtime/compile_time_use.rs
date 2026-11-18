@@ -232,12 +232,31 @@ impl Interpreter {
 }
 
 thread_local! {
-    /// Set when code running for a `sub EXPORT` hook reached the unit it is
-    /// imported into beyond the map it returns: it read `$*CU`, or asked
-    /// `$*R` to attach a phaser to the importing scope. A parse-time run of
-    /// such a hook cannot stand in for the run at the `use`'s import, which
-    /// reaches the unit that actually runs (`record_parse_time_hook_result`).
+    /// Set when a `sub EXPORT` hook running with no in-position `use` (a
+    /// preload, a parse-time load) asked `$*R` to attach a phaser to its
+    /// importing scope, which only the run at the `use`'s import performs
+    /// (`runtime::attach_target`): the parse-time run cannot stand in for it
+    /// (`record_parse_time_hook_result`).
     static HOOK_REACHED_IMPORTER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set while `Str.AST` parses: the tree is compiled again by the `EVAL`
+    /// that runs it, whose own `use`s run their hooks then, as on rakudo, so
+    /// a hook run of the `.AST` parse keeps nothing for an import.
+    static PARSE_FOR_AST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `parse`, a `Str.AST` parse, with [`PARSE_FOR_AST`] set.
+// Cost: O(1) besides `parse`.
+pub(crate) fn parsing_for_ast<T>(parse: impl FnOnce() -> T) -> T {
+    let saved = PARSE_FOR_AST.with(|flag| flag.replace(true));
+    let result = parse();
+    PARSE_FOR_AST.with(|flag| flag.set(saved));
+    result
+}
+
+/// Whether the parse in progress is a `Str.AST` parse.
+// Cost: O(1).
+pub(crate) fn parse_is_for_ast() -> bool {
+    PARSE_FOR_AST.with(std::cell::Cell::get)
 }
 
 /// Note that the running hook reached its importing unit (see

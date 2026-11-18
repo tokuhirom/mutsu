@@ -456,10 +456,11 @@ impl Interpreter {
             }
             generated = block;
         }
-        // A hook that reached its importing unit (`$*CU`, a phaser attached
-        // through `$*R`) runs again at the import, where that takes effect on
-        // the unit that runs; its map is that run's.
-        if reached_importer {
+        // A hook that attached a phaser through `$*R` runs again at the
+        // import, where the attach takes effect; its map is that run's. A
+        // `Str.AST` parse's hook runs keep nothing: the `EVAL` of the tree
+        // compiles its `use`s again (`compile_time_use::parse_is_for_ast`).
+        if reached_importer || crate::runtime::compile_time_use::parse_is_for_ast() {
             return true;
         }
         self.module
