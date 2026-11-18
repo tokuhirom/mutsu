@@ -108,15 +108,17 @@ pub(crate) fn condition_element_source(cond: &Expr) -> Option<(String, Vec<bool>
 }
 
 /// The container key a `with`/`without` element source is recorded under: a
-/// plain lexical variable, not an attribute (`$!x`, `$.x`) or a compile-time
-/// `%?` hash, whose element writes do not go through a named lexical. The
+/// plain lexical variable or a private attribute (`%!h<k>`, which the
+/// writeback stores through `self`'s attribute cell, as `given %!h<k>`
+/// does), not a public accessor (`$.x`) or a compile-time `%?` hash. The
 /// compiler's matching side (`compile_expr_index`) must agree, so both call
 /// this.
 // Cost: O(|name|).
 pub(crate) fn element_source_root_key(root: &Expr) -> Option<String> {
     match root {
-        Expr::Var(name) | Expr::ArrayVar(name) if name.starts_with(['!', '.']) => None,
-        Expr::HashVar(name) if name.starts_with(['!', '.', '?']) => None,
+        Expr::Var(name) if name.starts_with(['!', '.']) => None,
+        Expr::ArrayVar(name) if name.starts_with('.') => None,
+        Expr::HashVar(name) if name.starts_with(['.', '?']) => None,
         other => other.container_var_key(),
     }
 }

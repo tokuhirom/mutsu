@@ -2239,6 +2239,26 @@ fn construct_values(
             }],
         }))));
     }
+    // `RakuAST::Type::Simple.from-identifier("A")` /
+    // `.from-identifier-parts("A", "B")`: the type named by the `Name` those
+    // constructors build (rakudo's `RakuAST::Lookup` helpers, used by
+    // CSS::Specification::Compiler's `my RakuAST::Type::Simple $type .=
+    // from-identifier-parts(|@module)`).
+    if class_name == "RakuAST::Type::Simple"
+        && matches!(method, "from-identifier" | "from-identifier-parts")
+    {
+        let Some(name) = construct_values(names, "RakuAST::Name", method, args)? else {
+            return Ok(None);
+        };
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TypeSimple,
+            fields: vec![RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(name),
+            }],
+        }))));
+    }
     if class_name == "RakuAST::Pragma"
         && let Some(answer) = pragma_statics::call(method, args)
     {
@@ -2426,7 +2446,13 @@ fn construct_class(
             name: Some("name"),
             value: RakuAstFieldValue::Node(name),
         }];
-        if let Some(arg_list) = named_arg(args, "args") {
+        // The `RakuAST::ArgList` type object is the absent value rakudo's own
+        // attribute default holds: `my RakuAST::ArgList $args .= new(...) if
+        // @args` passes it through untouched when there are no arguments
+        // (CSS::Specification::Compiler's `call`).
+        if let Some(arg_list) = named_arg(args, "args").filter(
+            |v| !matches!(v.view(), ValueView::Package(n) if n.as_str() == "RakuAST::ArgList"),
+        ) {
             require_rakuast_class(&arg_list, RakuAstClass::ArgList, &constructor)?;
             // An empty `ArgList` is the default; rakudo's `.raku` leaves it out.
             if !named_ctor::is_empty_arg_list(&arg_list) {

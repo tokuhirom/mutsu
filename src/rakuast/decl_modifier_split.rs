@@ -100,7 +100,135 @@ fn written_signature_declaration(stmt: &Stmt) -> Option<&SignatureDecl> {
 }
 
 fn is_declaration(stmt: &Stmt) -> bool {
-    matches!(stmt, Stmt::VarDecl { .. }) || written_signature_declaration(stmt).is_some()
+    matches!(stmt, Stmt::VarDecl { .. })
+        || written_signature_declaration(stmt).is_some()
+        || written_method_assign_declaration(stmt).is_some()
+        || lowered_method_assign_declaration(stmt).is_some()
+}
+
+/// A `.=` declaration as its lowering left it (`ast::method_assign_decl::
+/// expand`): the one declaration `my T $x = T.m(...)`, or the untyped
+/// `my $x; $x = $x.m(...)`.
+// Cost: O(1).
+fn lowered_method_assign_declaration(stmt: &Stmt) -> Option<&[Stmt]> {
+    let Stmt::SyntheticBlock(parts) = stmt else {
+        return None;
+    };
+    match parts.as_slice() {
+        [
+            Stmt::VarDecl {
+                marks,
+                is_state: false,
+                ..
+            },
+        ] if marks.method_assign_decl || is_method_call_initializer(&parts[0]) => Some(parts),
+        [
+            Stmt::VarDecl {
+                name,
+                has_initializer: false,
+                is_state: false,
+                ..
+            },
+            Stmt::Assign {
+                name: assigned,
+                op: crate::ast::AssignOp::Assign,
+                expr: Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. },
+                ..
+            },
+        ] if name == assigned => Some(parts),
+        _ => None,
+    }
+}
+
+/// Whether a declaration's initializer is the `T.m(...)` call a typed `.=`
+/// lowers to.
+// Cost: O(1).
+fn is_method_call_initializer(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::VarDecl {
+            has_initializer: true,
+            expr: Expr::MethodCall { target, .. } | Expr::DynamicMethodCall { target, .. },
+            ..
+        } if matches!(target.as_ref(), Expr::BareWord(_))
+    )
+}
+
+/// A written `my [T] $x .= method(...)` the split applies to: not `state`
+/// (once-only initialization), without a postfix chain or a shape, which
+/// keep the generic modifier wrapping.
+// Cost: O(1).
+fn written_method_assign_declaration(
+    stmt: &Stmt,
+) -> Option<&crate::ast::method_assign_decl::MethodAssignDecl> {
+    match stmt {
+        Stmt::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedStmt::MethodAssignDecl(form)
+                if !form.is_state && form.chain.is_none() && form.shape.is_none() =>
+            {
+                Some(form)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// [`split_method_assign_decl`] over the lowered statements.
+// Cost: O(n), n = size of the call.
+fn split_lowered_method_assign(
+    parts: &[Stmt],
+    effective_cond: &Expr,
+    is_unless: bool,
+) -> Option<Stmt> {
+    match parts {
+        [decl] => split_simple_declaration(decl, effective_cond, is_unless),
+        [decl, assign] => Some(Stmt::SyntheticBlock(vec![
+            decl.clone(),
+            Stmt::If {
+                cond: effective_cond.clone(),
+                then_branch: vec![assign.clone()],
+                else_branch: Vec::new(),
+                binding_var: None,
+                is_statement_modifier: true,
+                is_unless,
+                with_kind: None,
+            },
+        ])),
+        _ => None,
+    }
+}
+
+/// `my T $x .= new(...) if COND` declares `$x` (holding `T`) whatever COND
+/// is; only the call is gated (CSS::Specification::Compiler: `my
+/// RakuAST::ArgList $args .= new(|@args) if @args`).
+// Cost: O(n), n = size of the call.
+fn split_method_assign_decl(
+    form: &crate::ast::method_assign_decl::MethodAssignDecl,
+    effective_cond: &Expr,
+    is_unless: bool,
+) -> Option<Stmt> {
+    let mut stmts = crate::ast::method_assign_decl::expanded_declaration(form);
+    match stmts.len() {
+        1 => split_simple_declaration(&stmts[0], effective_cond, is_unless),
+        2 => {
+            let assign = stmts.pop()?;
+            let decl = stmts.pop()?;
+            Some(Stmt::SyntheticBlock(vec![
+                decl,
+                Stmt::If {
+                    cond: effective_cond.clone(),
+                    then_branch: vec![assign],
+                    else_branch: Vec::new(),
+                    binding_var: None,
+                    is_statement_modifier: true,
+                    is_unless,
+                    with_kind: None,
+                },
+            ]))
+        }
+        _ => None,
+    }
 }
 
 /// A `my`/`our` declaration carrying a conditional statement modifier
@@ -128,6 +256,16 @@ fn try_split_decl_modifier(
 ) -> Result<Option<Stmt>, RuntimeError> {
     if let Some(decl) = written_signature_declaration(stmt) {
         return split_signature_decl(decl, effective_cond, is_unless);
+    }
+    if let Some(form) = written_method_assign_declaration(stmt) {
+        return Ok(split_method_assign_decl(form, effective_cond, is_unless));
+    }
+    if let Some(parts) = lowered_method_assign_declaration(stmt) {
+        return Ok(split_lowered_method_assign(
+            parts,
+            effective_cond,
+            is_unless,
+        ));
     }
     Ok(split_simple_declaration(stmt, effective_cond, is_unless))
 }

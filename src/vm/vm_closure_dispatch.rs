@@ -1004,6 +1004,10 @@ impl Interpreter {
             // Named params with placeholders: handled by bind_function_args_values
         } else if !uses_positional
             && !body_uses_positional
+            // A signature that declares `$_` itself (`sub f(Str:D() $_)`)
+            // had the binder above bind it, coercion included; the raw
+            // argument must not replace that.
+            && !data.param_defs.iter().any(param_def_binds_topic)
             && !args.is_empty()
             && let Some(first) = args
                 .iter()

@@ -511,6 +511,10 @@ pub(in crate::runtime) fn named_values_from_unpack_target(value: &Value) -> Valu
     if let Some((_, inner)) = varref_from_value(value) {
         return named_values_from_unpack_target(&inner);
     }
+    // An itemized aggregate (a Pair's value `:o([...])`, an element read) is
+    // taken apart by its content, as `positional_values_from_unpack_target`
+    // does: `:o(@)! (',', *%term)` nested in a sub-signature.
+    let value = value.descalarize();
     match value.view() {
         ValueView::Capture { named, .. } => (*named).clone(),
         ValueView::Hash(map) => map.map.clone(),
@@ -762,7 +766,9 @@ fn sub_signature_matches_value_unbound(
             p.slurpy && (p.named || p.name.starts_with('%') || p.name == "_capture" || p.sigilless)
         });
         let mut surplus_named = false;
-        positional.retain(|v| match v.view() {
+        // An element held in an item container is looked through, as the
+        // binder's `drop_pairs_captured_as_named` does (`('?', $pair)`).
+        positional.retain(|v| match v.deref_container().view() {
             ValueView::Pair(key, _) => {
                 surplus_named |= !sub_params.iter().any(|p| {
                     p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == *key
@@ -865,6 +871,13 @@ fn sub_signature_matches_value_unbound(
         // would be rejected during dispatch matching.
         if let Some(sub) = &pd.sub_signature
             && !named_param_parens_accept(interpreter, pd, sub, &candidate)?
+        {
+            return Ok(false);
+        }
+        // The trailing parens of a named part (`:o(@)! (',', *%term)`) unpack
+        // its value as well; a value they do not fit rejects the candidate.
+        if let Some(outer) = &pd.outer_sub_signature
+            && !sub_signature_matches_value(interpreter, outer, &candidate)?
         {
             return Ok(false);
         }
@@ -1194,11 +1207,47 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
     Ok(())
 }
 
+/// A shallow copy of `value` for an `is copy` `@`/`%` sub-parameter: the
+/// elements of an array (or list), the pairs of a hash. Anything else is
+/// returned as is.
+// Cost: O(n), n = elements copied.
+fn copy_aggregate_for_sigil(name: &str, value: &Value) -> Value {
+    let value = value.deref_container();
+    let value = value.descalarize();
+    match (name.chars().next(), value.view()) {
+        (Some('@'), ValueView::Array(data, _)) => Value::real_array(data.items().to_vec()),
+        (Some('%'), ValueView::Hash(map)) => Value::hash(map.map.clone()),
+        _ => value.clone(),
+    }
+}
+
 /// Bind one destructured sub-parameter into the environment.
 fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) {
     // A sub-parameter spelled `$self` is the reserved lexical, never the
     // invocant (ADR-0061).
     let name = if name == "self" { crate::env::LEX_SELF } else { name };
+    // An `@`/`%` sub-parameter binds the aggregate itself, not the item
+    // container it arrived in (a hash element `%h<args>` holds `$[...]`):
+    // left itemized, `for @args` saw one element (CSS::Specification::
+    // Compiler's `:%signature! (:@args! is copy)`).
+    let value = if name.starts_with('@') {
+        let value = value.into_descalarized();
+        match value.view() {
+            ValueView::Array(data, kind) if kind.is_itemized() => {
+                Value::array_with_kind(data.clone(), kind.decontainerize())
+            }
+            _ => value,
+        }
+    } else if name.starts_with('%') {
+        let value = value.into_descalarized();
+        if value.hash_is_itemized() {
+            value.with_hash_itemized(false)
+        } else {
+            value
+        }
+    } else {
+        value
+    };
     interpreter.env.insert(name.to_string(), value);
 }
 
@@ -1526,7 +1575,15 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         }
         let bind_alias_name = !is_named_rename_sub_signature(sub_pd);
         if !sub_pd.name.is_empty() && bind_alias_name {
-            bind_sub_param_name(interpreter, &sub_pd.storage_name(), candidate.clone());
+            // `is copy` on an `@`/`%` part (`:%signature! (:@args! is copy)`)
+            // owns a fresh aggregate: a `.pop` in the body must not reach the
+            // caller's array.
+            let bound = if sub_pd.traits.iter().any(|t| t == "copy") {
+                copy_aggregate_for_sigil(&sub_pd.name, &candidate)
+            } else {
+                candidate.clone()
+            };
+            bind_sub_param_name(interpreter, &sub_pd.storage_name(), bound);
             // Neither shape of a destructured leaf ever got marked readonly:
             // a sigilless leaf (`sub f($ (\a, \b)) { a = 1 }`) is a TERM
             // binding like a top-level `sub f(\a) { a = 1 }` param, and a
@@ -1599,6 +1656,12 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             } else {
                 bind_sub_signature_from_value(interpreter, nested, &candidate)?;
             }
+        }
+        // `:o(@)! (',', *%term)` nested in a sub-signature: the trailing
+        // parens destructure the named part's value too, as they do at the
+        // top level (`bind_function_args_values`).
+        if let Some(outer) = &sub_pd.outer_sub_signature {
+            bind_sub_signature_from_value(interpreter, outer, &candidate)?;
         }
     }
     // Reject unexpected named arguments the sub-signature does not name.
