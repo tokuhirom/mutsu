@@ -640,12 +640,45 @@ pub(in crate::parser::stmt) fn need_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("need", input).ok_or_else(|| PError::expected("need statement"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, module) = qualified_ident(rest)?;
+    // `need Compress::Zlib::Raw:ver<1.1.0+>;`: the module name's version,
+    // authority and API selectors, in their `<...>` and `(...)` forms.
+    // TODO: hand them to the load to refine which distribution it resolves,
+    // as `use` does (`dist_selectors`); the load takes the name alone for now.
+    let rest = skip_dist_selectors(rest);
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     // `need` loads the module without importing, so its types become visible
     // while its exported subs do not. Scan for the type names only.
     super::super::simple::register_module_type_names(&module);
     Ok((rest, Stmt::Need { module }))
+}
+
+/// Skip the `:ver<...>` / `:v<...>` / `:auth<...>` / `:api<...>` selectors
+/// (and their `(expr)` forms) written directly after a module name.
+// Cost: O(n), n = length of the selectors.
+fn skip_dist_selectors(mut input: &str) -> &str {
+    loop {
+        let Some(after_colon) = input.strip_prefix(':').filter(|r| !r.starts_with(':')) else {
+            return input;
+        };
+        let Ok((after_name, name)) = ident(after_colon) else {
+            return input;
+        };
+        if !matches!(name.as_str(), "ver" | "v" | "auth" | "api") {
+            return input;
+        }
+        let value = after_name.strip_prefix(':').unwrap_or(after_name);
+        input = if let Some(angle) = value.strip_prefix('<') {
+            match angle.find('>') {
+                Some(end) => &angle[end + 1..],
+                None => return input,
+            }
+        } else if value.starts_with('(') {
+            skip_balanced_parens(value)
+        } else {
+            return input;
+        };
+    }
 }
 
 /// Parse a `no` statement.
