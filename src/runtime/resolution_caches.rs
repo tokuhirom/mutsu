@@ -47,6 +47,10 @@ pub(crate) enum MemoCheck {
     /// `Accepts` for a built-in scalar receiver, keyed by its built-in type
     /// (#17876).
     ScalarAccepts,
+    /// Whether an instance of a user class matches the core `Any` (its MRO
+    /// reaches `Any`, i.e. it is not declared `is Mu`), keyed by its class
+    /// (#12875).
+    CoreAny,
 }
 
 #[derive(Default)]

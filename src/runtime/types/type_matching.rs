@@ -708,6 +708,15 @@ impl Interpreter {
         if constraint == "Mu" && !self.types.user_declared_classes.contains("Mu") {
             return true;
         }
+        // An instance of a user class against `Any` -- the implicit type of
+        // every untyped routine parameter, so checked on every such call: a
+        // class whose MRO reaches the core `Any` matches it whatever else the
+        // name may be bound to (an import alias is consulted only after the
+        // core meaning failed), so that fact is answered per class while the
+        // registry is unchanged (#12875).
+        if constraint == "Any" && self.instance_matches_core_any(value) {
+            return true;
+        }
         // An instance of a user class against a nominal user type: answered
         // per (class, type) while the registry is unchanged (#17331).
         if let Some(key) = self.type_matches_memo_key(value, constraint) {
@@ -760,7 +769,7 @@ impl Interpreter {
     }
 
     // Cost: as `type_matches_value`.
-    fn type_matches_value_why_core(
+    pub(crate) fn type_matches_value_why_core(
         &mut self,
         constraint: &str,
         value: &Value,
