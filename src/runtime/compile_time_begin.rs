@@ -52,8 +52,8 @@ impl Interpreter {
         // the rest of the unit to lower, since a closed body names none of it.
         let lowered = crate::rakuast::frontend::round_trip_unit(vec![begin.clone()]);
         let names = match lowered.as_deref() {
-            Ok([Stmt::Phaser { body, .. }]) => {
-                crate::runtime::begin_prologue::begin_body_core_names(body)
+            Ok([Stmt::Phaser { body, bare, .. }]) => {
+                crate::runtime::begin_prologue::begin_body_core_names(body, *bare)
             }
             _ => None,
         };

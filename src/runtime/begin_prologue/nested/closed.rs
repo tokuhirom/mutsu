@@ -35,8 +35,12 @@ use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 /// returned (declare or import one of that name ahead of the `BEGIN`) for the
 /// body to be closed: they then name the core routines, types and terms.
 // Cost: O(n), n = size of `body` and of the code it compiles to.
-pub(crate) fn begin_body_core_names(body: &[Stmt]) -> Option<Vec<String>> {
-    let mut escapes = Escapes::default();
+pub(crate) fn begin_body_core_names(body: &[Stmt], bare: bool) -> Option<Vec<String>> {
+    // A blockless `BEGIN my $x = ...` declares into the unit's scope.
+    let mut escapes = Escapes {
+        found: false,
+        bare,
+    };
     for stmt in body {
         escapes.visit_stmt(stmt);
     }
@@ -78,9 +82,10 @@ pub(crate) fn begin_body_core_names(body: &[Stmt]) -> Option<Vec<String>> {
 }
 
 /// Finds what a `BEGIN` body could declare into, or load for, its unit.
-#[derive(Default)]
 struct Escapes {
     found: bool,
+    /// The phaser has no block: any variable it declares is the unit's.
+    bare: bool,
 }
 
 impl<'ast> Visit<'ast> for Escapes {
@@ -94,7 +99,7 @@ impl<'ast> Visit<'ast> for Escapes {
                 | Stmt::Package { .. }
                 | Stmt::ClassDecl { .. }
                 | Stmt::VarDecl { is_our: true, .. }
-        );
+        ) || (self.bare && matches!(stmt, Stmt::VarDecl { .. }));
         if !self.found {
             walk_stmt(self, stmt);
         }
