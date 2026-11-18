@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 0.9,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,10 +36,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-17",
+    "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "41f9bbd1",
+    "mutsu_commit": "818f2353",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

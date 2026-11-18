@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.27,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +37,29 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.95,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-basic-usage-R.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -54,12 +76,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/02-basic-usage-R.rakutest",
+      "path": "t/03-to-dataset.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.85,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,34 +98,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/03-to-dataset.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 0.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/04-basic-usage-data-translation.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.98,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.09,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +125,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.73,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,7 +147,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.57,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -162,10 +162,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-17",
+    "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "41f9bbd1",
+    "mutsu_commit": "818f2353",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

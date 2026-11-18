@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.86,
+        "secs": 2.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.22,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 2.33,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 5.56,
+        "secs": 5.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.32,
+        "secs": 0.42,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.29,
+        "secs": 3.27,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.22,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,10 +103,46 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.05,
+        "secs": 3.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-lines.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-io.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/json-native-io-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
       }
     }
   ],
@@ -117,10 +153,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-17",
+    "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "41f9bbd1",
+    "mutsu_commit": "818f2353",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -129,15 +165,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/J/SO/JSON_NATIVE/70fb4ea08e299d08ada50d42a9b7b9765e7346af.tar.gz"
+    "url": "https://360.zef.pm/J/SO/JSON_NATIVE/953f6385ca4e772a70e6d4e6cca22c9902036713.tar.gz"
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 65,
-    "baseline_files": 4,
-    "mutsu_assertions": 65,
-    "parity_files": 4,
+    "baseline_assertions": 68,
+    "baseline_files": 5,
+    "mutsu_assertions": 68,
+    "parity_files": 5,
     "regressed_files": 0
   },
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

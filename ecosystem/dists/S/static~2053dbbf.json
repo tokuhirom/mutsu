@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 1.12,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 6.6,
+        "secs": 7.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 3.31,
+        "secs": 2.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 12.3,
+        "secs": 12.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 1.59,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 7.46,
+        "secs": 6.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.83,
+        "secs": 1.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 7.91,
+        "secs": 9.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.67,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 3.62,
+        "secs": 5.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +124,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.88,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 7.74,
+        "secs": 14.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,7 +147,7 @@
         "nok": 1,
         "ok": 37,
         "plan": 38,
-        "secs": 0.57,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 2.67,
+        "secs": 4.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -169,7 +169,7 @@
         "nok": 0,
         "ok": 444,
         "plan": 444,
-        "secs": 12.05,
+        "secs": 14.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -179,7 +179,7 @@
         "nok": 0,
         "ok": 444,
         "plan": 444,
-        "secs": 48.5,
+        "secs": 76.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,7 +191,7 @@
         "nok": 0,
         "ok": 218,
         "plan": 218,
-        "secs": 6.13,
+        "secs": 8.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -201,7 +201,7 @@
         "nok": 0,
         "ok": 218,
         "plan": 218,
-        "secs": 23.88,
+        "secs": 34.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -213,7 +213,7 @@
         "nok": 0,
         "ok": 180,
         "plan": 180,
-        "secs": 4.65,
+        "secs": 6.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -223,7 +223,7 @@
         "nok": 0,
         "ok": 180,
         "plan": 180,
-        "secs": 18.67,
+        "secs": 31.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -235,7 +235,7 @@
         "nok": 0,
         "ok": 200,
         "plan": 200,
-        "secs": 4.35,
+        "secs": 4.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -245,7 +245,7 @@
         "nok": 0,
         "ok": 200,
         "plan": 200,
-        "secs": 16.63,
+        "secs": 29.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -257,7 +257,7 @@
         "nok": 0,
         "ok": 80,
         "plan": 80,
-        "secs": 2.17,
+        "secs": 2.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -267,7 +267,7 @@
         "nok": 0,
         "ok": 80,
         "plan": 80,
-        "secs": 8.96,
+        "secs": 10.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -279,7 +279,7 @@
         "nok": 0,
         "ok": 206,
         "plan": 206,
-        "secs": 4.13,
+        "secs": 4.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -289,7 +289,7 @@
         "nok": 0,
         "ok": 206,
         "plan": 206,
-        "secs": 18.17,
+        "secs": 19.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -299,11 +299,11 @@
       "cmp": "no_baseline",
       "path": "t/14-cli.rakutest",
       "raku": {
-        "first_failure": "Failed to remove the file '/tmp/static-cli-2-1794937196': Failed to delete file: read-only file system",
+        "first_failure": "Failed to remove the file '/tmp/static-cli-2-1794968787': Failed to delete file: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.73,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -315,7 +315,7 @@
         "nok": 0,
         "ok": 630,
         "plan": 630,
-        "secs": 16.4,
+        "secs": 15.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -325,7 +325,7 @@
         "nok": 0,
         "ok": 630,
         "plan": 630,
-        "secs": 65.52,
+        "secs": 65.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -341,10 +341,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-17",
+    "date": "2026-11-18",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "41f9bbd1",
+    "mutsu_commit": "818f2353",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
