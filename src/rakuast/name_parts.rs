@@ -335,6 +335,22 @@ pub(super) fn written_operator_name(
     Some(node)
 }
 
+/// Put the written operator name of a routine declaration (see
+/// [`written_operator_name`]) on its `name` field, when the parse kept one.
+// Cost: O(n), n = length of the written name.
+pub(super) fn apply_written_name(
+    names: &crate::scope::NameScope,
+    node: &mut RakuAstNode,
+    spans: Option<&crate::ast::parsed::RoutineSpans>,
+) {
+    if let Some(written) = spans.and_then(|s| s.name_written.as_deref())
+        && let Some(name) = written_operator_name(names, written)
+        && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("name"))
+    {
+        *field = super::view::node_field(Some("name"), name);
+    }
+}
+
 fn operator_colonpairs(symbol: &str) -> RakuAstField {
     RakuAstField {
         name: Some("colonpairs"),
