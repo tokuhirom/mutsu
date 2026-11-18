@@ -24,6 +24,14 @@ pub(crate) fn register_loaded_unit_facts(module: &str, import_tags: Option<&[Str
     let Some(facts) = crate::compile_time_loader::loaded_facts(module, import_tags) else {
         return;
     };
+    // An operator's `Routine.prec` record is what the importer's own
+    // operators relate to (`is equiv(&infix:<imported>)`) and what a `multi`
+    // candidate of it inherits, as for an operator declared in the unit.
+    for export in &facts.exports {
+        if let Some(prec) = &export.op_prec {
+            super::super::registry::register_op_prec(&export.name, prec.clone());
+        }
+    }
     let exports: Vec<InlineModuleExport> = facts
         .exports
         .into_iter()
