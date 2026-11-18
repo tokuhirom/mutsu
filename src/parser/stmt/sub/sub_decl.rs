@@ -209,7 +209,13 @@ fn declared_op_prec(name: &str, traits: &SubTraits) -> Option<crate::op_prec::Op
                 .or_else(|| category_default(category).map(OpPrec::from_entries))?;
             OpPrec::relative_to(relation, base)
         }
-        None => OpPrec::from_entries(category_default(category)?),
+        // `is assoc` alone changes only the associativity of the operator the
+        // name already denotes: a candidate of a built-in operator (Range::
+        // SetOps' `multi infix:<(|)> (**@r) is assoc<list>`) keeps the
+        // built-in's level, as rakudo's candidates share their proto's `prec`.
+        None => super::super::simple::lookup_op_prec(name)
+            .or_else(|| for_name(name).map(OpPrec::from_entries))
+            .or_else(|| category_default(category).map(OpPrec::from_entries))?,
     };
     match assoc {
         Some(assoc) => prec = prec.with_assoc(assoc),
