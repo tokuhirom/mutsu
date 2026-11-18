@@ -29,6 +29,7 @@ pub(crate) fn routine_spans(
         block,
         traits,
         only: false,
+        name_written: None,
     }))
 }
 
@@ -68,5 +69,20 @@ pub(crate) fn mark_only(stmt: &mut Stmt) {
         && let Some(spans) = spans
     {
         spans.only = true;
+    }
+}
+
+/// Remember how an operator routine's name was written when the canonical
+/// name spells its symbol differently (`«<< >>»` vs `<<< >>>`).
+// Cost: O(n), n = length of the written name.
+pub(crate) fn note_written_name(stmt: &mut Stmt, written: &str) {
+    if let Stmt::SubDecl { name, spans, .. } = stmt
+        && let Some(spans) = spans
+        && written != name.resolve()
+        && written
+            .split_once(':')
+            .is_some_and(|(_, quoted)| quoted.starts_with("<<") || quoted.starts_with('\u{ab}'))
+    {
+        spans.name_written = Some(written.into());
     }
 }

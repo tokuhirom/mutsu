@@ -310,6 +310,31 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
     })
 }
 
+/// The `Name` of an operator routine written with a quote form the canonical
+/// name does not keep (`postcircumfix:«<< >>»`, `infix:<< a >>`): the written
+/// colonpair is viewed as the quote it was, with its delimiters and spaces.
+/// `None` when the written text is not an operator name of a known category.
+// Cost: O(n), n = length of the written name.
+pub(super) fn written_operator_name(
+    names: &crate::scope::NameScope,
+    written: &str,
+) -> Option<RakuAstNode> {
+    let (head, pairs) = written.split_once(':')?;
+    let mut node = operator_name(&format!("{head}:<x>"))?;
+    let exprs = crate::parser::name_colonpair_exprs(&format!(":{pairs}"))?;
+    let views = exprs
+        .iter()
+        .map(|e| super::view::view_expr(names, e).map(|n| Value::rakuast(Box::new(n))))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    let field = node
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("colonpairs"))?;
+    field.value = RakuAstFieldValue::List(views);
+    Some(node)
+}
+
 fn operator_colonpairs(symbol: &str) -> RakuAstField {
     RakuAstField {
         name: Some("colonpairs"),
@@ -426,7 +451,8 @@ fn operator_symbol(node: &RakuAstNode) -> Option<String> {
     let ValueView::RakuAst(quoted) = pair.view() else {
         return None;
     };
-    quoted_text(quoted)
+    // The parser trims the written symbol (`infix:<< foo >>` is `infix:<foo>`).
+    quoted_text(quoted).map(|symbol| symbol.trim().to_string())
 }
 
 /// The text of a `QuotedString` of one plain segment.
