@@ -41,6 +41,7 @@ mod mzef_shim;
 mod name_resolution_stats;
 mod named_call_intern_budget;
 mod nested_sub_in_block_no_otf_recompile;
+mod nextcallee_continuation_skips_template;
 mod param_default_literal_binds_directly;
 mod profile_allocations;
 mod profile_counts;

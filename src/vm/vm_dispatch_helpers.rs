@@ -936,6 +936,11 @@ impl Interpreter {
         if let Some(current) = self.routine_call_me_view(&target) {
             return self.vm_call_on_value_at(current, args, compiled_fns, site);
         }
+        // The callable a method's `nextcallee` handed out runs its chain
+        // without the template's own call (#12875).
+        if let Some(result) = self.try_call_nextcallee_continuation(&target, &args) {
+            return result;
+        }
 
         // A CodeVar referring to an imported proto/multi is materialized as a
         // dispatcher Sub whose candidates are captured by value. Its dispatch
