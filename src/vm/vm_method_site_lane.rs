@@ -146,8 +146,6 @@ impl Interpreter {
             || !self.pending_rw_writeback_sources.is_empty()
             || !self.pending_local_updates.is_empty()
             || crate::runtime::find_method_intercept::any_user_find_method()
-            // A wrapped built-in method runs its wrapper, not the row (#12506).
-            || self.has_any_wrap_chains()
         {
             return None;
         }
@@ -168,6 +166,10 @@ impl Interpreter {
             return None;
         }
         let base = self.stack.len().checked_sub(arity + 1)?;
+        // A wrapped built-in method runs its wrapper, not the row (#12506).
+        if self.wrap_chains_may_reach(&self.stack[base]) {
+            return None;
+        }
         let shaped = match Receiver::of(&self.stack[base]) {
             Some(receiver) => Some(receiver),
             // A grammar cursor answers as a `Match` when its grammar leaves

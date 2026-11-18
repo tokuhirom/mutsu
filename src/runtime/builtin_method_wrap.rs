@@ -141,6 +141,31 @@ impl Interpreter {
             .cloned()
     }
 
+    /// Whether some method `.wrap` chain in the program could run for a call
+    /// on `receiver`. The method-table lanes decline then, since a wrapped
+    /// method must run its wrapper and not the row. A built-in receiver is
+    /// out of reach of every chain whose owner is a user class
+    /// ([`Self::no_wrap_owner_reaches_builtin`]); otherwise this is
+    /// `has_any_wrap_chains()`. Before this, a program that wrapped any user
+    /// method (every Method::Protected `is protected`) took every built-in
+    /// method call off the lanes (#12875).
+    // Cost: O(1) while nothing is wrapped; otherwise O(w), w = classes that
+    // ever owned a wrap chain.
+    pub(crate) fn wrap_chains_may_reach(&self, receiver: &Value) -> bool {
+        if !self.has_any_wrap_chains() {
+            return false;
+        }
+        let class_name: &str = match receiver.view() {
+            ValueView::Instance { class_name, .. } => class_name.as_str(),
+            ValueView::Package(name) => name.as_str(),
+            ValueView::Mixin(..) | ValueView::VarRef { .. } | ValueView::ContainerRef(_) => {
+                return true;
+            }
+            _ => crate::runtime::utils::value_type_name(receiver),
+        };
+        !self.no_wrap_owner_reaches_builtin(class_name)
+    }
+
     /// Whether no class that owns a wrap chain can be `class_name` or one of
     /// its ancestors: `class_name` is a built-in (catalog) type the program
     /// did not redeclare, and every owner is a class the program declared

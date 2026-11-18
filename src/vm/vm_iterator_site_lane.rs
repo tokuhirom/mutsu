@@ -85,11 +85,13 @@ impl Interpreter {
             || !self.pending_local_updates.is_empty()
             || self.dispatch.native_base_bypass.is_some()
             || crate::runtime::find_method_intercept::any_user_find_method()
-            || self.has_any_wrap_chains()
         {
             return None;
         }
         let target = self.stack.last()?;
+        if self.wrap_chains_may_reach(target) {
+            return None;
+        }
         let shape = target.receiver_shape()?;
         if !matches!(
             shape,
