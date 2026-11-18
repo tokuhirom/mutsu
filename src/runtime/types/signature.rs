@@ -482,6 +482,10 @@ pub(in crate::runtime) use crate::runtime::utils::{sigilless_alias_key, sigilles
 fn pairs_in_list_to_named(items: &[Value]) -> ValueMap {
     let mut out = ValueMap::default();
     for item in items {
+        // A Pair held in an item container (`('?', $pair)`, a List element
+        // read from a variable) is still a named part of the List's
+        // `.Capture`, as rakudo decontainerizes each element.
+        let item = item.deref_container();
         match item.view() {
             ValueView::Pair(key, val) => {
                 out.insert(key.clone(), val.clone());
@@ -1216,7 +1220,7 @@ fn drop_pairs_captured_as_named(value: &Value, positional: Vec<Value>) -> Vec<Va
         .into_iter()
         .filter(|v| {
             !matches!(
-                v.unwrap_varref().view(),
+                v.deref_container().view(),
                 ValueView::Pair(..) | ValueView::ValuePair(..)
             )
         })
