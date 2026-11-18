@@ -38,6 +38,7 @@ mod multi_candidate_match_does_not_copy_the_frame_env;
 mod multi_family_generation;
 mod mzef_shim;
 mod name_resolution_stats;
+mod nextcallee_continuation_skips_template;
 mod named_call_intern_budget;
 mod nested_sub_in_block_no_otf_recompile;
 mod param_default_literal_binds_directly;

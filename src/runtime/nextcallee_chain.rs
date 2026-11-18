@@ -71,6 +71,33 @@ impl Interpreter {
         Some(template)
     }
 
+    /// Call `target` directly when it is a continuation
+    /// [`Self::nextcallee_with_chain`] built: run the builtin its template
+    /// would call, on the same arguments. Without this, `original(self, |c)`
+    /// is three generic calls -- the template with its `|c` bind, the
+    /// `CallFunc` of the builtin through the interpreter, then the candidate.
+    /// `None` (nothing touched) for any other value; the template still
+    /// answers a continuation reached by a route that does not ask here.
+    // Cost: O(1) to decline (one pointer compare); otherwise
+    // `builtin_nextcallee_continue`'s cost.
+    pub(crate) fn try_call_nextcallee_continuation(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let template = self.caches.nextcallee_chain_template.as_ref()?;
+        let (Some(template), ValueView::Sub(data)) = (template.as_sub(), target.view()) else {
+            return None;
+        };
+        if !std::sync::Arc::ptr_eq(&template.body, &data.body) {
+            return None;
+        }
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.push(target.clone());
+        call_args.extend_from_slice(args);
+        Some(self.builtin_nextcallee_continue(call_args))
+    }
+
     /// `__mutsu_nextcallee_continue(&callee, $invocant, *@args)`: run the
     /// chain the callee carries -- its candidate on the invocant and
     /// arguments, under a deferral frame over the rest of the chain.
