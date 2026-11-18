@@ -22,7 +22,10 @@ fn straight_line_calls(src: &str) -> u64 {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "mutsu failed:\n{stdout}\n{stderr}");
-    assert!(stdout.contains("done"), "unexpected output:\n{stdout}\n{stderr}");
+    assert!(
+        stdout.contains("done"),
+        "unexpected output:\n{stdout}\n{stderr}"
+    );
     stderr
         .lines()
         .find_map(|l| l.split_once("] method-lanes: straight_line="))
@@ -36,15 +39,21 @@ fn carray_num_store_takes_the_straight_line_lane() {
         "use NativeCall; my @c := CArray[num64].new; \
          @c[$_] = 1.5e0 for ^200; say @c[199] == 1.5e0 ?? 'done' !! 'bad'",
     );
-    assert!(n >= 200, "only {n} of 200 stores took the straight-line lane");
+    assert!(
+        n >= 200,
+        "only {n} of 200 stores took the straight-line lane"
+    );
 }
 
 #[test]
 fn carray_int_store_from_a_sub_takes_the_straight_line_lane() {
     let n = straight_line_calls(
         "use NativeCall; sub fill(@a) { my @c := CArray[int32].new; \
-         @c[$_] = @a[$_] for ^@a.elems; @c } \
+         @c[$_] = @a[$_] for ^@a.elems; @c }; \
          my @c := fill([^200]); say @c[199] == 199 ?? 'done' !! 'bad'",
     );
-    assert!(n >= 200, "only {n} of 200 stores took the straight-line lane");
+    assert!(
+        n >= 200,
+        "only {n} of 200 stores took the straight-line lane"
+    );
 }
