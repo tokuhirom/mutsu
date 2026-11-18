@@ -468,6 +468,7 @@ mod vm_var_assign_elem_constraint;
 mod vm_var_assign_element;
 mod vm_var_assign_element_fast;
 mod vm_var_assign_element_slot_fast;
+mod vm_var_assign_hash_cell;
 mod vm_var_assign_hash_fast;
 mod vm_var_assign_index_named;
 mod vm_var_assign_local;

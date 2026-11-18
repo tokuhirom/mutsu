@@ -735,6 +735,18 @@ impl Interpreter {
         {
             return result;
         }
+        // The same store into a hash this frame reaches through a captured
+        // cell (`vm_var_assign_hash_cell.rs`, #18055).
+        if !element_share
+            && let Some(result) = self.try_fast_captured_hash_element_assign(
+                code,
+                name_idx,
+                is_positional,
+                target_slot,
+            )
+        {
+            return result;
+        }
         // The `$`-held twin of the array lane above: `$d[$i] = $v` and
         // `$d[$i] := ...` on an Array living in the scalar's own slot (#17429).
         if !element_share
@@ -958,7 +970,7 @@ impl Interpreter {
     /// owner keeps the slot-aware cell handling its store paths already have
     /// (the `:=`-bound container lane).
     // Cost: O(s + d), s = the chunk's slots for the name, d = one env probe.
-    fn capture_cell_for_element_store(
+    pub(super) fn capture_cell_for_element_store(
         &self,
         code: &CompiledCode,
         var_sym: Symbol,
