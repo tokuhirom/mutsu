@@ -35,8 +35,9 @@ impl Interpreter {
 
     /// The pun class of the plain role `role_name`, composed on the first call
     /// and found by name afterwards. `None` when `role_name` is not a role, is
-    /// a stub, or has a candidate that takes type parameters (those pun
-    /// through their parameterization instead).
+    /// a stub, or is a role group without a zero-parameter candidate (those
+    /// pun through their parameterization instead). A group that has one puns
+    /// that candidate, persistently, like a lone plain role (#18160).
     // Cost: O(n) while the pun exists, n = bytes of the role name (the name
     // and one registry probe); the first call composes the role into a class,
     // O(m), m = the role's and its parents' members.
@@ -54,14 +55,17 @@ impl Interpreter {
                 Some(role) if !role.is_stub_role => {}
                 _ => return Ok(None),
             }
-            let candidates = registry.role_candidates.get(role_name);
-            if candidates.is_some_and(|cs| cs.iter().any(|c| !c.type_params.is_empty())) {
-                return Ok(None);
+            // A role group puns its zero-parameter candidate, which is the one a
+            // bare `R` selects (`role R[\a] {...}; role R {...}; R.m`, the
+            // `CSS::Units` shape). A group with no such candidate puns through a
+            // parameterization instead.
+            match registry.role_candidates.get(role_name) {
+                Some(cs) => match cs.iter().rev().find(|c| c.type_params.is_empty()) {
+                    Some(plain) => plain.language_version.clone(),
+                    None => return Ok(None),
+                },
+                None => crate::parser::current_language_version(),
             }
-            candidates
-                .and_then(|cs| cs.last())
-                .map(|c| c.language_version.clone())
-                .unwrap_or_else(crate::parser::current_language_version)
         };
         let parents = [role_name.to_string()];
         let modifiers = super::registration_class::ClassDeclModifiers {
