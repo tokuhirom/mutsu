@@ -8,17 +8,17 @@ use Test;
 
 plan 4;
 
-use RequireTypesOnly;
-is $*REQUIRE-TYPES-ONLY-RUNS, 1, 'the use loaded it once';
+use RequireTypesApart;
+is $*REQUIRE-TYPES-APART-RUNS, 1, 'the use loaded it once';
 
 sub look-up() {
-    my $t = ::('RequireTypesOnlyThing');
+    my $t = ::('RequireTypesApartThing');
     if !$t && $t ~~ Failure {
-        require ::('RequireTypesOnly');
+        require ::('RequireTypesApart');
     }
-    ::('RequireTypesOnlyThing')
+    ::('RequireTypesApartThing')
 }
 is look-up().hi, 'hi', 'the type resolves after the require';
-is $*REQUIRE-TYPES-ONLY-RUNS, 1, 'require of the loaded module did not run its body again';
-require RequireTypesOnly;
-is $*REQUIRE-TYPES-ONLY-RUNS, 1, '... nor did a plain require';
+is $*REQUIRE-TYPES-APART-RUNS, 1, 'require of the loaded module did not run its body again';
+require RequireTypesApart;
+is $*REQUIRE-TYPES-APART-RUNS, 1, '... nor did a plain require';

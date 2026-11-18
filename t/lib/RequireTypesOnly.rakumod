@@ -1,4 +1,8 @@
-# A module file that declares only a type named apart from the file; its
-# body counts how often it runs.
-PROCESS::<$REQUIRE-TYPES-ONLY-RUNS> = (PROCESS::<$REQUIRE-TYPES-ONLY-RUNS> // 0) + 1;
-class RequireTypesOnlyThing is export { method hi { 'hi' } }
+unit module RequireTypesOnly;
+
+# A module that declares only types: no `RequireTypesOnly::`-prefixed routine.
+our @LOADS;
+@LOADS.push(1);
+
+role Marker is export { }
+class Box is export { has $.v }
