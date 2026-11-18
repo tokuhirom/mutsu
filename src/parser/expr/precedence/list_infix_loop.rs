@@ -637,7 +637,8 @@ fn parse_list_infix_loop_impl<'a>(
         // `42 same-in-Int "42"`) and CORE infix words with no dedicated parser.
         //
         // Only operators explicitly pushed down to (or below) the list-infix
-        // level with `is looser` are handled here. A trait-less custom infix
+        // level with `is looser` (or to the comma level with `is equiv<,>`)
+        // are handled here. A trait-less custom infix
         // defaults to ADDITIVE precedence in rakudo, so it is handled by
         // `additive_expr` instead — which is why `1 op 2 ?? "y" !! "n"` is
         // `(1 op 2) ?? ...` and not a parse error.
@@ -650,7 +651,9 @@ fn parse_list_infix_loop_impl<'a>(
                 r,
                 left,
                 i32::MIN,
-                crate::parser::stmt::simple::PREC_SEQUENCE,
+                // Up to the comma level: an operator declared `is equiv<,>`
+                // has no tighter layer to land in.
+                crate::parser::stmt::simple::PREC_COMMA,
                 &|s| operand.parse_single(s),
             )?
         {
