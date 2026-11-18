@@ -874,6 +874,9 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
         Expr::HashVar(_) => expr,
         _ => Expr::ZenSlice(Box::new(expr)),
     };
+    let indexed_expr = Expr::spelled(indexed_expr, || {
+        crate::ast::spelled::Spelling::ZenBrackets('<')
+    });
     let zen_adverb = [
         (":kv", "kv"),
         (":k", "keys"),
@@ -2396,7 +2399,9 @@ fn postfix_expr_loop_from<'a>(
                     rest = r;
                     continue;
                 }
-                expr = Expr::ZenSlice(Box::new(expr));
+                expr = Expr::spelled(Expr::ZenSlice(Box::new(expr)), || {
+                    crate::ast::spelled::Spelling::ZenBrackets('{')
+                });
                 rest = r;
                 continue;
             }

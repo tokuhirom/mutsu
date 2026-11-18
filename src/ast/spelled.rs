@@ -140,6 +140,10 @@ pub(crate) enum Spelling {
     /// `::?CLASS` / `::?ROLE` / `::?PACKAGE` / `::?MODULE`: the pseudo-package
     /// as written (the parser keeps `Var("?CLASS")`, the same as `$?CLASS`).
     PseudoPackage(Box<str>),
+    /// A zen slice written with the brackets `<>` or `{}` (`@a<>`, `*{}`): the
+    /// node is the same decontainerizing zen slice whatever the brackets, but
+    /// RakuAST keeps a different subscript class for each.
+    ZenBrackets(char),
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,
@@ -185,6 +189,19 @@ impl Expr {
             expr,
             spelling: spelling(),
         }))
+    }
+}
+
+impl Expr {
+    /// The expression with only its [`Expr::Spelled`] wrappers taken off; unlike
+    /// [`Expr::peel_parens`] it keeps a written `(...)`.
+    // Cost: O(w), w = nested wrappers.
+    pub(crate) fn peel_spelled(&self) -> &Expr {
+        let mut expr = self;
+        while let Expr::Spelled(spelled) = expr {
+            expr = &spelled.expr;
+        }
+        expr
     }
 }
 

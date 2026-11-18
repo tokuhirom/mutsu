@@ -340,6 +340,15 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         // its target exactly as `Expr::Index` does: `*.{}` and `*[]` are
         // `WhateverCode`, not a bare `Whatever` (verified against raku).
         Expr::ZenSlice(target) => contains_whatever(target) || is_wrapped_whatevercode(target),
+        // The brackets a zen slice was written with change nothing about it.
+        Expr::Spelled(spelled)
+            if matches!(
+                spelled.spelling,
+                crate::ast::spelled::Spelling::ZenBrackets(_)
+            ) =>
+        {
+            contains_whatever(&spelled.expr)
+        }
         // User-defined infix operators: `* quack 5`, `3 quack *`, etc.
         // Exclude flip-flop operators (ff, fff and variants) since `ff *` means
         // "stay true forever" and `*` should not trigger WhateverCode wrapping.

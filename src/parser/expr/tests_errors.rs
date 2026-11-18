@@ -206,8 +206,8 @@ fn parse_postfix_angle_index_zen() {
     let (rest, expr) = expression("$x<>").unwrap();
     assert_eq!(rest, "");
     assert!(matches!(
-        expr,
-        Expr::ZenSlice(target) if matches!(*target, Expr::Var(ref n) if n.as_str() == "x")
+        expr.peel_parens(),
+        Expr::ZenSlice(target) if matches!(**target, Expr::Var(ref n) if n.as_str() == "x")
     ));
 }
 
@@ -221,7 +221,7 @@ fn parse_postfix_angle_index_zen_values_adverb() {
         } => {
             assert_eq!(name, "values");
             assert!(args.is_empty());
-            assert!(matches!(*target, Expr::HashVar(ref n) if n.as_str() == "h"));
+            assert!(matches!(target.peel_parens(), Expr::HashVar(n) if n.as_str() == "h"));
         }
         _ => panic!("expected method call expression"),
     }
