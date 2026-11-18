@@ -538,8 +538,9 @@ impl Interpreter {
     /// for the `use` statement at parse site `site`. Every run of that
     /// statement (a block entered again, a routine called again) installs the
     /// same map, as rakudo runs the hook once, when it compiles the `use`.
-    /// A `use` whose import carries no site (`0`) takes the oldest map
-    /// recorded for the key, once.
+    /// An import with no site (`0`: its `use` was not loaded at parse time)
+    /// takes only a map recorded without one, once: a map recorded for
+    /// another statement is that statement's.
     // Cost: O(1) when nothing was recorded; else one key build and lookup,
     // plus O(q) to find the site, q = the maps recorded for the key.
     fn take_parse_time_hook_result(
@@ -559,7 +560,10 @@ impl Interpreter {
                 .find(|(recorded, _, _)| *recorded == site)
                 .map(|(_, map, generated)| (map.clone(), generated.clone()));
         }
-        let entry = queue.pop_front();
+        let entry = queue
+            .iter()
+            .position(|(recorded, _, _)| *recorded == 0)
+            .and_then(|at| queue.remove(at));
         if queue.is_empty() {
             self.module.parse_time_hook_results.remove(&key);
         }
