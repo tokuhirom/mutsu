@@ -48,8 +48,9 @@ impl Interpreter {
         // ADR-0058: a native method reads its ARGUMENTS' elements through pure
         // Rust (the receiver is already handled by
         // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —
-        // `600.polymod((1..3).map(* * 3))` — must run its callback first.
-        if let Err(e) = self.reify_map_grep_seq_args(args) {
+        // `600.polymod((1..3).map(* * 3))` — must run its callback first. A
+        // method the receiver's class declares binds them itself.
+        if let Err(e) = self.reify_map_grep_seq_method_args(target, method_sym, args) {
             return Some(Err(e));
         }
         // A native method takes its arguments by value, so the reference an

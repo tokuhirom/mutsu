@@ -28,6 +28,7 @@ pub(crate) mod proc_pty;
 pub(crate) mod proc_spawn;
 pub(crate) mod tcp_core;
 mod native_proc_async_refusal;
+mod native_proc_async_write;
 mod native_supplier_methods;
 mod native_supply_dispatch;
 mod native_supply_methods;

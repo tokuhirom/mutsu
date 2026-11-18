@@ -318,7 +318,7 @@ impl Interpreter {
         self.caches.ctor_lane_candidate = None;
         self.caches.plain_method_lane_candidate = None;
         self.set_pending_call_arg_sources_shared(decoded.map(|(names, _)| names));
-        if let Err(e) = self.reify_map_grep_seq_args(&args) {
+        if let Err(e) = self.reify_map_grep_seq_method_args(&target, method_sym, &args) {
             return Some(Err(e));
         }
         if let Some(plan) = plan {
