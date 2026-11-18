@@ -330,6 +330,7 @@ mod tests {
             condition: None,
             if_imports: Vec::new(),
             imports: Vec::new(),
+            site: 0,
         }
     }
 

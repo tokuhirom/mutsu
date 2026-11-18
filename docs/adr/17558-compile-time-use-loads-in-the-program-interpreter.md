@@ -473,3 +473,19 @@ interpreter.
   the re-activation of a language for a later parse (`$?LANG` seeding an
   `EVAL`, `Str.AST($slang)`) when the slang was not activated by this
   interpreter.
+
+### 7.11 Slice 2c: a `use`'s hook runs once (2026-11-18)
+
+Closes the 2b leftover of a `use` whose statement runs more than once.
+
+- Each `use` statement carries its parse site (`Stmt::Use::site`, on
+  `OpCode::UseModule` as `site`). A parse-time load records the map its
+  module's `sub EXPORT` returned under that site, and every run of the
+  statement — a loop body, a routine called again — installs it
+  (`take_parse_time_hook_result` no longer consumes a sited map). The hook
+  runs once per `use` statement, at its compile, as on rakudo.
+- A `use` of a module an earlier `use` already loaded runs the module's hook
+  at its own compile too (`run_export_hook_for_parse`) and records its map
+  the same way; it used to run the hook on each run of the statement.
+- An import that carries no site (a statement lowered from a RakuAST tree,
+  an `EVAL` pre-run) takes the oldest recorded map once, as in 2b.
