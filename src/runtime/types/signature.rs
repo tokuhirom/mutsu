@@ -505,6 +505,10 @@ pub(in crate::runtime) fn named_values_from_unpack_target(value: &Value) -> Valu
     if let Some((_, inner)) = varref_from_value(value) {
         return named_values_from_unpack_target(&inner);
     }
+    // An itemized aggregate (a Pair's value `:o([...])`, an element read) is
+    // taken apart by its content, as `positional_values_from_unpack_target`
+    // does: `:o(@)! (',', *%term)` nested in a sub-signature.
+    let value = value.descalarize();
     match value.view() {
         ValueView::Capture { named, .. } => (*named).clone(),
         ValueView::Hash(map) => map.map.clone(),
@@ -861,6 +865,13 @@ fn sub_signature_matches_value_unbound(
         // would be rejected during dispatch matching.
         if let Some(sub) = &pd.sub_signature
             && !named_param_parens_accept(interpreter, pd, sub, &candidate)?
+        {
+            return Ok(false);
+        }
+        // The trailing parens of a named part (`:o(@)! (',', *%term)`) unpack
+        // its value as well; a value they do not fit rejects the candidate.
+        if let Some(outer) = &pd.outer_sub_signature
+            && !sub_signature_matches_value(interpreter, outer, &candidate)?
         {
             return Ok(false);
         }
@@ -1595,6 +1606,12 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             } else {
                 bind_sub_signature_from_value(interpreter, nested, &candidate)?;
             }
+        }
+        // `:o(@)! (',', *%term)` nested in a sub-signature: the trailing
+        // parens destructure the named part's value too, as they do at the
+        // top level (`bind_function_args_values`).
+        if let Some(outer) = &sub_pd.outer_sub_signature {
+            bind_sub_signature_from_value(interpreter, outer, &candidate)?;
         }
     }
     // Reject unexpected named arguments the sub-signature does not name.
