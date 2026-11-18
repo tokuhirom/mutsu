@@ -474,6 +474,7 @@ impl Interpreter {
             compiled_fns,
             body_plan,
             is_hoisted_shell,
+            false,
         )?;
         // `also is Parent` applies at its position in the BODY, so its parent
         // is resolved here -- after the body has had its chance to introduce

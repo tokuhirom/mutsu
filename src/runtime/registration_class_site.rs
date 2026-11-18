@@ -23,6 +23,7 @@
 //! produce.
 
 use super::Interpreter;
+use crate::runtime::RuntimeError;
 use crate::opcode::{ClassBodyOp, CompiledClassDeclPlan, DeclTraitArg};
 
 /// What a full registration of a static lexical class declaration depended on.
@@ -64,6 +65,84 @@ impl CompiledClassDeclPlan {
     /// reused.
     // Cost: O(a + m + o), a = attributes, m = methods, o = body statements.
     pub(crate) fn reentry_is_static(&self) -> bool {
+        self.reentry_header_is_static()
+            && self.body_bind_source_slots.is_empty()
+            && self.declared_static_names.is_empty()
+            && self.body_plan.iter().all(|op| {
+                matches!(
+                    op,
+                    ClassBodyOp::Attr { .. }
+                        | ClassBodyOp::Method
+                        | ClassBodyOp::Does { args: None, .. }
+                        | ClassBodyOp::Other {
+                            raw: crate::ast::Stmt::SetLine(..),
+                            ..
+                        }
+                )
+            })
+    }
+
+    /// Whether a re-entry keeps the registered type and only runs the body's
+    /// per-entry part (#18070): the declaration is static but for body
+    /// statements that run per entry -- `my` variables and their
+    /// initializers, nested `sub`s, plain (non-block) statements,
+    /// class-scoped LEAVE phasers. Rakudo creates the type once per declaration and runs those
+    /// per entry (`sub f($i) { my class C { my $z = $i } }`: `f(1) === f(2)`,
+    /// and the body runs on both calls). A statement that can change the
+    /// class itself (`use`, a nested type, a BEGIN/CHECK phaser, an `EVAL`
+    /// that may declare attributes) keeps the declaration on the full path.
+    // Cost: O(a + m + o), as `reentry_is_static`.
+    pub(crate) fn reentry_keeps_type(&self) -> bool {
+        use crate::ast::Stmt;
+        self.reentry_header_is_static()
+            && self.body_plan.iter().all(|op| match op {
+                ClassBodyOp::Attr { .. }
+                | ClassBodyOp::Method
+                | ClassBodyOp::Does { args: None, .. }
+                | ClassBodyOp::LeavePhaser { .. } => true,
+                ClassBodyOp::ClassSub {
+                    is_swallowable,
+                    is_compile_time_phaser,
+                    ..
+                } => !is_swallowable && !is_compile_time_phaser,
+                ClassBodyOp::Other {
+                    raw,
+                    is_swallowable,
+                    is_compile_time_phaser,
+                    ..
+                } => {
+                    // Simple statements only: a nested block (or a `do`
+                    // expression) may declare a method that closes over
+                    // the block's own lexicals, which a full registration
+                    // re-captures per entry.
+                    !is_swallowable
+                        && !is_compile_time_phaser
+                        && match raw {
+                            Stmt::Expr(expr) => !matches!(expr, crate::ast::Expr::DoBlock { .. }),
+                            _ => matches!(
+                                raw,
+                                Stmt::SetLine(..)
+                                    | Stmt::VarDecl { .. }
+                                    | Stmt::Assign { .. }
+                                    | Stmt::Say(..)
+                                    | Stmt::Put(..)
+                                    | Stmt::Print(..)
+                                    | Stmt::Note(..)
+                                    | Stmt::Call { .. }
+                            ),
+                        }
+                }
+                _ => false,
+            })
+    }
+
+    /// The part of [`Self::reentry_is_static`] that does not depend on the
+    /// body statements: a lexical or anonymous, non-stub class with a fixed
+    /// name, no custom traits or metaclass, no parent or role arguments
+    /// evaluated per entry, and attribute declaration-time expressions that
+    /// read no lexical of the declaring frame.
+    // Cost: O(a + m), a = attributes, m = methods.
+    fn reentry_header_is_static(&self) -> bool {
         // An anonymous `class :: { ... }` is one type per site too (rakudo:
         // `sub f { class :: {} }; f() === f()`). Rebuilding it on every entry
         // also rewrote a world table other threads were dispatching through
@@ -82,20 +161,6 @@ impl CompiledClassDeclPlan {
             && !self.is_native
             && self.export_tags.is_none()
             && self.parent_arg_chunks.is_empty()
-            && self.body_bind_source_slots.is_empty()
-            && self.declared_static_names.is_empty()
-            && self.body_plan.iter().all(|op| {
-                matches!(
-                    op,
-                    ClassBodyOp::Attr { .. }
-                        | ClassBodyOp::Method
-                        | ClassBodyOp::Does { args: None, .. }
-                        | ClassBodyOp::Other {
-                            raw: crate::ast::Stmt::SetLine(..),
-                            ..
-                        }
-                )
-            })
             && self.attr_decls.iter().all(|(_, decl)| {
                 !reads_user_lexical(decl.default.as_ref())
                     && !reads_user_lexical(decl.where_constraint.as_ref())
@@ -119,7 +184,7 @@ impl Interpreter {
         parents: &[String],
         hidden_parents: &[String],
     ) -> Option<ClassSiteStamp> {
-        if !plan.reentry_is_static() {
+        if !plan.reentry_keeps_type() {
             return None;
         }
         // A role is composed into the class when it registers. A lexical role
@@ -177,5 +242,41 @@ impl Interpreter {
         if self.registry().class_site_stamps.contains_key(storage) {
             self.registry_mut().class_site_stamps.remove(storage);
         }
+    }
+
+    /// Re-enter the declaration of the registered class `name` whose site
+    /// keeps its type (`CompiledClassDeclPlan::reentry_keeps_type`): run the
+    /// body's per-entry statements in the class scope, as a full
+    /// registration runs them, without touching the class (#18070).
+    // Cost: the body's per-entry statements, plus one class-table read.
+    pub(crate) fn reenter_class_decl(
+        &mut self,
+        name: &str,
+        modifiers: super::ClassDeclModifiers<'_>,
+    ) -> Result<(), RuntimeError> {
+        let Some(class_def) = self.registry().classes.get(name).cloned() else {
+            return Ok(());
+        };
+        let class_lang_rev =
+            super::registration_class::language_revision_letter(modifiers.language_version);
+        self.run_class_body(
+            name,
+            class_def.into_value(),
+            modifiers.is_hidden,
+            modifiers.class_is_rw,
+            &class_lang_rev,
+            modifiers.own_attribute_names,
+            modifiers.attr_decls,
+            modifiers.attr_type_aliases,
+            modifiers.method_name_chunks,
+            modifiers.method_decls,
+            modifiers.declared_static_names,
+            modifiers.nested_decl_names,
+            modifiers.compiled_fns,
+            modifiers.body_plan,
+            modifiers.is_hoisted_shell,
+            true,
+        )?;
+        Ok(())
     }
 }
