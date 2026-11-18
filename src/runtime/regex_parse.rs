@@ -261,15 +261,71 @@ pub(crate) static TOKEN_DEFS_GEN: std::sync::atomic::AtomicU64 =
 /// `token value:sym<x> { <sym> }` shape (lowered to `:ratchet
 /// $<sym>=[x]`), which cost the whole proto's memo, not just this one
 /// candidate.
+///
+/// A character class body (`<[ ... ]>`, `<-[ ... ]>`, `<+[ ... ]>`, and the
+/// `<?[ ... ]>` / `<![ ... ]>` lookarounds) is skipped:
+/// every character in it is a literal member, so the `@!` of
+/// `<[A..Za..z:@!$&'()*+,;=-]>` (Cro::Uri's `pchars`) is not an `@!attr`
+/// interpolation. Reading it as one kept every such token off the parse cache
+/// and re-ran the interpolation pass on every match. The skip starts only
+/// outside quotes and outside `{ ... }` code blocks, where `<[` cannot be
+/// anything but a class opener; it ends at the first unescaped `]`, the end
+/// of the class body.
+// Cost: O(n), n = the pattern's length.
 pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
     fn starts_variable_form(c: char) -> bool {
         c.is_alphanumeric() || matches!(c, '_' | '{' | '(' | '*' | '?' | '^' | '.' | '!')
     }
     let mut chars = pattern.char_indices().peekable();
-    while let Some((_, c)) = chars.next() {
+    // The closer of the quoted span being scanned, and the code-block depth:
+    // a class opener counts only when neither is open.
+    let mut quote: Option<char> = None;
+    let mut brace_depth = 0usize;
+    while let Some((at, c)) = chars.next() {
         if c == '\\' {
             chars.next();
             continue;
+        }
+        if let Some(closer) = quote {
+            if c == closer {
+                quote = None;
+            }
+        } else if brace_depth == 0
+            && let Some(closer) = regex_quote_closer(c)
+        {
+            quote = Some(closer);
+        } else if c == '{' {
+            brace_depth += 1;
+        } else if c == '}' {
+            brace_depth = brace_depth.saturating_sub(1);
+        } else if c == '<' && brace_depth == 0 {
+            let rest = &pattern[at + 1..];
+            let rest = rest.strip_prefix(['-', '+', '?', '!']).unwrap_or(rest);
+            if let Some(body) = rest.strip_prefix('[') {
+                // Skip to the class body's closing `]`, honouring escapes.
+                let skip_to = body.len();
+                let mut escaped = false;
+                let mut end = None;
+                for (i, b) in body.char_indices() {
+                    if escaped {
+                        escaped = false;
+                    } else if b == '\\' {
+                        escaped = true;
+                    } else if b == ']' {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                let Some(end) = end else {
+                    // An unterminated class: nothing after it is safe to skip.
+                    return false;
+                };
+                let resume = pattern.len() - skip_to + end + 1;
+                while chars.peek().is_some_and(|&(i, _)| i < resume) {
+                    chars.next();
+                }
+                continue;
+            }
         }
         if matches!(c, '$' | '@' | '%') {
             let mut next = chars.peek().map(|(_, next)| *next);
@@ -432,6 +488,29 @@ mod static_pattern_tests {
         assert!(!regex_pattern_is_static("<%hash>"));
         assert!(!regex_pattern_is_static("a* %% %sep"));
         assert!(!regex_pattern_is_static("$$x"));
+    }
+
+    #[test]
+    fn character_class_members_are_literal() {
+        // Cro::Uri's `pchars` / `segment-nz-nc`: `@!` is a member, not `@!attr`.
+        assert!(regex_pattern_is_static(
+            "(<[A..Za..z0..9._~:@!$&'()*+,;=-]>+ | '%' <[A..Fa..f0..9]>**2 | \
+             $<broken>=<[\\[\\]\\<\\>\\{\\}\\^\\\"]>)+"
+        ));
+        assert!(regex_pattern_is_static("[<[A..Z._~@!$&'()]>+]+"));
+        assert!(regex_pattern_is_static("<-[@!x]>+"));
+        assert!(regex_pattern_is_static("<+[$abc]>"));
+        assert!(regex_pattern_is_static("<?[@foo]> <![$bar]>"));
+        assert!(regex_pattern_is_static("<[\\]@x]> a"));
+        // A variable after the class is still seen.
+        assert!(!regex_pattern_is_static("<[@!]> $var"));
+        assert!(!regex_pattern_is_static("<[a] + [@!]> @arr"));
+        // An unterminated class skips nothing.
+        assert!(!regex_pattern_is_static("<[@!x"));
+        // `<[` inside a quote or a code block is no class opener.
+        assert!(!regex_pattern_is_static("'<[' $x ']'"));
+        assert!(!regex_pattern_is_static("{ f(<[) } $x ]"));
+        assert!(!regex_pattern_is_static("\"<[\" @!x \"]\""));
     }
 }
 
