@@ -143,8 +143,7 @@ impl Interpreter {
         if cache.first().is_some_and(|(owner, _, _)| *owner != id) {
             cache.clear();
         }
-        if cache.len() < LEXSUB_FREE_CACHE_CAP
-            && !cache.iter().any(|(_, sym, _)| *sym == name_sym)
+        if cache.len() < LEXSUB_FREE_CACHE_CAP && !cache.iter().any(|(_, sym, _)| *sym == name_sym)
         {
             cache.push((id, name_sym, cell));
         }
