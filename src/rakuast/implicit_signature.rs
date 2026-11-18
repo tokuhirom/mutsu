@@ -79,7 +79,7 @@ fn invocant_type(package: &str, resolved: bool) -> Value {
     if resolved {
         type_node.origin.2 = if package == "$?CLASS" {
             Some(node(RakuAstClass::TypeCapture, vec![field(None, name())]))
-        } else if package.contains("::") {
+        } else if crate::qualified::is_qualified_str(package) {
             Some(node(
                 RakuAstClass::VarDeclarationImplicitConstant,
                 vec![
