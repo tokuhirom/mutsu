@@ -83,9 +83,16 @@ impl Interpreter {
         if !owner_slots.is_empty() {
             return None;
         }
+        // The variable's declared value and key types are recorded by name
+        // (a `my Int %h` hoisted below an `EVAL` that stores into it has no
+        // typed node yet); the general store checks them, so a typed hash is
+        // its.
+        let decl = self.store_decl(code, target_slot, false);
         if cell.is_readonly()
             || self.var_default(var_name).is_some()
             || self.is_readonly_sym(var_sym)
+            || self.decl_type_constraint(decl, var_name).is_some()
+            || self.decl_hash_key_constraint(decl, var_name).is_some()
         {
             return None;
         }
