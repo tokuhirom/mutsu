@@ -48,10 +48,15 @@ impl<K, V> Clone for ShardedMap<K, V> {
 }
 
 impl<K, V> Default for ShardedMap<K, V> {
-    // Cost: O(SHARDS).
+    // Cost: O(SHARDS), one allocation.
     fn default() -> Self {
         Self {
-            shards: Box::new(std::array::from_fn(|_| Arc::new(FxHashMap::default()))),
+            shards: {
+                // One empty table shared by every shard: a shard is copied
+                // (allocated) on its first write.
+                let empty = Arc::new(FxHashMap::default());
+                Box::new(std::array::from_fn(|_| Arc::clone(&empty)))
+            },
             len: 0,
             key_gen: crate::runtime::registry_gen::next_generation(),
         }

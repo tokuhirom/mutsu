@@ -2219,6 +2219,7 @@ pub(crate) struct RegistryReadGuard<'a> {
 impl<'a> RegistryReadGuard<'a> {
     /// This thread's snapshot of the world registry (ADR-17216 §2.2): one
     /// atomic load, and a refresh only after another thread wrote.
+    #[inline]
     pub(crate) fn new(cell: &'a crate::runtime::world_cell::WorldCell<Registry>) -> Self {
         Self { inner: cell.read() }
     }
