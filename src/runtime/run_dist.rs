@@ -105,11 +105,9 @@ impl Interpreter {
 
     fn build_resources_from_dist(&self, dist: &Value) -> Value {
         let meta = match dist.view() {
-            ValueView::Instance { attributes, .. } => attributes
-                .as_map()
-                .get("meta")
-                .cloned()
-                .unwrap_or(Value::NIL),
+            ValueView::Instance { attributes, .. } => {
+                attributes.as_map().get("meta").cloned().unwrap_or(Value::NIL)
+            }
             _ => Value::NIL,
         };
         let prefix = match meta.view() {
@@ -153,11 +151,10 @@ impl Interpreter {
                         let libraries_dir = std::path::Path::new(&prefix)
                             .join("resources")
                             .join("libraries");
-                        let platform_name =
-                            super::methods_distribution_helpers::library_resource_file_name(
-                                &libraries_dir,
-                                lib_name,
-                            );
+                        let platform_name = super::methods_distribution_helpers::library_resource_file_name(
+                            &libraries_dir,
+                            lib_name,
+                        );
                         if prefix.is_empty() {
                             format!("resources/libraries/{platform_name}")
                         } else {

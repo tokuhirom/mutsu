@@ -174,8 +174,7 @@ pub(crate) struct TypeState {
     /// Set when reading a Proxy subclass attribute; consumed by a subsequent
     /// .push/.pop etc. on THAT array: the third field is the address of the
     /// array data that was read, so an unrelated array's mutator never takes it.
-    pub(crate) pending_proxy_subclass_attr:
-        Option<(crate::value::ProxySubclassAttrs, String, usize)>,
+    pub(crate) pending_proxy_subclass_attr: Option<(crate::value::ProxySubclassAttrs, String, usize)>,
     /// The type object of the DECLARE'd class whose registration is currently
     /// driving the user HOW protocol (`new_type` → `add_method`* → `compose`).
     /// A `callsame` from a user `new_type` override returns it as the base

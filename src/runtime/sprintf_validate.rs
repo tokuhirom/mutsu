@@ -205,7 +205,7 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
         // reported in X::Str::Sprintf::Directives::Unsupported (Raku includes
         // flags / width / the vector flag in `.directive`, e.g. `%5vd` reports
         // directive `5vd`).
-        // Skip flags
+                // Skip flags
         while pos < len {
             let b = bytes[pos];
             if b == b'-' || b == b'+' || b == b' ' || b == b'#' || b == b'0' {
@@ -436,8 +436,10 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
         if let Some(arg) = args.get(effective_index)
             && arg.is_str_value()
             && let Some(base) = numeric_directive_base(spec)
-            && let Some(Ok(numeric)) =
-                crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("Numeric"))
+            && let Some(Ok(numeric)) = crate::builtins::methods_0arg::native_method_0arg(
+                arg,
+                Symbol::intern("Numeric"),
+            )
             && matches!(numeric.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
         {
             // The probe's Failure is consumed here, not left to warn on drop.

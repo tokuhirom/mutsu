@@ -215,9 +215,7 @@ impl Interpreter {
                     installed: v.clone(),
                     pins_topic: false,
                     qq_result: false,
-                    restores_unit: Some(
-                        crate::runtime::regex::regex_helpers::replace_defining_unit(Some(unit)),
-                    ),
+                    restores_unit: Some(crate::runtime::regex::regex_helpers::replace_defining_unit(Some(unit))),
                 });
                 continue;
             }
@@ -394,10 +392,7 @@ impl Interpreter {
                 return false;
             }
             let class = class.resolve();
-            return self
-                .class_mro(&class)
-                .iter()
-                .any(|c| c.as_str() == base_type)
+            return self.class_mro(&class).iter().any(|c| c.as_str() == base_type)
                 || self.class_does_role(&class, base_type);
         }
         // Every enum type object and every enum value does the
@@ -542,17 +537,11 @@ impl Interpreter {
                 ValueView::Nil => true,
                 ValueView::Instance { class_name, .. } => {
                     class_name.as_str() == "Failure"
-                        || self
-                            .class_mro(class_name.as_str())
-                            .iter()
-                            .any(|c| c.as_str() == "Nil")
+                        || self.class_mro(class_name.as_str()).iter().any(|c| c.as_str() == "Nil")
                 }
                 ValueView::Package(name) => {
                     name == "Nil"
-                        || self
-                            .class_mro(name.as_str())
-                            .iter()
-                            .any(|c| c.as_str() == "Nil")
+                        || self.class_mro(name.as_str()).iter().any(|c| c.as_str() == "Nil")
                 }
                 _ => false,
             },
@@ -654,7 +643,8 @@ impl Interpreter {
             (_, ValueView::Sub(data)) => {
                 let func = right.clone();
                 if data.compiled_code.is_none() {
-                    if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()]) {
+                    if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()])
+                    {
                         return result.truthy();
                     }
                     return match self.call_sub_value(func, vec![]) {
@@ -2370,7 +2360,7 @@ impl Interpreter {
                 | ValueView::Seq(..),
                 _,
             ) if let Some(result) =
-                crate::vm::vm_smart_match::positional_numeric_smart_match(left, right) =>
+                    crate::vm::vm_smart_match::positional_numeric_smart_match(left, right) =>
             {
                 result
             }
@@ -2411,17 +2401,14 @@ impl Interpreter {
             }
             // Attribute ~~ Str: `Str.ACCEPTS(Any:D)` compares `.Str`, which is
             // the attribute's name (`.^attributes.first('$!parent')`).
-            (
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                },
-                ValueView::Str(s),
-            ) if crate::value::attribute_class::is_attribute_class(class_name) => attributes
-                .as_map()
-                .get("name")
-                .is_some_and(|name| **s == name.to_string_value()),
+            (ValueView::Instance { class_name, attributes, .. }, ValueView::Str(s))
+                if crate::value::attribute_class::is_attribute_class(class_name) =>
+            {
+                attributes
+                    .as_map()
+                    .get("name")
+                    .is_some_and(|name| **s == name.to_string_value())
+            }
             // Instance ~~ Type or other: identity check (false)
             (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.

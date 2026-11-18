@@ -119,8 +119,7 @@ impl Interpreter {
     // Cost: O(n), n = source bytes (one substring search when absent).
     pub(super) fn inject_awaitable_handle_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !(source.contains("Awaitable::Handle") || source.contains("get-await-handle"))
-            || source.contains("role Awaitable::Handle")
-        {
+            || source.contains("role Awaitable::Handle") {
             return;
         }
         use std::sync::OnceLock;

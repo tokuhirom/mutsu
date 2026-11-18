@@ -74,7 +74,8 @@ static SIGNAL_PIPE: OnceLock<(i32, i32)> = OnceLock::new();
 /// sweep is called from every react loop exit and every `Tap.close`, so the
 /// overwhelmingly common "this program never called `signal()`" case must
 /// not even take the registry lock.
-static EVER_REGISTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static EVER_REGISTERED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 fn get_signal_pipe() -> (i32, i32) {
     *SIGNAL_PIPE.get_or_init(|| {
@@ -202,11 +203,13 @@ fn sweep_locked(
     // A `signal(SIGINT, SIGTERM)` supply has one registration per signal
     // number: it is only orphaned once every one of them is gone.
     orphaned.retain(|sid| {
-        !registry.values().any(|slot| {
-            slot.registrations
-                .iter()
-                .any(|reg| reg.supply_id() == Some(*sid))
-        })
+        !registry
+            .values()
+            .any(|slot| {
+                slot.registrations
+                    .iter()
+                    .any(|reg| reg.supply_id() == Some(*sid))
+            })
     });
 }
 

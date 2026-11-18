@@ -33,9 +33,7 @@ impl Interpreter {
         // (shared with its `EVAL`, `declared_ahead_vars`) and the declaration.
         let unit = self.str_ast_with_paths(&prelude, false)?;
         let ValueView::RakuAst(unit) = unit.view() else {
-            return Err(RuntimeError::new(
-                "RakuAST: the prelude of a declaration is no unit",
-            ));
+            return Err(RuntimeError::new("RakuAST: the prelude of a declaration is no unit"));
         };
         let mut unit = unit.clone();
         // The unit's earlier lexicals, each bound to the container the unit's
@@ -80,10 +78,7 @@ impl Interpreter {
             let qualified = if self.current_package_is_global_name() {
                 None
             } else {
-                Some(crate::qualified::qualified_text(
-                    self.current_package_str(),
-                    &name,
-                ))
+                Some(crate::qualified::qualified_text(self.current_package_str(), &name))
             };
             let found = qualified
                 .into_iter()

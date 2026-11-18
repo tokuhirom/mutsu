@@ -66,14 +66,14 @@ impl Interpreter {
         if matches!(stmt, Stmt::Package { .. }) && matches!(bare.as_str(), "EXPORT" | "EXPORTHOW") {
             return None;
         }
-        let qualified =
-            if crate::qualified::is_global_name(package) || (is_subset && package == "Main") {
-                bare.clone()
-            } else {
-                crate::qualified::qualified(crate::symbol::Symbol::intern(package), name)
-                    .as_str()
-                    .to_string()
-            };
+        let qualified = if crate::qualified::is_global_name(package) || (is_subset && package == "Main")
+        {
+            bare.clone()
+        } else {
+            crate::qualified::qualified(crate::symbol::Symbol::intern(package), name)
+                .as_str()
+                .to_string()
+        };
         let storage = format!("{qualified}\u{0}{decl_id}");
         // A subset's doc entry is keyed by its bare name, a container's by
         // its package-qualified one (`parser::decl_doc::resolve`).
@@ -202,9 +202,7 @@ impl Interpreter {
                 if !method_params.iter().any(|p| p == "%_") {
                     method_params.push("%_".to_string());
                 }
-                let mut method_param_defs = vec![crate::ast::ParamDef {
-                    spans: Default::default(),
-                    trait_meta: Default::default(),
+                let mut method_param_defs = vec![crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
                     implicit_invocant: true,
                     does_target: Default::default(),
                     target: Default::default(),
@@ -240,9 +238,7 @@ impl Interpreter {
                         .cloned(),
                 );
                 if !method_param_defs.iter().any(|p| p.name == "%_") {
-                    method_param_defs.push(crate::ast::ParamDef {
-                        spans: Default::default(),
-                        trait_meta: Default::default(),
+                    method_param_defs.push(crate::ast::ParamDef { spans: Default::default(), trait_meta: Default::default(),
                         implicit_invocant: Default::default(),
                         does_target: Default::default(),
                         target: Default::default(),
@@ -359,8 +355,7 @@ impl Interpreter {
                 decl_id,
                 ..
             } => {
-                if let Some((key, storage)) =
-                    Self::lexical_type_storage(stmt, package, *name, *decl_id)
+                if let Some((key, storage)) = Self::lexical_type_storage(stmt, package, *name, *decl_id)
                 {
                     out.insert(key, Value::package(crate::symbol::Symbol::intern(&storage)));
                 }

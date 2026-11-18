@@ -49,7 +49,9 @@ impl Interpreter {
             // `self`, `?CLASS`, `$_`, `$!`, `$/` and the internal keys are the
             // frame's own state, and an env key by their name would mislead the
             // readers that look those up env-first (ADR-14792).
-            if !sym.with_str(|name| name != "self" && crate::opcode::is_plain_user_var_name(name)) {
+            if !sym.with_str(|name| {
+                name != "self" && crate::opcode::is_plain_user_var_name(name)
+            }) {
                 continue;
             }
             flushed.push((*sym, value.clone()));
@@ -286,34 +288,29 @@ impl Interpreter {
     // unit, p = enclosing packages of the frame.
     pub(crate) fn caller_scope_routine(&self, name: &str, outers_only: bool) -> Option<Value> {
         let name_sym = Symbol::intern(name);
-        let in_scope =
-            |package: Symbol, lexical_package: Option<Symbol>, unit: Symbol| -> Option<Value> {
-                // A role's method runs with the composing class as its package but
-                // is lexically inside the role (and the file the role was written
-                // in), so the role's own enclosing packages count too.
-                crate::qualified::package_ancestors(package)
-                    .chain(
-                        lexical_package
-                            .into_iter()
-                            .flat_map(crate::qualified::package_ancestors),
-                    )
-                    .chain(std::iter::once(Symbol::intern("GLOBAL")))
-                    .find_map(|pkg| {
-                        let def = self
-                            .routines()
-                            .function_def(crate::qualified::qualified(pkg, name_sym))?;
-                        (self.unit_of_declaring_file(def.source_file.as_deref()) == unit)
-                            .then(|| self.sub_value_from_function_def((*def).clone()))
-                    })
-                    .or_else(|| self.unit_import_routine(unit, name))
-                    // A package-less `sub` of a parameterized role's body is moved
-                    // into its unit's private table (`seclude_role_lexical_routine`):
-                    // it is in the role file's lexical scope all the same.
-                    .or_else(|| {
-                        self.unit_private_routine_from(unit, name_sym)
-                            .map(|def| self.sub_value_from_function_def((*def).clone()))
-                    })
-            };
+        let in_scope = |package: Symbol, lexical_package: Option<Symbol>, unit: Symbol| -> Option<Value> {
+            // A role's method runs with the composing class as its package but
+            // is lexically inside the role (and the file the role was written
+            // in), so the role's own enclosing packages count too.
+            crate::qualified::package_ancestors(package)
+                .chain(lexical_package.into_iter().flat_map(crate::qualified::package_ancestors))
+                .chain(std::iter::once(Symbol::intern("GLOBAL")))
+                .find_map(|pkg| {
+                    let def = self
+                        .routines()
+                        .function_def(crate::qualified::qualified(pkg, name_sym))?;
+                    (self.unit_of_declaring_file(def.source_file.as_deref()) == unit)
+                        .then(|| self.sub_value_from_function_def((*def).clone()))
+                })
+                .or_else(|| self.unit_import_routine(unit, name))
+                // A package-less `sub` of a parameterized role's body is moved
+                // into its unit's private table (`seclude_role_lexical_routine`):
+                // it is in the role file's lexical scope all the same.
+                .or_else(|| {
+                    self.unit_private_routine_from(unit, name_sym)
+                        .map(|def| self.sub_value_from_function_def((*def).clone()))
+                })
+        };
         // The innermost routine frame is the one reading `CALLERS::`.
         // Only the nearest calling routine's scope counts: a routine two calls
         // up is not the caller's lexical scope (a module routine that imported
@@ -321,11 +318,7 @@ impl Interpreter {
         // no calling routine the caller is the program's mainline.
         let callers = self.routine_stack.len().saturating_sub(1);
         match self.routine_stack[..callers].last() {
-            Some(frame) => in_scope(
-                frame.package,
-                frame.lexical_package,
-                self.unit_of_source_sym(frame.def_file),
-            ),
+            Some(frame) => in_scope(frame.package, frame.lexical_package, self.unit_of_source_sym(frame.def_file)),
             None => (!outers_only)
                 .then(|| in_scope(Symbol::intern("GLOBAL"), None, crate::runtime::main_unit()))
                 .flatten(),

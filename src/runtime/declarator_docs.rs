@@ -48,7 +48,11 @@ impl DeclaratorDocs {
         }
     }
 
-    fn set_loaded_unit(&mut self, unit: Symbol, docs: std::sync::Arc<HashMap<String, DocComment>>) {
+    fn set_loaded_unit(
+        &mut self,
+        unit: Symbol,
+        docs: std::sync::Arc<HashMap<String, DocComment>>,
+    ) {
         match self.loaded_units.iter_mut().find(|(u, _)| *u == unit) {
             Some(slot) => slot.1 = docs,
             None => self.loaded_units.push((unit, docs)),

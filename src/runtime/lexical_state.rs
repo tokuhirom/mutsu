@@ -153,8 +153,9 @@ pub(crate) struct LexicalState {
     /// (see t/package-lookup.t). `package_scope_lexical`'s qualified branch skips
     /// any (class, name) recorded here.
     /// World state like `package_lexicals` (ADR-17216 slice 4a).
-    pub(crate) class_body_static_names:
-        crate::runtime::world_cell::WorldCell<HashMap<String, std::collections::HashSet<String>>>,
+    pub(crate) class_body_static_names: crate::runtime::world_cell::WorldCell<
+        HashMap<String, std::collections::HashSet<String>>,
+    >,
     /// The declared scalar type of each typed class-body `my` static
     /// (`class C { my Int $x; ... }`), keyed by class then the static's
     /// `package_lexicals` name. A by-name store from one of the class's

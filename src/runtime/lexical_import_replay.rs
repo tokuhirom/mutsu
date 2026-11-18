@@ -153,11 +153,7 @@ impl Interpreter {
         }
     }
 
-    fn replayable_effects(
-        &self,
-        id: Symbol,
-        probe: &ImportEffectProbe,
-    ) -> Option<LexicalImportReplay> {
+    fn replayable_effects(&self, id: Symbol, probe: &ImportEffectProbe) -> Option<LexicalImportReplay> {
         // An `EVAL`'s set: each `EVAL` is a compilation of its own. A set
         // holding a `sub EXPORT` hook's values: the hook runs again, and its
         // run notes what the block hides from its callees.
@@ -223,11 +219,7 @@ impl Interpreter {
         }
         let top = self.module.import_scope_stack.last()?;
         let mut env_keys = Vec::new();
-        for (key, value) in self
-            .env
-            .import_layer_entries(top.import_layer)
-            .unwrap_or_default()
-        {
+        for (key, value) in self.env.import_layer_entries(top.import_layer).unwrap_or_default() {
             if probe.env_keys_before.contains(&key) {
                 continue;
             }
@@ -321,21 +313,15 @@ impl Interpreter {
             }
             self.invalidate_fn_resolution_changing_keys(keys);
         }
-        let layer = self
-            .module
-            .import_scope_stack
-            .last()
-            .map_or(0, |top| top.import_layer);
+        let layer = self.module.import_scope_stack.last().map_or(0, |top| top.import_layer);
         if let Some(top) = self.module.import_scope_stack.last_mut() {
             top.own_routine_imports
                 .extend(replay.own_routine_imports.iter().copied());
             top.merged_modules.extend(replay.merged.iter().copied());
         }
         for module in &replay.merged {
-            self.env.insert_sym(
-                crate::meta_ns::MetaNs::ModuleMerge.key(*module),
-                Value::TRUE,
-            );
+            self.env
+                .insert_sym(crate::meta_ns::MetaNs::ModuleMerge.key(*module), Value::TRUE);
         }
         for (key, value, _) in &replay.env_keys {
             if layer == 0 || !self.env.insert_import_sym(layer, *key, value.clone()) {

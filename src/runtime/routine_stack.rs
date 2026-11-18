@@ -102,10 +102,7 @@ impl RoutineStack {
     }
 
     pub(crate) fn push(&mut self, mut frame: RoutineFrame) {
-        debug_assert_eq!(
-            frame.fixtures, 0,
-            "a frame with a record goes through push_with_fixtures"
-        );
+        debug_assert_eq!(frame.fixtures, 0, "a frame with a record goes through push_with_fixtures");
         frame.fixtures_floor = self.fixtures.len() as u32;
         if frame.lexical_package.is_some() {
             self.lexical_package_frames += 1;
@@ -284,10 +281,7 @@ impl RoutineStack {
     pub(crate) fn replace_top(&mut self, frame: RoutineFrame) {
         if let Some(top) = self.frames.last_mut() {
             debug_assert_eq!(top.fixtures, frame.fixtures);
-            match (
-                top.lexical_package.is_some(),
-                frame.lexical_package.is_some(),
-            ) {
+            match (top.lexical_package.is_some(), frame.lexical_package.is_some()) {
                 (true, false) => self.lexical_package_frames -= 1,
                 (false, true) => self.lexical_package_frames += 1,
                 _ => {}
@@ -582,10 +576,7 @@ mod tests {
         assert_eq!(class_of(&stack), "A");
         // replace_top keeps the record of the frame it replaces.
         let top = *stack.last().unwrap();
-        stack.replace_top(RoutineFrame {
-            callable_id: 7,
-            ..top
-        });
+        stack.replace_top(RoutineFrame { callable_id: 7, ..top });
         assert_eq!(stack.last().unwrap().callable_id, 7);
         assert_eq!(class_of(&stack), "A");
         // truncate drops the records of every dropped frame.

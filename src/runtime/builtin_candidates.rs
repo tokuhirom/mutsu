@@ -8,9 +8,7 @@
 //! `.line`.
 
 use super::*;
-use crate::builtins::rakudo_candidates::{
-    CoreCandidate, core_method_candidates, core_sub_candidates,
-};
+use crate::builtins::rakudo_candidates::{CoreCandidate, core_method_candidates, core_sub_candidates};
 
 impl Interpreter {
     /// The candidate code objects of the built-in routine `package`/`name`, or

@@ -217,29 +217,11 @@ impl Interpreter {
     /// whole parameter list.
     pub(crate) fn scalar_container_element_constraint(&self, constraint: &str) -> Option<String> {
         const CONTAINER_TYPES: &[&str] = &[
-            "Hash",
-            "Array",
-            "Map",
-            "List",
-            "Bag",
-            "Set",
-            "Mix",
-            "BagHash",
-            "SetHash",
-            "MixHash",
-            "Seq",
-            "array",
-            "Buf",
-            "Blob",
+            "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",
+            "Seq", "array", "Buf", "Blob",
             // The roles the containers do: a `$p` typed `Associative` / `Positional`
             // holds the whole container, whose elements these constrain nothing.
-            "Associative",
-            "Positional",
-            "Iterable",
-            "QuantHash",
-            "Baggy",
-            "Setty",
-            "Mixy",
+            "Associative", "Positional", "Iterable", "QuantHash", "Baggy", "Setty", "Mixy",
         ];
         let base = constraint.split('[').next().unwrap_or(constraint);
         // `Associative:D` / `Hash:U` are the same container type.
@@ -428,8 +410,7 @@ impl Interpreter {
     /// this returns true (mirrors the `has_class_scoped_subs` gate).
     pub(crate) fn class_has_package_lexicals(&self, class_name: &str) -> bool {
         self.lexicals
-            .class_body_static_names
-            .read()
+            .class_body_static_names.read()
             .get(class_name)
             .is_some_and(|m| !m.is_empty())
     }
@@ -461,10 +442,9 @@ impl Interpreter {
         }
         // A class nested in another sees the enclosing class bodies' `my`
         // statics too (outermost first, so an inner declaration shadows).
-        let enclosing: Vec<Symbol> =
-            crate::qualified::package_ancestors(Symbol::intern(class_name))
-                .skip(1)
-                .collect();
+        let enclosing: Vec<Symbol> = crate::qualified::package_ancestors(Symbol::intern(class_name))
+            .skip(1)
+            .collect();
         for outer in enclosing.into_iter().rev() {
             self.inject_own_class_body_statics(outer.as_str());
         }
@@ -500,8 +480,7 @@ impl Interpreter {
     // Cost: O(t), t = typed statics of `class_name`.
     pub(crate) fn class_body_static_meta_lanes(&self, class_name: &str) -> Vec<(String, Value)> {
         self.lexicals
-            .class_body_static_types
-            .read()
+            .class_body_static_types.read()
             .get(class_name)
             .map(|types| {
                 types
@@ -698,9 +677,7 @@ impl Interpreter {
         use std::sync::atomic::Ordering;
         let world = self.types.registry.generation();
         if world != self.types.registry_world_seen.load(Ordering::Relaxed) {
-            self.types
-                .registry_world_seen
-                .store(world, Ordering::Relaxed);
+            self.types.registry_world_seen.store(world, Ordering::Relaxed);
             self.types.registry_write_gen.store(
                 crate::runtime::registry_gen::next_generation(),
                 Ordering::Relaxed,

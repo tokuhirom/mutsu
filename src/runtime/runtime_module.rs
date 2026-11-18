@@ -158,10 +158,7 @@ impl Interpreter {
     // it).
     pub(crate) fn restore_importer_type_aliases(
         &mut self,
-        (importer, before): (
-            String,
-            std::sync::Arc<crate::runtime::package_keyed::PackageKeyed<String>>,
-        ),
+        (importer, before): (String, std::sync::Arc<crate::runtime::package_keyed::PackageKeyed<String>>),
     ) {
         if std::sync::Arc::ptr_eq(&before, &self.types.package_type_aliases) {
             return;
@@ -261,9 +258,7 @@ impl Interpreter {
         if let Some(top) = self.module.import_scope_stack.last()
             && top.scope_classes
             && top.import_layer != 0
-            && self
-                .env
-                .insert_import_sym(top.import_layer, sym, value.clone())
+            && self.env.insert_import_sym(top.import_layer, sym, value.clone())
         {
             return;
         }
@@ -277,8 +272,7 @@ impl Interpreter {
         self.note_lexical_import_routine(package, name);
         let alias = Symbol::intern(crate::qualified::qualified_text(package, name).as_str());
         let importer = self.executing_unit_sym_for_module_load();
-        if let Some(top) = Self::importing_scope_mut(&mut self.module.import_scope_stack, importer)
-        {
+        if let Some(top) = Self::importing_scope_mut(&mut self.module.import_scope_stack, importer) {
             top.own_routine_imports.insert(alias);
         }
         std::sync::Arc::make_mut(&mut self.module.imported_routine_aliases).insert(alias);
@@ -463,8 +457,7 @@ impl Interpreter {
     // Cost: O(1) amortized.
     pub(crate) fn log_import_write(&mut self, write: crate::runtime::ImportWrite) {
         let importer = self.executing_unit_sym_for_module_load();
-        if let Some(scope) =
-            Self::importing_scope_mut(&mut self.module.import_scope_stack, importer)
+        if let Some(scope) = Self::importing_scope_mut(&mut self.module.import_scope_stack, importer)
         {
             scope.import_writes.push(write);
         }

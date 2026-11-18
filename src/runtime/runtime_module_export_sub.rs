@@ -477,9 +477,8 @@ impl Interpreter {
         // to the block, so it is bound now, past the scope's rollback, as the
         // BEGIN-time preload binds it (`install_unit_generated_lexical`).
         if self.in_preload_scope() {
-            let (unit, block): (Vec<_>, Vec<_>) = generated
-                .into_iter()
-                .partition(|(into_block, _, _)| !*into_block);
+            let (unit, block): (Vec<_>, Vec<_>) =
+                generated.into_iter().partition(|(into_block, _, _)| !*into_block);
             for (_, name, value) in unit {
                 self.install_unit_generated_lexical(name, value, None);
             }
@@ -523,9 +522,7 @@ impl Interpreter {
     fn export_map_binds(val: &Value, name: &str) -> bool {
         match val.view() {
             ValueView::Hash(gc) => gc.map.contains_key(name),
-            ValueView::Array(items, ..) => {
-                items.iter().any(|item| Self::export_map_binds(item, name))
-            }
+            ValueView::Array(items, ..) => items.iter().any(|item| Self::export_map_binds(item, name)),
             ValueView::Instance {
                 class_name,
                 attributes,
@@ -624,12 +621,7 @@ impl Interpreter {
     /// unit's declaration belongs to the first: it is bound in the unit's env
     /// there, past the preload scope's rollback, so it outlives the block.
     // Cost: as `install_export_symbol`.
-    fn install_unit_generated_lexical(
-        &mut self,
-        key: String,
-        value: Value,
-        importer: Option<&str>,
-    ) {
+    fn install_unit_generated_lexical(&mut self, key: String, value: Value, importer: Option<&str>) {
         if importer.is_some() || !self.in_preload_scope() {
             self.install_export_symbol(key, value, importer);
             return;
@@ -651,8 +643,7 @@ impl Interpreter {
                     .export_term_override_names
                     .insert(Symbol::intern(&key));
                 let term_key = crate::runtime::term_names::term_key(&key);
-                self.env
-                    .insert_sym(Symbol::intern(&term_key), value.clone());
+                self.env.insert_sym(Symbol::intern(&term_key), value.clone());
                 self.env.insert_sym(Symbol::intern(&key), value);
             }
         }
@@ -757,9 +748,11 @@ impl Interpreter {
             // Under its term key as well: a routine reads the name through it.
             let term_key = crate::runtime::term_names::term_key(&key);
             for k in [term_key, key.clone()] {
-                self.module
-                    .importer_export_terms
-                    .push((importer.to_string(), k, value.clone()));
+                self.module.importer_export_terms.push((
+                    importer.to_string(),
+                    k,
+                    value.clone(),
+                ));
             }
         }
         // A hook that hands out the candidates of a built-in operator adds to
@@ -914,15 +907,12 @@ impl Interpreter {
         for key in [&env_key, &normalized_env_key] {
             if sigiled && !self.module.module_load_stack.is_empty() {
                 let previous = self.env.get(key).cloned();
-                if !self
-                    .module
-                    .module_imported_names
-                    .iter()
-                    .any(|(k, ..)| k == key)
-                {
-                    self.module
-                        .module_imported_names
-                        .push((key.clone(), value.clone(), previous));
+                if !self.module.module_imported_names.iter().any(|(k, ..)| k == key) {
+                    self.module.module_imported_names.push((
+                        key.clone(),
+                        value.clone(),
+                        previous,
+                    ));
                 }
             }
             if key == &normalized_env_key && normalized_env_key == env_key {

@@ -51,10 +51,12 @@ impl Interpreter {
     /// what `clear_match_state` does.)
     pub(in crate::runtime) fn clear_multi_match_state(&mut self) {
         self.clear_match_state();
-        self.env.assign_match_var(Value::array_with_kind(
-            crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-            crate::value::ArrayKind::List,
-        ));
+        self.env.assign_match_var(
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::value::ArrayKind::List,
+            ),
+        );
     }
 
     pub(in crate::runtime) fn apply_single_regex_captures(&mut self, captures: &RegexCaptures) {
@@ -533,7 +535,10 @@ impl Interpreter {
     /// CURRENTLY registered under the short name. `None` for any other value
     /// (or an unresolvable name), so a caller keeps the value it was given.
     // Cost: O(1) lookups plus the O(p) clone of the pattern, p = pattern length.
-    pub(in crate::runtime) fn named_regex_routine_pattern(&self, value: &Value) -> Option<String> {
+    pub(in crate::runtime) fn named_regex_routine_pattern(
+        &self,
+        value: &Value,
+    ) -> Option<String> {
         let ValueView::Routine {
             is_regex: true,
             name,

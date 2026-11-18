@@ -33,6 +33,7 @@ pub(crate) use crate::slang_link::{
 };
 use crate::value::ValueView;
 
+
 /// Classes of the compile-time `$*LANG` object graph. The language handle is
 /// named `Raku::...`, as rakudo's own `$*LANG` is (`Raku::Grammar`): Slangify
 /// keys its selection of the RakuAST roles on `$LANG.^name.starts-with('Raku::')`,
@@ -75,6 +76,7 @@ pub(crate) enum SlangRoleKind {
     /// methods are helpers the actions call themselves (ADR-13220).
     Actions,
 }
+
 
 /// The metaclass the language builds a declaration written with `declarator`
 /// with, as Rakudo's `EXPORTHOW` stash lists them.
@@ -121,11 +123,7 @@ pub(crate) fn grammar_handle_activations(value: &Value) -> Vec<crate::parser::Sl
     if class_name != GRAMMAR_HANDLE_CLASS {
         return Vec::new();
     }
-    match attributes
-        .as_map()
-        .get(LANG_ACTIVATIONS_ATTR)
-        .map(Value::view)
-    {
+    match attributes.as_map().get(LANG_ACTIVATIONS_ATTR).map(Value::view) {
         Some(ValueView::Array(items, ..)) => crate::parser::decode_slang_activations(&items),
         _ => Vec::new(),
     }
@@ -150,6 +148,7 @@ fn lang_handle_instance(class: &str, kind: &str, activations: Option<&Value>) ->
         _ => handle,
     }
 }
+
 
 impl SlangUseArg {
     pub(crate) fn into_value(self, interp: &mut Interpreter) -> Result<Value, String> {
@@ -208,9 +207,10 @@ pub(crate) fn run_slang_activation(
                 // never runs here. Naming that importer marks what an `EXPORT`
                 // hook hands out (`'&make' => ...`, EEL) as its import alone, so
                 // the slang's own modules, which run here, keep the core routine.
-                interp
-                    .env
-                    .insert("?FILE".to_string(), Value::str_from(SLANG_IMPORTER_FILE));
+                interp.env.insert(
+                    "?FILE".to_string(),
+                    Value::str_from(SLANG_IMPORTER_FILE),
+                );
                 // The `use` statement's literal arguments reach the module's
                 // `sub EXPORT`, as they do at run time: an EXPORT that declines
                 // to slang when given one (`use L10N::BG 'no-slangification'`)
@@ -255,11 +255,13 @@ pub(crate) fn run_slang_activation(
                 })
             })();
             let hooks = outcome.as_ref().is_ok_and(|a| {
-                a.rules.iter().any(|r| {
-                    crate::parser::slang_hook_rule(&r.name).is_some()
-                        || crate::parser::slang_action_rule(&r.name)
-                        || crate::parser::slang_wrapper_rule(&r.name)
-                })
+                a.rules
+                    .iter()
+                    .any(|r| {
+                        crate::parser::slang_hook_rule(&r.name).is_some()
+                            || crate::parser::slang_action_rule(&r.name)
+                            || crate::parser::slang_wrapper_rule(&r.name)
+                    })
             });
             if !hooks {
                 let _ = result_tx.send(outcome);
@@ -288,8 +290,9 @@ impl Interpreter {
     /// `EXPORT` hook's `LEXICAL::<EXPORTHOW> := ...`), if any.
     // Cost: O(k), k = entries of the stash.
     pub(crate) fn exporthow_stash_entry(&self, directive: &str, keyword: &str) -> Option<Value> {
-        let stash = self
-            .package_stash_value(crate::qualified::qualified_text("EXPORTHOW", directive).as_str());
+        let stash = self.package_stash_value(
+            crate::qualified::qualified_text("EXPORTHOW", directive).as_str(),
+        );
         let ValueView::Instance { attributes, .. } = stash.view() else {
             return None;
         };
@@ -307,8 +310,9 @@ impl Interpreter {
     /// modules published (a stash key keeps the `$` of its scalar binding).
     // Cost: O(k), k = entries of the stash.
     pub(super) fn exporthow_stash_keywords(&self, directive: &str) -> Vec<String> {
-        let stash = self
-            .package_stash_value(crate::qualified::qualified_text("EXPORTHOW", directive).as_str());
+        let stash = self.package_stash_value(
+            crate::qualified::qualified_text("EXPORTHOW", directive).as_str(),
+        );
         let ValueView::Instance { attributes, .. } = stash.view() else {
             return Vec::new();
         };
@@ -361,10 +365,7 @@ impl Interpreter {
             // `$*LANG.refine_slang($name, $grammar-role, $actions-role?)`: the
             // roles themselves, rather than the handles `.^mixin` builds.
             (COMP_LANG_CLASS, "refine_slang") => {
-                let name = args
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| Value::str("MAIN".to_string()));
+                let name = args.first().cloned().unwrap_or_else(|| Value::str("MAIN".to_string()));
                 let handle = |class: &str, role: Option<&Value>| {
                     handle_instance(class, "MAIN", role.cloned().into_iter().collect())
                 };
@@ -384,11 +385,10 @@ impl Interpreter {
                 .map_or(Value::NIL, |how| {
                     Value::package(crate::symbol::Symbol::intern(how))
                 }))),
-            (COMP_LANG_CLASS, "know_how") => {
-                Some(Ok(Value::truth(args.first().is_some_and(|name| {
-                    lang_how_type(&name.to_string_value()).is_some()
-                }))))
-            }
+            (COMP_LANG_CLASS, "know_how") => Some(Ok(Value::truth(
+                args.first()
+                    .is_some_and(|name| lang_how_type(&name.to_string_value()).is_some()),
+            ))),
             // `$*LANG.actions` is the host actions object; mutsu never runs a
             // slang's actions methods (they build QAST), so the handle only
             // has to accept `.^mixin`.
@@ -497,12 +497,8 @@ impl Interpreter {
             let Some(handle) = handle else { continue };
             for role in Self::slang_handle_roles(handle) {
                 match kind {
-                    SlangRoleKind::Grammar => {
-                        self.regex_state.slang_grammar_roles.push(role.clone())
-                    }
-                    SlangRoleKind::Actions => {
-                        self.regex_state.slang_action_roles.push(role.clone())
-                    }
+                    SlangRoleKind::Grammar => self.regex_state.slang_grammar_roles.push(role.clone()),
+                    SlangRoleKind::Actions => self.regex_state.slang_action_roles.push(role.clone()),
                 }
                 for over in self.slang_role_rule_names(&role, kind)? {
                     match kind {

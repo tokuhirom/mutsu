@@ -64,12 +64,7 @@ impl Interpreter {
     /// name still means its own type here.
     // Cost: O(1) expected on a hit (one memo probe, one capture lookup and one
     // scope lookup of the name); a miss is the full check.
-    fn scalar_type_object_accepts(
-        &mut self,
-        left: &Value,
-        kind: Symbol,
-        type_name: Symbol,
-    ) -> bool {
+    fn scalar_type_object_accepts(&mut self, left: &Value, kind: Symbol, type_name: Symbol) -> bool {
         let ty = type_name.as_str();
         let base = ty.strip_suffix(":D").unwrap_or(ty);
         if !Self::scalar_memo_name_shape(base) {
@@ -172,11 +167,7 @@ impl Interpreter {
         if ty.is_empty() || ty.ends_with(":D") || ty.ends_with(":U") || ty.ends_with(":_") {
             return None;
         }
-        if !self
-            .types
-            .user_declared_classes
-            .contains(class_name.as_str())
-        {
+        if !self.types.user_declared_classes.contains(class_name.as_str()) {
             return None;
         }
         {

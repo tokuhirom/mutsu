@@ -360,8 +360,9 @@ impl Interpreter {
             // second writer is a use after free. Exclude them on the node, the
             // key the mutating-method funnel (`methods_call_dispatch.rs`) and the
             // leaf structure reads take for the same uncelled container (ADR-0068).
-            let _structure =
-                crate::value::container_lock::ContainerStructGuard::acquire_for(None, slot);
+            let _structure = crate::value::container_lock::ContainerStructGuard::acquire_for(
+                None, slot,
+            );
             let result = slot
                 .with_array_mut(|arc_items, kind| {
                     let items = crate::value::gc_data_mut(arc_items);

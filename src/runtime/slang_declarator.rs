@@ -354,14 +354,8 @@ mod keyword_tests {
 
     #[test]
     fn both_spellings_of_the_category_name_a_declarator_keyword() {
-        assert_eq!(
-            declarator_keyword("package_declarator:sym<widget>"),
-            Some("widget")
-        );
-        assert_eq!(
-            declarator_keyword("package-declarator:sym<event>"),
-            Some("event")
-        );
+        assert_eq!(declarator_keyword("package_declarator:sym<widget>"), Some("widget"));
+        assert_eq!(declarator_keyword("package-declarator:sym<event>"), Some("event"));
         assert_eq!(declarator_keyword("package-declarator:sym<>"), None);
         assert_eq!(declarator_keyword("routine-declarator:sym<pattern>"), None);
     }
