@@ -70,16 +70,20 @@ impl Interpreter {
         }
         let arity = arity as usize;
         let start = self.stack.len().checked_sub(arity)?;
-        if self.stack[start..].iter().any(|arg| {
+        // The arguments as the general path hands them to a name nothing
+        // declares; a variable argument arrives `VarRef`-tagged, so the
+        // Junction and Proxy checks look at the unwrapped value.
+        let args: Vec<Value> = self.stack[start..]
+            .iter()
+            .cloned()
+            .map(Self::unwrap_var_ref_arg)
+            .collect();
+        if args.iter().any(|arg| {
             arg.is_proxy_value() || matches!(arg.view(), ValueView::Junction { .. })
         }) {
             return None;
         }
-        let args: Vec<Value> = self
-            .stack
-            .drain(start..)
-            .map(Self::unwrap_var_ref_arg)
-            .collect();
+        self.stack.truncate(start);
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         self.set_pending_call_arg_sources(None);
