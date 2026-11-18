@@ -406,6 +406,22 @@ impl Clone for MixinOverrides {
     }
 }
 
+impl MixinOverrides {
+    /// The representation-level copy `nqp::clone` makes: a new attribute cell
+    /// whose slots hold the same values (containers included) as this one, so
+    /// a later bind on either side is its own while an assignment through a
+    /// shared container shows in both, as MoarVM's shallow object copy does.
+    // Cost: O(a), a = attribute slots.
+    pub(crate) fn repr_clone(&self) -> Self {
+        Self {
+            overrides: self.overrides.clone(),
+            attributes: Gc::new((*self.attributes).clone()),
+            type_name: RwLock::new(self.type_name()),
+            name_suffix: NameSuffixMemo::default(),
+        }
+    }
+}
+
 /// Role mixin cloning is the implementation behind `.clone` when the mixed-in
 /// role does not provide a separate clone method.  Its role attributes must not
 /// retain nested Array/Hash backing nodes from the original object: a common

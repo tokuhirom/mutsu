@@ -217,6 +217,14 @@ impl Interpreter {
                     }
                     return Some(r);
                 }
+                // A code object is a distinct copy that shares the original's
+                // body, `state` scope and `FIRST` flag (rakudo's clone shares
+                // `$!do`); one with roles mixed in also gets its own attribute
+                // slots, so a `$!phasers` / `$!do` bind on the copy stays the
+                // copy's (ParaSeq's `BlockMapper` rewires a copy per batch).
+                if let Some(copy) = Self::nqp_clone_code(&v) {
+                    return Some(Ok(copy));
+                }
                 // A raw VMArray/VMHash copies into a fresh raw object of the
                 // same kind (ADR-12666).
                 if v.is_vm_collection() || v.is_iteration_buffer_view() {
@@ -258,5 +266,30 @@ impl Interpreter {
 
             _ => return self.call_nqp_op_list(op, args),
         })
+    }
+}
+
+impl Interpreter {
+    /// `nqp::clone` of a code object: [`repr_clone`] of the code, and for a
+    /// code object with roles mixed in, a mixin over that copy with its own
+    /// attribute slots (`MixinOverrides::repr_clone`). `None` when `v` is no
+    /// code object.
+    ///
+    /// [`repr_clone`]: crate::builtins::method_table::code::repr_clone
+    // Cost: O(a), a = attribute slots of the mixin (O(1) for plain code).
+    fn nqp_clone_code(v: &Value) -> Option<Value> {
+        match v.view() {
+            ValueView::Sub(data) => Some(crate::builtins::method_table::code::repr_clone(&data)),
+            ValueView::Mixin(inner, mixins) => {
+                let ValueView::Sub(data) = inner.view() else {
+                    return None;
+                };
+                Some(Value::mixin_with_state(
+                    crate::builtins::method_table::code::repr_clone(&data),
+                    mixins.repr_clone(),
+                ))
+            }
+            _ => None,
+        }
     }
 }
