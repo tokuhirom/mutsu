@@ -2239,6 +2239,26 @@ fn construct_values(
             }],
         }))));
     }
+    // `RakuAST::Type::Simple.from-identifier("A")` /
+    // `.from-identifier-parts("A", "B")`: the type named by the `Name` those
+    // constructors build (rakudo's `RakuAST::Lookup` helpers, used by
+    // CSS::Specification::Compiler's `my RakuAST::Type::Simple $type .=
+    // from-identifier-parts(|@module)`).
+    if class_name == "RakuAST::Type::Simple"
+        && matches!(method, "from-identifier" | "from-identifier-parts")
+    {
+        let Some(name) = construct_values(names, "RakuAST::Name", method, args)? else {
+            return Ok(None);
+        };
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TypeSimple,
+            fields: vec![RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(name),
+            }],
+        }))));
+    }
     if class_name == "RakuAST::Pragma"
         && let Some(answer) = pragma_statics::call(method, args)
     {
