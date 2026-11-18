@@ -2,15 +2,15 @@
 //!
 //! The registry is world state shared by every thread, published by
 //! read-copy-update: a write copies what another thread's snapshot still
-//! shares. A [`CowTable`](super::registry_cow_table::CowTable) copies the
+//! shares. A [`CowTable`](crate::runtime::registry_cow_table::CowTable) copies the
 //! whole table on such a write, which is `O(table)` per declaration. The type
 //! tables of a large program (Red: thousands of classes and roles) are
 //! written on every query that declares a type (a `my role`, a `class ::`, a
 //! `but` mixin, a MOP `new_type`), so with several threads declaring at once
 //! every write paid for a copy of the whole class table (#17217).
 //!
-//! A [`ShardedMap`] keeps the same `HashMap` interface but splits the entries
-//! over [`SHARDS`] shards by key hash, each behind its own `Arc`. Cloning the
+//! A [`ShardedMap`](crate::runtime::registry_sharded_map::ShardedMap) keeps the same `HashMap` interface but splits the entries
+//! over [`SHARDS`](crate::runtime::registry_sharded_map::SHARDS) shards by key hash, each behind its own `Arc`. Cloning the
 //! map is `SHARDS` reference-count increments; a write copies the one shard it
 //! touches (when shared), so a write costs `O(n / SHARDS)` instead of `O(n)`.
 //! A read is one hash plus the shard's own lookup.
