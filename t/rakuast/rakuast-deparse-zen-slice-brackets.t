@@ -1,7 +1,7 @@
 use Test;
 use experimental :rakuast;
 
-plan 10;
+plan 12;
 
 # A zen slice keeps the brackets it was written with (#14845).
 sub dep($src) { $src.AST.DEPARSE.lines.tail.trim }
@@ -19,3 +19,7 @@ is $ast.find-nodes(RakuAST::Postcircumfix::HashIndex).elems, 0, 'and no HashInde
 
 is EVAL('my @a = 1,2; @a<>.elems'.AST), 2, 'EVAL of <> is still the zen slice, not a lookup of the key ""';
 is EVAL('my @a = 3,4; @a{}.raku'.AST), '[3, 4]', 'EVAL of {} is the zen slice';
+
+# The brackets do not change what a zen slice does: `*{}` still curries.
+is (*{}).^name, 'WhateverCode', '*{} is a WhateverCode';
+is EVAL('(*<>)(<a b>)'.AST).raku, '("a", "b")', 'EVAL of a curried zen slice';
