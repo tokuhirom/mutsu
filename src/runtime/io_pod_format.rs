@@ -25,6 +25,18 @@ impl Interpreter {
         merged
     }
 
+    /// Whether `text` may hold a formatting code: an uppercase letter right
+    /// before an opening `<` or `«` delimiter. A cheap pre-check before
+    /// [`Self::parse_formatting_codes`].
+    // Cost: O(n), n = bytes of `text`.
+    pub(super) fn may_hold_formatting_code(text: &str) -> bool {
+        let bytes = text.as_bytes();
+        bytes.iter().enumerate().any(|(i, b)| {
+            b.is_ascii_uppercase()
+                && (bytes.get(i + 1) == Some(&b'<') || text[i + 1..].starts_with('«'))
+        })
+    }
+
     /// Inner recursive parser for formatting codes.
     fn parse_formatting_codes_inner(text: &str) -> Vec<Value> {
         let mut result = Vec::new();
@@ -34,18 +46,34 @@ impl Interpreter {
         {
             let after_letter = &rest[pos + 1..];
             let letter = &rest[pos..pos + 1];
-            // Check for double-angle `<<` delimiter
-            if let Some(stripped) = after_letter.strip_prefix("<<")
-                && let Some(close) = stripped.find(">>")
+            // `«…»` delimiters: the contents run to the first `»`, so a bare
+            // `<`/`>` inside them is text (`C«( )»`, `B«a<b>c»`). Nested
+            // codes are still parsed (`I«a B<x> c»`).
+            if let Some(inside) = after_letter.strip_prefix('«')
+                && let Some(close) = inside.find('»')
             {
                 let before = &rest[..pos];
                 if !before.is_empty() {
                     result.push(Value::str(before.to_string()));
                 }
-                let inner = &stripped[..close];
-                result.push(Self::make_formatting_code(letter, inner));
-                rest = &stripped[close + 2..];
+                result.push(Self::make_formatting_code(letter, &inside[..close]));
+                rest = &inside[close + '»'.len_utf8()..];
                 continue;
+            }
+            // A multi-angle delimiter (`<<`, `<<<`, ...) closes at the first
+            // run of as many `>`: `C<<< a >> b >>>` holds `a >> b`.
+            let angles = after_letter.bytes().take_while(|&b| b == b'<').count();
+            if angles >= 2 {
+                let inside = &after_letter[angles..];
+                if let Some(close) = inside.find(&">".repeat(angles)) {
+                    let before = &rest[..pos];
+                    if !before.is_empty() {
+                        result.push(Value::str(before.to_string()));
+                    }
+                    result.push(Self::make_formatting_code(letter, &inside[..close]));
+                    rest = &inside[close + angles..];
+                    continue;
+                }
             }
             // Check for single-angle `<` delimiter
             if let Some(inside) = after_letter.strip_prefix('<')
