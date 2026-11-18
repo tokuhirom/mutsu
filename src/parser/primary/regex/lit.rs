@@ -1422,10 +1422,13 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             };
             return Ok((
                 rest,
-                Expr::CallOn {
-                    target: Box::new(block),
-                    args,
-                },
+                Expr::spelled(
+                    Expr::CallOn {
+                        target: Box::new(block),
+                        args,
+                    },
+                    || crate::ast::spelled::Spelling::TopicPostfix,
+                ),
             ));
         }
         let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
@@ -1465,10 +1468,13 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
         };
         return Ok((
             rest,
-            Expr::CallOn {
-                target: Box::new(Expr::CodeVar(name.to_string())),
-                args,
-            },
+            Expr::spelled(
+                Expr::CallOn {
+                    target: Box::new(Expr::CodeVar(name.to_string())),
+                    args,
+                },
+                || crate::ast::spelled::Spelling::TopicPostfix,
+            ),
         ));
     }
     // Quoted method name on the topic: ."$method"() / .'method'() — equivalent to

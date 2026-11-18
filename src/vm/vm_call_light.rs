@@ -1604,6 +1604,12 @@ impl Interpreter {
     // m = its class's MRO (`type_matches_value`).
     #[inline]
     pub(crate) fn light_arg_is_any(&mut self, val: &Value) -> bool {
+        // A lazy Match (a grammar action's `$/`) is an `Any`, as the type
+        // checker's own lazy-Match fast path answers; viewing it here would
+        // materialize its attribute map for nothing.
+        if val.is_lazy_match_value() {
+            return true;
+        }
         match val.view() {
             ValueView::Package(_) | ValueView::Instance { .. } | ValueView::Mixin(..) => {
                 self.type_matches_value("Any", val)

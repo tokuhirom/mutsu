@@ -105,6 +105,15 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &["RakuAST::Postfix", "RakuAST::Postfixish", "RakuAST::Node"],
     ),
     (
+        "RakuAST::Postfix::Power",
+        &[
+            "RakuAST::Postfix::Power",
+            "RakuAST::Postfix::Literal",
+            "RakuAST::Postfixish",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Pragma",
         &["RakuAST::Pragma", "RakuAST::Statement", "RakuAST::Node"],
     ),
@@ -140,17 +149,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::QuotedString",
         &[
             "RakuAST::QuotedString",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::RatLiteral",
-        &[
-            "RakuAST::RatLiteral",
-            "RakuAST::Literal",
             "RakuAST::Term",
             "RakuAST::Termish",
             "RakuAST::Expression",

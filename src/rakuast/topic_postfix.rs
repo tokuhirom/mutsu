@@ -14,7 +14,7 @@ use crate::scope::NameScope;
 use crate::token_kind::TokenKind;
 use crate::value::{RuntimeError, ValueView};
 
-/// The `Term::TopicCall` of a marked `.++` / `.--`; any other marked shape
+/// The `Term::TopicCall` of a marked `.++` / `.--` or `.&...` call; any other marked shape
 /// renders as the expression it wraps.
 // Cost: O(1).
 pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
@@ -29,6 +29,19 @@ pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, R
                 fields: vec![super::view::node_field(None, postfix_node(op))],
             })
         }
+        // `.&foo(args)` / `.&{ ... }(args)`: the call of a routine or block with
+        // the topic first. RakuAST keeps `Term::TopicCall(<dynamic call>)`.
+        Expr::CallOn { target, args } => match args.split_first() {
+            Some((Expr::Var(topic), rest)) if topic == "_" => {
+                let postfix = super::dynamic_method::postfix(names, target, rest, None)?;
+                Ok(RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::TermTopicCall,
+                    fields: vec![super::view::node_field(None, postfix)],
+                })
+            }
+            _ => view_expr(names, expr),
+        },
         other => view_expr(names, other),
     }
 }

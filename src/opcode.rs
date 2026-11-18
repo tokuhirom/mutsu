@@ -10545,6 +10545,9 @@ impl CompiledCode {
                     .get(*slot as usize)
                     .is_some_and(|name| !matches!(name.as_str(), "?CLASS" | "?ROLE")),
                 OpCode::NqpOp { id, .. } => !nqp_op_names_lexical(*id, false),
+                // A non-rw routine decontainerizes a tail call's result
+                // (`compile_tail_expr`); that reads the stack top only.
+                OpCode::DerefContainer => true,
                 _ => false,
             })
     }

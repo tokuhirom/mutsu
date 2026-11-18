@@ -3203,12 +3203,15 @@ fn postfix_expr_loop_from<'a>(
         // Superscript digits as postfix exponentiation: x² → x ** 2, x³ → x ** 3
         if let Some((exp, len)) = parse_superscript_exp(rest) {
             rest = &rest[len..];
-            expr = Expr::Binary {
-                left: Box::new(expr),
-                op: crate::token_kind::TokenKind::StarStar,
-                right: Box::new(Expr::Literal(Value::int(exp))),
-                form: Default::default(),
-            };
+            expr = Expr::spelled(
+                Expr::Binary {
+                    left: Box::new(expr),
+                    op: crate::token_kind::TokenKind::StarStar,
+                    right: Box::new(Expr::Literal(Value::int(exp))),
+                    form: Default::default(),
+                },
+                || crate::ast::spelled::Spelling::SuperscriptPower,
+            );
             continue;
         }
 
