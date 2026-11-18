@@ -2,7 +2,7 @@
 //! channels the threads alternate on. A leaf module -- the parser names it, the
 //! runtime's `slang_host` serves the other end.
 
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use std::sync::mpsc::{Receiver, Sender};
 
 /// A parser-to-host message.
@@ -198,5 +198,105 @@ impl SlangHost {
                 "the action override {rule} asked the parser for a production"
             )),
         }
+    }
+}
+
+// The facts a slang activation hands the parser (ADR-0026 §2.1, ADR-0091).
+// Plain data, kept in this leaf so the parser and the compile-time loader
+// (`crate::compile_time_loader`) can carry them without naming the runtime.
+
+/// What one slang activation run learned: the grammar-rule overrides the
+/// module's roles declare, and the package declarators they add (ADR-0091).
+#[derive(Default)]
+pub(crate) struct SlangActivation {
+    pub(crate) rules: Vec<SlangRuleOverride>,
+    pub(crate) declarators: Vec<SlangDeclarator>,
+    /// Built-in declarators whose HOW an `EXPORT` hook replaced through
+    /// `LEXICAL::<EXPORTHOW>` (`EXPORTHOW::SUPERSEDE`).
+    pub(crate) supersede_keywords: Vec<String>,
+    /// The parser's end of the slang host, when a rule is a production hook
+    /// (ADR-15762): the interpreter that loaded the slang stays alive to run
+    /// its tokens and actions.
+    pub(crate) host: Option<SlangHost>,
+    /// The routines the module exports to the activating `use` (under its
+    /// import tags), with their operator precedence: an activation in the
+    /// activation interpreter stands in for the parse-time load of a slang
+    /// module, so the importer's parse learns them here (#18091). Empty when
+    /// the program interpreter loaded the module, whose loaded unit supplies
+    /// them as for any other `use`.
+    pub(crate) exports: Vec<crate::compile_time_loader::LoadedExport>,
+}
+
+/// One grammar-rule override a slang role declares: the overridden rule/token
+/// name, plus the token's raw regex source when it has one.
+///
+/// Slang::Tuxic-style slangs override *productions* and the body is Rakudo
+/// internals mutsu never executes (ADR-0026 §4), so `body` goes unread. An
+/// `L10N::XX` vocabulary role overrides *spellings*, and the body is the
+/// localized spelling itself — data, which `parser::stmt::simple::l10n`
+/// interprets.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SlangRuleOverride {
+    pub(crate) name: String,
+    pub(crate) body: Option<String>,
+    /// `localized => canonical` pairs read out of an L10N role's
+    /// `<category>2ast` method (`method core2ast { my constant %mapping = ... }`),
+    /// which is where the generated roles keep the identifier-position half of
+    /// a vocabulary. Empty for every other kind of override.
+    pub(crate) aliases: Vec<(String, String)>,
+}
+
+/// One package declarator a slang grammar role registered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SlangDeclarator {
+    /// The keyword itself — the `:sym<...>` of the proto-regex candidate.
+    pub(crate) keyword: String,
+    /// The `$*PKGDECL` the candidate declares, i.e. which package kind the
+    /// keyword builds. `role` makes the keyword a peer of `role`; anything
+    /// else (including a kind named after the declarator itself) is built as
+    /// a `class`, which is what Rakudo's `package_def` does for every
+    /// class-like `$*PKGDECL`.
+    pub(crate) kind: String,
+    /// Name of the metaclass the declaration is built with, from
+    /// `$*LANG.set_how($*PKGDECL, ...)`. Empty when the slang set none, in
+    /// which case the keyword is a plain alias for its package kind.
+    pub(crate) how_type: String,
+}
+
+impl SlangDeclarator {
+    pub(crate) fn is_role(&self) -> bool {
+        self.kind == "role"
+    }
+}
+
+/// A literal `use` argument (`use L10N::BG 'no-slangification'`) carried to the
+/// activation thread. Plain data rather than a `Value`: the value is built on
+/// the activation thread, whose interpreter owns it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SlangUseArg {
+    Str(String),
+    Int(i64),
+    Num(f64),
+    Bool(bool),
+    /// `&name` of a sub declared earlier in the importing unit, with the text of
+    /// its declaration: rebuilt on the host, so the sub must not close over the
+    /// unit's other lexicals (#17055).
+    Routine {
+        name: String,
+        source: String,
+    },
+}
+
+impl SlangUseArg {
+    /// The argument for a literal `value`, or `None` when it is not a plain
+    /// string, number or boolean.
+    pub(crate) fn from_literal(value: &Value) -> Option<Self> {
+        Some(match value.view() {
+            ValueView::Str(s) => SlangUseArg::Str(s.to_string()),
+            ValueView::Int(n) => SlangUseArg::Int(n),
+            ValueView::Num(f) => SlangUseArg::Num(f),
+            ValueView::Bool(b) => SlangUseArg::Bool(b),
+            _ => return None,
+        })
     }
 }

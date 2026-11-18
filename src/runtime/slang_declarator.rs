@@ -30,28 +30,7 @@ use super::*;
 use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::value::ValueView;
 
-/// One package declarator a slang grammar role registered.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SlangDeclarator {
-    /// The keyword itself — the `:sym<...>` of the proto-regex candidate.
-    pub(crate) keyword: String,
-    /// The `$*PKGDECL` the candidate declares, i.e. which package kind the
-    /// keyword builds. `role` makes the keyword a peer of `role`; anything
-    /// else (including a kind named after the declarator itself) is built as
-    /// a `class`, which is what Rakudo's `package_def` does for every
-    /// class-like `$*PKGDECL`.
-    pub(crate) kind: String,
-    /// Name of the metaclass the declaration is built with, from
-    /// `$*LANG.set_how($*PKGDECL, ...)`. Empty when the slang set none, in
-    /// which case the keyword is a plain alias for its package kind.
-    pub(crate) how_type: String,
-}
-
-impl SlangDeclarator {
-    pub(crate) fn is_role(&self) -> bool {
-        self.kind == "role"
-    }
-}
+pub(crate) use crate::slang_link::SlangDeclarator;
 
 /// The declarator keyword of a `package_declarator:sym<name>` grammar rule,
 /// or `None` for any other rule name.

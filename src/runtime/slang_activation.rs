@@ -27,31 +27,12 @@
 //! only *records* the role composition.
 
 use super::*;
-use crate::runtime::slang_declarator::{SlangDeclarator, declarator_keyword, delegates_to_package_def};
+use crate::runtime::slang_declarator::{declarator_keyword, delegates_to_package_def};
+pub(crate) use crate::slang_link::{
+    SlangActivation, SlangDeclarator, SlangRuleOverride, SlangUseArg,
+};
 use crate::value::ValueView;
 
-/// What one slang activation run learned: the grammar-rule overrides the
-/// module's roles declare, and the package declarators they add (ADR-0091).
-#[derive(Default)]
-pub(crate) struct SlangActivation {
-    pub(crate) rules: Vec<SlangRuleOverride>,
-    pub(crate) declarators: Vec<SlangDeclarator>,
-    /// Built-in declarators whose HOW an `EXPORT` hook replaced through
-    /// `LEXICAL::<EXPORTHOW>` (`EXPORTHOW::SUPERSEDE`).
-    pub(crate) supersede_keywords: Vec<String>,
-    /// The parser's end of the slang host, when a rule is a production hook
-    /// (ADR-15762): the interpreter that loaded the slang stays alive to run
-    /// its tokens and actions.
-    pub(crate) host: Option<crate::slang_link::SlangHost>,
-    /// The routines the module exports to the activating `use` (under its
-    /// import tags), with their operator precedence: the activation stands
-    /// in for the parse-time load of a slang module, so the importer's parse
-    /// learns them here (#18091).
-    // TODO: ADR-17558 slice 4 loads a slang module in the program
-    // interpreter, whose loaded unit then supplies these facts as for any
-    // other `use`; this field goes with the activation interpreter.
-    pub(crate) exports: Vec<crate::compile_time_loader::LoadedExport>,
-}
 
 /// Classes of the compile-time `$*LANG` object graph. The language handle is
 /// named `Raku::...`, as rakudo's own `$*LANG` is (`Raku::Grammar`): Slangify
@@ -96,24 +77,6 @@ pub(crate) enum SlangRoleKind {
     Actions,
 }
 
-/// One grammar-rule override a slang role declares: the overridden rule/token
-/// name, plus the token's raw regex source when it has one.
-///
-/// Slang::Tuxic-style slangs override *productions* and the body is Rakudo
-/// internals mutsu never executes (ADR-0026 §4), so `body` goes unread. An
-/// `L10N::XX` vocabulary role overrides *spellings*, and the body is the
-/// localized spelling itself — data, which `parser::stmt::simple::l10n`
-/// interprets.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SlangRuleOverride {
-    pub(crate) name: String,
-    pub(crate) body: Option<String>,
-    /// `localized => canonical` pairs read out of an L10N role's
-    /// `<category>2ast` method (`method core2ast { my constant %mapping = ... }`),
-    /// which is where the generated roles keep the identifier-position half of
-    /// a vocabulary. Empty for every other kind of override.
-    pub(crate) aliases: Vec<(String, String)>,
-}
 
 /// The metaclass the language builds a declaration written with `declarator`
 /// with, as Rakudo's `EXPORTHOW` stash lists them.
@@ -186,35 +149,9 @@ fn lang_handle_instance(class: &str, kind: &str, activations: Option<&Value>) ->
     }
 }
 
-/// A literal `use` argument (`use L10N::BG 'no-slangification'`) carried to the
-/// activation thread. Plain data rather than a `Value`: the value is built on
-/// the activation thread, whose interpreter owns it.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum SlangUseArg {
-    Str(String),
-    Int(i64),
-    Num(f64),
-    Bool(bool),
-    /// `&name` of a sub declared earlier in the importing unit, with the text of
-    /// its declaration: rebuilt on the host, so the sub must not close over the
-    /// unit's other lexicals (#17055).
-    Routine { name: String, source: String },
-}
 
 impl SlangUseArg {
-    /// The argument for a literal `value`, or `None` when it is not a plain
-    /// string, number or boolean.
-    pub(crate) fn from_literal(value: &Value) -> Option<Self> {
-        Some(match value.view() {
-            ValueView::Str(s) => SlangUseArg::Str(s.to_string()),
-            ValueView::Int(n) => SlangUseArg::Int(n),
-            ValueView::Num(f) => SlangUseArg::Num(f),
-            ValueView::Bool(b) => SlangUseArg::Bool(b),
-            _ => return None,
-        })
-    }
-
-    fn into_value(self, interp: &mut Interpreter) -> Result<Value, String> {
+    pub(crate) fn into_value(self, interp: &mut Interpreter) -> Result<Value, String> {
         Ok(match self {
             SlangUseArg::Str(s) => Value::str(s),
             SlangUseArg::Int(n) => Value::int(n),
@@ -372,7 +309,7 @@ impl Interpreter {
     /// The declarator names in the `EXPORTHOW::<directive>` stash the loaded
     /// modules published (a stash key keeps the `$` of its scalar binding).
     // Cost: O(k), k = entries of the stash.
-    fn exporthow_stash_keywords(&self, directive: &str) -> Vec<String> {
+    pub(super) fn exporthow_stash_keywords(&self, directive: &str) -> Vec<String> {
         let stash = self.package_stash_value(
             crate::qualified::qualified_text("EXPORTHOW", directive).as_str(),
         );
@@ -516,7 +453,12 @@ impl Interpreter {
         // the slang adds (`our event Flow` in a module that `use`s EEL, #16888)
         // is registered with its metaclass at run time, so the declarators are
         // recorded even then; the parser rules are not.
-        if self.module.module_load_stack.len() > 1 {
+        let depth = self.module.module_load_stack.len();
+        let registers = match self.regex_state.slang_activation_depth {
+            Some(activating) => depth == activating,
+            None => depth <= 1,
+        };
+        if !registers {
             for role in Self::slang_handle_roles(grammar) {
                 for over in self.slang_role_rule_names(&role, SlangRoleKind::Grammar)? {
                     if let Some(keyword) = declarator_keyword(&over.name)

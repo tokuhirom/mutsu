@@ -229,13 +229,22 @@ pub(in crate::parser) fn activate_slang_module(
     {
         return Ok(Vec::new());
     }
-    let activation = crate::runtime::slang_activation::run_slang_activation(
-        module.to_string(),
-        parser_lib_paths(),
-        use_args.clone(),
-        import_tags,
-    )
-    .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?;
+    // The interpreter compiling this unit loaded the module when the parser
+    // reached its `use` and recorded the slang it registered (ADR-17558
+    // slice 4); its exports reached the parse as the loaded unit's. A slang
+    // it did not activate (no loader, a `use` it does not take, or a slang
+    // whose productions need a host) activates in the activation interpreter.
+    let activation = match crate::compile_time_loader::slang_activation(module, use_args.as_deref())
+    {
+        Some(activation) => activation,
+        None => crate::runtime::slang_activation::run_slang_activation(
+            module.to_string(),
+            parser_lib_paths(),
+            use_args.clone(),
+            import_tags,
+        )
+        .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?,
+    };
     // The language from here on includes this slang (`$?LANG`, `slang_lang`);
     // the activation ends with the enclosing block like its hooks do.
     note_slang_activation_scope();

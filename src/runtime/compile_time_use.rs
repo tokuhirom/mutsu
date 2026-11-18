@@ -40,12 +40,6 @@ impl CompileTimeLoader for Interpreter {
         ) else {
             return LoadOutcome::NotTaken;
         };
-        // A slang module activates in the slang activation interpreter at
-        // parse time and loads here at run time, until slice 4 makes the
-        // program interpreter its host.
-        if request.activates_slang {
-            return LoadOutcome::NotTaken;
-        }
         let (bare, _) = Self::split_dist_selectors(module);
         if self.module.loaded_modules.contains(bare) {
             return LoadOutcome::Loaded;
@@ -95,15 +89,27 @@ impl CompileTimeLoader for Interpreter {
             .parse_time_hook_depth
             .replace(self.module.module_load_stack.len() + 1);
         take_hook_reached_importer();
-        let result = if request.nested {
-            // A `use` inside a block: what the module installs while it loads
-            // is lexical to the block (`OpCode::PreloadModule`'s scope).
-            self.push_preload_scope();
-            let result = self.without_use_attach_depth(|interp| interp.preload_module(module));
-            self.pop_import_scope();
-            result
+        let nested = request.nested;
+        let preload = move |interp: &mut Self| {
+            if nested {
+                // A `use` inside a block: what the module installs while it
+                // loads is lexical to the block (`OpCode::PreloadModule`'s scope).
+                interp.push_preload_scope();
+                let result =
+                    interp.without_use_attach_depth(|interp| interp.preload_module(module));
+                interp.pop_import_scope();
+                result
+            } else {
+                interp.without_use_attach_depth(|interp| interp.preload_module(module))
+            }
+        };
+        // A slang module registers its slang for this parse while it loads
+        // (its `EXPORT` hook calls `$*LANG.define_slang`), as on rakudo; the
+        // parser reads what it registered (ADR-17558 slice 4).
+        let result = if request.activates_slang {
+            self.load_activating_slang(bare, request.literal_args.as_deref(), preload)
         } else {
-            self.without_use_attach_depth(|interp| interp.preload_module(module))
+            preload(self)
         };
         self.module.parse_time_hook_depth = saved_hook_depth;
         if let Some(saved) = replaced_import_target {
@@ -146,6 +152,15 @@ impl CompileTimeLoader for Interpreter {
             exports,
             declarators,
         }
+    }
+
+    // Cost: O(a), a = slangs activated at parse time so far.
+    fn slang_activation(
+        &mut self,
+        module: &str,
+        args: Option<&[crate::slang_link::SlangUseArg]>,
+    ) -> Option<crate::slang_link::SlangActivation> {
+        self.parse_time_slang_activation(module, args)
     }
 }
 
