@@ -79,7 +79,9 @@ pub(crate) fn note_written_name(stmt: &mut Stmt, written: &str) {
     if let Stmt::SubDecl { name, spans, .. } = stmt
         && let Some(spans) = spans
         && written != name.resolve()
-        && written.contains(':')
+        && written
+            .split_once(':')
+            .is_some_and(|(_, quoted)| quoted.starts_with("<<") || quoted.starts_with('\u{ab}'))
     {
         spans.name_written = Some(written.into());
     }
