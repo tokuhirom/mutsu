@@ -3430,8 +3430,13 @@ impl Compiler {
                 is_statement_modifier,
                 // `with_kind` records which source keyword desugared into this
                 // `Given`; it changes nothing about how one executes.
-                with_kind: _,
+                with_kind,
             } => {
+                // A `with`/`without` whose body cannot observe that `$_`
+                // aliases the topic's container (`with_topic_alias.rs`) needs
+                // no source tag: the topic is read as a plain value.
+                let alias_unobservable = with_kind.is_some()
+                    && super::with_topic_alias::with_topic_alias_unobservable(body);
                 // The tail `given` of an `is rw` routine: every `when`/`default`
                 // clause and the body's own last statement may be the value the
                 // routine returns (#9060). Taken first so the topic never sees it.
@@ -3455,7 +3460,7 @@ impl Compiler {
                 // the element value and tag the (container, index) source so the
                 // body's final `$_` is written back. `topic_readonly` is false.
                 let element_source = match topic {
-                    Expr::Index { .. } => {
+                    Expr::Index { .. } if !alias_unobservable => {
                         let mut path = Vec::new();
                         let root = topic.index_path(&mut path);
                         Self::container_var_name(root).map(|c| (c, root, path))
@@ -3509,7 +3514,7 @@ impl Compiler {
                     };
                     // `is copy` makes a detached copy, so suppress the
                     // source-writeback tag even for a bare-variable topic.
-                    let source_name = if is_copy_topic {
+                    let source_name = if is_copy_topic || alias_unobservable {
                         None
                     } else {
                         topic
