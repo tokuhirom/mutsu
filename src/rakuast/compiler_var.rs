@@ -67,8 +67,8 @@ pub(super) fn lower_pseudo_package(node: &RakuAstNode) -> Result<Expr, RuntimeEr
     let ValueView::Str(name) = name.view() else {
         return Err(super::lower::unsupported(node));
     };
-    match name.strip_prefix("::") {
-        Some(bare) if bare.starts_with('?') => Ok(Expr::Var(bare.to_string())),
+    match name.strip_prefix("::?") {
+        Some(bare) if !bare.is_empty() => Ok(Expr::Var(format!("?{bare}"))),
         _ => Err(super::lower::unsupported(node)),
     }
 }
