@@ -410,7 +410,7 @@ impl Interpreter {
     /// this returns true (mirrors the `has_class_scoped_subs` gate).
     pub(crate) fn class_has_package_lexicals(&self, class_name: &str) -> bool {
         self.lexicals
-            .class_body_static_names
+            .class_body_static_names.read()
             .get(class_name)
             .is_some_and(|m| !m.is_empty())
     }
@@ -437,7 +437,7 @@ impl Interpreter {
         // A program with no class-body statics anywhere has nothing to
         // inject; every compiled method call comes here, so skip the
         // ancestor walk and its allocation (#17331).
-        if self.lexicals.package_lexicals.is_empty() {
+        if self.lexicals.package_lexicals.read().is_empty() {
             return;
         }
         // A class nested in another sees the enclosing class bodies' `my`
@@ -453,16 +453,14 @@ impl Interpreter {
 
     // Cost: O(s), s = statics of `class_name`.
     fn inject_own_class_body_statics(&mut self, class_name: &str) {
-        let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
-            return;
-        };
-        if statics.is_empty() {
-            return;
-        }
-        let to_inject: Vec<(String, Value)> = statics
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let to_inject: Vec<(String, Value)> =
+            match self.lexicals.package_lexicals.read().get(class_name) {
+                Some(statics) if !statics.is_empty() => statics
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                _ => return,
+            };
         for (k, v) in to_inject {
             self.env.insert(k, v);
         }
@@ -482,7 +480,7 @@ impl Interpreter {
     // Cost: O(t), t = typed statics of `class_name`.
     pub(crate) fn class_body_static_meta_lanes(&self, class_name: &str) -> Vec<(String, Value)> {
         self.lexicals
-            .class_body_static_types
+            .class_body_static_types.read()
             .get(class_name)
             .map(|types| {
                 types
@@ -500,10 +498,12 @@ impl Interpreter {
     /// and must not answer for these.
     // Cost: O(s), s = statics of `class_name`.
     fn class_body_static_stale_lanes(&self, class_name: &str) -> Vec<Symbol> {
-        let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
+        let package_lexicals = self.lexicals.package_lexicals.read();
+        let Some(statics) = package_lexicals.get(class_name) else {
             return Vec::new();
         };
-        let recorded = self.lexicals.class_body_static_types.get(class_name);
+        let static_types = self.lexicals.class_body_static_types.read();
+        let recorded = static_types.get(class_name);
         let mut stale = Vec::new();
         for k in statics.keys() {
             if !k.starts_with(['@', '%']) {
@@ -545,16 +545,14 @@ impl Interpreter {
         saved: &mut Vec<(String, Option<Value>)>,
         except: &[Symbol],
     ) {
-        let Some(statics) = self.lexicals.package_lexicals.get(class_name) else {
-            return;
-        };
-        if statics.is_empty() {
-            return;
-        }
-        let to_inject: Vec<(String, Value)> = statics
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        let to_inject: Vec<(String, Value)> =
+            match self.lexicals.package_lexicals.read().get(class_name) {
+                Some(statics) if !statics.is_empty() => statics
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                _ => return,
+            };
         for (k, v) in to_inject {
             if except.iter().any(|sym| sym.with_str(|n| n == k)) {
                 continue;

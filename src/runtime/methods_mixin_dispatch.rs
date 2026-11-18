@@ -789,7 +789,7 @@ impl Interpreter {
                     static_packages.push(punned_name);
                 }
                 for package in &static_packages {
-                    if let Some(statics) = self.lexicals.package_lexicals.get(package.as_str()) {
+                    if let Some(statics) = self.lexicals.package_lexicals.read().get(package.as_str()) {
                         method_role_bindings.extend(statics.iter().map(|(k, v)| (k.clone(), v.clone())));
                     }
                 }

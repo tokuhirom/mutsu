@@ -5244,13 +5244,18 @@ impl Interpreter {
         // resolves to the package store when the frame's env does not hold the
         // name (`GetArrayVar`/`GetHashVar` consult it last), so its in-place
         // mutations land there too (#10343).
+        // The store is shared by every thread (ADR-17216 slice 4a), so the
+        // mutation goes through the lexical's cell, which this frame holds
+        // under a pin key for as long as the returned reference lives.
         if !self.env().contains_key(var_name)
-            && let Some(root) = self.package_scope_lexical_root_mut(var_name)
+            && let Some(cell) = self.package_scope_lexical_cell(var_name)
         {
-            let root = root as *mut Value;
-            // SAFETY: `root` points into a `package_lexicals` entry, which
-            // nothing else borrows while the returned reference is held (see
-            // `descend_container_ref`).
+            let pin = crate::meta_ns::MetaNs::PackageLexicalPin.key_for_str(var_name);
+            self.env_mut().insert_sym(pin, cell);
+            let root = self.env_mut().get_mut_sym(pin)? as *mut Value;
+            // SAFETY: `root` points into this frame's env entry, which holds
+            // the cell and which nothing else borrows while the returned
+            // reference is held (see `descend_container_ref`).
             let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
             // SAFETY: `descended` was derived from `root` just above.
             return Some(unsafe { &mut *descended });

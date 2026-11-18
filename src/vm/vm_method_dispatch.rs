@@ -994,7 +994,7 @@ impl Interpreter {
             // into the caller's same-named `@x` (zef `!find-prereq-candidates`
             // `@needed`). The light-call merge already excludes these via
             // `declared_locals`.
-            let class_body_static_names = self.lexicals.class_body_static_names.clone();
+            let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
             // The type parameters of the roles the receiver class composes are
             // bound while an instance is constructed, so a class's own TWEAK /
             // BUILD frame sees them; they are not the caller's variables
@@ -2974,7 +2974,7 @@ impl Interpreter {
                 // leak to the caller): frame fixtures, params, attribute twigil
                 // forms, and compiled locals. No alias arm — the fast-path gate
                 // excludes alias-carrying instances.
-                let class_body_static_names = self.lexicals.class_body_static_names.clone();
+                let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)

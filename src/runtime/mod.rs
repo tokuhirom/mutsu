@@ -1952,16 +1952,39 @@ impl Interpreter {
         cow_table_mut(&mut self.lexicals.unit_lexicals)
     }
 
+    /// The generation TRIR's free-variable cache (`trir_outer_cache`) is
+    /// keyed on: this thread's [`LexicalState::unit_lexical_gen`](crate::runtime::lexical_state::LexicalState::unit_lexical_gen) plus the
+    /// world generation of `package_lexicals`, so a package lexical another
+    /// thread adds or rebinds invalidates this thread's cached resolutions
+    /// too. Both parts only ever grow, so their sum changes whenever either
+    /// does.
+    // Cost: O(1), one atomic load.
+    #[inline]
+    pub(crate) fn trir_outer_cache_gen(&self) -> u64 {
+        self.lexicals
+            .unit_lexical_gen
+            .wrapping_add(self.lexicals.package_lexicals.generation())
+    }
+
     /// The mutation funnel for `package_lexicals`. It bumps the same
     /// [`LexicalState::unit_lexical_gen`](crate::runtime::lexical_state::LexicalState::unit_lexical_gen), because TRIR's free-variable cache
     /// also holds bindings read out of this table (a `package P { my $x }`
     /// lexical, which is often a plain value rather than a cell). Writing
     /// through a cell already in the table needs no bump, as for
     /// `unit_lexicals`.
+    ///
+    /// The table is world state shared by every thread (ADR-17216 slice 4a):
+    /// `f` runs under its write lock and the result is published to every
+    /// thread, so `f` must not touch `package_lexicals` itself.
+    // Cost: O(1) plus `f`; the table is copied (O(n), n = entries) only while
+    // another thread holds a snapshot of it.
     #[inline]
-    pub(crate) fn package_lexicals_cow_mut(&mut self) -> &mut PackageLexicals {
+    pub(crate) fn package_lexicals_write<R>(
+        &mut self,
+        f: impl FnOnce(&mut PackageLexicals) -> R,
+    ) -> R {
         self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
-        cow_table_mut(&mut self.lexicals.package_lexicals)
+        self.lexicals.package_lexicals.write(f)
     }
 }
 
@@ -2746,6 +2769,10 @@ pub(crate) enum ImportWrite {
     Proto(Symbol, Option<Arc<FunctionDef>>),
     /// A `proto_subs` marker, and whether it was already there.
     ProtoSub(String, bool),
+    /// A grant of the scoped family `name` declared by `unit` to `importer`
+    /// (`ModuleState::operator_import_units`) that a `sub EXPORT` hook's
+    /// import made (`grant_scoped_family_import`): `(name, unit, importer)`.
+    FamilyGrant(Symbol, Symbol, Symbol),
 }
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the

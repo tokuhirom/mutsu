@@ -54,7 +54,7 @@ impl Interpreter {
         let package_lexicals = names
             .iter()
             .filter_map(|n| {
-                self.lexicals.package_lexicals.get(n).map(|store| {
+                self.lexicals.package_lexicals.read().get(n).map(|store| {
                     let entries = store.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                     (n.clone(), entries)
                 })
@@ -126,12 +126,14 @@ impl Interpreter {
             if !type_names.iter().any(|m| m == n) {
                 continue;
             }
-            let dst = self.package_lexicals_cow_mut().entry(n.clone()).or_default();
-            for (bare, value) in store {
-                if dst.get(bare).is_none() {
-                    dst.insert(bare.clone(), value.clone());
+            self.package_lexicals_write(|table| {
+                let dst = table.entry(n.clone()).or_default();
+                for (bare, value) in store {
+                    if dst.get(bare).is_none() {
+                        dst.insert(bare.clone(), value.clone());
+                    }
                 }
-            }
+            });
         }
         self.caches.native_ctor_plan_cache.clear();
         self.caches.native_ctor_plan_builtin.clear();

@@ -137,6 +137,27 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
+        // A built-in method with a row in the method table, on an inline
+        // receiver of a shape the table covers (`vm_call_method_site_lane`).
+        if let Some(answer) = self.try_call_method_site_lane(code, ip) {
+            // Debug builds re-run a pure row through the full path and
+            // compare; an interpreter row has effects and is not re-run.
+            #[cfg(debug_assertions)]
+            if answer.pure {
+                let full = self.exec_call_method_site_full(code, ip);
+                return self.check_method_site_lane(code, ip, answer, full);
+            }
+            return self.finish_call_method_site_lane(code, ip, answer);
+        }
+        self.exec_call_method_site_full(code, ip)
+    }
+
+    /// `OpCode::CallMethod` at `code.ops[ip]`, through every probe.
+    pub(super) fn exec_call_method_site_full(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+    ) -> Result<(), RuntimeError> {
         let OpCode::CallMethod {
             name_idx,
             arity,

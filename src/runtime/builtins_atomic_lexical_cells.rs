@@ -249,7 +249,7 @@ impl Interpreter {
             return None;
         }
         let pkg = self.current_package();
-        let cur = self.lexicals.package_lexicals.get(&pkg)?.get(bare)?.clone();
+        let cur = self.lexicals.package_lexicals.read().get(&pkg)?.get(bare)?.clone();
         if let ValueView::ContainerRef(c) = cur.view() {
             return Some(c.clone());
         }
@@ -257,9 +257,11 @@ impl Interpreter {
             return None;
         }
         let container = cur.into_container_ref();
-        self.package_lexicals_cow_mut()
-            .get_mut(&pkg)?
-            .insert(bare.to_string(), container.clone());
+        self.package_lexicals_write(|table| {
+            table
+                .get_mut(&pkg)
+                .map(|store| store.insert(bare.to_string(), container.clone()))
+        })?;
         match container.view() {
             ValueView::ContainerRef(c) => Some(c.clone()),
             _ => None,

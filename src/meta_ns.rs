@@ -141,6 +141,11 @@ pub(crate) enum MetaNs {
     /// `$!name` was bound (`:=`) to a non-container value, so it is no longer
     /// a writable container (`nqp::isrwcont`).
     BoundAttr,
+    /// `__mutsu_package_lexical_pin::<name>` — a frame's hold on the cell of
+    /// the package-block lexical `<name>` while an in-place mutation of it
+    /// runs: the shared package table may drop the cell meanwhile
+    /// (ADR-17216 slice 4a).
+    PackageLexicalPin,
     /// `__mutsu_compunit::<prefix>::<short-name>` — a loaded compunit, cached
     /// per repository prefix. Built with [`MetaNs::key_pair`].
     Compunit,
@@ -281,6 +286,7 @@ impl MetaNs {
         MetaNs::AtomicValue,
         MetaNs::BoundDecont,
         MetaNs::BoundAttr,
+        MetaNs::PackageLexicalPin,
         MetaNs::Compunit,
         MetaNs::ConstantVar,
         MetaNs::ModuleMerge,
@@ -338,6 +344,7 @@ impl MetaNs {
             MetaNs::AtomicValue => "__mutsu_atomic_value::",
             MetaNs::BoundDecont => "__mutsu_bound_decont::",
             MetaNs::BoundAttr => "__mutsu_bound_attr::",
+            MetaNs::PackageLexicalPin => "__mutsu_package_lexical_pin::",
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
             MetaNs::ModuleMerge => "__mutsu_module_merge::",
@@ -600,6 +607,7 @@ mod tests {
             (MetaNs::AtomicValue, "__mutsu_atomic_value::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::BoundAttr, "__mutsu_bound_attr::@a"),
+            (MetaNs::PackageLexicalPin, "__mutsu_package_lexical_pin::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
             (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),

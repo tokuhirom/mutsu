@@ -415,11 +415,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
 /// evaluated.
 // Cost: O(n), n = arguments.
 fn literal_use_args(arg: &Expr) -> Option<Vec<crate::value::Value>> {
-    match arg {
+    // `use M <x y>` keeps how its words were spelled (`Expr::Spelled`); the
+    // values are the words themselves (#18091).
+    match arg.peel_parens() {
         Expr::Literal(value) => Some(vec![value.clone()]),
         Expr::ArrayLiteral(items) => items
             .iter()
-            .map(|item| match item {
+            .map(|item| match item.peel_parens() {
                 Expr::Literal(value) => Some(value.clone()),
                 _ => None,
             })

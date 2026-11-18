@@ -100,10 +100,12 @@ impl Interpreter {
         self.register_container_cell_constraint_for_name(&container, name);
         self.mark_fresh_cell_declared_untyped(&container, name);
         let pkg = self.current_package();
-        self.package_lexicals_cow_mut()
-            .entry(pkg)
-            .or_default()
-            .insert(name.to_string(), container.clone());
+        self.package_lexicals_write(|table| {
+            table
+                .entry(pkg)
+                .or_default()
+                .insert(name.to_string(), container.clone())
+        });
         Some(container)
     }
 }

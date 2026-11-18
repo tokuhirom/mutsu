@@ -44,10 +44,11 @@ impl Interpreter {
             for key in lanes {
                 if let Some(ValueView::Str(tc)) = self.env().get_sym(key).map(Value::view) {
                     let tc = tc.as_str().to_owned();
-                    crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_types)
-                        .entry(class.to_string())
-                        .or_default()
-                        .insert(key.resolve(), tc);
+                    self.lexicals.class_body_static_types.write(|t| {
+                        t.entry(class.to_string())
+                            .or_default()
+                            .insert(key.resolve(), tc);
+                    });
                 }
                 self.restore_static_meta_lane(key, saved_env);
             }
@@ -57,10 +58,11 @@ impl Interpreter {
             return;
         }
         if let Some(constraint) = self.var_type_constraint_sym(sym) {
-            crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_types)
-                .entry(class.to_string())
-                .or_default()
-                .insert(bare.to_string(), constraint);
+            self.lexicals.class_body_static_types.write(|t| {
+                t.entry(class.to_string())
+                    .or_default()
+                    .insert(bare.to_string(), constraint);
+            });
         }
         self.restore_static_meta_lane(Self::type_meta_key_for_sym(sym), saved_env);
     }
@@ -86,13 +88,14 @@ impl Interpreter {
     /// not such a static.
     // Cost: O(|name|), `package_scope_lexical_key` plus two table probes.
     pub(crate) fn class_body_static_store_type(&self, name: &str) -> Option<Option<String>> {
-        if self.lexicals.class_body_static_names.is_empty() {
+        if self.lexicals.class_body_static_names.read().is_empty() {
             return None;
         }
         let (class, key) = self.package_scope_lexical_key(name)?;
         if !self
             .lexicals
             .class_body_static_names
+            .read()
             .get(class)
             .is_some_and(|names| names.contains(key.as_ref()))
         {
@@ -101,6 +104,7 @@ impl Interpreter {
         Some(
             self.lexicals
                 .class_body_static_types
+                .read()
                 .get(class)
                 .and_then(|types| types.get(key.as_ref()))
                 .cloned(),
