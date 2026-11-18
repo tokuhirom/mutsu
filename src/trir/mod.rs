@@ -294,6 +294,25 @@ pub(crate) struct TrChunk {
     pub(crate) captured_fatal_mode: bool,
     /// Whether calls to this routine omit its frame from backtraces.
     pub(crate) is_hidden_from_backtrace: bool,
+    /// The declared nominal return type (`--> Bool:D`) a returned value is
+    /// checked against, with the light return check's plan for it
+    /// (`CompiledFunction::return_fast_plan`). Only a type that check
+    /// serves by itself (`Interpreter::is_fast_return_type_name`) is
+    /// admitted; `--> Nil` and a definite constant are compiled into the
+    /// ops instead, and every other return type declines the routine.
+    pub(crate) return_check: Option<TrReturnCheck>,
+}
+
+/// A TRIR routine's declared return type and its precomputed check plan.
+#[derive(Debug, Clone, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
+pub(crate) struct TrReturnCheck {
+    /// The return type as written (`Bool:D`).
+    pub(crate) spec: String,
+    /// The base's tag-check plan.
+    pub(crate) fast: Option<crate::opcode::FastParamCheck>,
+    /// The definiteness smiley, when `fast` classified the base.
+    pub(crate) smiley: Option<crate::opcode::TypeSmiley>,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

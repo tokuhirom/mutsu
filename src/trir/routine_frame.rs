@@ -80,6 +80,16 @@ impl Interpreter {
                     Ok(TrOutcome::Value(self.fail_error_to_failure_value(&e)))
                 }
             }
+            // A declared return type checks the routine's value, as the
+            // light call path's `light_finish_return` does: Nil, a Failure
+            // and a type object of the type pass, a mismatch is
+            // `X::TypeCheck::Return`.
+            Ok(TrOutcome::Value(v)) => {
+                if let Some(check) = &chunk.return_check {
+                    self.light_check_return_type(&check.spec, check.fast, check.smiley, &v)?;
+                }
+                Ok(TrOutcome::Value(v))
+            }
             other => other,
         }
     }

@@ -136,10 +136,25 @@ impl<'a> TrirCompiler<'a> {
         // A definite VALUE (`--> True`) needs none: the body's value is
         // discarded and the constant answered, which is what #9074 does on
         // the light call path.
+        // A nominal return type the light return check serves by itself
+        // (`--> Bool:D`, `--> Str`) is checked on the way out of the routine
+        // (`run_trir_routine`), by that same check. Any other one (a user
+        // class, a subset, a coercion) still declines.
+        let mut return_check = None;
         let definite_return = match return_type {
             None | Some("Nil") => None,
             Some("True") => Some(Value::TRUE),
             Some("False") => Some(Value::FALSE),
+            Some(rt) if crate::runtime::Interpreter::is_fast_return_type_name(rt) => {
+                let (fast, smiley) =
+                    crate::opcode::CompiledFunction::return_fast_plan(Some(rt));
+                return_check = Some(super::TrReturnCheck {
+                    spec: rt.to_string(),
+                    fast,
+                    smiley,
+                });
+                None
+            }
             Some(_) => return None,
         };
         let mut c = TrirCompiler {
@@ -200,6 +215,7 @@ impl<'a> TrirCompiler<'a> {
             def_file: std::sync::OnceLock::new(),
             captured_fatal_mode,
             is_hidden_from_backtrace: false,
+            return_check,
         })
     }
 

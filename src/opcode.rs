@@ -15399,6 +15399,27 @@ impl CompiledFunction {
         }
     }
 
+    /// The light return check's plan for a declared return type: the base's
+    /// [`FastParamCheck`] and, when that classified it, the smiley
+    /// (`--> Bool:D` is `Fast { Bool }` plus `Some(Definite)`). Shared by
+    /// [`Self::return_fast_type`] and the TRIR chunk of the same routine, so
+    /// both check a return value the same way.
+    // Cost: O(n), n = the return type's spelling length.
+    pub(crate) fn return_fast_plan(
+        return_type: Option<&str>,
+    ) -> (Option<FastParamCheck>, Option<TypeSmiley>) {
+        match return_type {
+            Some(rt) => {
+                let (base, smiley) = TypeSmiley::split(rt);
+                match FastParamCheck::of(Some(&base.to_string())) {
+                    Some(check) => (Some(check), smiley),
+                    None => (None, None),
+                }
+            }
+            None => (None, None),
+        }
+    }
+
     pub(crate) fn precompute_param_name_syms(&mut self) {
         self.param_name_syms = self
             .param_defs
@@ -15416,16 +15437,7 @@ impl CompiledFunction {
             .map(FastParamCheck::of_param)
             .collect::<Option<Vec<_>>>()
             .unwrap_or_default();
-        let (return_fast_type, return_smiley) = match self.return_type.as_deref() {
-            Some(rt) => {
-                let (base, smiley) = TypeSmiley::split(rt);
-                match FastParamCheck::of(Some(&base.to_string())) {
-                    Some(check) => (Some(check), smiley),
-                    None => (None, None),
-                }
-            }
-            None => (None, None),
-        };
+        let (return_fast_type, return_smiley) = Self::return_fast_plan(self.return_type.as_deref());
         self.return_fast_type = return_fast_type;
         self.return_smiley = return_smiley;
         self.return_definite_const = self
