@@ -61,7 +61,10 @@ impl Interpreter {
             .cached(sites, name_idx as usize, generation)?;
         let name_sym = code.const_sym(name_idx);
         if self.in_lvalue_assignment
-            || self.env().get_sym(dispatch_key::amp_sym(name_sym)).is_some()
+            || self
+                .env()
+                .get_sym(dispatch_key::amp_sym(name_sym))
+                .is_some()
             || self.any_routine_wrapped()
             || self.module.export_amp_override_names.contains(&name_sym)
             || self.class_lexical_method_callable(code, name_sym).is_some()
@@ -162,11 +165,7 @@ impl Interpreter {
         {
             return;
         }
-        code.native_call_sites.remember(
-            code.constants.len(),
-            name_idx as usize,
-            generation,
-            1,
-        );
+        code.native_call_sites
+            .remember(code.constants.len(), name_idx as usize, generation, 1);
     }
 }
