@@ -361,8 +361,21 @@ impl Interpreter {
             // its HOW) before the role's attributes compose into the class, so
             // the hook can prepare the class HOW the attributes' `compose`
             // relies on (AttrX::Mooish mixes its ClassHOW role in there).
+            // Once per class, at its real declaration: a forward or nested
+            // shell's run would call the hook a second time, and a hook that
+            // mixes a `compose` override into the class HOW (Method::Also's
+            // `is also` on a class that does a role with an alias) would then
+            // count as present before the class's own traits ran, so the
+            // real declaration never queued the compose.
+            if !cx.per_entry && cx.is_hoisted_shell.is_shell() {
+                self.registry_mut()
+                    .pending_role_specialize
+                    .retain(|(class, _, _)| class != cx.name);
+            }
             if !cx.per_entry {
-                self.drive_role_how_specialize(cx.name)?;
+                if !cx.is_hoisted_shell.is_shell() {
+                    self.drive_role_how_specialize(cx.name)?;
+                }
                 self.queue_role_attribute_composes(&mut cx, own_attribute_names);
                 self.run_pending_attr_composes(&mut cx)?;
             }
