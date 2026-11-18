@@ -891,10 +891,10 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // A `BEGIN` or `multi` of the scanned module is that module's compile-time
     // effect, not one of the importer's: it must not keep the importer's later
     // `use`s from loading at parse time (ADR-17558 §7.6).
-    let saved_effect_seen = UNIT_BEGIN_SEEN.with(|seen| seen.replace(false));
+    let saved_effects_seen = super::take_unit_effects_seen();
     let ((stmts, _), nested) =
         nested_imports::collect(|| crate::parser::parse_program_partial_spelled(source));
-    UNIT_BEGIN_SEEN.with(|seen| seen.set(saved_effect_seen));
+    super::restore_unit_effects_seen(saved_effects_seen);
     // A best-effort parse silently drops every statement it cannot parse — a
     // `class`/`constant` among them. The names in such a statement are missing
     // from this scan, so the importer's view of the module is partial and it

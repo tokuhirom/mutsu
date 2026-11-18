@@ -382,6 +382,22 @@ pub(in crate::parser) fn take_statement_numbering() -> Option<Vec<usize>> {
         .then(|| std::mem::take(&mut attempts.positions))
 }
 
+/// The sorted attempt positions of the unit so far, if a `use trace` hook
+/// needs them: what [`take_statement_numbering`] will return for the
+/// statements already parsed, since every later attempt lies after them. For a
+/// `BEGIN` that runs before the unit is finished (ADR-17558 slice 5).
+pub(in crate::parser) fn peek_statement_numbering() -> Option<Vec<usize>> {
+    let attempts = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        origin
+            .attempt_base
+            .is_none()
+            .then(|| origin.attempts.clone())
+    })??;
+    let attempts = attempts.borrow();
+    attempts.hooked.then(|| attempts.positions.clone())
+}
+
 /// Opaque snapshot of the parser's source-location state (the `$?LINE` origin
 /// pointer plus any registered heredoc leaked regions). Used to save/restore
 /// around nested sub-parses (`parse_program_partial`) so a best-effort module

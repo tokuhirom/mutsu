@@ -601,7 +601,9 @@ impl Interpreter {
         let saved_source_file = crate::parser::set_parser_source_file(Some(source_file));
         // The parse loads each `use`d module as it reaches it (ADR-17558).
         let parse_result =
-            self.parse_with_loader(|| crate::parse_dispatch::parse_compilation_unit_of(&preprocessed));
+            self.parse_program_with_loader(|| {
+                crate::parse_dispatch::parse_compilation_unit_of(&preprocessed)
+            });
         let unit_docs = crate::parser::decl_doc::take_unit_docs();
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();

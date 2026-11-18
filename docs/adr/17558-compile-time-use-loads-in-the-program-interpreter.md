@@ -489,3 +489,44 @@ Closes the 2b leftover of a `use` whose statement runs more than once.
   the same way; it used to run the hook on each run of the statement.
 - An import that carries no site (a statement lowered from a RakuAST tree,
   an `EVAL` pre-run) takes the oldest recorded map once, as in 2b.
+
+### 7.12 Slice 5a: a closed `BEGIN` of the program runs at parse time (2026-11-18)
+
+Slice 5 is split. **5a** runs a `BEGIN` at parse time where that needs no
+frame of the unit; **5b** is the rest (a `BEGIN` that reads the unit, and the
+`multi`/`proto` candidate order of §7.6).
+
+- A statement-form `BEGIN` at the top level of the **program** (not a
+  module's compile, an `EVAL`, a `Str.AST` or a fragment parse) is handed to
+  the loader when the parser finishes it (`CompileTimeLoader::run_begin`). The
+  program interpreter lowers it on its own, compiles it as the prologue would
+  (a failure is the same `X::Comp::BeginTime`, reported as the compile error
+  at the `BEGIN`) and runs it. The parsed tree keeps nothing in its place, so
+  the prologue does not run it again, and it does not set the §7.6 flag: a
+  `use` after it still loads at parse time.
+- It runs there only when its body is **closed**
+  (`begin_prologue::begin_body_core_names`): compiled on its own it has no
+  free lexical, calls only core routines, names only core types and terms,
+  reaches no name dynamically, and declares nothing (no routine, type,
+  package, `our` variable, `use`/`need`/`import`/`require`, nested `BEGIN`);
+  and the unit provides none of the names it uses (`unit_provides_name`: a
+  parse-time `use` has loaded but not yet imported, so an imported routine
+  that shadows a core one is not bound). Such a body cannot tell the unit's
+  frame is missing, so running it early is observable only in its order
+  against the `use` loads, which is rakudo's.
+- It runs only while **no effect the prologue runs precedes it**
+  (`UNIT_PROLOGUE_EFFECT_SEEN`, set from each finished top-level statement by
+  `prologue_effects::has_prologue_effect`): a `BEGIN` that did not run at
+  parse time, a computed `constant` or `enum` value, a user trait on a
+  declaration, a `will begin`, a `use` that did not load at parse time (`use
+  lib` included; `Test` and the inert pragmas excepted), `need` or `import`.
+  This is a separate flag from §7.6's: it only decides `BEGIN`, so the `use`s
+  slices 1–4 load at parse time are unchanged.
+- Its `use trace` hooks are numbered when it runs, from the statement attempts
+  so far, which no later attempt changes.
+
+**5b** remains: a `BEGIN` that reads the unit's lexicals or calls its routines
+needs the unit's frame (or its static cells, ADR-0134 §2.2) to exist while the
+parse is in progress; the `multi`/`proto` part of §7.6 needs candidate order
+to follow source order across a parse-time load. Until then those keep the
+transitional rule, and slice 4b (§7.10) still waits on them.
