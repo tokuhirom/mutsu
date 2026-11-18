@@ -727,6 +727,7 @@ RakuAST::Var::Lexical	is-resolved	RakuAST::Var::Lexical
 RakuAST::Var::Lexical	name	RakuAST::Var::Lexical
 RakuAST::Var::Lexical	resolution	RakuAST::Var::Lexical
 RakuAST::Var::Lexical	sigil	RakuAST::Var::Lexical
+RakuAST::Var::Lexical::Constant	name	RakuAST::Var::Lexical
 RakuAST::Var::NamedCapture	colonpairs	RakuAST::Var::NamedCapture
 RakuAST::Var::NamedCapture	index	RakuAST::Var::NamedCapture
 RakuAST::Var::NamedCapture	sigil	RakuAST::Var::NamedCapture
