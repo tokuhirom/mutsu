@@ -645,6 +645,18 @@ impl Interpreter {
             return candidates
                 .iter()
                 .find_map(|source| self.env.get(source).cloned())
+                // A package-less module's `our` variable lives in GLOBAL; its
+                // bare alias goes with the scope that loaded the module, so a
+                // later `require` of the loaded module reads it from there.
+                .or_else(|| {
+                    let global =
+                        crate::qualified::qualified(crate::symbol::wk::global_package(), Symbol::intern(bare));
+                    self.lexicals
+                        .our_vars
+                        .get(global.as_str())
+                        .or_else(|| self.env.get_sym(global))
+                        .cloned()
+                })
                 .map(|value| (value, RequiredKey::Var));
         }
 
