@@ -110,8 +110,10 @@ impl Interpreter {
                     .or_default()
                     .insert(lane.resolve(), Value::str(tc.clone()));
                 self.lexicals.class_body_static_types.write(|t| {
-    t.entry(name.clone()).or_default().insert(lane.resolve(), tc);
-});
+                    t.entry(name.clone())
+                        .or_default()
+                        .insert(lane.resolve(), tc);
+                });
             }
         }
         for (lane, previous) in outer_lanes {
@@ -257,8 +259,8 @@ impl Interpreter {
                 // (and the caller's same-named lanes cleared), as a class's
                 // methods do with its statics.
                 self.lexicals.class_body_static_names.write(|t| {
-    t.entry(name.clone()).or_default().insert(bare.clone());
-});
+                    t.entry(name.clone()).or_default().insert(bare.clone());
+                });
                 let sym = Symbol::intern(bare);
                 lane_keys.push(Self::type_meta_key_for_sym(sym));
                 if bare.starts_with('%') {
@@ -272,8 +274,10 @@ impl Interpreter {
                     && let ValueView::Str(tc) = v.view()
                 {
                     self.lexicals.class_body_static_types.write(|t| {
-    t.entry(name.clone()).or_default().insert(k.resolve(), tc.as_str().to_owned());
-});
+                        t.entry(name.clone())
+                            .or_default()
+                            .insert(k.resolve(), tc.as_str().to_owned());
+                    });
                 }
             }
             write_back.retain(|(k, _)| !lane_keys.contains(k));
@@ -284,8 +288,8 @@ impl Interpreter {
         for (bare, _) in &package_lexicals {
             if bare.starts_with(['@', '%']) {
                 self.lexicals.class_body_static_names.write(|t| {
-    t.entry(name.clone()).or_default().insert(bare.clone());
-});
+                    t.entry(name.clone()).or_default().insert(bare.clone());
+                });
             }
         }
         drop(writes);

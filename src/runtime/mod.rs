@@ -1979,7 +1979,10 @@ impl Interpreter {
     // Cost: O(1) plus `f`; the table is copied (O(n), n = entries) only while
     // another thread holds a snapshot of it.
     #[inline]
-    pub(crate) fn package_lexicals_write<R>(&mut self, f: impl FnOnce(&mut PackageLexicals) -> R) -> R {
+    pub(crate) fn package_lexicals_write<R>(
+        &mut self,
+        f: impl FnOnce(&mut PackageLexicals) -> R,
+    ) -> R {
         self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
         self.lexicals.package_lexicals.write(f)
     }

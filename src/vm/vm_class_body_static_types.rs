@@ -45,8 +45,10 @@ impl Interpreter {
                 if let Some(ValueView::Str(tc)) = self.env().get_sym(key).map(Value::view) {
                     let tc = tc.as_str().to_owned();
                     self.lexicals.class_body_static_types.write(|t| {
-    t.entry(class.to_string()).or_default().insert(key.resolve(), tc);
-});
+                        t.entry(class.to_string())
+                            .or_default()
+                            .insert(key.resolve(), tc);
+                    });
                 }
                 self.restore_static_meta_lane(key, saved_env);
             }
@@ -57,8 +59,10 @@ impl Interpreter {
         }
         if let Some(constraint) = self.var_type_constraint_sym(sym) {
             self.lexicals.class_body_static_types.write(|t| {
-    t.entry(class.to_string()).or_default().insert(bare.to_string(), constraint);
-});
+                t.entry(class.to_string())
+                    .or_default()
+                    .insert(bare.to_string(), constraint);
+            });
         }
         self.restore_static_meta_lane(Self::type_meta_key_for_sym(sym), saved_env);
     }
@@ -90,7 +94,8 @@ impl Interpreter {
         let (class, key) = self.package_scope_lexical_key(name)?;
         if !self
             .lexicals
-            .class_body_static_names.read()
+            .class_body_static_names
+            .read()
             .get(class)
             .is_some_and(|names| names.contains(key.as_ref()))
         {
@@ -98,7 +103,8 @@ impl Interpreter {
         }
         Some(
             self.lexicals
-                .class_body_static_types.read()
+                .class_body_static_types
+                .read()
                 .get(class)
                 .and_then(|types| types.get(key.as_ref()))
                 .cloned(),

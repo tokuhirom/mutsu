@@ -67,7 +67,8 @@ impl Interpreter {
             // under the name belongs to the enclosing scope.
             if self
                 .lexicals
-                .package_lexicals.read()
+                .package_lexicals
+                .read()
                 .get(package)
                 .is_some_and(|store| store.contains_key(name))
                 && let Some(value) = self.env().get(name).cloned()
@@ -111,7 +112,8 @@ impl Interpreter {
         let cur: &str = cur_sym.as_str();
         if !self
             .lexicals
-            .package_lexicals.read()
+            .package_lexicals
+            .read()
             .get(cur)
             .is_some_and(|m| m.contains_key(name))
         {

@@ -414,13 +414,18 @@ impl Interpreter {
         }
         if let Some(v) = self
             .lexicals
-            .package_lexicals.read()
+            .package_lexicals
+            .read()
             .get(cur.as_str())
             .and_then(|m| m.get(name.as_str()))
         {
             return Some(v.clone());
         }
-        if !self.lexicals.package_lexicals.read().contains_key(cur.as_str())
+        if !self
+            .lexicals
+            .package_lexicals
+            .read()
+            .contains_key(cur.as_str())
             && let Some(v) = self
                 .types
                 .published_mixins
@@ -439,7 +444,8 @@ impl Interpreter {
             .filter(|pkg| *pkg != cur)
             .find_map(|pkg| {
                 self.lexicals
-                    .package_lexicals.read()
+                    .package_lexicals
+                    .read()
                     .get(pkg.as_str())
                     .and_then(|m| m.get(name.as_str()))
                     .cloned()
@@ -481,7 +487,8 @@ impl Interpreter {
             }
             if let Some(v) = self
                 .lexicals
-                .package_lexicals.read()
+                .package_lexicals
+                .read()
                 .get(pkg.as_str())
                 .and_then(|m| m.get(name_str))
                 .cloned()
@@ -534,7 +541,8 @@ impl Interpreter {
                     }
                     if let Some(value) = self
                         .lexicals
-                        .package_lexicals.read()
+                        .package_lexicals
+                        .read()
                         .get(pkg.as_str())
                         .and_then(|entries| entries.get(name))
                         .cloned()
@@ -666,7 +674,8 @@ impl Interpreter {
                 // the static — do not resolve it here (t/package-lookup.t).
                 if self
                     .lexicals
-                    .class_body_static_names.read()
+                    .class_body_static_names
+                    .read()
                     .get(pkg)
                     .is_some_and(|s| s.contains(bare))
                 {
@@ -1624,7 +1633,8 @@ impl Interpreter {
         // frame, for a lookup that found nothing.
         let holds = |pkg: &str| {
             self.lexicals
-                .package_lexicals.read()
+                .package_lexicals
+                .read()
                 .get(pkg)
                 .is_some_and(|m| m.contains_key(name))
         };
