@@ -212,6 +212,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("colonpairs", Absent::EmptyList),
         ],
         Postfix => &[("operator", Absent::Required)],
+        PostfixPower => &[("power", Absent::Required)],
         Block => &[
             ("body", Absent::TypeObject("RakuAST::Blockoid")),
             ("implicit-topic", Absent::TypeObject("Bool")),
