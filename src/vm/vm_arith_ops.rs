@@ -549,7 +549,8 @@ impl Interpreter {
         op_name: &str,
         args: Vec<Value>,
     ) -> Result<Option<Value>, RuntimeError> {
-        if !self.user_infix_override(op_name) {
+        if !self.user_infix_override(op_name) && self.lexical_operator_dispatcher(op_name).is_none()
+        {
             return Ok(None);
         }
         self.try_user_candidates(op_name, args, None)
