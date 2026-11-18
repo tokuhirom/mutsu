@@ -718,13 +718,14 @@ impl Interpreter {
         method_def: &crate::runtime::MethodDef,
         args: &[Value],
     ) -> bool {
-        args.iter().any(|a| {
-            matches!(
-                a.unwrap_varref().view(),
-                ValueView::Seq(..) | ValueView::LazyList(..)
-            )
-        }) && method_def.param_defs.iter().any(|pd| {
+        // The signature first: it is usually decisive, and viewing an
+        // argument would materialize a lazy Match (a grammar action's `$/`).
+        method_def.param_defs.iter().any(|pd| {
             !pd.is_invocant && !pd.slurpy && !pd.double_slurpy && pd.name.starts_with('@')
+        }) && args.iter().any(|a| {
+            let a = a.unwrap_varref();
+            !a.is_lazy_match_value()
+                && matches!(a.view(), ValueView::Seq(..) | ValueView::LazyList(..))
         })
     }
 
