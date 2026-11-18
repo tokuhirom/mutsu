@@ -1047,11 +1047,21 @@ impl Compiler {
             }
             Stmt::RoleDecl {
                 custom_traits,
+                body,
                 decl_id,
                 ..
             } => {
                 let decl_id = *decl_id;
                 custom_traits.retain(|(t, _)| keep_trait(t));
+                // The role's methods keep their bodies, but not their user
+                // traits: a `method m is also<x>` trait runs once, at the
+                // real declaration. Run from the shell too, it ran twice,
+                // and a HOW role it mixed in (Method::Also's
+                // `AliasableRoleHOW`, whose `specialize` mixes a `compose`
+                // hook into the consuming class's HOW) reached the class
+                // before its real declaration, which then took that hook as
+                // pre-existing and never ran it.
+                Self::strip_role_shell_method_traits(body, &keep_trait);
                 (decl_id, self.add_role_decl_plan(&shell, pass))
             }
             _ => return,
@@ -1061,6 +1071,30 @@ impl Compiler {
             Some(deferred) if !nested => deferred.push(idx),
             _ => {
                 self.code.emit(OpCode::RegisterDecl(idx));
+            }
+        }
+    }
+
+    /// Drop the user traits of every method (`method`, `multi method`,
+    /// `proto method`) in a role shell's body, keeping the internal ones
+    /// `keep_trait` names; see [`Self::emit_type_decl_shell`]. Methods are
+    /// declared directly in the role body, so only its statements are read.
+    // Cost: O(s), s = statements in the role body.
+    fn strip_role_shell_method_traits(body: &mut [Stmt], keep_trait: &dyn Fn(&str) -> bool) {
+        for stmt in body {
+            match stmt {
+                Stmt::MethodDecl { custom_traits, .. } => {
+                    custom_traits.retain(|(t, _)| keep_trait(t));
+                }
+                Stmt::ProtoDecl {
+                    custom_traits,
+                    trait_args,
+                    ..
+                } => {
+                    custom_traits.retain(|t| keep_trait(t));
+                    trait_args.retain(|(t, _)| keep_trait(t));
+                }
+                _ => {}
             }
         }
     }
