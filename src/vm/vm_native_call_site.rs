@@ -71,15 +71,20 @@ impl Interpreter {
         let arity = arity as usize;
         let start = self.stack.len().checked_sub(arity)?;
         // The arguments as the general path hands them to a name nothing
-        // declares; a variable argument arrives `VarRef`-tagged, so the
-        // Junction and Proxy checks look at the unwrapped value.
+        // declares. A Junction (in a container, or as a named argument's
+        // value) is left to the general path's autothreading, which the
+        // fallback below does not repeat.
         let args: Vec<Value> = self.stack[start..]
             .iter()
             .cloned()
             .map(Self::unwrap_var_ref_arg)
             .collect();
         if args.iter().any(|arg| {
-            arg.is_proxy_value() || matches!(arg.view(), ValueView::Junction { .. })
+            let junction = match arg.view() {
+                ValueView::Pair(_, value) => Self::unwrap_junction_value(&value).is_some(),
+                _ => Self::unwrap_junction_value(arg).is_some(),
+            };
+            junction || arg.is_proxy_value()
         }) {
             return None;
         }
