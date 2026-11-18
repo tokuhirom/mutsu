@@ -504,6 +504,9 @@ impl Interpreter {
                         registry.proto_subs_retain(|key| key != name.as_str());
                     }
                 }
+                ImportWrite::FamilyGrant(name, unit, importer) => {
+                    self.revoke_scoped_family_import(name, unit, importer);
+                }
             }
         }
         changed
