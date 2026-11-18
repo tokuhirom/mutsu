@@ -1,7 +1,7 @@
 use Test;
 use experimental :rakuast;
 
-plan 7;
+plan 8;
 
 # `::?CLASS` / `::?PACKAGE` as a term are `Var::Lexical::Constant` (#14845).
 my $ast = 'class C { method m { ::?CLASS.^name } }'.AST;
