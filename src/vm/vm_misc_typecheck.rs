@@ -551,6 +551,10 @@ impl Interpreter {
             // is merged (ADR-11136).
             || self.module_name_hidden_here(declared_constraint))
             && !is_core_raku_type(declared_constraint)
+            // A RakuAST node class is a type object, not a registered class
+            // (ADR-0011): `my RakuAST::Name $n` is checked like a parameter
+            // of that type, by the general match below.
+            && !crate::rakuast::is_registered_type_object(declared_constraint)
             // A type the running package declares: a module routine's `EVAL`
             // of `class Foo {...}; my Foo $x`, whose bare `Foo` binding is
             // not in that routine's view of the env (ADR-12529).

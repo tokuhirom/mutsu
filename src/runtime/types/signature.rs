@@ -477,11 +477,21 @@ pub(crate) fn decode_slurpy_rw_param(param: &str) -> Option<(&str, usize, Option
 // them unqualified through `use super::*`.
 pub(in crate::runtime) use crate::runtime::utils::{sigilless_alias_key, sigilless_readonly_key};
 
+/// What a list element holds, through the container a variable put it in.
+/// `List.Capture` takes a Pair the list holds in a container (`('?', $p)`)
+/// as a named argument, like a literal one, so destructuring a list looks
+/// through the container on both the positional and the named side.
+// Cost: O(1).
+fn list_item_content(item: &Value) -> Value {
+    item.unwrap_varref().deref_container().into_descalarized()
+}
+
 /// Collect the `Pair`/`ValuePair` elements of a list into a named map. Used
 /// when a list of pairs is destructured by named sub-signature params.
 fn pairs_in_list_to_named(items: &[Value]) -> ValueMap {
     let mut out = ValueMap::default();
     for item in items {
+        let item = list_item_content(item);
         match item.view() {
             ValueView::Pair(key, val) => {
                 out.insert(key.clone(), val.clone());
@@ -1216,7 +1226,7 @@ fn drop_pairs_captured_as_named(value: &Value, positional: Vec<Value>) -> Vec<Va
         .into_iter()
         .filter(|v| {
             !matches!(
-                v.unwrap_varref().view(),
+                list_item_content(v).view(),
                 ValueView::Pair(..) | ValueView::ValuePair(..)
             )
         })

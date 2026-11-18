@@ -123,6 +123,9 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
             let (r2, _) = ws(r2)?;
             let (r2, _) = parse_char(r2, ')')?;
             (r2, a)
+        } else if r_name.starts_with(':') && !r_name.starts_with("::") {
+            // `$x .= &f: 3` -- colon arguments, as after a method name.
+            parse_colon_arg_list(&r_name[1..])?
         } else {
             (r_name, vec![])
         };
@@ -148,52 +151,8 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         let (r2, ()) = parse_trailing_call_adverbs(r2, &mut a)?;
         (r2, a)
     } else if r_before_ws.starts_with(':') && !r_before_ws.starts_with("::") {
-        // Colon-arg syntax: .=method: arg (no space before colon). The arg list
-        // is a comma-list at listop precedence, so each element stops before the
-        // loose word-logical ops (`andthen`/`and`/`or`): `$x .=new: 1 andthen $y`
-        // is `($x .=new: 1) andthen $y`, not `$x .=new(1 andthen $y)`.
-        let r2 = &r[1..];
-        let (r2, _) = ws(r2)?;
-        // An empty colon-arg list is a plain zero-argument call: `$s .= uc:  ;`
-        // means `$s .= uc`. The list is empty whenever the next token cannot
-        // start a term (statement terminator, closing bracket, end of input).
-        let mut args = Vec::new();
-        let r2 = if r2.is_empty() || r2.starts_with([';', '}', ')', ']']) {
-            r2
-        } else {
-            let (r2, first_arg) = listop_arg_expr_list_infix(r2)?;
-            args.push(first_arg);
-            r2
-        };
-        let mut r_inner = r2;
-        loop {
-            let (r3, _) = ws(r_inner)?;
-            if r3.starts_with(':')
-                && !r3.starts_with("::")
-                && let Ok((r4, arg)) = colonpair_expr(r3)
-            {
-                args.push(arg);
-                r_inner = r4;
-                continue;
-            }
-            if !r3.starts_with(',') {
-                r_inner = r3;
-                break;
-            }
-            let r3 = &r3[1..];
-            let (r3, _) = ws(r3)?;
-            if r3.starts_with(';') || r3.starts_with('}') || r3.is_empty() {
-                r_inner = r3;
-                break;
-            }
-            let (r3, next) = listop_arg_expr_list_infix(r3)?;
-            args.push(next);
-            r_inner = r3;
-        }
-        (
-            r_inner,
-            crate::parser::primary::lift_list_infix_in_arg_list(args),
-        )
+        // Colon-arg syntax: .=method: arg (no space before colon).
+        parse_colon_arg_list(&r[1..])?
     } else if r.starts_with(':') && !r.starts_with("::") {
         // Fake-infix adverb form (space before ':'): .=method :key<val>
         let mut args = Vec::new();
@@ -229,4 +188,53 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
 fn written_dotty(expr: Expr, call_fn: impl Fn(Expr) -> Expr) -> Expr {
     let call = call_fn(expr.clone());
     crate::parser::stmt::assign::written_dotty_assignment(expr, call)
+}
+
+/// The arguments after the `:` of a colon-arg call (`.=method: a, b`,
+/// `.= &f: a`), `input` starting right after the colon. The arg list is a
+/// comma-list at listop precedence, so each element stops before the loose
+/// word-logical ops (`andthen`/`and`/`or`): `$x .=new: 1 andthen $y` is
+/// `($x .=new: 1) andthen $y`, not `$x .=new(1 andthen $y)`.
+fn parse_colon_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
+    let (r2, _) = ws(input)?;
+    // An empty colon-arg list is a plain zero-argument call: `$s .= uc:  ;`
+    // means `$s .= uc`. The list is empty whenever the next token cannot
+    // start a term (statement terminator, closing bracket, end of input).
+    let mut args = Vec::new();
+    let r2 = if r2.is_empty() || r2.starts_with([';', '}', ')', ']']) {
+        r2
+    } else {
+        let (r2, first_arg) = listop_arg_expr_list_infix(r2)?;
+        args.push(first_arg);
+        r2
+    };
+    let mut r_inner = r2;
+    loop {
+        let (r3, _) = ws(r_inner)?;
+        if r3.starts_with(':')
+            && !r3.starts_with("::")
+            && let Ok((r4, arg)) = colonpair_expr(r3)
+        {
+            args.push(arg);
+            r_inner = r4;
+            continue;
+        }
+        if !r3.starts_with(',') {
+            r_inner = r3;
+            break;
+        }
+        let r3 = &r3[1..];
+        let (r3, _) = ws(r3)?;
+        if r3.starts_with(';') || r3.starts_with('}') || r3.is_empty() {
+            r_inner = r3;
+            break;
+        }
+        let (r3, next) = listop_arg_expr_list_infix(r3)?;
+        args.push(next);
+        r_inner = r3;
+    }
+    Ok((
+        r_inner,
+        crate::parser::primary::lift_list_infix_in_arg_list(args),
+    ))
 }
