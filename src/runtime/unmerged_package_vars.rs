@@ -89,7 +89,7 @@ impl Interpreter {
         let pkg =
             crate::qualified::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg));
         let key = Self::unmerged_store_key(pkg, split.sigil, split.bare);
-        self.lexicals.our_vars.contains_key(key.as_str())
+        self.our_table().contains_key(key.as_str())
     }
 
     /// The separate store's key for the variable `<sigil><pkg>::<bare>`.
@@ -135,7 +135,7 @@ impl Interpreter {
         self.env()
             .get_sym(key)
             .cloned()
-            .or_else(|| self.get_our_var(key.as_str()).cloned())
+            .or_else(|| self.get_our_var(key.as_str()))
             .unwrap_or_else(|| crate::value::Value::package(Symbol::intern("Any")))
     }
 

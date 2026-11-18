@@ -291,7 +291,7 @@ impl Interpreter {
         // code running in GLOBAL gets them.
         if crate::qualified::is_global_package(Symbol::intern(&self.current_package())) {
             names.extend(
-                self.our_vars_iter()
+                self.lexicals.our_vars.snapshot().iter()
                     .filter_map(|(key, _)| key.strip_prefix('\\'))
                     .filter_map(term_name),
             );

@@ -651,11 +651,10 @@ impl Interpreter {
                 .or_else(|| {
                     let global =
                         crate::qualified::qualified(crate::symbol::wk::global_package(), Symbol::intern(bare));
-                    self.lexicals
-                        .our_vars
+                    self.our_table()
                         .get(global.as_str())
-                        .or_else(|| self.env.get_sym(global))
                         .cloned()
+                        .or_else(|| self.env.get_sym(global).cloned())
                 })
                 .map(|value| (value, RequiredKey::Var));
         }

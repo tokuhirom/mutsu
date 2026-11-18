@@ -985,7 +985,19 @@ impl Interpreter {
         // though the body never reads `$_`.
         let body_uses_positional = data.params.is_empty()
             && crate::method_signature_shared::auto_signature_uses(&data.body).0;
-        if !uses_positional
+        // An explicitly declared coercive `$_` (`sub f(Str:D() $_)`) holds the
+        // coerced value the binder stored; the raw implicit-topic binding
+        // below would put the argument back over it.
+        let topic_param_coerces = data.param_defs.iter().any(|pd| {
+            pd.name == "_"
+                && pd
+                    .type_constraint
+                    .as_deref()
+                    .is_some_and(crate::runtime::types::is_coercion_constraint)
+        });
+        if topic_param_coerces {
+            // Bound by `bind_function_args_values` above.
+        } else if !uses_positional
             && !data.params.is_empty()
             && data.params.iter().all(|p| p.starts_with('$'))
         {

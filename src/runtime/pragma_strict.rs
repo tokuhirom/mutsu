@@ -51,7 +51,7 @@ impl Interpreter {
     // symbol) and one `our_vars` probe.
     pub(crate) fn no_strict_package_var(&self, name: &str, sym: Symbol) -> Option<Value> {
         if Self::env_is_no_strict(self.env()) && Self::is_auto_declarable_name(name, sym) {
-            self.get_our_var(name).cloned()
+            self.get_our_var(name)
         } else {
             None
         }

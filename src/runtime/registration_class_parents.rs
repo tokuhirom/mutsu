@@ -42,6 +42,28 @@ impl Interpreter {
     /// `trait_mod:<is>` candidate that turns out not to match this call's
     /// shape after all (mirrors the sibling variable-/attribute-trait
     /// no-candidate fallback).
+    /// Whether `name` is declared as a `package` or module, which exists
+    /// but does not support inheritance.
+    // Cost: O(1).
+    pub(crate) fn is_declared_package_name(&self, name: &str) -> bool {
+        self.module.chain_declared_packages.contains(name)
+    }
+
+    /// rakudo's error for inheriting from a package or module:
+    /// `package A {}; class B is A {}`.
+    // Cost: O(|parent| + |child|).
+    pub(crate) fn inheritance_unsupported_error(parent: &str, child: &str) -> RuntimeError {
+        let msg = format!("{parent} does not support inheritance, so {child} cannot inherit from it");
+        let mut attrs = ValueMap::default();
+        attrs.insert("child-typename".to_string(), Value::str(child.to_string()));
+        attrs.insert(
+            "parent".to_string(),
+            Value::package(crate::symbol::Symbol::intern(parent)),
+        );
+        attrs.insert("message".to_string(), Value::str(msg));
+        RuntimeError::typed("X::Inheritance::Unsupported", attrs)
+    }
+
     pub(crate) fn unknown_parent_error(&self, name: &str, parent_name: &str) -> RuntimeError {
         // `name` may be a lexical class's mangled storage name (ADR-0047 P1:
         // `Foo\u{0}<decl-id>`) — show the user-facing bare name in the message
@@ -302,15 +324,13 @@ impl Interpreter {
                 // `also is Parent` executes at its position in the class
                 // BODY, so a parent named there is allowed to be unknown right
                 // now: the body itself may be what brings it into scope (a
-                // `use` inside the body, or a type the body declares). That
-                // holds for a name that is only a package so far too: the
-                // stub `A::B` a nested `unit module A::B::C::U` made is
-                // replaced by the grammar the body's own `use A::B` loads
-                // (CSS::Specification::Extended's `also is CSS::Specification`).
-                // A parent that is still a package after the body raises
-                // X::Inheritance::Unsupported there. Collect
+                // `use` inside the body, or a type the body declares). Collect
                 // it and let `apply_deferred_body_parents` re-resolve it once
-                // the body has run.
+                // the body has run. Ahead of the declared-package check too:
+                // `grammar P::Ext { use P; also is P }` loaded from the
+                // precompilation cache runs the body's `use P` only now, while
+                // an earlier `P::Util` already declared `P` as a package
+                // (CSS::Specification::Extended).
                 //
                 // Ahead of the `trait_mod:<is>` deferral below, not after it:
                 // that deferral now claims EVERY unknown name once any
@@ -331,13 +351,15 @@ impl Interpreter {
                 // package is not an unknown name, so rakudo passes it to
                 // `trait_mod:<is>` positionally (as the package object) rather
                 // than as the `:Name` named argument the deferral synthesises.
-                if self.module.chain_declared_packages.contains(base_parent)
-                    || self
-                        .module
-                        .chain_declared_packages
-                        .contains(resolved_parent_name.as_str())
+                // An `also is` parent was deferred above: the package may be
+                // only the stub another module's `P::Sub` name left, and the
+                // body's own `use P` brings in the class
+                // (`apply_deferred_body_parents` raises this same error if
+                // it does not).
+                if self.is_declared_package_name(base_parent)
+                    || self.is_declared_package_name(resolved_parent_name.as_str())
                 {
-                    return Err(inheritance_unsupported_error(
+                    return Err(Self::inheritance_unsupported_error(
                         resolved_parent_name.as_str(),
                         name.as_ref(),
                     ));
@@ -453,19 +475,4 @@ impl Interpreter {
             deferred_body_parents,
         })
     }
-}
-
-/// X::Inheritance::Unsupported: `parent` is a package (or module), which a
-/// class cannot inherit from (`package A {}; class B is A {}`).
-// Cost: O(|parent| + |child|).
-pub(super) fn inheritance_unsupported_error(parent: &str, child: &str) -> RuntimeError {
-    let msg = format!("{parent} does not support inheritance, so {child} cannot inherit from it");
-    let mut attrs = ValueMap::default();
-    attrs.insert("child-typename".to_string(), Value::str(child.to_string()));
-    attrs.insert(
-        "parent".to_string(),
-        Value::package(crate::symbol::Symbol::intern(parent)),
-    );
-    attrs.insert("message".to_string(), Value::str(msg));
-    RuntimeError::typed("X::Inheritance::Unsupported", attrs)
 }

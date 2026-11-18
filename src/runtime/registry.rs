@@ -354,6 +354,13 @@ pub(crate) struct Registry {
     /// candidate-index scan `Interpreter::enter_method_wrap_chain` runs before
     /// it can look a chain up (#12875).
     pub(crate) candidate_wrapped_methods: CowTable<std::collections::HashSet<String>>,
+    /// Owner classes that have ever had a chain in `method_wrap_chains`. The
+    /// same kind of conservative prefilter: [`Registry::method_wrap_chain`]
+    /// answers a miss for any other class without building its owned key.
+    /// Without it, wrapping one class's `pick` made every `.pick` call on any
+    /// value build two `String`s per class of the receiver's built-in MRO
+    /// to probe the chains (#12875).
+    pub(crate) method_wrap_owners: CowTable<std::collections::HashSet<String>>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: Sharded<String, Vec<(String, EnumValue)>>,
     /// Enums minted by `Metamodel::EnumHOW.new_type`: type name -> the value
@@ -1341,7 +1348,9 @@ impl Registry {
         // of this name was ever wrapped (the common case -- this runs on every
         // method call, and a program that wraps one method must not pay for
         // every other name).
-        if !self.method_name_ever_wrapped(method_name) {
+        if !self.method_name_ever_wrapped(method_name)
+            || !self.method_wrap_owners.contains(class_name)
+        {
             return None;
         }
         self.method_wrap_chains
@@ -1351,6 +1360,15 @@ impl Registry {
                 candidate_idx,
             ))
             .filter(|c| !c.is_empty())
+    }
+
+    /// Record `class_name` in [`Self::method_wrap_owners`] before a chain
+    /// entry of it is created.
+    // Cost: O(|class_name|) expected; one allocation the first time.
+    fn note_method_wrap_owner(&mut self, class_name: &str) {
+        if !self.method_wrap_owners.contains(class_name) {
+            self.method_wrap_owners.insert(class_name.to_string());
+        }
     }
 
     /// Push a new wrapper onto a method candidate's chain (ADR-0019 E10).
@@ -1369,6 +1387,7 @@ impl Registry {
             self.candidate_wrapped_methods
                 .insert(method_name.to_string());
         }
+        self.note_method_wrap_owner(class_name);
         self.method_wrap_chains
             .entry((
                 class_name.to_string(),
@@ -1396,6 +1415,7 @@ impl Registry {
             self.candidate_wrapped_methods
                 .insert(method_name.to_string());
         }
+        self.note_method_wrap_owner(class_name);
         let chain = self
             .method_wrap_chains
             .entry((

@@ -80,21 +80,38 @@ fn paren_has_toplevel_semicolon(input: &str) -> bool {
     false
 }
 
-/// Confirm a [`paren_has_toplevel_semicolon`] hit against the group the term
-/// parser reads at `input`. The character scan knows only `'…'`/`"…"` quotes,
-/// so a `#` inside another quoting construct (`q<[<a> | <b> ]#>`) reads as a
-/// comment that swallows the rest of its line, `)` included; the scan then
-/// counts the loop body's statements as still inside the parentheses and
-/// reports their `;` (CSS::Specification::Compiler's t/compile.t). Scanning
-/// only the text of the parsed group keeps the body out of it. When the group
-/// does not parse as a term, the scan's verdict stands.
-// Cost: O(n), n = length of the parenthesized group.
-fn paren_group_has_semicolon(input: &str) -> bool {
-    match crate::parser::primary::primary(input) {
-        Ok((after, _)) => crate::parser::expr::consumed_span(input, after)
-            .is_none_or(paren_has_toplevel_semicolon),
-        Err(_) => true,
+/// Whether `input` (starting at `(`) is the obsolete C-style header
+/// `( EXPR? ; EXPR? ; EXPR? )`, checked with the real expression parser as
+/// rakudo's `statement_control:sym<for>` lookahead does. The character scan
+/// [`paren_has_toplevel_semicolon`] only pre-filters: it does not know every
+/// quoting construct (a `#` inside `q<[...]#>` read as a comment and ran it
+/// into the loop body's `;`s), and `for (1; 2) { }` -- one `;` -- is a
+/// valid semicolon list, not a C-style loop.
+// Cost: O(n), n = length of the parenthesized header.
+fn is_c_style_for_header(input: &str) -> bool {
+    let Some(mut rest) = input.strip_prefix('(') else {
+        return false;
+    };
+    for part in 0..3 {
+        let Ok((r, _)) = ws(rest) else {
+            return false;
+        };
+        let r = match expression(r) {
+            Ok((r, _)) => r,
+            Err(_) => r,
+        };
+        let Ok((r, _)) = ws(r) else {
+            return false;
+        };
+        if part == 2 {
+            return r.starts_with(')');
+        }
+        match r.strip_prefix(';') {
+            Some(r) => rest = r,
+            None => return false,
+        }
     }
+    false
 }
 
 pub(crate) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -197,11 +214,11 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     }
     // C-style `for (init; test; incr) { }` is obsolete — Raku uses `loop`.
     // Detected by a top-level `;` inside the parenthesized iterable.
-    if rest.starts_with('(')
-        && paren_has_toplevel_semicolon(rest)
-        && paren_group_has_semicolon(rest)
-    {
-        return Err(PError::obsolete("C-style \"for\"", "\"loop\""));
+    if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) && is_c_style_for_header(rest) {
+        return Err(PError::obsolete(
+            "C-style \"for (;;)\" loop",
+            "\"loop (;;)\"",
+        ));
     }
     // Try to detect `<->` (rw pointy block) before the expression parser
     // consumes the `<` as a comparison operator.

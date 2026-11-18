@@ -170,13 +170,13 @@ impl Interpreter {
                 .env()
                 .get(real)
                 .cloned()
-                .or_else(|| self.get_our_var(real).cloned())
+                .or_else(|| self.get_our_var(real))
                 .or_else(|| self.enum_variant_value(enum_name.as_str(), variant.as_str()));
         }
         // An `our constant` of the package: a package symbol (#17720).
         self.toplevel_package_symbol(real)
-            .or_else(|| self.get_our_var(real))
             .cloned()
+            .or_else(|| self.get_our_var(real))
     }
     /// A bare name whose type is not visible here (a module's not merged here,
     /// ADR-11136; the main program's, from a REPL session unit, #17642). The
@@ -499,7 +499,7 @@ impl Interpreter {
         {
             let real =
                 crate::qualified::qualified(self.current_package_sym(), Symbol::intern(bare));
-            if self.get_our_var(real.as_str()).is_some() {
+            if self.has_our_var(real.as_str()) {
                 return self.push_bare_word_value_in(real, compiled_fns, false, foreign_unit);
             }
         }
@@ -1100,14 +1100,14 @@ impl Interpreter {
             // (`Logic::Ternary::{'True'} = …` inside `sub EXPORT`): the env
             // entry went with that frame, the package store keeps it.
             if !self.has_type(name)
-                && let Some(our_val) = self.get_our_var(name).cloned()
+                && let Some(our_val) = self.get_our_var(name)
             {
                 our_val
             // `Foo::Bar::zape` naming a package's `our &zape` code variable: the
             // bare qualified name is a call of the stored Callable, as it is
             // for an `our sub` (#16482). The stash keys it `&Foo::Bar::zape`.
             } else if !self.has_type(name)
-                && let Some(code) = self.get_our_var(&format!("&{name}")).cloned()
+                && let Some(code) = self.get_our_var(&format!("&{name}"))
                 && matches!(code.deref_container().view(), ValueView::Sub(..))
             {
                 self.vm_call_on_value(code.deref_container(), Vec::new(), Some(compiled_fns))?
@@ -1239,7 +1239,7 @@ impl Interpreter {
                 Value::rat_raw(n, d)
             } else if let Some(val) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
                 Value::int(val)
-            } else if let Some(our_val) = self.get_our_var(name).cloned() {
+            } else if let Some(our_val) = self.get_our_var(name) {
                 // Single-character `our`-scoped constant declared in an inner
                 // block (see the multi-char case below for rationale).
                 our_val
@@ -1266,7 +1266,7 @@ impl Interpreter {
                 attrs,
             )));
             return Err(err);
-        } else if let Some(our_val) = self.get_our_var(name).cloned() {
+        } else if let Some(our_val) = self.get_our_var(name) {
             // `our`-scoped constants (and `our` variables) declared in an inner
             // block survive block-scope restoration in the package store
             // (`our_vars`) even though the lexical env entry was discarded.
@@ -1588,8 +1588,8 @@ impl Interpreter {
         // symbols, not in the importer's env (#14174).
         let binding = self.type_name_binding(prefix).or_else(|| {
             self.toplevel_package_symbol(prefix)
-                .or_else(|| self.get_our_var(prefix))
                 .cloned()
+                .or_else(|| self.get_our_var(prefix))
         });
         let Some(ValueView::Package(pkg)) = binding.as_ref().map(Value::view) else {
             return None;

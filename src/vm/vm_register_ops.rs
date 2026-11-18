@@ -300,12 +300,13 @@ impl Interpreter {
             // the shared containers over, unless the capture already holds
             // that name (a nearer lexical of the same spelling).
             // Cost: O(g), g = file-scope `our` variables declared so far.
-            for sym in self.lexicals.global_our_names.iter() {
+            let our_vars = self.lexicals.our_vars.snapshot();
+            for sym in our_vars.global_names().iter() {
                 if env.contains_key_sym(*sym) {
                     continue;
                 }
                 if let Some(v) = self.get_our_var(sym.as_str()) {
-                    env.insert_sym(*sym, v.clone());
+                    env.insert_sym(*sym, v);
                 }
             }
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);

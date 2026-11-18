@@ -428,7 +428,14 @@ impl Interpreter {
         // For %::("x"), look up "%x" (hashes are stored with sigil).
         // For &::("x"), resolve as a code variable (function lookup).
         if sigil == "&" {
-            let val = loan_env!(self, resolve_code_var(&name));
+            let mut val = loan_env!(self, resolve_code_var(&name));
+            // An indirect name is also looked up in the package (`OUR::`), as
+            // `::("x")` does in raku: an `our sub` whose declaring scope (an
+            // `EVAL` unit, another thread) is gone is still a package member.
+            if val.is_nil() && !crate::qualified::is_qualified_str(&name) {
+                let our_name = format!("OUR::{name}");
+                val = loan_env!(self, resolve_code_var(&our_name));
+            }
             // A code symbol that is not there is an undefined `Failure`, not a
             // bare `Nil` — that is what lets a `//` fallback chain try the next
             // spelling (`&CALLER::LEXICAL::("infix:<$op>") // …` in `cmp-ok`)

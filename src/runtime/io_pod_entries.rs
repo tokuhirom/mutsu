@@ -73,12 +73,7 @@ impl Interpreter {
         if text.is_empty() {
             (Self::make_pod_para(Vec::new()), idx)
         } else {
-            // Check if text contains formatting codes
-            let has_formatting = text
-                .as_bytes()
-                .windows(2)
-                .any(|w| w[0].is_ascii_uppercase() && w[1] == b'<');
-            if has_formatting {
+            if Self::may_hold_formatting_code(&text) {
                 (Self::make_pod_para_with_formatting(&text), idx)
             } else {
                 (Self::make_pod_para(vec![text]), idx)
@@ -177,11 +172,7 @@ impl Interpreter {
         if text.is_empty() {
             (Some(Self::make_pod_para(Vec::new())), idx)
         } else {
-            let has_formatting = text
-                .as_bytes()
-                .windows(2)
-                .any(|w| w[0].is_ascii_uppercase() && w[1] == b'<');
-            if has_formatting {
+            if Self::may_hold_formatting_code(&text) {
                 (Some(Self::make_pod_para_with_formatting(&text)), idx)
             } else {
                 (Some(Self::make_pod_para(vec![text])), idx)

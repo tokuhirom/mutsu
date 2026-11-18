@@ -47,11 +47,7 @@ impl Interpreter {
             // `OUR::<Name> := ...` in a module body stores under the package
             // in `our_vars`, which a module read from inside another frame
             // (`my package EXPORT { Mod::Name }`) only sees there.
-            || self
-                .lexicals
-                .our_vars
-                .keys()
-                .any(|k| k.starts_with(&prefix))
+            || self.our_table().keys().any(|k| k.starts_with(&prefix))
             || self
                 .registry()
                 .classes
@@ -638,13 +634,11 @@ impl Interpreter {
             let env_sym = Symbol::intern(&env_name);
             if sigil.is_none() {
                 // An unsigiled key is the stash entry itself, not a `$` scalar.
-                self.lexicals.our_term_keys.insert(env_sym);
-                self.lexicals.our_scalar_keys.remove(&env_sym);
+                self.our_table_mark_term(env_sym, true);
             } else if sigil == Some('$') {
                 // `$Baz` is stored as `Pkg::Baz`; record that it is the scalar
                 // and not a term of that spelling (#17364).
-                self.lexicals.our_scalar_keys.insert(env_sym);
-                self.lexicals.our_term_keys.remove(&env_sym);
+                self.our_table_mark_term(env_sym, false);
             }
             self.env_mut().insert(env_name.clone(), binding.clone());
             self.set_our_var_exact(env_name, binding.clone());
@@ -912,21 +906,21 @@ impl Interpreter {
         // Fallback: check persistent `our`-scoped variables (constants, `our` decls)
         // which may have been removed from the lexical env by block-scope restoration.
         if let Some(bare) = name.strip_prefix('$')
-            && let Some(value) = self.lexicals.our_vars.get(bare)
+            && let Some(value) = self.our_table().get(bare).cloned()
             && !value.is_nil()
         {
             return value.clone();
         }
         if !name.starts_with(['$', '@', '%', '&'])
             && let Some(value) = self
-                .lexicals
-                .our_vars
+                .our_table()
                 .get(&crate::runtime::term_names::term_key(name))
+                .cloned()
             && !value.is_nil()
         {
             return value.clone();
         }
-        if let Some(value) = self.lexicals.our_vars.get(name)
+        if let Some(value) = self.our_table().get(name).cloned()
             && !value.is_nil()
         {
             return value.clone();

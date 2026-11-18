@@ -879,17 +879,19 @@ impl Interpreter {
                         self.current_package_sym(),
                         Symbol::intern(lookup_name),
                     );
-                    self.routines()
-                        .our_scoped_functions
-                        .get(&fq)
-                        .map(|d| (**d).clone())
+                    self.our_scoped_routine(fq)
+                        .map(|d| (*d).clone())
                         .or_else(|| {
                             let global_fq = format!("GLOBAL::{}", lookup_name);
-                            self.routines()
-                                .our_scoped_functions
-                                .get(&Symbol::intern(&global_fq))
-                                .map(|d| (**d).clone())
+                            self.our_scoped_routine(Symbol::intern(&global_fq))
+                                .map(|d| (*d).clone())
                         })
+                } else if crate::qualified::is_qualified_str(lookup_name) {
+                    // `&::("P::f")` / `&P::f` of an `our sub` an `EVAL` unit
+                    // (or another thread) declared: the unit's routine table
+                    // is rolled back, the package stash keeps it.
+                    self.our_scoped_routine(Symbol::intern(lookup_name))
+                        .map(|d| (*d).clone())
                 } else {
                     None
                 }

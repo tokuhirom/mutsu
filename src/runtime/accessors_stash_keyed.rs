@@ -105,7 +105,7 @@ impl Interpreter {
         }
         // A sigil-less `our constant` is mirrored in the env under the same
         // spelling as a scalar; it is a term, not `$name` (#11877).
-        if Symbol::lookup(key_s).is_some_and(|sym| self.lexicals.our_term_keys.contains(&sym)) {
+        if Symbol::lookup(key_s).is_some_and(|sym| self.our_table().is_term_key(sym)) {
             return Some(EnvStashMember::Value(rest.to_string()));
         }
         // An enum's key is a term too: `M::ea` of `module M { enum E <ea> }`
@@ -149,7 +149,7 @@ impl Interpreter {
         }
         // A sigil-less `our constant` is a term: its stash name is the bare
         // spelling, not the `$`-scalar its store key looks like (#11877).
-        if Symbol::lookup(key).is_some_and(|sym| self.lexicals.our_term_keys.contains(&sym)) {
+        if Symbol::lookup(key).is_some_and(|sym| self.our_table().is_term_key(sym)) {
             let rest = Self::stash_member_tail(key, package_name)?;
             // A term of a nested package (`outer::Inner::x`) makes that package
             // a member of this one (`Inner`), not the qualified name.
@@ -183,7 +183,7 @@ impl Interpreter {
     /// rather than a term of the same spelling (#17364).
     // Cost: O(1).
     fn is_our_scalar_key(&self, key: &str) -> bool {
-        Symbol::lookup(key).is_some_and(|sym| self.lexicals.our_scalar_keys.contains(&sym))
+        Symbol::lookup(key).is_some_and(|sym| self.our_table().is_scalar_key(sym))
     }
 
     /// `c2` of `rest` = `M::c2` when `M` is the last component of the package

@@ -810,7 +810,7 @@ impl Interpreter {
                     && self
                         .package_chain_var_fallback(crate::symbol::Symbol::intern(&key))
                         .is_none()
-                    && self.get_our_var(&key).is_none())
+                    && !self.has_our_var(&key))
             }
             // `GLOBAL::<Name> := Name` publishes the type to every scope.
             // Last: it builds GLOBAL's stash.

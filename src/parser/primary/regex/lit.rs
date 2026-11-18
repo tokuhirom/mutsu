@@ -1431,8 +1431,8 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 ),
             ));
         }
-        // An identifier, with its inner `-`/`'` (`.&lit'r`), as the
-        // postfix form `$x.&lit'r` reads it.
+        // The callee's name follows the identifier rules, apostrophe joints
+        // included (`.&lit'r`).
         let (rest, name) = crate::parser::primary::var::parse_ident_with_hyphens(r)?;
         let mut args = vec![Expr::Var("_".to_string())];
         let rest = if rest.starts_with('(') {
