@@ -474,16 +474,14 @@ impl Interpreter {
             .collect()
     }
 
-    pub(crate) fn resolve_token_defs(
+    /// The walk behind [`Self::resolve_token_defs`], which memoizes it
+    /// (`token_defs_memo`).
+    // Cost: O(m*v), m = MRO length of the current package, v = proto
+    // variants of the name.
+    pub(super) fn resolve_token_defs_uncached(
         &self,
         name: &str,
     ) -> Option<Vec<std::sync::Arc<FunctionDef>>> {
-        // Every lookup below reads `token_defs`: a program that declared no
-        // token has none to find, so skip the MRO walks and key builds (the
-        // `&name` resolution of every plain sub asks, #13049).
-        if self.routines().token_defs.is_empty() {
-            return None;
-        }
         if crate::qualified::is_qualified_str(name) {
             let identity = self.qualified_token_identity(Symbol::intern(name));
             let name = identity.as_str();
