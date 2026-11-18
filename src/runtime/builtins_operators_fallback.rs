@@ -245,7 +245,14 @@ impl Interpreter {
         // — that shortcut is only for a grammar start-rule / token-atom
         // caller, which threads `allow_builtin_char_class: true` through the
         // dedicated `eval_token_call_values`/`_at` call sites instead (#9719).
-        if let Some(pattern) = self.eval_token_call_values(name, args, false)? {
+        // A name that has user multi candidates or a proto is a routine whose
+        // dispatch just failed: that is X::Multi::NoMatch below, not a call of
+        // a same-named token the token lookup reaches through an enclosing
+        // package (CSS::Specification::Compiler::Grammars' `multi sub ws`
+        // fell to its outer grammar CSS::Specification's `token ws`).
+        if !(self.has_multi_function(name) || self.has_proto(name))
+            && let Some(pattern) = self.eval_token_call_values(name, args, false)?
+        {
             return Ok(Value::regex(pattern));
         }
         // An enum declared inside a module is stored by its bare declarator
