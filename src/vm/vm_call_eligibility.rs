@@ -915,7 +915,7 @@ impl Interpreter {
                 });
             return match supplied {
                 Some(v) => plan.accepts(&v),
-                None => plan.fill.is_some(),
+                None => plan.fill.is_some() || plan.binds_type_object_when_omitted(pd),
             };
         }
         if pd.has_traits()

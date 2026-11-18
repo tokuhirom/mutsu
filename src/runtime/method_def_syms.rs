@@ -179,6 +179,29 @@ pub(crate) fn named_fast_fill(pd: &crate::ast::ParamDef) -> Option<Option<crate:
 }
 
 impl NamedFast {
+    /// Whether an unsupplied `pd` (whose plan this is) binds the type object
+    /// `missing_optional_param_value` gives it, so the fast
+    /// binder can bind the omission without the general binder.
+    ///
+    /// That is a parameter with no default at all (a non-constant default
+    /// leaves `fill` empty and needs the general binder to evaluate it) whose
+    /// type is untyped or a plain built-in: the general binder's own omitted
+    /// value (`omitted_optional_param_value`) only differs from that type
+    /// object for a subset (`UInt` binds its refinee `Int`) or a user type, and
+    /// a `:D` smiley makes the omission an error the general binder raises.
+    // Cost: O(1).
+    pub(crate) fn binds_type_object_when_omitted(&self, pd: &crate::ast::ParamDef) -> bool {
+        use crate::opcode::{FastParamCheck, FastParamType};
+        pd.default.is_none()
+            && match self.check {
+                FastParamCheck::Unconstrained | FastParamCheck::RequiresAny => true,
+                FastParamCheck::ImplicitCallable => false,
+                FastParamCheck::Fast { kind, smiley, .. } => {
+                    smiley.is_none() && !matches!(kind, FastParamType::UInt)
+                }
+            }
+    }
+
     // Cost: O(1).
     pub(crate) fn of_param(pd: &crate::ast::ParamDef) -> Option<Self> {
         use crate::opcode::{CompiledFunction, FastParamCheck};
