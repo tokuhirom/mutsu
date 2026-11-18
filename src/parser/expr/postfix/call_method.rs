@@ -28,10 +28,12 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
     if crate::parser::stmt::simple::is_user_declared_sub(&name)
         || crate::parser::stmt::simple::is_imported_function(&name)
     {
+        // Written without parentheses (`make-seq.tail`): RakuAST's
+        // `Call::Name::WithoutParentheses`, deparsed `(make-seq).tail`.
         let call = Expr::Call {
             name: Symbol::intern(&name),
             args: Vec::new(),
-            listop: false,
+            listop: true,
         };
         return crate::parser::primary::ident::export_term_or_call(&name, call);
     }
