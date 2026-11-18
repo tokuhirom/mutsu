@@ -137,21 +137,21 @@ impl CompiledClassDeclPlan {
     }
 
     /// The part of [`Self::reentry_is_static`] that does not depend on the
-    /// body statements: a lexical or anonymous, non-stub class with a fixed
+    /// body statements: a non-stub class with a fixed
     /// name, no custom traits or metaclass, no parent or role arguments
     /// evaluated per entry, and attribute declaration-time expressions that
     /// read no lexical of the declaring frame.
     // Cost: O(a + m), a = attributes, m = methods.
     fn reentry_header_is_static(&self) -> bool {
-        // An anonymous `class :: { ... }` is one type per site too (rakudo:
-        // `sub f { class :: {} }; f() === f()`). Rebuilding it on every entry
-        // also rewrote a world table other threads were dispatching through
-        // (ADR-17216): a concurrent caller found its method table empty.
-        (self.is_lexical
-            || self
-                .name
-                .with_str(crate::anon_names::is_anon_class_name))
-            && self.decl_id != 0
+        // Every declaration is one type per site (rakudo creates it at
+        // compile time): a lexical one, an anonymous `class :: { ... }`
+        // (`sub f { class :: {} }; f() === f()`), and a package-scoped one
+        // declared in a routine (Proc::Q's `$c.send: class Res { ... }.new`
+        // in a `start` block). Rebuilding it on every entry rewrote a world
+        // table other threads were dispatching through (ADR-17216): a
+        // concurrent caller found its method table empty ("No such method
+        // 'out' for invocant of type 'Res'").
+        self.decl_id != 0
             && !self.is_stub
             && self.name_chunk.is_none()
             && self.custom_traits.is_empty()

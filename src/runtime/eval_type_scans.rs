@@ -341,7 +341,7 @@ impl CaptureInheritance {
             if !self.captures.contains(base) {
                 continue;
             }
-            let child_display = if name.starts_with("__ANON_CLASS_") {
+            let child_display = if crate::anon_names::is_anon_class_name(name) {
                 "<anon>".to_string()
             } else {
                 name.to_string()
