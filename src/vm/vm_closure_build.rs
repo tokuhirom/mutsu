@@ -232,6 +232,7 @@ impl Interpreter {
             _state_scope_guard: state_scope_guard,
             captured_readonly,
             routine_cell: spec.routine_cell.unwrap_or_default(),
+            routine_ctx: self.routine_context_handle(),
         }))
     }
 
