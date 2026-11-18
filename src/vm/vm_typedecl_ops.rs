@@ -1249,7 +1249,7 @@ impl Interpreter {
     /// with: the module's `EXPORTHOW::DECLARE` entry, the `EXPORTHOW::SUPERSEDE`
     /// entry that replaces a built-in declarator's HOW, or a slang's own record.
     // Cost: O(1), a bounded number of env and registry probes.
-    fn declarator_how_type(&mut self, keyword: &str) -> Option<Value> {
+    pub(crate) fn declarator_how_type(&mut self, keyword: &str) -> Option<Value> {
         let probe = |this: &mut Self, package: &str| {
             let name =
                 crate::qualified::qualified(Symbol::intern(package), Symbol::intern(keyword));

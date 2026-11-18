@@ -50,6 +50,77 @@ impl Interpreter {
         out
     }
 
+    /// Record as `module`'s own the `EXPORTHOW` declarators its load bound
+    /// (`globals`: the qualified env bindings the load added), beyond those
+    /// its source declares: a member the module computes
+    /// (`BEGIN EXPORTHOW::DECLARE.WHO<gizmo> := GizmoHOW`) is a declarator of
+    /// the loaded unit as much as a `constant` in `package DECLARE` is, and
+    /// only the loaded unit knows it (ADR-17558 slice 3). A declarator some
+    /// other module already owns (one a dependency loaded inside this load
+    /// declared) stays that module's.
+    // Cost: O(g + d), g = `globals`, d = declarators recorded for every
+    // loaded module.
+    pub(crate) fn record_bound_exporthow_declares(&mut self, module: &str, globals: &[(Symbol, Value)]) {
+        let mut found: Vec<(String, String)> = Vec::new();
+        for (key, _) in globals {
+            let key = key.resolve();
+            let Some(rest) = key.strip_prefix("EXPORTHOW::") else {
+                continue;
+            };
+            let Some((directive, keyword)) = rest.split_once("::") else {
+                continue;
+            };
+            if !matches!(directive, "DECLARE" | "SUPERSEDE") {
+                continue;
+            }
+            let keyword = keyword.strip_prefix('$').unwrap_or(keyword);
+            if keyword.is_empty() || crate::qualified::is_qualified_str(keyword) {
+                continue;
+            }
+            found.push((directive.to_string(), keyword.to_string()));
+        }
+        if found.is_empty() {
+            return;
+        }
+        let owned = |declares: &HashMap<String, Vec<(String, String)>>, entry: &(String, String)| {
+            declares.values().any(|list| list.contains(entry))
+        };
+        found.retain(|entry| !owned(&self.module.exporthow_declares, entry));
+        found.dedup();
+        if found.is_empty() {
+            return;
+        }
+        crate::runtime::cow_table_mut(&mut self.module.exporthow_declares)
+            .entry(module.to_string())
+            .or_default()
+            .extend(found);
+    }
+
+    /// Whether the HOW `how` (a declarator's `EXPORTHOW` entry) builds a
+    /// parametric role: it is `Metamodel::ParametricRoleHOW`, or a class that
+    /// inherits from it. rakudo's `package_def` takes a declaration's `[...]`
+    /// signature exactly when its HOW's `archetypes.parametric` is true, which
+    /// among the metaclasses a declarator can name is this one alone.
+    // Cost: O(m), m = the MRO length of the HOW's class.
+    pub(crate) fn how_builds_parametric_role(&mut self, how: &Value) -> bool {
+        let ValueView::Package(sym) = how.view() else {
+            return false;
+        };
+        let is_role_how = |name: &str| {
+            matches!(
+                name,
+                "Metamodel::ParametricRoleHOW" | "Perl6::Metamodel::ParametricRoleHOW"
+            )
+        };
+        let name = sym.resolve();
+        is_role_how(&name)
+            || (self.registry().classes.contains_key(&name)
+                && self
+                    .class_mro(&name)
+                    .iter()
+                    .any(|class| is_role_how(&class.resolve())))
+    }
+
     fn declared_member_name(stmt: &Stmt) -> Option<String> {
         match stmt {
             Stmt::VarDecl { name, .. } => Some(name.clone()),
