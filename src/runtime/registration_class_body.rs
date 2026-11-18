@@ -66,6 +66,10 @@ pub(super) struct ClassBodyCx<'a> {
     /// owner through one (`$o!NAME::meth`); the constant has not run yet when
     /// the method is validated, so the alias is read off the body.
     pub(super) type_aliases: Vec<(String, String)>,
+    /// A re-entry of a declaration that keeps its registered type (#18070):
+    /// only the body's per-entry statements run, and nothing is registered
+    /// or written back to the class.
+    pub(super) per_entry: bool,
 }
 
 impl ClassBodyCx<'_> {
@@ -148,6 +152,7 @@ impl Interpreter {
         compiled_fns: &crate::opcode::CompiledFns,
         body_plan: &[crate::opcode::ClassBodyOp],
         is_hoisted_shell: super::registration_class::HoistedShell,
+        per_entry: bool,
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -198,6 +203,7 @@ impl Interpreter {
             is_hoisted_shell,
             pending_attr_composes: Vec::new(),
             type_aliases: body_type_aliases(body_plan),
+            per_entry,
         };
         // Snapshotted BEFORE the hoist pre-pass below, so the per-op
         // `class_subs` tail-probe (search "Check if any new functions were
@@ -257,6 +263,16 @@ impl Interpreter {
             .push(Symbol::intern(name));
         let walk_result: Result<(), RuntimeError> = (|| {
             for op in body_plan {
+                if cx.per_entry
+                    && !matches!(
+                        op,
+                        crate::opcode::ClassBodyOp::LeavePhaser { .. }
+                            | crate::opcode::ClassBodyOp::ClassSub { .. }
+                            | crate::opcode::ClassBodyOp::Other { .. }
+                    )
+                {
+                    continue;
+                }
                 match op {
                     crate::opcode::ClassBodyOp::LeavePhaser { chunk, raw } => {
                         let Stmt::Phaser { body, .. } = raw else {
@@ -337,95 +353,19 @@ impl Interpreter {
                         )?;
                     }
                 }
-                // Check if any new functions were registered under the class package
-                // during body processing (e.g., class-scoped subs).
-                // Only count functions that are actual subs (not methods, which are
-                // registered via MethodDecl and stored in the class methods table).
-                //
-                // A `multi sub` does NOT register under the bare `Pkg::name`
-                // key: `insert_multi_overload` keys its candidates
-                // `Pkg::name/arity:types` (plus `__mN` for same-signature
-                // siblings). Probing only the exact key therefore missed every
-                // class-body `proto`+`multi` family, `has_class_scoped_subs`
-                // stayed false, and method dispatch left `current_package` at
-                // GLOBAL -- so `bare_name_packages()` inside a method never
-                // reached the class and the family was unreachable from the
-                // class's own methods ("Unknown function"). Accept the multi
-                // key shape as well.
-                if let crate::opcode::ClassBodyOp::ClassSub { name: sub_name, .. } = op {
-                    let fq = crate::qualified::qualified_text(cx.name, sub_name)
-                        .as_str()
-                        .to_string();
-                    let multi_prefix = format!("{fq}/");
-                    let registered = {
-                        let registry = self.routines();
-                        registry.functions.keys().any(|k| {
-                            let ks = k.resolve();
-                            (ks == fq || ks.starts_with(&multi_prefix))
-                                && !saved_functions_keys.contains(&ks)
-                        })
-                    };
-                    if registered {
-                        self.registry_mut()
-                            .class_subs
-                            .entry(cx.name.to_string())
-                            .or_default()
-                            .insert(fq, Value::TRUE);
-                    }
-                } else if matches!(
-                    op,
-                    crate::opcode::ClassBodyOp::Other {
-                        raw: Stmt::Use { .. } | Stmt::Import { .. },
-                        ..
-                    }
-                ) {
-                    // A class-body `use`/`import` installs its exports under
-                    // THIS class's own package (`import_module`'s `target_pkg`
-                    // is `current_package()`, already the class while its body
-                    // runs) -- but there is no single known sub name to probe
-                    // for, unlike a `sub` declaration above. Diff the whole
-                    // function-key set instead: any key newly registered under
-                    // `cx.name::` is one of the statement's imports. Without
-                    // this, `has_class_scoped_subs` stayed false for a class
-                    // whose only class-scoped routine came from a `use`
-                    // (rather than its own `sub`), so method dispatch never
-                    // anchored `current_package` to the class and an imported
-                    // sub was "Unknown function" from the class's own methods
-                    // (#8883).
-                    let prefix = format!("{}::", cx.name);
-                    let new_keys: Vec<String> = {
-                        let registry = self.routines();
-                        registry
-                            .functions
-                            .keys()
-                            .filter_map(|k| {
-                                let ks = k.resolve();
-                                (ks.starts_with(&prefix) && !saved_functions_keys.contains(&ks))
-                                    .then_some(ks)
-                            })
-                            .collect()
-                    };
-                    if !new_keys.is_empty() {
-                        let mut registry = self.registry_mut();
-                        let entry = registry.class_subs.entry(cx.name.to_string()).or_default();
-                        for fq in new_keys {
-                            entry.insert(fq, Value::TRUE);
-                        }
-                    }
+                if !cx.per_entry {
+                    self.publish_class_body_op(&cx, op, &saved_functions_keys);
                 }
-                self.registry_mut()
-                    .classes
-                    .insert(cx.name.to_string(), cx.class_def.clone().into());
-                self.registry_mut()
-                    .sync_accessor_entries(Symbol::intern(cx.name));
             }
             // Rakudo specializes a role (running a user `specialize` mixed into
             // its HOW) before the role's attributes compose into the class, so
             // the hook can prepare the class HOW the attributes' `compose`
             // relies on (AttrX::Mooish mixes its ClassHOW role in there).
-            self.drive_role_how_specialize(cx.name)?;
-            self.queue_role_attribute_composes(&mut cx, own_attribute_names);
-            self.run_pending_attr_composes(&mut cx)?;
+            if !cx.per_entry {
+                self.drive_role_how_specialize(cx.name)?;
+                self.queue_role_attribute_composes(&mut cx, own_attribute_names);
+                self.run_pending_attr_composes(&mut cx)?;
+            }
             self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
             self.persist_class_body_statics(&cx, declared_static_names, nested_decl_names);
             self.restore_class_body_our_aliases(&cx, body_plan);
@@ -755,11 +695,13 @@ impl Interpreter {
         // `is_swallowable` is precomputed at plan-classification time
         // (`crate::opcode::is_swallowable_class_body_stmt`, ADR-0019 D10
         // follow-up) instead of re-matching `stmt`'s shape here.
-        self.registry_mut()
-            .classes
-            .insert(cx.name.to_string(), cx.class_def.clone().into());
-        self.registry_mut()
-            .sync_accessor_entries(Symbol::intern(cx.name));
+        if !cx.per_entry {
+            self.registry_mut()
+                .classes
+                .insert(cx.name.to_string(), cx.class_def.clone().into());
+            self.registry_mut()
+                .sync_accessor_entries(Symbol::intern(cx.name));
+        }
         // Mark this class as "being defined" so a `has`-attribute
         // declaration executed by a *compile-time* phaser
         // (`class Foo { BEGIN EVAL q[has $.x] }`) attaches to it
