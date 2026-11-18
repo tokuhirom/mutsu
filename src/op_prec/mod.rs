@@ -167,7 +167,14 @@ impl OpPrec {
         let mark = match relation {
             "tighter" => '@',
             "looser" => ':',
-            _ => return base,
+            // `is equiv` takes the level (and `dba`, `iffy`, `diffy`) but not
+            // the associativity, which is left unless `is assoc` says
+            // otherwise, as for `is tighter` / `is looser` (rakudo:
+            // `is equiv(&infix:<**>)` is `assoc => left`).
+            _ => {
+                base.set("assoc", "left".to_string());
+                return base;
+            }
         };
         if let Some((_, prec)) = base.0.iter_mut().find(|(k, _)| k == "prec") {
             match prec.find('=') {
