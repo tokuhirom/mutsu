@@ -497,9 +497,35 @@ impl Interpreter {
         }
         let table = crate::runtime::cow_table_mut(&mut self.module.operator_import_units);
         if let Some(families) = table.get_mut(&name_sym) {
-            for unit in grant {
+            for &unit in &grant {
                 families.entry(unit).or_default().insert(importer);
             }
+        }
+        self.module.operator_import_gen += 1;
+        // A block-scoped `use` grants the family to the block only: its
+        // import scope takes the grant back when it closes, as it does the
+        // registry writes of the import (#18100). A top-level import has no
+        // scope of its own and keeps it.
+        for unit in grant {
+            self.log_import_write(crate::runtime::ImportWrite::FamilyGrant(
+                name_sym, unit, importer,
+            ));
+        }
+    }
+
+    /// Undo one grant [`Self::grant_scoped_family_import`] made: the family
+    /// `name` declared by `unit` is no longer imported by `importer`.
+    // Cost: O(1) hash probes, plus a copy of the table while it is shared.
+    pub(crate) fn revoke_scoped_family_import(
+        &mut self,
+        name: Symbol,
+        unit: Symbol,
+        importer: Symbol,
+    ) {
+        let table = crate::runtime::cow_table_mut(&mut self.module.operator_import_units);
+        if let Some(importers) = table.get_mut(&name).and_then(|families| families.get_mut(&unit))
+        {
+            importers.remove(&importer);
         }
         self.module.operator_import_gen += 1;
     }

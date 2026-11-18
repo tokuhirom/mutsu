@@ -2746,6 +2746,10 @@ pub(crate) enum ImportWrite {
     Proto(Symbol, Option<Arc<FunctionDef>>),
     /// A `proto_subs` marker, and whether it was already there.
     ProtoSub(String, bool),
+    /// A grant of the scoped family `name` declared by `unit` to `importer`
+    /// (`ModuleState::operator_import_units`) that a `sub EXPORT` hook's
+    /// import made (`grant_scoped_family_import`): `(name, unit, importer)`.
+    FamilyGrant(Symbol, Symbol, Symbol),
 }
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
