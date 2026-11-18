@@ -8,12 +8,14 @@ use lib 't/lib-unit-module-role-shell';
 # size_t --> Pointer) is native`, which warned "Not an accepted NativeCall type"
 # once another module had loaded NativeCall).
 
-plan 2;
+plan 3;
 
 use ShellStore;
 use ShellFirst;
 use ShellRole;
+use ShellRoleLate;
 
 is R.new.z, 1, 'the role composes';
+is RL.new.z, 2, 'a role after run-time code and a versioned unit declarator composes';
 ok @ShellStore::SEEN && (all(@ShellStore::SEEN) eq 'NativeCall::Types::size_t'),
-    'every trait run sees the imported type';
+    'every trait run, in both modules, sees the imported type';

@@ -958,6 +958,23 @@ impl Compiler {
         self.in_unit_package = original_in_unit_package;
     }
 
+    /// The last `use`/`need`/`import` among a unit's leading statements (the
+    /// ones before the first statement that runs user code), after which the
+    /// unit's type shells register (see `Compiler::deferred_type_shells`).
+    // Cost: O(s), s = leading statements.
+    pub(super) fn leading_import_anchor(stmts: &[Stmt]) -> Option<&Stmt> {
+        stmts
+            .iter()
+            .take_while(|stmt| Self::runs_no_user_code(stmt))
+            .filter(|stmt| {
+                matches!(
+                    stmt,
+                    Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. }
+                )
+            })
+            .last()
+    }
+
     /// Whether a unit-level statement only declares or imports: it registers
     /// symbols but runs no user code, so nothing can forward-reference a
     /// later type while it runs.
@@ -967,11 +984,13 @@ impl Compiler {
         // package; without user traits it runs nothing. Counting it as code
         // made every type after it in a module "forward-referenceable",
         // shelled ahead of the module's own `use`s (#18092).
-        if let Stmt::Package {
+        // The declarator may come wrapped with its adverbs (`unit module
+        // X:ver<0.1>;`, `package_header`).
+        if let Some(Stmt::Package {
             is_unit: true,
             custom_traits,
             ..
-        } = stmt
+        }) = crate::ast::package_header::declaration(stmt)
         {
             return custom_traits.is_empty();
         }
@@ -1038,7 +1057,12 @@ impl Compiler {
             _ => return,
         };
         self.hoisted_type_shells.push((decl_id, idx));
-        self.code.emit(OpCode::RegisterDecl(idx));
+        match self.deferred_type_shells.as_mut() {
+            Some(deferred) if !nested => deferred.push(idx),
+            _ => {
+                self.code.emit(OpCode::RegisterDecl(idx));
+            }
+        }
     }
 
     /// The declaration-only subset of a class body used by

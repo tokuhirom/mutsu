@@ -10,6 +10,12 @@ before `use NativeCall` had imported `size_t`: NativeHelpers::Blob printed
 NativeCall's "Not an accepted NativeCall type" warning for `size_t` whenever
 another module had loaded NativeCall first.
 
-A `unit module`/`unit package` declarator without traits now counts as a
-declaration, like `unit class`, so the types after it register in source
-order (#18092).
+Two changes fix it (#18092):
+
+- a `unit module`/`unit package` declarator without traits (adverbs such as
+  `:ver<...>` included) now counts as a declaration, like `unit class`;
+- a unit's shells register right after its last leading `use`, not at its very
+  head: they still precede every statement that runs user code, but no longer
+  the imports a role body's signatures and traits need. NativeHelpers'
+  `NativeHelpers::CStruct`, whose `our $debug = False;` before the role makes
+  the shell legitimate, now loads without the warning.
