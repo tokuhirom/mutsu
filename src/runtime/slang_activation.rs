@@ -43,6 +43,14 @@ pub(crate) struct SlangActivation {
     /// (ADR-15762): the interpreter that loaded the slang stays alive to run
     /// its tokens and actions.
     pub(crate) host: Option<crate::slang_link::SlangHost>,
+    /// The routines the module exports to the activating `use` (under its
+    /// import tags), with their operator precedence: the activation stands
+    /// in for the parse-time load of a slang module, so the importer's parse
+    /// learns them here (#18091).
+    // TODO: ADR-17558 slice 4 loads a slang module in the program
+    // interpreter, whose loaded unit then supplies these facts as for any
+    // other `use`; this field goes with the activation interpreter.
+    pub(crate) exports: Vec<crate::compile_time_loader::LoadedExport>,
 }
 
 /// Classes of the compile-time `$*LANG` object graph. The language handle is
@@ -243,6 +251,7 @@ pub(crate) fn run_slang_activation(
     module: String,
     lib_paths: Vec<String>,
     use_args: Option<Vec<SlangUseArg>>,
+    import_tags: Option<Vec<String>>,
 ) -> Result<SlangActivation, String> {
     let (result_tx, result_rx) = std::sync::mpsc::channel::<Result<SlangActivation, String>>();
     // Detached: a plain activation thread ends when it has answered; a host
@@ -291,11 +300,21 @@ pub(crate) fn run_slang_activation(
                         });
                     }
                 }
+                let (bare, _) = Interpreter::split_dist_selectors(&module);
+                let exports = interp
+                    .module_exported_routine_names(bare, import_tags.as_deref())
+                    .into_iter()
+                    .map(|name| {
+                        let op_prec = interp.declared_op_prec_of_name(&name);
+                        crate::compile_time_loader::LoadedExport { name, op_prec }
+                    })
+                    .collect();
                 Ok(SlangActivation {
                     rules: std::mem::take(&mut interp.regex_state.defined_slang_rules),
                     declarators,
                     supersede_keywords: interp.exporthow_stash_keywords("SUPERSEDE"),
                     host: None,
+                    exports,
                 })
             })();
             let hooks = outcome.as_ref().is_ok_and(|a| {

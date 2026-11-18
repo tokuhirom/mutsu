@@ -344,19 +344,26 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             _ => {}
         }
     }
-    let if_imports = if condition.is_some() {
-        imports.clone()
-    } else {
-        Vec::new()
-    };
     // A slang-activating module (its source `use`s Slangify) executes at
     // parse time so its slang registration can switch parser modes for the
     // rest of this compilation unit (ADR-0026 §2.1). Activation failure —
     // including an unsupported grammar-rule override — fails the parse
     // loudly; continuing in the wrong grammar would be silently wrong.
-    if let Err(msg) = super::super::simple::maybe_activate_slang_use(&module, arg.as_ref()) {
-        return Err(PError::fatal(msg));
+    match super::super::simple::maybe_activate_slang_use(&module, arg.as_ref(), import_tags) {
+        Err(msg) => return Err(PError::fatal(msg)),
+        Ok(names) => {
+            for name in names {
+                if !imports.contains(&name) {
+                    imports.push(name);
+                }
+            }
+        }
     }
+    let if_imports = if condition.is_some() {
+        imports.clone()
+    } else {
+        Vec::new()
+    };
     // Dist selectors ride on the module name (`Name:auth<...>:ver<...>`); the
     // runtime's use_module splits them back off before any registry keying.
     let module = if dist_selectors.is_empty() {

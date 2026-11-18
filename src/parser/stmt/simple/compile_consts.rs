@@ -359,6 +359,18 @@ pub(in crate::parser) fn register_loaded_use_exports(
     capture_imported_functions(|| super::register_loaded_unit_facts(module, import_tags))
 }
 
+/// Register the routines a slang activation reported for its `use`
+/// ([`super::maybe_activate_slang_use`]), returning the names imported.
+// Cost: O(e * n), e = exported routines, n = built-in operator count.
+pub(in crate::parser) fn register_activation_exports(
+    exports: Vec<crate::compile_time_loader::LoadedExport>,
+) -> Vec<String> {
+    if exports.is_empty() {
+        return Vec::new();
+    }
+    capture_imported_functions(|| super::module_exports::apply_loaded_exports(exports))
+}
+
 /// Run `register` (a `use`'s export registration) and return exactly the
 /// function names it imported into the current scope, including ones an
 /// earlier `use` had already imported there. Registration only ever inserts,

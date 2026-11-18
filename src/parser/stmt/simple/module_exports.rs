@@ -23,7 +23,7 @@ use export_hook::{
     collect_export_hook_value_terms, collect_unit_scope_routines, declares_export_sub,
 };
 pub(crate) use import_tags::register_import_tags;
-pub(crate) use loaded_facts::register_loaded_unit_facts;
+pub(crate) use loaded_facts::{apply_loaded_exports, register_loaded_unit_facts};
 use scanned_exports::record_scanned_exports;
 pub(crate) use scanned_exports::{CanonicalScans, canonical_export_scans};
 
