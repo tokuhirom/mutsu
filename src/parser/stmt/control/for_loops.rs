@@ -197,7 +197,9 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     }
     // C-style `for (init; test; incr) { }` is obsolete — Raku uses `loop`.
     // Detected by a top-level `;` inside the parenthesized iterable.
-    if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) && paren_group_has_semicolon(rest)
+    if rest.starts_with('(')
+        && paren_has_toplevel_semicolon(rest)
+        && paren_group_has_semicolon(rest)
     {
         return Err(PError::obsolete("C-style \"for\"", "\"loop\""));
     }

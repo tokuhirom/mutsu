@@ -115,11 +115,13 @@ fn lowered_method_assign_declaration(stmt: &Stmt) -> Option<&[Stmt]> {
         return None;
     };
     match parts.as_slice() {
-        [Stmt::VarDecl { marks, is_state: false, .. }]
-            if marks.method_assign_decl || is_method_call_initializer(&parts[0]) =>
-        {
-            Some(parts)
-        }
+        [
+            Stmt::VarDecl {
+                marks,
+                is_state: false,
+                ..
+            },
+        ] if marks.method_assign_decl || is_method_call_initializer(&parts[0]) => Some(parts),
         [
             Stmt::VarDecl {
                 name,
@@ -174,7 +176,11 @@ fn written_method_assign_declaration(
 
 /// [`split_method_assign_decl`] over the lowered statements.
 // Cost: O(n), n = size of the call.
-fn split_lowered_method_assign(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) -> Option<Stmt> {
+fn split_lowered_method_assign(
+    parts: &[Stmt],
+    effective_cond: &Expr,
+    is_unless: bool,
+) -> Option<Stmt> {
     match parts {
         [decl] => split_simple_declaration(decl, effective_cond, is_unless),
         [decl, assign] => Some(Stmt::SyntheticBlock(vec![
@@ -255,7 +261,11 @@ fn try_split_decl_modifier(
         return Ok(split_method_assign_decl(form, effective_cond, is_unless));
     }
     if let Some(parts) = lowered_method_assign_declaration(stmt) {
-        return Ok(split_lowered_method_assign(parts, effective_cond, is_unless));
+        return Ok(split_lowered_method_assign(
+            parts,
+            effective_cond,
+            is_unless,
+        ));
     }
     Ok(split_simple_declaration(stmt, effective_cond, is_unless))
 }
