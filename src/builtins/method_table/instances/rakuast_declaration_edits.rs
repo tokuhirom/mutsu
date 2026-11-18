@@ -20,9 +20,7 @@ fn lexical_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> 
         ValueView::RakuAst(node) if node.class == crate::rakuast::RakuAstClass::TypeCapture => {
             crate::rakuast::node_accessor(node, "name")
                 .and_then(|name| match name.view() {
-                    ValueView::RakuAst(name) => {
-                        crate::rakuast::node_accessor(name, "canonicalize")
-                    }
+                    ValueView::RakuAst(name) => crate::rakuast::node_accessor(name, "canonicalize"),
                     _ => None,
                 })
                 .unwrap_or(Value::NIL)
