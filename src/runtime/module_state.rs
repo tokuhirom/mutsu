@@ -613,6 +613,10 @@ pub(crate) struct ModuleState {
     /// The parse site of the `use` statement whose import is running
     /// (`OpCode::UseModule`), for `rerun_module_export` (`0`: none).
     pub(crate) pending_use_site: u32,
+    /// Set by `run_export_hook_for_parse` for the `rerun_module_export` it
+    /// makes: that run records the hook's map for the parse instead of
+    /// installing one.
+    pub(crate) export_hook_run_for_parse: bool,
     /// While a parse-time load runs: the `module_load_stack` depth at which
     /// a hook's importer is the unit being parsed, so only that hook's map
     /// is recorded in `parse_time_hook_results` (a dependency's hook imports
@@ -878,6 +882,7 @@ impl ModuleState {
             parse_time_hook_results: HashMap::new(),
             parse_time_hook_site: 0,
             pending_use_site: 0,
+            export_hook_run_for_parse: false,
             parse_time_hook_depth: None,
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
@@ -1008,6 +1013,7 @@ impl ModuleState {
             parse_time_hook_results: HashMap::new(),
             parse_time_hook_site: 0,
             pending_use_site: 0,
+            export_hook_run_for_parse: false,
             parse_time_hook_depth: None,
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),

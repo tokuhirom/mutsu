@@ -318,8 +318,7 @@ impl Interpreter {
         let site = std::mem::take(&mut self.module.pending_use_site);
         // A run for the parse (`run_export_hook_for_parse`) is the one that
         // records a map; it installs none.
-        let for_parse =
-            self.module.parse_time_hook_depth == Some(self.module.module_load_stack.len());
+        let for_parse = std::mem::take(&mut self.module.export_hook_run_for_parse);
         if !for_parse
             && let Some((result, generated)) =
                 self.take_parse_time_hook_result(module, &export_args, site)
@@ -405,7 +404,7 @@ impl Interpreter {
         self.record_eval_hook_result(module, &hook_args, &result);
         // A parse that runs the hook for its `use` (`run_export_hook_for_parse`)
         // keeps the map for the `use`'s import in position.
-        if self.record_parse_time_hook_result(module, &hook_args, &result) {
+        if for_parse && self.record_parse_time_hook_result(module, &hook_args, &result) {
             return Ok(());
         }
         self.install_hook_result(&result, importer.as_deref());
@@ -421,7 +420,9 @@ impl Interpreter {
         // The hook's importer sits one load deeper than the parse, as when
         // the module's own load runs it (`parse_time_hook_depth`).
         self.module.module_load_stack.push(module.to_string());
+        self.module.export_hook_run_for_parse = true;
         let result = self.rerun_module_export(module);
+        self.module.export_hook_run_for_parse = false;
         self.module.module_load_stack.pop();
         result
     }
