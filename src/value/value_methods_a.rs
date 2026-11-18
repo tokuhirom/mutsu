@@ -1274,6 +1274,11 @@ impl Value {
     /// Non-ContainerRef values are cloned as-is. Use [`Value::with_deref`] instead
     /// when you only need to read the inner value (it avoids the clone).
     pub fn deref_container(&self) -> Value {
+        // A lazy Match is not a container, and viewing it would materialize
+        // its attribute map.
+        if self.is_lazy_match_value() {
+            return self.clone();
+        }
         self.with_deref(|inner| {
             if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
                 inner.hash_entry_read()
