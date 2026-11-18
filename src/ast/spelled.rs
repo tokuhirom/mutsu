@@ -144,6 +144,9 @@ pub(crate) enum Spelling {
     /// node is the same decontainerizing zen slice whatever the brackets, but
     /// RakuAST keeps a different subscript class for each.
     ZenBrackets(char),
+    /// `x²`: a superscript power, which is the `**` the parser builds but a
+    /// `Postfix::Power` in RakuAST.
+    SuperscriptPower,
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,

@@ -17,6 +17,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         VarCompilerLookup => "name",
         VarCompilerFile => "file",
         VarCompilerLine => "line",
+        PostfixPower => "power",
         Label => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",
