@@ -141,7 +141,11 @@ impl Interpreter {
                 let front = matches!(method, "unshift" | "prepend");
                 Some(Ok(self.shared_array_extend(name, items, front)))
             }
-            "push" | "unshift" if !args.is_empty() => {
+            // Appends only: `push_to_shared_var` adds at the end, so an
+            // `unshift` here (an attribute `@!p` once a second thread exists)
+            // came out as a push (Terminal::LineEditor's prefix sums read
+            // `[1, 2, 3, 0]`). It takes the ordinary path, as `prepend` does.
+            "push" if !args.is_empty() => {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethodmut",
                     "shared-array-push-legacy",
