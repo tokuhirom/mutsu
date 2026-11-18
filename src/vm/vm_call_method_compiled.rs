@@ -204,8 +204,16 @@ impl Interpreter {
                     self.locals[*slot] = val.clone();
                     continue;
                 }
-                if let Some(val) = self.env().get(name) {
-                    self.locals[*slot] = val.clone();
+                // A file-scope lexical of a module file is not in the running
+                // env (the env belongs to whatever scope loaded the module,
+                // a routine that `require`d it, #18017): the by-name read
+                // finds it in the module's compunit bucket.
+                if let Some(val) = self
+                    .unit_lexical_slot(name, None)
+                    .cloned()
+                    .or_else(|| self.env().get(name).cloned())
+                {
+                    self.locals[*slot] = val;
                 }
             }
         }
@@ -328,9 +336,13 @@ impl Interpreter {
                         Some(ValueView::Array(..) | ValueView::Hash(..))
                     )
                 {
-                    {
-                        let __v = self.locals[*slot].clone();
-                        self.env_mut().insert(name.clone(), __v);
+                    let value = self.locals[*slot].clone();
+                    // A module file's own file-scope lexical is written where
+                    // its routines read it, not into the loader's env.
+                    if let Some(cell) = self.unit_lexical_slot_mut(name, None) {
+                        *cell = value;
+                    } else {
+                        self.env_mut().insert(name.clone(), value);
                     }
                 }
             }
