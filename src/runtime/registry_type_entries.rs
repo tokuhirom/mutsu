@@ -301,6 +301,7 @@ impl Registry {
             method_renames,
             dispatcher_wrapped_methods,
             candidate_wrapped_methods,
+            method_wrap_owners,
             enum_types,
             how_enums,
             subsets,
@@ -443,6 +444,7 @@ impl Registry {
         dst.has_proto_methods |= *has_proto_methods;
         union(dispatcher_wrapped_methods, &mut dst.dispatcher_wrapped_methods);
         union(candidate_wrapped_methods, &mut dst.candidate_wrapped_methods);
+        union(method_wrap_owners, &mut dst.method_wrap_owners);
         union(class_level_attr_names, &mut dst.class_level_attr_names);
         union(proto_method_names, &mut dst.proto_method_names);
 
