@@ -556,6 +556,11 @@ pub(crate) struct RoutineSpans {
     /// RakuAST node says `multiness => "only"`.
     #[serde(default)]
     pub(crate) only: bool,
+    /// The operator name as written (`postcircumfix:«<< >>»`) when the
+    /// parser's canonical name (`postcircumfix:<<< >>>`) spells its symbol
+    /// differently; RakuAST keeps the written quote form.
+    #[serde(default)]
+    pub(crate) name_written: Option<Box<str>>,
 }
 
 /// Where a trait was written (`is copy`, `returns Int`): all of it, and the

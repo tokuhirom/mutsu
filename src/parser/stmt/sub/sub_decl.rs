@@ -320,6 +320,7 @@ pub(crate) fn sub_decl_body(
         (rest, name, None)
     };
     let name_span = crate::parser::primary::source_span(name_start, rest);
+    let name_written = &name_start[..name_start.len() - rest.len()];
     let (rest, _) = ws(rest)?;
 
     // Parse params
@@ -613,7 +614,7 @@ pub(crate) fn sub_decl_body(
         rest,
         &body,
     );
-    let sub_decl = Stmt::SubDecl {
+    let mut sub_decl = Stmt::SubDecl {
         is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
         spans,
         name: sub_name_sym,
@@ -635,6 +636,7 @@ pub(crate) fn sub_decl_body(
         scope: crate::ast::SubScope::My,
         custom_traits: traits.custom_traits,
     };
+    super::note_written_name(&mut sub_decl, name_written);
     // Check for immediate invocation: `sub foo(...) { ... }(args)`.
     // Only if `(` follows without a newline (same-line invocation).
     let has_newline = rest[..rest.len().min(rest.find('(').unwrap_or(rest.len()))].contains('\n');

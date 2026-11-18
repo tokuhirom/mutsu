@@ -601,6 +601,12 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 body,
                 return_type.as_deref(),
             )?;
+            if let Some(written) = spans.as_deref().and_then(|s| s.name_written.as_deref())
+                && let Some(name) = super::name_parts::written_operator_name(names, written)
+                && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("name"))
+            {
+                *field = node_field(Some("name"), name);
+            }
             super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
             super::routine_source::mark_legacy_sub_forms(
                 names,
