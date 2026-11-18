@@ -12,6 +12,8 @@ pub(crate) use proto_resolve_memo::ProtoResolveMemo;
 pub(crate) mod registry_gen;
 /// A world table shared live by every thread (ADR-17216).
 pub(crate) mod world_cell;
+/// The `our` variable store as a world table (ADR-17216 slice 4b).
+pub(crate) mod our_var_table;
 /// Serialises type declarations against the shared world registry.
 pub(crate) mod world_decl_lock;
 /// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).

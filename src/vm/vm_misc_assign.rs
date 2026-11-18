@@ -1162,11 +1162,11 @@ impl Interpreter {
             .env()
             .get_sym(sym)
             .filter(|v| v.is_container_ref())
+            .cloned()
             .or_else(|| {
                 self.get_our_var(sym.as_str())
                     .filter(|v| v.is_container_ref())
-            })
-            .cloned();
+            });
         match cell {
             Some(cell) => {
                 self.stack.pop();

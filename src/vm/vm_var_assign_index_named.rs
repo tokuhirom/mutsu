@@ -6630,9 +6630,7 @@ impl Interpreter {
                         // (`Foo.WHO.keys` is `(k)`, #15965).
                         let pkg = Self::normalize_stash_package(&package);
                         let qualified = Self::qualify_stash_name(&pkg, &key);
-                        self.lexicals
-                            .our_term_keys
-                            .insert(Symbol::intern(&qualified));
+                        self.our_table_mark_term(Symbol::intern(&qualified), true);
                         self.env_mut().insert(qualified.clone(), val.clone());
                         self.set_our_var(qualified, val.clone());
                     }

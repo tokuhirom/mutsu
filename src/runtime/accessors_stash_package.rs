@@ -219,7 +219,7 @@ impl Interpreter {
         // declarations. Only GLOBAL and the root get these; a named user
         // package must not vacuum up every bare `our` name.
         if crate::qualified::is_global_package(package_sym) {
-            for (key, val) in self.our_vars_iter() {
+            for (key, val) in self.lexicals.our_vars.snapshot().iter() {
                 // `our_vars` carries both a bare mirror (`o`) and a
                 // fully-qualified one (`GLOBAL::o`) for a root-scope `our`
                 // declaration. The qualified spelling is the *same* symbol,
@@ -372,12 +372,12 @@ impl Interpreter {
                 // store directly, not through `get_our_var`, which redirects a
                 // package this running unit did not merge to the empty store
                 // a qualified `$ModA::x` read uses (#17054).
-                let Some(val) = self.lexicals.our_vars.get(key) else {
+                let Some(val) = self.our_table().get(key).cloned() else {
                     continue;
                 };
                 match self.our_var_stash_member(key, &package_name) {
                     Some(EnvStashMember::Value(stash_key)) => {
-                        let stash_key = Self::type_member_stash_key(val, key, stash_key);
+                        let stash_key = Self::type_member_stash_key(&val, key, stash_key);
                         symbols.entry(stash_key).or_insert_with(|| val.clone());
                     }
                     // Listed after the direct members, so a sub-package's own

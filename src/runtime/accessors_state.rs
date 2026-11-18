@@ -475,11 +475,44 @@ impl Interpreter {
     // Cost: O(1) amortized for a key the store holds, or whose unqualified part
     // it never held (one intern and one index probe); otherwise
     // `unmerged_our_var_key`'s / `lexical_package_key`'s.
-    pub(crate) fn get_our_var(&self, key: &str) -> Option<&Value> {
-        if !self.lexicals.our_vars.contains_key(key) {
+    pub(crate) fn get_our_var(&self, key: &str) -> Option<Value> {
+        // The common case first: the key is stored as spelled and is not
+        // redirected.
+        {
+            let table = self.our_table();
+            if let Some(value) = table.get(key) {
+                return match self.unmerged_our_var_key(key) {
+                    None => Some(value.clone()),
+                    Some(redirected) => table.get(redirected.as_str()).cloned(),
+                };
+            }
+        }
+        self.our_var_store_key(key)
+            .and_then(|real| self.our_table().get(real.as_deref().unwrap_or(key)).cloned())
+    }
+
+    /// Whether [`Self::get_our_var`] finds `key`.
+    // Cost: as `get_our_var`.
+    pub(crate) fn has_our_var(&self, key: &str) -> bool {
+        if self.our_table().contains_key(key) {
+            return match self.unmerged_our_var_key(key) {
+                None => true,
+                Some(redirected) => self.our_table().contains_key(redirected.as_str()),
+            };
+        }
+        self.our_var_store_key(key)
+            .is_some_and(|real| self.our_table().contains_key(real.as_deref().unwrap_or(key)))
+    }
+
+    /// The store spelling [`Self::get_our_var`] reads `key` under: `Some(None)`
+    /// for `key` itself, `Some(Some(real))` for a redirect, `None` for a key
+    /// that cannot be stored.
+    // Cost: see `get_our_var`.
+    fn our_var_store_key(&self, key: &str) -> Option<Option<String>> {
+        if !self.our_table().contains_key(key) {
             // Every key the store holds put its unqualified part (`<sigil>` +
             // the segment after the last `::`) into the append-only
-            // `our_var_unqualified` index, and both redirects below -- the
+            // unqualified index, and both redirects below -- the
             // unmerged-store spelling and a lexical package's storage-name
             // member -- keep the key's unqualified part. So a key whose
             // unqualified part was never stored misses all three lookups;
@@ -489,61 +522,70 @@ impl Interpreter {
             // check, App::Moneymoor).
             let key_sym = Symbol::intern(key);
             if !self
-                .lexicals
-                .our_var_unqualified
-                .contains(&crate::qualified::unqualified_part(key_sym))
+                .our_table()
+                .has_unqualified(crate::qualified::unqualified_part(key_sym))
             {
                 return None;
             }
             if crate::qualified::is_qualified(key_sym) && self.unmerged_store_entry_exists(key_sym)
             {
-                return match self.unmerged_our_var_key(key) {
-                    Some(redirected) => self.lexicals.our_vars.get(redirected.as_str()),
-                    None => self.lexicals.our_vars.get(key),
-                };
+                return Some(
+                    self.unmerged_our_var_key(key)
+                        .map(|redirected| redirected.as_str().to_string()),
+                );
             }
             // `tmp::Foo` of a lexical package: its declaration's own member
             // (#17449).
             return crate::qualified::is_qualified(key_sym)
                 .then(|| self.lexical_package_key(key))
                 .flatten()
-                .and_then(|real| self.lexicals.our_vars.get(real.as_str()));
+                .map(|real| Some(real.as_str().to_string()));
         }
-        match self.unmerged_our_var_key(key) {
-            Some(redirected) => self.lexicals.our_vars.get(redirected.as_str()),
-            None => self.lexicals.our_vars.get(key),
-        }
+        Some(
+            self.unmerged_our_var_key(key)
+                .map(|redirected| redirected.as_str().to_string()),
+        )
     }
 
-    /// Mutable counterpart of [`Self::get_our_var`], for the container
-    /// write chokepoint (`env_root_descended_mut`): a package's `our @a`/`our
-    /// %h` is mutated in place through its stored `Gc`, not replaced.
-    pub(crate) fn get_our_var_mut(&mut self, key: &str) -> Option<&mut Value> {
-        if !self.lexicals.our_vars.contains_key(key)
+    /// The store spelling a mutation of `key` lands on (the redirects of
+    /// [`Self::get_our_var`]), when the store holds it.
+    // Cost: see `get_our_var`.
+    pub(crate) fn our_var_mut_key<'k>(&self, key: &'k str) -> Option<&'k str> {
+        let stored = self.our_table().contains_key(key);
+        if stored && self.unmerged_our_var_key(key).is_none() {
+            return Some(key);
+        }
+        if !stored
             && crate::qualified::is_qualified_str(key)
             && let Some(real) = self.lexical_package_key(key)
-            && self.lexicals.our_vars.contains_key(real.as_str())
+            && self.our_table().contains_key(real.as_str())
         {
-            return self.lexicals.our_vars.get_mut(real.as_str());
+            return Some(real.as_str());
         }
-        match self.unmerged_our_var_key(key) {
-            Some(redirected) => self.lexicals.our_vars.get_mut(redirected.as_str()),
-            None => self.lexicals.our_vars.get_mut(key),
-        }
+        let real = match self.unmerged_our_var_key(key) {
+            Some(redirected) => redirected.as_str(),
+            None => key,
+        };
+        self.our_table().contains_key(real).then_some(real)
     }
 
-    pub(crate) fn our_vars_iter(&self) -> impl Iterator<Item = (&String, &Value)> {
-        self.lexicals.our_vars.iter()
+    /// The in-place mutation root of the stored `our` variable `key` (see
+    /// [`Self::our_var_pinned_root`]): a package's `our @a`/`our %h` is
+    /// mutated in place through its stored container, not replaced.
+    // Cost: see `our_var_mut_key` and `our_var_pinned_root`.
+    pub(crate) fn get_our_var_mut(&mut self, key: &str) -> Option<&mut Value> {
+        let real = self.our_var_mut_key(key)?;
+        self.our_var_pinned_root(real)
     }
 
     pub(crate) fn our_vars_is_empty(&self) -> bool {
-        self.lexicals.our_vars.is_empty()
+        self.our_table().is_empty()
     }
 
     pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
         let key = match self.unmerged_our_var_key(&key) {
             Some(redirected) => redirected.as_str().to_string(),
-            None if !self.lexicals.our_vars.contains_key(&key)
+            None if !self.our_table().contains_key(&key)
                 && crate::qualified::is_qualified_str(&key) =>
             {
                 // `$X::v = ...` of a lexical package writes its declaration's
@@ -564,19 +606,7 @@ impl Interpreter {
     /// (`sub bind($WHO) { $WHO<k> := ... }` called on a `my package`'s stash
     /// of another unit).
     pub(crate) fn set_our_var_exact(&mut self, key: String, value: Value) {
-        self.lexicals
-            .our_var_unqualified
-            .insert(crate::qualified::unqualified_part(Symbol::intern(&key)));
-        let key_sym = Symbol::intern(&key);
-        // Probe before the mutable borrow: a re-store of a known name must not
-        // copy the table shared with the thread clones (`cow_table_mut`).
-        if !crate::qualified::is_qualified(key_sym)
-            && !key.contains('\u{0}')
-            && !self.lexicals.global_our_names.contains(&key_sym)
-        {
-            crate::runtime::cow_table_mut(&mut self.lexicals.global_our_names).insert(key_sym);
-        }
-        self.lexicals.our_vars.insert(key, value);
+        self.our_table_insert(key, value);
     }
 
     /// A runtime-written process-level dynamic, keyed by its env spelling
@@ -646,9 +676,7 @@ impl Interpreter {
     /// ([`crate::qualified::unqualified_part`]: sigil, if any, plus the
     /// segment after the last `::`), so this interns `name` to ask.
     pub(crate) fn our_var_unqualified_exists(&self, name: &str) -> bool {
-        self.lexicals
-            .our_var_unqualified
-            .contains(&Symbol::intern(name))
+        self.our_table().has_unqualified(Symbol::intern(name))
     }
 
     pub(crate) fn get_state_var(&self, key: crate::state_scope::StateKey) -> Option<&Value> {

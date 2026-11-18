@@ -304,7 +304,7 @@ impl UndeclaredName<'_> {
             || interp.term_binding(name).is_some()
             // `our`-scoped constants/variables installed in the package
             // survive in `our_vars` even after their lexical block exits.
-            || interp.get_our_var(name).is_some()
+            || interp.has_our_var(name)
             // A file-scope constant of the running routine's own module.
             || interp.module_scope_lexical(name).is_some()
             // A type of the running package's own (a module routine's

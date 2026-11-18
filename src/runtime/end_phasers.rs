@@ -595,7 +595,7 @@ impl EndWalker<'_> {
         let Some(key) = Self::our_symbol_key(&self.our_package(), name) else {
             return;
         };
-        if self.interp.get_our_var(&key).is_some() {
+        if self.interp.has_our_var(&key) {
             return;
         }
         // An `@`/`%` `our` is a container, and rakudo gives it an EMPTY one

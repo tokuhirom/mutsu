@@ -17,9 +17,9 @@ impl Interpreter {
     /// top-level `our %h` reached as `%GLOBAL::h`), or its qualifier is a
     /// constant naming another package. An explicitly stored spelling wins.
     fn package_container_key(&self, name: &str) -> String {
-        if self.get_our_var(name).is_none() {
+        if !self.has_our_var(name) {
             if let Some(bare) = Self::pseudo_package_unqualified_name(name)
-                && self.get_our_var(&bare).is_some()
+                && self.has_our_var(&bare)
             {
                 return bare;
             }
@@ -85,8 +85,10 @@ impl Interpreter {
             return false;
         }
         let key = self.package_container_key(name);
-        let existing = self.get_our_var(&key).or_else(|| self.env().get(name));
-        if existing.is_some_and(|v| Self::is_declared_package_container(v, positional)) {
+        let existing = self
+            .get_our_var(&key)
+            .or_else(|| self.env().get(name).cloned());
+        if existing.is_some_and(|v| Self::is_declared_package_container(&v, positional)) {
             return false;
         }
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
@@ -109,7 +111,7 @@ impl Interpreter {
         let name = name_sym.as_str();
         let key = self.package_container_key(name);
         let env_val = self.env().get(name).cloned();
-        let stored = match self.get_our_var(&key).cloned() {
+        let stored = match self.get_our_var(&key) {
             Some(stored) => stored,
             None => {
                 let fresh = env_val

@@ -231,6 +231,38 @@ Left for later slices: `our` variables and runtime-created `our` routines
 lexicals of a mixin composed on one thread published under the role's name
 in the shared table.
 
+### 3.5 Slice 4b: `our` variables and `our`-scoped routines (2026-11-18)
+
+The `our` store (`lexicals.our_vars`) and its four name indexes (the
+unqualified-spelling filter, the file-scope names, the term and scalar key
+sets) are one `WorldCell<OurVarTable>`
+(`runtime/our_var_table.rs`). The variables are a `ShardedMap`, so a write
+while other threads hold snapshots copies one shard; the indexes are each
+behind their own `Arc` and are copied only when a write adds a name to them.
+A store of the cell already stored under a key is not a write.
+
+- Reads return an owned `Value` (`get_our_var`); a container is shared by the
+  table and every reader, so an in-place mutation is seen by all of them.
+- No `&mut` into the table escapes its lock. The in-place mutation chokepoint
+  (`env_root_descended_mut`) pins the stored value in the thread's pin slot
+  (`LexicalState::our_var_pin`, a GC root) and mutates through the pin (an
+  `Array`/`Hash` node or a `ContainerRef` cell is shared with the table; any
+  other value is boxed into a cell in the table first). The reference borrows
+  the interpreter mutably, so the slot is not replaced while it lives. The identity-preserving mirror store
+  is one table write.
+- An `our sub` (a routine registered `our`-scoped) is also published to the
+  table's routine map. The per-thread routine tables stay lexical (§3.2): a
+  thread's own `our_scoped_functions` answers first, the world map answers
+  for a routine another thread declared. The qualified call fallback, the
+  `&Pkg::name` / `&::("Pkg::name")` lookup and an indirect `&::("name")`
+  (looked up in `OUR::` as raku does) consult it.
+- A package-qualified array read (`@Pkg::a`) reads the store first, as hash
+  and scalar reads already did, so a rebind (`Pkg::<@a> := [...]`) made in
+  another frame or on another thread is seen.
+
+Imported routines (`runtime_module_exports`, which also file into
+`our_scoped_functions`) are lexical imports and are not published.
+
 ## 4. Consequences
 
 - `start` and every other spawn see the program rakudo would show them: declarations, wraps,

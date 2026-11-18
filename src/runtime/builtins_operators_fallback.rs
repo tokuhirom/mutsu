@@ -1326,11 +1326,9 @@ impl Interpreter {
             // routine table is rolled back, but the package stash it published
             // to is shared with the caller (`EVAL q[package P { our sub f {} }];
             // P::f()`), so the persistent our-scoped table answers.
-            let our_def = self
-                .routines()
-                .our_scoped_functions
-                .get(&Symbol::intern(name))
-                .cloned();
+            // Another thread's `our sub` was published to the same stash
+            // (ADR-17216 slice 4b).
+            let our_def = self.our_scoped_routine(Symbol::intern(name));
             if let Some(def) = our_def {
                 let sub_val = self.sub_value_from_function_def((*def).clone());
                 return self.eval_call_on_value(sub_val, args.to_vec());

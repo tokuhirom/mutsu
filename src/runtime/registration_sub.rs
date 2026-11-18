@@ -2021,6 +2021,9 @@ impl Interpreter {
             // same lock would deadlock, so clone the handle out first).
             let f = self.routines().functions.get(&Symbol::intern(&fq)).cloned();
             if let Some(f) = f {
+                // Also published to the package stash every thread shares
+                // (ADR-17216 slice 4b).
+                self.publish_our_routine(Symbol::intern(&fq), f.clone());
                 std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                     .insert(Symbol::intern(&fq), f);
             }

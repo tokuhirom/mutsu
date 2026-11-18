@@ -529,7 +529,7 @@ impl Interpreter {
             .env()
             .get(&qualified)
             .cloned()
-            .or_else(|| self.get_our_var(&qualified).cloned())
+            .or_else(|| self.get_our_var(&qualified))
         else {
             return;
         };

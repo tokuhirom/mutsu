@@ -238,7 +238,7 @@ impl Interpreter {
             // declaration-time snapshot shadow the real `our` value on read
             // (`package_scope_lexical` is consulted before the `our` fallback).
             let qualified = crate::qualified::qualified(name_sym, k);
-            if self.get_our_var(qualified.as_str()).is_some() || in_body_env(&env, qualified) {
+            if self.has_our_var(qualified.as_str()) || in_body_env(&env, qualified) {
                 continue;
             }
             package_lexicals.push((bare, v.clone()));

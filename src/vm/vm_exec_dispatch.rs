@@ -575,7 +575,7 @@ impl Interpreter {
                         // so read the package store first.
                         .or_else(|| {
                             if crate::qualified::is_qualified(code.const_sym(*name_idx)) {
-                                self.get_our_var(name).cloned()
+                                self.get_our_var(name)
                             } else {
                                 None
                             }
@@ -599,7 +599,6 @@ impl Interpreter {
                             // lexical alias for `our` variables is block-scoped.
                             if crate::qualified::is_qualified(code.const_sym(*name_idx)) {
                                 self.get_our_var(name)
-                                    .cloned()
                                     .or_else(|| self.our_var_pseudo_unqualified(name))
                                     .or_else(|| {
                                         // Nested package shorthand: when looking up
@@ -623,9 +622,7 @@ impl Interpreter {
                                         ) {
                                             let candidate =
                                                 crate::qualified::qualified_var(pkg, name_sym);
-                                            if let Some(v) =
-                                                self.get_our_var(candidate.as_str()).cloned()
-                                            {
+                                            if let Some(v) = self.get_our_var(candidate.as_str()) {
                                                 return Some(v);
                                             }
                                             if let Some(v) =
@@ -956,24 +953,24 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                let val = self
+                // A package-qualified array's canonical store is `our_vars`, as
+                // for a hash (`GetHashVar`) and a scalar (`GetGlobal`): a rebind
+                // in another frame or on another thread (`Q::<@a> := [...]`)
+                // lands there, and this frame's env may hold a stale copy.
+                let package_val = if crate::qualified::is_package_array(code.const_sym(*name_idx)) {
+                    self.qualified_our_var_read(code.const_sym(*name_idx))
+                        .or_else(|| self.our_var_pseudo_unqualified(name))
+                } else {
+                    None
+                };
+                let val = package_val
                     // A package-block `my @a` read by the package's own subs,
                     // ahead of a same-named enclosing lexical (as `GetGlobal`).
-                    .package_scope_lexical_in(code, name)
+                    .or_else(|| self.package_scope_lexical_in(code, name))
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
                     .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
                     .or_else(|| self.global_package_dynamic_fallback(name))
-                    // A qualified package array created in another frame
-                    // outlives that frame in our_vars, like scalar GetGlobal.
-                    .or_else(|| {
-                        if crate::qualified::is_package_array(code.const_sym(*name_idx)) {
-                            self.qualified_our_var_read(code.const_sym(*name_idx))
-                                .or_else(|| self.our_var_pseudo_unqualified(name))
-                        } else {
-                            None
-                        }
-                    })
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         // Fallback: check bare name in env (for closures capturing params)
@@ -1150,7 +1147,6 @@ impl Interpreter {
                 // frame's env may hold a stale copy or none (#10901).
                 let package_val = if crate::qualified::is_package_hash(name_sym) {
                     self.get_our_var(name)
-                        .cloned()
                         .or_else(|| self.our_var_pseudo_unqualified(name))
                 } else {
                     None
@@ -1389,7 +1385,6 @@ impl Interpreter {
                 let name = Self::const_str(code, *name_idx);
                 let val = self
                     .get_our_var(name)
-                    .cloned()
                     .or_else(|| self.get_env_with_main_alias(name))
                     .unwrap_or_else(|| {
                         // A never-stored `our` variable falls back to its
@@ -1690,7 +1685,7 @@ impl Interpreter {
                             .to_string();
                         if !crate::qualified::is_global_package(cur)
                             && split.pkg == cur.as_str()
-                            && self.get_our_var(&name).is_none()
+                            && !self.has_our_var(&name)
                             && !self.env().contains_key(&name)
                             && (if self.regex_state.in_regex_code_block {
                                 self.env().contains_key(&bare)
@@ -2824,7 +2819,7 @@ impl Interpreter {
                         if let Some(method_class) = self.method_class_stack_top_sym() {
                             let qualified =
                                 crate::qualified::qualified(method_class, name_sym).as_str();
-                            if self.get_our_var(qualified).is_some() {
+                            if self.has_our_var(qualified) {
                                 self.set_our_var(qualified.to_string(), container.clone());
                                 self.env_mut()
                                     .insert(qualified.to_string(), container.clone());
