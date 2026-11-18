@@ -2401,7 +2401,7 @@ impl Interpreter {
             // keep their sigil (`@a`/`%h`/`&f`). Twigils and compiler-internal
             // keys never start with a letter, `@`, `%` or `&`.
             if !name.chars().next().is_some_and(|c| {
-                c.is_ascii_alphabetic()
+                c.is_alphabetic()
                     || c == '_'
                     || c == '@'
                     || c == '%'
@@ -2501,7 +2501,7 @@ impl Interpreter {
             if !bare
                 .chars()
                 .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
             {
                 return;
             }
@@ -2660,7 +2660,7 @@ impl Interpreter {
             if bare
                 .chars()
                 .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
                 && !names.iter().any(|n| n == name)
             {
                 names.push(name.clone());
@@ -2711,7 +2711,7 @@ impl Interpreter {
                 || !bare
                     .chars()
                     .next()
-                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                    .is_some_and(|c| c.is_alphabetic() || c == '_')
             {
                 continue;
             }
