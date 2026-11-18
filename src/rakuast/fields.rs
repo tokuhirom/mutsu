@@ -149,7 +149,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         IntLiteral | NumLiteral | RatLiteral | VersionLiteral | Constant | Literal
         | ComplexLiteral | StrLiteral => &[("value", Absent::Required)],
-        VarLexical | VarDynamic | VarDoc => &[("name", Absent::Required)],
+        VarLexical | VarLexicalConstant | VarDynamic | VarDoc => &[("name", Absent::Required)],
         VarCompilerLookup => &[("name", Absent::Required)],
         VarCompilerFile => &[("file", Absent::Required)],
         VarCompilerLine => &[("line", Absent::Required)],

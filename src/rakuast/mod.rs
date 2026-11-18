@@ -436,6 +436,7 @@ pub enum RakuAstClass {
     ArgList,
     // Phase 2: variables, declarations, operators.
     VarLexical,
+    VarLexicalConstant,
     VarCompilerBlock,
     VarCompilerRoutine,
     VarCompilerLookup,
@@ -840,6 +841,7 @@ impl RakuAstClass {
             NamePartEmptyEdge => "RakuAST::Name::Part::EmptyEdge",
             ArgList => "RakuAST::ArgList",
             VarLexical => "RakuAST::Var::Lexical",
+            VarLexicalConstant => "RakuAST::Var::Lexical::Constant",
             VarCompilerBlock => "RakuAST::Var::Compiler::Block",
             VarCompilerRoutine => "RakuAST::Var::Compiler::Routine",
             VarCompilerLookup => "RakuAST::Var::Compiler::Lookup",
@@ -1390,6 +1392,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::NamePartEmptyEdge,
     RakuAstClass::ArgList,
     RakuAstClass::VarLexical,
+    RakuAstClass::VarLexicalConstant,
     RakuAstClass::VarCompilerBlock,
     RakuAstClass::VarCompilerRoutine,
     RakuAstClass::VarCompilerLookup,
@@ -4176,6 +4179,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Infix
             | RakuAstClass::Prefix
             | RakuAstClass::VarLexical
+            | RakuAstClass::VarLexicalConstant
             | RakuAstClass::VarCompilerBlock
             | RakuAstClass::VarCompilerRoutine
             | RakuAstClass::VarCompilerLookup

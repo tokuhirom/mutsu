@@ -137,6 +137,9 @@ pub(crate) enum Spelling {
         form: crate::ast::BinaryForm,
     },
     /// Where the term was written (ADR-10723 Stage 2, expression families):
+    /// `::?CLASS` / `::?ROLE` / `::?PACKAGE` / `::?MODULE`: the pseudo-package
+    /// as written (the parser keeps `Var("?CLASS")`, the same as `$?CLASS`).
+    PseudoPackage(Box<str>),
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,

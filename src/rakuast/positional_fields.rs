@@ -13,7 +13,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         FakeSignature => "signature",
         Infix | Prefix | Feed | FlipFlop | Mixin => "operator",
         VarAttribute => "name",
-        VarLexical | VarDynamic | VarDoc => "name",
+        VarLexical | VarLexicalConstant | VarDynamic | VarDoc => "name",
         VarCompilerLookup => "name",
         VarCompilerFile => "file",
         VarCompilerLine => "line",

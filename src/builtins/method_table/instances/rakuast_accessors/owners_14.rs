@@ -206,9 +206,10 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
-        "RakuAST::Var::NamedCapture",
+        "RakuAST::Var::Lexical::Constant",
         &[
-            "RakuAST::Var::NamedCapture",
+            "RakuAST::Var::Lexical::Constant",
+            "RakuAST::Var::Lexical",
             "RakuAST::Var",
             "RakuAST::Term",
             "RakuAST::Termish",
@@ -217,9 +218,9 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
-        "RakuAST::Var::Package",
+        "RakuAST::Var::NamedCapture",
         &[
-            "RakuAST::Var::Package",
+            "RakuAST::Var::NamedCapture",
             "RakuAST::Var",
             "RakuAST::Term",
             "RakuAST::Termish",

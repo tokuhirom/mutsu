@@ -49,6 +49,30 @@ pub(super) fn view_folded(written: &str, value: &Expr) -> Result<RakuAstNode, Ru
     })
 }
 
+/// `::?CLASS` and its siblings: a `Var::Lexical::Constant` named as written.
+// Cost: O(1).
+pub(super) fn view_pseudo_package(written: &str) -> RakuAstNode {
+    node(
+        RakuAstClass::VarLexicalConstant,
+        Some(Value::str(written.to_string())),
+    )
+}
+
+/// The expression a pseudo-package constant (`::?CLASS`) lowers to.
+// Cost: O(1).
+pub(super) fn lower_pseudo_package(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let Some(RakuAstFieldValue::Node(name)) = node.fields.first().map(|f| &f.value) else {
+        return Err(super::lower::unsupported(node));
+    };
+    let ValueView::Str(name) = name.view() else {
+        return Err(super::lower::unsupported(node));
+    };
+    match name.strip_prefix("::?") {
+        Some(bare) if !bare.is_empty() => Ok(Expr::Var(format!("?{bare}"))),
+        _ => Err(super::lower::unsupported(node)),
+    }
+}
+
 /// The expression a compiler-variable node lowers to: the parser's folded
 /// literal for `Line` / `File` / `$?TABSTOP`, its runtime lookup otherwise.
 // Cost: O(1).
