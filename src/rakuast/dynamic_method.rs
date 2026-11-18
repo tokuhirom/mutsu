@@ -31,7 +31,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// The `Call::TermAsMethod` / `Call::NameAsMethod` postfix of a dynamic call.
 // Cost: O(n), n = nodes of the name and arguments.
-fn postfix(
+pub(super) fn postfix(
     names: &NameScope,
     name_expr: &Expr,
     args: &[Expr],
@@ -71,9 +71,23 @@ fn postfix_of(
             RakuAstClass::CallNameAsMethod
         }
         other => {
+            // `.&(EXPR)`: rakudo itemizes the statements, `callee => $(EXPR)`.
+            if let Expr::Grouped(inner) = other {
+                let item = super::contextualizer::view_segment(names, inner)?;
+                fields.push(node_field(Some("callee"), item));
+                if !args.is_empty() {
+                    fields.push(node_field(Some("args"), arg_list(names, args)?));
+                }
+                fields.extend(dispatch);
+                return Ok(RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::CallTermAsMethod,
+                    fields,
+                });
+            }
             let callee = view_expr(names, other)?;
             // `.&{ ... }`: rakudo itemizes the block, `callee => $(Block)`.
-            let callee = if matches!(other, Expr::AnonSub { .. }) {
+            let callee = if callee.class == RakuAstClass::Block {
                 RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::ContextualizerItem,
@@ -224,9 +238,20 @@ fn name_expr(names: &NameScope, postfix: &RakuAstNode) -> Result<Expr, RuntimeEr
                 && let Some(RakuAstFieldValue::Node(inner)) =
                     callee.fields.first().map(|f| &f.value)
                 && let ValueView::RakuAst(inner) = inner.view()
-                && inner.class == RakuAstClass::Block
             {
-                return lower_expr(names, inner);
+                if inner.class == RakuAstClass::Block {
+                    return lower_expr(names, inner);
+                }
+                // `.&(EXPR)`: the parenthesized expression is the callee.
+                if inner.class == RakuAstClass::StatementSequence
+                    && let [field] = inner.fields.as_slice()
+                    && let RakuAstFieldValue::Node(statement) = &field.value
+                    && let ValueView::RakuAst(statement) = statement.view()
+                    && statement.class == RakuAstClass::StatementExpression
+                {
+                    let expression = named_child(statement, "expression")?;
+                    return Ok(Expr::Grouped(Box::new(lower_expr(names, expression)?)));
+                }
             }
             lower_expr(names, callee)
         }
