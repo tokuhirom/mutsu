@@ -752,7 +752,18 @@ impl Interpreter {
         } else {
             "Method"
         };
-        let method_obj = Value::make_instance(Symbol::intern(instance_class_name), attrs);
+        // A declared method keeps one identity per owning class, however
+        // often its object is rebuilt (#18107); a dispatcher is synthetic.
+        let method_obj = match owner_class.filter(|_| !is_dispatcher) {
+            Some(owner) => Value::make_instance_with_id(
+                Symbol::intern(instance_class_name),
+                attrs,
+                method_def
+                    .routine_cell
+                    .method_object_id(Symbol::intern(owner)),
+            ),
+            None => Value::make_instance(Symbol::intern(instance_class_name), attrs),
+        };
         // A non-multi (single) method's own `.candidates` is itself, a
         // one-element list -- verified against `raku`
         // (`Foo.^lookup('bar').candidates[0]` on a plain method, not just a

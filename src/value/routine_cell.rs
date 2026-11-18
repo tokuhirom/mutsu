@@ -91,6 +91,13 @@ struct Inner {
     dispatchees: RwLock<Vec<super::Value>>,
     /// Set once a dispatchee is added; never cleared.
     has_dispatchees: AtomicBool,
+    /// The instance id of the `Method` object the metaclass hands out for
+    /// this method in each owning class (`.^find_method`, `.^lookup`,
+    /// `.^methods`). The object is rebuilt whenever the lookup caches are
+    /// cleared, but it is the same method: in rakudo it keeps its identity
+    /// (`nqp::objectid`, `===`) for the life of the class (#18107). A role's
+    /// method composed into two classes is two methods, hence per owner.
+    method_object_ids: RwLock<Vec<(Symbol, u64)>>,
 }
 
 /// Set once any routine has had a composition stored; never cleared. A
@@ -110,6 +117,33 @@ impl std::fmt::Debug for RoutineCell {
 }
 
 impl RoutineCell {
+    /// The stable instance id of this method's `Method` object in the class
+    /// `owner`, allocated on first use.
+    // Cost: O(o), o = classes the method was looked up in (almost always 1).
+    pub(crate) fn method_object_id(&self, owner: Symbol) -> u64 {
+        if let Some(&(_, id)) = self
+            .0
+            .method_object_ids
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .find(|(o, _)| *o == owner)
+        {
+            return id;
+        }
+        let mut ids = self
+            .0
+            .method_object_ids
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(&(_, id)) = ids.iter().find(|(o, _)| *o == owner) {
+            return id;
+        }
+        let id = super::next_instance_id();
+        ids.push((owner, id));
+        id
+    }
+
     // Cost: O(1).
     pub(crate) fn note_method_family(&self, owner: Symbol, name: Symbol) {
         let _ = self.0.method_family.set((owner, name));

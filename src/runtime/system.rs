@@ -256,7 +256,7 @@ impl Interpreter {
                 }
                 // A literal `use lib` was applied while planning.
                 (Stmt::Use { module, .. }, _) if module == "lib" => {}
-                (Stmt::Use { module, arg, tags, .. }, _) => {
+                (Stmt::Use { module, arg, tags, site, .. }, _) => {
                     preran.insert(module.clone());
                     // The `use` arguments are what the module's `sub EXPORT`
                     // sees (the compiler pushes one value per top-level list
@@ -277,8 +277,12 @@ impl Interpreter {
                     self.module.eval_hook_recording = idx < lifted || how == Prerun::Replay;
                     let set_id = set_id.filter(|_| idx < lifted || matches!(how, Prerun::Keep | Prerun::Replay));
                     let outer = set_id.map(|id| self.begin_lexical_import_capture(id));
+                    // The map the parse recorded for this statement, if it
+                    // loaded the module (`OpCode::UseModule` passes it alike).
+                    let outer_site = std::mem::replace(&mut self.module.pending_use_site, *site);
                     let loaded = self
                         .with_use_attach_depth(|this| this.use_module_with_tags(module, tags));
+                    self.module.pending_use_site = outer_site;
                     if let (Some(id), Some(outer)) = (set_id, outer) {
                         if loaded.is_ok() {
                             self.finish_lexical_import_capture(id, outer);

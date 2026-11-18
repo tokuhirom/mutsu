@@ -360,6 +360,7 @@ impl Compiler {
             tags_idx: None,
             arg_count: 0,
             lexical_set_idx: None,
+            site: 0,
         });
         if let Some(plan_arg) = Self::extract_test_more_plan_arg(arg) {
             self.compile_expr(plan_arg);
@@ -4888,6 +4889,7 @@ impl Compiler {
                     tags_idx,
                     arg_count: 0,
                     lexical_set_idx: None,
+                    site: 0,
                 });
             }
             Stmt::Use { module, .. }
@@ -4928,6 +4930,7 @@ impl Compiler {
                     tags_idx: None,
                     arg_count: 0,
                     lexical_set_idx: None,
+                    site: 0,
                 });
             }
             Stmt::Use {
@@ -4970,6 +4973,7 @@ impl Compiler {
                         tags_idx,
                         arg_count,
                         lexical_set_idx,
+                        site: 0,
                     });
                 }
             }
@@ -4978,6 +4982,7 @@ impl Compiler {
                 tags,
                 condition,
                 arg,
+                site,
                 ..
             } => {
                 // #9521: mirror `use fatal`'s effect at compile time, so a
@@ -5057,6 +5062,7 @@ impl Compiler {
                             tags_idx,
                             arg_count,
                             lexical_set_idx,
+                            site: *site,
                         });
                     }
                     self.code.patch_jump(skip);
@@ -5072,6 +5078,7 @@ impl Compiler {
                         tags_idx,
                         arg_count,
                         lexical_set_idx,
+                        site: *site,
                     });
                     // The variables it imports are the block's own bindings
                     // (ADR-8751).

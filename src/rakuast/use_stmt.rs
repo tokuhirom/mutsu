@@ -168,6 +168,7 @@ pub(super) fn view_use_stmt(names: &NameScope, stmt: &Stmt) -> Result<RakuAstNod
         condition,
         if_imports,
         imports,
+        site: _,
     } = stmt
     else {
         return Err(super::view::unsupported("use statement"));
@@ -201,6 +202,7 @@ pub(super) fn view_inline_proto(
         condition,
         if_imports,
         imports,
+        site: _,
     } = use_stmt
     else {
         return Err(super::view::unsupported("inline proto use statement"));
@@ -599,6 +601,7 @@ pub(super) fn lower_pragma(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
         condition: condition.map(Box::new),
         if_imports,
         imports: recorded_imports(node),
+        site: 0,
     })
 }
 
@@ -642,6 +645,7 @@ pub(super) fn lower_use(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         condition: condition.map(Box::new),
         if_imports,
         imports: recorded_imports(node),
+        site: 0,
     };
     Ok(match inline_proto {
         Some(proto) => super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::InlineProtoUse {
@@ -754,6 +758,7 @@ pub(super) fn lower_language_version(node: &RakuAstNode) -> Result<Stmt, Runtime
         condition: None,
         if_imports: Vec::new(),
         imports: Vec::new(),
+        site: 0,
     })
 }
 

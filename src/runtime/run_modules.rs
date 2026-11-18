@@ -828,9 +828,14 @@ impl Interpreter {
     }
 
     /// Whether what the loaded `module` registered is still there: a routine
-    /// under its package, or the package itself (`require` reloads a module
-    /// whose routines an import scope's pop dropped).
-    // Cost: O(f), f = registered routines (a prefix scan, stopping at the first hit).
+    /// under its package, the package itself, or a package-scope type its body
+    /// published under another name (`require` reloads a module whose
+    /// routines an import scope's pop dropped). A file that declares only
+    /// types named apart from it (`class Thing` in `ReqDecl.rakumod`, Red's
+    /// `model Zub` in `TestRed.pm6`) is still loaded while those types are
+    /// known: running its body again re-applied every declaration's traits.
+    // Cost: O(f + p), f = registered routines (a prefix scan, stopping at the
+    // first hit), p = names any module published.
     pub(super) fn module_still_registered(&self, module: &str) -> bool {
         let prefix = format!("{module}::");
         self.is_known_package(module)
@@ -839,6 +844,15 @@ impl Interpreter {
                 .functions
                 .keys()
                 .any(|k| k.as_str().starts_with(&prefix))
+            || Symbol::lookup(module).is_some_and(|module| {
+                self.module
+                    .module_visibility
+                    .module_name_providers
+                    .iter()
+                    .any(|(name, provider)| {
+                        *provider == module && self.is_known_package(&name.resolve())
+                    })
+            })
     }
 
     /// Load `module` from an already-resolved `source_path` as its own

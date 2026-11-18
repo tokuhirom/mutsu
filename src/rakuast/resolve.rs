@@ -58,6 +58,8 @@ struct Scopes<'a> {
     shadowed: &'a dyn Fn(&str) -> bool,
     /// The named packages enclosing the node being walked, innermost last.
     packages: Vec<String>,
+    /// Whether each of `packages` is a role.
+    package_roles: Vec<bool>,
     /// How many `*` arguments the enclosing thunk has numbered so far.
     whatever_args: Vec<usize>,
     /// Anonymous subsets minted so far, for their internal names.
@@ -124,6 +126,7 @@ fn annotate_with(
         imported_type,
         shadowed,
         packages: Vec::new(),
+        package_roles: Vec::new(),
         whatever_args: vec![0],
         anonymous_subsets: 0,
         multi_candidates: HashMap::new(),
@@ -231,7 +234,15 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     .then(|| package_name(node))
     .flatten();
     if matches!(node.class, C::Method | C::Submethod) && !scopes.packages.is_empty() {
-        node.origin.2 = Some(Value::str(scopes.packages.join("::")));
+        let owner = scopes.packages.join("::");
+        // Its implicit invocant is typed by the package's full name, or by
+        // `$?CLASS` in a role, as rakudo spells it (`implicit_signature`).
+        node.origin.3 = Some(if scopes.package_roles.last() == Some(&true) {
+            "$?CLASS".into()
+        } else {
+            owner.clone().into_boxed_str()
+        });
+        node.origin.2 = Some(Value::str(owner));
     }
     // A `multi sub` remembers which candidate of its name it declares.
     if node.class == C::Sub
@@ -245,6 +256,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     let named_package = package.is_some();
     if let Some(name) = package {
         scopes.packages.push(name);
+        scopes.package_roles.push(node.class == C::Role);
         // A package remembers its qualified name, for `compile-time-value`.
         node.origin.2 = Some(Value::str(scopes.packages.join("::")));
     }
@@ -335,6 +347,7 @@ fn walk(node: &mut RakuAstNode, scopes: &mut Scopes) {
     }
     if named_package {
         scopes.packages.pop();
+        scopes.package_roles.pop();
     }
     if opened {
         scopes.scopes.pop();
@@ -1181,7 +1194,7 @@ fn external_setting(name: &str) -> Option<Value> {
 /// An external declaration of the given class; its `compile-time-value` is
 /// read lazily from the interpreter.
 // Cost: O(1).
-fn external(class: &str, lexical_name: &str) -> Option<Value> {
+pub(super) fn external(class: &str, lexical_name: &str) -> Option<Value> {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert(
         "lexical-name".to_string(),

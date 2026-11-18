@@ -63,6 +63,40 @@ fn collects_named(param: &Value) -> bool {
     })
 }
 
+/// The `Type::Simple` an implicit invocant is typed by: `package`, the
+/// enclosing package's full name (`$?CLASS` in a role). In a tree the resolver
+/// walked (`resolved`, `$*CU`), it carries the resolution rakudo gives it: a
+/// role's `Type::Capture`, a qualified name's package constant
+/// (`VarDeclaration::Implicit::Constant`), else the lexical package (#18107).
+// Cost: O(|package|).
+fn invocant_type(package: &str, resolved: bool) -> Value {
+    let name = || Value::rakuast(Box::new(super::view::name_from_identifier(package)));
+    let mut type_node = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::TypeSimple,
+        fields: vec![field(None, name())],
+    };
+    if resolved {
+        type_node.origin.2 = if package == "$?CLASS" {
+            Some(node(RakuAstClass::TypeCapture, vec![field(None, name())]))
+        } else if crate::qualified::is_qualified_str(package) {
+            Some(node(
+                RakuAstClass::VarDeclarationImplicitConstant,
+                vec![
+                    field(Some("name"), Value::str_from(package)),
+                    field(
+                        Some("value"),
+                        Value::package(crate::symbol::Symbol::intern(package)),
+                    ),
+                ],
+            ))
+        } else {
+            super::resolve::external("RakuAST::Declaration::LexicalPackage", package)
+        };
+    }
+    Value::rakuast(Box::new(type_node))
+}
+
 /// The `Signature` a `Method` / `Submethod` visits: the written one (or an
 /// empty one) with the implicit parameters added.
 // Cost: O(p), p = written parameters.
@@ -91,13 +125,7 @@ fn method_signature(method: &RakuAstNode) -> Value {
         let fields = match method.origin.3.as_deref() {
             Some(package) => vec![field(
                 Some("type"),
-                node(
-                    RakuAstClass::TypeSimple,
-                    vec![field(
-                        None,
-                        Value::rakuast(Box::new(super::view::name_from_identifier(package))),
-                    )],
-                ),
+                invocant_type(package, method.origin.2.is_some()),
             )],
             None => Vec::new(),
         };

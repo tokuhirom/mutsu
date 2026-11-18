@@ -45,9 +45,22 @@ pub(crate) struct UseRequest<'a> {
     /// The package the `use` stands in (`unit module Foo;` or a package
     /// block), `None` at the unit's top level outside any.
     pub(crate) package: Option<String>,
+    /// The statement's parse site (`Stmt::Use::site`).
+    pub(crate) site: u32,
     /// The parser's module search path at the `use`: the interpreter's chain
     /// plus the unit's parse-time `use lib` additions, in order.
     pub(crate) lib_paths: &'a [String],
+}
+
+/// A fresh parse site for a `use` statement (`Stmt::Use::site`): the key its
+/// module's `sub EXPORT` map is kept under when the loader runs the hook.
+/// Never `0`, which stands for no site.
+// Cost: O(1).
+pub(crate) fn next_use_site() -> u32 {
+    static SITES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+    SITES
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        .max(1)
 }
 
 /// What the loader did with a [`UseRequest`].

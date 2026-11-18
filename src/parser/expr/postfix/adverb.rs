@@ -69,14 +69,14 @@ pub(crate) fn scan_subscript_adverbs(input: &str) -> Option<(&str, Vec<Expr>)> {
 /// adverbs that read every element.
 // Cost: O(1).
 pub(crate) fn subscript_adverbs_expr(subscript: Expr, pairs: Vec<Expr>) -> Expr {
-    let subscript = match subscript {
+    let subscript = match subscript.peel_spelled() {
         Expr::ZenSlice(target) => Expr::Index {
-            is_positional: !matches!(*target, Expr::HashVar(_)),
-            target,
+            is_positional: !matches!(**target, Expr::HashVar(_)),
+            target: target.clone(),
             index: Box::new(Expr::Literal(Value::WHATEVER)),
             spelling: Default::default(),
         },
-        other => other,
+        _ => subscript,
     };
     Expr::Ast(Box::new(ParsedExpr::SubscriptAdverbs(SubscriptAdverbs {
         subscript,

@@ -10,6 +10,7 @@ mod rw_writeback_slots;
 mod supply_interval;
 mod synth_closure;
 mod token_defs_memo;
+mod token_render_memo;
 pub(crate) use synth_closure::{install_value_layer_compiler, synthesized_closure_code};
 mod lexical_package_keys;
 mod tolerance;
