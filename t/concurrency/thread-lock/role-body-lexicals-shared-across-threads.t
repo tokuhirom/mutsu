@@ -5,7 +5,7 @@ use Test;
 # write. Rakudo shares the one container. A mixin type adopted from another
 # thread also re-ran the role body, so its lexicals started fresh there.
 
-plan 6;
+plan 9;
 
 {
     role R { my $n = 0; method inc { ++$n } }
@@ -30,4 +30,17 @@ plan 6;
     is (await start { $o does M; $o.bump }), 1, 'a mixin on a worker uses the role-body lexical';
     is $o.bump, 2, 'the adopting thread binds the same role-body lexical';
     is @ran.elems, 1, 'the role body runs once, not again on the adopting thread';
+}
+
+{
+    # Each type composing a role runs the role body once and gets its own
+    # lexicals: two mixins of one role on different threads do not share a
+    # counter (the role-name keyed stopgap shared it, ADR-17216).
+    role M2 { my $n = 0; method bump { ++$n } }
+    class Foo2 {}; class Bar2 {}
+    my $o = Foo2.new; my $p = Bar2.new;
+    await start { $o does M2; $o.bump };
+    is (await start { $p does M2; $p.bump }), 1, 'a second composition of the role starts its own lexical';
+    is $p.bump, 2, 'the adopting thread binds the second composition\'s lexical';
+    is $o.bump, 2, 'the first composition keeps its own lexical';
 }
