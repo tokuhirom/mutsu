@@ -213,6 +213,24 @@ per-thread registry moved only the writer's. Finer invalidation (a write that
 only adds a type need not drop memos about other types) is the next step if a
 workload needs it.
 
+### 3.4 Slice 4a: package and class-body statics (2026-11-18)
+
+`package_lexicals` (package-block `my` lexicals and class-body statics) and
+its two companion tables (`class_body_static_names`,
+`class_body_static_types`) are `WorldCell`s. Writes go through
+guard-scoped closures (`package_lexicals_write`). No `&mut` into the table
+outlives its lock: an in-place mutation of a package-block `@`/`%` lexical
+boxes the entry into a cell under the write lock
+(`package_scope_lexical_cell`), and the mutating frame pins the cell under a
+`MetaNs::PackageLexicalPin` env key while it holds a reference into it, so
+another thread's rebind cannot free it mid-mutation. TRIR's free-variable
+cache is keyed on the table's world generation as well.
+
+Left for later slices: `our` variables and runtime-created `our` routines
+(4b), and retiring `PublishedMixins::role_lexical`, which needs the role-body
+lexicals of a mixin composed on one thread published under the role's name
+in the shared table.
+
 ## 4. Consequences
 
 - `start` and every other spawn see the program rakudo would show them: declarations, wraps,
