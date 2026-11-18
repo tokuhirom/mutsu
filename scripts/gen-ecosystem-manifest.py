@@ -53,6 +53,37 @@ def first_reason(record: dict) -> str:
     return ""
 
 
+# The figures the page publishes must equal the ledger summary's.
+KPI_KEYS = ("dist_parity", "file_parity", "graded_distributions",
+            "green_distributions", "baseline_files", "parity_files")
+
+
+def check_against_summary(numbers: dict) -> None:
+    """Refuse to publish a KPI that differs from the ledger's own summary.
+
+    `ecosystem/summary.json` is the rollup's output for the same ledger
+    revision these records came from, so its figures and ours must be equal.
+    The comparison is skipped only when the rollup applied a different exclude
+    list (an `exclude.txt` edit merged since the last sweep: the page is then
+    deliberately one edit ahead of the summary), or the summary predates the
+    `excluded_dists` field.
+    """
+    path = os.path.join(REPO, "ecosystem", "summary.json")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        summary = json.load(fh)
+    if summary.get("excluded_dists") != numbers["excluded_dists"]:
+        print("note: ecosystem/summary.json was rolled up with another exclude list "
+              "(or before it recorded one); not cross-checking the KPI against it")
+        return
+    diff = {k: (summary.get(k), numbers[k]) for k in KPI_KEYS
+            if summary.get(k) != numbers[k]}
+    if diff:
+        sys.exit("the page KPI disagrees with ecosystem/summary.json (summary, page): "
+                 + ", ".join(f"{k}={v}" for k, v in diff.items()))
+
+
 def main() -> int:
     if not os.path.isdir(DISTS_DIR):
         sys.exit(f"no records at {DISTS_DIR} — run scripts/ecosystem-ledger.sh pull first")
@@ -63,48 +94,38 @@ def main() -> int:
     # exactly as `no_baseline` is. The record's own status is untouched.
     excluded = eco.load_exclude(EXCLUDE_LIST)
 
+    # eco.load_records refuses two files claiming one distribution: the page
+    # is keyed by the record's own `dist`, so a duplicate (what a
+    # filename-rule change leaves behind) would list it twice.
+    records = eco.load_records(DISTS_DIR)
     rows, measured = [], {}
-    # The page is keyed by the record's own `dist`, never by its filename, so a
-    # second file claiming the same distribution would list it twice with two
-    # different verdicts. That is what a filename-rule change leaves behind if
-    # the existing records are not renamed with it, so refuse it here as well as
-    # in the rollup.
-    where = {}
-    for dirpath, _dirs, names in os.walk(DISTS_DIR):
-        for name in names:
-            if not name.endswith(".json"):
-                continue
-            path = os.path.join(dirpath, name)
-            with open(path, encoding="utf-8") as fh:
-                record = json.load(fh)
-            if record.get("dist") in where:
-                sys.exit(f"two records claim the distribution "
-                         f"{record['dist']!r}:\n  {where[record['dist']]}\n  {path}")
-            where[record.get("dist")] = path
-            totals = record.get("totals") or {}
-            row = {
-                "dist": record["dist"],
-                "version": record.get("version", "?"),
-                "status": record.get("status", "skipped"),
-                "axis": record.get("axis", ""),
-                "passed": totals.get("parity_files", 0),
-                "baseline": totals.get("baseline_files", 0),
-                "reason": first_reason(record)[:160],
-            }
-            if eco.is_excluded(excluded, record["dist"], record.get("version")):
-                row.update(status="excluded", passed=0, baseline=0,
-                           reason=excluded[record["dist"]][1][:160])
-            rows.append(row)
-            measured = record.get("measured", measured)
+    for record in records:
+        totals = record.get("totals") or {}
+        row = {
+            "dist": record["dist"],
+            "version": record.get("version", "?"),
+            "status": record.get("status", "skipped"),
+            "axis": record.get("axis", ""),
+            "passed": totals.get("parity_files", 0),
+            "baseline": totals.get("baseline_files", 0),
+            "reason": first_reason(record)[:160],
+        }
+        if eco.is_excluded(excluded, record["dist"], record.get("version")):
+            row.update(status="excluded", passed=0, baseline=0,
+                       reason=excluded[record["dist"]][1][:160])
+        rows.append(row)
+        measured = record.get("measured", measured)
 
     rows.sort(key=lambda r: (STATUS_ORDER.index(r["status"])
                              if r["status"] in STATUS_ORDER else 99,
                              r["dist"].lower()))
 
-    graded = [r for r in rows if r["baseline"] > 0]
-    green = [r for r in graded if r["status"] == "green"]
-    baseline_files = sum(r["baseline"] for r in rows)
-    passed_files = sum(r["passed"] for r in rows)
+    # The KPI is eco.kpi(), the function the rollup publishes summary.md with,
+    # never a recount over the page rows: the two once disagreed on whether an
+    # exclude.txt distribution counts, and the page showed 99.2% beside a
+    # ledger saying 98.7%.
+    numbers = eco.kpi(records, excluded)
+    check_against_summary(numbers)
 
     # Whether the KPI chart exists is decided here, not by the page probing for
     # it: a fetch that 404s on every load is a console error on a production
@@ -127,13 +148,13 @@ def main() -> int:
         "has_chart": has_chart,
         "measured": {k: measured.get(k) for k in
                      ("date", "mutsu_commit", "mutsu_version", "raku_version", "host")},
-        "counts": {"distributions": len(rows), "graded": len(graded),
-                   "green": len(green), "corpus": corpus_total},
+        "counts": {"distributions": len(rows),
+                   "graded": numbers["graded_distributions"],
+                   "green": numbers["green_distributions"], "corpus": corpus_total},
         "coverage": (round(100.0 * len(rows) / corpus_total, 1)
                      if corpus_total else 0.0),
-        "dist_parity": round(100.0 * len(green) / len(graded), 1) if graded else 0.0,
-        "file_parity": (round(100.0 * passed_files / baseline_files, 1)
-                        if baseline_files else 0.0),
+        "dist_parity": numbers["dist_parity"],
+        "file_parity": numbers["file_parity"],
         "distributions": rows,
     }
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
