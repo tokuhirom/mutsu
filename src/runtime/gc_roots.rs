@@ -264,7 +264,7 @@ impl Interpreter {
         visit_opt(visitor, &self.trait_mod_attr_writeback_value);
         visit_opt(visitor, &self.trait_mod_default_writeback);
         visit_map_values(visitor, &self.lexicals.our_vars);
-        for inner in self.lexicals.package_lexicals.values() {
+        for inner in self.lexicals.package_lexicals.read().values() {
             visit_map_values(visitor, inner);
         }
         for inner in self.module.module_scope_lexicals.values() {

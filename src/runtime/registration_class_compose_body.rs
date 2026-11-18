@@ -79,24 +79,23 @@ impl Interpreter {
         if new_lexicals.is_empty() {
             return;
         }
-        let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
-            .entry(owner.to_string())
-            .or_default();
-        for (bare, _) in &new_lexicals {
-            marks.insert(bare.clone());
-        }
-        let store = self
-            .package_lexicals_cow_mut()
-            .entry(owner.to_string())
-            .or_default();
-        for (bare, v) in new_lexicals {
-            let v = if bound.contains(&bare) {
-                v
-            } else {
-                super::registration_class_body_exit::share_body_static_scalar(&bare, v)
-            };
-            store.insert(bare, v);
-        }
+        self.lexicals.class_body_static_names.write(|t| {
+    let marks = t.entry(owner.to_string()).or_default();
+    for (bare, _) in &new_lexicals {
+        marks.insert(bare.clone());
+    }
+});
+        self.package_lexicals_write(|table| {
+            let store = table.entry(owner.to_string()).or_default();
+            for (bare, v) in new_lexicals {
+                let v = if bound.contains(&bare) {
+                    v
+                } else {
+                    super::registration_class_body_exit::share_body_static_scalar(&bare, v)
+                };
+                store.insert(bare, v);
+            }
+        });
     }
 
     /// Apply a role through the ClassHOW add_role MOP operation.

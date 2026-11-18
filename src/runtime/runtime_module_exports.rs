@@ -794,14 +794,16 @@ impl Interpreter {
             if let Some(key) = self.module_toplevel_enum_key(module, spelled) {
                 return Some(key);
             }
+            let package_lexical = self
+                .lexicals
+                .package_lexicals
+                .read()
+                .get(module)
+                .and_then(|e| e.get(name))
+                .cloned();
             return qualified_binding
                 .filter(|v| !is_type_self_binding(v))
-                .or_else(|| {
-                    self.lexicals
-                        .package_lexicals
-                        .get(module)
-                        .and_then(|e| e.get(name))
-                })
+                .or(package_lexical.as_ref())
                 .or_else(|| self.lexicals.our_vars.get(qualified.as_str()))
                 .or_else(|| {
                     self.module
@@ -878,7 +880,7 @@ impl Interpreter {
             })
             .or_else(|| {
                 self.lexicals
-                    .package_lexicals
+                    .package_lexicals.read()
                     .get(module)
                     .and_then(|entries| entries.get(name).or_else(|| entries.get(bare)))
                     .cloned()

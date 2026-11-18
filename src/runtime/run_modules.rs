@@ -2271,7 +2271,7 @@ impl Interpreter {
             }
             owners.push(module.to_string());
             for owner in owners {
-                let class_static_names = self.lexicals.class_body_static_names.get(&owner);
+                let class_static_names = self.lexicals.class_body_static_names.read().get(&owner).cloned();
                 if !module_type_aliases.is_empty() {
                     crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(owner.clone())
@@ -2290,6 +2290,7 @@ impl Interpreter {
                             .iter()
                             .filter(|(name, _)| {
                                 !class_static_names
+                                    .as_ref()
                                     .is_some_and(|names| names.contains(name.as_str()))
                             })
                             .map(|(k, v)| (k.clone(), v.clone())),

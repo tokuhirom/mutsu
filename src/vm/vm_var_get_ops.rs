@@ -760,10 +760,14 @@ impl Interpreter {
             // declaring unit evaluated; preferring it here gave a method with a
             // `use` (which runs in a module frame) another object than its
             // siblings (#16255).
-            let composed_role_term = frame_package
-                .and_then(|package| self.lexicals.package_lexicals.get(package.as_str()))
-                .and_then(|lexicals| lexicals.get(term_key.as_str()))
-                .cloned();
+            let composed_role_term = frame_package.and_then(|package| {
+                self.lexicals
+                    .package_lexicals
+                    .read()
+                    .get(package.as_str())
+                    .and_then(|lexicals| lexicals.get(term_key.as_str()))
+                    .cloned()
+            });
             let active_package_term = composed_role_term.or_else(|| {
                 frame_package
                     .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))

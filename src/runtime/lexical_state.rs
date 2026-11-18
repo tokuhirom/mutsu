@@ -140,7 +140,10 @@ pub(crate) struct LexicalState {
     /// `package_lexicals[current_package]`. This fires ONLY inside that package's
     /// subs (where `current_package == Foo`), so it does not leak the lexical to
     /// bare references after the block (which run under `GLOBAL`).
-    pub(crate) package_lexicals: std::sync::Arc<PackageLexicals>,
+    /// One world table shared by every thread (ADR-17216 slice 4a): a
+    /// package static created or rebound on one thread is visible on every
+    /// other.
+    pub(crate) package_lexicals: crate::runtime::world_cell::WorldCell<PackageLexicals>,
     /// Names in `package_lexicals` that are class-body `my` statics
     /// (`class C { my $x = ...; method m { $x } }`), keyed by class. These are
     /// stored in `package_lexicals` so a method's BARE `$x` read/write and the
@@ -149,8 +152,10 @@ pub(crate) struct LexicalState {
     /// reachable through a QUALIFIED `$C::x`, which is a distinct package variable
     /// (see t/package-lookup.t). `package_scope_lexical`'s qualified branch skips
     /// any (class, name) recorded here.
-    pub(crate) class_body_static_names:
-        std::sync::Arc<HashMap<String, std::collections::HashSet<String>>>,
+    /// World state like `package_lexicals` (ADR-17216 slice 4a).
+    pub(crate) class_body_static_names: crate::runtime::world_cell::WorldCell<
+        HashMap<String, std::collections::HashSet<String>>,
+    >,
     /// The declared scalar type of each typed class-body `my` static
     /// (`class C { my Int $x; ... }`), keyed by class then the static's
     /// `package_lexicals` name. A by-name store from one of the class's
@@ -161,7 +166,9 @@ pub(crate) struct LexicalState {
     /// type on the first class's methods (#10524). An `@`/`%` static's lanes
     /// are kept here under their own `__mutsu_type::` /
     /// `__mutsu_hash_key_type::` keys, which method entry re-injects (#12903).
-    pub(crate) class_body_static_types: std::sync::Arc<HashMap<String, HashMap<String, String>>>,
+    /// World state like `package_lexicals` (ADR-17216 slice 4a).
+    pub(crate) class_body_static_types:
+        crate::runtime::world_cell::WorldCell<HashMap<String, HashMap<String, String>>>,
     /// File-scope `my` lexicals of a loaded `unit` compunit, keyed by the unit
     /// package name then env var name, each holding a shared `ContainerRef` cell.
     ///
@@ -203,10 +210,12 @@ pub(crate) struct LexicalState {
     /// (`Interpreter::running_compunit_lexical_unit`).
     pub(crate) candidate_scope_unit: Option<(Symbol, usize)>,
     /// Bumped by [`Interpreter::unit_lexicals_cow_mut`] and
-    /// [`Interpreter::package_lexicals_cow_mut`], the funnels through which
+    /// [`Interpreter::package_lexicals_write`], the funnels through which
     /// `unit_lexicals` and `package_lexicals` are mutated. TRIR's per-routine
-    /// free-variable cache (`trir_outer_cache`) is keyed on it, so a bucket
-    /// or binding added anywhere invalidates every cached resolution.
+    /// free-variable cache (`trir_outer_cache`) is keyed on it together with
+    /// the world generation of `package_lexicals`
+    /// ([`Interpreter::trir_outer_cache_gen`]), so a bucket or binding added
+    /// anywhere, on any thread, invalidates every cached resolution.
     /// Writing *through* a cell already in the table does not bump it, and
     /// must not: the cell is what the cache holds, so such a write is
     /// visible without re-resolving.
@@ -438,7 +447,7 @@ impl LexicalState {
             our_scalar_keys: rustc_hash::FxHashSet::default(),
             process_dynamics: process_stash::ProcessStash::default(),
             hll_syms: rustc_hash::FxHashMap::default(),
-            package_lexicals: std::sync::Arc::new(PackageLexicals::default()),
+            package_lexicals: Default::default(),
             class_body_static_names: Default::default(),
             class_body_static_types: Default::default(),
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
@@ -504,9 +513,9 @@ impl LexicalState {
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),
-            package_lexicals: self.package_lexicals.clone(),
-            class_body_static_names: self.class_body_static_names.clone(),
-            class_body_static_types: self.class_body_static_types.clone(),
+            package_lexicals: self.package_lexicals.share(),
+            class_body_static_names: self.class_body_static_names.share(),
+            class_body_static_types: self.class_body_static_types.share(),
             unit_lexicals: self.unit_lexicals.clone(),
             unit_lexical_meta_lanes: self.unit_lexical_meta_lanes.clone(),
             compunit_lexical_units: self.compunit_lexical_units.clone(),

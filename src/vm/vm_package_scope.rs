@@ -109,10 +109,9 @@ impl Interpreter {
                     .entry(name.clone())
                     .or_default()
                     .insert(lane.resolve(), Value::str(tc.clone()));
-                crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_types)
-                    .entry(name.clone())
-                    .or_default()
-                    .insert(lane.resolve(), tc);
+                self.lexicals.class_body_static_types.write(|t| {
+    t.entry(name.clone()).or_default().insert(lane.resolve(), tc);
+});
             }
         }
         for (lane, previous) in outer_lanes {
@@ -257,10 +256,9 @@ impl Interpreter {
                 // The block's subs enter with its `@`/`%` lexicals injected
                 // (and the caller's same-named lanes cleared), as a class's
                 // methods do with its statics.
-                crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
-                    .entry(name.clone())
-                    .or_default()
-                    .insert(bare.clone());
+                self.lexicals.class_body_static_names.write(|t| {
+    t.entry(name.clone()).or_default().insert(bare.clone());
+});
                 let sym = Symbol::intern(bare);
                 lane_keys.push(Self::type_meta_key_for_sym(sym));
                 if bare.starts_with('%') {
@@ -273,10 +271,9 @@ impl Interpreter {
                 if lane_keys.contains(k)
                     && let ValueView::Str(tc) = v.view()
                 {
-                    crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_types)
-                        .entry(name.clone())
-                        .or_default()
-                        .insert(k.resolve(), tc.as_str().to_owned());
+                    self.lexicals.class_body_static_types.write(|t| {
+    t.entry(name.clone()).or_default().insert(k.resolve(), tc.as_str().to_owned());
+});
                 }
             }
             write_back.retain(|(k, _)| !lane_keys.contains(k));
@@ -286,18 +283,19 @@ impl Interpreter {
         // its statics.
         for (bare, _) in &package_lexicals {
             if bare.starts_with(['@', '%']) {
-                crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
-                    .entry(name.clone())
-                    .or_default()
-                    .insert(bare.clone());
+                self.lexicals.class_body_static_names.write(|t| {
+    t.entry(name.clone()).or_default().insert(bare.clone());
+});
             }
         }
         drop(writes);
         if !package_lexicals.is_empty() {
-            let store = self.package_lexicals_cow_mut().entry(name).or_default();
-            for (bare, v) in package_lexicals {
-                store.insert(bare, v);
-            }
+            self.package_lexicals_write(|table| {
+                let store = table.entry(name).or_default();
+                for (bare, v) in package_lexicals {
+                    store.insert(bare, v);
+                }
+            });
         }
         for (k, v) in write_back {
             env.insert_sym(k, v);
