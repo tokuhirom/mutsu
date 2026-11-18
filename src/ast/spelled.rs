@@ -137,6 +137,9 @@ pub(crate) enum Spelling {
         form: crate::ast::BinaryForm,
     },
     /// Where the term was written (ADR-10723 Stage 2, expression families):
+    /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
+    /// `Nil` literal in the parser's tree) does not have.
+    WrittenNil,
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),
 }
