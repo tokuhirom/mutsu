@@ -2152,6 +2152,7 @@ pub fn str_dot_ast_with_slang(
         module.clone(),
         crate::parser::parser_lib_paths_for_slang(),
         None,
+        None,
     )
     .map_err(|e| RuntimeError::new(format!("Could not find {module}: {e}")))?;
 

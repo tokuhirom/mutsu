@@ -24,16 +24,29 @@ pub(crate) fn register_loaded_unit_facts(module: &str, import_tags: Option<&[Str
     let Some(facts) = crate::compile_time_loader::loaded_facts(module, import_tags) else {
         return;
     };
+    apply_loaded_exports(facts.exports);
+    for (directive, keyword) in &facts.declarators {
+        match directive.as_str() {
+            "DECLARE" => super::register_scoped_declare_keyword(module, keyword),
+            "SUPERSEDE" => super::register_scoped_supersede_keyword(module, keyword),
+            _ => {}
+        }
+    }
+}
+
+/// Register in the current scope the routines a loaded unit exports to the
+/// `use` being parsed: their names, and the precedence of the operators.
+// Cost: O(e * n), e = exported routines, n = built-in operator count.
+pub(crate) fn apply_loaded_exports(exports: Vec<crate::compile_time_loader::LoadedExport>) {
     // An operator's `Routine.prec` record is what the importer's own
     // operators relate to (`is equiv(&infix:<imported>)`) and what a `multi`
     // candidate of it inherits, as for an operator declared in the unit.
-    for export in &facts.exports {
+    for export in &exports {
         if let Some(prec) = &export.op_prec {
             super::super::registry::register_op_prec(&export.name, prec.clone());
         }
     }
-    let exports: Vec<InlineModuleExport> = facts
-        .exports
+    let exports: Vec<InlineModuleExport> = exports
         .into_iter()
         .map(|export| {
             let (precedence, associativity) = parser_precedence(export.op_prec.as_ref());
@@ -46,13 +59,6 @@ pub(crate) fn register_loaded_unit_facts(module: &str, import_tags: Option<&[Str
         })
         .collect();
     super::apply_module_exports(&exports);
-    for (directive, keyword) in &facts.declarators {
-        match directive.as_str() {
-            "DECLARE" => super::register_scoped_declare_keyword(module, keyword),
-            "SUPERSEDE" => super::register_scoped_supersede_keyword(module, keyword),
-            _ => {}
-        }
-    }
 }
 
 /// The parser's numeric precedence level and associativity for a loaded
