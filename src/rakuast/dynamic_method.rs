@@ -24,7 +24,7 @@ use super::view::{
     arg_list, leaf_field, name_from_identifier, node_field, postfix_operand,
     unsupported as unsupported_expr, view_expr,
 };
-use super::{RakuAstClass, RakuAstNode};
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -71,7 +71,18 @@ fn postfix_of(
             RakuAstClass::CallNameAsMethod
         }
         other => {
-            fields.push(node_field(Some("callee"), view_expr(names, other)?));
+            let callee = view_expr(names, other)?;
+            // `.&{ ... }`: rakudo itemizes the block, `callee => $(Block)`.
+            let callee = if matches!(other, Expr::AnonSub { .. }) {
+                RakuAstNode {
+                    origin: Default::default(),
+                    class: RakuAstClass::ContextualizerItem,
+                    fields: vec![node_field(None, callee)],
+                }
+            } else {
+                callee
+            };
+            fields.push(node_field(Some("callee"), callee));
             RakuAstClass::CallTermAsMethod
         }
     };
@@ -206,7 +217,19 @@ fn name_expr(names: &NameScope, postfix: &RakuAstNode) -> Result<Expr, RuntimeEr
     match postfix.class {
         RakuAstClass::CallNameAsMethod => Ok(Expr::CodeVar(call_name_str(postfix)?)),
         RakuAstClass::CallBlockMethod => lower_expr(names, named_child(postfix, "block")?),
-        _ => lower_expr(names, named_child(postfix, "callee")?),
+        _ => {
+            let callee = named_child(postfix, "callee")?;
+            // `.&{ ... }` itemizes its block; the call is on the block itself.
+            if callee.class == RakuAstClass::ContextualizerItem
+                && let Some(RakuAstFieldValue::Node(inner)) =
+                    callee.fields.first().map(|f| &f.value)
+                && let ValueView::RakuAst(inner) = inner.view()
+                && inner.class == RakuAstClass::Block
+            {
+                return lower_expr(names, inner);
+            }
+            lower_expr(names, callee)
+        }
     }
 }
 
