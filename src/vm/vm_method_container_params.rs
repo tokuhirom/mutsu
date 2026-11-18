@@ -116,13 +116,16 @@ impl Interpreter {
             .map(|sources| sources.get(arg_idx).cloned().flatten());
         let bind = match source {
             Some(Some(name)) => self.method_container_source_bind(&name, arg)?,
-            // The call site says the argument is no variable.
-            Some(None) => Self::method_container_value_bind(arg)?,
-            // No source names at all: only a sigilless parameter keeps the
-            // read-only bind it always had here; an `is raw` one keeps the
-            // general binder, which also consults the caller's env.
-            None if pd.sigilless => Self::method_container_value_bind(arg)?,
-            None => return None,
+            // The call site says the argument is no variable -- or it recorded
+            // no source table at all, which the compiler omits exactly when no
+            // argument names one (`add_arg_sources_constant`), so `$o.m(1)`
+            // carries none. With no table the general binder has no source
+            // name either: it aliases a `ContainerRef` argument's cell, finds
+            // a variable only through a `VarRef` wrapper (declined by
+            // `method_container_value_bind`) and otherwise binds the value
+            // read-only -- the binds this classifies, for `is raw` as for a
+            // sigilless parameter.
+            Some(None) | None => Self::method_container_value_bind(arg)?,
         };
         // A Proxy binds itself, which only an unconstrained (`Mu`) parameter
         // does without fetching.
