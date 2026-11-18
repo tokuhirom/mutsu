@@ -73,7 +73,7 @@ impl Interpreter {
         let role_def = candidate
             .and_then(|idx| registry.role_candidates.get(role_name)?.get(idx))
             .map(|cand| &cand.role_def)
-            .or_else(|| registry.roles.get(role_name));
+            .or_else(|| registry.roles.get(role_name).map(|r| &**r));
         let Some(role_def) = role_def else {
             return result;
         };
@@ -122,7 +122,7 @@ impl Interpreter {
         let role_def = candidate
             .and_then(|idx| registry.role_candidates.get(role_name)?.get(idx))
             .map(|cand| &cand.role_def)
-            .or_else(|| registry.roles.get(role_name));
+            .or_else(|| registry.roles.get(role_name).map(|r| &**r));
         let Some(role_def) = role_def else {
             return Vec::new();
         };

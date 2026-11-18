@@ -2579,7 +2579,7 @@ impl Interpreter {
         registry.classes = classes
             .into_iter()
             .map(|(name, def)| (name, def.into()))
-            .collect::<rustc_hash::FxHashMap<_, _>>()
+            .collect::<crate::runtime::registry_sharded_map::ShardedMap<_, _>>()
             .into();
         // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
         // now lives in the shared Registry instead of an Interpreter field).
@@ -3026,7 +3026,11 @@ impl Interpreter {
                     },
                 );
             }
-            roles.into()
+            roles
+                .into_iter()
+                .map(|(name, def): (String, RoleDef)| (name, def.into()))
+                .collect::<crate::runtime::registry_sharded_map::ShardedMap<_, _>>()
+                .into()
         };
         // ADR-0029: role-to-role composition among the 16 `X::` marker
         // roles above, re-verified against real rakudo (2026-08-19,
@@ -3054,6 +3058,10 @@ impl Interpreter {
         // walk `role_parents` here to pull in roles reached
         // transitively through a composed role's own `does` (a class
         // doing `X::Syntax` also does `X::Comp`).
+        let added = register_x_does.len();
+        registry.class_composed_roles.reserve(added);
+        registry.class_direct_composed_roles.reserve(added);
+        registry.class_does_only_roles.reserve(added);
         for (class_name, does) in register_x_does {
             let mut flattened: Vec<String> = does.clone();
             let mut i = 0;

@@ -211,12 +211,20 @@ impl Interpreter {
         }
         // The object about to be reblessed may be reachable from other
         // threads, whose registries do not have this type (#11456).
-        let body_lexicals = self
+        let body_lexicals: Vec<(String, Value)> = self
             .lexicals
             .package_lexicals
             .get(&name)
             .map(|store| store.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default();
+        // The role bodies' lexicals are kept under the mixin type's name; a
+        // method of one of the roles run on another thread looks them up
+        // under the role's name (see `PublishedMixins::role_lexical`).
+        for role in &fresh {
+            self.types
+                .published_mixins
+                .publish_role_lexicals(role, body_lexicals.clone());
+        }
         let recipe = crate::runtime::published_mixins::MixinRecipe {
             base: base_class.to_string(),
             roles: fresh,

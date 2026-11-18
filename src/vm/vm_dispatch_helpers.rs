@@ -598,6 +598,14 @@ impl Interpreter {
         match val.view() {
             ValueView::Package(name) => {
                 let class_name = name.as_str();
+                // A role's type object boolifies through `Mu`, never through a
+                // `Bool` the role declares: rakudo's role punning excepts
+                // `Bool` (with `ACCEPTS`, `gist`, `raku`, `WHICH`, ...), so
+                // `so R` is False whether or not `R` was punned yet. Red's
+                // `if $ast.?filter` on the `Red::AST` type object depends on it.
+                if self.registry().roles.contains_key(class_name) {
+                    return val.truthy();
+                }
                 // No level of the type's MRO declares `Bool` -- the common
                 // case, a missing element read as `Any` (#17429) -- so the
                 // resolution below could only answer `None`: skip its walk.

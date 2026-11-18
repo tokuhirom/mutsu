@@ -55,7 +55,7 @@ fn reads_user_lexical(arg: Option<&DeclTraitArg>) -> bool {
 
 impl CompiledClassDeclPlan {
     /// Whether registering this declaration depends on nothing but the plan
-    /// and its resolved parents: a lexical, non-stub class with a fixed name,
+    /// and its resolved parents: a lexical or anonymous, non-stub class with a fixed name,
     /// no custom traits or metaclass, no parent or role arguments evaluated
     /// per entry, and a body of nothing but `has` and `method` declarations
     /// whose declaration-time expressions read no lexical of the declaring
@@ -64,7 +64,14 @@ impl CompiledClassDeclPlan {
     /// reused.
     // Cost: O(a + m + o), a = attributes, m = methods, o = body statements.
     pub(crate) fn reentry_is_static(&self) -> bool {
-        self.is_lexical
+        // An anonymous `class :: { ... }` is one type per site too (rakudo:
+        // `sub f { class :: {} }; f() === f()`). Rebuilding it on every entry
+        // also rewrote a world table other threads were dispatching through
+        // (ADR-17216): a concurrent caller found its method table empty.
+        (self.is_lexical
+            || self
+                .name
+                .with_str(crate::anon_names::is_anon_class_name))
             && self.decl_id != 0
             && !self.is_stub
             && self.name_chunk.is_none()

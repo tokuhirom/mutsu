@@ -318,10 +318,6 @@ impl Interpreter {
             .into_iter()
             .collect();
         let current_roles = self.registry().roles.clone();
-        let current_role_candidates = self.registry().role_candidates.clone();
-        let current_role_type_params = self.registry().role_type_params.clone();
-        let current_role_parents = self.registry().role_parents.clone();
-        let current_role_hides = self.registry().role_hides.clone();
         let keep_role =
             |name: &str| !eval_role_names.contains(name) || returned_role_names.contains(name);
         let is_eval_role_artifact = |name: &str| {
@@ -343,26 +339,6 @@ impl Interpreter {
         );
         let mut current_classes = self.registry().classes.clone();
         current_classes.retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
-        let mut current_hidden_classes = self.registry().hidden_classes.clone();
-        current_hidden_classes.retain(|name| !failed_classes.contains(name));
-        let current_hidden_defer_parents = self.registry().hidden_defer_parents.clone();
-        let mut current_class_composed_roles = self.registry().class_composed_roles.clone();
-        current_class_composed_roles.retain(|name, roles| {
-            !is_eval_role_artifact(name)
-                && !failed_classes.contains(name)
-                && !roles.iter().any(|role| eval_role_names.contains(role))
-        });
-        let mut current_class_direct_composed_roles =
-            self.registry().class_direct_composed_roles.clone();
-        current_class_direct_composed_roles.retain(|name, roles| {
-            !is_eval_role_artifact(name)
-                && !failed_classes.contains(name)
-                && !roles.iter().any(|role| eval_role_names.contains(role))
-        });
-        let mut current_class_role_param_bindings =
-            self.registry().class_role_param_bindings.clone();
-        current_class_role_param_bindings
-            .retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
         let current_type_keys: std::collections::HashSet<String> = current_roles
             .keys()
             .filter(|name| keep_role(name))
@@ -388,62 +364,80 @@ impl Interpreter {
             .filter(|name| !current_classes.contains_key(*name))
             .cloned()
             .collect();
-        self.registry_mut().roles = roles_snapshot;
-        self.registry_mut().user_declared_roles = user_declared_roles_snapshot;
-        self.registry_mut().role_candidates = role_candidates_snapshot;
-        self.registry_mut().role_type_params = role_type_params_snapshot;
-        self.registry_mut().role_parents = role_parents_snapshot;
-        self.registry_mut().role_hides = role_hides_snapshot;
-        self.registry_mut().classes = classes_snapshot;
-        self.registry_mut().hidden_classes = hidden_classes_snapshot;
-        self.registry_mut().hidden_defer_parents = hidden_defer_parents_snapshot;
-        self.registry_mut().class_composed_roles = class_composed_roles_snapshot;
-        self.registry_mut().class_direct_composed_roles = class_direct_composed_roles_snapshot;
-        self.registry_mut().class_role_param_bindings = class_role_param_bindings_snapshot;
-        // Package-scoped roles declared by EVAL remain visible to later EVALs.
-        // Lexical `my role` declarations do not, unless their type object is
-        // returned directly from EVAL and remains reachable by the caller.
-        self.registry_mut().roles.extend(
-            current_roles
-                .into_iter()
-                .filter(|(name, _)| keep_role(name)),
-        );
-        self.registry_mut().role_candidates.extend(
-            current_role_candidates
-                .into_iter()
-                .filter(|(name, _)| keep_role(name)),
-        );
-        self.registry_mut().role_type_params.extend(
-            current_role_type_params
-                .into_iter()
-                .filter(|(name, _)| keep_role(name)),
-        );
-        self.registry_mut().role_parents.extend(
-            current_role_parents
-                .into_iter()
-                .filter(|(name, _)| keep_role(name)),
-        );
-        self.registry_mut().role_hides.extend(
-            current_role_hides
-                .into_iter()
-                .filter(|(name, _)| keep_role(name)),
-        );
-        self.registry_mut().classes.extend(current_classes);
-        self.registry_mut()
-            .hidden_classes
-            .extend(current_hidden_classes);
-        self.registry_mut()
-            .hidden_defer_parents
-            .extend(current_hidden_defer_parents);
-        self.registry_mut()
-            .class_composed_roles
-            .extend(current_class_composed_roles);
-        self.registry_mut()
-            .class_direct_composed_roles
-            .extend(current_class_direct_composed_roles);
-        self.registry_mut()
-            .class_role_param_bindings
-            .extend(current_class_role_param_bindings);
+        // The merge is `snapshot` overlaid with what the EVAL left (minus its
+        // own lexical artifacts), done in place under ONE write guard: the
+        // registry is shared by every thread (ADR-17216), and a declaration
+        // another thread made while this EVAL ran must survive it. Reading
+        // the tables and writing a merged copy back in separate steps lost
+        // such a declaration.
+        {
+            let mut guard = self.registry_mut();
+            let reg = &mut *guard;
+            /// Put back every entry of `snapshot` whose key the table lost.
+            fn refill<K, V>(
+                table: &mut crate::runtime::registry::Sharded<K, V>,
+                snapshot: &crate::runtime::registry::Sharded<K, V>,
+            ) where
+                K: std::hash::Hash + Eq + Clone,
+                V: Clone,
+            {
+                for (key, value) in snapshot.iter() {
+                    if !table.contains_key(key) {
+                        table.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            reg.roles.retain(|name, _| keep_role(name));
+            refill(&mut reg.roles, &roles_snapshot);
+            reg.role_candidates.retain(|name, _| keep_role(name));
+            refill(&mut reg.role_candidates, &role_candidates_snapshot);
+            reg.role_type_params.retain(|name, _| keep_role(name));
+            refill(&mut reg.role_type_params, &role_type_params_snapshot);
+            reg.role_parents.retain(|name, _| keep_role(name));
+            refill(&mut reg.role_parents, &role_parents_snapshot);
+            reg.role_hides.retain(|name, _| keep_role(name));
+            refill(&mut reg.role_hides, &role_hides_snapshot);
+            reg.classes
+                .retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
+            refill(&mut reg.classes, &classes_snapshot);
+            reg.hidden_classes
+                .retain(|name| !failed_classes.contains(name));
+            reg.hidden_classes
+                .extend(hidden_classes_snapshot.iter().cloned());
+            refill(
+                &mut reg.hidden_defer_parents,
+                &hidden_defer_parents_snapshot,
+            );
+            let drops_composition = |name: &str, roles: &Vec<String>| {
+                is_eval_role_artifact(name)
+                    || failed_classes.contains(name)
+                    || roles.iter().any(|role| eval_role_names.contains(role))
+            };
+            reg.class_composed_roles
+                .retain(|name, roles| !drops_composition(name, roles));
+            refill(
+                &mut reg.class_composed_roles,
+                &class_composed_roles_snapshot,
+            );
+            reg.class_direct_composed_roles
+                .retain(|name, roles| !drops_composition(name, roles));
+            refill(
+                &mut reg.class_direct_composed_roles,
+                &class_direct_composed_roles_snapshot,
+            );
+            reg.class_role_param_bindings
+                .retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
+            refill(
+                &mut reg.class_role_param_bindings,
+                &class_role_param_bindings_snapshot,
+            );
+            // The roles this EVAL declared are not user-declared outside it;
+            // another thread's are.
+            reg.user_declared_roles
+                .retain(|name| !eval_role_names.contains(name));
+            reg.user_declared_roles
+                .extend(user_declared_roles_snapshot.iter().cloned());
+        }
         // ADR-0019 F4c-8(b): this used to loop over every class in the
         // registry (O(all classes) x O(total table rows), to repair at most
         // a handful of owners); scoping to `resurrected_classes` (computed

@@ -87,7 +87,7 @@ impl Interpreter {
             } else {
                 None
             }
-            .or_else(|| registry.roles.get(role_name));
+            .or_else(|| registry.roles.get(role_name).map(|r| &**r));
             if let Some(role_def) = role_def
                 && let Some(overloads) = role_def.methods.get(method_name)
             {

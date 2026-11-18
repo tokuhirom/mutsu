@@ -1059,7 +1059,8 @@ impl Interpreter {
         // until the next registry write (which drops the memo): a method that
         // reads the bareword of a `my class` on every call paid the four
         // whole-map walks each time.
-        if let Some(known) = reg.lexical_key_scans.get(qualified) {
+        let keys_stamp = reg.type_keys_stamp();
+        if let Some(known) = reg.lexical_key_scans.get(keys_stamp, qualified) {
             return known;
         }
         let prefix = format!("{qualified}\u{0}");
@@ -1089,7 +1090,7 @@ impl Interpreter {
                 .cloned()
         };
         let found = find(true).or_else(|| find(false));
-        reg.lexical_key_scans.insert(qualified, found.clone());
+        reg.lexical_key_scans.insert(keys_stamp, qualified, found.clone());
         found
     }
 
@@ -1102,7 +1103,8 @@ impl Interpreter {
         let prefix_len = bare.len() + 1;
         let reg = self.registry();
         let mut found: Option<&str> = None;
-        for key in reg.lexical_type_keys_for(bare).iter().filter(|key| {
+        let keys = reg.lexical_type_keys_for(bare);
+        for key in keys.iter().filter(|key| {
             !is_curried_lexical_key(key, prefix_len) && !is_mixin_lexical_key(key, prefix_len)
         }) {
             match found {

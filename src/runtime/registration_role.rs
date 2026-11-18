@@ -274,7 +274,7 @@ impl Interpreter {
             &parent
         };
         let Some(candidates) = self.registry().role_candidates.get(base_role_name).cloned() else {
-            if let Some(role) = self.registry().roles.get(base_role_name).cloned() {
+            if let Some(role) = self.registry().roles.get(base_role_name).map(|r| RoleDef::clone(r)) {
                 return Ok(Some((role, Vec::new(), Vec::new())));
             }
             if matches!(base_role_name, "Positional" | "Associative" | "Callable") {

@@ -29,7 +29,7 @@
 //! cache cannot be swapped under a live borrow): one operation sees one
 //! version.
 
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -48,6 +48,9 @@ pub(crate) struct WorldCell<T> {
     /// This thread's snapshot and the generation it was taken at. `None`
     /// only between a write dropping it and the write storing the new one.
     cache: RefCell<(u64, Option<Arc<T>>)>,
+    /// `cache.0`, readable without borrowing the cache: the read fast path
+    /// is one atomic load and one compare against it.
+    cached_gen: Cell<u64>,
 }
 
 impl<T: Default> Default for WorldCell<T> {
@@ -60,7 +63,13 @@ impl<T> WorldCell<T> {
     /// A new world table holding `value`, shared with no other thread yet.
     // Cost: O(1).
     pub(crate) fn new(value: T) -> Self {
-        let value = Arc::new(value);
+        Self::from_arc(Arc::new(value))
+    }
+
+    /// A new world table starting from a shared template version (the
+    /// built-in registry every program starts from); the first write copies.
+    // Cost: O(1).
+    pub(crate) fn from_arc(value: Arc<T>) -> Self {
         let generation = crate::runtime::registry_gen::next_generation();
         Self {
             slot: Arc::new(WorldSlot {
@@ -68,6 +77,7 @@ impl<T> WorldCell<T> {
                 generation: AtomicU64::new(generation),
             }),
             cache: RefCell::new((generation, Some(value))),
+            cached_gen: Cell::new(generation),
         }
     }
 
@@ -83,6 +93,7 @@ impl<T> WorldCell<T> {
         };
         Self {
             slot: Arc::clone(&self.slot),
+            cached_gen: Cell::new(cache.0),
             cache: RefCell::new(cache),
         }
     }
@@ -113,16 +124,39 @@ impl<T> WorldCell<T> {
     // another thread wrote.
     #[inline]
     pub(crate) fn read(&self) -> Ref<'_, T> {
-        let generation = self.generation();
-        if let Ok(mut cache) = self.cache.try_borrow_mut()
-            && (cache.0 != generation || cache.1.is_none())
-        {
+        if self.cached_gen.get() != self.generation() {
+            self.refresh();
+        }
+        Ref::map(self.cache.borrow(), |cache| match cache.1.as_ref() {
+            Some(current) => &**current,
+            None => unreachable!("world cell snapshot present outside a write"),
+        })
+    }
+
+    /// Take the current version into this thread's cache, unless an outer
+    /// snapshot of it is still borrowed here (that one is kept).
+    // Cost: O(1), one read lock and an `Arc` clone.
+    #[cold]
+    #[inline(never)]
+    fn refresh(&self) {
+        if let Ok(mut cache) = self.cache.try_borrow_mut() {
             let (generation, current) = self.load();
             *cache = (generation, Some(current));
+            self.cached_gen.set(generation);
         }
-        Ref::map(self.cache.borrow(), |cache| {
-            &**cache.1.as_ref().expect("world cell snapshot present outside a write")
-        })
+    }
+
+    /// An owned snapshot of the table's current version (this thread's).
+    // Cost: O(1), one reference-count increment.
+    pub(crate) fn snapshot(&self) -> Arc<T> {
+        drop(self.read());
+        match self.cache.try_borrow() {
+            Ok(cache) => match &cache.1 {
+                Some(current) => Arc::clone(current),
+                None => self.load().1,
+            },
+            Err(_) => self.load().1,
+        }
     }
 }
 
@@ -137,8 +171,11 @@ impl<T: Clone> WorldCell<T> {
         // outer read stays; the write then copies.)
         let mut cache = self.cache.try_borrow_mut().ok();
         if let Some(cache) = cache.as_mut() {
-            cache.1 = None;
+            drop(cache.1.take());
         }
+        // Until the new version is stored below, no fast-path read may trust
+        // the cache.
+        self.cached_gen.set(u64::MAX);
         let mut current = crate::runtime::lock_reentry::ReentrantWriteGuard::new(
             &self.slot.current,
             "world_cell",
@@ -148,7 +185,87 @@ impl<T: Clone> WorldCell<T> {
         self.slot.generation.store(generation, Ordering::Release);
         if let Some(cache) = cache.as_mut() {
             **cache = (generation, Some(Arc::clone(&current)));
+            self.cached_gen.set(generation);
         }
         result
+    }
+}
+
+impl<T: Clone> WorldCell<T> {
+    /// A write guard over the table: derefs to the current version, and its
+    /// first mutable deref copies it (`Arc::make_mut`) when any thread still
+    /// holds a snapshot. Dropping a guard that was mutably dereferenced
+    /// publishes the result under a fresh generation. Never read the same
+    /// table on this thread while the guard lives.
+    // Cost: O(1) to take; the copy-on-write clone as for [`Self::write`].
+    pub(crate) fn write_guard(&self) -> WorldWriteGuard<'_, T> {
+        let mut cache = self.cache.try_borrow_mut().ok();
+        // Drop this thread's own snapshot so it does not force the copy by
+        // itself; restored on drop.
+        // (Released before the lock is taken: when it is the last reference
+        // to an old version, that version is freed outside the lock.)
+        drop(cache.as_mut().and_then(|cache| cache.1.take()));
+        self.cached_gen.set(u64::MAX);
+        let current = crate::runtime::lock_reentry::ReentrantWriteGuard::new(
+            &self.slot.current,
+            "world_cell",
+        );
+        WorldWriteGuard {
+            slot: &self.slot,
+            current,
+            cache,
+            cached_gen: &self.cached_gen,
+            dirty: false,
+        }
+    }
+}
+
+/// See [`WorldCell::write_guard`].
+pub(crate) struct WorldWriteGuard<'a, T> {
+    slot: &'a WorldSlot<T>,
+    current: crate::runtime::lock_reentry::ReentrantWriteGuard<'a, Arc<T>>,
+    cache: Option<std::cell::RefMut<'a, (u64, Option<Arc<T>>)>>,
+    cached_gen: &'a Cell<u64>,
+    dirty: bool,
+}
+
+impl<T: Clone> WorldWriteGuard<'_, T> {
+    /// Whether another reference to the current version is alive (a mutable
+    /// deref would then copy it).
+    // Cost: O(1).
+    pub(crate) fn is_shared(&self) -> bool {
+        Arc::strong_count(&self.current) > 1
+    }
+}
+
+impl<T> std::ops::Deref for WorldWriteGuard<'_, T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        &self.current
+    }
+}
+
+impl<T: Clone> std::ops::DerefMut for WorldWriteGuard<'_, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        self.dirty = true;
+        Arc::make_mut(&mut self.current)
+    }
+}
+
+impl<T> Drop for WorldWriteGuard<'_, T> {
+    fn drop(&mut self) {
+        let generation = if self.dirty {
+            let generation = crate::runtime::registry_gen::next_generation();
+            self.slot.generation.store(generation, Ordering::Release);
+            generation
+        } else {
+            self.slot.generation.load(Ordering::Acquire)
+        };
+        if let Some(cache) = self.cache.as_mut() {
+            **cache = (generation, Some(Arc::clone(&self.current)));
+            self.cached_gen.set(generation);
+        }
     }
 }

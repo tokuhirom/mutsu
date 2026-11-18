@@ -207,7 +207,7 @@ impl Interpreter {
                 None
             };
         let role = match concretized_parent
-            .or_else(|| self.registry().roles.get(base_role_name).cloned())
+            .or_else(|| self.registry().roles.get(base_role_name).map(|r| RoleDef::clone(r)))
         {
             Some(r) => r,
             None => {

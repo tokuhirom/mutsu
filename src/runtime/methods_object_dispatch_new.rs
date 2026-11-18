@@ -643,7 +643,7 @@ impl Interpreter {
                 return self.dispatch_new(Value::package(Symbol::intern(&punned)), args);
             }
             self.ensure_role_punned_to_class(&base_name_str)?;
-            let mut selected_role = self.registry().roles.get(&base_name_str).cloned();
+            let mut selected_role = self.registry().roles.get(&base_name_str).map(|r| crate::runtime::RoleDef::clone(r));
             let mut matched_lang_version: Option<String> = None;
             // The matched candidate's parameter *signature*, not just the names:
             // binding the type arguments is real signature binding (a `@l`

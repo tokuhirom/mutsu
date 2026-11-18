@@ -97,7 +97,7 @@ impl Interpreter {
         {
             return Some(candidate.role_def.clone());
         }
-        self.registry().roles.get(role_name).cloned()
+        self.registry().roles.get(role_name).map(|r| RoleDef::clone(r))
     }
 
     /// Whether the role `role_name` composed into `mixins` declares the
@@ -157,7 +157,7 @@ impl Interpreter {
         {
             return Some(f(&candidate.role_def));
         }
-        registry.roles.get(role_name).map(f)
+        registry.roles.get(role_name).map(|r| f(r))
     }
 
     pub(crate) fn resolve_parametric_role_runtime(
@@ -165,7 +165,7 @@ impl Interpreter {
         base_name: &str,
         type_args: &[Value],
     ) -> Option<(RoleDef, Vec<String>)> {
-        let mut selected_role = self.registry().roles.get(base_name).cloned();
+        let mut selected_role = self.registry().roles.get(base_name).map(|r| RoleDef::clone(r));
         let mut selected_param_names = self
             .registry()
             .role_type_params
@@ -758,7 +758,7 @@ impl Interpreter {
         let resolved_type_arg_values = resolved.as_ref().map(|(_, _, values)| values.clone());
         let role = match &resolved {
             Some((role_def, _, _)) => Some(role_def.clone()),
-            None => self.registry().roles.get(role_name).cloned(),
+            None => self.registry().roles.get(role_name).map(|r| RoleDef::clone(r)),
         };
         // Role type-parameter keys used for composition are normalized
         // (sigil-less), but a declaration expression still reads the spelling
@@ -814,10 +814,13 @@ impl Interpreter {
                 // composition as already done just because some earlier,
                 // unrelated base type already composed the same role.
                 let base_type = crate::value::types::what_type_name(&left);
-                if self
-                    .registry_mut()
-                    .composed_role_bodies
-                    .insert(format!("mixin:{base_type}:{role_name}"))
+                let body_key = format!("mixin:{base_type}:{role_name}");
+                // Probe before writing: the registry is world state, and a
+                // write publishes a new version (copying it while another
+                // thread holds a snapshot), so `1 but R` in a loop must not
+                // write once the body has run (ADR-17216 slice 2b).
+                if !self.registry().composed_role_bodies.contains(&body_key)
+                    && self.registry_mut().composed_role_bodies.insert(body_key)
                 {
                     let (ops, decl_file) = role
                         .as_ref()

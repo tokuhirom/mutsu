@@ -63,16 +63,10 @@ pub(crate) struct TaskRegistry(Arc<Registry>, Arc<RoutineTables>);
 use crate::runtime::routine_tables::RoutineTables;
 
 impl Interpreter {
-    /// The registry `Arc` this interpreter currently reads.
-    // Cost: O(1), one read-lock acquisition.
+    /// The registry version this interpreter currently reads.
+    // Cost: O(1).
     fn registry_arc(&self) -> Arc<Registry> {
-        Arc::clone(
-            &self
-                .types
-                .registry
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        )
+        self.types.registry.snapshot()
     }
 
     /// The routine-tables `Arc` this interpreter currently reads.
@@ -99,6 +93,12 @@ impl Interpreter {
             self.types
                 .registry_write_gen
                 .store(warm.registry_write_gen, Ordering::Relaxed);
+            // The registry version is the one the warm caches were filled
+            // under (the warm handoff holds a reference to it, so a write
+            // since would have copied it): reconcile with its generation.
+            self.types
+                .registry_world_seen
+                .store(self.types.registry.generation(), Ordering::Relaxed);
         }
         TaskRegistry(registry, routines)
     }
@@ -113,7 +113,7 @@ impl Interpreter {
         let warm = untouched.then(|| WarmCaches {
             registry,
             routines,
-            registry_write_gen: self.types.registry_write_gen.load(Ordering::Relaxed),
+            registry_write_gen: self.registry_write_generation(),
             caches: std::mem::take(&mut self.caches),
             attr_type_constraint_cache: std::mem::take(&mut self.types.attr_type_constraint_cache),
             class_does_role_memo: std::mem::take(&mut self.types.class_does_role_memo),

@@ -16,7 +16,7 @@ impl Interpreter {
             return;
         }
         let role_def = super::registration_class::builtin_role_def();
-        self.registry_mut().roles.insert(name.to_string(), role_def);
+        self.registry_mut().roles.insert(name.to_string(), role_def.into());
     }
 
     /// `$role.^add_method($name, $code)` on a role: the candidates go to the

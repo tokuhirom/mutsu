@@ -30,6 +30,7 @@
 // `HashMap`/`HashSet` names are aliased so the ~40 field declarations below
 // stay textually unchanged.
 use super::registry_cow_table::CowTable;
+use super::registry_sharded_map::ShardedMap;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::sync::Arc;
 
@@ -41,7 +42,17 @@ use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
 /// [`Registry::classes`]'s type: a copy-on-write table, so a snapshot of it
 /// (an import scope's, `ImportScopeSnapshot`) is a reference bump.
-pub(crate) type ClassTable = CowTable<HashMap<String, CowTable<ClassDef>>>;
+/// A registry map: shared copy-on-write, written one shard at a time.
+pub(crate) type Sharded<K, V> = CowTable<ShardedMap<K, V>>;
+/// A proto method's compiled dispatcher body and its functions.
+pub(crate) type CompiledProto = (
+    Arc<crate::opcode::CompiledCode>,
+    Option<Arc<crate::opcode::CompiledFns>>,
+);
+pub(crate) type ClassTable = Sharded<String, CowTable<ClassDef>>;
+/// The role table: sharded like [`ClassTable`], each definition behind its
+/// own `Arc`, so copying a shard never copies a role body.
+pub(crate) type RoleTable = CowTable<ShardedMap<String, CowTable<RoleDef>>>;
 
 /// Canonical method-table key. Both built-in handlers and user candidates will
 /// occupy this namespace; the latter still live in `ClassDef::methods` during
@@ -145,44 +156,41 @@ pub(crate) const DISPATCHER_WRAP_IDX: usize = usize::MAX;
 /// Note: no `Debug` derive — `ClassDef` (and its `MethodDef`/AST graph) is not
 /// `Debug`, and nothing needs to format the registry.
 /// A memo of the lexical-type-key scan (see [`Registry::lexical_key_scans`]).
-/// Cloning a registry starts the copy with an empty memo.
-#[derive(Default)]
-pub(crate) struct LexicalKeyScans(
-    std::sync::Mutex<rustc_hash::FxHashMap<Box<str>, Option<String>>>,
-);
+/// Its answers depend only on the key sets of the four type tables, so every
+/// version of the registry shares one memo, tagged with the
+/// [`TypeKeysStamp`] its answers were found under: a version with other keys
+/// sees a miss, and the first insert under a new stamp starts it over.
+#[derive(Default, Clone)]
+pub(crate) struct LexicalKeyScans(Arc<std::sync::Mutex<StampedKeyScans>>);
 
-impl Clone for LexicalKeyScans {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
+/// The memo behind [`LexicalKeyScans`] and the stamp it holds for.
+type StampedKeyScans = (TypeKeysStamp, rustc_hash::FxHashMap<Box<str>, Option<String>>);
 
 impl LexicalKeyScans {
     // Cost: O(1) expected.
-    pub(crate) fn get(&self, qualified: &str) -> Option<Option<String>> {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(qualified)
-            .cloned()
+    pub(crate) fn get(&self, stamp: TypeKeysStamp, qualified: &str) -> Option<Option<String>> {
+        let memo = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if memo.0 != stamp {
+            return None;
+        }
+        memo.1.get(qualified).cloned()
     }
 
-    // Cost: O(1) expected.
-    pub(crate) fn insert(&self, qualified: &str, answer: Option<String>) {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(qualified.into(), answer);
-    }
-
-    // Cost: O(entries).
-    fn clear(&mut self) {
-        self.0
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clear();
+    // Cost: O(1) expected; O(entries) to drop a memo of other keys.
+    pub(crate) fn insert(&self, stamp: TypeKeysStamp, qualified: &str, answer: Option<String>) {
+        let mut memo = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if memo.0 != stamp {
+            memo.0 = stamp;
+            memo.1.clear();
+        }
+        memo.1.insert(qualified.into(), answer);
     }
 }
+
+/// Names the key sets of the four type tables (classes, roles, enums,
+/// subsets): two registries with equal stamps hold the same type keys. See
+/// [`Registry::type_keys_stamp`].
+pub(crate) type TypeKeysStamp = (u64, u64, u64, u64);
 
 /// The `augment`ed candidates a class's own multi dispatcher does not see
 /// (#16049): the MRO level of the nearest class declaring `multi` candidates
@@ -206,8 +214,12 @@ impl AugmentCutoff {
 /// `source-facing name -> the mangled type keys carrying it`; see
 /// [`Registry::lexical_type_keys_for`].
 type LexicalTypeNameIndex = rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>>;
+/// The index and the [`TypeKeysStamp`] it was built under.
+type StampedLexicalTypeNames = (TypeKeysStamp, LexicalTypeNameIndex);
 /// `short name -> class key`; see [`Registry::class_key_by_short_name`].
 type ClassShortNameIndex = rustc_hash::FxHashMap<Box<str>, Box<str>>;
+/// The index and the class table key generation it was built under.
+type StampedClassShortNames = (u64, ClassShortNameIndex);
 
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
@@ -219,26 +231,25 @@ pub(crate) struct Registry {
         std::sync::Arc<std::sync::Mutex<(usize, HashMap<String, String>)>>,
     /// The stash `nqp::setwho` gave a type object, by `who_override_key`:
     /// its `.WHO` answers that very object.
-    pub(crate) who_overrides: std::collections::HashMap<String, crate::value::Value>,
+    pub(crate) who_overrides: Sharded<String, crate::value::Value>,
     /// `(class, method)` -> the stamp of the first `augment` that added a
     /// `multi` candidate of `method` to an ancestor after `class` had composed
     /// its own multi dispatcher for it. Rakudo derives a subclass's dispatcher
     /// from its parent's when the subclass is composed, so candidates stamped
     /// at or after that point (`MethodDef::augment_epoch`) do not join it
     /// (#16049).
-    pub(crate) frozen_dispatchers:
-        std::collections::HashMap<(crate::symbol::Symbol, crate::symbol::Symbol), u64>,
+    pub(crate) frozen_dispatchers: Sharded<(crate::symbol::Symbol, crate::symbol::Symbol), u64>,
     /// Compunits whose top level ran `use MONKEY-SEE-NO-EVAL` (or `use
     /// MONKEY`). A routine of such a unit keeps the pragma when it is called
     /// from another unit, whose env (the one the call runs in) does not carry
     /// it -- see `runtime::pragma_monkey_eval`.
-    pub(crate) monkey_eval_units: std::collections::HashSet<crate::symbol::Symbol>,
+    pub(crate) monkey_eval_units: CowTable<std::collections::HashSet<crate::symbol::Symbol>>,
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
-    pub(crate) method_entries: CowTable<HashMap<MethodEntryKey, MethodEntry>>,
+    pub(crate) method_entries: Sharded<MethodEntryKey, MethodEntry>,
     /// Declaration prototypes, including copies owned by composed classes.
     /// Replacing a method row does not change an already declared initializer.
-    pub(crate) method_value_prototypes: HashMap<Symbol, HashMap<Symbol, Arc<crate::value::RoutinePrototype>>>,
+    pub(crate) method_value_prototypes: Sharded<Symbol, HashMap<Symbol, Arc<crate::value::RoutinePrototype>>>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
     /// ADR-0067 slice 3a: has any user method with a **raw invocant**
@@ -299,7 +310,7 @@ pub(crate) struct Registry {
     /// the construction site; every actual read/write outside this impl
     /// block should go through [`owner_method_names`](Self::owner_method_names)
     /// rather than touching the field directly.
-    pub(crate) owner_method_names: HashMap<Symbol, Vec<Symbol>>,
+    pub(crate) owner_method_names: Sharded<Symbol, Vec<Symbol>>,
     /// Reverse index for the OTHER half of the same table: owner -> every
     /// `name` whose `(owner, name)` row currently carries an `accessor`
     /// column. Maintained solely by
@@ -316,7 +327,7 @@ pub(crate) struct Registry {
     /// `pub(crate)` for the same struct-update-syntax reason as
     /// [`owner_method_names`](Self::owner_method_names); read and written only
     /// through `registry_method_table.rs`.
-    pub(crate) owner_accessor_names: HashMap<Symbol, Vec<Symbol>>,
+    pub(crate) owner_accessor_names: Sharded<Symbol, Vec<Symbol>>,
     /// Method-candidate wrap chains: `(owner class, method name, candidate
     /// index)` -> stack of `(handle_id, wrapper_sub)`, outermost (currently
     /// active) last. Populated by `.wrap()` on a Sub/Method obtained via
@@ -326,31 +337,31 @@ pub(crate) struct Registry {
     /// letting the generation-checked `fast_method_cache` stay valid instead
     /// of a program-wide `has_any_wrap_chains()` prefilter disabling it
     /// whenever ANY method anywhere is wrapped).
-    pub(crate) method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
+    pub(crate) method_wrap_chains: Sharded<(String, String, usize), Vec<(u64, Value)>>,
     /// `Method.set_name` renames: `(owner class, method name, candidate
     /// index)` -> the name `.name` reports. The method table key (the dispatch
     /// name) is unchanged, as in rakudo, where `set_name` only rewrites the
     /// code object's `$!do` name.
-    pub(crate) method_renames: HashMap<(String, String, usize), String>,
+    pub(crate) method_renames: Sharded<(String, String, usize), String>,
     /// Method names that have ever had a wrapper pushed onto their multi
     /// DISPATCHER slot ([`DISPATCHER_WRAP_IDX`]). A conservative prefilter
     /// for `Interpreter::dispatcher_wrap_chain`: a name is never removed, so
     /// a stale entry only costs one MRO walk, never a missed wrapper.
-    pub(crate) dispatcher_wrapped_methods: std::collections::HashSet<String>,
+    pub(crate) dispatcher_wrapped_methods: CowTable<std::collections::HashSet<String>>,
     /// Method names that have ever had a chain on one of their CANDIDATE
     /// slots (a `.wrap` or a bound `$!do` body). The same kind of
     /// conservative prefilter as `dispatcher_wrapped_methods`, for the
     /// candidate-index scan `Interpreter::enter_method_wrap_chain` runs before
     /// it can look a chain up (#12875).
-    pub(crate) candidate_wrapped_methods: std::collections::HashSet<String>,
+    pub(crate) candidate_wrapped_methods: CowTable<std::collections::HashSet<String>>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
-    pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
+    pub(crate) enum_types: Sharded<String, Vec<(String, EnumValue)>>,
     /// Enums minted by `Metamodel::EnumHOW.new_type`: type name -> the value
     /// objects `.^add_enum_value` received and the HOW's compose state.
     /// Declared (`enum Name ...`) enums live in `enum_types` instead.
-    pub(crate) how_enums: HashMap<String, super::methods_enumhow::HowEnumState>,
+    pub(crate) how_enums: Sharded<String, super::methods_enumhow::HowEnumState>,
     /// `subset Name of Base where { ... }` declarations.
-    pub(crate) subsets: HashMap<String, std::sync::Arc<SubsetDef>>,
+    pub(crate) subsets: Sharded<String, std::sync::Arc<SubsetDef>>,
 
     /// User/builtin class definitions: class name -> [`ClassDef`] (parents, MRO,
     /// methods, attributes, ...). Read on hot method-dispatch paths; callers take
@@ -361,54 +372,54 @@ pub(crate) struct Registry {
 
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).
-    pub(crate) cunion_classes: HashSet<String>,
+    pub(crate) cunion_classes: CowTable<HashSet<String>>,
     /// Classes declared `is repr('CStruct')` (native interop). Used by
     /// NativeCall to recognize a signature type as an opaque native handle
     /// passed by pointer, even when the class name is lowercase (e.g.
     /// `evp_cipher_st`) and so would not match the name-shape heuristic.
-    pub(crate) cstruct_classes: HashSet<String>,
+    pub(crate) cstruct_classes: CowTable<HashSet<String>>,
     /// Classes declared `is repr('CPPStruct')`: laid out and allocated as a
     /// CStruct (they are also in [`cstruct_classes`](Self::cstruct_classes)),
     /// but reporting their own REPR.
-    pub(crate) cppstruct_classes: HashSet<String>,
+    pub(crate) cppstruct_classes: CowTable<HashSet<String>>,
     /// Classes declared `is repr('CPointer')` — an opaque native handle with no
     /// declared field layout of its own (OpenSSL's `BIO`). Tracked separately
     /// from [`cstruct_classes`](Self::cstruct_classes) because such a class has no layout to compute,
     /// but a *field* of that type is still one pointer wide inside an enclosing
     /// CStruct.
-    pub(crate) cpointer_classes: HashSet<String>,
+    pub(crate) cpointer_classes: CowTable<HashSet<String>>,
     /// Classes declared `is repr('CArray')` (#11209), by full name. An instance
     /// `nqp::create` makes of one carries native element storage typed by the
     /// type's `.^array_type` (see `runtime::carray_repr`).
-    pub(crate) carray_classes: HashSet<String>,
+    pub(crate) carray_classes: CowTable<HashSet<String>>,
     /// Classes declared `is repr('Uninstantiable')` (upstream NativeCall's
     /// `class void`), by full name: they report that REPR and have no
     /// instances (`.new` / `nqp::create` die).
-    pub(crate) uninstantiable_classes: HashSet<String>,
+    pub(crate) uninstantiable_classes: CowTable<HashSet<String>>,
     /// Classes declared `is repr<NativeCall>` (upstream NativeCall's
     /// `my class Callsite`), by full name: their instances are the callsite
     /// `nqp::buildnativecall` fills in (see `runtime::box_target`).
-    pub(crate) nativecall_classes: HashSet<String>,
+    pub(crate) nativecall_classes: CowTable<HashSet<String>>,
     /// Classes declared `is repr<CStr>` (upstream NativeCall's nested
     /// `CStr`), by full name: `nqp::box_s($str, $class)` gives such a class an
     /// object that owns a NUL-terminated copy of the string (see
     /// `runtime::cstr_repr`).
-    pub(crate) cstr_classes: HashSet<String>,
+    pub(crate) cstr_classes: CowTable<HashSet<String>>,
     /// The attribute a class or role declared `is box_target`, keyed by the
     /// declaring class or role (a role by its base name). MoarVM's native ops
     /// on an object that has one apply to that attribute's value instead
     /// (see `runtime::box_target`).
-    pub(crate) box_target_attrs: HashMap<String, String>,
+    pub(crate) box_target_attrs: Sharded<String, String>,
     /// `native`-declared types and the traits they recorded (`is repr`,
     /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
-    pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,
+    pub(crate) native_decls: Sharded<String, super::native_decl::NativeDecl>,
     /// `.^array_type` of a class that recorded one (`is array_type(T)`, a
     /// composed role's trait, or `.^set_array_type`; see
     /// `runtime::array_type_trait`).
-    pub(crate) array_types: HashMap<String, Value>,
+    pub(crate) array_types: Sharded<String, Value>,
     /// A role's `is array_type(...)` argument, evaluated against the role's
     /// type arguments when a class composes it (`runtime::array_type_trait`).
-    pub(crate) role_array_type_args: HashMap<String, crate::opcode::DeclTraitArg>,
+    pub(crate) role_array_type_args: Sharded<String, crate::opcode::DeclTraitArg>,
     /// Classes declared `is repr('VMArray')` or `is repr('VMHash')` — raw VM
     /// storage, with no Raku attributes of their own. nqp code declares one
     /// when it wants a bare list/hash store to build with `nqp::bindpos` /
@@ -419,13 +430,13 @@ pub(crate) struct Registry {
     /// Keyed by the class's SHORT name (its last `::` segment): `nqp::create`
     /// matches a class by short name, and keying the set that way turns that
     /// match into one probe instead of a scan of every entry.
-    pub(crate) vmarray_classes: HashSet<String>,
+    pub(crate) vmarray_classes: CowTable<HashSet<String>>,
     /// `is repr('ConcBlockingQueue')` / `is repr('AsyncTask')` classes
     /// (#11502), by name, with the REPR each declared.
-    pub(crate) async_repr_classes: HashMap<String, &'static str>,
-    pub(crate) vmhash_classes: HashSet<String>,
+    pub(crate) async_repr_classes: Sharded<String, &'static str>,
+    pub(crate) vmhash_classes: CowTable<HashSet<String>>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).
-    pub(crate) hidden_classes: HashSet<String>,
+    pub(crate) hidden_classes: CowTable<HashSet<String>>,
     /// Classes registered from a `my class`/`my role` declaration, keyed by
     /// the same registry key as [`classes`](Self::classes) (their storage
     /// name, which is normally the bare/qualified name but may be mangled —
@@ -443,25 +454,24 @@ pub(crate) struct Registry {
     /// bare-name `has_class` query, producing a false-positive redeclaration
     /// error for an unrelated `EVAL q[class Foo {}]` (verified against real
     /// `raku`, which allows it — see `t/eval-class-redeclaration-cross-boundary.t`).
-    pub(crate) lexical_classes: HashSet<String>,
+    pub(crate) lexical_classes: CowTable<HashSet<String>>,
     /// Lexical classes registered in full from a static declaration, keyed by
     /// storage name, with what that registration depended on. A later entry
     /// of the same declaration with an equal stamp keeps the class instead of
     /// rebuilding it (`registration_class_site`, #16978).
-    pub(crate) class_site_stamps:
-        HashMap<String, super::registration_class_site::ClassSiteStamp>,
+    pub(crate) class_site_stamps: Sharded<String, super::registration_class_site::ClassSiteStamp>,
     /// Qualified names of lexical types declared under an already-namespaced
     /// spelling (`my class AST::Param {}` at file scope), as opposed to a
     /// `my class Param {}` written inside `module AST { }`. The former keeps
     /// its qualified name visible in its own compilation unit even when the
     /// leading package is a `module`/`package` (Badger's `my module AST {}`);
     /// see `Interpreter::my_scoped_type_visible_here`.
-    pub(crate) namespaced_lexical_types: HashSet<String>,
+    pub(crate) namespaced_lexical_types: CowTable<HashSet<String>>,
     /// Classes with a method whose body declares a class or role (see
     /// `runtime::method_type_decls`). Method dispatch anchors
     /// `current_package` to the owner of such a method so the nested type is
     /// named under it (`Q::X`).
-    pub(crate) classes_with_method_type_decls: HashSet<String>,
+    pub(crate) classes_with_method_type_decls: CowTable<HashSet<String>>,
     /// Registry keys whose `::` segments come from a **compound declared name**
     /// (`class Foo::List { ... }` written at file scope) rather than from real
     /// lexical nesting (`unit module NL; class Searcher { ... }`).
@@ -482,23 +492,23 @@ pub(crate) struct Registry {
     /// Maps each such name to the package it was really declared in, which is
     /// the next scope the outward walk visits after it (skipping the
     /// intermediate segments the compound name merely spells).
-    pub(crate) compound_declared_types: HashMap<String, Symbol>,
+    pub(crate) compound_declared_types: Sharded<String, Symbol>,
     /// A compound-named class declared inside a package while that very name
     /// already denotes a class (`unit class Foo::Bar; class Foo::Bar { }`).
     /// Rakudo installs the nested class into the existing `Foo` stash, so the
     /// written name `Foo::Bar` then names the nested class (whose own name is
     /// the package-qualified `Foo::Bar::Foo::Bar`) and the outer class is no
     /// longer reachable by it. Maps the written name to that qualified name.
-    pub(crate) compound_name_overrides: HashMap<String, String>,
+    pub(crate) compound_name_overrides: Sharded<String, String>,
     /// A relative compound declaration's registry identity is not an extra
     /// package binding. Maps that identity to the written binding it uses.
-    pub(crate) compound_identity_bindings: HashMap<Symbol, Symbol>,
+    pub(crate) compound_identity_bindings: Sharded<Symbol, Symbol>,
     /// Reverse index for consumers resolving a published binding to its type.
-    pub(crate) compound_binding_identities: HashMap<Symbol, Symbol>,
+    pub(crate) compound_binding_identities: Sharded<Symbol, Symbol>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
-    pub(crate) class_stubs: HashSet<String>,
+    pub(crate) class_stubs: CowTable<HashSet<String>>,
     /// Forward-declared package stubs.
-    pub(crate) package_stubs: HashSet<String>,
+    pub(crate) package_stubs: CowTable<HashSet<String>>,
     /// Names already reported by `check_unresolved_stubs_excluding` as an
     /// `X::Package::Stubbed` error. Kept separate from `class_stubs`/
     /// `package_stubs` — a name here is STILL a stub for every class-system
@@ -507,21 +517,21 @@ pub(crate) struct Registry {
     /// later check (an outer EVAL, or the top-level end-of-program check)
     /// must not raise the identical error again for a `try`/`CATCH` that
     /// already handled it.
-    pub(crate) reported_stub_errors: HashSet<String>,
+    pub(crate) reported_stub_errors: CowTable<HashSet<String>>,
     /// Declarator keyword used for a bare `package`/`module`/`grammar` (a
     /// `Stmt::Package`), so `.HOW` reports the matching metaclass
     /// (`PackageHOW`/`ModuleHOW`/`GrammarHOW`) instead of the default
     /// `ClassHOW`. Classes and roles are absent (they default to `ClassHOW` /
     /// the role HOW).
-    pub(crate) package_kinds: HashMap<String, crate::ast::PackageKind>,
+    pub(crate) package_kinds: Sharded<String, crate::ast::PackageKind>,
     /// `is hidden` parents deferred until the parent is fully declared.
-    pub(crate) hidden_defer_parents: HashMap<String, HashSet<String>>,
+    pub(crate) hidden_defer_parents: Sharded<String, HashSet<String>>,
     /// `trusts` relationships: class -> trusted classes, in declaration
     /// order (`Metamodel::Trusting`'s `.^trusts` answers an ordered `List`,
     /// so a set would lose the order the source declared).
-    pub(crate) class_trusts: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) class_trusts: Sharded<String, Vec<String>>,
     /// Per-class metaclass (`HOW`) value override.
-    pub(crate) class_how_values: HashMap<String, Value>,
+    pub(crate) class_how_values: Sharded<String, Value>,
     /// Roles whose declaration is running a method's `trait_mod:<is>` right
     /// now. The role is not in `roles` yet, so `.HOW` on its `Package` would
     /// fall through to `ClassHOW`; rakudo reports `ParametricRoleHOW`.
@@ -533,17 +543,17 @@ pub(crate) struct Registry {
     /// is a `ParametricRoleHOW` and not the default `ClassHOW`. Distinct from
     /// `class_how_values`, which carries *user* HOW instances installed by the
     /// EXPORTHOW/DECLARE protocol.
-    pub(crate) declared_native_how: HashMap<String, String>,
+    pub(crate) declared_native_how: Sharded<String, String>,
     /// Grammars declared under a custom EXPORTHOW `grammar` metaclass whose HOW
     /// class defines a user `find_method`: grammar name -> HOW instance. The
     /// regex engine consults this to route subrule dispatch through the custom
     /// `find_method` (Metamodel::GrammarHOW protocol).
-    pub(crate) grammar_custom_how: HashMap<String, Value>,
+    pub(crate) grammar_custom_how: Sharded<String, Value>,
     /// Classes whose user HOW instance (`class_how_values`) defines a
     /// `find_method`: class name -> that HOW. Every method call on an instance
     /// or type object of such a class is looked up through it, the way rakudo's
     /// method cache miss path asks `HOW.find_method` (OO::Actors' `actor`).
-    pub(crate) class_find_method_how: HashMap<String, Value>,
+    pub(crate) class_find_method_how: Sharded<String, Value>,
     /// Classes declared under a custom EXPORTHOW `class` metaclass whose HOW
     /// class defines a user `compose` method: names queued for a post-`is`-trait
     /// `compose` call. Drained by the class-decl VM op after custom `is` traits
@@ -553,24 +563,24 @@ pub(crate) struct Registry {
     /// User classes whose HOW reached the native compose step. This is kept
     /// separately from `mro`: the C3 order is available while registration is
     /// still in progress, before Rakudo's compose protocol has completed.
-    pub(crate) composed_classes: std::collections::HashSet<String>,
+    pub(crate) composed_classes: CowTable<std::collections::HashSet<String>>,
     /// Bare names a `Metamodel::*HOW.new_type` already minted a type under. A
     /// later `new_type` with the same `:name` is a different type (rakudo), so
     /// it gets its own storage key (`Name\0nt<n>`, the lexical-site-key form of
     /// ADR-0047) while keeping the name for display.
-    pub(crate) minted_type_names: std::collections::HashSet<String>,
+    pub(crate) minted_type_names: CowTable<std::collections::HashSet<String>>,
     /// `(class, method)` pairs a `^add_multi_method` added to a class that is not
     /// composed yet. Rakudo keeps those candidates in `multi_methods_to_incorporate`
     /// until `compose`, so `^can` does not see them before then.
-    pub(crate) pending_multi_methods: std::collections::HashSet<(String, String)>,
+    pub(crate) pending_multi_methods: CowTable<std::collections::HashSet<(String, String)>>,
     /// Classes whose HOW `compose` hook already ran through an attribute
     /// trait's deferred compose (`run_pending_attr_composes`); consumed by
     /// `queue_trait_how_compose` so the hook is not queued a second time.
-    pub(crate) attr_trait_composed: std::collections::HashSet<String>,
+    pub(crate) attr_trait_composed: CowTable<std::collections::HashSet<String>>,
     /// Roles whose body is being registered right now (group name -> `role_id`).
     /// The role is not in `roles` yet, but its method traits already see it as
     /// `$*PACKAGE` -- the individual parametric role (`ParametricRoleHOW`).
-    pub(crate) declaring_role_ids: HashMap<String, u64>,
+    pub(crate) declaring_role_ids: Sharded<String, u64>,
     /// `(class, role_how_key, role_name)` for every role a class composed whose
     /// HOW carries a user `specialize` override (`$role.HOW does R` from a
     /// trait). Drained by the class-decl VM op once the class is registered,
@@ -583,7 +593,7 @@ pub(crate) struct Registry {
     /// Roles composed into each class: class -> [role names]. This is the
     /// FLATTENED set (includes roles reached transitively through a composed
     /// role's own `does`), used for `~~`/role-membership checks.
-    pub(crate) class_composed_roles: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) class_composed_roles: Sharded<String, Vec<String>>,
     /// Roles DIRECTLY declared on each class's `does` list (NOT the transitive
     /// closure): class -> [role names]. Qualified `self.Role::method` resolution
     /// of a parametric role uses this so a concretization reached only
@@ -591,59 +601,58 @@ pub(crate) struct Registry {
     /// `R2[::T] does R1[::T]`) does not make a directly-declared `R1[Int]`
     /// ambiguous (Raku resolves a qualified role call against the immediate
     /// roles of the consumer).
-    pub(crate) class_direct_composed_roles: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) class_direct_composed_roles: Sharded<String, Vec<String>>,
     /// Roles composed PURELY via `does` (not `is Role` puns): class -> [role names].
     /// A `does`-composed role provides methods but is NOT an MRO entry in Rakudo's
     /// `.^mro_unhidden`, so this set is filtered out of that introspection.
-    pub(crate) class_does_only_roles: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) class_does_only_roles: Sharded<String, Vec<String>>,
     /// Roles implicitly composed by enums: enum -> [role names].
-    pub(crate) class_enum_roles: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) class_enum_roles: Sharded<String, Vec<String>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
-    pub(crate) class_subs: CowTable<HashMap<String, HashMap<String, Value>>>,
+    pub(crate) class_subs: Sharded<String, HashMap<String, Value>>,
     /// Role composition scopes (`K::&role:R`) holding a role body's `sub`
     /// whose name the composing class declares too; a role method composed
     /// into `K` runs in its scope (`role_composition_scope`, #14177).
-    pub(crate) role_composition_scopes: HashSet<crate::symbol::Symbol>,
+    pub(crate) role_composition_scopes: CowTable<HashSet<crate::symbol::Symbol>>,
     /// BUILDPLANs the meta-object protocol stored per class: built by
     /// `create_BUILDPLAN` or bound by a module (ADR-14162, `buildplan.rs`).
-    pub(crate) buildplans: HashMap<String, super::buildplan::BuildPlanState>,
+    pub(crate) buildplans: Sharded<String, super::buildplan::BuildPlanState>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
-    pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
+    pub(crate) attribute_build_overrides: Sharded<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
-    pub(crate) class_attribute_defaults: super::class_attr_table::ClassAttrTable<Value>,
+    pub(crate) class_attribute_defaults: CowTable<super::class_attr_table::ClassAttrTable<Value>>,
     /// Per-attribute `is default(...)` expression for a parametric role, where the
     /// value cannot be evaluated until the role is composed and its type params
     /// are bound: (role-base, attr) -> expr. Evaluated at instance construction
     /// (with role param bindings in scope) to tag `@`/`%` containers.
-    pub(crate) role_attribute_default_exprs: HashMap<(String, String), crate::opcode::DeclTraitArg>,
+    pub(crate) role_attribute_default_exprs: Sharded<(String, String), crate::opcode::DeclTraitArg>,
     /// Class-level (`my $.x` / `our $.x`) role attributes: (role-base, attr) ->
     /// optional default expr. These generate an accessor on the *type object*
     /// (not per-instance), so at composition they are copied into the consuming
     /// class's `class_level_attrs` rather than its per-instance attributes.
-    pub(crate) role_class_level_attrs:
-        HashMap<(String, String), Option<crate::opcode::DeclTraitArg>>,
+    pub(crate) role_class_level_attrs: Sharded<(String, String), Option<crate::opcode::DeclTraitArg>>,
     /// Every name a class has ever declared a class-level attribute under
     /// (`ClassDef::class_level_attrs`). Only grows. Lets the per-call
     /// "does a class-scoped accessor shadow this method?" query answer the
     /// overwhelming common case -- no class has such an attribute of that
     /// name -- without walking the receiver's MRO.
-    pub(crate) class_level_attr_names: HashSet<String>,
+    pub(crate) class_level_attr_names: CowTable<HashSet<String>>,
     /// Per-attribute deferred `is default(...)` expression carried from a composed
     /// parametric role onto a consuming class: (class, attr) -> expr. Evaluated at
     /// construction with the class's role type-param bindings in scope.
     pub(crate) class_attribute_default_exprs:
-        super::class_attr_table::ClassAttrTable<crate::opcode::DeclTraitArg>,
+        CowTable<super::class_attr_table::ClassAttrTable<crate::opcode::DeclTraitArg>>,
     /// The `EXPORTHOW::DECLARE` `<kw>-attr` metaclass of a class declared with
     /// `<kw>`: class -> attribute class name. `.^attributes` answers instances
     /// of it.
-    pub(crate) declare_attribute_classes: HashMap<String, String>,
+    pub(crate) declare_attribute_classes: Sharded<String, String>,
     /// Per-attribute declared type: (class, attr) -> type name.
-    pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
+    pub(crate) class_attribute_is_types: Sharded<(String, String), String>,
     /// Per-attribute `is Type` container trait declared on a *role* attribute:
     /// (role, attr) -> type name. Carried onto a consuming class's
     /// `class_attribute_is_types` at composition (`has @.a is G::A` in a
     /// parametric role) so the attribute's element type is enforced.
-    pub(crate) role_attribute_is_types: HashMap<(String, String), String>,
+    pub(crate) role_attribute_is_types: Sharded<(String, String), String>,
     /// Per-attribute declared type constraint on a *role* attribute
     /// (`role R { has Int $.x }`, `has Callable %!c{Mu:U}`): (role, attr) ->
     /// type constraint, in the same `ValueType{KeyType}` encoding a class
@@ -651,97 +660,93 @@ pub(crate) struct Registry {
     /// before it is known which class will consume it; at composition (and when
     /// a role is punned to a class) the entries are copied — with role type
     /// parameters substituted — into the class's `attribute_types`.
-    pub(crate) role_attribute_types: HashMap<(String, String), String>,
+    pub(crate) role_attribute_types: Sharded<(String, String), String>,
     /// Per-attribute definiteness smiley on a *role* attribute
     /// (`role R { has Int:D $.x }`): (role, attr) -> "D"/"U"/"_". Copied
     /// alongside `role_attribute_types`.
-    pub(crate) role_attribute_smileys: HashMap<(String, String), String>,
+    pub(crate) role_attribute_smileys: Sharded<(String, String), String>,
     /// Per-attribute `does Role` traits: (class, attr) -> role names mixed into
     /// the attribute's container (`has $.x does Foo`). Applied to the attribute's
     /// value at construction so `$o.x` does the role.
-    pub(crate) class_attribute_does_roles: HashMap<(String, String), Vec<String>>,
+    pub(crate) class_attribute_does_roles: Sharded<(String, String), Vec<String>>,
     /// Per-attribute container role mixins recorded by a custom `trait_mod:<is>`
     /// that mixes a role into `$attr.container.VAR` (e.g.
     /// `$a.container.VAR does doc($arg)`): (class, attr) -> list of mixin-override
     /// maps (each holding `__mutsu_role__X` / `__mutsu_attr__X` keys). Applied to
     /// the attribute's value at construction so `$o.attr.VAR` does the role.
-    pub(crate) class_attribute_container_mixins:
-        HashMap<(String, String), Vec<HashMap<String, Value>>>,
+    pub(crate) class_attribute_container_mixins: Sharded<(String, String), Vec<HashMap<String, Value>>>,
     /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
-    pub(crate) class_attribute_deprecated: HashMap<(String, String), String>,
+    pub(crate) class_attribute_deprecated: Sharded<(String, String), String>,
     /// The Attribute meta-object a custom `trait_mod:<is>` was applied to,
     /// per (class, attr). Instance attrs are a shared cell, so mutations the
     /// trait made (`$a does JSON::Name::NamedAttribute; $a.json-name = ...`)
     /// live in this stored object; `^attributes` returns it (topped up with
     /// the standard meta keys) so the mixin state survives introspection.
-    pub(crate) class_attribute_trait_objects: HashMap<(String, String), crate::value::Value>,
+    pub(crate) class_attribute_trait_objects: Sharded<(String, String), crate::value::Value>,
     /// A *role* attribute's custom traits (`has $.x is entry(...)`) still to
     /// apply: (role, attr) -> its compiled declaration. Applied once, at the
     /// role's first composition — the role body's `use` that imports the
     /// trait handler runs only then — and removed; see
     /// `apply_pending_role_attribute_traits`.
-    pub(crate) role_attribute_pending_traits:
-        HashMap<(String, String), crate::opcode::CompiledAttrDecl>,
+    pub(crate) role_attribute_pending_traits: Sharded<(String, String), crate::opcode::CompiledAttrDecl>,
     /// The custom traits a role attribute was last recorded with: (role, attr) ->
     /// their rendering. A second role declaration under the same name (sibling
     /// scopes each declaring `my role R`) with different traits is a new
     /// declaration, not a re-registration, and must not reuse the first one's
     /// applied meta-object.
-    pub(crate) role_attribute_trait_fingerprints: HashMap<(String, String), String>,
+    pub(crate) role_attribute_trait_fingerprints: Sharded<(String, String), String>,
     /// A *parameterized* role attribute's custom traits: (`RoleDef::role_id`,
     /// attr) -> its compiled declaration. Unlike `role_attribute_pending_traits`
     /// these run at every composition, with the role's type parameters bound,
     /// on the composing class's attribute (Rakudo specializes the role body
     /// per consumer).
-    pub(crate) param_role_attribute_traits:
-        HashMap<(u64, String), crate::opcode::CompiledAttrDecl>,
+    pub(crate) param_role_attribute_traits: Sharded<(u64, String), crate::opcode::CompiledAttrDecl>,
     /// Sub-level `proto`s a role body has already registered: (role,
     /// routine name). A role's body re-runs at every composition, but its
     /// `proto sub f(|) {*}` declares one routine for the role — registering
     /// it again would be a redeclaration.
-    pub(crate) role_registered_sub_protos: std::collections::HashSet<(String, String)>,
+    pub(crate) role_registered_sub_protos: CowTable<std::collections::HashSet<(String, String)>>,
     /// `my constant`s of a non-parametric role body a composition has already
     /// evaluated: (role, constant name). Rakudo initialises a `my constant`
     /// once, so a later composition reuses the persisted binding (#16255).
     /// The value is the env bindings the first evaluation left (the constant's
     /// own name and its term key), put back for the later compositions.
-    pub(crate) role_evaluated_constants:
-        std::collections::HashMap<(String, String), Vec<(String, Value)>>,
+    pub(crate) role_evaluated_constants: Sharded<(String, String), Vec<(String, Value)>>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,
     /// attributes, deferred body, ...). Like `classes`, callers clone the
     /// minimal projection under a short-lived guard rather than the whole def.
-    pub(crate) roles: CowTable<HashMap<String, RoleDef>>,
+    pub(crate) roles: RoleTable,
     /// Roles explicitly declared via user code (not pre-registered builtins);
     /// used to detect `X::Redeclaration` for role->class name conflicts.
-    pub(crate) user_declared_roles: HashSet<String>,
+    pub(crate) user_declared_roles: CowTable<HashSet<String>>,
     /// Parameterized role candidates: role name -> [candidate by arity/types].
-    pub(crate) role_candidates: CowTable<HashMap<String, Vec<RoleCandidateDef>>>,
+    pub(crate) role_candidates: Sharded<String, CowTable<Vec<RoleCandidateDef>>>,
     /// Role inheritance: role -> [parent role specs].
-    pub(crate) role_parents: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) role_parents: Sharded<String, Vec<String>>,
     /// `also hides` relationships on roles: role -> [hidden names].
-    pub(crate) role_hides: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) role_hides: Sharded<String, Vec<String>>,
     /// Declared type parameters per parameterized role: role -> [param names].
-    pub(crate) role_type_params: CowTable<HashMap<String, Vec<String>>>,
+    pub(crate) role_type_params: Sharded<String, Vec<String>>,
     /// A role's body block, installed by `$role.^set_body_block(&block)` on a
     /// role built with `Metamodel::ParametricRoleHOW.new_type`. A declared
     /// role's body is `RoleDef::deferred_body`; a MOP-built role has only this
     /// block, which every composition calls with the consuming type, like
     /// Rakudo's `ParametricRoleHOW.specialize`.
-    pub(crate) role_body_blocks: HashMap<String, Value>,
+    pub(crate) role_body_blocks: Sharded<String, Value>,
     /// Compositions whose role body has already been run, keyed by kind and
     /// target (`pun:R`, `mixin:R`, or `class:C:R`). A role body runs once per
     /// composed target: repeated paths to the same ancestor role in one class
     /// must not run it again, while each distinct consuming class remains its
     /// own composition.
-    pub(crate) composed_role_bodies: HashSet<String>,
+    pub(crate) composed_role_bodies: CowTable<HashSet<String>>,
     /// `decl_id`s of nested class declarations whose compile-time shell has
     /// already dispatched the declaration's `trait_mod:<is>` traits (#12708);
     /// the in-place registration of the same declaration must not repeat them.
-    pub(crate) nested_shell_traits_applied: HashSet<u64>,
+    pub(crate) nested_shell_traits_applied: CowTable<HashSet<u64>>,
     /// Bound role type parameters per class: class -> (param name -> value).
-    pub(crate) class_role_param_bindings: CowTable<HashMap<String, HashMap<String, Value>>>,
+    pub(crate) class_role_param_bindings: Sharded<String, HashMap<String, Value>>,
     /// Anonymous type-object identity cache for a role-mixed value's `.WHAT`
     /// (ADR-0060): composition key
     /// (`crate::value::types::mixin_composition_key`) -> the shared
@@ -751,7 +756,7 @@ pub(crate) struct Registry {
     /// Rakudo mechanism (one permanent anonymous type per (base type, role
     /// set) pair) for a different purpose (deferred-body-run-once, rather
     /// than `.WHAT` identity).
-    pub(crate) mixin_what_cache: HashMap<String, crate::gc::Gc<crate::value::MixinOverrides>>,
+    pub(crate) mixin_what_cache: Sharded<String, crate::gc::Gc<crate::value::MixinOverrides>>,
     /// Whether ANY `proto method`/`proto submethod` has been declared
     /// anywhere in the program (ADR-0019 E8c). A monotonic flag — proto
     /// bodies are never unregistered — set by [`Registry::set_proto_method`]
@@ -766,7 +771,7 @@ pub(crate) struct Registry {
     /// for, in any class: `lookup_proto_method`'s O(1) negative answer, so a
     /// call of any other method skips the MRO walk. Written only by
     /// [`Registry::set_proto_method`].
-    proto_method_names: std::collections::HashSet<Symbol>,
+    proto_method_names: CowTable<std::collections::HashSet<Symbol>>,
     /// Compiled bytecode for a `proto method`/`proto submethod` body, keyed by
     /// `(owner, method_name)`. ADR-0019 D3-8 (`todo/tickets/
     /// adr0019-method-body-compile-dedup-remnants.md` item 2) never covered
@@ -777,13 +782,7 @@ pub(crate) struct Registry {
     /// [`Registry::set_proto_method`] installs a new body there (class
     /// redeclaration / EVAL), so a stale compile can never survive a real
     /// body change.
-    pub(crate) proto_compiled_cache: HashMap<
-        MethodEntryKey,
-        (
-            Arc<crate::opcode::CompiledCode>,
-            Option<Arc<crate::opcode::CompiledFns>>,
-        ),
-    >,
+    pub(crate) proto_compiled_cache: Sharded<MethodEntryKey, CompiledProto>,
     /// The source-facing names of the lexically-mangled type keys the four
     /// type maps hold — i.e. `key[..first NUL]` for every key that carries the
     /// ADR-0047 P1 `Foo\u{0}<decl-id>` suffix. Built on first query and
@@ -795,13 +794,13 @@ pub(crate) struct Registry {
     /// Behind an `Arc` (as is [`Self::class_short_names`]) so the copy-on-write
     /// clone of a registry a worker thread's first write makes shares the
     /// built index instead of deep-copying it (#17337).
-    lexical_type_names: std::sync::OnceLock<std::sync::Arc<LexicalTypeNameIndex>>,
+    lexical_type_names: std::sync::OnceLock<std::sync::Arc<StampedLexicalTypeNames>>,
     /// `short name -> class key` for every class whose key is qualified: the
     /// part after the LAST `::` of the key, pointing at the smallest key with
     /// that tail. Built on first query and dropped by
     /// [`RegistryWriteGuard`]'s `DerefMut` together with
     /// [`Self::lexical_type_names`]; see [`Registry::class_key_by_short_name`].
-    class_short_names: std::sync::OnceLock<std::sync::Arc<ClassShortNameIndex>>,
+    class_short_names: std::sync::OnceLock<std::sync::Arc<StampedClassShortNames>>,
     /// `source-facing name -> mangled registry key` answers of the four-map
     /// scan in `Interpreter::resolve_lexical_type_key`, dropped on every
     /// registry write with the other indexes above.
@@ -885,32 +884,59 @@ impl Registry {
     /// themselves does not walk every type key either.
     // Cost: O(1) expected once built; the first query after a registry write
     // is O(t), t = registered type keys.
-    pub(crate) fn lexical_type_keys_for(&self, unmangled: &str) -> &[Box<str>] {
-        self.lexical_type_names
-            .get_or_init(|| {
-                let mut index: rustc_hash::FxHashMap<Box<str>, Vec<Box<str>>> =
-                    rustc_hash::FxHashMap::default();
-                for key in self
-                    .classes
-                    .keys()
-                    .chain(self.roles.keys())
-                    .chain(self.enum_types.keys())
-                    .chain(self.subsets.keys())
-                {
-                    // Every NUL-terminated prefix: a type nested in a
-                    // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
-                    // and a scan for `Outer\0<id>::Inner` is a prefix of it.
-                    for (at, _) in key.match_indices('\u{0}') {
-                        index
-                            .entry(Box::<str>::from(&key[..at]))
-                            .or_default()
-                            .push(Box::<str>::from(key.as_str()));
-                    }
-                }
-                std::sync::Arc::new(index)
-            })
-            .get(unmangled)
-            .map_or(&[], Vec::as_slice)
+    pub(crate) fn lexical_type_keys_for(
+        &self,
+        unmangled: &str,
+    ) -> std::borrow::Cow<'_, [Box<str>]> {
+        let stamp = self.type_keys_stamp();
+        let built = self
+            .lexical_type_names
+            .get_or_init(|| std::sync::Arc::new((stamp, self.build_lexical_type_names())));
+        if built.0 == stamp {
+            return std::borrow::Cow::Borrowed(built.1.get(unmangled).map_or(&[], Vec::as_slice));
+        }
+        // Only inside a write guard that changed the keys after the index
+        // was built (the guard's drop refreshes it): answer from the tables.
+        std::borrow::Cow::Owned(
+            self.build_lexical_type_names()
+                .remove(unmangled)
+                .unwrap_or_default(),
+        )
+    }
+
+    /// The index behind [`Self::lexical_type_keys_for`].
+    // Cost: O(t), t = registered type keys.
+    fn build_lexical_type_names(&self) -> LexicalTypeNameIndex {
+        let mut index: LexicalTypeNameIndex = rustc_hash::FxHashMap::default();
+        for key in self
+            .classes
+            .keys()
+            .chain(self.roles.keys())
+            .chain(self.enum_types.keys())
+            .chain(self.subsets.keys())
+        {
+            // Every NUL-terminated prefix: a type nested in a
+            // lexical class is stored as `Outer\0<id>::Inner\0<id>`,
+            // and a scan for `Outer\0<id>::Inner` is a prefix of it.
+            for (at, _) in key.match_indices('\u{0}') {
+                index
+                    .entry(Box::<str>::from(&key[..at]))
+                    .or_default()
+                    .push(Box::<str>::from(key.as_str()));
+            }
+        }
+        index
+    }
+
+    /// The key sets the type-name indexes summarise; see [`TypeKeysStamp`].
+    // Cost: O(1).
+    pub(crate) fn type_keys_stamp(&self) -> TypeKeysStamp {
+        (
+            self.classes.key_generation(),
+            self.roles.key_generation(),
+            self.enum_types.key_generation(),
+            self.subsets.key_generation(),
+        )
     }
 
     /// The registry key of a class declared as `...::short` (a name `short`
@@ -928,37 +954,65 @@ impl Registry {
     /// index is a `OnceLock` that the write guard's `DerefMut` drops.
     // Cost: O(1) expected; the first query after a registry write builds the index in O(k), k = classes.
     pub(crate) fn class_key_by_short_name(&self, short: &str) -> Option<&str> {
-        self.class_short_names
-            .get_or_init(|| {
-                let mut index: rustc_hash::FxHashMap<Box<str>, Box<str>> =
-                    rustc_hash::FxHashMap::default();
-                for key in self.classes.keys() {
-                    let Some((_, tail)) =
-                        crate::qualified::split_qualified(crate::qualified::known_symbol(key))
-                    else {
-                        continue;
-                    };
-                    match index.get_mut(tail.as_str()) {
-                        Some(held) if **held <= **key => {}
-                        Some(held) => *held = key.as_str().into(),
-                        None => {
-                            index.insert(tail.as_str().into(), key.as_str().into());
-                        }
-                    }
-                }
-                std::sync::Arc::new(index)
+        let stamp = self.classes.key_generation();
+        let built = self
+            .class_short_names
+            .get_or_init(|| std::sync::Arc::new((stamp, self.build_class_short_names())));
+        if built.0 == stamp {
+            return built.1.get(short).map(|key| &**key);
+        }
+        // Only inside a write guard that changed the keys after the index
+        // was built (the guard's drop refreshes it): answer from the table.
+        self.classes
+            .keys()
+            .filter(|key| {
+                crate::qualified::split_qualified(crate::qualified::known_symbol(key))
+                    .is_some_and(|(_, tail)| tail.as_str() == short)
             })
-            .get(short)
-            .map(|key| &**key)
+            .min()
+            .map(String::as_str)
+    }
+
+    /// The index behind [`Self::class_key_by_short_name`].
+    // Cost: O(k), k = classes.
+    fn build_class_short_names(&self) -> ClassShortNameIndex {
+        let mut index: ClassShortNameIndex = rustc_hash::FxHashMap::default();
+        for key in self.classes.keys() {
+            let Some((_, tail)) =
+                crate::qualified::split_qualified(crate::qualified::known_symbol(key))
+            else {
+                continue;
+            };
+            match index.get_mut(tail.as_str()) {
+                Some(held) if **held <= **key => {}
+                Some(held) => *held = key.as_str().into(),
+                None => {
+                    index.insert(tail.as_str().into(), key.as_str().into());
+                }
+            }
+        }
+        index
     }
 
     /// Drop the [`Self::has_lexical_type_key_for`] and
     /// [`Self::class_key_by_short_name`] caches. Called from the write guard's
     /// `DerefMut`, which is the only way to reach `&mut Registry`.
     fn invalidate_lexical_type_names(&mut self) {
-        self.lexical_type_names.take();
-        self.class_short_names.take();
-        self.lexical_key_scans.clear();
+        // The name indexes depend on the key sets only: keep them while the
+        // keys are the ones they were built from, so a write that declares
+        // nothing (or one on another thread) does not make every thread
+        // rebuild them.
+        let stamp = self.type_keys_stamp();
+        if self.lexical_type_names.get().is_some_and(|built| built.0 != stamp) {
+            self.lexical_type_names.take();
+        }
+        if self
+            .class_short_names
+            .get()
+            .is_some_and(|built| built.0 != stamp.0)
+        {
+            self.class_short_names.take();
+        }
         static NEXT_STAMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         self.type_stamp = NEXT_STAMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
@@ -2161,14 +2215,15 @@ impl Registry {
 ///
 /// [`ReentrantReadGuard`]: crate::runtime::lock_reentry::ReentrantReadGuard
 pub(crate) struct RegistryReadGuard<'a> {
-    inner: crate::runtime::lock_reentry::ReentrantReadGuard<'a, Arc<Registry>>,
+    inner: std::cell::Ref<'a, Registry>,
 }
 
 impl<'a> RegistryReadGuard<'a> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<Arc<Registry>>, name: &'static str) -> Self {
-        Self {
-            inner: crate::runtime::lock_reentry::ReentrantReadGuard::new(lock, name),
-        }
+    /// This thread's snapshot of the world registry (ADR-17216 §2.2): one
+    /// atomic load, and a refresh only after another thread wrote.
+    #[inline]
+    pub(crate) fn new(cell: &'a crate::runtime::world_cell::WorldCell<Registry>) -> Self {
+        Self { inner: cell.read() }
     }
 }
 
@@ -2180,21 +2235,33 @@ impl std::ops::Deref for RegistryReadGuard<'_> {
     }
 }
 
-/// Write guard for the shared [`Registry`]. Wraps a [`ReentrantWriteGuard`] over
-/// the copy-on-write `Arc<Registry>`; the first mutable deref after a share
-/// pays the one deep clone via `Arc::make_mut` (recorded as
-/// `registry_cow_clones`), then behaves exactly like a plain `&mut Registry`.
-/// See [`crate::runtime::lock_reentry`].
-///
-/// [`ReentrantWriteGuard`]: crate::runtime::lock_reentry::ReentrantWriteGuard
+/// Write guard for the world [`Registry`], shared by every thread (ADR-17216
+/// §2.2). Holds the registry's write lock; the first mutable deref copies the
+/// current version when any thread still holds a snapshot of it (recorded as
+/// `registry_cow_clones`), and dropping a guard that was mutably dereferenced
+/// publishes the result to every thread. See [`crate::runtime::world_cell`].
 pub(crate) struct RegistryWriteGuard<'a> {
-    inner: crate::runtime::lock_reentry::ReentrantWriteGuard<'a, Arc<Registry>>,
+    inner: crate::runtime::world_cell::WorldWriteGuard<'a, Registry>,
+    /// Whether a `&mut Registry` was handed out.
+    written: bool,
 }
 
 impl<'a> RegistryWriteGuard<'a> {
-    pub(crate) fn new(lock: &'a std::sync::RwLock<Arc<Registry>>, name: &'static str) -> Self {
+    pub(crate) fn new(cell: &'a crate::runtime::world_cell::WorldCell<Registry>) -> Self {
         Self {
-            inner: crate::runtime::lock_reentry::ReentrantWriteGuard::new(lock, name),
+            inner: cell.write_guard(),
+            written: false,
+        }
+    }
+}
+
+impl Drop for RegistryWriteGuard<'_> {
+    fn drop(&mut self) {
+        // Drop the name indexes the writes made stale before the version is
+        // published, so readers on other threads find them current or absent.
+        if self.written {
+            let registry: &mut Registry = &mut self.inner;
+            registry.invalidate_lexical_type_names();
         }
     }
 }
@@ -2210,11 +2277,11 @@ impl std::ops::Deref for RegistryWriteGuard<'_> {
 impl std::ops::DerefMut for RegistryWriteGuard<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Registry {
-        let arc: &mut Arc<Registry> = &mut self.inner;
-        if Arc::strong_count(arc) > 1 {
+        if self.inner.is_shared() {
             crate::vm::vm_stats::record_registry_cow_clone();
         }
-        let registry = Arc::make_mut(arc);
+        self.written = true;
+        let registry: &mut Registry = &mut self.inner;
         // This is the ONLY way to reach a `&mut Registry`, so dropping the
         // derived name caches here is what makes them impossible to
         // desynchronise from the maps they summarise. See
@@ -2286,7 +2353,7 @@ mod tests {
         let mut parent = Registry::default();
         parent
             .role_candidates
-            .insert("R".to_string(), Vec::new());
+            .insert("R".to_string(), Vec::new().into());
         parent.class_subs.insert("C".to_string(), HashMap::default());
         parent
             .class_role_param_bindings
@@ -2521,7 +2588,7 @@ mod tests {
     /// because the guard's `DerefMut` IS the invalidation mechanism.
     #[test]
     fn lexical_type_key_filter_tracks_the_maps_through_the_write_guard() {
-        let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
+        let lock = crate::runtime::world_cell::WorldCell::new(Registry::default());
         let scan = |reg: &Registry, name: &str| {
             let prefix = format!("{name}\u{0}");
             reg.classes
@@ -2535,18 +2602,18 @@ mod tests {
         // Nothing mangled registered yet: the filter declines, and so does the
         // scan it stands in for.
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(!reg.has_lexical_type_key_for("Foo"));
             assert!(!scan(&reg, "Foo"));
         }
 
         // A mangled key added through the guard is visible to the next query.
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types.insert("Foo\u{0}12".to_string(), Vec::new());
         }
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(reg.has_lexical_type_key_for("Foo"));
             assert!(scan(&reg, "Foo"));
             // An UNmangled key is not a lexical type key, and a partial
@@ -2558,11 +2625,11 @@ mod tests {
         // A plain (unmangled) registration does not make the filter answer
         // yes -- the scan would not match it either.
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types.insert("Bare".to_string(), Vec::new());
         }
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(!reg.has_lexical_type_key_for("Bare"));
             assert!(!scan(&reg, "Bare"));
             assert!(reg.has_lexical_type_key_for("Foo"));
@@ -2570,11 +2637,11 @@ mod tests {
 
         // Removal through the guard invalidates too.
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types.remove("Foo\u{0}12");
         }
         {
-            let reg = RegistryReadGuard::new(&lock, "test");
+            let reg = RegistryReadGuard::new(&lock);
             assert!(!reg.has_lexical_type_key_for("Foo"));
             assert!(!scan(&reg, "Foo"));
         }
@@ -2586,13 +2653,13 @@ mod tests {
     /// lexical class asks for `Store\u{0}1::Session` (#14143).
     #[test]
     fn lexical_type_key_filter_uses_every_nul_prefix() {
-        let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
+        let lock = crate::runtime::world_cell::WorldCell::new(Registry::default());
         {
-            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            let mut reg = RegistryWriteGuard::new(&lock);
             reg.enum_types
                 .insert("Store\u{0}1::Session\u{0}2".to_string(), Vec::new());
         }
-        let reg = RegistryReadGuard::new(&lock, "test");
+        let reg = RegistryReadGuard::new(&lock);
         assert!(reg.has_lexical_type_key_for("Store"));
         assert!(reg.has_lexical_type_key_for("Store\u{0}1::Session"));
         assert!(!reg.has_lexical_type_key_for("Store\u{0}1"));

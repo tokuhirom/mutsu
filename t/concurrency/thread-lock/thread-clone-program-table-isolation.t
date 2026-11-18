@@ -1,10 +1,11 @@
 use Test;
 
 # The interpreter's program-global symbol tables (loaded modules, exported
-# names, per-package lexicals, class bookkeeping) are shared copy-on-write
-# with every thread clone rather than deep-copied (#7667). The share must be
-# invisible: a spawned block still sees what the parent declared before it,
-# and what the spawn declares must not leak back.
+# names, per-package lexicals, class bookkeeping) are shared with every
+# thread clone rather than deep-copied (#7667). A spawned block sees what the
+# parent declared before it, and since ADR-17216 the type registry is one
+# world table: a class the spawn declares is visible to the parent, as on
+# rakudo.
 
 plan 6;
 
@@ -19,10 +20,10 @@ class Before { method greet() { 'before' } }
 is (await start { Before.new.greet }), 'before',
     'a class declared before the spawn is visible inside it';
 
-# A class declared INSIDE the spawn does not leak back to the parent.
+# A class declared INSIDE the spawn is visible to the parent (raku: 1).
 await start { EVAL 'class OnlyInChild { method x() { 1 } }' };
-nok (try EVAL 'OnlyInChild.new.x'),
-    'a class declared inside a spawn does not leak to the parent';
+is (try EVAL 'OnlyInChild.new.x'), 1,
+    'a class declared inside a spawn is visible to the parent';
 
 # Package-scope statics: the parent's value survives a spawn that writes its own.
 package P {
