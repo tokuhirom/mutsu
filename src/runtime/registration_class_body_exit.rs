@@ -212,16 +212,12 @@ impl Interpreter {
             }
         }
         if !body_lexicals.is_empty() {
-            let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
-                .entry(name.to_string())
-                .or_default();
-            for (bare, _) in &body_lexicals {
-                marks.insert(bare.clone());
-            }
-            let store = self
-                .package_lexicals_cow_mut()
-                .entry(name.to_string())
-                .or_default();
+            self.lexicals.class_body_static_names.write(|t| {
+    let marks = t.entry(name.to_string()).or_default();
+    for (bare, _) in &body_lexicals {
+        marks.insert(bare.clone());
+    }
+});
             // Only the names this body genuinely `my`-declared are unbound below.
             // `body_lexicals` deliberately over-approximates — for a `unit class`
             // it also picks up everything the body's own `use` statements imported
@@ -229,18 +225,22 @@ impl Interpreter {
             // that module's `%useragents`). Recording those as statics is harmless;
             // *unbinding* them is not, and it broke the exported `get-ua` that
             // reads `%useragents`.
-            let mut static_names = Vec::with_capacity(body_lexicals.len());
-            for (bare, v) in body_lexicals {
-                if declared_statics.contains(bare.as_str()) {
-                    static_names.push(bare.clone());
+            let static_names = self.package_lexicals_write(|table| {
+                let store = table.entry(name.to_string()).or_default();
+                let mut static_names = Vec::with_capacity(body_lexicals.len());
+                for (bare, v) in body_lexicals {
+                    if declared_statics.contains(bare.as_str()) {
+                        static_names.push(bare.clone());
+                    }
+                    let v = if declared_statics.contains(bare.as_str()) {
+                        share_body_static_scalar(&bare, v)
+                    } else {
+                        v
+                    };
+                    store.insert(bare, v);
                 }
-                let v = if declared_statics.contains(bare.as_str()) {
-                    share_body_static_scalar(&bare, v)
-                } else {
-                    v
-                };
-                store.insert(bare, v);
-            }
+                static_names
+            });
             // The class body is these names' whole scope. Leaving the bare
             // binding in the env made every class-body `my` a de facto global:
             // the next class body declaring the same name overwrote it, and the

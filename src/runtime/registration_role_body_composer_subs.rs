@@ -87,7 +87,7 @@ impl Interpreter {
         }
         // The class's cells for the body's lexicals, bound in place of the
         // body run's plain values while the subs are declared.
-        let cells: Vec<(String, Value)> = match self.lexicals.package_lexicals.get(class) {
+        let cells: Vec<(String, Value)> = match self.lexicals.package_lexicals.read().get(class) {
             Some(statics) => declared
                 .iter()
                 .filter_map(|name| {
@@ -208,7 +208,7 @@ impl Interpreter {
         scope: &str,
         declared: &HashSet<String>,
     ) {
-        let shared: Vec<(String, Value)> = match self.lexicals.package_lexicals.get(class) {
+        let shared: Vec<(String, Value)> = match self.lexicals.package_lexicals.read().get(class) {
             Some(statics) => declared
                 .iter()
                 .filter_map(|name| {
@@ -222,18 +222,17 @@ impl Interpreter {
         if shared.is_empty() {
             return;
         }
-        let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
-            .entry(scope.to_string())
-            .or_default();
-        for (name, _) in &shared {
-            marks.insert(name.clone());
-        }
-        let store = self
-            .package_lexicals_cow_mut()
-            .entry(scope.to_string())
-            .or_default();
-        for (name, value) in shared {
-            store.insert(name, value);
-        }
+        self.lexicals.class_body_static_names.write(|t| {
+    let marks = t.entry(scope.to_string()).or_default();
+    for (name, _) in &shared {
+        marks.insert(name.clone());
+    }
+});
+        self.package_lexicals_write(|table| {
+            let store = table.entry(scope.to_string()).or_default();
+            for (name, value) in shared {
+                store.insert(name, value);
+            }
+        });
     }
 }

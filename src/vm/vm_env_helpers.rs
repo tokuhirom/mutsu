@@ -419,12 +419,17 @@ impl Interpreter {
         if let Some(v) = self
             .lexicals
             .package_lexicals
+            .read()
             .get(cur.as_str())
             .and_then(|m| m.get(name.as_str()))
         {
             return Some(v.clone());
         }
-        if !self.lexicals.package_lexicals.contains_key(cur.as_str())
+        if !self
+            .lexicals
+            .package_lexicals
+            .read()
+            .contains_key(cur.as_str())
             && let Some(v) = self
                 .types
                 .published_mixins
@@ -444,6 +449,7 @@ impl Interpreter {
             .find_map(|pkg| {
                 self.lexicals
                     .package_lexicals
+                    .read()
                     .get(pkg.as_str())
                     .and_then(|m| m.get(name.as_str()))
                     .cloned()
@@ -486,6 +492,7 @@ impl Interpreter {
             if let Some(v) = self
                 .lexicals
                 .package_lexicals
+                .read()
                 .get(pkg.as_str())
                 .and_then(|m| m.get(name_str))
                 .cloned()
@@ -539,6 +546,7 @@ impl Interpreter {
                     if let Some(value) = self
                         .lexicals
                         .package_lexicals
+                        .read()
                         .get(pkg.as_str())
                         .and_then(|entries| entries.get(name))
                         .cloned()
@@ -601,7 +609,7 @@ impl Interpreter {
 
     pub(crate) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
         let (cur, key) = self.package_scope_lexical_key(name)?;
-        match self.lexicals.package_lexicals.get(cur) {
+        match self.lexicals.package_lexicals.read().get(cur) {
             Some(m) => m.get(key.as_ref()).cloned(),
             // A role body run on the thread that composed a mixin type (see
             // `PublishedMixins::role_lexical`).
@@ -620,7 +628,7 @@ impl Interpreter {
         // the store is empty and nothing below can resolve: answer before the
         // package probe and the two name scans, which every free-variable read
         // in a routine body otherwise paid.
-        if self.lexicals.package_lexicals.is_empty() {
+        if self.lexicals.package_lexicals.read().is_empty() {
             return None;
         }
         // Both questions are decided by the package name's TEXT, so they are
@@ -671,6 +679,7 @@ impl Interpreter {
                 if self
                     .lexicals
                     .class_body_static_names
+                    .read()
                     .get(pkg)
                     .is_some_and(|s| s.contains(bare))
                 {
@@ -1590,7 +1599,7 @@ impl Interpreter {
         // nothing to write back, so skip the `current_package()` RwLock read +
         // `String` clone entirely. This is the dominant cost of the inc-dec
         // write-back path once the type-constraint check is gated away.
-        if self.our_vars_is_empty() && self.lexicals.package_lexicals.is_empty() {
+        if self.our_vars_is_empty() && self.lexicals.package_lexicals.read().is_empty() {
             return false;
         }
         // The symbol mirror, not `current_package()`: that takes the `RwLock`
@@ -1629,6 +1638,7 @@ impl Interpreter {
         let holds = |pkg: &str| {
             self.lexicals
                 .package_lexicals
+                .read()
                 .get(pkg)
                 .is_some_and(|m| m.contains_key(name))
         };
@@ -1656,24 +1666,33 @@ impl Interpreter {
         // probe above proved it) and only its VALUE is written here, so the
         // table's name filter stays valid. Reaching the inner map through
         // `DerefMut` would drop that filter on every package-scope write-back.
-        let Some(slot) = crate::runtime::cow_table_mut(&mut self.lexicals.package_lexicals)
-            .get_value_mut(cur, name)
-        else {
-            return false;
-        };
-        // A boxed lexical's cell is shared with every reader; mutate it in
-        // place rather than replacing the entry with a plain value (which
-        // would sever the sharing). A plain entry is replaced directly.
-        if let ValueView::ContainerRef(arc) = slot.view() {
+        // A boxed lexical's cell is shared with every reader (on every
+        // thread); mutate it in place rather than replacing the entry with a
+        // plain value (which would sever the sharing). That needs no table
+        // write. A plain entry is replaced under the table's write lock.
+        let cell = self
+            .lexicals
+            .package_lexicals
+            .read()
+            .get(cur)
+            .and_then(|store| store.get(name))
+            .and_then(|slot| match slot.view() {
+                ValueView::ContainerRef(arc) => Some(arc.clone()),
+                _ => None,
+            });
+        if let Some(arc) = cell {
             arc.lock().unwrap().clone_from(val);
-        } else {
-            *slot = val.clone();
-            // TRIR's free-variable cache may hold the old plain value
-            // (`package_lexicals_cow_mut`). A write through a cell is seen
-            // without this.
-            self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
+            return true;
         }
-        true
+        // TRIR's free-variable cache may hold the old plain value
+        // (`package_lexicals_write` moves its generation).
+        self.package_lexicals_write(|table| match table.get_value_mut(cur, name) {
+            Some(slot) => {
+                *slot = val.clone();
+                true
+            }
+            None => false,
+        })
     }
 
     /// Strip pseudo-package qualifiers (GLOBAL::, OUR::, MY::) from a

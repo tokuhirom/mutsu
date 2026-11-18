@@ -34,7 +34,7 @@ impl Interpreter {
             return true;
         }
         let key = chunk.id;
-        let cache_gen = self.lexicals.unit_lexical_gen;
+        let cache_gen = self.trir_outer_cache_gen();
         // A package lexical is found by the CURRENT package, which is the
         // routine's own only when it has one (`trir_body_package`); a
         // binding resolved under one package is not another's.
@@ -100,7 +100,7 @@ impl Interpreter {
         let key = chunk.id;
         if !self.env().runs_in_activation_frame()
             && let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
-            && *g == self.lexicals.unit_lexical_gen
+            && *g == self.trir_outer_cache_gen()
             && *p == self.current_package_sym()
         {
             for (i, v) in bindings.iter().enumerate() {

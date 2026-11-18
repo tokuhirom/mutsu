@@ -213,7 +213,7 @@ impl Interpreter {
         // threads, whose registries do not have this type (#11456).
         let body_lexicals: Vec<(String, Value)> = self
             .lexicals
-            .package_lexicals
+            .package_lexicals.read()
             .get(&name)
             .map(|store| store.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default();
@@ -300,19 +300,18 @@ impl Interpreter {
             self.ensure_mixin_class_with_args(&recipe.base, &recipe.roles, &recipe.role_args);
         self.types.adopting_mixins.retain(|n| n != class_name);
         if !recipe.body_lexicals.is_empty() {
-            let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
-                .entry(class_name.to_string())
-                .or_default();
-            for (bare, _) in &recipe.body_lexicals {
-                marks.insert(bare.clone());
-            }
-            let store = self
-                .package_lexicals_cow_mut()
-                .entry(class_name.to_string())
-                .or_default();
-            for (bare, value) in recipe.body_lexicals {
-                store.insert(bare, value);
-            }
+            self.lexicals.class_body_static_names.write(|t| {
+    let marks = t.entry(class_name.to_string()).or_default();
+    for (bare, _) in &recipe.body_lexicals {
+        marks.insert(bare.clone());
+    }
+});
+            self.package_lexicals_write(|table| {
+                let store = table.entry(class_name.to_string()).or_default();
+                for (bare, value) in recipe.body_lexicals {
+                    store.insert(bare, value);
+                }
+            });
         }
         matches!(composed, Ok(name) if name == class_name)
     }

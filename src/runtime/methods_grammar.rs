@@ -344,13 +344,13 @@ impl Interpreter {
         );
         let mut saved: Vec<(String, Option<Value>)> = Vec::new();
         for pkg in &packages {
-            let Some(statics) = self.lexicals.package_lexicals.get(pkg) else {
-                continue;
+            let entries: Vec<(String, Value)> = match self.lexicals.package_lexicals.read().get(pkg) {
+                Some(statics) => statics
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
+                None => continue,
             };
-            let entries: Vec<(String, Value)> = statics
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
             for (k, v) in entries {
                 if saved.iter().any(|(sk, _)| sk == &k) {
                     continue;
