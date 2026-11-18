@@ -135,6 +135,12 @@ pub(crate) struct ResolutionCaches {
     pub(super) gather_compile_cache:
         HashMap<MapGrepCacheKey, (std::sync::Arc<CompiledCode>, std::sync::Arc<CompiledFns>)>,
     pub(super) private_zeroarg_method_cache: HashMap<(String, String), Option<(String, MethodDef)>>,
+    /// The routine name whose call the native arm of
+    /// `dispatch_func_call_inner` answered last, read and cleared by the
+    /// general `CallFunc` path to remember its site's route
+    /// (`vm_native_call_site`, #18028). Only a hint: the remembered route is
+    /// re-validated on every hit.
+    pub(crate) native_arm_answered: Option<crate::symbol::Symbol>,
     /// The shapeless method-table lane's verdicts (`vm_shapeless_site_lane`):
     /// the row (or a remembered miss) answering a zero-argument built-in
     /// method on a receiver with no dispatch shape, keyed by the receiver's
