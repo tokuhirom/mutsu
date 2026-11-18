@@ -309,8 +309,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // (a `BEGIN`, a `multi`/`proto`) happen at parse time too (§7.1), a `use`
     // after one loads in the prologue, so the module never runs, or installs
     // candidates, ahead of what was written before it.
-    let site = crate::compile_time_loader::next_use_site();
+    // The statement's parse site keys the hook map a parse-time load records
+    // for it; a `use` the loader does not take keeps none (`0`), so a parse
+    // that loads nothing stays deterministic.
+    let mut site = 0;
     if module != "lib" && !super::super::simple::unit_compile_time_effect_seen() {
+        let candidate_site = crate::compile_time_loader::next_use_site();
         let lib_paths = super::super::simple::parser_lib_paths();
         let spec = format!("{module}{dist_selectors}");
         let request = crate::compile_time_loader::UseRequest {
@@ -328,7 +332,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             nested: super::super::simple::in_nested_scope(),
             activates_slang: super::super::simple::module_activates_slang(&module),
             package: super::super::simple::statement_package(),
-            site,
+            site: candidate_site,
             lib_paths: &lib_paths,
         };
         match crate::compile_time_loader::load_use(&request) {
@@ -338,6 +342,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 return Err(PError::fatal_at(message, input));
             }
             crate::compile_time_loader::LoadOutcome::Loaded if !empty_import => {
+                site = candidate_site;
                 for name in super::super::simple::register_loaded_use_exports(&module, import_tags)
                 {
                     if !imports.contains(&name) {
@@ -345,6 +350,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                     }
                 }
             }
+            crate::compile_time_loader::LoadOutcome::Loaded => site = candidate_site,
             _ => {}
         }
     }
