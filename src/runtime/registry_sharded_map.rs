@@ -23,7 +23,7 @@ use std::sync::Arc;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 /// The number of shards. A power of two, so the shard index is a mask.
-pub(crate) const SHARDS: usize = 32;
+pub(crate) const SHARDS: usize = 16;
 
 /// See the module docs.
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl<K, V> Default for ShardedMap<K, V> {
 fn shard_of<Q: Hash + ?Sized>(key: &Q) -> usize {
     // The upper bits: FxHash mixes them best, and the shard's own table
     // indexes by the lower ones.
-    (FxBuildHasher.hash_one(key) >> 59) as usize & (SHARDS - 1)
+    (FxBuildHasher.hash_one(key) >> 60) as usize & (SHARDS - 1)
 }
 
 impl<K: Hash + Eq, V> ShardedMap<K, V> {
