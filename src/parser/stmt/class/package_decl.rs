@@ -231,6 +231,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // body. Register the type before returning so body methods can use the
         // fully-qualified name in a `when` matcher.
         super::super::simple::register_user_type(&name);
+        // The rest of the unit is this class's: its `use`s import into it.
+        super::super::simple::note_unit_package(&name);
         return Ok((
             r,
             with_header(
@@ -546,6 +548,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         // A `unit grammar` also captures the remainder of the compilation unit
         // as its body; register its name before that body is parsed.
         super::super::simple::register_user_type(&name);
+        super::super::simple::note_unit_package(&name);
         let mut body: Vec<Stmt> = Vec::new();
         crate::ast::routine_trait::attach(&mut body, written);
         return Ok((
@@ -602,6 +605,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     // `unit module App::Racoco::ConfigFile is export;`.
     let (rest, traits) = parse_package_is_traits(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    // The rest of the unit is this package's: its `use`s import into it.
+    super::super::simple::note_unit_package(&name);
     let mut body = Vec::new();
     crate::ast::routine_trait::attach(&mut body, traits.source);
     let package = Stmt::Package {

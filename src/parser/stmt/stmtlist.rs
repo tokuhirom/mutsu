@@ -645,9 +645,6 @@ fn stmt_list_inner(
                 ) {
                     saw_compunit_declarator = true;
                 }
-                if let Some(name) = unit_declared_package(&stmt) {
-                    super::simple::note_unit_package(&name.resolve());
-                }
                 let hook = attempt.hook(input_before_stmt, r, &stmt);
                 trace::apply_pragma(&stmt);
                 open_terminator = !consumed.ends_with(';');
@@ -821,26 +818,5 @@ pub(in crate::parser) fn next_line_opens_with_plain_term(rest: &str) -> bool {
         Some(c) if c.is_ascii_digit() => true,
         Some('"' | '\'') => true,
         _ => false,
-    }
-}
-
-/// The package a `unit module` / `unit class` / `unit grammar` statement
-/// declares, looking through the synthetic block its `:ver`/`:auth` adverbs
-/// wrap it in.
-// Cost: O(k), k = statements of a synthetic wrapper.
-fn unit_declared_package(stmt: &Stmt) -> Option<crate::symbol::Symbol> {
-    match stmt {
-        Stmt::Package {
-            name,
-            is_unit: true,
-            ..
-        }
-        | Stmt::ClassDecl {
-            name,
-            is_unit: true,
-            ..
-        } => Some(*name),
-        Stmt::SyntheticBlock(inner) => inner.iter().find_map(unit_declared_package),
-        _ => None,
     }
 }
