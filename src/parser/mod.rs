@@ -285,6 +285,14 @@ pub(crate) fn canonical_name_colonpairs(source: &str, stem: String) -> (&str, St
     }
 }
 
+/// A term parsed again from its source text (`<< :a b >>` as written), or
+/// `None` unless `source` is exactly one term.
+// Cost: O(n), n = length of `source`.
+pub(crate) fn term_expr(source: &str) -> Option<crate::ast::Expr> {
+    let (rest, expr) = primary::primary(source).ok()?;
+    rest.trim().is_empty().then_some(expr)
+}
+
 /// The colonpairs of an extended name, parsed again from their source text
 /// (as [`written_name_colonpairs`] kept it) the way a `.AST` parse reads them:
 /// `:foo<g h>` is a colonpair, a key-less `:<home>` / `:«home»` / `:['home']`

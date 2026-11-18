@@ -1021,6 +1021,8 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     variant_form,
                     crate::ast::EnumVariantForm::EmptyWords(_)
                         | crate::ast::EnumVariantForm::PairList
+                        | crate::ast::EnumVariantForm::WrittenPairs(_)
+                        | crate::ast::EnumVariantForm::WrittenQuoteWords(_)
                 )
             {
                 return Err(unsupported("enum without a body"));

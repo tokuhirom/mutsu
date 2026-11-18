@@ -142,7 +142,7 @@ pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
 fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
     let (rest, variants, variant_form) = if input.starts_with("<<") || input.starts_with('\u{ab}') {
         let (rest, variants) = parse_double_angle_enum_variants(input)?;
-        (rest, variants, EnumVariantForm::QuoteWords)
+        (rest, variants, quote_words_form(input, rest))
     } else if input.starts_with('<') {
         let (r, _) = parse_char(input, '<')?;
         let body_start = r;
@@ -171,7 +171,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         let (r, body) = parse_paren_enum_body(input)?;
         let variants = enum_variants_from_body(&body)
             .ok_or_else(|| PError::expected("anonymous enum variants"))?;
-        (r, variants, EnumVariantForm::PairList)
+        (r, variants, pair_list_form(&body))
     } else {
         return Err(PError::expected("anonymous enum variants"));
     };
@@ -344,6 +344,39 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
 /// Decompose a parsed `(...)` enum body into static variants, or `None` when at
 /// least one element is not a static name/pair (the caller then keeps the body
 /// as a computed expression).
+/// The form of a `<< >>` / `« »` body that began at `start` and ended where
+/// `after` begins: the text as written when it holds only words, since the
+/// variants keep neither the spacing nor which words were colonpair atoms
+/// (`:k(7)`), and a body with atoms stays the plain quote-words form.
+// Cost: O(n), n = length of the body.
+fn quote_words_form(start: &str, after: &str) -> EnumVariantForm {
+    let written = start[..start.len() - after.len()].trim_end();
+    if written.contains(':') {
+        EnumVariantForm::QuoteWords
+    } else {
+        EnumVariantForm::WrittenQuoteWords(written.into())
+    }
+}
+
+/// The form of a static parenthesized body: the elements as written when one
+/// is a colonpair (`:x(1)`), plain [`EnumVariantForm::PairList`] otherwise.
+// Cost: O(v), v = variants.
+fn pair_list_form(body: &Expr) -> EnumVariantForm {
+    let Expr::ArrayLiteral(items) = body.peel_parens() else {
+        return EnumVariantForm::PairList;
+    };
+    let form_of = |e: &Expr| match e.peel_parens() {
+        Expr::Binary { form, .. } => *form,
+        _ => crate::ast::BinaryForm::Infix,
+    };
+    let forms: Vec<_> = items.iter().map(form_of).collect();
+    if forms.iter().any(|f| *f != crate::ast::BinaryForm::Infix) {
+        EnumVariantForm::WrittenPairs(forms)
+    } else {
+        EnumVariantForm::PairList
+    }
+}
+
 pub(crate) fn enum_variants_from_body(body: &Expr) -> Option<Vec<(String, Option<Expr>)>> {
     // `enum (a => 5, b => 10)` arrives parenthesized, and the parser records
     // that; the variant list is what is inside.
@@ -390,8 +423,8 @@ pub(super) fn parse_enum_decl_body_with_type(
 
     // Enum variants in << >>, « », <> or ()
     let (rest, variants, variant_form) = if rest.starts_with("<<") || rest.starts_with('\u{ab}') {
-        let (rest, variants) = parse_double_angle_enum_variants(rest)?;
-        (rest, variants, EnumVariantForm::QuoteWords)
+        let (after, variants) = parse_double_angle_enum_variants(rest)?;
+        (after, variants, quote_words_form(rest, after))
     } else if rest.starts_with('<') {
         let (r, _) = parse_char(rest, '<')?;
         let body_start = r;
@@ -431,7 +464,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             }
         })?;
         match enum_variants_from_body(&body) {
-            Some(variants) => (r, variants, EnumVariantForm::PairList),
+            Some(variants) => (r, variants, pair_list_form(&body)),
             None => {
                 // Computed body (operators like `X~`, `Z=>`, `|`, a `%hash`, …):
                 // keep the whole expression and let the runtime build the enum.
