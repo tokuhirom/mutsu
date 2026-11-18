@@ -215,7 +215,10 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     // C-style `for (init; test; incr) { }` is obsolete — Raku uses `loop`.
     // Detected by a top-level `;` inside the parenthesized iterable.
     if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) && is_c_style_for_header(rest) {
-        return Err(PError::obsolete("C-style \"for (;;)\" loop", "\"loop (;;)\""));
+        return Err(PError::obsolete(
+            "C-style \"for (;;)\" loop",
+            "\"loop (;;)\"",
+        ));
     }
     // Try to detect `<->` (rw pointy block) before the expression parser
     // consumes the `<` as a comparison operator.
