@@ -178,6 +178,41 @@ stash; until then it stays visible on the thread that made it.
 Slice 2 lands in two PRs: 2a moves the routine tables out (no behaviour change), 2b
 shares what is left of `Registry`.
 
+### 3.3 Slice 2b refinement: sharded tables, per-site declaration locks (2026-11-18)
+
+Measured on slice 2b (§4 anticipated this): with the registry shared, a write
+copies whatever another thread's snapshot still shares, and every reader
+thread holds one. With most tables held inline, every declaration copied the
+whole `Registry` (~4 ms with Red loaded); Red t/098 (eight threads minting
+projection types per query) went from 26 s to 258 s. So:
+
+- Every table of `Registry` is a `CowTable` (copying the registry is a
+  reference-count bump per table), and every keyed map is a `ShardedMap`
+  (`runtime/registry_sharded_map.rs`): 16 copy-on-write shards selected by key
+  hash, so a write copies one shard of one table. Values that carry an AST
+  (`roles`, `role_candidates`) are behind their own `Arc`, so a shard copy
+  never deep-copies a definition. These are the "finer-grained tables" of §4,
+  without a dependency on a persistent-map crate; reads stay a hashbrown probe
+  (plus one hash for the shard).
+- Indexes derived from the type tables (class short names, lexical type
+  names, the lexical key scan memo) are tagged with the tables' key
+  generation and kept while it holds, instead of being dropped by every write
+  and rebuilt by every thread.
+- A type declaration's registration (site-reuse check, method table) is
+  serialised per **declaration site**, not by one process-wide lock. The
+  registration runs user code (a class body, traits); a process-wide lock held
+  across it is a lock-order inversion with any user lock that code takes
+  (raku runs the case in `concurrent-type-declaration-lock-order.t`; mutsu
+  deadlocked). Rakudo serialises composition per type the same way.
+
+Result: Red t/098 39 s; Ir against `main`: 400 `start`s +0.9%, a method-call
+loop +0.6%, `say "hello"` +3% (the sharded builtin registry), an eight-thread
+OO + mixin script -14%. What remains of the gap on Red is memo invalidation:
+every world write moves every thread's registry generation, where a
+per-thread registry moved only the writer's. Finer invalidation (a write that
+only adds a type need not drop memos about other types) is the next step if a
+workload needs it.
+
 ## 4. Consequences
 
 - `start` and every other spawn see the program rakudo would show them: declarations, wraps,
