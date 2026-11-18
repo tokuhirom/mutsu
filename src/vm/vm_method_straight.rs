@@ -175,6 +175,7 @@ impl Interpreter {
         self.stack.truncate(saved_stack_depth);
         self.locals.pop_frame(caller_frame);
         self.current_unit = saved_unit;
+        super::vm_stats_method_lanes::record_straight_line_method();
         Some(self.finalize_method_result_fast(cc, outcome, None, None, None))
     }
 }
