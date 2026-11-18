@@ -2426,7 +2426,13 @@ fn construct_class(
             name: Some("name"),
             value: RakuAstFieldValue::Node(name),
         }];
-        if let Some(arg_list) = named_arg(args, "args") {
+        // The `RakuAST::ArgList` type object is the absent value rakudo's own
+        // attribute default holds: `my RakuAST::ArgList $args .= new(...) if
+        // @args` passes it through untouched when there are no arguments
+        // (CSS::Specification::Compiler's `call`).
+        if let Some(arg_list) = named_arg(args, "args").filter(|v| {
+            !matches!(v.view(), ValueView::Package(n) if n.as_str() == "RakuAST::ArgList")
+        }) {
             require_rakuast_class(&arg_list, RakuAstClass::ArgList, &constructor)?;
             // An empty `ArgList` is the default; rakudo's `.raku` leaves it out.
             if !named_ctor::is_empty_arg_list(&arg_list) {

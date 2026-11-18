@@ -1206,6 +1206,28 @@ fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) 
     // A sub-parameter spelled `$self` is the reserved lexical, never the
     // invocant (ADR-0061).
     let name = if name == "self" { crate::env::LEX_SELF } else { name };
+    // An `@`/`%` sub-parameter binds the aggregate itself, not the item
+    // container it arrived in (a hash element `%h<args>` holds `$[...]`):
+    // left itemized, `for @args` saw one element (CSS::Specification::
+    // Compiler's `:%signature! (:@args! is copy)`).
+    let value = if name.starts_with('@') {
+        let value = value.into_descalarized();
+        match value.view() {
+            ValueView::Array(data, kind) if kind.is_itemized() => {
+                Value::array_with_kind(data.clone(), kind.decontainerize())
+            }
+            _ => value,
+        }
+    } else if name.starts_with('%') {
+        let value = value.into_descalarized();
+        if value.hash_is_itemized() {
+            value.with_hash_itemized(false)
+        } else {
+            value
+        }
+    } else {
+        value
+    };
     interpreter.env.insert(name.to_string(), value);
 }
 
