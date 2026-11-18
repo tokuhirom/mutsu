@@ -114,6 +114,29 @@ impl Interpreter {
         Some((class, Symbol::intern(constraint), MemoCheck::Matches))
     }
 
+    /// Whether `value` is an instance of a user class whose MRO reaches the
+    /// core `Any`, memoized per class for one registry write generation.
+    /// `false` also when the memo does not apply (not a plain user-class
+    /// instance, or the program declares its own `Any`); the caller then
+    /// takes the full check.
+    // Cost: O(1) expected on a hit; the core `Any` check on a miss.
+    pub(crate) fn instance_matches_core_any(&mut self, value: &Value) -> bool {
+        let ValueView::Instance { class_name, .. } = value.view() else {
+            return false;
+        };
+        if value.is_lazy_match_value()
+            || value.is_match_instance()
+            || !self.types.user_declared_classes.contains(class_name.as_str())
+            || self.types.user_declared_classes.contains("Any")
+        {
+            return false;
+        }
+        let key = (class_name, crate::symbol::wk::any(), MemoCheck::CoreAny);
+        self.memoized_instance_type_check(key, |vm| {
+            vm.type_matches_value_why_core("Any", value, &mut None)
+        })
+    }
+
     /// Answer `key` from the memo, or run `check` and remember its answer
     /// under the registry generation it was computed for.
     // Cost: O(1) expected on a hit; `check` on a miss.
