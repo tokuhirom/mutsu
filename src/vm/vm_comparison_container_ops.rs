@@ -265,6 +265,15 @@ impl Interpreter {
         if name.starts_with(['@', '%', '&']) {
             return false;
         }
+        // `$!attr` (a method's attribute local is spelled `!attr`) owns a
+        // Scalar unless a `:=` seated a plain value in it. That decision
+        // lives on the instance, not in the method's lexicals, so a bind in
+        // one method is seen by a test in another
+        // (`$!next := IterationEnd` ... `nqp::eqaddr($!next, IterationEnd)`).
+        // (`$!` itself, the error variable, is spelled `!` and is not one.)
+        if name.len() > 1 && name.starts_with('!') {
+            return !self.private_attr_is_bound(Some(name));
+        }
         // `my $b := @x` / `:= %h` aliases the aggregate, which is its own
         // container — no Scalar. `my $b := $a` aliases `$a`'s Scalar, so the
         // question becomes "does the ROOT own one", answered by recursing.
