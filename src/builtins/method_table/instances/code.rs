@@ -350,21 +350,42 @@ fn capture(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
 // Cost: O(1) for a `Sub` (the captured environment is shared, not copied).
 fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
-        ValueView::Sub(data) => {
-            let mut new_data = (**data).clone();
-            new_data.id = crate::value::next_instance_id();
-            new_data.routine_cell = new_data.routine_cell.forked();
-            // The copy owns a new state scope, so its disposal is its own to
-            // report (the guard it cloned would reap the ORIGINAL's scope).
-            if new_data._state_scope_guard.is_some() {
-                new_data._state_scope_guard = Some(
-                    crate::value::state_scope_reaper::StateScopeGuard::new(new_data.id),
-                );
-            }
-            Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data))))
-        }
+        ValueView::Sub(data) => Some(Ok(closure_clone(&data))),
         _ => Some(Ok(target.clone())),
     }
+}
+
+/// A new closure clone of a code object: `Code.clone`, and the copy `$code but
+/// R` mixes into (rakudo's `but` is `.clone.^mixin`). The clone has its own
+/// identity, so its own `state` variables and its own `FIRST` flag.
+// Cost: O(1) plus a shallow copy of the code object's fields.
+pub(crate) fn closure_clone(data: &crate::value::SubData) -> Value {
+    let mut new_data = data.clone();
+    new_data.id = crate::value::next_instance_id();
+    new_data.routine_cell = new_data.routine_cell.forked();
+    // The copy owns a new state scope, so its disposal is its own to
+    // report (the guard it cloned would reap the ORIGINAL's scope).
+    if new_data._state_scope_guard.is_some() {
+        new_data._state_scope_guard = Some(crate::value::state_scope_reaper::StateScopeGuard::new(
+            new_data.id,
+        ));
+    }
+    Value::sub_value(crate::gc::Gc::new(new_data))
+}
+
+/// The representation-level copy of a code object (`Mu.clone`, `nqp::clone`):
+/// a distinct code object that keeps running in the original's `state` scope,
+/// so it shares the original's `state` variables and `FIRST` flag, unlike
+/// [`closure_clone`], which starts its own (#15897).
+// Cost: O(1) plus a shallow copy of the code object's fields.
+pub(crate) fn repr_clone(data: &crate::value::SubData) -> Value {
+    let copy = closure_clone(data);
+    if let ValueView::Sub(copy_data) = copy.view() {
+        copy_data
+            .routine_cell
+            .share_state_scope(data.routine_cell.shared_state_scope().unwrap_or(data.id));
+    }
+    copy
 }
 
 /// `Code.static_id`: the identity of the code the object runs, shared by every

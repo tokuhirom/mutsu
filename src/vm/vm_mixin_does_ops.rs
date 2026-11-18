@@ -13,6 +13,14 @@ impl Interpreter {
         // the group; composition is group-keyed throughout, so narrow it back.
         let right = self.normalize_role_type_object(&right);
         let left = self.stack.pop().unwrap();
+        // `$code but R` mixes into a closure clone of `$code`, as rakudo's
+        // `.clone.^mixin` does: the result has its own `state` variables and
+        // its own `FIRST` flag (ParaSeq mixes its mapper role into the user's
+        // block this way, and expects the block's `FIRST` to fire again).
+        let left = match left.view() {
+            ValueView::Sub(data) => crate::builtins::method_table::code::closure_clone(&data),
+            _ => left,
+        };
         // `$obj but R` runs role R's `submethod TWEAK`/`BUILD` via the interpreter,
         // which can mutate a captured-outer caller lexical (`my $invoked; role R
         // { submethod TWEAK { $invoked = True } }`). A captured-and-mutated
