@@ -187,6 +187,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Postfix", "is-resolved"),
     row!("RakuAST::Postfix", "operator"),
     row!("RakuAST::Postfix", "resolution"),
+    row!("RakuAST::Postfix::Power", "power"),
     row!("RakuAST::Postfixish", "colonpairs"),
     row!("RakuAST::Pragma", "argument"),
     row!("RakuAST::Pragma", "name"),
@@ -201,5 +202,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::QuotedString", "has-variables"),
     row!("RakuAST::QuotedString", "processors"),
     row!("RakuAST::QuotedString", "segments"),
-    row!("RakuAST::Regex::Assertion::Alias", "assertion"),
 ];
