@@ -6,6 +6,7 @@
 //! IR; its round-trip mode currently exercises that boundary.
 
 mod accessors;
+mod zen_slice;
 mod adverb_origins;
 mod model_methods;
 mod positional_fields;

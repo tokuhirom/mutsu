@@ -140,6 +140,10 @@ pub(crate) enum Spelling {
     /// `::?CLASS` / `::?ROLE` / `::?PACKAGE` / `::?MODULE`: the pseudo-package
     /// as written (the parser keeps `Var("?CLASS")`, the same as `$?CLASS`).
     PseudoPackage(Box<str>),
+    /// A zen slice written with the brackets `<>` or `{}` (`@a<>`, `*{}`): the
+    /// node is the same decontainerizing zen slice whatever the brackets, but
+    /// RakuAST keeps a different subscript class for each.
+    ZenBrackets(char),
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,
