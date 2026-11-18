@@ -170,7 +170,18 @@ impl Interpreter {
                     (ValueView::RakuAst(a), ValueView::RakuAst(b)) => {
                         std::ptr::eq(a, b) || *a == *b
                     }
-                    _ => false,
+                    // Any other object (a Promise, a Lock, a Str) bound by
+                    // both names with no Scalar of their own is the object
+                    // itself: `my $p := Promise.new; my $q := $p` or a
+                    // `$!attr := $v` bound in another method (#18024).
+                    _ => {
+                        !self.operand_denotes_scalar_container(code, left_name)
+                            && !self.operand_denotes_scalar_container(code, right_name)
+                            && crate::runtime::utils::values_same_object(
+                                &left.deref_container(),
+                                &right.deref_container(),
+                            )
+                    }
                 },
             }
         };
@@ -278,6 +289,13 @@ impl Interpreter {
         // parameter, a `for @a -> $v` alias — is deliberately not excluded:
         // rakudo reports `Scalar` for those.
         if self.scalar_name_has_no_container(name) {
+            return false;
+        }
+        // `$!attr := VALUE` seats the value itself as the attribute, in
+        // whichever method the bind ran; the instance records it
+        // (`BoundAttr`), so a later method's `nqp::eqaddr($!attr, $v)` sees
+        // the value, not a Scalar (ParaSeq's `$!lastsema`, #18024).
+        if name.starts_with('!') && self.private_attr_is_bound(Some(name)) {
             return false;
         }
         // A Proxy is an assignable container of its own, rather than a
