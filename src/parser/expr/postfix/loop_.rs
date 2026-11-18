@@ -874,6 +874,9 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
         Expr::HashVar(_) => expr,
         _ => Expr::ZenSlice(Box::new(expr)),
     };
+    let indexed_expr = Expr::spelled(indexed_expr, || {
+        crate::ast::spelled::Spelling::ZenBrackets('<')
+    });
     let zen_adverb = [
         (":kv", "kv"),
         (":k", "keys"),
@@ -2396,7 +2399,9 @@ fn postfix_expr_loop_from<'a>(
                     rest = r;
                     continue;
                 }
-                expr = Expr::ZenSlice(Box::new(expr));
+                expr = Expr::spelled(Expr::ZenSlice(Box::new(expr)), || {
+                    crate::ast::spelled::Spelling::ZenBrackets('{')
+                });
                 rest = r;
                 continue;
             }
@@ -3198,12 +3203,15 @@ fn postfix_expr_loop_from<'a>(
         // Superscript digits as postfix exponentiation: x² → x ** 2, x³ → x ** 3
         if let Some((exp, len)) = parse_superscript_exp(rest) {
             rest = &rest[len..];
-            expr = Expr::Binary {
-                left: Box::new(expr),
-                op: crate::token_kind::TokenKind::StarStar,
-                right: Box::new(Expr::Literal(Value::int(exp))),
-                form: Default::default(),
-            };
+            expr = Expr::spelled(
+                Expr::Binary {
+                    left: Box::new(expr),
+                    op: crate::token_kind::TokenKind::StarStar,
+                    right: Box::new(Expr::Literal(Value::int(exp))),
+                    form: Default::default(),
+                },
+                || crate::ast::spelled::Spelling::SuperscriptPower,
+            );
             continue;
         }
 

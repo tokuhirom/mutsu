@@ -4763,6 +4763,9 @@ pub(crate) enum OpCode {
         /// import binds are recorded there, for the call sites the block
         /// lexically encloses ([`Self::LexImportCall`]).
         lexical_set_idx: Option<u32>,
+        /// The `use` statement's parse site (`Stmt::Use::site`): the import
+        /// installs the `sub EXPORT` map the parse recorded under it.
+        site: u32,
     },
     /// Prefix of the [`Self::CallFunc`] at `ip + 1`, emitted for a bareword
     /// call lexically inside a block that `use`s a module (ADR-8751 stage 1).
@@ -10542,6 +10545,9 @@ impl CompiledCode {
                     .get(*slot as usize)
                     .is_some_and(|name| !matches!(name.as_str(), "?CLASS" | "?ROLE")),
                 OpCode::NqpOp { id, .. } => !nqp_op_names_lexical(*id, false),
+                // A non-rw routine decontainerizes a tail call's result
+                // (`compile_tail_expr`); that reads the stack top only.
+                OpCode::DerefContainer => true,
                 _ => false,
             })
     }

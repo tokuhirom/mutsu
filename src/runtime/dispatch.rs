@@ -403,6 +403,15 @@ impl Interpreter {
         if def.empty_sig && !arg_values.is_empty() {
             return Err(Self::reject_args_for_empty_sig(arg_values));
         }
+        // An argument-less literal rule renders the same way every time
+        // (`token_render_memo`).
+        let static_source = Self::static_token_source(def, arg_values);
+        if let Some(rendered) = static_source
+            .as_deref()
+            .and_then(Self::rendered_token_pattern)
+        {
+            return Ok(Some(rendered));
+        }
         let saved_env = self.env.clone();
         // The rule's body is rendered in the scope it was declared in
         // (`regex_token_closure`), wherever the resolution runs from.
@@ -527,6 +536,9 @@ impl Interpreter {
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
         self.exit_readonly_frame(saved_readonly);
+        if let (Some(source), Ok(Some(pattern))) = (static_source, &rendered) {
+            Self::remember_rendered_token_pattern(source, pattern);
+        }
         rendered
     }
 }

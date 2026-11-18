@@ -315,7 +315,14 @@ impl Interpreter {
             .unwrap_or_default();
         // The parse already ran this `use`'s hook, when it loaded the module
         // at compile time (ADR-17558): install that map.
-        if let Some((result, generated)) = self.take_parse_time_hook_result(module, &export_args) {
+        let site = std::mem::take(&mut self.module.pending_use_site);
+        // A run for the parse (`run_export_hook_for_parse`) is the one that
+        // records a map; it installs none.
+        let for_parse = std::mem::take(&mut self.module.export_hook_run_for_parse);
+        if !for_parse
+            && let Some((result, generated)) =
+                self.take_parse_time_hook_result(module, &export_args, site)
+        {
             let importer = self.module.module_load_stack.last().cloned();
             self.module.pending_generated_lexicals = generated;
             // An `EVAL` pre-run that meets it keeps it for the `use` it lifts.
@@ -395,8 +402,29 @@ impl Interpreter {
         let result = result?;
         let importer = self.module.module_load_stack.last().cloned();
         self.record_eval_hook_result(module, &hook_args, &result);
+        // A parse that runs the hook for its `use` (`run_export_hook_for_parse`)
+        // keeps the map for the `use`'s import in position.
+        if for_parse && self.record_parse_time_hook_result(module, &hook_args, &result) {
+            return Ok(());
+        }
         self.install_hook_result(&result, importer.as_deref());
         Ok(())
+    }
+
+    /// Run the `sub EXPORT` of `module`, which an earlier `use` loaded, for the
+    /// `use` the parser has reached (ADR-17558): the hook runs once, now, and
+    /// its map is kept for the statement's import in position
+    /// (`take_parse_time_hook_result`), as for a first load.
+    // Cost: the hook's own run.
+    pub(crate) fn run_export_hook_for_parse(&mut self, module: &str) -> Result<(), RuntimeError> {
+        // The hook's importer sits one load deeper than the parse, as when
+        // the module's own load runs it (`parse_time_hook_depth`).
+        self.module.module_load_stack.push(module.to_string());
+        self.module.export_hook_run_for_parse = true;
+        let result = self.rerun_module_export(module);
+        self.module.export_hook_run_for_parse = false;
+        self.module.module_load_stack.pop();
+        result
     }
 
     /// The key an `EVAL` pre-run's hook result is kept under.
@@ -463,11 +491,12 @@ impl Interpreter {
         if reached_importer || crate::runtime::compile_time_use::parse_is_for_ast() {
             return true;
         }
+        let site = self.module.parse_time_hook_site;
         self.module
             .parse_time_hook_results
             .entry(key)
             .or_default()
-            .push_back((result.clone(), generated));
+            .push_back((site, result.clone(), generated));
         true
     }
 
@@ -484,7 +513,7 @@ impl Interpreter {
                     .is_some_and(|rest| rest.is_empty() || rest.starts_with('\u{1f}'))
             })
             .flat_map(|(_, queue)| queue.iter())
-            .any(|(map, _)| Self::export_map_binds(map, "&MAIN"))
+            .any(|(_, map, _)| Self::export_map_binds(map, "&MAIN"))
     }
 
     /// Whether the export map `val` (as [`Self::install_export_map`] reads
@@ -506,24 +535,40 @@ impl Interpreter {
         }
     }
 
-    /// The oldest map a parse-time load got from the hook of `module` for
-    /// `args` and no import has installed yet.
-    // Cost: O(1) when nothing was recorded; else one key build and lookup.
+    /// The map a parse-time load got from the hook of `module` for `args`
+    /// for the `use` statement at parse site `site`. Every run of that
+    /// statement (a block entered again, a routine called again) installs the
+    /// same map, as rakudo runs the hook once, when it compiles the `use`.
+    /// An import with no site (`0`: its `use` was not loaded at parse time)
+    /// takes only a map recorded without one, once: a map recorded for
+    /// another statement is that statement's.
+    // Cost: O(1) when nothing was recorded; else one key build and lookup,
+    // plus O(q) to find the site, q = the maps recorded for the key.
     fn take_parse_time_hook_result(
         &mut self,
         module: &str,
         args: &[Value],
+        site: u32,
     ) -> Option<(Value, Vec<crate::runtime::module_state::GeneratedLexical>)> {
         if self.module.parse_time_hook_results.is_empty() {
             return None;
         }
         let key = Self::hook_replay_key(module, args);
         let queue = self.module.parse_time_hook_results.get_mut(&key)?;
-        let entry = queue.pop_front();
+        if site != 0 {
+            return queue
+                .iter()
+                .find(|(recorded, _, _)| *recorded == site)
+                .map(|(_, map, generated)| (map.clone(), generated.clone()));
+        }
+        let entry = queue
+            .iter()
+            .position(|(recorded, _, _)| *recorded == 0)
+            .and_then(|at| queue.remove(at));
         if queue.is_empty() {
             self.module.parse_time_hook_results.remove(&key);
         }
-        entry
+        entry.map(|(_, map, generated)| (map, generated))
     }
 
     /// The map a pre-run already got from the hook of `module` for `args`.

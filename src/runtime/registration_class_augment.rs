@@ -1752,13 +1752,16 @@ impl Interpreter {
                 {
                     Some(regex_owner)
                 }
-                // A multi or exported `sub` registers where the composer can
-                // reach it, as before.
+                // A multi `sub` registers where the composer can reach it, as
+                // before. An exported plain one does not: it is the role
+                // body's routine, and the twin in
+                // `run_composed_role_deferred_body_inner` runs it in the role's
+                // package too. Re-declared in the composer's package, the
+                // copy shadowed the importer's own import of it and read the
+                // role body's lexicals (`my constant %D`) under the composer's
+                // package, where they are not (#18106).
                 crate::opcode::DeferredBodyOpKind::Plain
-                    if matches!(
-                        op.raw,
-                        Stmt::SubDecl { multi: true, .. } | Stmt::SubDecl { is_export: true, .. }
-                    ) =>
+                    if matches!(op.raw, Stmt::SubDecl { multi: true, .. }) =>
                 {
                     None
                 }

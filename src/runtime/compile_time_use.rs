@@ -42,7 +42,13 @@ impl CompileTimeLoader for Interpreter {
             return LoadOutcome::NotTaken;
         };
         let (bare, _) = Self::split_dist_selectors(module);
-        if self.module.loaded_modules.contains(bare) {
+        // A module loaded already (by an earlier `use`) does not load again,
+        // but its `sub EXPORT` runs for this `use` too, now, as rakudo runs it
+        // once per `use` statement at compile time.
+        let already_loaded = self.module.loaded_modules.contains(bare);
+        if already_loaded
+            && (request.activates_slang || !self.module.module_export_defs.contains_key(bare))
+        {
             return LoadOutcome::Loaded;
         }
         // The unit's parse-time `use lib` additions are BEGIN-time effects that
@@ -89,19 +95,27 @@ impl CompileTimeLoader for Interpreter {
             .module
             .parse_time_hook_depth
             .replace(self.module.module_load_stack.len() + 1);
+        let saved_hook_site =
+            std::mem::replace(&mut self.module.parse_time_hook_site, request.site);
         take_hook_reached_importer();
         let nested = request.nested;
+        let load = move |interp: &mut Self| {
+            if already_loaded {
+                interp.run_export_hook_for_parse(bare)
+            } else {
+                interp.without_use_attach_depth(|interp| interp.preload_module(module))
+            }
+        };
         let preload = move |interp: &mut Self| {
             if nested {
                 // A `use` inside a block: what the module installs while it
                 // loads is lexical to the block (`OpCode::PreloadModule`'s scope).
                 interp.push_preload_scope();
-                let result =
-                    interp.without_use_attach_depth(|interp| interp.preload_module(module));
+                let result = load(interp);
                 interp.pop_import_scope();
                 result
             } else {
-                interp.without_use_attach_depth(|interp| interp.preload_module(module))
+                load(interp)
             }
         };
         // A slang module registers its slang for this parse while it loads
@@ -113,6 +127,7 @@ impl CompileTimeLoader for Interpreter {
             preload(self)
         };
         self.module.parse_time_hook_depth = saved_hook_depth;
+        self.module.parse_time_hook_site = saved_hook_site;
         if let Some(saved) = replaced_import_target {
             self.module.import_target_package = saved;
         }

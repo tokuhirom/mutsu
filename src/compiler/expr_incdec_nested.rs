@@ -129,6 +129,18 @@ impl Compiler {
         wrap: impl FnOnce(Expr) -> Expr,
     ) -> bool {
         let root = elem_chain_root(expr);
+        // A dynamic/lexical pseudo-stash entry written in one step
+        // (`PROCESS::<$x>++`) is not a container to bind: the read-increment-
+        // write path below stores through `IndexAssignPseudoStashNamed`, as
+        // `PROCESS::<$x> += 1` does. A bound temporary holds a snapshot of
+        // the stash, and the increment went into it (#18120).
+        if let Expr::Index { target, index, .. } = expr
+            && let Expr::PseudoStash(stash) = target.as_ref()
+            && matches!(stash.as_str(), "MY::" | "PROCESS::" | "CALLER::LEXICAL::")
+            && matches!(index.as_ref(), Expr::Literal(lit) if lit.as_str().is_some())
+        {
+            return false;
+        }
         // A method root (`$o.h<k>++`) keeps the two-evaluation path: its
         // `IndexAssign` writes back through the method-lvalue machinery, which
         // a write through a bound temporary bypasses -- a typed-key hash

@@ -5754,6 +5754,8 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                         listop: false,
                     })
                 }
+                // `2²`: the superscript power the parser reads as `**`.
+                RakuAstClass::PostfixPower => super::postfix_power::lower_power(postfix, operand),
                 // `$x++` / `$x--` -> Postfix(operator => "++"); a user
                 // operator routine (`5!`, a user `postfix:<++>`) is called.
                 RakuAstClass::Postfix => {
@@ -5883,6 +5885,16 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                         }
                         index
                     };
+                    // `@a<>`: an empty word quote is the zen slice, not a lookup
+                    // of the key "".
+                    if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex
+                        && super::name_parts::quoted_text(index_node)
+                            .is_some_and(|text| text.trim().is_empty())
+                        && named_child(postfix, "assignee").is_err()
+                        && !list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty())
+                    {
+                        return Ok(Expr::ZenSlice(Box::new(operand)));
+                    }
                     // `@a[0] = 1`: rakudo folds an assignment to a subscript
                     // into the postcircumfix's `assignee`; the parser keeps it
                     // as `IndexAssign`.

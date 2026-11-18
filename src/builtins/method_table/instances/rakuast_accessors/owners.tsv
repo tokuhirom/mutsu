@@ -300,6 +300,7 @@ RakuAST::Postfix	colonpairs	RakuAST::Postfixish
 RakuAST::Postfix	is-resolved	RakuAST::Postfix
 RakuAST::Postfix	operator	RakuAST::Postfix
 RakuAST::Postfix	resolution	RakuAST::Postfix
+RakuAST::Postfix::Power	power	RakuAST::Postfix::Power
 RakuAST::Pragma	argument	RakuAST::Pragma
 RakuAST::Pragma	name	RakuAST::Pragma
 RakuAST::Pragma	off	RakuAST::Pragma

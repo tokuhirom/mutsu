@@ -9,7 +9,9 @@ mod accessors;
 mod adverb_origins;
 mod model_methods;
 mod positional_fields;
+mod postfix_power;
 mod routine_stub;
+mod zen_slice;
 pub use accessors::node_accessor;
 pub(crate) use doc_source::{origin_pod_source, pod_source};
 #[cfg(test)]
@@ -461,6 +463,7 @@ pub enum RakuAstClass {
     PrefixMultislice,
     ApplyPostfix,
     Postfix,
+    PostfixPower,
     Assignment,
     MetaInfixAssign,
     MetaInfixNegate,
@@ -864,6 +867,7 @@ impl RakuAstClass {
             PrefixMultislice => "RakuAST::Prefix::Multislice",
             ApplyPostfix => "RakuAST::ApplyPostfix",
             Postfix => "RakuAST::Postfix",
+            PostfixPower => "RakuAST::Postfix::Power",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
             MetaInfixNegate => "RakuAST::MetaInfix::Negate",
@@ -1414,6 +1418,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Prefix,
     RakuAstClass::ApplyPostfix,
     RakuAstClass::Postfix,
+    RakuAstClass::PostfixPower,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
     RakuAstClass::MetaInfixNegate,
@@ -4010,6 +4015,7 @@ fn multi_field_schema(
             (RakuAstClass::ApplyPostfix, &["operand", "postfix"][..])
         }
         ("RakuAST::Postfix", "new") => (RakuAstClass::Postfix, &["operator"][..]),
+        ("RakuAST::Postfix::Power", "new") => (RakuAstClass::PostfixPower, &["power"][..]),
         ("RakuAST::Block", "new") => (RakuAstClass::Block, &["body"][..]),
         ("RakuAST::CompUnit", "new") => (
             RakuAstClass::CompUnit,

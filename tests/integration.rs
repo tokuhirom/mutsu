@@ -18,6 +18,7 @@ mod my_enum_thread_registry_cow;
 mod profile_doc;
 
 mod adr0044_listop_fast_path;
+mod carray_store_takes_straight_line_lane;
 mod carrier_compile_cache_keyed_by_parse_site;
 mod carrier_compile_cache_serves_whenever_callbacks;
 mod closure_call_intern_budget;
@@ -40,6 +41,7 @@ mod mzef_shim;
 mod name_resolution_stats;
 mod named_call_intern_budget;
 mod nested_sub_in_block_no_otf_recompile;
+mod nextcallee_continuation_skips_template;
 mod param_default_literal_binds_directly;
 mod profile_allocations;
 mod profile_counts;

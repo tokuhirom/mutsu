@@ -22,7 +22,9 @@ use crate::symbol::Symbol;
 pub(crate) const BOOTSTRAPATTR_MARKER: &str = "__mutsu_is_bootstrapattr";
 
 pub(crate) fn is_bootstrapattr(value: &Value) -> bool {
-    matches!(value.view(), ValueView::Instance { attributes, .. }
+    // A lazy Match is never one, and viewing it would materialize it.
+    !value.is_lazy_match_value()
+        && matches!(value.view(), ValueView::Instance { attributes, .. }
         if attributes.as_map().get(crate::symbol::wk::bootstrapattr_marker()).is_some_and(Value::truthy))
 }
 
