@@ -35,8 +35,8 @@ impl Interpreter {
             );
             // Check direct composed roles and transitive sub-roles
             let check_transitive =
-                |class_composed: &rustc_hash::FxHashMap<String, Vec<String>>,
-                 role_parents: &rustc_hash::FxHashMap<String, Vec<String>>,
+                |class_composed: &crate::runtime::registry_sharded_map::ShardedMap<String, Vec<String>>,
+                 role_parents: &crate::runtime::registry_sharded_map::ShardedMap<String, Vec<String>>,
                  cn: &str|
                  -> Option<Value> {
                     let composed = class_composed.get(cn).cloned().unwrap_or_default();

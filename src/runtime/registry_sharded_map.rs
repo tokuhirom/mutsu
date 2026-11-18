@@ -221,6 +221,18 @@ impl<K: Hash + Eq + Clone, V: Clone> FromIterator<(K, V)> for ShardedMap<K, V> {
     }
 }
 
+impl<K, V, Q> std::ops::Index<&Q> for ShardedMap<K, V>
+where
+    K: Hash + Eq + Borrow<Q>,
+    Q: Hash + Eq + ?Sized,
+{
+    type Output = V;
+    // Cost: O(|key|) expected. Panics on a missing key, as `HashMap` does.
+    fn index(&self, key: &Q) -> &V {
+        self.get(key).expect("ShardedMap: key not present")
+    }
+}
+
 impl<'a, K: Hash + Eq, V> IntoIterator for &'a ShardedMap<K, V> {
     type Item = (&'a K, &'a V);
     type IntoIter = Box<dyn Iterator<Item = (&'a K, &'a V)> + 'a>;

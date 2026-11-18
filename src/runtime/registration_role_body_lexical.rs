@@ -48,7 +48,7 @@ impl Interpreter {
             role.methods = methods.clone();
         }
         if let Some(candidates) = registry.role_candidates.get_mut(owner) {
-            for candidate in candidates {
+            for candidate in candidates.iter_mut() {
                 if candidate.role_def.role_id == role_id {
                     candidate.role_def.methods = methods.clone();
                 }
