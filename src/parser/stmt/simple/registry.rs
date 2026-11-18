@@ -146,6 +146,9 @@ fn resolve_infix_symbol_precedence(symbol: &str) -> Option<i32> {
         // declared `is equiv<Z>` takes a whole comma list as its operand
         // (#9405).
         "Z" | "X" | "..." | "...^" | "\u{2026}" | "\u{2026}^" | "minmax" => Some(PREC_SEQUENCE),
+        // The comma operator, so `is looser<,>` reaches the list-infix level
+        // and the operator's right operand is the whole comma list (#18094).
+        "," => Some(PREC_COMMA),
         _ => {
             // Check if it's a user-defined op with a registered level; a
             // declared one without a precedence trait sits at the additive

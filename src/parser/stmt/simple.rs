@@ -451,6 +451,12 @@ pub(crate) fn eval_preseed_active() -> bool {
 /// Numeric precedence levels for built-in operator categories.
 /// Higher values mean tighter binding.
 pub(crate) const PREC_SEQUENCE: i32 = 10;
+/// The comma operator: one step tighter than the list-infix level and looser
+/// than `||`. It is only a reference level for `is looser<,>` / `is
+/// tighter<,>` / `is equiv<,>` — the comma itself is parsed by the list layer,
+/// not by the precedence climb. An operator declared `is looser<,>` lands at or
+/// below [`PREC_SEQUENCE`] and so takes a whole comma list as its operand.
+pub(crate) const PREC_COMMA: i32 = 11;
 /// `||` `^^` `//` and `&&`: looser than structural/comparison, tighter than the
 /// list-infix level. A user operator declared `is equiv(&infix:<||>)` lands here.
 pub(in crate::parser) const PREC_OR_OR: i32 = 12;
