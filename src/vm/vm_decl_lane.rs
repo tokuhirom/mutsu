@@ -121,13 +121,15 @@ impl Interpreter {
     }
 
     /// The `SetLocalDecl` store of an env-free declaration whose value is an
-    /// ordinary scalar: write the slot and nothing else.
+    /// ordinary scalar, Array, Hash or object: write the slot and nothing else.
     ///
     /// Everything the generic path would do for this store is inert under the
     /// conditions below, in the order that path reaches it: the marks are only
     /// the declaration's own (no bind, rebind, `constant`, shaped or raw-param
-    /// flavour); the value is a tag-probed inert payload (so no Proxy fetch,
-    /// Seq reification, itemization or `Nil`-to-type-object reset); the slot
+    /// flavour); the value is a tag-probed plain payload (so no Proxy fetch,
+    /// Seq reification or `Nil`-to-type-object reset), and an aggregate gets
+    /// the `$` container's itemization exactly as the plain `$x = v` store
+    /// (`exec_set_local_scalar_fast`) gives it; the slot
     /// holds no write-through cell; a declared constraint is the identity for
     /// the value ([`Interpreter::native_typed_store_is_identity`]); the env
     /// mirror is skipped exactly as the generic store skips it for a
@@ -165,7 +167,12 @@ impl Interpreter {
         let Some(v) = self.stack.last() else {
             return false;
         };
-        if !v.is_inert_scalar_store_payload() || !self.locals[idx].is_plain_scalar_store_slot() {
+        // Any value the plain `$x = v` lane stores (`exec_set_local_scalar_fast`)
+        // -- an Array, Hash or object as well as an inert scalar -- with the
+        // same value shaping below. The payload probe excludes every value
+        // that unwraps, reifies or writes through (a container, Proxy, Seq,
+        // lazy list, Slip) and `Nil`, which resets to the type object.
+        if !v.is_plain_scalar_store_payload() || !self.locals[idx].is_plain_scalar_store_slot() {
             return false;
         }
         if Self::slot_type_constraint_possible(code, idx)
@@ -175,6 +182,13 @@ impl Interpreter {
         }
         // -- committed: from here the store cannot fall back --
         let v = self.stack.pop().unwrap_or(Value::NIL);
+        // The `$` container's itemization, as the plain store lane applies
+        // it (an inert scalar is its own itemization).
+        let v = if v.is_inert_scalar_store_payload() {
+            v
+        } else {
+            Self::itemize_scalar_store_value(v)
+        };
         self.mark_ctx.consume_for_store();
         // The declaration steps the generic store runs unconditionally.
         self.clear_var_default(name);
