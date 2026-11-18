@@ -170,7 +170,18 @@ impl Interpreter {
                     (ValueView::RakuAst(a), ValueView::RakuAst(b)) => {
                         std::ptr::eq(a, b) || *a == *b
                     }
-                    _ => false,
+                    // Any other object (a Promise, a Lock, a Str) bound by
+                    // both names with no Scalar of their own is the object
+                    // itself: `my $p := Promise.new; my $q := $p` or a
+                    // `$!attr := $v` bound in another method (#18024).
+                    _ => {
+                        !self.operand_denotes_scalar_container(code, left_name)
+                            && !self.operand_denotes_scalar_container(code, right_name)
+                            && crate::runtime::utils::values_same_object(
+                                &left.deref_container(),
+                                &right.deref_container(),
+                            )
+                    }
                 },
             }
         };
