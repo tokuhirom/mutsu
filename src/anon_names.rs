@@ -188,16 +188,3 @@ pub(crate) fn next_id(kind: AnonKind, global: &AtomicU64) -> u64 {
     });
     content.unwrap_or_else(|| global.fetch_add(1, Ordering::Relaxed))
 }
-
-/// Whether `name` is the marker of an unnamed class or grammar declaration
-/// (`class :: { ... }`, `__ANON_CLASS_<n>__` / `__ANON_GRAMMAR_<n>__`).
-// Cost: O(|name|).
-pub(crate) fn is_anon_class_name(name: &str) -> bool {
-    name.strip_suffix("__").is_some_and(|inner| {
-        ["__ANON_CLASS_", "__ANON_GRAMMAR_"].iter().any(|prefix| {
-            inner
-                .strip_prefix(prefix)
-                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-        })
-    })
-}
