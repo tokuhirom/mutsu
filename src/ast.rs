@@ -2708,6 +2708,11 @@ pub(crate) enum Stmt {
         /// `red-compile`) finds them there, as rakudo's finds the import in
         /// the block's pad; the scan's scopes are gone after the parse.
         imports: Vec<String>,
+        /// The statement's parse site (ADR-17558): the key under which the
+        /// map its module's `sub EXPORT` returned when the parse loaded the
+        /// module is kept, so every run of the statement installs that map
+        /// rather than running the hook again (`0`: the parse took no site).
+        site: u32,
     },
     /// `no Module ...;` — disable pragma/module effects for current lexical scope.
     No {

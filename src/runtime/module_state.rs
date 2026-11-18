@@ -605,7 +605,14 @@ pub(crate) struct ModuleState {
     /// `use`'s import in position installs the oldest entry instead of
     /// running the hook a second time (`rerun_module_export`).
     pub(crate) parse_time_hook_results:
-        HashMap<String, std::collections::VecDeque<(Value, Vec<GeneratedLexical>)>>,
+        HashMap<String, std::collections::VecDeque<(u32, Value, Vec<GeneratedLexical>)>>,
+    /// While a parse-time load runs for a `use`: that statement's parse site
+    /// (`Stmt::Use::site`), recorded with the hook's map so every run of the
+    /// statement installs it (`0`: none).
+    pub(crate) parse_time_hook_site: u32,
+    /// The parse site of the `use` statement whose import is running
+    /// (`OpCode::UseModule`), for `rerun_module_export` (`0`: none).
+    pub(crate) pending_use_site: u32,
     /// While a parse-time load runs: the `module_load_stack` depth at which
     /// a hook's importer is the unit being parsed, so only that hook's map
     /// is recorded in `parse_time_hook_results` (a dependency's hook imports
@@ -869,6 +876,8 @@ impl ModuleState {
             eval_hook_results: HashMap::new(),
             eval_hook_recording: false,
             parse_time_hook_results: HashMap::new(),
+            parse_time_hook_site: 0,
+            pending_use_site: 0,
             parse_time_hook_depth: None,
             foreign_main_clean_version: None,
             lexical_import_replays: Default::default(),
@@ -997,6 +1006,8 @@ impl ModuleState {
             eval_hook_results: self.eval_hook_results.clone(),
             eval_hook_recording: false,
             parse_time_hook_results: HashMap::new(),
+            parse_time_hook_site: 0,
+            pending_use_site: 0,
             parse_time_hook_depth: None,
             foreign_main_clean_version: self.foreign_main_clean_version,
             lexical_import_replays: self.lexical_import_replays.clone(),

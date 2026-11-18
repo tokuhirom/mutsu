@@ -4763,6 +4763,9 @@ pub(crate) enum OpCode {
         /// import binds are recorded there, for the call sites the block
         /// lexically encloses ([`Self::LexImportCall`]).
         lexical_set_idx: Option<u32>,
+        /// The `use` statement's parse site (`Stmt::Use::site`): the import
+        /// installs the `sub EXPORT` map the parse recorded under it.
+        site: u32,
     },
     /// Prefix of the [`Self::CallFunc`] at `ip + 1`, emitted for a bareword
     /// call lexically inside a block that `use`s a module (ADR-8751 stage 1).

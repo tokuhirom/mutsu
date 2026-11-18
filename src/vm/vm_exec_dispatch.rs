@@ -7928,9 +7928,21 @@ impl Interpreter {
                 tags_idx,
                 arg_count,
                 lexical_set_idx,
+                site,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_use_module_op(code, *name_idx, *tags_idx, *arg_count, *lexical_set_idx)?;
+                // The import below installs the hook map the parse recorded
+                // for this statement; the site is this op's alone.
+                let outer_site = std::mem::replace(&mut self.module.pending_use_site, *site);
+                let result = self.exec_use_module_op(
+                    code,
+                    *name_idx,
+                    *tags_idx,
+                    *arg_count,
+                    *lexical_set_idx,
+                );
+                self.module.pending_use_site = outer_site;
+                result?;
                 *ip += 1;
             }
             // Cost: O(1): one exported-variable lookup.

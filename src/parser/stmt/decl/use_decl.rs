@@ -36,6 +36,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 condition: None,
                 if_imports: Vec::new(),
                 imports: Vec::new(),
+                site: 0,
             },
         ));
     }
@@ -87,6 +88,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 condition: None,
                 if_imports: Vec::new(),
                 imports: Vec::new(),
+                site: 0,
             },
         ));
     }
@@ -307,6 +309,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // (a `BEGIN`, a `multi`/`proto`) happen at parse time too (§7.1), a `use`
     // after one loads in the prologue, so the module never runs, or installs
     // candidates, ahead of what was written before it.
+    let site = crate::compile_time_loader::next_use_site();
     if module != "lib" && !super::super::simple::unit_compile_time_effect_seen() {
         let lib_paths = super::super::simple::parser_lib_paths();
         let spec = format!("{module}{dist_selectors}");
@@ -325,6 +328,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             nested: super::super::simple::in_nested_scope(),
             activates_slang: super::super::simple::module_activates_slang(&module),
             package: super::super::simple::statement_package(),
+            site,
             lib_paths: &lib_paths,
         };
         match crate::compile_time_loader::load_use(&request) {
@@ -378,6 +382,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         condition,
         if_imports,
         imports,
+        site,
     };
     // `use Foo ..., proto sub MAIN(|) {*}` passes the proto object to Foo's
     // EXPORT routine. The proto declaration is part of the use argument's
@@ -611,6 +616,7 @@ fn parse_use_smiley_pragma<'a>(input: &'a str, pragma_name: &'a str) -> PResult<
             condition: None,
             if_imports: Vec::new(),
             imports: Vec::new(),
+            site: 0,
         },
     ))
 }

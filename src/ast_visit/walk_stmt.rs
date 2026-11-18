@@ -222,6 +222,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             condition,
             if_imports: _,
             imports: _,
+            site: _,
         } => {
             v.visit_name(module, NameKind::Module);
             if let Some(e) = arg {
