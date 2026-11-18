@@ -28,7 +28,10 @@
 //! - `map`, `grep` and `first` are left to the full path for every inline
 //!   receiver (the variable lane tells a named array apart; this one cannot);
 //! - a receiver with no shape is never answered here (the shapeless lane keys
-//!   on the receiver variable's name).
+//!   on the receiver variable's name), and neither is a collection: only an
+//!   immutable scalar or a `Match` is admitted (`inline_receiver_admitted`),
+//!   because the plain path streams or reifies a deferred `Seq` a collection
+//!   holds before its native probe.
 //!
 //! In debug builds the full path still runs for a pure row and must agree
 //! (`check_method_site_lane`), so CI's `debug-tap` job checks every hit over
@@ -62,6 +65,10 @@ impl Interpreter {
             "perl" | "throw" | "of" | "package_at_key" | "ASSIGN-KEY"
         ) || self.retype_receiver_needed(code, name_idx)
         {
+            return None;
+        }
+        let base = self.stack.len().checked_sub(arity as usize + 1)?;
+        if !inline_receiver_admitted(&self.stack[base]) {
             return None;
         }
         self.site_lane_answer(code, ip, name_idx, arity, None, arg_sources_idx)
@@ -109,4 +116,20 @@ impl Interpreter {
             }
         }
     }
+}
+
+/// Whether the lane answers a call on this inline receiver: an immutable
+/// scalar, or a `Match` (eager, lazy, or a grammar cursor the cursor-match
+/// lane decides). A collection is left to the full path, which streams or
+/// reifies a deferred `Seq` the receiver holds (a lazy `.keys`, a `Pair`
+/// whose value is a `.map`) before the native probe, where the variable
+/// lane's receiver never holds one unreified.
+// Cost: O(1), a tag probe.
+fn inline_receiver_admitted(receiver: &Value) -> bool {
+    use crate::value::DispatchShape as S;
+    receiver.is_lazy_match_value()
+        || matches!(
+            receiver.dispatch_shape(),
+            Some(S::Str | S::Int | S::Num | S::Rat | S::FatRat | S::Complex | S::Bool | S::Match)
+        )
 }

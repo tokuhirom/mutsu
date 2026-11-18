@@ -12,6 +12,9 @@ The plain opcode now asks the same lane first (`vm_call_method_site_lane`),
 with the same guard and the same per-site memo. It adds the checks the plain
 path makes by name before its native probe: `.perl` (renamed to `.raku`),
 `.throw` (a resumable throw site), a native array's retyped answer, and the
-`of`/stash arms. `map`/`grep`/`first` and receivers without a shape stay on
-the full path. In debug builds the full path still runs for every pure row
+`of`/stash arms. Only an immutable scalar (`Str`, `Int`, `Num`, `Rat`, `FatRat`,
+`Complex`, `Bool`) or a `Match` is admitted as an inline receiver: the plain
+path streams or reifies a deferred `Seq` that a collection holds (a lazy
+`.keys`, a `Pair` whose value is a `.map`) before its native probe, and the
+debug cross-check caught the lane answering such receivers without that. In debug builds the full path still runs for every pure row
 and must agree, so the TAP suite checks every hit.
