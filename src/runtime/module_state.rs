@@ -156,8 +156,7 @@ pub(crate) struct ModuleState {
     /// Each loaded package-less module's own `multi`/`proto` candidates, kept
     /// so a re-`use` can put them back for the module's `sub EXPORT` after an
     /// import-scope pop dropped them (#11246).
-    pub(crate) module_own_families:
-        HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
+    pub(crate) module_own_families: HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
     pub(crate) loaded_modules: std::sync::Arc<HashSet<String>>,
     /// The lexical pad `CompUnit::Handle.unit` answers for each loaded unit,
     /// built on the first ask so every later ask returns the same `Hash` and
@@ -353,8 +352,7 @@ pub(crate) struct ModuleState {
     /// An exported variable/constant a module re-exports from another module
     /// (`UNIT::EXPORT::{$tag} := Other::EXPORT::{$tag}`): `(module, name)` ->
     /// the module that owns the value.
-    pub(crate) reexported_var_owners:
-        std::sync::Arc<HashMap<(String, String), String>>,
+    pub(crate) reexported_var_owners: std::sync::Arc<HashMap<(String, String), String>>,
     /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
     /// mixed a role into it) keyed by package and routine name. Captured at
     /// `is export` registration time so `import` can restore the `&name` env
@@ -528,17 +526,14 @@ pub(crate) struct ModuleState {
     /// with those of the earlier `use`s of its scope: a later `use` of the
     /// same family name adds its candidates to the earlier ones rather than
     /// hiding them.
-    pub(crate) lexical_set_families: HashMap<
-        Symbol,
-        HashMap<Symbol, Vec<std::sync::Arc<crate::ast::FunctionDef>>>,
-    >,
+    pub(crate) lexical_set_families:
+        HashMap<Symbol, HashMap<Symbol, Vec<std::sync::Arc<crate::ast::FunctionDef>>>>,
     /// The values a `sub EXPORT` hook returned for the names the importing
     /// block declares itself (ADR-8751), keyed by the use's lexical import
     /// set id and then by the name's declaration key (`x`, `@a`, the term key
     /// of a sigilless one). Refilled by every run of the `use`; the block's
     /// `OpCode::GetHookExport` bindings read it.
-    pub(crate) lexical_import_hook_values:
-        HashMap<Symbol, std::sync::Arc<HashMap<Symbol, Value>>>,
+    pub(crate) lexical_import_hook_values: HashMap<Symbol, std::sync::Arc<HashMap<Symbol, Value>>>,
     /// The ids of the `lexical_import_sets` that bind a built-in operator's
     /// dispatcher (ADR-8751 stage 2). A built-in op compiled under an import
     /// chain asks the chain only while one exists (#13906).

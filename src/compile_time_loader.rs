@@ -127,6 +127,15 @@ pub(crate) trait CompileTimeLoader {
         module: &str,
         args: Option<&[crate::slang_link::SlangUseArg]>,
     ) -> Option<crate::slang_link::SlangActivation>;
+
+    /// Run one production of a slang this loader loaded (ADR-17558 slice 4b):
+    /// the slang's token and action, as the activation interpreter's host
+    /// does, answering the core productions it asks for through `back_call`.
+    fn run_slang_hook(
+        &mut self,
+        request: &crate::slang_link::HookRequest<'_>,
+        back_call: &mut crate::slang_link::BackCall<'_>,
+    ) -> crate::slang_link::HostAnswer;
 }
 
 thread_local! {
@@ -206,6 +215,17 @@ pub(crate) fn slang_activation(
     args: Option<&[crate::slang_link::SlangUseArg]>,
 ) -> Option<crate::slang_link::SlangActivation> {
     with_loader(|loader| loader.slang_activation(module, args)).flatten()
+}
+
+/// Run a slang production on this thread's current loader (the program
+/// host, [`crate::slang_link::SlangHost::Program`]); `None` when no loader is
+/// reachable.
+// Cost: O(1) when there is no loader; the slang's token and action otherwise.
+pub(crate) fn run_slang_hook(
+    request: &crate::slang_link::HookRequest<'_>,
+    back_call: &mut crate::slang_link::BackCall<'_>,
+) -> Option<crate::slang_link::HostAnswer> {
+    with_loader(|loader| loader.run_slang_hook(request, back_call))
 }
 
 /// Run `call` on this thread's innermost loader, if one is reachable: none

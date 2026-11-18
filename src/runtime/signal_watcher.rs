@@ -12,9 +12,9 @@ use crate::value::Value;
 mod unix_impl;
 
 #[cfg(unix)]
-pub(super) use unix_impl::{register_signal, register_signal_queue};
-#[cfg(unix)]
 pub(crate) use unix_impl::sweep_retired_registrations;
+#[cfg(unix)]
+pub(super) use unix_impl::{register_signal, register_signal_queue};
 
 /// No-op stub for non-Unix platforms (e.g., WASM).
 #[cfg(not(unix))]

@@ -199,7 +199,8 @@ impl Interpreter {
         let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
-                self.import_multi_candidate_merged(&target_key, def.clone()).0
+                self.import_multi_candidate_merged(&target_key, def.clone())
+                    .0
             } else {
                 let key = Symbol::intern(&target_key);
                 self.routines_mut().functions_mut().insert(key, def.clone());
@@ -340,7 +341,10 @@ impl Interpreter {
             return;
         };
         let entries: Vec<(String, Value)> = match symbols.view() {
-            ValueView::Hash(map) => map.iter().map(|(k, v)| (k.to_string(), v.clone())).collect(),
+            ValueView::Hash(map) => map
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
             _ => return,
         };
         let target = crate::qualified::qualified_text(export_package, tag)
@@ -445,7 +449,8 @@ impl Interpreter {
         let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
-                self.import_multi_candidate_merged(&target_key, def.clone()).0
+                self.import_multi_candidate_merged(&target_key, def.clone())
+                    .0
             } else {
                 let key = Symbol::intern(&target_key);
                 self.routines_mut()
@@ -568,7 +573,10 @@ impl Interpreter {
                 removed_keys.push(key);
             }
         }
-        let proto = self.routines_mut().proto_functions_mut().remove(&target_sym);
+        let proto = self
+            .routines_mut()
+            .proto_functions_mut()
+            .remove(&target_sym);
         if let Some(def) = proto {
             self.log_import_write(crate::runtime::ImportWrite::Proto(target_sym, Some(def)));
         }
@@ -725,13 +733,17 @@ impl Interpreter {
             .module_block_packages
             .get(&crate::symbol::Symbol::intern(module))
             .map(|pkg| pkg.as_str().to_string());
-        [Some(module.to_string()), declared, block, Some("GLOBAL".to_string())]
-            .into_iter()
-            .flatten()
-            .find_map(|owner| table.get(owner.as_str()).and_then(|keys| keys.get(name)))
-            .cloned()
+        [
+            Some(module.to_string()),
+            declared,
+            block,
+            Some("GLOBAL".to_string()),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(|owner| table.get(owner.as_str()).and_then(|keys| keys.get(name)))
+        .cloned()
     }
-
 
     /// Record the importer's short name for an exported enum type that a
     /// block-scoped binding (`my \Errno := ...`) otherwise carries alone, so a
@@ -880,7 +892,8 @@ impl Interpreter {
             })
             .or_else(|| {
                 self.lexicals
-                    .package_lexicals.read()
+                    .package_lexicals
+                    .read()
                     .get(module)
                     .and_then(|entries| entries.get(name).or_else(|| entries.get(bare)))
                     .cloned()
@@ -1162,16 +1175,16 @@ impl Interpreter {
             // export.  Prefer the method candidates when rebuilding the
             // importing scope, otherwise the exact plain sub steals the
             // export simply because it sorts first in this lookup.
-            let exported_method_candidates = self
-                .routines()
-                .functions
-                .get(&source_single_sym)
-                .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
-                && source_family.iter().any(|key| {
-                    self.routines().functions.get(key).is_some_and(|def| {
-                        def.declarator == crate::ast::RoutineDeclarator::Method
-                    })
-                });
+            let exported_method_candidates =
+                self.routines()
+                    .functions
+                    .get(&source_single_sym)
+                    .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
+                    && source_family.iter().any(|key| {
+                        self.routines().functions.get(key).is_some_and(|def| {
+                            def.declarator == crate::ast::RoutineDeclarator::Method
+                        })
+                    });
             let bare_file_multi = bare_file_module
                 && !self
                     .routines()
@@ -1259,7 +1272,12 @@ impl Interpreter {
                 let own_alias = format!("{module}::EXPORT::ALL::{name}");
                 let own_family = self.routines().functions.family_keys(&own_alias);
                 let mut own_entries: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
-                self.rebase_family_entries(&own_alias, &own_family, &target_single, &mut own_entries);
+                self.rebase_family_entries(
+                    &own_alias,
+                    &own_family,
+                    &target_single,
+                    &mut own_entries,
+                );
                 for (key, def) in own_entries {
                     if !function_entries
                         .iter()
@@ -1452,13 +1470,14 @@ impl Interpreter {
             // intern also made the import's cost vary from run to run.
             let global_proto_key = (unit_global_subs.contains_key(&name) || bare_file_module)
                 .then(|| Symbol::intern(&format!("GLOBAL::{name}")));
-            let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = [Some(source_single_sym), global_proto_key]
-                .into_iter()
-                .flatten()
-                .filter(|_| !family_bound_lexically)
-                .filter_map(|k| self.routines().proto_functions.get(&k).cloned())
-                .map(|v| (Symbol::intern(&target_single), v))
-                .collect();
+            let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> =
+                [Some(source_single_sym), global_proto_key]
+                    .into_iter()
+                    .flatten()
+                    .filter(|_| !family_bound_lexically)
+                    .filter_map(|k| self.routines().proto_functions.get(&k).cloned())
+                    .map(|v| (Symbol::intern(&target_single), v))
+                    .collect();
             for (k, v) in proto_entries {
                 let prior = self.routines().proto_functions.get(&k).cloned();
                 self.log_import_write(crate::runtime::ImportWrite::Proto(k, prior));
@@ -1473,8 +1492,8 @@ impl Interpreter {
             // `proto`: recording the name in `proto_subs` made the operator
             // look shadowed, so a core candidate never competed with them
             // (Color's `infix:<*>` made CSS::Units' own `($v * $n)` recurse).
-            let records_proto_name = imported_real_proto
-                || (bare_file_multi && !name.starts_with("infix:<"));
+            let records_proto_name =
+                imported_real_proto || (bare_file_multi && !name.starts_with("infix:<"));
             if records_proto_name && !family_bound_lexically {
                 let was_present = self.routines().proto_subs_contains(&target_single);
                 if !was_present {

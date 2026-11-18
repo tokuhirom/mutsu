@@ -28,7 +28,7 @@ impl Interpreter {
         let result = self.parse_with_loader(|| {
             crate::runtime::compile_time_use::parsing_for_ast(|| {
                 if compunit {
-                crate::rakuast::str_dot_ast_compunit(&scope, source, &Self::str_ast_unit_check)
+                    crate::rakuast::str_dot_ast_compunit(&scope, source, &Self::str_ast_unit_check)
                 } else {
                     crate::rakuast::str_dot_ast_checked(&scope, source, &Self::str_ast_unit_check)
                 }

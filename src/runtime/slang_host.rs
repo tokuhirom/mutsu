@@ -22,8 +22,8 @@
 //! The channel types are in [`crate::slang_link`], a leaf the parser may name.
 
 use super::*;
-use std::cell::RefCell;
 use crate::slang_link::{FromHost, HostAnswer, HostEnd, ToHost};
+use std::cell::RefCell;
 
 thread_local! {
     static HOST_LINK: RefCell<Option<HostEnd>> = const { RefCell::new(None) };
@@ -55,6 +55,24 @@ const HOST_PRELUDE: &str = include_str!("slang_host_raku/prelude.raku");
 /// (`$*R`, `$*CU`, `attach`). The unit evaluates them too, to replay an action there
 /// (ADR-17243).
 pub(super) const HOST_STUBS: &str = include_str!("slang_host_raku/stubs.raku");
+
+thread_local! {
+    /// Whether this thread's interpreter evaluated [`HOST_STUBS`]: the host's
+    /// entry and the replay's both need them, and the program interpreter,
+    /// which is the host of a slang it loaded (ADR-17558 slice 4b), may
+    /// evaluate both.
+    static STUBS_LOADED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// [`HOST_STUBS`] the first time on this thread, then nothing.
+// Cost: O(1).
+pub(super) fn host_stubs_once() -> &'static str {
+    if STUBS_LOADED.with(|l| l.replace(true)) {
+        ""
+    } else {
+        HOST_STUBS
+    }
+}
 
 /// The entry of the host: runs one production and answers its node.
 const HOST_ENTRY_SOURCE: &str = include_str!("slang_host_raku/entry.raku");
@@ -99,30 +117,51 @@ impl Interpreter {
         block: Option<Value>,
         span: Option<crate::slang_link::ActionSpan>,
     ) -> bool {
-        let depth = HOOK_DEPTH.with(std::cell::Cell::get);
-        let answer = if depth >= MAX_HOOK_DEPTH {
-            Err(format!(
-                "slang productions nest deeper than {MAX_HOOK_DEPTH} levels"
-            ))
-        } else {
-            HOOK_DEPTH.with(|d| d.set(depth + 1));
-            // Composed outside the class log: the host's own grammar and
-            // actions are not classes the production installed, so they must
-            // not be replayed into the unit (where the grammar would lack its
-            // host base's `panic`).
-            let composed = self.compose_slang_host();
-            super::slang_class_replay::begin_class_log();
-            let answer =
-                composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block, span));
-            super::slang_class_replay::end_class_log();
-            HOOK_DEPTH.with(|d| d.set(depth));
-            answer
-        };
+        let answer = self.answer_slang_hook(rule, source, start, node, block, span, false);
         HOST_LINK.with(|l| {
             l.borrow()
                 .as_ref()
                 .is_some_and(|link| link.to_parser.send(FromHost::Done(answer)).is_ok())
         })
+    }
+
+    /// Run one hook: compose the host's grammar and actions from the slang's
+    /// roles, match the production and run its action. `live`: the host is the
+    /// program's own interpreter (ADR-17558 slice 4b), so what the production
+    /// minted and its site are recorded as having happened in this process.
+    // Cost: the token and the action.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn answer_slang_hook(
+        &mut self,
+        rule: &str,
+        source: &str,
+        start: usize,
+        node: Option<Value>,
+        block: Option<Value>,
+        span: Option<crate::slang_link::ActionSpan>,
+        live: bool,
+    ) -> HostAnswer {
+        let depth = HOOK_DEPTH.with(std::cell::Cell::get);
+        if depth >= MAX_HOOK_DEPTH {
+            return Err(format!(
+                "slang productions nest deeper than {MAX_HOOK_DEPTH} levels"
+            ));
+        }
+        HOOK_DEPTH.with(|d| d.set(depth + 1));
+        // Composed outside the class log: the host's own grammar and
+        // actions are not classes the production installed, so they must
+        // not be replayed into the unit (where the grammar would lack its
+        // host base's `panic`).
+        let composed = self.compose_slang_host();
+        super::slang_class_replay::begin_class_log();
+        let answer =
+            composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block, span));
+        let minted = super::slang_class_replay::end_class_log_minted();
+        if live {
+            super::slang_program_host::note_live_hook(minted);
+        }
+        HOOK_DEPTH.with(|d| d.set(depth));
+        answer
     }
 
     /// The host's entry sub, compiled on first use.
@@ -132,7 +171,10 @@ impl Interpreter {
             return Ok(run);
         }
         let entry = self
-            .eval_code_string(&format!("{HOST_PRELUDE}{HOST_STUBS}{HOST_ENTRY_SOURCE}"))
+            .eval_code_string(&format!(
+                "{HOST_PRELUDE}{}{HOST_ENTRY_SOURCE}",
+                host_stubs_once()
+            ))
             .map_err(|e| e.message.to_string())?;
         HOST_ENTRY.with(|e| *e.borrow_mut() = Some(entry.clone()));
         Ok(entry)
@@ -171,43 +213,38 @@ impl Interpreter {
         let grammar_roles = Value::array(self.regex_state.slang_grammar_roles.clone());
         let action_roles = Value::array(self.regex_state.slang_action_roles.clone());
         let answer = self
-            .call_sub_value(
-                run,
-                {
-                    let mut args = vec![
-                        Value::str(rule.to_string()),
-                        Value::str(source.to_string()),
-                        grammar_roles,
-                        action_roles,
-                        Value::pair(
-                            "pos".to_string(),
-                            Value::int(
-                                crate::value::match_helpers::cp_to_grapheme_index(source, start)
-                                    as i64,
-                            ),
+            .call_sub_value(run, {
+                let mut args = vec![
+                    Value::str(rule.to_string()),
+                    Value::str(source.to_string()),
+                    grammar_roles,
+                    action_roles,
+                    Value::pair(
+                        "pos".to_string(),
+                        Value::int(
+                            crate::value::match_helpers::cp_to_grapheme_index(source, start) as i64,
                         ),
-                    ];
-                    if let Some(node) = node {
-                        args.push(Value::pair("node".to_string(), node));
+                    ),
+                ];
+                if let Some(node) = node {
+                    args.push(Value::pair("node".to_string(), node));
+                }
+                if let Some(block) = block {
+                    args.push(Value::pair("block".to_string(), block));
+                }
+                if let Some(span) = span {
+                    args.push(Value::pair(
+                        "to".to_string(),
+                        Value::int(crate::value::match_helpers::cp_to_grapheme_index(
+                            source, span.end,
+                        ) as i64),
+                    ));
+                    if let Some(file) = span.file {
+                        args.push(Value::pair("file".to_string(), Value::str(file)));
                     }
-                    if let Some(block) = block {
-                        args.push(Value::pair("block".to_string(), block));
-                    }
-                    if let Some(span) = span {
-                        args.push(Value::pair(
-                            "to".to_string(),
-                            Value::int(
-                                crate::value::match_helpers::cp_to_grapheme_index(source, span.end)
-                                    as i64,
-                            ),
-                        ));
-                        if let Some(file) = span.file {
-                            args.push(Value::pair("file".to_string(), Value::str(file)));
-                        }
-                    }
-                    args
-                },
-            )
+                }
+                args
+            })
             .map_err(|e| e.message.to_string())?;
         let Some(items) = answer.as_list_items() else {
             return Ok(None);
@@ -286,7 +323,11 @@ impl Interpreter {
                 .get_dynamic_var("*IN_REGEX_ASSERTION")
                 .is_ok_and(|v| v.truthy()),
         };
-        let answer = self.slang_back_call(&rule, pos, dynamics)?;
+        let answer = if super::slang_program_host::program_hook_running() {
+            self.program_back_call(&rule, pos, dynamics)
+        } else {
+            self.slang_back_call(&rule, pos, dynamics)?
+        };
         let class = class_name.resolve();
         match answer.map_err(RuntimeError::new)? {
             Some((end, node)) => {
@@ -297,9 +338,7 @@ impl Interpreter {
                 }
                 Ok(cursor)
             }
-            None => Ok(Self::make_cursor_value(
-                &class, &orig, pos as i64, -1, true,
-            )),
+            None => Ok(Self::make_cursor_value(&class, &orig, pos as i64, -1, true)),
         }
     }
 

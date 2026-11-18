@@ -55,10 +55,7 @@ impl Interpreter {
     /// Prepend [`OPERATOR_PROPERTIES_PRELUDE`] to a unit that names
     /// `OperatorProperties` or asks an operator for its `properties`.
     // Cost: O(n), n = source bytes (one substring search when absent).
-    pub(super) fn inject_operator_properties_prelude(
-        source: &CodeText<'_>,
-        stmts: &mut Vec<Stmt>,
-    ) {
+    pub(super) fn inject_operator_properties_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !(source.contains("OperatorProperties") || source.contains(".properties"))
             || source.contains("class OperatorProperties")
         {

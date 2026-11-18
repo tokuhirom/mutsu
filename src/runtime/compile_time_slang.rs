@@ -8,9 +8,8 @@
 //! and the `EXPORTHOW` declarators the hook bound — is kept per `use`
 //! ([`ParseTimeSlangActivation`]) for the parser to read.
 //!
-//! A slang whose productions run on a slang host (ADR-15762) still gets that
-//! host from the activation interpreter (`slang_activation.rs`) until the
-//! host's hooks run on this interpreter too.
+//! A slang whose productions run on a slang host (ADR-15762) has this
+//! interpreter as its host (slice 4b, `slang_program_host.rs`).
 
 use super::regex_grammar_state::ParseTimeSlangActivation;
 use super::*;
@@ -29,6 +28,8 @@ impl Interpreter {
         load: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let rules_before = self.regex_state.defined_slang_rules.len();
+        let grammar_roles_before = self.regex_state.slang_grammar_roles.len();
+        let action_roles_before = self.regex_state.slang_action_roles.len();
         let declarators_before = self.regex_state.defined_slang_declarators.clone();
         let declares_before = self.exporthow_stash_keywords("DECLARE");
         let supersedes_before = self.exporthow_stash_keywords("SUPERSEDE");
@@ -51,16 +52,34 @@ impl Interpreter {
             }
         }
         result?;
-        let rules = self.regex_state.defined_slang_rules[rules_before..].to_vec();
-        // A production a slang host has to run cannot be answered here yet.
+        // What this load's own `define_slang` registered. A slang `use`d by the
+        // module's own compile registered for that compile, through a nested
+        // call of this function that recorded it and took it out again; the
+        // registrations leave the shared lists so an enclosing activation
+        // does not count them as its own.
+        let rules = self
+            .regex_state
+            .defined_slang_rules
+            .split_off(rules_before.min(self.regex_state.defined_slang_rules.len()));
+        let grammar_roles = self
+            .regex_state
+            .slang_grammar_roles
+            .split_off(grammar_roles_before.min(self.regex_state.slang_grammar_roles.len()));
+        let action_roles = self
+            .regex_state
+            .slang_action_roles
+            .split_off(action_roles_before.min(self.regex_state.slang_action_roles.len()));
+        // A production the slang adds runs on this interpreter, with the roles
+        // this load registered (`slang_program_host`).
         let hooked = rules.iter().any(|rule| {
             crate::parser::slang_hook_rule(&rule.name).is_some()
                 || crate::parser::slang_action_rule(&rule.name)
                 || crate::parser::slang_wrapper_rule(&rule.name)
         });
-        if hooked {
-            return Ok(());
-        }
+        let host = hooked.then_some(crate::slang_link::ProgramHost {
+            grammar_roles,
+            action_roles,
+        });
         let mut declarators: Vec<_> = self
             .regex_state
             .defined_slang_declarators
@@ -103,6 +122,7 @@ impl Interpreter {
                 rules,
                 declarators,
                 supersede_keywords,
+                host,
             });
         Ok(())
     }
@@ -125,7 +145,10 @@ impl Interpreter {
             rules: found.rules.clone(),
             declarators: found.declarators.clone(),
             supersede_keywords: found.supersede_keywords.clone(),
-            host: None,
+            host: found
+                .host
+                .clone()
+                .map(crate::slang_link::SlangHost::Program),
             exports: Vec::new(),
         })
     }

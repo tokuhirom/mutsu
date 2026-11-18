@@ -78,6 +78,8 @@ impl Interpreter {
             .first()
             .and_then(|e| e.as_list_items())
             .and_then(|parts| parts.get(3).and_then(Value::as_int));
+        // A production that ran live on this interpreter already ran its
+        // actions here (ADR-17558 slice 4b).
         if let Some(site) = site
             && !REPLAYED.with(|r| r.borrow_mut().insert(site))
         {
@@ -106,7 +108,7 @@ impl Interpreter {
         if entry.is_none() {
             let built = self.eval_code_string(&format!(
                 "{}{REPLAY_BUILDER}",
-                super::slang_host::HOST_STUBS
+                super::slang_host::host_stubs_once()
             ))?;
             REPLAY_ENTRY.with(|e| *e.borrow_mut() = Some(built.clone()));
             entry = Some(built);
@@ -139,9 +141,20 @@ impl Interpreter {
         // One actions class per set of roles, however many productions use it.
         let key = roles
             .as_list_items()
-            .map(|items| items.iter().map(Value::to_string_value).collect::<Vec<_>>().join(","))
+            .map(|items| {
+                items
+                    .iter()
+                    .map(Value::to_string_value)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
             .unwrap_or_default();
-        let cached = BUILT.with(|b| b.borrow().iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone()));
+        let cached = BUILT.with(|b| {
+            b.borrow()
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.clone())
+        });
         let built = match cached {
             Some(built) => built,
             None => {
@@ -151,7 +164,10 @@ impl Interpreter {
                 });
                 let built = self.call_sub_value(
                     entry,
-                    vec![roles, Value::str(format!("Mutsu::Slang::Replay::Actions{serial}"))],
+                    vec![
+                        roles,
+                        Value::str(format!("Mutsu::Slang::Replay::Actions{serial}")),
+                    ],
                 )?;
                 BUILT.with(|b| b.borrow_mut().push((key, built.clone())));
                 built
@@ -170,7 +186,11 @@ impl Interpreter {
         };
         let resolver = resolver.unwrap_or_else(|| parts.get(1).cloned().unwrap_or(Value::NIL));
         install(self, "*R".to_string(), resolver);
-        install(self, "*CU".to_string(), parts.get(2).cloned().unwrap_or(Value::NIL));
+        install(
+            self,
+            "*CU".to_string(),
+            parts.get(2).cloned().unwrap_or(Value::NIL),
+        );
         let _replay_unit =
             crate::unit_source_file::ReplayUnitGuard::enter(self.current_source_file_sym());
         let mut outcome = Ok(Value::NIL);
@@ -194,7 +214,10 @@ impl Interpreter {
             let Some(event) = event.as_list_items() else {
                 continue;
             };
-            let method = event.first().map(Value::to_string_value).unwrap_or_default();
+            let method = event
+                .first()
+                .map(Value::to_string_value)
+                .unwrap_or_default();
             let match_obj = event.get(1).cloned().unwrap_or(Value::NIL);
             let match_obj = self.unit_language_cursor(match_obj);
             if let Some(dynamics) = event.get(2).and_then(Value::as_list_items) {

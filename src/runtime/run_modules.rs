@@ -470,7 +470,9 @@ impl Interpreter {
     /// operators from imported modules without seeing non-exported subs.
     /// Walks the already-parsed statements (fresh or from the precomp cache)
     /// rather than re-reading and re-parsing the source file.
-    pub(super) fn extract_module_exported_operator_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+    pub(super) fn extract_module_exported_operator_names(
+        stmts: &[crate::ast::Stmt],
+    ) -> Vec<String> {
         let mut out = Vec::new();
         for stmt in stmts {
             if let crate::ast::Stmt::SubDecl {
@@ -591,9 +593,7 @@ impl Interpreter {
         // the previous value is restored rather than cleared.
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(source_path.to_string_lossy().to_string()));
-        let parse = || {
-            parse_dispatch::parse_compilation_unit_of(&preprocessed)
-        };
+        let parse = || parse_dispatch::parse_compilation_unit_of(&preprocessed);
         // The module's own `use`s load as its parser reaches them (ADR-17558),
         // with the module as their importing compunit, as when they load in
         // its prologue: what they publish (#7797) is the module's to see.
@@ -1097,9 +1097,11 @@ impl Interpreter {
                     crate::runtime::begin_prologue::order_unit(stmts)
                 };
                 let prologue_len = match &module_unit {
-                    Some(unit) => crate::anon_names::with_content_unit(unit.rewrite_session(), || {
-                        order(&mut stmts)
-                    }),
+                    Some(unit) => {
+                        crate::anon_names::with_content_unit(unit.rewrite_session(), || {
+                            order(&mut stmts)
+                        })
+                    }
                     None => order(&mut stmts),
                 };
                 crate::runtime::begin_prologue::split_package_bodies(&mut stmts);
@@ -1125,7 +1127,8 @@ impl Interpreter {
                 // A type used before the statement that declares it is a compile
                 // error of the module, as of any unit (ADR-15760 Amendment 1, 1a).
                 crate::rakuast::post_declared::check(&stmts, &crate::scope::NameScope::default())?;
-                let ast = super::module_load_facts::ModuleAst::loaded(stmts, prologue_len, path_text);
+                let ast =
+                    super::module_load_facts::ModuleAst::loaded(stmts, prologue_len, path_text);
                 (ast, facts, effects, precompiled)
             }
         };
@@ -1641,8 +1644,12 @@ impl Interpreter {
                 .filter(|k| k.contains('\u{0}') && !before_lexical_enums.contains(*k))
                 .cloned()
                 .collect();
-            self.record_unit_lexical_types(module_unit_for_loading_stack, lexical_enums_here.iter());
-            let exported_type_names: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
+            self.record_unit_lexical_types(
+                module_unit_for_loading_stack,
+                lexical_enums_here.iter(),
+            );
+            let exported_type_names: HashSet<String> =
+                facts.exported_type_names.iter().cloned().collect();
             // A type a `package EXPORT::<tag>` block declared is imported under
             // its short name: bind it where the importer reads it (#16332).
             for (short, stash_name) in &facts.export_stash_types {
@@ -2194,7 +2201,8 @@ impl Interpreter {
             // the `unit` package the declarations actually live in so a
             // transitively loaded dependency's same-named export cannot claim
             // the alias.
-            let exported_here: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
+            let exported_here: HashSet<String> =
+                facts.exported_type_names.iter().cloned().collect();
             let unit_prefix = unit_name.as_deref().map(|n| format!("{n}::"));
             let owned_types = new_types.iter().filter(|qualified| {
                 if *qualified == module || qualified.starts_with(&format!("{module}::")) {
@@ -2285,7 +2293,12 @@ impl Interpreter {
             }
             owners.push(module.to_string());
             for owner in owners {
-                let class_static_names = self.lexicals.class_body_static_names.read().get(&owner).cloned();
+                let class_static_names = self
+                    .lexicals
+                    .class_body_static_names
+                    .read()
+                    .get(&owner)
+                    .cloned();
                 if !module_type_aliases.is_empty() {
                     crate::runtime::cow_table_mut(&mut self.types.package_type_aliases)
                         .entry(owner.clone())
@@ -2550,8 +2563,7 @@ impl Interpreter {
                     // a `__constant` trait; `is_our` alone cannot tell it from an
                     // ordinary `our $x`, which is a package variable the loading
                     // scope may legitimately share.
-                    if *is_dynamic || !constant.is_some()
-                    {
+                    if *is_dynamic || !constant.is_some() {
                         continue;
                     }
                     // A sigil-less constant is stored under its term key

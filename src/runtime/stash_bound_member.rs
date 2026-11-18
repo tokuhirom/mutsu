@@ -21,7 +21,8 @@ impl Interpreter {
         // segment count bounds the steps a well-formed chain takes.
         for _ in 1..crate::qualified::segments(name).len() {
             let ancestors: Vec<Symbol> =
-                crate::qualified::package_ancestors(crate::qualified::package_parent(name)?).collect();
+                crate::qualified::package_ancestors(crate::qualified::package_parent(name)?)
+                    .collect();
             let (bound, real) = ancestors.iter().find_map(|prefix| {
                 let bound = self.get_our_var(prefix.as_str())?.deref_container();
                 match bound.view() {

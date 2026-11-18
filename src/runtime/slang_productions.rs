@@ -28,7 +28,10 @@ struct HostGrammar {
 
 static HOST_GRAMMAR: LazyLock<HostGrammar> = LazyLock::new(|| {
     let productions: HashSet<&'static str> = production_lines().collect();
-    let protos = productions.iter().filter_map(|name| proto_of(name)).collect();
+    let protos = productions
+        .iter()
+        .filter_map(|name| proto_of(name))
+        .collect();
     HostGrammar {
         productions,
         protos,
@@ -95,7 +98,10 @@ mod tests {
         assert!(is_production_handler("statement-control:sym<use>", &none));
         assert!(is_production_handler("statement_control:sym<use>", &none));
         assert!(is_production_handler("blockoid", &none));
-        assert!(is_production_handler("statement_control:sym<frobnicate>", &none));
+        assert!(is_production_handler(
+            "statement_control:sym<frobnicate>",
+            &none
+        ));
         assert!(!is_production_handler("add_phaser", &none));
         assert!(!is_production_handler("frobnicate:sym<x>", &none));
         let own: HashSet<String> = ["frobnicate:sym<x>".to_string()].into();

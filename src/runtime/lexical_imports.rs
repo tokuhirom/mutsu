@@ -251,9 +251,11 @@ impl Interpreter {
         }
         if entries.is_empty()
             || !entries.iter().all(|(key, _)| key.as_str().contains('/'))
-            || self.module.lexical_import_capture.as_ref().is_some_and(|capture| {
-                capture.block_multis.contains(&Symbol::intern(name))
-            })
+            || self
+                .module
+                .lexical_import_capture
+                .as_ref()
+                .is_some_and(|capture| capture.block_multis.contains(&Symbol::intern(name)))
         {
             return false;
         }
@@ -268,8 +270,10 @@ impl Interpreter {
         // later ranks equally narrow candidates by the order they are listed
         // here (`pick_captured_multi_candidate` stamps them in turn): keep the
         // declaration order Rakudo breaks such ties by.
-        let mut defs: Vec<std::sync::Arc<crate::ast::FunctionDef>> =
-            entries.iter().map(|(_, def)| std::sync::Arc::clone(def)).collect();
+        let mut defs: Vec<std::sync::Arc<crate::ast::FunctionDef>> = entries
+            .iter()
+            .map(|(_, def)| std::sync::Arc::clone(def))
+            .collect();
         defs.sort_by_key(|def| def.decl_order);
         capture.multi_defs.insert(Symbol::intern(name), defs);
         if proto.is_some() {
@@ -300,7 +304,9 @@ impl Interpreter {
         if capture.unit != importer || capture.block_multis.contains(&sym) {
             return false;
         }
-        capture.multi_defs.insert(sym, vec![std::sync::Arc::clone(def)]);
+        capture
+            .multi_defs
+            .insert(sym, vec![std::sync::Arc::clone(def)]);
         capture.declared_protos.insert(sym);
         true
     }
@@ -481,12 +487,11 @@ impl Interpreter {
             if let Some(binding) = binding {
                 // A family an earlier `use` of the scope handed out as a
                 // dispatcher value (a `sub EXPORT` hook) is the same family.
-                let is_family = !capture.hook_routines.contains_key(&name)
-                    && multi_defs.contains_key(&name);
-                let env_hook = (is_family
-                    && self.module.export_amp_override_names.contains(&name))
-                .then(|| self.env.get_sym(amp).cloned())
-                .flatten();
+                let is_family =
+                    !capture.hook_routines.contains_key(&name) && multi_defs.contains_key(&name);
+                let env_hook = (is_family && self.module.export_amp_override_names.contains(&name))
+                    .then(|| self.env.get_sym(amp).cloned())
+                    .flatten();
                 let binding = self.merge_earlier_import_dispatchers(
                     binding,
                     name,
@@ -652,7 +657,9 @@ impl Interpreter {
                 }
                 let value = match binding {
                     LexicalImport::Code(value) => value.clone(),
-                    LexicalImport::Routine(def) => self.sub_value_from_function_def((**def).clone()),
+                    LexicalImport::Routine(def) => {
+                        self.sub_value_from_function_def((**def).clone())
+                    }
                 };
                 routines.push((*name, value));
             }
@@ -906,10 +913,12 @@ impl Interpreter {
         if chain.is_empty() {
             return None;
         }
-        Some(match self.lexical_import_binding(&chain, Symbol::intern(name))? {
-            LexicalImport::Code(value) => value,
-            LexicalImport::Routine(def) => self.sub_value_from_function_def((*def).clone()),
-        })
+        Some(
+            match self.lexical_import_binding(&chain, Symbol::intern(name))? {
+                LexicalImport::Code(value) => value,
+                LexicalImport::Routine(def) => self.sub_value_from_function_def((*def).clone()),
+            },
+        )
     }
 
     /// [`Self::lexical_import_binding`] for the user candidates of a built-in
@@ -944,7 +953,9 @@ impl Interpreter {
         }
         let candidates_of = |value: &Value| -> Vec<Value> {
             match value.view() {
-                ValueView::Sub(data) => Self::captured_dispatch_candidates(&data).unwrap_or_default(),
+                ValueView::Sub(data) => {
+                    Self::captured_dispatch_candidates(&data).unwrap_or_default()
+                }
                 _ => Vec::new(),
             }
         };
@@ -963,7 +974,9 @@ impl Interpreter {
                 crate::value::ArrayKind::List,
             ),
         );
-        Some(LexicalImport::Code(Value::sub_value(crate::gc::Gc::new(merged))))
+        Some(LexicalImport::Code(Value::sub_value(crate::gc::Gc::new(
+            merged,
+        ))))
     }
 
     /// Whether `value` is a dispatcher over user candidates of a built-in

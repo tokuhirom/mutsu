@@ -203,8 +203,7 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 Some(&_mixin_storage)
             }
             Some(ValueView::Instance { .. }) => {
-                match raw_arg.and_then(crate::builtins::native_base::numeric_subclass_payload)
-                {
+                match raw_arg.and_then(crate::builtins::native_base::numeric_subclass_payload) {
                     Some(payload) => {
                         _mixin_storage = payload;
                         Some(&_mixin_storage)

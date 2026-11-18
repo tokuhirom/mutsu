@@ -494,9 +494,11 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Tap".to_string()],
                 attributes: Vec::new(),
-                native_methods: crate::builtins::method_table::handle_names("IO::Socket::Async::ListenSocket")
-                    .map(str::to_string)
-                    .collect(),
+                native_methods: crate::builtins::method_table::handle_names(
+                    "IO::Socket::Async::ListenSocket",
+                )
+                .map(str::to_string)
+                .collect(),
                 mro: sym_mro(&["IO::Socket::Async::ListenSocket", "Tap"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -821,9 +823,11 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: crate::builtins::method_table::handle_names("Lock::ConditionVariable")
-                    .map(str::to_string)
-                    .collect(),
+                native_methods: crate::builtins::method_table::handle_names(
+                    "Lock::ConditionVariable",
+                )
+                .map(str::to_string)
+                .collect(),
                 mro: sym_mro(&["Lock::ConditionVariable"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -1235,7 +1239,15 @@ impl Interpreter {
             "Distro".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: systemic_attributes(&["release", "path-sep", "name", "auth", "version", "signature", "desc"]),
+                attributes: systemic_attributes(&[
+                    "release",
+                    "path-sep",
+                    "name",
+                    "auth",
+                    "version",
+                    "signature",
+                    "desc",
+                ]),
                 native_methods: crate::builtins::method_table::systemic_names("Distro")
                     .map(str::to_string)
                     .collect(),
@@ -1259,7 +1271,14 @@ impl Interpreter {
                 identity_name.to_string(),
                 ClassDef {
                     parents: Vec::new(),
-                    attributes: systemic_attributes(&["compiler", "name", "auth", "version", "signature", "desc"]),
+                    attributes: systemic_attributes(&[
+                        "compiler",
+                        "name",
+                        "auth",
+                        "version",
+                        "signature",
+                        "desc",
+                    ]),
                     native_methods: crate::builtins::method_table::systemic_names(identity_name)
                         .map(str::to_string)
                         .collect(),
@@ -1283,7 +1302,13 @@ impl Interpreter {
                 // In Rakudo's order, which `Mu.raku` renders; `auth` is read by
                 // its row from the instance and is not listed there.
                 attributes: systemic_attributes(&[
-                    "name", "version", "hardware", "arch", "bits", "release", "desc",
+                    "name",
+                    "version",
+                    "hardware",
+                    "arch",
+                    "bits",
+                    "release",
+                    "desc",
                     "signature",
                 ]),
                 native_methods: crate::builtins::method_table::systemic_names("Kernel")
@@ -1303,7 +1328,17 @@ impl Interpreter {
             "VM".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: systemic_attributes(&["config", "prefix", "precomp-ext", "precomp-target", "name", "auth", "version", "signature", "desc"]),
+                attributes: systemic_attributes(&[
+                    "config",
+                    "prefix",
+                    "precomp-ext",
+                    "precomp-target",
+                    "name",
+                    "auth",
+                    "version",
+                    "signature",
+                    "desc",
+                ]),
                 native_methods: crate::builtins::method_table::systemic_names("VM")
                     .map(str::to_string)
                     .collect(),
@@ -1321,7 +1356,16 @@ impl Interpreter {
             "Compiler".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: systemic_attributes(&["id", "release", "codename", "name", "auth", "version", "signature", "desc"]),
+                attributes: systemic_attributes(&[
+                    "id",
+                    "release",
+                    "codename",
+                    "name",
+                    "auth",
+                    "version",
+                    "signature",
+                    "desc",
+                ]),
                 native_methods: crate::builtins::method_table::systemic_names("Compiler")
                     .map(str::to_string)
                     .collect(),
@@ -1358,9 +1402,11 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: crate::builtins::method_table::encoding_names("Encoding::Encoder::Builtin")
-                    .map(str::to_string)
-                    .collect(),
+                native_methods: crate::builtins::method_table::encoding_names(
+                    "Encoding::Encoder::Builtin",
+                )
+                .map(str::to_string)
+                .collect(),
                 mro: sym_mro(&["Encoding::Encoder::Builtin"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -2900,7 +2946,8 @@ impl Interpreter {
             {
                 let stub_body = vec![Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_stub_die"),
-                    args: vec![], listop: false,
+                    args: vec![],
+                    listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
                     value_prototype: None,
@@ -2969,7 +3016,8 @@ impl Interpreter {
             {
                 let stub_body = vec![Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_stub_die"),
-                    args: vec![], listop: false,
+                    args: vec![],
+                    listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
                     value_prototype: None,

@@ -392,10 +392,22 @@ role GLOBAL::Metamodel::MultipleInheritance {
     // that composes them again gets the role (`.^does`, the name in `does`)
     // and keeps the inherited behaviour, which re-declaring them here would
     // shadow.
-    ("MROBasedMethodDispatch", "role GLOBAL::Metamodel::MROBasedMethodDispatch { }\n"),
-    ("RoleContainer", "role GLOBAL::Metamodel::RoleContainer { }\n"),
-    ("AttributeContainer", "role GLOBAL::Metamodel::AttributeContainer { }\n"),
-    ("MethodContainer", "role GLOBAL::Metamodel::MethodContainer { }\n"),
+    (
+        "MROBasedMethodDispatch",
+        "role GLOBAL::Metamodel::MROBasedMethodDispatch { }\n",
+    ),
+    (
+        "RoleContainer",
+        "role GLOBAL::Metamodel::RoleContainer { }\n",
+    ),
+    (
+        "AttributeContainer",
+        "role GLOBAL::Metamodel::AttributeContainer { }\n",
+    ),
+    (
+        "MethodContainer",
+        "role GLOBAL::Metamodel::MethodContainer { }\n",
+    ),
 ];
 
 /// Builtin `X::Wrapper` role (Rakudo core since ~2023.10; see
@@ -600,8 +612,8 @@ impl Interpreter {
         // script itself.
         let saved_source_file = crate::parser::set_parser_source_file(Some(source_file));
         // The parse loads each `use`d module as it reaches it (ADR-17558).
-        let parse_result =
-            self.parse_with_loader(|| crate::parse_dispatch::parse_compilation_unit_of(&preprocessed));
+        let parse_result = self
+            .parse_with_loader(|| crate::parse_dispatch::parse_compilation_unit_of(&preprocessed));
         let unit_docs = crate::parser::decl_doc::take_unit_docs();
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
@@ -650,13 +662,12 @@ impl Interpreter {
         // A type used before the statement that declares it: judged on the
         // statements in source order, before the phasers move (a CHECK block
         // that names a class declared above it is not a use before it).
-        let post_declared = crate::rakuast::post_declared::check(
-            &stmts,
-            &crate::scope::NameScope::default(),
-        );
+        let post_declared =
+            crate::rakuast::post_declared::check(&stmts, &crate::scope::NameScope::default());
         // A term used before its declaration, judged in source order for the
         // same reason (ADR-15760 Amendment 1, 1b).
-        let premature_term = crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts);
+        let premature_term =
+            crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts);
         // `my $x will leave { ... }` expands to a scopeless `SyntheticBlock`
         // holding the declaration and its exit phasers. Those phasers belong to
         // the unit's scope, so lift them out where `split_block_phasers` sees
@@ -692,7 +703,8 @@ impl Interpreter {
                 .into_iter()
                 .map(|s| {
                     if let Stmt::Block(body) = s {
-                        Stmt::Phaser { spans: Default::default(),
+                        Stmt::Phaser {
+                            spans: Default::default(),
                             kind: crate::ast::PhaserKind::Enter,
                             body,
                             condition: None,
@@ -1360,7 +1372,9 @@ impl Interpreter {
     /// including augment bodies.
     // Cost: O(n), n = current package name bytes.
     pub(super) fn current_class_is_hidden(&self) -> bool {
-        self.registry().hidden_classes.contains(self.current_package_sym().as_str())
+        self.registry()
+            .hidden_classes
+            .contains(self.current_package_sym().as_str())
     }
 
     pub(crate) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {

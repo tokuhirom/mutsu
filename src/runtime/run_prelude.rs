@@ -1,7 +1,7 @@
 use super::run::{
-    COMPUNIT_REPOSITORY_SPEC_PRELUDE, DISTRIBUTION_LOCALLY_PRELUDE, ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
-    RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_OF_PRELUDE, TRAIT_MOD_IS_DEFAULT_PRELUDE,
-    X_WRAPPER_ROLE_PRELUDE,
+    COMPUNIT_REPOSITORY_SPEC_PRELUDE, DISTRIBUTION_LOCALLY_PRELUDE, ENUMERATION_ROLE_PRELUDE,
+    IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE, RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE,
+    TRAIT_MOD_IS_DEFAULT_PRELUDE, TRAIT_MOD_OF_PRELUDE, X_WRAPPER_ROLE_PRELUDE,
 };
 use super::source_code_text::CodeText;
 use super::*;
@@ -598,8 +598,15 @@ impl Interpreter {
                     *is_rw,
                     *is_raw,
                 );
-                let compiled = self
-                    .compile_forward_declared_sub(*name, params, param_defs, body, *is_rw, *is_raw, &[]);
+                let compiled = self.compile_forward_declared_sub(
+                    *name,
+                    params,
+                    param_defs,
+                    body,
+                    *is_rw,
+                    *is_raw,
+                    &[],
+                );
                 self.register_compiled_sub_decl(
                     &name_str,
                     params,

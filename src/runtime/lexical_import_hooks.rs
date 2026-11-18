@@ -147,7 +147,9 @@ impl Interpreter {
     // Cost: O(|key|).
     pub(crate) fn bind_hook_term_lexically(&mut self, key: &str, value: &Value) -> bool {
         if !key.starts_with(|c: char| c.is_alphabetic())
-            || !key.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+            || !key
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
         {
             return false;
         }

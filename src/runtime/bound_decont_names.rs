@@ -65,6 +65,9 @@ mod tests {
         let clear = (0..256)
             .map(|n| Symbol::intern(&format!("bound-decont-names-test-clear-{n}")))
             .find(|name| !Interpreter::bound_decont_name_possible(*name));
-        assert!(clear.is_some(), "some unrelated name must keep its bit clear");
+        assert!(
+            clear.is_some(),
+            "some unrelated name must keep its bit clear"
+        );
     }
 }

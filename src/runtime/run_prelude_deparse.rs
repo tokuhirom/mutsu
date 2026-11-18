@@ -93,10 +93,9 @@ impl Interpreter {
             );
             return Ok(());
         }
-        let Some(class) = DEPARSE_CLASS
-            .contains(DEPARSE_CLASS_HEAD)
-            .then(|| DEPARSE_CLASS.replacen(DEPARSE_CLASS_HEAD, "class GLOBAL::RakuAST::Deparse {", 1))
-        else {
+        let Some(class) = DEPARSE_CLASS.contains(DEPARSE_CLASS_HEAD).then(|| {
+            DEPARSE_CLASS.replacen(DEPARSE_CLASS_HEAD, "class GLOBAL::RakuAST::Deparse {", 1)
+        }) else {
             return Ok(());
         };
         INJECTED.store(true, std::sync::atomic::Ordering::Release);
@@ -105,10 +104,9 @@ impl Interpreter {
     }
 
     fn prepend_deparse_prelude(stmts: &mut Vec<Stmt>) {
-        let Some(class) = DEPARSE_CLASS
-            .contains(DEPARSE_CLASS_HEAD)
-            .then(|| DEPARSE_CLASS.replacen(DEPARSE_CLASS_HEAD, "class GLOBAL::RakuAST::Deparse {", 1))
-        else {
+        let Some(class) = DEPARSE_CLASS.contains(DEPARSE_CLASS_HEAD).then(|| {
+            DEPARSE_CLASS.replacen(DEPARSE_CLASS_HEAD, "class GLOBAL::RakuAST::Deparse {", 1)
+        }) else {
             return;
         };
         let program = format!("{{\n{DEPARSE_NYI}\n{class}\n}}\n{DEPARSE_ENTRY}");

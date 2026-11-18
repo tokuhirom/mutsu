@@ -70,22 +70,62 @@ pub(crate) struct HostEnd {
 }
 
 /// The parser's end of a slang host.
-pub(crate) struct SlangHost {
-    to_host: Sender<ToHost>,
-    from_host: Receiver<FromHost>,
+pub(crate) enum SlangHost {
+    /// A host on another thread (the activation interpreter of a slang the
+    /// compile-time loader did not load), reached over two channels.
+    Channel {
+        to_host: Sender<ToHost>,
+        from_host: Receiver<FromHost>,
+    },
+    /// The program's own interpreter, which loaded the slang module when the
+    /// parser reached its `use` (ADR-17558 slice 4b): a hook is a nested call
+    /// through the compile-time loader, and a back-call a nested call back
+    /// into the parser. The roles are the ones the slang's `define_slang`
+    /// registered; the host composes its grammar and actions from them.
+    Program(ProgramHost),
 }
+
+/// The slang a [`SlangHost::Program`] runs: the roles of its two halves.
+#[derive(Clone)]
+pub(crate) struct ProgramHost {
+    pub(crate) grammar_roles: Vec<Value>,
+    pub(crate) action_roles: Vec<Value>,
+}
+
+/// One production a program host runs, as [`ToHost::Hook`] carries it.
+pub(crate) struct HookRequest<'a> {
+    pub(crate) host: &'a ProgramHost,
+    pub(crate) rule: &'a str,
+    pub(crate) source: &'a str,
+    pub(crate) start: usize,
+    pub(crate) node: Option<Value>,
+    pub(crate) block: Option<Value>,
+    pub(crate) span: Option<ActionSpan>,
+}
+
+/// The parser's answer to a back-call: parse the core production `rule` at a
+/// character offset of the hook's source.
+pub(crate) type BackCall<'a> = dyn FnMut(&str, usize, BackCallDynamics) -> HostAnswer + 'a;
 
 /// Both ends of a fresh host connection.
 pub(crate) fn connect() -> (SlangHost, HostEnd) {
     let (to_host, from_parser) = std::sync::mpsc::channel();
     let (to_parser, from_host) = std::sync::mpsc::channel();
     (
-        SlangHost { to_host, from_host },
+        SlangHost::Channel { to_host, from_host },
         HostEnd {
             to_parser,
             from_parser,
         },
     )
+}
+
+/// Run `request` on the program host through this thread's compile-time
+/// loader.
+// Cost: the slang's own token and action.
+fn run_on_program(request: &HookRequest<'_>, back_call: &mut BackCall<'_>) -> HostAnswer {
+    crate::compile_time_loader::run_slang_hook(request, back_call)
+        .unwrap_or_else(|| Err("the slang host is gone".to_string()))
 }
 
 impl SlangHost {
@@ -111,7 +151,35 @@ impl SlangHost {
         // shim cursor positions remain code points. A finished production's
         // visible `.to` counts graphemes and is converted back here (#17486).
         use crate::value::match_helpers::grapheme_to_cp_index;
-        self.to_host
+        let shift = |answer: HostAnswer| {
+            answer.map(|found| {
+                found.map(|(end, node)| {
+                    (grapheme_to_cp_index(text, end).saturating_sub(start), node)
+                })
+            })
+        };
+        let (to_host, from_host) = match self {
+            SlangHost::Channel { to_host, from_host } => (to_host, from_host),
+            SlangHost::Program(host) => {
+                let request = HookRequest {
+                    host,
+                    rule,
+                    source: text,
+                    start,
+                    node: None,
+                    block,
+                    span: None,
+                };
+                // The parser answers in `source`'s offsets; the host reads
+                // them in the unit text's.
+                let mut shifted = |rule: &str, pos: usize, dynamics: BackCallDynamics| {
+                    back_call(rule, pos.saturating_sub(start), dynamics)
+                        .map(|found| found.map(|(end, node)| (end + start, node)))
+                };
+                return shift(run_on_program(&request, &mut shifted));
+            }
+        };
+        to_host
             .send(ToHost::Hook {
                 rule: rule.to_string(),
                 source: text.to_string(),
@@ -121,15 +189,8 @@ impl SlangHost {
                 span: None,
             })
             .map_err(|_| "the slang host is gone".to_string())?;
-        let shift = |answer: HostAnswer| {
-            answer.map(|found| {
-                found.map(|(end, node)| {
-                    (grapheme_to_cp_index(text, end).saturating_sub(start), node)
-                })
-            })
-        };
         loop {
-            let message = crate::gc::block_quiescent(|| self.from_host.recv())
+            let message = crate::gc::block_quiescent(|| from_host.recv())
                 .map_err(|_| "the slang host stopped answering".to_string())?;
             match message {
                 FromHost::Done(answer) => return shift(answer),
@@ -144,7 +205,7 @@ impl SlangHost {
                     // offset, which the parser counts in too.
                     let reply = back_call(&rule, pos.saturating_sub(start), dynamics)
                         .map(|found| found.map(|(end, node)| (end + start, node)));
-                    self.to_host
+                    to_host
                         .send(ToHost::BackReply(reply))
                         .map_err(|_| "the slang host is gone".to_string())?;
                 }
@@ -178,18 +239,39 @@ impl SlangHost {
         start: usize,
         span: Option<ActionSpan>,
     ) -> Result<Value, String> {
-        self.to_host
-            .send(ToHost::Hook {
-                rule: rule.to_string(),
-                source: source.to_string(),
-                start,
-                node: Some(node),
-                block: None,
-                span,
-            })
-            .map_err(|_| "the slang host is gone".to_string())?;
-        let message = crate::gc::block_quiescent(|| self.from_host.recv())
-            .map_err(|_| "the slang host stopped answering".to_string())?;
+        let message = match self {
+            SlangHost::Program(host) => {
+                let request = HookRequest {
+                    host,
+                    rule,
+                    source,
+                    start,
+                    node: Some(node),
+                    block: None,
+                    span,
+                };
+                let mut refuse = |_: &str, _: usize, _: BackCallDynamics| -> HostAnswer {
+                    Err(format!(
+                        "the action override {rule} asked the parser for a production"
+                    ))
+                };
+                FromHost::Done(run_on_program(&request, &mut refuse))
+            }
+            SlangHost::Channel { to_host, from_host } => {
+                to_host
+                    .send(ToHost::Hook {
+                        rule: rule.to_string(),
+                        source: source.to_string(),
+                        start,
+                        node: Some(node),
+                        block: None,
+                        span,
+                    })
+                    .map_err(|_| "the slang host is gone".to_string())?;
+                crate::gc::block_quiescent(|| from_host.recv())
+                    .map_err(|_| "the slang host stopped answering".to_string())?
+            }
+        };
         match message {
             FromHost::Done(Ok(Some((_, node)))) => Ok(node),
             FromHost::Done(Ok(None)) => Err(format!("the action override {rule} answered no node")),

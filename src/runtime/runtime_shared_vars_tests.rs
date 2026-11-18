@@ -97,7 +97,9 @@ fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
     interp.leave_critical_section();
 
     // The outer frame's own `$guard`, entering a critical section later.
-    interp.env.insert("*guard".to_string(), Value::str("outer".to_string()));
+    interp
+        .env
+        .insert("*guard".to_string(), Value::str("outer".to_string()));
     interp.enter_critical_section();
 
     assert_eq!(
@@ -110,7 +112,6 @@ fn entering_a_critical_section_keeps_a_same_named_lexical_over_own_writes() {
     );
     interp.leave_critical_section();
 }
-
 
 fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {
     interp.mark_atomic_var_seen(name);
@@ -178,8 +179,12 @@ fn protect_sync_leaves_a_sigilless_binding_alone() {
         .threads
         .shared_vars
         .set("*count", Value::str("shared".to_string()));
-    interp.env.insert("\\type".to_string(), Value::str("live".to_string()));
-    interp.env.insert("*count".to_string(), Value::str("live".to_string()));
+    interp
+        .env
+        .insert("\\type".to_string(), Value::str("live".to_string()));
+    interp
+        .env
+        .insert("*count".to_string(), Value::str("live".to_string()));
 
     interp.sync_shared_vars_for_names(["\\type", "*count"]);
 

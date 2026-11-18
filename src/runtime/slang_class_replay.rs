@@ -58,17 +58,11 @@ pub(super) fn begin_class_log() {
     });
 }
 
-/// Stop recording for the innermost hook and answer its log as a list of
-/// `[metamethod, [arguments]]` pairs (empty when it built no type).
-// Cost: O(k), k = the recorded calls.
-pub(super) fn end_class_log() -> Value {
+/// Stop recording for the innermost hook: the names of the types it minted.
+// Cost: O(m), m = the minted types.
+pub(super) fn end_class_log_minted() -> Vec<String> {
     let log = LOGS.with(|l| l.borrow_mut().pop()).unwrap_or_default();
-    Value::array(
-        log.ops
-            .into_iter()
-            .map(|(op, args)| Value::array(vec![Value::str(op), Value::array(args)]))
-            .collect(),
-    )
+    log.minted.into_iter().collect()
 }
 
 /// The log of the innermost running hook, as `end_class_log` shapes it, without
@@ -80,7 +74,9 @@ pub(super) fn peek_class_log() -> Value {
         let ops = logs.last().map(|log| log.ops.as_slice()).unwrap_or(&[]);
         Value::array(
             ops.iter()
-                .map(|(op, args)| Value::array(vec![Value::str(op.clone()), Value::array(args.clone())]))
+                .map(|(op, args)| {
+                    Value::array(vec![Value::str(op.clone()), Value::array(args.clone())])
+                })
                 .collect(),
         )
     })
@@ -153,7 +149,8 @@ impl Interpreter {
             {
                 vars.extend(hash.iter().map(|(k, v)| (k.to_string(), v.clone())));
             }
-            log.actions.push((method.to_string(), match_obj.clone(), vars));
+            log.actions
+                .push((method.to_string(), match_obj.clone(), vars));
         });
     }
 
@@ -227,7 +224,10 @@ impl Interpreter {
     /// actions minted, for a production whose actions are replayed too
     /// (ADR-17741 §2.4).
     // Cost: O(k), k = the recorded calls.
-    pub(super) fn builtin_slang_class_log(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_slang_class_log(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
         if !args.first().is_some_and(Value::truthy) {
             return Ok(peek_class_log());
         }
@@ -237,7 +237,11 @@ impl Interpreter {
                 return Value::array(Vec::new());
             };
             let by_action = |op: &str, args: &[Value]| {
-                let target = if op == "new_type" { args.last() } else { args.first() };
+                let target = if op == "new_type" {
+                    args.last()
+                } else {
+                    args.first()
+                };
                 matches!(target.map(Value::view), Some(ValueView::Package(name))
                     if log.action_minted.contains(name.resolve().as_str()))
             };
@@ -289,17 +293,46 @@ impl Interpreter {
         let mut renamed: Vec<(String, Value)> = Vec::new();
         let remap = |value: &Value, renamed: &[(String, Value)]| -> Value {
             if let ValueView::Package(name) = value.view()
-                && let Some((_, now)) = renamed.iter().find(|(old, _)| old.as_str() == &*name.resolve())
+                && let Some((_, now)) = renamed
+                    .iter()
+                    .find(|(old, _)| old.as_str() == &*name.resolve())
             {
                 return now.clone();
             }
             value.clone()
         };
+        // A type minted by a production that ran live on this interpreter
+        // (ADR-17558 slice 4b) is already built: it stands for itself.
+        let live = |value: Option<&Value>| {
+            matches!(value.map(Value::view), Some(ValueView::Package(name))
+                if super::slang_program_host::minted_live(&name.resolve()))
+        };
         for entry in entries.iter() {
             let Some(parts) = entry.as_list_items() else {
                 continue;
             };
-            let op = parts.first().map(Value::to_string_value).unwrap_or_default();
+            let op = parts
+                .first()
+                .map(Value::to_string_value)
+                .unwrap_or_default();
+            let raw_args = parts.get(1).and_then(Value::as_list_items);
+            let target = raw_args.as_ref().and_then(|items| {
+                if op == "new_type" {
+                    items.last()
+                } else {
+                    items.first()
+                }
+                .cloned()
+            });
+            if live(target.as_ref()) {
+                if op == "new_type"
+                    && let Some(minted) = target
+                    && let ValueView::Package(name) = minted.view()
+                {
+                    renamed.push((name.resolve().to_string(), minted.clone()));
+                }
+                continue;
+            }
             let call_args: Vec<Value> = parts
                 .get(1)
                 .and_then(Value::as_list_items)
@@ -312,7 +345,8 @@ impl Interpreter {
                 let Some((how_class, new_type_args)) = rest.split_first() else {
                     continue;
                 };
-                let minted = self.metamodel_new_type(&how_class.to_string_value(), new_type_args)?;
+                let minted =
+                    self.metamodel_new_type(&how_class.to_string_value(), new_type_args)?;
                 if let ValueView::Package(host_name) = minted_host.view() {
                     renamed.push((host_name.resolve().to_string(), minted));
                 }

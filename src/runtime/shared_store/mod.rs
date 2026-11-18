@@ -17,8 +17,6 @@
 use crate::value::Value;
 use std::sync::{Arc, Mutex, RwLock};
 
-
-
 // Lineage-store maps are String-keyed and hit on every spawn's seeding loop;
 // use FxHash instead of SipHash (variable names are program identifiers, not
 // attacker-controlled data, so HashDoS hardening buys nothing here).

@@ -92,7 +92,10 @@ impl PublishedMixins {
         if lexicals.is_empty() {
             return;
         }
-        let mut table = self.role_lexicals.write().unwrap_or_else(|e| e.into_inner());
+        let mut table = self
+            .role_lexicals
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         table.entry(role.to_string()).or_insert(lexicals);
         self.any_role_lexicals.store(true, Ordering::Release);
     }

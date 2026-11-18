@@ -691,4 +691,3 @@ impl Interpreter {
         crate::runtime::utils::is_builtin_dynamic_var(bare)
     }
 }
-

@@ -58,7 +58,11 @@ impl CompileTimeLoader for Interpreter {
         // their own positions.
         let known = self.parser_scan_lib_paths();
         let saved_lib_paths = std::sync::Arc::clone(&self.module.lib_paths);
-        for path in request.lib_paths.iter().filter(|path| !known.contains(path)) {
+        for path in request
+            .lib_paths
+            .iter()
+            .filter(|path| !known.contains(path))
+        {
             self.prepend_lib_path(Self::strip_file_repo_spec(path.clone()));
         }
         // The module's own compile is a parse of its own: the importer's parse
@@ -84,11 +88,9 @@ impl CompileTimeLoader for Interpreter {
             .last()
             .is_some_and(|&(_, depth)| depth == self.routine_stack_len());
         let replaced_import_target = match (&request.package, in_module_compile) {
-            (Some(package), true) => Some(
-                self.module
-                    .import_target_package
-                    .replace(package.clone()),
-            ),
+            (Some(package), true) => {
+                Some(self.module.import_target_package.replace(package.clone()))
+            }
             _ => None,
         };
         let saved_hook_depth = self
@@ -192,6 +194,15 @@ impl CompileTimeLoader for Interpreter {
     ) -> Option<crate::slang_link::SlangActivation> {
         self.parse_time_slang_activation(module, args)
     }
+
+    // Cost: the slang's own token and action.
+    fn run_slang_hook(
+        &mut self,
+        request: &crate::slang_link::HookRequest<'_>,
+        back_call: &mut crate::slang_link::BackCall<'_>,
+    ) -> crate::slang_link::HostAnswer {
+        self.run_program_slang_hook(request, back_call)
+    }
 }
 
 impl Interpreter {
@@ -225,7 +236,10 @@ impl Interpreter {
     /// The `Routine.prec` hash declared on the operator routine `name`, found
     /// through the registry's candidates for that name.
     // Cost: O(k), k = registered candidates of `name`.
-    pub(crate) fn declared_op_prec_of_name(&mut self, name: &str) -> Option<crate::op_prec::OpPrec> {
+    pub(crate) fn declared_op_prec_of_name(
+        &mut self,
+        name: &str,
+    ) -> Option<crate::op_prec::OpPrec> {
         crate::op_prec::split_op_name(name)?;
         let keys = self.fn_keys_for_base(name);
         keys.iter().find_map(|key| {

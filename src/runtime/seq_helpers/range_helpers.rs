@@ -181,17 +181,26 @@ impl Interpreter {
         // numeric value of its endpoints (`v0.1 ~~ v1..v2` is False).
         if let ValueView::Version { .. } = val.view() {
             let (r_start, r_end) = Self::range_raw_endpoints(range);
-            let is_open = |b: &Value| {
-                matches!(b.view(), ValueView::Whatever | ValueView::HyperWhatever)
-            };
+            let is_open =
+                |b: &Value| matches!(b.view(), ValueView::Whatever | ValueView::HyperWhatever);
             if matches!(r_start.view(), ValueView::Version { .. })
                 || matches!(r_end.view(), ValueView::Version { .. })
             {
                 let cmp = |bound: &Value| -> Option<std::cmp::Ordering> {
                     match (val.view(), bound.view()) {
                         (
-                            ValueView::Version { parts: ap, plus: a_plus, minus: a_minus, .. },
-                            ValueView::Version { parts: bp, plus: b_plus, minus: b_minus, .. },
+                            ValueView::Version {
+                                parts: ap,
+                                plus: a_plus,
+                                minus: a_minus,
+                                ..
+                            },
+                            ValueView::Version {
+                                parts: bp,
+                                plus: b_plus,
+                                minus: b_minus,
+                                ..
+                            },
                         ) => Some(crate::value::version_cmp::version_cmp(
                             ap, a_plus, a_minus, bp, b_plus, b_minus,
                         )),

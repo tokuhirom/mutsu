@@ -21,10 +21,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // ADR-0040 slices 1-2: each argument is a seed/endpoint list the
         // operator DECOMPOSES, so strip the itemization an element carries.
-        let args: Vec<Value> = args
-            .iter()
-            .map(|v| v.clone().deitemize_element())
-            .collect();
+        let args: Vec<Value> = args.iter().map(|v| v.clone().deitemize_element()).collect();
         if args.len() < 3 {
             let left = args.first().cloned().unwrap_or(Value::NIL);
             let right = args.last().cloned().unwrap_or(Value::NIL);

@@ -113,26 +113,28 @@ impl Interpreter {
                             // "clone and original array share reifier" leans on
                             // the first elements being cached).
                             let expensive = match v.view() {
-                                ValueView::BigInt(b) => b.bits() > super::sequence::SEQ_EAGER_PREFIX_MAX_SIZE,
+                                ValueView::BigInt(b) => {
+                                    b.bits() > super::sequence::SEQ_EAGER_PREFIX_MAX_SIZE
+                                }
                                 // A sequence of ever-growing lists (the generator keeps a
                                 // `state @row` it doubles each step).
                                 ValueView::Array(items, ..) => {
                                     items.len() as u64 > super::sequence::SEQ_EAGER_PREFIX_MAX_SIZE
                                 }
                                 ValueView::BigRat(n, d) => {
-                                    n.bits().max(d.bits()) > super::sequence::SEQ_EAGER_PREFIX_MAX_SIZE
+                                    n.bits().max(d.bits())
+                                        > super::sequence::SEQ_EAGER_PREFIX_MAX_SIZE
                                 }
-                                ValueView::Str(s) => s.len() as u64 > super::sequence::SEQ_EAGER_PREFIX_MAX_SIZE,
+                                ValueView::Str(s) => {
+                                    s.len() as u64 > super::sequence::SEQ_EAGER_PREFIX_MAX_SIZE
+                                }
                                 _ => false,
                             };
                             // Only a sequence that hands back a lazy continuation may
                             // stop early; one with a closure or regex endpoint ends as
                             // a plain array of this prefix (Math::Root's `newton`).
                             if expensive
-                                && matches!(
-                                    g.endpoint_kind,
-                                    None | Some(EndpointKind::Value(_))
-                                )
+                                && matches!(g.endpoint_kind, None | Some(EndpointKind::Value(_)))
                             {
                                 result.push(v);
                                 break 'seq_gen;
@@ -156,9 +158,10 @@ impl Interpreter {
                 SeqMode::Arithmetic(step) => {
                     if g.is_string_seq {
                         if g.string_product {
-                            let (Some(ValueView::Str(seed)), Some(EndpointKind::Value(ep))) =
-                                (g.first_seed.as_ref().map(Value::view), g.endpoint_kind.as_ref())
-                            else {
+                            let (Some(ValueView::Str(seed)), Some(EndpointKind::Value(ep))) = (
+                                g.first_seed.as_ref().map(Value::view),
+                                g.endpoint_kind.as_ref(),
+                            ) else {
                                 break;
                             };
                             let (ValueView::Str(last), ValueView::Str(end)) =
@@ -332,7 +335,7 @@ impl Interpreter {
                             // in lexicographic order before reaching its final term.
                             if !g.string_product
                                 && let (ValueView::Str(ns), ValueView::Str(es)) =
-                                (item.view(), ep.view())
+                                    (item.view(), ep.view())
                                 && let SeqMode::Arithmetic(step) = &g.mode
                             {
                                 if *step > 0.0 && *ns > *es {
