@@ -4675,6 +4675,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         )?)),
         RakuAstClass::VarCompilerBlock => Ok(Expr::CodeVar("?BLOCK".to_string())),
         RakuAstClass::VarCompilerRoutine => Ok(Expr::CodeVar("?ROUTINE".to_string())),
+        RakuAstClass::VarLexicalConstant => super::compiler_var::lower_pseudo_package(node),
         RakuAstClass::VarCompilerLookup
         | RakuAstClass::VarCompilerFile
         | RakuAstClass::VarCompilerLine

@@ -64,6 +64,7 @@ pub(super) fn single_positional_class(class_name: &str, method: &str) -> Option<
         ("RakuAST::MetaPrefix::Hyper", "new") => RakuAstClass::MetaPrefixHyper,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
+        ("RakuAST::Var::Lexical::Constant", "new") => RakuAstClass::VarLexicalConstant,
         ("RakuAST::Var::Compiler::Lookup", "new") => RakuAstClass::VarCompilerLookup,
         ("RakuAST::Var::Compiler::File", "new") => RakuAstClass::VarCompilerFile,
         ("RakuAST::Var::Compiler::Line", "new") => RakuAstClass::VarCompilerLine,

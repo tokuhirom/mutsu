@@ -89,7 +89,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
             .next()
             .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
     {
-        return Ok((after, Expr::Var("?PACKAGE".to_string())));
+        return Ok((after, pseudo_package("?PACKAGE")));
     }
     if let Some(after) = rest.strip_prefix("?MODULE")
         && after
@@ -97,7 +97,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
             .next()
             .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
     {
-        return Ok((after, Expr::Var("?MODULE".to_string())));
+        return Ok((after, pseudo_package("?MODULE")));
     }
     // Handle ::?CLASS — compile-time class pseudo-package
     if let Some(after) = rest.strip_prefix("?CLASS")
@@ -106,7 +106,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
             .next()
             .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
     {
-        return Ok((after, Expr::Var("?CLASS".to_string())));
+        return Ok((after, pseudo_package("?CLASS")));
     }
     // Handle ::?ROLE — compile-time role pseudo-package
     if let Some(after) = rest.strip_prefix("?ROLE")
@@ -115,7 +115,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
             .next()
             .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '-')
     {
-        return Ok((after, Expr::Var("?ROLE".to_string())));
+        return Ok((after, pseudo_package("?ROLE")));
     }
     // Handle ::($expr) — indirect name lookup, optionally followed by static
     // segments (`::($n)::Bar`) and/or a trailing `::` (`::($n)::`, also before
@@ -731,4 +731,13 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     }
 
     Err(PError::expected("keyword literal"))
+}
+
+/// `::?NAME` as a term: the parser's `Var("?NAME")`, with the written `::?NAME`
+/// kept for RakuAST (`Var::Lexical::Constant`).
+// Cost: O(1).
+fn pseudo_package(name: &str) -> Expr {
+    Expr::spelled(Expr::Var(name.to_string()), || {
+        crate::ast::spelled::Spelling::PseudoPackage(format!("::{name}").into())
+    })
 }
