@@ -83,10 +83,11 @@ impl CompileTimeLoader for Interpreter {
             .last()
             .is_some_and(|&(_, depth)| depth == self.routine_stack_len());
         let replaced_import_target = match (&request.package, in_module_compile) {
-            (Some(package), true) => Some(std::mem::replace(
-                &mut self.module.import_target_package,
-                Some(package.clone()),
-            )),
+            (Some(package), true) => Some(
+                self.module
+                    .import_target_package
+                    .replace(package.clone()),
+            ),
             _ => None,
         };
         let saved_hook_depth = self
