@@ -264,6 +264,25 @@ pub(in crate::parser) fn number_statements(stmts: &mut Vec<Stmt>) {
     }
 }
 
+/// Number the `use trace` hooks of `stmt`, a statement of an unfinished unit
+/// that runs now (a parse-time `BEGIN`, ADR-17558 slice 5): each hook's number
+/// is its rank among the attempts so far, which no later attempt changes.
+pub(in crate::parser) fn number_statements_so_far(stmt: &mut Stmt) {
+    struct Numberer(Vec<usize>);
+    impl VisitMut for Numberer {
+        fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+            if let Stmt::Trace { id, .. } = stmt {
+                *id = u32::try_from(self.0.partition_point(|&at| at < *id as usize) + 1)
+                    .unwrap_or(u32::MAX);
+            }
+            walk_stmt_mut(self, stmt);
+        }
+    }
+    if let Some(positions) = crate::parser::primary::peek_statement_numbering() {
+        Numberer(positions).visit_stmt_mut(stmt);
+    }
+}
+
 fn is_trace_pragma(stmt: &Stmt) -> bool {
     matches!(stmt, Stmt::Use { module, .. } | Stmt::No { module, .. } if module == "trace")
 }

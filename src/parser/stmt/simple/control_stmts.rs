@@ -517,8 +517,15 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Ok((rest, Stmt::Expr(Expr::Literal(v))));
     }
+    // A unit-level `BEGIN` may run now, as on rakudo (ADR-17558 slice 5).
     if kind == PhaserKind::Begin {
-        super::note_unit_compile_time_effect();
+        match super::begin_at_parse::run_unit_begin(&body, bare) {
+            super::begin_at_parse::UnitBegin::Ran => return Ok((rest, Stmt::Block(Vec::new()))),
+            super::begin_at_parse::UnitBegin::Failed(message) => {
+                return Err(PError::fatal_at(message, input));
+            }
+            super::begin_at_parse::UnitBegin::Kept => {}
+        }
     }
     let condition = matches!(kind, PhaserKind::Pre | PhaserKind::Post).then(|| {
         let consumed = condition_src.len() - rest.len();

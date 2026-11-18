@@ -77,6 +77,20 @@ pub(crate) enum LoadOutcome {
     Failed(RuntimeError),
 }
 
+/// What the loader did with a unit-level `BEGIN` the parser finished
+/// (ADR-17558 slice 5).
+pub(crate) enum BeginOutcome {
+    /// The phaser ran now; the unit's prologue must not run it again.
+    Ran,
+    /// The loader did not take it (no loader, a parse that is not the
+    /// program's, a body that reads or names something of the unit); it runs
+    /// in the unit's BEGIN prologue as before.
+    NotTaken,
+    /// The phaser died: the unit's compile fails at the `BEGIN` with this
+    /// error.
+    Failed(RuntimeError),
+}
+
 /// One routine a loaded module exports to a `use`: its name (sigil-less,
 /// `postfix:<USD>`) and, for an operator declared with `is tighter` / `is
 /// looser` / `is equiv` / `is assoc`, its `Routine.prec` record.
@@ -127,6 +141,11 @@ pub(crate) trait CompileTimeLoader {
         module: &str,
         args: Option<&[crate::slang_link::SlangUseArg]>,
     ) -> Option<crate::slang_link::SlangActivation>;
+
+    /// Run `begin`, a statement-form `BEGIN` phaser of the unit's top level
+    /// that the parser just finished, now, when running it ahead of the
+    /// unit's frame is unobservable (ADR-17558 slice 5).
+    fn run_begin(&mut self, begin: &crate::ast::Stmt) -> BeginOutcome;
 }
 
 thread_local! {
@@ -206,6 +225,12 @@ pub(crate) fn slang_activation(
     args: Option<&[crate::slang_link::SlangUseArg]>,
 ) -> Option<crate::slang_link::SlangActivation> {
     with_loader(|loader| loader.slang_activation(module, args)).flatten()
+}
+
+/// Ask this thread's current loader to run a finished unit-level `BEGIN`.
+// Cost: O(1) when there is no loader; the phaser's analysis and run otherwise.
+pub(crate) fn run_begin(begin: &crate::ast::Stmt) -> BeginOutcome {
+    with_loader(|loader| loader.run_begin(begin)).unwrap_or(BeginOutcome::NotTaken)
 }
 
 /// Run `call` on this thread's innermost loader, if one is reachable: none

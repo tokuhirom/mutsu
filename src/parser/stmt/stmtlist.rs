@@ -654,6 +654,9 @@ fn stmt_list_inner(
                         crate::parser::primary::statement_span(input_before_stmt, r),
                     ));
                 }
+                if !super::simple::in_nested_scope() {
+                    super::simple::note_unit_prologue_effects_of(&stmt);
+                }
                 stmts.extend(hook);
                 stmts.push(stmt);
                 rest = consume_trailing_comma(r);

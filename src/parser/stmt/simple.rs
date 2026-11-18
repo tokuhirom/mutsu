@@ -23,6 +23,7 @@ use super::{
 // Themed submodules. This file is the facade: it owns the parser-state statics
 // and shared types, declares the submodules, and re-exports each moved function
 // at its original visibility so external callers (`simple::<name>`) are unchanged.
+pub(in crate::parser) mod begin_at_parse;
 mod compile_consts;
 mod control_stmts;
 mod io_stmts;
@@ -30,6 +31,7 @@ mod l10n;
 mod lib_paths;
 mod module_exports;
 mod pragma_preseed;
+mod prologue_effects;
 mod registry;
 mod slang_hooks;
 mod slang_lang;
@@ -38,6 +40,9 @@ mod slang_multiness;
 mod slang_use;
 mod slang_wrapper_block;
 mod user_ops;
+pub(in crate::parser) use begin_at_parse::{
+    note_unit_prologue_effects_of, restore_unit_effects_seen, take_unit_effects_seen,
+};
 
 // `pub` re-exports.
 pub use lib_paths::{
@@ -404,6 +409,7 @@ pub(in crate::parser) fn in_nested_scope() -> bool {
 // Cost: O(1).
 pub(in crate::parser) fn note_unit_compile_time_effect() {
     UNIT_BEGIN_SEEN.with(|seen| seen.set(true));
+    begin_at_parse::UNIT_PROLOGUE_EFFECT_SEEN.with(|seen| seen.set(true));
 }
 
 /// Whether a compile-time effect of the unit precedes the parse position.
@@ -550,6 +556,7 @@ pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state
     unit.take(&CURRENT_LANGUAGE_VERSION, "6.d".to_string());
     unit.take(&DECLARE_KEYWORDS, HashMap::new());
     unit.take_cell(&UNIT_BEGIN_SEEN, false);
+    unit.take_cell(&begin_at_parse::UNIT_PROLOGUE_EFFECT_SEEN, false);
     registry::suspend_unit_state(unit);
     l10n::suspend_unit_state(unit);
     slang_lang::suspend_unit_state(unit);

@@ -192,6 +192,12 @@ impl CompileTimeLoader for Interpreter {
     ) -> Option<crate::slang_link::SlangActivation> {
         self.parse_time_slang_activation(module, args)
     }
+
+    // Cost: O(n) for the analysis, n = size of the phaser's body; the
+    // phaser's own run otherwise.
+    fn run_begin(&mut self, begin: &Stmt) -> crate::compile_time_loader::BeginOutcome {
+        self.run_parse_time_begin(begin)
+    }
 }
 
 impl Interpreter {
@@ -200,6 +206,28 @@ impl Interpreter {
     /// a `use` failed to load reports the load's error.
     // Cost: O(1) besides `parse`.
     pub(crate) fn parse_with_loader<T>(
+        &mut self,
+        parse: impl FnOnce() -> Result<T, RuntimeError>,
+    ) -> Result<T, RuntimeError> {
+        crate::runtime::compile_time_begin::with_parse_kind(false, || {
+            self.parse_unit_with_loader(parse)
+        })
+    }
+
+    /// [`Interpreter::parse_with_loader`] for the program's own unit, whose
+    /// unit-level `BEGIN`s may also run at parse time (ADR-17558 slice 5).
+    // Cost: O(1) besides `parse`.
+    pub(crate) fn parse_program_with_loader<T>(
+        &mut self,
+        parse: impl FnOnce() -> Result<T, RuntimeError>,
+    ) -> Result<T, RuntimeError> {
+        crate::runtime::compile_time_begin::with_parse_kind(true, || {
+            self.parse_unit_with_loader(parse)
+        })
+    }
+
+    // Cost: O(1) besides `parse`.
+    fn parse_unit_with_loader<T>(
         &mut self,
         parse: impl FnOnce() -> Result<T, RuntimeError>,
     ) -> Result<T, RuntimeError> {

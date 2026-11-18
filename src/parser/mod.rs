@@ -213,6 +213,15 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
+/// Whether the unit being parsed provides `name` at the parse position: it
+/// declares it (a routine, a type, an enum value, a term) or a `use` before it
+/// imports it. A parse-time `BEGIN` that names one is left to the prologue
+/// (ADR-17558 slice 5): none of them is bound before the unit's frame exists.
+// Cost: O(s), s = enclosing parse scopes.
+pub(crate) fn unit_provides_name(name: &str) -> bool {
+    stmt::simple::is_declared_symbol_name(name) || stmt::simple::is_imported_function(name)
+}
+
 /// See `stmt::simple::scanned_module_value_terms`.
 pub(crate) fn scanned_module_value_terms(path: &std::path::Path) -> Option<Vec<String>> {
     stmt::simple::scanned_module_value_terms(path)
@@ -606,6 +615,20 @@ fn apply_inherited_scopes() {
     stmt::simple::set_current_language_version(&inherited.language_version);
 }
 
+thread_local! {
+    /// How many fragment parses ([`parse_fragment_spelled`]) are in progress on
+    /// this thread. A fragment is part of an enclosing unit whose prologue
+    /// effects it cannot see, so none of its `BEGIN`s runs at parse time
+    /// (ADR-17558 slice 5).
+    static FRAGMENT_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether the parse in progress is a fragment's (see `FRAGMENT_DEPTH`).
+// Cost: O(1).
+pub(in crate::parser) fn in_fragment_parse() -> bool {
+    FRAGMENT_DEPTH.with(|depth| depth.get() > 0)
+}
+
 /// Parse an internal expression *fragment* (a role type argument re-parsed at
 /// run time, ...) rather than a compilation unit.
 ///
@@ -650,13 +673,17 @@ pub(crate) fn parse_fragment_spelled(
     let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
     // A fragment is part of the enclosing unit: a `BEGIN` before it still
     // precedes the unit's later `use`s, and one inside it does too.
-    let effect_was_seen = stmt::simple::unit_compile_time_effect_seen();
+    let effects_were_seen = stmt::simple::take_unit_effects_seen();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
+    FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() + 1));
     let result = parse_program_spelled(input);
+    FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() - 1));
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
-    if effect_was_seen {
-        stmt::simple::note_unit_compile_time_effect();
-    }
+    let (begin_now, prologue_now) = stmt::simple::take_unit_effects_seen();
+    stmt::simple::restore_unit_effects_seen((
+        effects_were_seen.0 || begin_now,
+        effects_were_seen.1 || prologue_now,
+    ));
     if type_index_was_incomplete {
         stmt::simple::note_type_index_incomplete();
     }
