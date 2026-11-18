@@ -245,7 +245,18 @@ impl Interpreter {
         // top-to-bottom, so a monotonic counter captures declaration order,
         // which is Rakudo's tie-break for an equal-length LTM tie between
         // proto candidates (`token pp:sym<**>` before `token pp:sym<m>`).
-        def.decl_order = next_decl_order();
+        //
+        // Re-registering the one candidate a key holds keeps its stamp: a
+        // grammar that is composed twice (its hoisted shell, then the real
+        // declaration) re-runs only its nearest role's body, and a fresh stamp
+        // would move that role's candidates behind those of the roles it
+        // composes -- the reverse of rakudo's nearest-first order
+        // (Lingua::NumericWordForms' `sym<Armenian>` lost its tie to the base
+        // role's `sym<General>`).
+        def.decl_order = (!multi)
+            .then(|| self.token_key_decl_order_sym(key))
+            .filter(|&order| order != u64::MAX)
+            .unwrap_or_else(next_decl_order);
         crate::runtime::regex::regex_dynparams::resolve_rule_routine_reads(
             &mut def.body,
             package,
