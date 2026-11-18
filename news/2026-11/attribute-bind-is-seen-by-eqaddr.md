@@ -1,6 +1,6 @@
 # A `:=`-bound attribute is that value to `=:=` and `nqp::eqaddr`
 
-Since `nqp::eqaddr` became container identity (#17620), a `$!attr` operand was
+Since `nqp::eqaddr` became container identity (#17927), a `$!attr` operand was
 always treated as a Scalar, so `$!next := $iter.pull-one` in one method and
 `nqp::eqaddr($!next, IterationEnd)` in the next never matched. The nqp-style
 iterator idiom then spun forever: the snip and span distributions' suites
