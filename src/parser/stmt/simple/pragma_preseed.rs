@@ -99,6 +99,22 @@ impl Drop for PackagePathGuard {
 /// mid-body cannot leak a stale prefix into the next parse.
 pub(crate) fn reset_package_path() {
     PACKAGE_PATH.with(|p| p.borrow_mut().clear());
+    UNIT_PACKAGE.with(|p| p.borrow_mut().take());
+}
+
+/// Note the package a `unit module` / `unit class` / `unit grammar`
+/// declaration of the unit being parsed names: the rest of the unit is its
+/// body, though no package block encloses it.
+// Cost: O(|name|).
+pub(in crate::parser) fn note_unit_package(name: &str) {
+    UNIT_PACKAGE.with(|p| *p.borrow_mut() = Some(strip_global_prefix(name).to_string()));
+}
+
+/// The package a statement at the parse position stands in: the enclosing
+/// package blocks, else the unit's `unit` declaration, else `None`.
+// Cost: O(d), d = enclosing package depth.
+pub(in crate::parser) fn statement_package() -> Option<String> {
+    current_package_prefix().or_else(|| UNIT_PACKAGE.with(|p| p.borrow().clone()))
 }
 
 /// The `::`-joined path of the package-like declarators currently being parsed,

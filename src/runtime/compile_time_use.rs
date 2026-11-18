@@ -36,16 +36,14 @@ impl CompileTimeLoader for Interpreter {
             request.module,
             request.tags,
             request.has_condition,
-            request.has_arg,
+            request.has_arg && request.literal_args.is_none(),
         ) else {
             return LoadOutcome::NotTaken;
         };
-        // A module that imports through a `sub EXPORT` hook runs the hook once
-        // per `use`, at its import, with the `use`'s arguments.
-        // TODO: run the hook at parse time and install its map at the import
-        // (ADR-17558 slice 2); until then such a module loads at run time,
-        // where the first load and the hook happen together.
-        if request.through_hook {
+        // A slang module activates in the slang activation interpreter at
+        // parse time and loads here at run time, until slice 4 makes the
+        // program interpreter its host.
+        if request.activates_slang {
             return LoadOutcome::NotTaken;
         }
         let (bare, _) = Self::split_dist_selectors(module);
@@ -65,6 +63,38 @@ impl CompileTimeLoader for Interpreter {
         // The module's own compile is a parse of its own: the importer's parse
         // is suspended around it and resumes exactly where it was.
         let suspended = crate::parser::unit_state::suspend();
+        // A module that imports through a `sub EXPORT` hook runs it now, once
+        // for this `use`, as rakudo does at compile time; the map it returns
+        // is kept for the `use`'s import in position, which installs it
+        // instead of running the hook again (`rerun_module_export`).
+        // A literal argument list goes to the hook as the run-time `use`
+        // would hand it over, so the import finds the map under the same key.
+        let saved_export_args = std::mem::replace(
+            &mut self.module.pending_use_export_args,
+            request.literal_args.clone(),
+        );
+        // A `use` in a module's own compile imports into the module's package,
+        // as it does from the module's prologue (`import_target_package_for_load`
+        // reads the `unit module` name there): the type aliases its load
+        // records belong to the module, not to the unit that loads it.
+        let in_module_compile = self
+            .module
+            .module_loading_unit_stack
+            .last()
+            .is_some_and(|&(_, depth)| depth == self.routine_stack_len());
+        let replaced_import_target = match (&request.package, in_module_compile) {
+            (Some(package), true) => Some(
+                self.module
+                    .import_target_package
+                    .replace(package.clone()),
+            ),
+            _ => None,
+        };
+        let saved_hook_depth = self
+            .module
+            .parse_time_hook_depth
+            .replace(self.module.module_load_stack.len() + 1);
+        take_hook_reached_importer();
         let result = if request.nested {
             // A `use` inside a block: what the module installs while it loads
             // is lexical to the block (`OpCode::PreloadModule`'s scope).
@@ -75,6 +105,11 @@ impl CompileTimeLoader for Interpreter {
         } else {
             self.without_use_attach_depth(|interp| interp.preload_module(module))
         };
+        self.module.parse_time_hook_depth = saved_hook_depth;
+        if let Some(saved) = replaced_import_target {
+            self.module.import_target_package = saved;
+        }
+        self.module.pending_use_export_args = saved_export_args;
         drop(suspended);
         self.module.lib_paths = saved_lib_paths;
         match result {
@@ -195,4 +230,45 @@ impl Interpreter {
         names.dedup();
         names
     }
+}
+
+thread_local! {
+    /// Set when a `sub EXPORT` hook running with no in-position `use` (a
+    /// preload, a parse-time load) asked `$*R` to attach a phaser to its
+    /// importing scope, which only the run at the `use`'s import performs
+    /// (`runtime::attach_target`): the parse-time run cannot stand in for it
+    /// (`record_parse_time_hook_result`).
+    static HOOK_REACHED_IMPORTER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set while `Str.AST` parses: the tree is compiled again by the `EVAL`
+    /// that runs it, whose own `use`s run their hooks then, as on rakudo, so
+    /// a hook run of the `.AST` parse keeps nothing for an import.
+    static PARSE_FOR_AST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `parse`, a `Str.AST` parse, with [`PARSE_FOR_AST`] set.
+// Cost: O(1) besides `parse`.
+pub(crate) fn parsing_for_ast<T>(parse: impl FnOnce() -> T) -> T {
+    let saved = PARSE_FOR_AST.with(|flag| flag.replace(true));
+    let result = parse();
+    PARSE_FOR_AST.with(|flag| flag.set(saved));
+    result
+}
+
+/// Whether the parse in progress is a `Str.AST` parse.
+// Cost: O(1).
+pub(crate) fn parse_is_for_ast() -> bool {
+    PARSE_FOR_AST.with(std::cell::Cell::get)
+}
+
+/// Note that the running hook reached its importing unit (see
+/// `HOOK_REACHED_IMPORTER`).
+// Cost: O(1).
+pub(crate) fn note_hook_reached_importer() {
+    HOOK_REACHED_IMPORTER.with(|flag| flag.set(true));
+}
+
+/// Whether a hook reached its importing unit since the last call, clearing it.
+// Cost: O(1).
+pub(crate) fn take_hook_reached_importer() -> bool {
+    HOOK_REACHED_IMPORTER.with(|flag| flag.replace(false))
 }

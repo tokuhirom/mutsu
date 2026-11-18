@@ -26,11 +26,13 @@ impl Interpreter {
         // as the parser reaches them, and the parse reads what they provide
         // (ADR-17558), exactly as for a program this interpreter runs.
         let result = self.parse_with_loader(|| {
-            if compunit {
+            crate::runtime::compile_time_use::parsing_for_ast(|| {
+                if compunit {
                 crate::rakuast::str_dot_ast_compunit(&scope, source, &Self::str_ast_unit_check)
-            } else {
-                crate::rakuast::str_dot_ast_checked(&scope, source, &Self::str_ast_unit_check)
-            }
+                } else {
+                    crate::rakuast::str_dot_ast_checked(&scope, source, &Self::str_ast_unit_check)
+                }
+            })
         });
         crate::parser::clear_parser_lib_paths();
         // Rakudo's `.AST` resolves the tree's lookups before handing it out:
@@ -69,12 +71,14 @@ impl Interpreter {
             self.str_ast_caller_trait_types(),
         );
         let result = self.parse_with_loader(|| {
-            crate::rakuast::str_dot_ast_with_slang(
-                &scope,
-                source,
-                slang.as_deref(),
-                &Self::str_ast_unit_check,
-            )
+            crate::runtime::compile_time_use::parsing_for_ast(|| {
+                crate::rakuast::str_dot_ast_with_slang(
+                    &scope,
+                    source,
+                    slang.as_deref(),
+                    &Self::str_ast_unit_check,
+                )
+            })
         });
         crate::parser::clear_parser_lib_paths();
         if let Ok(tree) = &result {

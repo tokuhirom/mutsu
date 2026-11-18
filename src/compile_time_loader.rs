@@ -6,10 +6,10 @@
 //! [`CompileTimeLoader`] trait and the free functions here, never
 //! `crate::runtime` (ADR-10779's upward-call rule). The interpreter implements
 //! the trait and pushes itself with [`LoaderGuard::push`] for the extent of a
-//! parse whose unit it is about to run: the program (`run`, `-c`) and an
-//! `EVAL`. A module's own compile and a `require`d file do not push one yet
-//! (their `use`s load in their prologue; ADR-17558 §7.6), so a parse nested in
-//! a load finds the busy entry of the load and loads nothing.
+//! parse whose unit it compiles: the program (`run`, `-c`), an `EVAL`, a
+//! `Str.AST`, and a module's own compile. A `require`d file does not push one
+//! yet (its `use`s load in its prologue; ADR-17558 §7.7), so a parse nested in
+//! such a load finds the busy entry of the load and loads nothing.
 //!
 //! **Fail-closed** (ADR-17558 §2.5, §7.5): a parse with no loader on this
 //! thread's stack — every analysis path (`--dump-*`, `src/analysis/`,
@@ -28,15 +28,22 @@ pub(crate) struct UseRequest<'a> {
     pub(crate) tags: &'a [String],
     /// Whether the `use` carries a positional argument list (for `sub EXPORT`).
     pub(crate) has_arg: bool,
+    /// That argument list's values, when every element is a literal the
+    /// parser can hand over as it stands (`use M <a b>`, `use M 'x', 2`);
+    /// `None` for an argument list that has to be evaluated.
+    pub(crate) literal_args: Option<Vec<crate::value::Value>>,
     /// Whether the `use` carries a `:if(...)` condition.
     pub(crate) has_condition: bool,
     /// Whether the `use` is inside a block rather than at the unit's top
     /// level: what the module installs while it loads is then lexical to that
     /// block, as for the prologue's preload of a nested `use`.
     pub(crate) nested: bool,
-    /// Whether the module imports through a `sub EXPORT` hook (its own or
-    /// Slangify's), as the parser's scan of it found.
-    pub(crate) through_hook: bool,
+    /// Whether the module activates a slang (it `use`s Slangify), which the
+    /// slang activation interpreter does at parse time (ADR-0026 §2.1).
+    pub(crate) activates_slang: bool,
+    /// The package the `use` stands in (`unit module Foo;` or a package
+    /// block), `None` at the unit's top level outside any.
+    pub(crate) package: Option<String>,
     /// The parser's module search path at the `use`: the interpreter's chain
     /// plus the unit's parse-time `use lib` additions, in order.
     pub(crate) lib_paths: &'a [String],

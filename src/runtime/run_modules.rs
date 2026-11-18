@@ -594,16 +594,18 @@ impl Interpreter {
         let parse = || {
             parse_dispatch::parse_compilation_unit_of(&preprocessed)
         };
-        // The module's own `use`s still load in its BEGIN-time prologue, as on a
-        // precompilation hit, which parses nothing: the load's bookkeeping
-        // (`load_module_inner`) snapshots the registry and env after the parse,
-        // so a dependency loaded during the parse would count as the importer's.
-        // TODO: take those snapshots before the parse and give this parse the
-        // loader too (ADR-17558 §7.6).
-        let result = match unit {
+        // The module's own `use`s load as its parser reaches them (ADR-17558),
+        // with the module as their importing compunit, as when they load in
+        // its prologue: what they publish (#7797) is the module's to see.
+        let own_unit = self.unit_of_source(Some(&source_path.to_string_lossy()));
+        self.module
+            .module_loading_unit_stack
+            .push((own_unit, self.routine_stack_len()));
+        let result = self.parse_with_loader(|| match unit {
             Some(unit) => crate::anon_names::with_content_unit(unit.parse_session(), parse),
             None => parse(),
-        };
+        });
+        self.module.module_loading_unit_stack.pop();
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // Capture exactly what a later cache hit will have to replay, before
@@ -1035,6 +1037,7 @@ impl Interpreter {
         let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&source_text);
         crate::unit_source_text::mark_module_unit();
         let path_text = source_path.to_string_lossy().into_owned();
+        let mut parse_loaded_env: Vec<(Symbol, Value)> = Vec::new();
         let (mut module_ast, facts, effects, precompiled) = match &entry {
             Some(entry) => {
                 // A hit skips the parse, which is where a unit's mention of a
@@ -1050,8 +1053,28 @@ impl Interpreter {
                 (ast, entry.facts.clone(), entry.effects.clone(), true)
             }
             None => {
+                let env_keys_before_parse: HashSet<Symbol> = self.env.keys().copied().collect();
                 let (mut stmts, precompiled, effects) =
                     self.parse_module_source_in(module, &source_path, module_unit.as_ref())?;
+                // The module's own `use`s loaded while it parsed (ADR-17558),
+                // ahead of the body window below that tells the module's
+                // bindings from its importer's. What those loads left in the
+                // shared env is the module's, as when they load in its
+                // prologue: park it and put it back inside the window.
+                let new_keys: Vec<Symbol> = self
+                    .env
+                    .keys()
+                    .filter(|key| !env_keys_before_parse.contains(*key))
+                    // `?FILE` and the other compile-time names are scoped by the
+                    // loads themselves.
+                    .filter(|key| !key.as_str().starts_with('?'))
+                    .copied()
+                    .collect();
+                for key in new_keys {
+                    if let Some(value) = self.env.remove(key.as_str()) {
+                        parse_loaded_env.push((key, value));
+                    }
+                }
                 // A term used before its declaration, judged in source order,
                 // before the BEGIN-time effects move to the head.
                 crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts)?;
@@ -1136,6 +1159,13 @@ impl Interpreter {
                 guards: &guards,
             })?;
         let use_only = facts.use_only && guards.is_empty();
+        // A module whose body does not run has no window: what its parse-time
+        // loads left in the env stays where they put it.
+        if use_only {
+            for (key, value) in std::mem::take(&mut parse_loaded_env) {
+                self.env.insert_sym(key, value);
+            }
+        }
         let decl_docs_present = !crate::parser::decl_doc::unit_docs_is_empty();
         module_ast.set_guards(guards);
         // The few consumers the load facts cannot serve read the AST itself.
@@ -1338,6 +1368,9 @@ impl Interpreter {
                 saved_plain_env
                     .entry(crate::symbol::Symbol::intern("=pod"))
                     .or_insert_with(|| pod.clone());
+            }
+            for (key, value) in std::mem::take(&mut parse_loaded_env) {
+                self.env.insert_sym(key, value);
             }
             let saved_monkey_see_no_eval = self.monkey_see_no_eval_snapshot();
             let saved_imports = std::mem::take(&mut self.module.module_imported_names);
@@ -1989,7 +2022,8 @@ impl Interpreter {
                     .any(|m| m.contains_key("MAIN")))
                 || self.env.get("&MAIN").is_some_and(|v| {
                     matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. })
-                });
+                })
+                || self.parse_time_hook_exports_main(module);
             Self::remove_leaked_main_routines(
                 self.routines_mut().functions_mut(),
                 &before_function_keys,
