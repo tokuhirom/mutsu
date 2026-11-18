@@ -151,6 +151,15 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
         self.shard_mut(index).get_mut(key)
     }
 
+    /// Make room for `additional` more entries spread over the shards.
+    // Cost: O(n + SHARDS), copying every shared shard.
+    pub(crate) fn reserve(&mut self, additional: usize) {
+        let per_shard = additional / SHARDS + 1;
+        for shard in self.shards.iter_mut() {
+            Arc::make_mut(shard).reserve(per_shard);
+        }
+    }
+
     // Cost: O(|key|) expected, plus the shard copy when shared.
     pub(crate) fn insert(&mut self, key: K, value: V) -> Option<V> {
         let old = self.shard_mut(shard_of(&key)).insert(key, value);
@@ -220,7 +229,9 @@ impl<K: Hash + Eq + Clone, V: Clone> Extend<(K, V)> for ShardedMap<K, V> {
 impl<K: Hash + Eq + Clone, V: Clone> FromIterator<(K, V)> for ShardedMap<K, V> {
     // Cost: O(m) expected for m items.
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        let iter = iter.into_iter();
         let mut map = Self::default();
+        map.reserve(iter.size_hint().0);
         map.extend(iter);
         map
     }

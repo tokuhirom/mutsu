@@ -3058,6 +3058,10 @@ impl Interpreter {
         // walk `role_parents` here to pull in roles reached
         // transitively through a composed role's own `does` (a class
         // doing `X::Syntax` also does `X::Comp`).
+        let added = register_x_does.len();
+        registry.class_composed_roles.reserve(added);
+        registry.class_direct_composed_roles.reserve(added);
+        registry.class_does_only_roles.reserve(added);
         for (class_name, does) in register_x_does {
             let mut flattened: Vec<String> = does.clone();
             let mut i = 0;
