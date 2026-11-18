@@ -193,6 +193,19 @@ impl Expr {
 }
 
 impl Expr {
+    /// The expression with only its [`Expr::Spelled`] wrappers taken off; unlike
+    /// [`Expr::peel_parens`] it keeps a written `(...)`.
+    // Cost: O(w), w = nested wrappers.
+    pub(crate) fn peel_spelled(&self) -> &Expr {
+        let mut expr = self;
+        while let Expr::Spelled(spelled) = expr {
+            expr = &spelled.expr;
+        }
+        expr
+    }
+}
+
+impl Expr {
     /// The argument of a `die` as written: the parser groups a lone `<x y>`
     /// to tell it from several arguments, but the source has no parentheses.
     // Cost: O(1).

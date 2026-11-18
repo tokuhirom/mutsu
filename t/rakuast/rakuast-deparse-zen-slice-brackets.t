@@ -17,5 +17,5 @@ my $ast = 'my @a; @a<>'.AST;
 is $ast.find-nodes(RakuAST::Postcircumfix::LiteralHashIndex).elems, 1, '<> is a LiteralHashIndex';
 is $ast.find-nodes(RakuAST::Postcircumfix::HashIndex).elems, 0, 'and no HashIndex';
 
-is EVAL('my @a = 1,2; @a<>.raku'.AST), '$[1, 2]', 'EVAL of <> is still the zen slice';
+is EVAL('my @a = 1,2; @a<>.elems'.AST), 2, 'EVAL of <> is still the zen slice, not a lookup of the key ""';
 is EVAL('my @a = 3,4; @a{}.raku'.AST), '[3, 4]', 'EVAL of {} is the zen slice';

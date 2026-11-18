@@ -448,7 +448,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(r, stmt);
         }
         // Reject binding to a zen slice: `@a[] := ...` / `%a{} := ...` → X::Bind::ZenSlice
-        if let Expr::ZenSlice(inner) = &expr {
+        if let Expr::ZenSlice(inner) = expr.peel_spelled() {
             let type_name = match inner.as_ref() {
                 Expr::HashVar(_) => "Hash",
                 _ => "Array",

@@ -139,7 +139,7 @@ pub(crate) fn is_conservative_angle_key_char(c: char) -> bool {
 /// `@a»{...}` (parsed as a hyper `AT-KEY` call) is a subscript too: taurus
 /// chains `>>.{0..4}` newline `.grep(...)`.
 pub(in crate::parser) fn is_subscript_expr(expr: &Expr) -> bool {
-    match expr {
+    match expr.peel_spelled() {
         Expr::Index { .. } | Expr::MultiDimIndex { .. } | Expr::ZenSlice(_) => true,
         Expr::HyperMethodCall { name, .. } => {
             matches!(name.as_str(), "AT-KEY" | "postcircumfix:<{ }>")
