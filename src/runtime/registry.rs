@@ -42,7 +42,14 @@ use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
 /// [`Registry::classes`]'s type: a copy-on-write table, so a snapshot of it
 /// (an import scope's, `ImportScopeSnapshot`) is a reference bump.
-pub(crate) type ClassTable = CowTable<ShardedMap<String, CowTable<ClassDef>>>;
+/// A registry map: shared copy-on-write, written one shard at a time.
+pub(crate) type Sharded<K, V> = CowTable<ShardedMap<K, V>>;
+/// A proto method's compiled dispatcher body and its functions.
+pub(crate) type CompiledProto = (
+    Arc<crate::opcode::CompiledCode>,
+    Option<Arc<crate::opcode::CompiledFns>>,
+);
+pub(crate) type ClassTable = Sharded<String, CowTable<ClassDef>>;
 /// The role table: sharded like [`ClassTable`], each definition behind its
 /// own `Arc`, so copying a shard never copies a role body.
 pub(crate) type RoleTable = CowTable<ShardedMap<String, CowTable<RoleDef>>>;
@@ -154,9 +161,10 @@ pub(crate) const DISPATCHER_WRAP_IDX: usize = usize::MAX;
 /// [`TypeKeysStamp`] its answers were found under: a version with other keys
 /// sees a miss, and the first insert under a new stamp starts it over.
 #[derive(Default, Clone)]
-pub(crate) struct LexicalKeyScans(
-    Arc<std::sync::Mutex<(TypeKeysStamp, rustc_hash::FxHashMap<Box<str>, Option<String>>)>>,
-);
+pub(crate) struct LexicalKeyScans(Arc<std::sync::Mutex<StampedKeyScans>>);
+
+/// The memo behind [`LexicalKeyScans`] and the stamp it holds for.
+type StampedKeyScans = (TypeKeysStamp, rustc_hash::FxHashMap<Box<str>, Option<String>>);
 
 impl LexicalKeyScans {
     // Cost: O(1) expected.
@@ -223,14 +231,14 @@ pub(crate) struct Registry {
         std::sync::Arc<std::sync::Mutex<(usize, HashMap<String, String>)>>,
     /// The stash `nqp::setwho` gave a type object, by `who_override_key`:
     /// its `.WHO` answers that very object.
-    pub(crate) who_overrides: CowTable<ShardedMap<String, crate::value::Value>>,
+    pub(crate) who_overrides: Sharded<String, crate::value::Value>,
     /// `(class, method)` -> the stamp of the first `augment` that added a
     /// `multi` candidate of `method` to an ancestor after `class` had composed
     /// its own multi dispatcher for it. Rakudo derives a subclass's dispatcher
     /// from its parent's when the subclass is composed, so candidates stamped
     /// at or after that point (`MethodDef::augment_epoch`) do not join it
     /// (#16049).
-    pub(crate) frozen_dispatchers: CowTable<ShardedMap<(crate::symbol::Symbol, crate::symbol::Symbol), u64>>,
+    pub(crate) frozen_dispatchers: Sharded<(crate::symbol::Symbol, crate::symbol::Symbol), u64>,
     /// Compunits whose top level ran `use MONKEY-SEE-NO-EVAL` (or `use
     /// MONKEY`). A routine of such a unit keeps the pragma when it is called
     /// from another unit, whose env (the one the call runs in) does not carry
@@ -238,10 +246,10 @@ pub(crate) struct Registry {
     pub(crate) monkey_eval_units: CowTable<std::collections::HashSet<crate::symbol::Symbol>>,
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
-    pub(crate) method_entries: CowTable<ShardedMap<MethodEntryKey, MethodEntry>>,
+    pub(crate) method_entries: Sharded<MethodEntryKey, MethodEntry>,
     /// Declaration prototypes, including copies owned by composed classes.
     /// Replacing a method row does not change an already declared initializer.
-    pub(crate) method_value_prototypes: CowTable<ShardedMap<Symbol, HashMap<Symbol, Arc<crate::value::RoutinePrototype>>>>,
+    pub(crate) method_value_prototypes: Sharded<Symbol, HashMap<Symbol, Arc<crate::value::RoutinePrototype>>>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
     /// ADR-0067 slice 3a: has any user method with a **raw invocant**
@@ -302,7 +310,7 @@ pub(crate) struct Registry {
     /// the construction site; every actual read/write outside this impl
     /// block should go through [`owner_method_names`](Self::owner_method_names)
     /// rather than touching the field directly.
-    pub(crate) owner_method_names: CowTable<ShardedMap<Symbol, Vec<Symbol>>>,
+    pub(crate) owner_method_names: Sharded<Symbol, Vec<Symbol>>,
     /// Reverse index for the OTHER half of the same table: owner -> every
     /// `name` whose `(owner, name)` row currently carries an `accessor`
     /// column. Maintained solely by
@@ -319,7 +327,7 @@ pub(crate) struct Registry {
     /// `pub(crate)` for the same struct-update-syntax reason as
     /// [`owner_method_names`](Self::owner_method_names); read and written only
     /// through `registry_method_table.rs`.
-    pub(crate) owner_accessor_names: CowTable<ShardedMap<Symbol, Vec<Symbol>>>,
+    pub(crate) owner_accessor_names: Sharded<Symbol, Vec<Symbol>>,
     /// Method-candidate wrap chains: `(owner class, method name, candidate
     /// index)` -> stack of `(handle_id, wrapper_sub)`, outermost (currently
     /// active) last. Populated by `.wrap()` on a Sub/Method obtained via
@@ -329,12 +337,12 @@ pub(crate) struct Registry {
     /// letting the generation-checked `fast_method_cache` stay valid instead
     /// of a program-wide `has_any_wrap_chains()` prefilter disabling it
     /// whenever ANY method anywhere is wrapped).
-    pub(crate) method_wrap_chains: CowTable<ShardedMap<(String, String, usize), Vec<(u64, Value)>>>,
+    pub(crate) method_wrap_chains: Sharded<(String, String, usize), Vec<(u64, Value)>>,
     /// `Method.set_name` renames: `(owner class, method name, candidate
     /// index)` -> the name `.name` reports. The method table key (the dispatch
     /// name) is unchanged, as in rakudo, where `set_name` only rewrites the
     /// code object's `$!do` name.
-    pub(crate) method_renames: CowTable<ShardedMap<(String, String, usize), String>>,
+    pub(crate) method_renames: Sharded<(String, String, usize), String>,
     /// Method names that have ever had a wrapper pushed onto their multi
     /// DISPATCHER slot ([`DISPATCHER_WRAP_IDX`]). A conservative prefilter
     /// for `Interpreter::dispatcher_wrap_chain`: a name is never removed, so
@@ -347,13 +355,13 @@ pub(crate) struct Registry {
     /// it can look a chain up (#12875).
     pub(crate) candidate_wrapped_methods: CowTable<std::collections::HashSet<String>>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
-    pub(crate) enum_types: CowTable<ShardedMap<String, Vec<(String, EnumValue)>>>,
+    pub(crate) enum_types: Sharded<String, Vec<(String, EnumValue)>>,
     /// Enums minted by `Metamodel::EnumHOW.new_type`: type name -> the value
     /// objects `.^add_enum_value` received and the HOW's compose state.
     /// Declared (`enum Name ...`) enums live in `enum_types` instead.
-    pub(crate) how_enums: CowTable<ShardedMap<String, super::methods_enumhow::HowEnumState>>,
+    pub(crate) how_enums: Sharded<String, super::methods_enumhow::HowEnumState>,
     /// `subset Name of Base where { ... }` declarations.
-    pub(crate) subsets: CowTable<ShardedMap<String, std::sync::Arc<SubsetDef>>>,
+    pub(crate) subsets: Sharded<String, std::sync::Arc<SubsetDef>>,
 
     /// User/builtin class definitions: class name -> [`ClassDef`] (parents, MRO,
     /// methods, attributes, ...). Read on hot method-dispatch paths; callers take
@@ -401,17 +409,17 @@ pub(crate) struct Registry {
     /// declaring class or role (a role by its base name). MoarVM's native ops
     /// on an object that has one apply to that attribute's value instead
     /// (see `runtime::box_target`).
-    pub(crate) box_target_attrs: CowTable<ShardedMap<String, String>>,
+    pub(crate) box_target_attrs: Sharded<String, String>,
     /// `native`-declared types and the traits they recorded (`is repr`,
     /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
-    pub(crate) native_decls: CowTable<ShardedMap<String, super::native_decl::NativeDecl>>,
+    pub(crate) native_decls: Sharded<String, super::native_decl::NativeDecl>,
     /// `.^array_type` of a class that recorded one (`is array_type(T)`, a
     /// composed role's trait, or `.^set_array_type`; see
     /// `runtime::array_type_trait`).
-    pub(crate) array_types: CowTable<ShardedMap<String, Value>>,
+    pub(crate) array_types: Sharded<String, Value>,
     /// A role's `is array_type(...)` argument, evaluated against the role's
     /// type arguments when a class composes it (`runtime::array_type_trait`).
-    pub(crate) role_array_type_args: CowTable<ShardedMap<String, crate::opcode::DeclTraitArg>>,
+    pub(crate) role_array_type_args: Sharded<String, crate::opcode::DeclTraitArg>,
     /// Classes declared `is repr('VMArray')` or `is repr('VMHash')` — raw VM
     /// storage, with no Raku attributes of their own. nqp code declares one
     /// when it wants a bare list/hash store to build with `nqp::bindpos` /
@@ -425,7 +433,7 @@ pub(crate) struct Registry {
     pub(crate) vmarray_classes: CowTable<HashSet<String>>,
     /// `is repr('ConcBlockingQueue')` / `is repr('AsyncTask')` classes
     /// (#11502), by name, with the REPR each declared.
-    pub(crate) async_repr_classes: CowTable<ShardedMap<String, &'static str>>,
+    pub(crate) async_repr_classes: Sharded<String, &'static str>,
     pub(crate) vmhash_classes: CowTable<HashSet<String>>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) hidden_classes: CowTable<HashSet<String>>,
@@ -451,7 +459,7 @@ pub(crate) struct Registry {
     /// storage name, with what that registration depended on. A later entry
     /// of the same declaration with an equal stamp keeps the class instead of
     /// rebuilding it (`registration_class_site`, #16978).
-    pub(crate) class_site_stamps: CowTable<ShardedMap<String, super::registration_class_site::ClassSiteStamp>>,
+    pub(crate) class_site_stamps: Sharded<String, super::registration_class_site::ClassSiteStamp>,
     /// Qualified names of lexical types declared under an already-namespaced
     /// spelling (`my class AST::Param {}` at file scope), as opposed to a
     /// `my class Param {}` written inside `module AST { }`. The former keeps
@@ -484,19 +492,19 @@ pub(crate) struct Registry {
     /// Maps each such name to the package it was really declared in, which is
     /// the next scope the outward walk visits after it (skipping the
     /// intermediate segments the compound name merely spells).
-    pub(crate) compound_declared_types: CowTable<ShardedMap<String, Symbol>>,
+    pub(crate) compound_declared_types: Sharded<String, Symbol>,
     /// A compound-named class declared inside a package while that very name
     /// already denotes a class (`unit class Foo::Bar; class Foo::Bar { }`).
     /// Rakudo installs the nested class into the existing `Foo` stash, so the
     /// written name `Foo::Bar` then names the nested class (whose own name is
     /// the package-qualified `Foo::Bar::Foo::Bar`) and the outer class is no
     /// longer reachable by it. Maps the written name to that qualified name.
-    pub(crate) compound_name_overrides: CowTable<ShardedMap<String, String>>,
+    pub(crate) compound_name_overrides: Sharded<String, String>,
     /// A relative compound declaration's registry identity is not an extra
     /// package binding. Maps that identity to the written binding it uses.
-    pub(crate) compound_identity_bindings: CowTable<ShardedMap<Symbol, Symbol>>,
+    pub(crate) compound_identity_bindings: Sharded<Symbol, Symbol>,
     /// Reverse index for consumers resolving a published binding to its type.
-    pub(crate) compound_binding_identities: CowTable<ShardedMap<Symbol, Symbol>>,
+    pub(crate) compound_binding_identities: Sharded<Symbol, Symbol>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: CowTable<HashSet<String>>,
     /// Forward-declared package stubs.
@@ -515,15 +523,15 @@ pub(crate) struct Registry {
     /// (`PackageHOW`/`ModuleHOW`/`GrammarHOW`) instead of the default
     /// `ClassHOW`. Classes and roles are absent (they default to `ClassHOW` /
     /// the role HOW).
-    pub(crate) package_kinds: CowTable<ShardedMap<String, crate::ast::PackageKind>>,
+    pub(crate) package_kinds: Sharded<String, crate::ast::PackageKind>,
     /// `is hidden` parents deferred until the parent is fully declared.
-    pub(crate) hidden_defer_parents: CowTable<ShardedMap<String, HashSet<String>>>,
+    pub(crate) hidden_defer_parents: Sharded<String, HashSet<String>>,
     /// `trusts` relationships: class -> trusted classes, in declaration
     /// order (`Metamodel::Trusting`'s `.^trusts` answers an ordered `List`,
     /// so a set would lose the order the source declared).
-    pub(crate) class_trusts: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) class_trusts: Sharded<String, Vec<String>>,
     /// Per-class metaclass (`HOW`) value override.
-    pub(crate) class_how_values: CowTable<ShardedMap<String, Value>>,
+    pub(crate) class_how_values: Sharded<String, Value>,
     /// Roles whose declaration is running a method's `trait_mod:<is>` right
     /// now. The role is not in `roles` yet, so `.HOW` on its `Package` would
     /// fall through to `ClassHOW`; rakudo reports `ParametricRoleHOW`.
@@ -535,17 +543,17 @@ pub(crate) struct Registry {
     /// is a `ParametricRoleHOW` and not the default `ClassHOW`. Distinct from
     /// `class_how_values`, which carries *user* HOW instances installed by the
     /// EXPORTHOW/DECLARE protocol.
-    pub(crate) declared_native_how: CowTable<ShardedMap<String, String>>,
+    pub(crate) declared_native_how: Sharded<String, String>,
     /// Grammars declared under a custom EXPORTHOW `grammar` metaclass whose HOW
     /// class defines a user `find_method`: grammar name -> HOW instance. The
     /// regex engine consults this to route subrule dispatch through the custom
     /// `find_method` (Metamodel::GrammarHOW protocol).
-    pub(crate) grammar_custom_how: CowTable<ShardedMap<String, Value>>,
+    pub(crate) grammar_custom_how: Sharded<String, Value>,
     /// Classes whose user HOW instance (`class_how_values`) defines a
     /// `find_method`: class name -> that HOW. Every method call on an instance
     /// or type object of such a class is looked up through it, the way rakudo's
     /// method cache miss path asks `HOW.find_method` (OO::Actors' `actor`).
-    pub(crate) class_find_method_how: CowTable<ShardedMap<String, Value>>,
+    pub(crate) class_find_method_how: Sharded<String, Value>,
     /// Classes declared under a custom EXPORTHOW `class` metaclass whose HOW
     /// class defines a user `compose` method: names queued for a post-`is`-trait
     /// `compose` call. Drained by the class-decl VM op after custom `is` traits
@@ -572,7 +580,7 @@ pub(crate) struct Registry {
     /// Roles whose body is being registered right now (group name -> `role_id`).
     /// The role is not in `roles` yet, but its method traits already see it as
     /// `$*PACKAGE` -- the individual parametric role (`ParametricRoleHOW`).
-    pub(crate) declaring_role_ids: CowTable<ShardedMap<String, u64>>,
+    pub(crate) declaring_role_ids: Sharded<String, u64>,
     /// `(class, role_how_key, role_name)` for every role a class composed whose
     /// HOW carries a user `specialize` override (`$role.HOW does R` from a
     /// trait). Drained by the class-decl VM op once the class is registered,
@@ -585,7 +593,7 @@ pub(crate) struct Registry {
     /// Roles composed into each class: class -> [role names]. This is the
     /// FLATTENED set (includes roles reached transitively through a composed
     /// role's own `does`), used for `~~`/role-membership checks.
-    pub(crate) class_composed_roles: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) class_composed_roles: Sharded<String, Vec<String>>,
     /// Roles DIRECTLY declared on each class's `does` list (NOT the transitive
     /// closure): class -> [role names]. Qualified `self.Role::method` resolution
     /// of a parametric role uses this so a concretization reached only
@@ -593,36 +601,36 @@ pub(crate) struct Registry {
     /// `R2[::T] does R1[::T]`) does not make a directly-declared `R1[Int]`
     /// ambiguous (Raku resolves a qualified role call against the immediate
     /// roles of the consumer).
-    pub(crate) class_direct_composed_roles: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) class_direct_composed_roles: Sharded<String, Vec<String>>,
     /// Roles composed PURELY via `does` (not `is Role` puns): class -> [role names].
     /// A `does`-composed role provides methods but is NOT an MRO entry in Rakudo's
     /// `.^mro_unhidden`, so this set is filtered out of that introspection.
-    pub(crate) class_does_only_roles: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) class_does_only_roles: Sharded<String, Vec<String>>,
     /// Roles implicitly composed by enums: enum -> [role names].
-    pub(crate) class_enum_roles: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) class_enum_roles: Sharded<String, Vec<String>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
-    pub(crate) class_subs: CowTable<ShardedMap<String, HashMap<String, Value>>>,
+    pub(crate) class_subs: Sharded<String, HashMap<String, Value>>,
     /// Role composition scopes (`K::&role:R`) holding a role body's `sub`
     /// whose name the composing class declares too; a role method composed
     /// into `K` runs in its scope (`role_composition_scope`, #14177).
     pub(crate) role_composition_scopes: CowTable<HashSet<crate::symbol::Symbol>>,
     /// BUILDPLANs the meta-object protocol stored per class: built by
     /// `create_BUILDPLAN` or bound by a module (ADR-14162, `buildplan.rs`).
-    pub(crate) buildplans: CowTable<ShardedMap<String, super::buildplan::BuildPlanState>>,
+    pub(crate) buildplans: Sharded<String, super::buildplan::BuildPlanState>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
-    pub(crate) attribute_build_overrides: CowTable<ShardedMap<(String, String), Value>>,
+    pub(crate) attribute_build_overrides: Sharded<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
     pub(crate) class_attribute_defaults: CowTable<super::class_attr_table::ClassAttrTable<Value>>,
     /// Per-attribute `is default(...)` expression for a parametric role, where the
     /// value cannot be evaluated until the role is composed and its type params
     /// are bound: (role-base, attr) -> expr. Evaluated at instance construction
     /// (with role param bindings in scope) to tag `@`/`%` containers.
-    pub(crate) role_attribute_default_exprs: CowTable<ShardedMap<(String, String), crate::opcode::DeclTraitArg>>,
+    pub(crate) role_attribute_default_exprs: Sharded<(String, String), crate::opcode::DeclTraitArg>,
     /// Class-level (`my $.x` / `our $.x`) role attributes: (role-base, attr) ->
     /// optional default expr. These generate an accessor on the *type object*
     /// (not per-instance), so at composition they are copied into the consuming
     /// class's `class_level_attrs` rather than its per-instance attributes.
-    pub(crate) role_class_level_attrs: CowTable<ShardedMap<(String, String), Option<crate::opcode::DeclTraitArg>>>,
+    pub(crate) role_class_level_attrs: Sharded<(String, String), Option<crate::opcode::DeclTraitArg>>,
     /// Every name a class has ever declared a class-level attribute under
     /// (`ClassDef::class_level_attrs`). Only grows. Lets the per-call
     /// "does a class-scoped accessor shadow this method?" query answer the
@@ -637,14 +645,14 @@ pub(crate) struct Registry {
     /// The `EXPORTHOW::DECLARE` `<kw>-attr` metaclass of a class declared with
     /// `<kw>`: class -> attribute class name. `.^attributes` answers instances
     /// of it.
-    pub(crate) declare_attribute_classes: CowTable<ShardedMap<String, String>>,
+    pub(crate) declare_attribute_classes: Sharded<String, String>,
     /// Per-attribute declared type: (class, attr) -> type name.
-    pub(crate) class_attribute_is_types: CowTable<ShardedMap<(String, String), String>>,
+    pub(crate) class_attribute_is_types: Sharded<(String, String), String>,
     /// Per-attribute `is Type` container trait declared on a *role* attribute:
     /// (role, attr) -> type name. Carried onto a consuming class's
     /// `class_attribute_is_types` at composition (`has @.a is G::A` in a
     /// parametric role) so the attribute's element type is enforced.
-    pub(crate) role_attribute_is_types: CowTable<ShardedMap<(String, String), String>>,
+    pub(crate) role_attribute_is_types: Sharded<(String, String), String>,
     /// Per-attribute declared type constraint on a *role* attribute
     /// (`role R { has Int $.x }`, `has Callable %!c{Mu:U}`): (role, attr) ->
     /// type constraint, in the same `ValueType{KeyType}` encoding a class
@@ -652,47 +660,47 @@ pub(crate) struct Registry {
     /// before it is known which class will consume it; at composition (and when
     /// a role is punned to a class) the entries are copied — with role type
     /// parameters substituted — into the class's `attribute_types`.
-    pub(crate) role_attribute_types: CowTable<ShardedMap<(String, String), String>>,
+    pub(crate) role_attribute_types: Sharded<(String, String), String>,
     /// Per-attribute definiteness smiley on a *role* attribute
     /// (`role R { has Int:D $.x }`): (role, attr) -> "D"/"U"/"_". Copied
     /// alongside `role_attribute_types`.
-    pub(crate) role_attribute_smileys: CowTable<ShardedMap<(String, String), String>>,
+    pub(crate) role_attribute_smileys: Sharded<(String, String), String>,
     /// Per-attribute `does Role` traits: (class, attr) -> role names mixed into
     /// the attribute's container (`has $.x does Foo`). Applied to the attribute's
     /// value at construction so `$o.x` does the role.
-    pub(crate) class_attribute_does_roles: CowTable<ShardedMap<(String, String), Vec<String>>>,
+    pub(crate) class_attribute_does_roles: Sharded<(String, String), Vec<String>>,
     /// Per-attribute container role mixins recorded by a custom `trait_mod:<is>`
     /// that mixes a role into `$attr.container.VAR` (e.g.
     /// `$a.container.VAR does doc($arg)`): (class, attr) -> list of mixin-override
     /// maps (each holding `__mutsu_role__X` / `__mutsu_attr__X` keys). Applied to
     /// the attribute's value at construction so `$o.attr.VAR` does the role.
-    pub(crate) class_attribute_container_mixins: CowTable<ShardedMap<(String, String), Vec<HashMap<String, Value>>>>,
+    pub(crate) class_attribute_container_mixins: Sharded<(String, String), Vec<HashMap<String, Value>>>,
     /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
-    pub(crate) class_attribute_deprecated: CowTable<ShardedMap<(String, String), String>>,
+    pub(crate) class_attribute_deprecated: Sharded<(String, String), String>,
     /// The Attribute meta-object a custom `trait_mod:<is>` was applied to,
     /// per (class, attr). Instance attrs are a shared cell, so mutations the
     /// trait made (`$a does JSON::Name::NamedAttribute; $a.json-name = ...`)
     /// live in this stored object; `^attributes` returns it (topped up with
     /// the standard meta keys) so the mixin state survives introspection.
-    pub(crate) class_attribute_trait_objects: CowTable<ShardedMap<(String, String), crate::value::Value>>,
+    pub(crate) class_attribute_trait_objects: Sharded<(String, String), crate::value::Value>,
     /// A *role* attribute's custom traits (`has $.x is entry(...)`) still to
     /// apply: (role, attr) -> its compiled declaration. Applied once, at the
     /// role's first composition — the role body's `use` that imports the
     /// trait handler runs only then — and removed; see
     /// `apply_pending_role_attribute_traits`.
-    pub(crate) role_attribute_pending_traits: CowTable<ShardedMap<(String, String), crate::opcode::CompiledAttrDecl>>,
+    pub(crate) role_attribute_pending_traits: Sharded<(String, String), crate::opcode::CompiledAttrDecl>,
     /// The custom traits a role attribute was last recorded with: (role, attr) ->
     /// their rendering. A second role declaration under the same name (sibling
     /// scopes each declaring `my role R`) with different traits is a new
     /// declaration, not a re-registration, and must not reuse the first one's
     /// applied meta-object.
-    pub(crate) role_attribute_trait_fingerprints: CowTable<ShardedMap<(String, String), String>>,
+    pub(crate) role_attribute_trait_fingerprints: Sharded<(String, String), String>,
     /// A *parameterized* role attribute's custom traits: (`RoleDef::role_id`,
     /// attr) -> its compiled declaration. Unlike `role_attribute_pending_traits`
     /// these run at every composition, with the role's type parameters bound,
     /// on the composing class's attribute (Rakudo specializes the role body
     /// per consumer).
-    pub(crate) param_role_attribute_traits: CowTable<ShardedMap<(u64, String), crate::opcode::CompiledAttrDecl>>,
+    pub(crate) param_role_attribute_traits: Sharded<(u64, String), crate::opcode::CompiledAttrDecl>,
     /// Sub-level `proto`s a role body has already registered: (role,
     /// routine name). A role's body re-runs at every composition, but its
     /// `proto sub f(|) {*}` declares one routine for the role — registering
@@ -703,7 +711,7 @@ pub(crate) struct Registry {
     /// once, so a later composition reuses the persisted binding (#16255).
     /// The value is the env bindings the first evaluation left (the constant's
     /// own name and its term key), put back for the later compositions.
-    pub(crate) role_evaluated_constants: CowTable<ShardedMap<(String, String), Vec<(String, Value)>>>,
+    pub(crate) role_evaluated_constants: Sharded<(String, String), Vec<(String, Value)>>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,
@@ -714,19 +722,19 @@ pub(crate) struct Registry {
     /// used to detect `X::Redeclaration` for role->class name conflicts.
     pub(crate) user_declared_roles: CowTable<HashSet<String>>,
     /// Parameterized role candidates: role name -> [candidate by arity/types].
-    pub(crate) role_candidates: CowTable<ShardedMap<String, CowTable<Vec<RoleCandidateDef>>>>,
+    pub(crate) role_candidates: Sharded<String, CowTable<Vec<RoleCandidateDef>>>,
     /// Role inheritance: role -> [parent role specs].
-    pub(crate) role_parents: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) role_parents: Sharded<String, Vec<String>>,
     /// `also hides` relationships on roles: role -> [hidden names].
-    pub(crate) role_hides: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) role_hides: Sharded<String, Vec<String>>,
     /// Declared type parameters per parameterized role: role -> [param names].
-    pub(crate) role_type_params: CowTable<ShardedMap<String, Vec<String>>>,
+    pub(crate) role_type_params: Sharded<String, Vec<String>>,
     /// A role's body block, installed by `$role.^set_body_block(&block)` on a
     /// role built with `Metamodel::ParametricRoleHOW.new_type`. A declared
     /// role's body is `RoleDef::deferred_body`; a MOP-built role has only this
     /// block, which every composition calls with the consuming type, like
     /// Rakudo's `ParametricRoleHOW.specialize`.
-    pub(crate) role_body_blocks: CowTable<ShardedMap<String, Value>>,
+    pub(crate) role_body_blocks: Sharded<String, Value>,
     /// Compositions whose role body has already been run, keyed by kind and
     /// target (`pun:R`, `mixin:R`, or `class:C:R`). A role body runs once per
     /// composed target: repeated paths to the same ancestor role in one class
@@ -738,7 +746,7 @@ pub(crate) struct Registry {
     /// the in-place registration of the same declaration must not repeat them.
     pub(crate) nested_shell_traits_applied: CowTable<HashSet<u64>>,
     /// Bound role type parameters per class: class -> (param name -> value).
-    pub(crate) class_role_param_bindings: CowTable<ShardedMap<String, HashMap<String, Value>>>,
+    pub(crate) class_role_param_bindings: Sharded<String, HashMap<String, Value>>,
     /// Anonymous type-object identity cache for a role-mixed value's `.WHAT`
     /// (ADR-0060): composition key
     /// (`crate::value::types::mixin_composition_key`) -> the shared
@@ -748,7 +756,7 @@ pub(crate) struct Registry {
     /// Rakudo mechanism (one permanent anonymous type per (base type, role
     /// set) pair) for a different purpose (deferred-body-run-once, rather
     /// than `.WHAT` identity).
-    pub(crate) mixin_what_cache: CowTable<ShardedMap<String, crate::gc::Gc<crate::value::MixinOverrides>>>,
+    pub(crate) mixin_what_cache: Sharded<String, crate::gc::Gc<crate::value::MixinOverrides>>,
     /// Whether ANY `proto method`/`proto submethod` has been declared
     /// anywhere in the program (ADR-0019 E8c). A monotonic flag — proto
     /// bodies are never unregistered — set by [`Registry::set_proto_method`]
@@ -774,13 +782,7 @@ pub(crate) struct Registry {
     /// [`Registry::set_proto_method`] installs a new body there (class
     /// redeclaration / EVAL), so a stale compile can never survive a real
     /// body change.
-    pub(crate) proto_compiled_cache: CowTable<HashMap<
-        MethodEntryKey,
-        (
-            Arc<crate::opcode::CompiledCode>,
-            Option<Arc<crate::opcode::CompiledFns>>,
-        ),
-    >>,
+    pub(crate) proto_compiled_cache: Sharded<MethodEntryKey, CompiledProto>,
     /// The source-facing names of the lexically-mangled type keys the four
     /// type maps hold — i.e. `key[..first NUL]` for every key that carries the
     /// ADR-0047 P1 `Foo\u{0}<decl-id>` suffix. Built on first query and
