@@ -2725,6 +2725,16 @@ fn postfix_expr_loop_from<'a>(
                         // `».<a b>` slices each element (`.{'a','b'}`); a bare
                         // `AT-KEY` would look up the list as one key.
                         let slice = args.len() == 1 && matches!(args[0], Expr::ArrayLiteral(_));
+                        // The raw text stays on the key so the RakuAST view can
+                        // tell `».<a b>` from an explicit `».AT-KEY("a")`.
+                        let args = args
+                            .into_iter()
+                            .map(|arg| {
+                                Expr::spelled(arg, || {
+                                    crate::ast::spelled::Spelling::Words(content.into())
+                                })
+                            })
+                            .collect();
                         expr = Expr::HyperMethodCall {
                             target: Box::new(expr),
                             name: Symbol::intern(if slice {

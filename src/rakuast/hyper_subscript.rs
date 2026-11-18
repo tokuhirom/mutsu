@@ -29,6 +29,18 @@ pub(super) fn view_node(
             )],
         }));
     }
+    // `%h>>.<k>`: the parser kept the raw key text, which rakudo keeps as one
+    // word quote under a `LiteralHashIndex` (`%h<k>` without the hyper).
+    if matches!(name, "AT-KEY" | "postcircumfix:<{ }>")
+        && let [Expr::Spelled(spelled)] = args
+        && let crate::ast::spelled::Spelling::Words(text) = &spelled.spelling
+    {
+        return Some(Ok(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::PostcircumfixLiteralHashIndex,
+            fields: vec![node_field(Some("index"), super::view::word_quote(text))],
+        }));
+    }
     let class = match name {
         "postcircumfix:<[ ]>" => RakuAstClass::PostcircumfixArrayIndex,
         "postcircumfix:<{ }>" => RakuAstClass::PostcircumfixHashIndex,
@@ -58,7 +70,9 @@ pub(super) fn view_node(
 pub(super) fn is_subscript(node: &RakuAstNode) -> bool {
     matches!(
         node.class,
-        RakuAstClass::PostcircumfixArrayIndex | RakuAstClass::PostcircumfixHashIndex
+        RakuAstClass::PostcircumfixArrayIndex
+            | RakuAstClass::PostcircumfixHashIndex
+            | RakuAstClass::PostcircumfixLiteralHashIndex
     )
 }
 
@@ -69,6 +83,23 @@ pub(super) fn lower(
     node: &RakuAstNode,
 ) -> Result<Expr, RuntimeError> {
     let index = named_child(node, "index")?;
+    if node.class == RakuAstClass::PostcircumfixLiteralHashIndex {
+        // `%h>>.<a b>` slices each element; one word is a plain key lookup.
+        let key = lower_expr(names, index)?;
+        let words = super::angle_subscript::angle_key_text(&key)
+            .map_or(2, |text| text.split_whitespace().count());
+        return Ok(Expr::HyperMethodCall {
+            target: Box::new(operand),
+            name: Symbol::intern(if words == 1 {
+                "AT-KEY"
+            } else {
+                "postcircumfix:<{ }>"
+            }),
+            args: vec![key],
+            modifier: None,
+            quoted: false,
+        });
+    }
     if index.fields.len() != 1 {
         return Err(unsupported(node));
     }
