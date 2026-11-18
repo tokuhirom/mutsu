@@ -1201,6 +1201,20 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
     Ok(())
 }
 
+/// A shallow copy of `value` for an `is copy` `@`/`%` sub-parameter: the
+/// elements of an array (or list), the pairs of a hash. Anything else is
+/// returned as is.
+// Cost: O(n), n = elements copied.
+fn copy_aggregate_for_sigil(name: &str, value: &Value) -> Value {
+    let value = value.deref_container();
+    let value = value.descalarize();
+    match (name.chars().next(), value.view()) {
+        (Some('@'), ValueView::Array(data, _)) => Value::real_array(data.items().to_vec()),
+        (Some('%'), ValueView::Hash(map)) => Value::hash(map.map.clone()),
+        _ => value.clone(),
+    }
+}
+
 /// Bind one destructured sub-parameter into the environment.
 fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) {
     // A sub-parameter spelled `$self` is the reserved lexical, never the
@@ -1555,7 +1569,15 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         }
         let bind_alias_name = !is_named_rename_sub_signature(sub_pd);
         if !sub_pd.name.is_empty() && bind_alias_name {
-            bind_sub_param_name(interpreter, &sub_pd.storage_name(), candidate.clone());
+            // `is copy` on an `@`/`%` part (`:%signature! (:@args! is copy)`)
+            // owns a fresh aggregate: a `.pop` in the body must not reach the
+            // caller's array.
+            let bound = if sub_pd.traits.iter().any(|t| t == "copy") {
+                copy_aggregate_for_sigil(&sub_pd.name, &candidate)
+            } else {
+                candidate.clone()
+            };
+            bind_sub_param_name(interpreter, &sub_pd.storage_name(), bound);
             // Neither shape of a destructured leaf ever got marked readonly:
             // a sigilless leaf (`sub f($ (\a, \b)) { a = 1 }`) is a TERM
             // binding like a top-level `sub f(\a) { a = 1 }` param, and a
