@@ -366,9 +366,9 @@ pub(crate) fn closure_clone(data: &crate::value::SubData) -> Value {
     // The copy owns a new state scope, so its disposal is its own to
     // report (the guard it cloned would reap the ORIGINAL's scope).
     if new_data._state_scope_guard.is_some() {
-        new_data._state_scope_guard = Some(
-            crate::value::state_scope_reaper::StateScopeGuard::new(new_data.id),
-        );
+        new_data._state_scope_guard = Some(crate::value::state_scope_reaper::StateScopeGuard::new(
+            new_data.id,
+        ));
     }
     Value::sub_value(crate::gc::Gc::new(new_data))
 }

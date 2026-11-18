@@ -18,9 +18,7 @@ impl Interpreter {
         // its own `FIRST` flag (ParaSeq mixes its mapper role into the user's
         // block this way, and expects the block's `FIRST` to fire again).
         let left = match left.view() {
-            ValueView::Sub(data) => {
-                crate::builtins::method_table::code::closure_clone(&data)
-            }
+            ValueView::Sub(data) => crate::builtins::method_table::code::closure_clone(&data),
             _ => left,
         };
         // `$obj but R` runs role R's `submethod TWEAK`/`BUILD` via the interpreter,
