@@ -64,9 +64,9 @@ use crate::builtins::method_table::{self, Receiver, RowId};
 /// A lane answer: the row's result, the row it came from, and the number of
 /// arguments above the receiver on the stack.
 pub(super) struct SiteLaneAnswer {
-    result: Result<Value, RuntimeError>,
-    row: RowId,
-    arity: usize,
+    pub(super) result: Result<Value, RuntimeError>,
+    pub(super) row: RowId,
+    pub(super) arity: usize,
     /// Whether the handler is pure, so the debug cross-check may re-run the
     /// call through the full path. An interpreter row has effects and was
     /// answered once, here.
@@ -114,6 +114,30 @@ impl Interpreter {
         else {
             return None;
         };
+        self.site_lane_answer(
+            code,
+            ip,
+            name_idx,
+            arity,
+            Some(target_name_idx),
+            arg_sources_idx,
+        )
+    }
+
+    /// The lane's answer for a call of constant `name_idx` with `arity`
+    /// arguments at `code.ops[ip]`, whose receiver is the variable named by
+    /// constant `target_name_idx` (`CallMethodMut`) or an inline expression
+    /// (`None`, the plain `CallMethod`). Leaves the stack untouched.
+    // Cost: as `try_method_site_lane`.
+    pub(super) fn site_lane_answer(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        name_idx: u32,
+        arity: u32,
+        target_name_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<SiteLaneAnswer> {
         let arity = arity as usize;
         if arity > MAX_LANE_ARITY {
             return None;
@@ -136,8 +160,10 @@ impl Interpreter {
         // A callback that binds `$_` rw writes back into the named array
         // (`@a.map({ $_++ })`): the rw-writeback dispatch must see the call,
         // not the `Any` interpreter rows (ADR-11276 §9.60).
+        // An inline receiver is not told apart here: the lane leaves all
+        // three to the full path for it.
         if matches!(Self::const_str(code, name_idx), "map" | "grep" | "first")
-            && Self::const_str(code, target_name_idx).starts_with('@')
+            && target_name_idx.is_none_or(|t| Self::const_str(code, t).starts_with('@'))
         {
             return None;
         }
@@ -157,7 +183,7 @@ impl Interpreter {
             if arity != 0 {
                 return None;
             }
-            let row = self.shapeless_site_lane_row(code, name_idx, target_name_idx, base)?;
+            let row = self.shapeless_site_lane_row(code, name_idx, target_name_idx?, base)?;
             let target = &self.stack[base];
             let result = method_table::invoke(row, target, &[])?;
             return Some(SiteLaneAnswer {
@@ -178,7 +204,9 @@ impl Interpreter {
             // with another arity share, so the arity is part of the payload.
             Some(payload) if payload_matches(payload, receiver, arity) => {
                 let row = payload_row(payload)?;
-                if Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx)) {
+                if target_name_idx
+                    .is_some_and(|t| Self::is_array_hash_attr_twigil(Self::const_str(code, t)))
+                {
                     return None;
                 }
                 row
@@ -255,13 +283,15 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
-        target_name_idx: u32,
+        target_name_idx: Option<u32>,
         receiver: Receiver,
         arity: usize,
     ) -> Resolved {
         // A property of this site's receiver, not of the method: the memo,
         // which every site naming the method shares, must not remember it.
-        if Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx)) {
+        if target_name_idx
+            .is_some_and(|t| Self::is_array_hash_attr_twigil(Self::const_str(code, t)))
+        {
             return Resolved::Skip;
         }
         let method = Self::const_str(code, name_idx);
@@ -404,7 +434,7 @@ impl Interpreter {
         let raced = crate::value::container_lock::multi_mutator_threads_live();
         debug_assert!(
             diverted_by_handler || raced || lane == full_rendered,
-            "the method-table lane disagrees with the full CallMethodMut path for .{} \
+            "the method-table lane disagrees with the full call path for .{} \
              (row owner {}) at ip {ip} -- a probe the lane skips now claims this call\n  \
              lane: {lane:?}\n  full: {full_rendered:?}",
             method_table::row(answer.row).name,
