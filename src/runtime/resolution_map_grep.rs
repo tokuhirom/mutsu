@@ -656,6 +656,10 @@ impl Interpreter {
                         || pd.outer_sub_signature.is_some()
                         || pd.code_signature.is_some()
                         || pd.shape_constraints.is_some()
+                        // `-> @x is copy`: the binder makes the copy; the
+                        // inline loop would bind the source element itself
+                        // (#18151).
+                        || pd.traits.iter().any(|t| t == "copy")
                 }) || !data.assumed_positional.is_empty()
                     || !data.assumed_named.is_empty()
                     || sub_reads_block_var(&data));

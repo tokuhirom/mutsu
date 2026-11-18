@@ -75,6 +75,7 @@ impl Interpreter {
                         || pd.outer_sub_signature.is_some()
                         || pd.code_signature.is_some()
                         || pd.shape_constraints.is_some()
+                        || pd.traits.iter().any(|t| t == "copy")
                 });
                 // A routine callback must run through the real call path so a
                 // `return` in its body ends THAT call with the returned value

@@ -240,6 +240,7 @@ pub(crate) fn native_rw_map_block_shape(data: &SubData) -> Option<NativeRwMapSha
             || pd.outer_sub_signature.is_some()
             || pd.code_signature.is_some()
             || pd.shape_constraints.is_some()
+            || pd.traits.iter().any(|t| t == "copy")
     });
     if requires_full_binding {
         return None;
