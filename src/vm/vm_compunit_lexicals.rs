@@ -41,6 +41,21 @@ impl Interpreter {
                 .contains(&unit)
                 .then_some(unit);
         }
+        // A module's own mainline running under a routine that loaded it (a
+        // `require` inside a sub, #18017): no routine was called since the
+        // load began, so the code is that module's, not the routine's. While
+        // its body still runs, its file-scope lexicals are in env and it has
+        // no bucket yet; a role body re-run from its composer
+        // (`enter_source_file`) answers its compunit's bucket.
+        if let Some(&(unit, depth)) = self.module.module_loading_unit_stack.last()
+            && depth == self.routine_stack().len()
+        {
+            return self
+                .lexicals
+                .compunit_lexical_units
+                .contains(&unit)
+                .then_some(unit);
+        }
         let def_file = self
             .routine_stack()
             .iter()
