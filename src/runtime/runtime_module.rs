@@ -1268,6 +1268,7 @@ impl Interpreter {
                 })
                 .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
                 .collect();
+            self.record_bound_exporthow_declares(module, &package_globals);
             if !package_globals.is_empty() {
                 crate::runtime::cow_table_mut(&mut self.module.module_package_globals)
                     .entry(module.to_string())

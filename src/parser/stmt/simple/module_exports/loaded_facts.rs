@@ -25,9 +25,12 @@ pub(crate) fn register_loaded_unit_facts(module: &str, import_tags: Option<&[Str
         return;
     };
     apply_loaded_exports(facts.exports);
-    for (directive, keyword) in &facts.declarators {
-        match directive.as_str() {
-            "DECLARE" => super::register_scoped_declare_keyword(module, keyword),
+    for declarator in &facts.declarators {
+        let keyword = declarator.keyword.as_str();
+        match declarator.directive.as_str() {
+            "DECLARE" => {
+                super::register_scoped_declare_keyword(module, keyword, declarator.is_role)
+            }
             "SUPERSEDE" => super::register_scoped_supersede_keyword(module, keyword),
             _ => {}
         }
