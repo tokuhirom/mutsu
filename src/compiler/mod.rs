@@ -3152,10 +3152,11 @@ impl Compiler {
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
         // A routine around the nested code shadows a same-named class/package
-        // `my`; see `CompiledCode::routine_scoped_free`.
+        // `my`; see `CompiledCode::routine_scoped_free`. A unit's mainline
+        // compiled under a loader routine's frame is no such routine (#18017).
         sub.routine_scoped_names
             .extend(self.routine_scoped_names.iter().cloned());
-        if self.is_routine || self.lexically_in_routine {
+        if (self.is_routine || self.lexically_in_routine) && !self.is_mainline {
             sub.routine_scoped_names
                 .extend(self.local_map.keys().cloned());
             for frame in self.local_scopes.iter() {

@@ -254,19 +254,16 @@ impl Interpreter {
         (code, fns)
     }
 
-    /// [`Self::block_compiler`] at the top of the module's own unit: a load
-    /// run by a `require` inside a routine must not compile the module's subs
-    /// as routine-nested ones, whose free variables then read an alias of a
-    /// declaring activation that never exists (`Any`, #18017).
+    /// [`Self::block_compiler`] for a module's mainline, which is the top of
+    /// its own unit whatever loads it: a `require` inside a routine runs the
+    /// load under that routine's frame, but the module's top-level subs are
+    /// not nested in it (#18017; `Compiler::binds_lexsub_free_vars`).
     // Cost: O(1).
     fn module_mainline_compiler(
         &self,
     ) -> (crate::compiler::Compiler, Option<crate::symbol::Symbol>) {
         let (mut compiler, compile_unit) = self.block_compiler();
-        compiler.is_routine = false;
-        compiler.lexically_in_routine = false;
         compiler.is_mainline = true;
-        compiler.enclosing_package = None;
         (compiler, compile_unit)
     }
 
