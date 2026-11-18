@@ -475,29 +475,18 @@ def rollup(append_history=False):
     if not records:
         sys.exit(f"no records under {DISTS_DIR} — run a sweep first")
     by_status = collections.Counter(r["status"] for r in records)
-    baseline = sum(r["totals"]["baseline_files"] for r in records)
-    parity = sum(r["totals"]["parity_files"] for r in records)
-    b_assert = sum(r["totals"]["baseline_assertions"] for r in records)
-    m_assert = sum(r["totals"]["mutsu_assertions"] for r in records)
-    graded = [r for r in records if r["totals"]["baseline_files"] > 0]
-    green = [r for r in graded if r["status"] == "green"]
     accepted = sum(1 for r in records for f in r.get("files", [])
                    if f.get("cmp") == "accepted")
-
-    def pct(num, den):
-        return round(100.0 * num / den, 1) if den else 0.0
+    # The KPI itself is eco.kpi(), shared with gen-ecosystem-manifest.py so the
+    # site page and this summary publish one definition.
+    numbers = eco.kpi(records, eco.load_exclude(EXCLUDE_LIST))
 
     summary = {
         "schema": SCHEMA,
         "generated": dt.date.today().isoformat(),
         "distributions": len(records),
         "status": dict(sorted(by_status.items())),
-        "dist_parity": pct(len(green), len(graded)),
-        "file_parity": pct(parity, baseline),
-        "assertion_parity": pct(m_assert, b_assert),
-        "baseline_files": baseline, "parity_files": parity,
-        "baseline_assertions": b_assert, "mutsu_assertions": m_assert,
-        "graded_distributions": len(graded), "green_distributions": len(green),
+        **numbers,
         "accepted_files": accepted,
     }
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -529,6 +518,8 @@ def write_summary_md(summary, records):
         f"| assertion parity | {summary['assertion_parity']}% |",
         f"| accepted divergences (out of the KPI, ADR-0130) | "
         f"{summary['accepted_files']} file(s) |",
+        f"| out-of-scope distributions (`exclude.txt`, out of the KPI) | "
+        f"{len(summary['excluded_dists'])} |",
         "",
         "| status | distributions |",
         "|---|---|",

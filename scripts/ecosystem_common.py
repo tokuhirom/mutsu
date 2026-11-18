@@ -940,6 +940,51 @@ def load_records(dists_dir: str) -> list[dict]:
     return out
 
 
+def _pct(num: int, den: int) -> float:
+    return round(100.0 * num / den, 1) if den else 0.0
+
+
+def kpi(records: list[dict], exclude: dict[str, tuple[str | None, str]]) -> dict:
+    """The published parity numbers, computed once for every publisher.
+
+    `ecosystem-sweep.py --rollup` (summary.md/.json, history.tsv and the chart)
+    and `gen-ecosystem-manifest.py` (the site's ecosystem page) both call this,
+    so the page and the ledger cannot disagree about what the KPI means. They
+    did: the page left `exclude.txt` distributions out and the rollup counted
+    them, so the same ledger published 99.2% (1324/1335) on the site and 98.7%
+    (1327/1344) in summary.md.
+
+    A distribution listed in `ecosystem/exclude.txt` is out of every KPI, like
+    a `no_baseline` one: the project decided it will never be supported, and
+    bulk sweeps skip it, so its record is a frozen old measurement that would
+    otherwise keep steering a figure about the current interpreter. Its record
+    still exists and its status is still counted in the status table.
+    """
+    counted = [r for r in records
+               if not is_excluded(exclude, r.get("dist"), r.get("version"))]
+
+    def total(r, key):
+        return (r.get("totals") or {}).get(key, 0)
+
+    graded = [r for r in counted if total(r, "baseline_files") > 0]
+    green = [r for r in graded if r.get("status") == "green"]
+    baseline = sum(total(r, "baseline_files") for r in counted)
+    parity = sum(total(r, "parity_files") for r in counted)
+    b_assert = sum(total(r, "baseline_assertions") for r in counted)
+    m_assert = sum(total(r, "mutsu_assertions") for r in counted)
+    return {
+        "dist_parity": _pct(len(green), len(graded)),
+        "file_parity": _pct(parity, baseline),
+        "assertion_parity": _pct(m_assert, b_assert),
+        "graded_distributions": len(graded),
+        "green_distributions": len(green),
+        "baseline_files": baseline, "parity_files": parity,
+        "baseline_assertions": b_assert, "mutsu_assertions": m_assert,
+        "excluded_dists": sorted(r.get("dist") for r in records
+                                 if is_excluded(exclude, r.get("dist"), r.get("version"))),
+    }
+
+
 # --- self-test ---------------------------------------------------------------
 
 def _self_test() -> int:
@@ -1304,6 +1349,30 @@ def _self_test() -> int:
         if name in unset:
             print(f"sandbox_wrap: {name} must stay set", file=sys.stderr)
             failures += 1
+
+    # kpi(): an excluded distribution (bare-name or pinned to its version) is
+    # out of every parity figure; a pin on another version is not.
+    def rec(dist, version, status, base, par):
+        return {"dist": dist, "version": version, "status": status,
+                "totals": {"baseline_files": base, "parity_files": par,
+                           "baseline_assertions": base * 10,
+                           "mutsu_assertions": par * 10}}
+    records = [rec("Good", "1", "green", 3, 3), rec("Bad", "1", "red", 2, 0),
+               rec("Out", "1", "red", 5, 0), rec("Pinned", "2", "green", 4, 4),
+               rec("NoBase", "1", "no_baseline", 0, 0)]
+    k = kpi(records, {"Out": (None, "out of scope"), "Pinned": ("2", "this release")})
+    want = {"dist_parity": 50.0, "file_parity": 60.0, "assertion_parity": 60.0,
+            "graded_distributions": 2, "green_distributions": 1,
+            "baseline_files": 5, "parity_files": 3,
+            "excluded_dists": ["Out", "Pinned"]}
+    for key, value in want.items():
+        if k[key] != value:
+            print(f"kpi: {key}: want {value!r}, got {k[key]!r}", file=sys.stderr)
+            failures += 1
+    k = kpi(records, {"Pinned": ("1", "an older release")})
+    if (k["graded_distributions"], k["green_distributions"]) != (4, 2):
+        print(f"kpi: a pin on another version must not exclude: {k}", file=sys.stderr)
+        failures += 1
 
     print(f"ecosystem_common self-test: "
           f"{'all cases pass' if not failures else f'{failures} failure(s)'}")

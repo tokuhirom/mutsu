@@ -99,8 +99,16 @@ unmaintained compiler surface: it is `no_baseline`, and mutsu does not have to r
 Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_load`
 (a provided module does not even `use`) · `blocked_dep` (§3) · `skipped`.
 
-`ecosystem/exclude.txt` is orthogonal to `status` — it does not change what gets measured or
-published, only what `ecosystem-tickets.py --queue`/`ecosystem-sweep.py --all` offer automatically. A
+`ecosystem/exclude.txt` is orthogonal to `status` — a listed distribution keeps its record and its
+status — but it leaves the KPI: all three numbers above are computed without it, exactly as for a
+`no_baseline` distribution, and `ecosystem-tickets.py --queue`/`ecosystem-sweep.py --all` never
+offer it. Bulk sweeps skip it, so its record is a frozen old measurement that must not steer a
+figure about the current interpreter. The definition lives in one function,
+`ecosystem_common.kpi()`, which both the rollup (`summary.md`, `history.tsv`) and the site page
+(`gen-ecosystem-manifest.py`) call; the generator also refuses to publish figures that differ from
+the ledger's `summary.json` for the same exclude list. (Until 2026-11-18 the rollup counted listed
+distributions and the page did not, so the page read 99.2% beside a ledger summary of 98.7%; the
+history series steps up by that difference at the first sweep after the fix.) A
 distribution lands there once, and only once, a run has shown its record can never move (rakudo
 passes, mutsu deliberately and permanently cannot) without reversing a decision already made
 elsewhere (an ADR, or a call `AGENTS.md` reserves for the user) — never for "looks hard" or for

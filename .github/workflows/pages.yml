@@ -103,14 +103,23 @@ jobs:
         # ledger (ecosystem/dists/**.json on the `ecosystem-data` branch), so
         # like the batteries page it is generated rather than hand-written and
         # cannot drift from the measurements. The chart is copied alongside it
-        # when a full sweep has produced one. Best-effort: with no ledger to
-        # fetch, the page deploys in a "not measured yet" state rather than
-        # failing the deploy.
+        # when a full sweep has produced one, from the same ledger pull, so the
+        # KPI and the chart always describe one ledger revision.
+        #
+        # Only a missing ledger is best-effort: with nothing to fetch, the page
+        # deploys in a "not measured yet" state rather than failing the deploy.
+        # Once a ledger was pulled the generator must succeed. It refuses a KPI
+        # that disagrees with the ledger's own summary.json, and publishing
+        # zeros (or a wrong figure) would be worse than keeping the previous
+        # deploy live until that is fixed.
         run: |
-          scripts/ecosystem-ledger.sh pull || echo "no ecosystem ledger to fetch"
-          python3 scripts/gen-ecosystem-manifest.py || \
+          if scripts/ecosystem-ledger.sh pull; then
+            python3 scripts/gen-ecosystem-manifest.py
+          else
+            echo "no ecosystem ledger to fetch; publishing the page as not measured yet"
             echo '{"distributions":[],"counts":{"green":0,"graded":0},"dist_parity":0,"file_parity":0,"measured":{}}' \
               > site/content/ecosystem.json
+          fi
           cp ecosystem/history.svg site/history.svg 2>/dev/null || true
 
       - name: Generate the Internals reference data
