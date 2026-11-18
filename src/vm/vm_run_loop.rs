@@ -1374,8 +1374,10 @@ impl Interpreter {
     /// The value half of [`Self::itemize_scalar_store`], for a caller that has
     /// already settled the name half.
     pub(crate) fn itemize_scalar_store_value(val: Value) -> Value {
-        // A raw VM collection stays raw in a `$` container (ADR-12666).
-        if val.is_vm_collection() || val.is_iteration_buffer_view() {
+        // A raw VM collection stays raw in a `$` container (ADR-12666). A lazy
+        // Match is stored as it is (the `_` arm below), and viewing it would
+        // materialize its attribute map.
+        if val.is_vm_collection() || val.is_iteration_buffer_view() || val.is_lazy_match_value() {
             return val;
         }
         match val.view() {
