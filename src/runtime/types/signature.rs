@@ -756,7 +756,9 @@ fn sub_signature_matches_value_unbound(
             p.slurpy && (p.named || p.name.starts_with('%') || p.name == "_capture" || p.sigilless)
         });
         let mut surplus_named = false;
-        positional.retain(|v| match v.view() {
+        // An element held in an item container is looked through, as the
+        // binder's `drop_pairs_captured_as_named` does (`('?', $pair)`).
+        positional.retain(|v| match v.deref_container().view() {
             ValueView::Pair(key, _) => {
                 surplus_named |= !sub_params.iter().any(|p| {
                     p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == *key
