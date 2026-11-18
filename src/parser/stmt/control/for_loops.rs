@@ -80,6 +80,23 @@ fn paren_has_toplevel_semicolon(input: &str) -> bool {
     false
 }
 
+/// Confirm a [`paren_has_toplevel_semicolon`] hit against the group the term
+/// parser reads at `input`. The character scan knows only `'…'`/`"…"` quotes,
+/// so a `#` inside another quoting construct (`q<[<a> | <b> ]#>`) reads as a
+/// comment that swallows the rest of its line, `)` included; the scan then
+/// counts the loop body's statements as still inside the parentheses and
+/// reports their `;` (CSS::Specification::Compiler's t/compile.t). Scanning
+/// only the text of the parsed group keeps the body out of it. When the group
+/// does not parse as a term, the scan's verdict stands.
+// Cost: O(n), n = length of the parenthesized group.
+fn paren_group_has_semicolon(input: &str) -> bool {
+    match crate::parser::primary::primary(input) {
+        Ok((after, _)) => crate::parser::expr::consumed_span(input, after)
+            .is_none_or(paren_has_toplevel_semicolon),
+        Err(_) => true,
+    }
+}
+
 pub(crate) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
     for_stmt_with_mode(input, crate::ast::ForMode::Normal)
 }
@@ -180,7 +197,8 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     }
     // C-style `for (init; test; incr) { }` is obsolete — Raku uses `loop`.
     // Detected by a top-level `;` inside the parenthesized iterable.
-    if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) {
+    if rest.starts_with('(') && paren_has_toplevel_semicolon(rest) && paren_group_has_semicolon(rest)
+    {
         return Err(PError::obsolete("C-style \"for\"", "\"loop\""));
     }
     // Try to detect `<->` (rw pointy block) before the expression parser
