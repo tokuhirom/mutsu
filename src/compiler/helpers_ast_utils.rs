@@ -963,6 +963,18 @@ impl Compiler {
     /// later type while it runs.
     // Cost: O(1).
     pub(crate) fn runs_no_user_code(stmt: &Stmt) -> bool {
+        // A `unit module`/`unit package` declarator only names the unit's
+        // package; without user traits it runs nothing. Counting it as code
+        // made every type after it in a module "forward-referenceable",
+        // shelled ahead of the module's own `use`s (#18092).
+        if let Stmt::Package {
+            is_unit: true,
+            custom_traits,
+            ..
+        } = stmt
+        {
+            return custom_traits.is_empty();
+        }
         matches!(
             stmt,
             Stmt::SetLine(..)
