@@ -445,3 +445,31 @@ positions, or after a `BEGIN`/`multi` of the importer (slice 5).
   importer's parse knows the keyword. The analysis paths, which load
   nothing, still read only the static scan and take every declarator to
   build a class.
+
+### 7.10 Slice 4a as built (2026-11-18)
+
+Slice 4 is split. **4a** moves a slang module's activation into the program
+interpreter; **4b** moves the slang host there and deletes the activation
+interpreter.
+
+- The compile-time loader takes the `use` of a slang module (one that `use`s
+  Slangify or calls `$*LANG.define_slang`): the program interpreter loads it
+  when the parser reaches the statement, with the parse's `$*LANG` bound for
+  the load, so the module's `EXPORT` hook registers the slang once, at the
+  point rakudo runs it. What `define_slang` recorded (rule overrides,
+  package declarators, the `EXPORTHOW` declarators the hook bound) is kept
+  per `use`, by module and literal arguments, and the parser reads it
+  (`CompileTimeLoader::slang_activation`) instead of loading the module a
+  second time in the activation interpreter. The `use` in position only
+  imports.
+- `define_slang` registers for the parse when it runs at the depth of the
+  activating load (`RegexGrammarState::slang_activation_depth`); a
+  dependency's `EXPORT` that calls it keeps it to its own compile (#17267),
+  and a slang `use`d by a module's own compile registers for that compile.
+- Still in the activation interpreter: a slang with a production the host
+  runs (a hook, an action override, a `statementlist` wrapper; 4b), a `use`
+  the loader does not take (after a `BEGIN`/`multi` of the unit, §7.6, until
+  slice 5; an argument list that has to be evaluated, a `&sub` argument), and
+  the re-activation of a language for a later parse (`$?LANG` seeding an
+  `EVAL`, `Str.AST($slang)`) when the slang was not activated by this
+  interpreter.

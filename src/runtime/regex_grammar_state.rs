@@ -6,6 +6,16 @@
 
 use super::*;
 
+/// One slang the program interpreter activated at parse time.
+#[derive(Clone)]
+pub(crate) struct ParseTimeSlangActivation {
+    pub(crate) module: String,
+    pub(crate) args: Option<Vec<crate::slang_link::SlangUseArg>>,
+    pub(crate) rules: Vec<crate::slang_link::SlangRuleOverride>,
+    pub(crate) declarators: Vec<crate::slang_link::SlangDeclarator>,
+    pub(crate) supersede_keywords: Vec<String>,
+}
+
 #[derive(Default)]
 pub(crate) struct RegexGrammarState {
     /// Grammar-rule overrides recorded by `$*LANG.define_slang` during a slang
@@ -30,6 +40,16 @@ pub(crate) struct RegexGrammarState {
     /// of each kind is currently built with. Keyed by the `$*PKGDECL` name
     /// (`'role'`, `'test-hub'`, ...).
     pub(crate) slang_declarator_hows: ValueMap,
+    /// While the program interpreter loads a slang module for the parse of a
+    /// `use` (ADR-17558 slice 4): the module-load depth whose `EXPORT` hook
+    /// registers the slang for that parse. A `define_slang` run at another
+    /// depth is a dependency's own (#17267).
+    pub(crate) slang_activation_depth: Option<usize>,
+    /// The slangs the program interpreter activated for the parse, keyed by
+    /// module and `use` arguments: what each `define_slang` registered, read
+    /// by the parser that reached the `use` and by a later parse that starts
+    /// with the same language (`$?LANG`).
+    pub(crate) parse_time_slang_activations: Vec<ParseTimeSlangActivation>,
     /// `rule name -> its own `:my $*/%*/@*x = …;` declarations`, for the grammar
     /// currently being parsed. `establish_grammar_dynamic_vars` also evaluates
     /// them once into `env` (a parse-wide slot, which is what a non-declaring

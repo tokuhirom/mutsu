@@ -38,8 +38,9 @@ pub(crate) struct UseRequest<'a> {
     /// level: what the module installs while it loads is then lexical to that
     /// block, as for the prologue's preload of a nested `use`.
     pub(crate) nested: bool,
-    /// Whether the module activates a slang (it `use`s Slangify), which the
-    /// slang activation interpreter does at parse time (ADR-0026 §2.1).
+    /// Whether the module activates a slang (it `use`s Slangify): the loader
+    /// then loads it with the parse's `$*LANG` bound, and the parser reads the
+    /// slang it registered ([`slang_activation`]).
     pub(crate) activates_slang: bool,
     /// The package the `use` stands in (`unit module Foo;` or a package
     /// block), `None` at the unit's top level outside any.
@@ -103,6 +104,16 @@ pub(crate) trait CompileTimeLoader {
     /// it with `import_tags` imports (`None`: the `use`'s arguments go to a
     /// `sub EXPORT`, so every tag counts).
     fn loaded_facts(&mut self, module: &str, import_tags: Option<&[String]>) -> LoadedFacts;
+
+    /// The slang `module` activated when this loader loaded it for a `use`
+    /// with the literal arguments `args` (ADR-17558 slice 4): what its
+    /// `define_slang` registered. `None` when this loader activated no slang
+    /// for that `use` (it did not take the `use`, or the slang needs a host).
+    fn slang_activation(
+        &mut self,
+        module: &str,
+        args: Option<&[crate::slang_link::SlangUseArg]>,
+    ) -> Option<crate::slang_link::SlangActivation>;
 }
 
 thread_local! {
@@ -171,6 +182,17 @@ pub(crate) fn load_use(request: &UseRequest<'_>) -> LoadOutcome {
 // Cost: O(1) when there is no loader; the loader's fact read otherwise.
 pub(crate) fn loaded_facts(module: &str, import_tags: Option<&[String]>) -> Option<LoadedFacts> {
     with_loader(|loader| loader.loaded_facts(module, import_tags))
+}
+
+/// The slang this thread's current loader activated for a `use` of `module`
+/// with the literal arguments `args`; `None` when no loader is reachable or it
+/// activated none.
+// Cost: O(1) when there is no loader; the loader's lookup otherwise.
+pub(crate) fn slang_activation(
+    module: &str,
+    args: Option<&[crate::slang_link::SlangUseArg]>,
+) -> Option<crate::slang_link::SlangActivation> {
+    with_loader(|loader| loader.slang_activation(module, args)).flatten()
 }
 
 /// Run `call` on this thread's innermost loader, if one is reachable: none
