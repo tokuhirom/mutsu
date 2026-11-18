@@ -183,40 +183,57 @@ pub(crate) fn apply_slang_overrides(
 /// fails (module load error, or an override of a grammar rule mutsu does not
 /// support) — the `use` statement must then fail to parse, never silently
 /// continue in the wrong grammar.
+///
+/// On success, returns the routine names the module exports to this `use`
+/// (`import_tags`, as for [`super::register_loaded_use_exports`]), now
+/// registered in the current scope: a slang module does not load at parse
+/// time in the program interpreter yet, so its activation is what tells the
+/// parse which routines and operators the `use` imports (#18091).
 pub(in crate::parser) fn maybe_activate_slang_use(
     module: &str,
     arg: Option<&Expr>,
-) -> Result<(), String> {
+    import_tags: Option<&[String]>,
+) -> Result<Vec<String>, String> {
     if !super::module_exports::module_activates_slang(module) {
-        return Ok(());
+        return Ok(Vec::new());
     }
-    activate_slang_module(module, arg.and_then(literal_use_args))
+    let exports = activate_slang_module(
+        module,
+        arg.and_then(literal_use_args),
+        import_tags.map(<[String]>::to_vec),
+    )?;
+    Ok(super::compile_consts::register_activation_exports(exports))
 }
 
 /// Activate the slang of `module`, which is known to have one, with the
 /// `use` arguments already read: [`maybe_activate_slang_use`]'s work, and how
 /// a unit parse seeded with an earlier unit's language (`$?LANG`,
 /// `slang_lang`) activates that language's slangs again.
+///
+/// Returns the routines the module exports to `import_tags` (see
+/// [`crate::runtime::slang_activation::SlangActivation::exports`]).
 pub(in crate::parser) fn activate_slang_module(
     module: &str,
     use_args: Option<Vec<SlangUseArg>>,
-) -> Result<(), String> {
+    import_tags: Option<Vec<String>>,
+) -> Result<Vec<crate::compile_time_loader::LoadedExport>, String> {
     // Activation executes the module; a non-executing parse (`--dump-ast`,
     // the analysis API) stays in the ordinary grammar instead (#11212).
     if crate::parser::no_execute::no_execute() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     // No recursive activation: the activation sub-interpreter's own parses
     // (the slang module chain) must not spawn further activation threads.
     if std::thread::current().name()
         == Some(crate::runtime::slang_activation::ACTIVATION_THREAD_NAME)
     {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let activation = crate::runtime::slang_activation::run_slang_activation(
         module.to_string(),
         parser_lib_paths(),
         use_args.clone(),
+        import_tags,
     )
     .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?;
     // The language from here on includes this slang (`$?LANG`, `slang_lang`);
@@ -252,7 +269,8 @@ pub(in crate::parser) fn activate_slang_module(
     // `define_slang` already validated these on the activation thread; this
     // only re-reports if the two maps ever drift apart.
     apply_slang_overrides(&activation.rules)
-        .map_err(|e| format!("slang activation for '{module}': {e}"))
+        .map_err(|e| format!("slang activation for '{module}': {e}"))?;
+    Ok(activation.exports)
 }
 
 /// The literal arguments of a `use` statement (`use Foo 'a', 42`), in the form

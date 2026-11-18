@@ -53,7 +53,7 @@ pub(crate) fn set_slang_preseed(activations: Vec<SlangUseSpec>) {
 pub(in crate::parser) fn apply_slang_preseed() -> Result<(), String> {
     let seed = SLANG_PRESEED.with(|p| std::mem::take(&mut *p.borrow_mut()));
     for (module, args) in seed {
-        super::slang_use::activate_slang_module(&module, args)?;
+        super::slang_use::activate_slang_module(&module, args, None)?;
     }
     Ok(())
 }
