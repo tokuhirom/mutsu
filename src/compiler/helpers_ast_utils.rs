@@ -1077,7 +1077,8 @@ impl Compiler {
 
     /// Drop the user traits of every method (`method`, `multi method`,
     /// `proto method`) in a role shell's body, keeping the internal ones
-    /// `keep_trait` names; see [`Self::emit_type_decl_shell`].
+    /// `keep_trait` names; see [`Self::emit_type_decl_shell`]. Methods are
+    /// declared directly in the role body, so only its statements are read.
     // Cost: O(s), s = statements in the role body.
     fn strip_role_shell_method_traits(body: &mut [Stmt], keep_trait: &dyn Fn(&str) -> bool) {
         for stmt in body {
@@ -1092,9 +1093,6 @@ impl Compiler {
                 } => {
                     custom_traits.retain(|t| keep_trait(t));
                     trait_args.retain(|(t, _)| keep_trait(t));
-                }
-                Stmt::SyntheticBlock(inner) => {
-                    Self::strip_role_shell_method_traits(inner, keep_trait)
                 }
                 _ => {}
             }
