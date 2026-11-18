@@ -85,8 +85,8 @@ impl CompiledClassDeclPlan {
     /// Whether a re-entry keeps the registered type and only runs the body's
     /// per-entry part (#18070): the declaration is static but for body
     /// statements that run per entry -- `my` variables and their
-    /// initializers, nested `sub`s, plain statements, class-scoped LEAVE
-    /// phasers. Rakudo creates the type once per declaration and runs those
+    /// initializers, nested `sub`s, plain (non-block) statements,
+    /// class-scoped LEAVE phasers. Rakudo creates the type once per declaration and runs those
     /// per entry (`sub f($i) { my class C { my $z = $i } }`: `f(1) === f(2)`,
     /// and the body runs on both calls). A statement that can change the
     /// class itself (`use`, a nested type, a BEGIN/CHECK phaser, an `EVAL`
@@ -111,27 +111,26 @@ impl CompiledClassDeclPlan {
                     is_compile_time_phaser,
                     ..
                 } => {
+                    // Simple statements only: a nested block (or a `do`
+                    // expression) may declare a method that closes over
+                    // the block's own lexicals, which a full registration
+                    // re-captures per entry.
                     !is_swallowable
                         && !is_compile_time_phaser
-                        && matches!(
-                            raw,
-                            Stmt::SetLine(..)
-                                | Stmt::VarDecl { .. }
-                                | Stmt::Assign { .. }
-                                | Stmt::Expr(..)
-                                | Stmt::Say(..)
-                                | Stmt::Put(..)
-                                | Stmt::Print(..)
-                                | Stmt::Note(..)
-                                | Stmt::Call { .. }
-                                | Stmt::Block(..)
-                                | Stmt::SyntheticBlock(..)
-                                | Stmt::If { .. }
-                                | Stmt::For { .. }
-                                | Stmt::While { .. }
-                                | Stmt::Loop { .. }
-                                | Stmt::Given { .. }
-                        )
+                        && match raw {
+                            Stmt::Expr(expr) => !matches!(expr, crate::ast::Expr::DoBlock { .. }),
+                            _ => matches!(
+                                raw,
+                                Stmt::SetLine(..)
+                                    | Stmt::VarDecl { .. }
+                                    | Stmt::Assign { .. }
+                                    | Stmt::Say(..)
+                                    | Stmt::Put(..)
+                                    | Stmt::Print(..)
+                                    | Stmt::Note(..)
+                                    | Stmt::Call { .. }
+                            ),
+                        }
                 }
                 _ => false,
             })
