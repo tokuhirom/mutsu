@@ -183,6 +183,7 @@ mod vm_call_nqp_list;
 mod vm_cursor_match_lane;
 mod vm_iterator_site_lane;
 mod vm_method_site_lane;
+mod vm_native_call_site;
 mod vm_shapeless_site_lane;
 pub(crate) use vm_attr_type_constraint::AttrTypeConstraintCache;
 mod vm_accessor_lane;

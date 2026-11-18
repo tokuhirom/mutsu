@@ -8134,6 +8134,10 @@ pub(crate) struct CompiledCode {
     /// from, for one registry write generation (see
     /// `Interpreter::try_method_site_lane`).
     pub(crate) method_sites: crate::value::MethodSiteCaches,
+    /// #18028: one memo per string constant, remembering that a `CallFunc`
+    /// naming that constant reached the built-in routine's native arm, for
+    /// one registry write generation (see `Interpreter::try_native_call_site`).
+    pub(crate) native_call_sites: crate::value::MethodSiteCaches,
     /// #14371: one memo per string constant, remembering the routine a
     /// `LexImportCall` site naming that constant resolved to, for one
     /// lexical-import-set generation (see `exec_lex_import_call_site`).
@@ -8856,6 +8860,7 @@ impl CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             method_sites: Default::default(),
+            native_call_sites: Default::default(),
             lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),

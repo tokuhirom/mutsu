@@ -1150,6 +1150,21 @@ impl Interpreter {
             named: call_has_named,
             slip: call_has_slip,
         } = arg_kinds;
+        // A built-in routine this site already reached through the whole
+        // ladder below (#18028).
+        if !skip_name_caches
+            && !call_has_slip
+            && let Some(result) = self.try_native_call_site(
+                code,
+                name_idx,
+                arity,
+                arg_kinds,
+                arg_sources_idx,
+                compiled_fns,
+            )
+        {
+            return result;
+        }
         // A multi call whose winner this site's argument types already
         // resolved runs it through the positional light bind directly
         // (`vm_multi_light_call.rs`, #10109). After the plain caches above,
@@ -1774,6 +1789,18 @@ impl Interpreter {
         let lvalue_writeback_pre = lvalue_writeback_target
             .as_ref()
             .map(|t| self.env().get(t).cloned());
+        // Whether this call may teach its site the native route (#18028):
+        // nothing bound at run time stood in the way of the ladder.
+        let native_site_generation = (!skip_name_caches
+            && !call_has_slip
+            && call_me_override.is_none()
+            && lvalue_writeback_target.is_none()
+            && attr_share.is_none()
+            && !package_index_lvalue)
+            .then(|| {
+                self.caches.native_arm_answered = None;
+                self.registry_write_generation()
+            });
         let dispatched = self.dispatch_func_call_inner(
             code,
             &name,
@@ -1786,6 +1813,11 @@ impl Interpreter {
             trir_args.as_deref(),
         );
         self.end_lvalue_unit_redirect(unit_redirect);
+        if let Some(generation) = native_site_generation
+            && dispatched.is_ok()
+        {
+            self.note_native_call_site(code, name_idx, name_sym, generation);
+        }
         let result = match dispatched {
             Ok(v) => {
                 if let Some((source, share_args)) = attr_share {
@@ -2913,6 +2945,7 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     result
                 } else if let Some(native_result) = self.try_native_function(name_sym, &mut args) {
+                    self.caches.native_arm_answered = Some(name_sym);
                     native_result
                 } else if !self.is_interpreter_handled_function(name)
                 && !self.has_multi_candidates_cached_sym(name_sym)
