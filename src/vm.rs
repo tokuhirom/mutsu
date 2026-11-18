@@ -152,6 +152,7 @@ mod vm_lex_import_light_call;
 mod vm_lexical_role;
 mod vm_lexsub_aliases;
 mod vm_lexsub_capture;
+mod vm_lexsub_free_cache;
 mod vm_light_aggregate_params;
 mod vm_sequence_role_delegate;
 use vm_frame_lexical::FrameLexicalCallSite;
@@ -159,6 +160,7 @@ pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget}
 pub(crate) use vm_helpers_lazy_adaptor::{is_infinite_operand, is_unbounded_operand};
 pub(crate) use vm_hoist_capture_cells::HoistPendingCell;
 pub(crate) use vm_lexsub_aliases::{LexSubAliasTable, LexSubLatestCells};
+pub(crate) use vm_lexsub_free_cache::LexSubFreeCache;
 pub(crate) use vm_method_return_spec::MethodReturnSpecMemo;
 pub(crate) use vm_method_role_bindings::MethodRoleBindingsMemo;
 mod vm_call_light_typed;

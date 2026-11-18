@@ -170,7 +170,18 @@ impl Interpreter {
                     (ValueView::RakuAst(a), ValueView::RakuAst(b)) => {
                         std::ptr::eq(a, b) || *a == *b
                     }
-                    _ => false,
+                    // Any other object (a Promise, a Lock, a Str) bound by
+                    // both names with no Scalar of their own is the object
+                    // itself: `my $p := Promise.new; my $q := $p` or a
+                    // `$!attr := $v` bound in another method (#18024).
+                    _ => {
+                        !self.operand_denotes_scalar_container(code, left_name)
+                            && !self.operand_denotes_scalar_container(code, right_name)
+                            && crate::runtime::utils::values_same_object(
+                                &left.deref_container(),
+                                &right.deref_container(),
+                            )
+                    }
                 },
             }
         };
@@ -264,6 +275,15 @@ impl Interpreter {
     pub(crate) fn name_denotes_scalar_container(&self, name: &str) -> bool {
         if name.starts_with(['@', '%', '&']) {
             return false;
+        }
+        // `$!attr` (a method's attribute local is spelled `!attr`) owns a
+        // Scalar unless a `:=` seated a plain value in it. That decision
+        // lives on the instance, not in the method's lexicals, so a bind in
+        // one method is seen by a test in another
+        // (`$!next := IterationEnd` ... `nqp::eqaddr($!next, IterationEnd)`).
+        // (`$!` itself, the error variable, is spelled `!` and is not one.)
+        if name.len() > 1 && name.starts_with('!') {
+            return !self.private_attr_is_bound(Some(name));
         }
         // `my $b := @x` / `:= %h` aliases the aggregate, which is its own
         // container — no Scalar. `my $b := $a` aliases `$a`'s Scalar, so the

@@ -179,14 +179,30 @@ impl Interpreter {
         };
         // A chain over a multi family (a dispatcher value) is resolved by the
         // generic multi-operand path, which ranks the family's candidates for
-        // the whole operand list.
+        // the whole operand list. The candidates of a built-in operator are
+        // bound only in this block's import set, so that path sees them only
+        // while the `InfixFunc` runs in their scope, as
+        // `exec_lex_import_builtin_op_site` runs a built-in op: Range::SetOps'
+        // `multi infix:<(|)>(**@r) is assoc<list>` answers `$a (|) $b (|) $c`,
+        // and the built-in answers what none of them takes.
         if arity > 2
-            && matches!(
-                target,
-                crate::runtime::lexical_imports::LexicalImport::Code(_)
-            )
+            && let crate::runtime::lexical_imports::LexicalImport::Code(value) = &target
         {
-            return Ok(false);
+            if !Self::is_builtin_operator_dispatcher(value) {
+                return Ok(false);
+            }
+            self.dispatch.lexical_operator_scopes.push(
+                crate::runtime::dispatch_state::LexicalOperatorScope {
+                    name: code.const_sym(name_idx),
+                    dispatcher: value.clone(),
+                    depth: self.routine_stack().len(),
+                },
+            );
+            let mut next_ip = ip + 1;
+            let result = self.exec_one(code, &mut next_ip, compiled_fns);
+            self.dispatch.lexical_operator_scopes.pop();
+            result?;
+            return Ok(true);
         }
         let call_ip = ip + 1;
         self.sync_source_line(code, call_ip);

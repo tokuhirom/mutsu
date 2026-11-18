@@ -100,7 +100,7 @@ impl Interpreter {
     /// Whether `$!attr` of the current invocant was bound (`:=`) to a plain
     /// value, which leaves it without a writable container.
     // Cost: O(1).
-    fn private_attr_is_bound(&self, name: Option<&str>) -> bool {
+    pub(crate) fn private_attr_is_bound(&self, name: Option<&str>) -> bool {
         let Some(attr) = name.and_then(|n| n.strip_prefix('!')) else {
             return false;
         };
