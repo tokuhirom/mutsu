@@ -126,6 +126,11 @@ impl Interpreter {
             return None;
         }
         let registry = self.registry();
+        if !registry.method_name_ever_wrapped(method)
+            || self.no_wrap_owner_reaches_builtin(class_name)
+        {
+            return None;
+        }
         registry
             .builtin_method_wrap_chain_along_mro(class_name, method)
             .or_else(|| {
@@ -134,6 +139,24 @@ impl Interpreter {
                     .find_map(|owner| registry.method_wrap_chain(owner, method, 0))
             })
             .cloned()
+    }
+
+    /// Whether no class that owns a wrap chain can be `class_name` or one of
+    /// its ancestors: `class_name` is a built-in (catalog) type the program
+    /// did not redeclare, and every owner is a class the program declared
+    /// under a name the catalog does not use. A built-in type never inherits
+    /// from a user class, so the MRO probes would all miss (#12875).
+    // Cost: O(w), w = classes that ever owned a wrap chain.
+    fn no_wrap_owner_reaches_builtin(&self, class_name: &str) -> bool {
+        use crate::builtin_types::catalog::builtin_type_info;
+        let user_declared = &self.types.user_declared_classes;
+        builtin_type_info(class_name).is_some()
+            && !user_declared.contains(class_name)
+            && self
+                .registry()
+                .method_wrap_owners
+                .iter()
+                .all(|owner| user_declared.contains(owner) && builtin_type_info(owner).is_none())
     }
 
     /// Call `chain`'s outermost wrapper with `[invocant, ...args]`, the rest of
