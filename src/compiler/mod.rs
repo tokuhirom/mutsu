@@ -1081,6 +1081,7 @@ mod atomic_target;
 pub(crate) mod begin_use;
 mod bind_ternary;
 mod block_imported_vars;
+mod block_lexical_types;
 mod block_lexsubs;
 mod body_scans;
 mod call_arg_index_assign;
@@ -1298,6 +1299,14 @@ pub(crate) struct Compiler {
     /// name in this closure body reaches through its binding, not by name
     /// (`block_lexsubs.rs`). Empty outside closure bodies.
     enclosing_lexsubs: Vec<Symbol>,
+    /// The lexical types (`my class`/`my role`) each active block scope of
+    /// this compilation declares, as `(local_scopes depth, name)`; see
+    /// `block_lexical_types.rs` (#17711).
+    block_lexical_type_decls: Vec<(usize, Symbol)>,
+    /// The block-declared lexical types of the enclosing compilations that a
+    /// bare name in this closure body reads through the captured type-only
+    /// binding (`block_lexical_types.rs`). Empty outside closure bodies.
+    enclosing_lexical_types: Vec<Symbol>,
     /// Set by a runtime path that compiles a closure body's AST as a whole
     /// compilation (the inline `map`/`grep` path): the top level is that
     /// block's scope, so its routines are bindings for the closures nested
@@ -2225,6 +2234,8 @@ impl Compiler {
             inherited_scope_routine_decls: Vec::new(),
             block_lexsub_decls: Vec::new(),
             enclosing_lexsubs: Vec::new(),
+            block_lexical_type_decls: Vec::new(),
+            enclosing_lexical_types: Vec::new(),
             top_level_is_block_body: false,
             pending_scope_frame: None,
             pending_wc_source: None,
@@ -3681,6 +3692,8 @@ impl Compiler {
         self.scope_routine_decls
             .retain(|&(level, _)| level <= depth);
         self.block_lexsub_decls.retain(|&(level, _)| level <= depth);
+        self.block_lexical_type_decls
+            .retain(|&(level, _)| level <= depth);
         if !shadow_slots_active() {
             // DEFAULT build: behavior-preserving no-op (frame already dropped).
             return;

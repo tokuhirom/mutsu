@@ -434,6 +434,16 @@ impl Compiler {
                     self.code.emit(OpCode::GetGlobal(name_idx));
                     return;
                 }
+                // A lexical type an enclosing block declared, read from a
+                // closure body (#17711): the type-only binding, read by name
+                // so the closure captures the declaring scope's type rather
+                // than resolving the name wherever it runs.
+                if self.reads_enclosing_lexical_type(name) {
+                    let key = crate::runtime::term_names::lexical_type_key(name);
+                    let name_idx = self.code.add_constant(Value::str(key));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
+                    return;
+                }
                 // An in-scope `constant` with a compile-time scalar value is read
                 // straight from the constant pool (ADR-0006 §2.2) instead of a
                 // GetLocal / GetBareWord package lookup.
