@@ -23,7 +23,8 @@ is $c.untyped, 'Any,Any', 'omitted untyped named params bind Any';
 is $c.untyped(:b(2)), 'Any,2', 'a supplied one binds its value, the other Any';
 is $c.typed, 'Str,Int,Num,Bool', 'omitted typed named params bind their type objects';
 is $c.uint, 'Int', 'an omitted UInt binds its refinee Int';
-# An omitted `Str:D :$d` must die too; mutsu binds `Str` there (#18075).
+# An omitted `Str:D :$d` dies instead: see
+# t/routines/signature/omitted-definite-param-dies.t (#18075).
 is $c.with-default, '42 Any', 'a constant default and an omitted param';
 is $c.computed, 'base', 'a computed default is evaluated';
 
