@@ -121,7 +121,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
+      - uses: dtolnay/rust-toolchain@d5e4d57b030548f435d0befec15ff413a2c60eff # 1.100.0
 
       # rust-cache restores the registry + built dependencies (small, reliable)
       # instead of the whole multi-GB target/. Deliberately NOT mold-linked: this

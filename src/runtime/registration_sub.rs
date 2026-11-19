@@ -770,7 +770,6 @@ impl Interpreter {
     /// the compiler produced *for that signature* — a body recompiled on demand
     /// would key on the per-alternate signature and split the shared cell.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_sub_alternate_decl(
         &mut self,
         name: &str,

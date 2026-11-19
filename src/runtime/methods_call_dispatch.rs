@@ -1496,6 +1496,9 @@ impl Interpreter {
                 crate::runtime::Interpreter::meta_call_type_target(&how, meta_method, &target);
             how_args.push(type_target);
             how_args.extend(args.clone());
+            if let Some(result) = self.try_builtin_how_meta_lane(&how, meta_method, &how_args) {
+                return result;
+            }
             return self.call_method_with_values(how, meta_method, how_args);
         }
 

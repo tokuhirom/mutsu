@@ -255,6 +255,16 @@ impl Interpreter {
             "__mutsu_attr_owner".to_string(),
             Value::str(owner.to_string()),
         );
+        // An attribute of an uncomposed role belongs to the role's generic
+        // `$?CLASS` (a `GenericHOW` type object) until the role is composed
+        // into a class (#18215); the owner key stays the role for lookups.
+        if self.registry().roles.contains_key(owner) && !self.registry().classes.contains_key(owner)
+        {
+            meta.insert(
+                "__mutsu_attr_package".to_string(),
+                Value::str(crate::runtime::GENERIC_CLASS_TYPE.to_string()),
+            );
+        }
         meta.insert("is_public".to_string(), Value::truth(is_public));
         meta.insert("is_rw".to_string(), Value::truth(is_rw));
         meta.insert("sigil".to_string(), Value::str(sigil.to_string()));

@@ -2925,6 +2925,11 @@ impl Default for Interpreter {
 /// `has_user_custom_traits` in `registration_sub`.
 pub(crate) const PRELUDE_SUB_TRAIT: &str = "__mutsu_prelude";
 
+/// The name of a role's generic class placeholder (`$?CLASS`, a `GenericHOW`
+/// type object): what an uncomposed role's attribute names as its `.package`
+/// (#18215).
+pub(crate) const GENERIC_CLASS_TYPE: &str = "$?CLASS";
+
 /// Rakudo's default `$*TOLERANCE`, the relative tolerance `infix:<=~=>`/`≅`
 /// (and `Complex`'s real-coercion check) compare against. Declared in
 /// `PROCESS::` by the setting, so a program that never touches it still reads

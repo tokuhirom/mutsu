@@ -104,72 +104,86 @@ macro_rules! constant {
 narrow!(
     /// `abs2rel($path, $base)`.
     // Cost: O(n), n = path and base length.
-    abs2rel_row, io_spec_abs2rel
+    abs2rel_row,
+    io_spec_abs2rel
 );
 narrow!(
     /// `basename($path)`.
     // Cost: O(n), n = path length.
-    basename_row, io_spec_basename
+    basename_row,
+    io_spec_basename
 );
 narrow!(
     /// `catdir(*@parts)`.
     // Cost: O(n), n = total chars of the parts.
-    catdir_row, io_spec_catdir
+    catdir_row,
+    io_spec_catdir
 );
 narrow!(
     /// `catfile(*@parts)`.
     // Cost: O(n), n = total chars of the parts.
-    catfile_row, io_spec_catfile
+    catfile_row,
+    io_spec_catfile
 );
 narrow!(
     /// `catpath($volume, $dir, $file)`.
     // Cost: O(n), n = total input length.
-    catpath_row, io_spec_catpath
+    catpath_row,
+    io_spec_catpath
 );
 narrow!(
     /// `extension($path)`.
     // Cost: O(n), n = path length.
-    extension_row, io_spec_extension
+    extension_row,
+    io_spec_extension
 );
 narrow!(
     /// `is-absolute($path)`.
     // Cost: O(p), p = chars of the path.
-    is_absolute_row, io_spec_is_absolute
+    is_absolute_row,
+    io_spec_is_absolute
 );
 narrow!(
     /// `join($volume, $dirname, $basename)`.
     // Cost: O(n), n = total input length.
-    join_row, io_spec_join
+    join_row,
+    io_spec_join
 );
 narrow!(
     /// `rel2abs($path, $base)`.
     // Cost: O(n), n = path, base and cwd length.
-    rel2abs_row, io_spec_rel2abs
+    rel2abs_row,
+    io_spec_rel2abs
 );
 narrow!(
     /// `split($path)`: an `IO::Path::Parts`.
     // Cost: O(n), n = path length.
-    split_row, io_spec_split
+    split_row,
+    io_spec_split
 );
 narrow!(
     /// `splitdir($path)`.
     // Cost: O(n), n = path length.
-    splitdir_row, io_spec_splitdir
+    splitdir_row,
+    io_spec_splitdir
 );
 constant!(
     /// `devnull`.
     // Cost: O(1).
-    devnull_row, io_spec_devnull
+    devnull_row,
+    io_spec_devnull
 );
 constant!(
     /// `dir-sep`.
     // Cost: O(1).
-    dir_sep_row, io_spec_dir_sep
+    dir_sep_row,
+    io_spec_dir_sep
 );
 constant!(
     /// `rootdir`.
     // Cost: O(1).
-    rootdir_row, io_spec_rootdir
+    rootdir_row,
+    io_spec_rootdir
 );
 
 /// `curdir`: `.`.

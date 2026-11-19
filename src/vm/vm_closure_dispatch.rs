@@ -588,6 +588,11 @@ impl Interpreter {
                 activation_capture,
                 capture_names,
             );
+        } else {
+            // Every other closure resolves a lexical through its capture and
+            // the program scope before its callers, which still answer a name
+            // neither binds (#18175, `Env::mark_outer_is_capture`).
+            self.env_mut().mark_outer_is_capture();
         }
         // EXCEPTION: a `ContainerRef` captured value is a *shared container cell*
         // (box-on-capture, lever C Slice 2). It is the single source of truth for
