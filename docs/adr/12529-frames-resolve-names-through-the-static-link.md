@@ -1829,6 +1829,36 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    Qwiratry, Monad, MCP::Server, AttrX::Mooish, FunctionalParsers, ...)
    against the nightly ledger: no file regressed; Green went from 2/4 to 4/4.
 
+   **Slice 57 done** (`fix/17630-param-default-static-scope`, #17630): a
+   routine declared at the unit's top level stops reading a calling mainline
+   block's lexicals in its body and its parameter defaults. Its frame links
+   to the program scope (slice 3's `outer_is_unit`), but a mainline block is
+   part of that segment of the chain while it runs, so the link landed on the
+   block: `sub f(:&cmp = &[cmp]) { cmp(2, 1) }` called from a block with `my
+   &infix:<cmp>` answered with the block's operator, and so did a body's
+   `&infix:<cmp>(2, 1)`.
+
+   - Slice 20's hidden set (`CompiledCode::unit_hidden_lexicals`, the
+     unit's block-only lexicals) was recorded for reflective routines only.
+     Every other top-level routine now records the ones its code can name
+     (`compiler/unit_hidden_names.rs`): a free variable or `OUTER::` name of
+     its body or of a parameter's `where`/default/shape chunk, or a string
+     constant naming a code variable, a sigilless term or a type-shaped
+     name. Its own locals are not counted (the frame answers them), nor is a
+     constant against a `$`/`@`/`%` variable (a method name `.key` is not a
+     read of a block's `$key`). A routine that names none carries no set,
+     keeps its light call and pays nothing per call.
+   - A parameter default runs with the static links honoured
+     (`with_static_links_honoured`): the binder around it reads the caller's
+     argument sources through the whole chain, but the default is code of
+     the routine's own scope.
+
+   Release-build Ir against the merge base: every call-heavy row within
+   ±0.1% except `method-call` (+0.05% / +0.45% JIT, layout); a routine whose
+   method names collide with a calling block's loop variables (the case the
+   constant rule excludes) -0.03%, which a first cut that matched every
+   constant had at +3.6% (+25% allocations).
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
