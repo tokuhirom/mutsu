@@ -68,6 +68,19 @@ pub(crate) fn itemize_real_array_elements(mut value: Value) -> Value {
 /// that is not an unbounded range: build the real `Array` and itemize its
 /// elements.
 pub(crate) fn coerce_finite_to_array(value: Value) -> Value {
+    // A `$`-held Seq (`ItemSeq`/`ItemList` view) assigned to an `@` container
+    // is one item, as an itemized Array is: `C.new(a => $seq)` fills `@.a`
+    // with the Seq itself, not its elements (#18193). The destructuring
+    // staging temp below does not take this arm: `my ($a, $b) = $seq`
+    // iterates the Seq in Rakudo.
+    if let ValueView::Seq(body) = value.view()
+        && matches!(
+            body.view(),
+            crate::value::SeqView::ItemSeq | crate::value::SeqView::ItemList
+        )
+    {
+        return Value::real_array(vec![value.clone()]);
+    }
     itemize_real_array_elements(coerce_to_array_inner(value))
 }
 
