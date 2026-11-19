@@ -288,7 +288,9 @@ impl Interpreter {
         name: &str,
         mut args: Vec<Value>,
     ) -> Result<Vec<Value>, RuntimeError> {
-        if !args.iter().any(|a| a.is_proxy_value()) {
+        // A Proxy bound to a variable arrives tagged with its source
+        // (`VarRef`), as `my $p := Proxy.new(...); f($p)` passes it (#18099).
+        if !args.iter().any(|a| bound_proxy(a).is_some()) {
             return Ok(args);
         }
         let keeps: Vec<bool> = match self.resolve_function(name) {
@@ -296,7 +298,14 @@ impl Interpreter {
                 let positional = def.param_defs.iter().filter(|p| !p.named);
                 let mut flags: Vec<bool> = positional
                     .clone()
-                    .map(|p| p.binds_caller_container() && !p.is_variadic())
+                    // A method's invocant (a `my method` called as a sub,
+                    // `STORE SELF, $v`) is the object itself, never read
+                    // through.
+                    .map(|p| {
+                        (p.binds_caller_container() && !p.is_variadic())
+                            || p.is_invocant
+                            || p.implicit_invocant
+                    })
                     .collect();
                 // A positional arg past the declared ones never binds a
                 // container parameter -- except to a variadic `is raw` slurpy
@@ -316,12 +325,24 @@ impl Interpreter {
             _ => Vec::new(),
         };
         for (i, arg) in args.iter_mut().enumerate() {
-            if keeps.get(i).copied().unwrap_or(false) && arg.is_proxy_value() {
+            if keeps.get(i).copied().unwrap_or(false) && bound_proxy(arg).is_some() {
                 continue;
             }
             // `.VAR` is the Proxy object itself, passed as the argument
             // (`f($q.VAR)`), not a container to read (#15893).
             if arg.is_proxy_var_object() {
+                continue;
+            }
+            // A value parameter binds what the Proxy FETCHes, not the
+            // variable that holds it.
+            // Only a parameter the callee's own signature says binds a value
+            // reads a Proxy out of the variable that holds it: an unresolved
+            // callee (a lexical `my method` called as a sub) keeps it.
+            if !arg.is_proxy_value()
+                && i < keeps.len()
+                && let Some(proxy) = bound_proxy(arg)
+            {
+                *arg = loan_env!(self, auto_fetch_proxy(&proxy))?;
                 continue;
             }
             *arg = loan_env!(self, auto_fetch_proxy(arg))?;
@@ -721,4 +742,22 @@ impl Interpreter {
         self.env_mut().remove(&temp_name);
         Ok((result, updated))
     }
+}
+
+/// The Proxy an argument carries: the argument itself, or the Proxy the
+/// variable it was read from holds, tagged with its source (`VarRef`) or in
+/// the variable's shared cell (`my $p := Proxy.new(...); f($p)`, #18099).
+// Cost: O(1).
+pub(super) fn bound_proxy(arg: &Value) -> Option<Value> {
+    let inner = arg.unwrap_varref();
+    if inner.is_proxy_value() {
+        return Some(inner.clone());
+    }
+    if inner.is_container_ref() {
+        let held = inner.deref_container();
+        if held.is_proxy_value() {
+            return Some(held);
+        }
+    }
+    None
 }
