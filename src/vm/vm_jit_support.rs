@@ -64,6 +64,12 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetArrayVar(_)
             | OpCode::GetHashVar(_)
             | OpCode::GetBareWord(_)
+            // `True`/`False`/`Nil`/... in a compunit that imported through a
+            // `sub EXPORT` hook (#9047): the folded constant unless the hook
+            // installed the name. Its arm only advances `ip` by one. Unlisted,
+            // every routine in a module with such a `use` that names `False`
+            // ran interpreted (#18211).
+            | OpCode::GetShadowableTerm { .. }
             | OpCode::GetTypeCapture(_)
             | OpCode::VarHasContainer(_)
             | OpCode::GetCaptureVar(_)
