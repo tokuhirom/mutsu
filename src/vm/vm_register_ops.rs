@@ -413,6 +413,7 @@ impl Interpreter {
                 deleted_indices: Default::default(),
                 descriptor: None,
                 generator_origin: None,
+                exhausted: Default::default(),
                 itemized: false,
             };
             let list = Value::lazy_list(crate::gc::Gc::new(list));

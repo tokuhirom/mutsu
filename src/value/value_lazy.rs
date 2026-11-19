@@ -55,6 +55,7 @@ impl Clone for LazyList {
             deleted_indices: Default::default(),
             descriptor: self.descriptor.clone(),
             generator_origin: self.generator_origin.clone(),
+            exhausted: std::sync::atomic::AtomicBool::new(self.is_exhausted()),
             itemized: self.itemized,
         }
     }
@@ -131,20 +132,6 @@ impl LazyList {
     /// materialize on gist/Str rather than render a placeholder.
     pub(crate) fn is_genuinely_lazy(&self) -> bool {
         self.sequence_spec.is_some()
-            // A `.map`/`.grep`/index pipe is lazy exactly when its SOURCE is:
-            // Rakudo's `.is-lazy` on a map/grep Seq delegates to the source
-            // iterator, so `(1..3).map(*+1)` and `gather {...}.map(*+1)` are
-            // both `False` while `(1..Inf).map(*+1)` is `True`. Treating every
-            // non-`SkipFirst` pipe as lazy made a pipe over a `gather` render
-            // the `(...)` placeholder and refuse `.elems`.
-            // `pipe_bottoms_out_finite` is the conservative complement (it
-            // answers `false` for any source it cannot prove finite), so an
-            // unrecognized source keeps the old lazy answer and this can never
-            // turn an infinite pipe into a hang.
-            || self
-                .lazy_pipe
-                .as_ref()
-                .is_some_and(|_| !self.pipe_bottoms_out_finite())
             || self
                 .closure_seq
                 .as_ref()
@@ -158,6 +145,31 @@ impl LazyList {
                 let f = c.to_f64();
                 f.is_infinite() && f.is_sign_positive()
             })
+            // A list a pull has read to its end is no longer lazy (#17908):
+            // only the arms below, which may describe a finite source, can be
+            // exhausted.
+            || (!self.is_exhausted() && self.has_lazy_source())
+    }
+
+    /// The arms of [`Self::is_genuinely_lazy`] a finite source can satisfy: a
+    /// pipe whose source is not provably finite and the explicit `lazy`
+    /// marker.
+    // Cost: O(p), p = pipe stages walked by `pipe_bottoms_out_finite`.
+    fn has_lazy_source(&self) -> bool {
+        // A `.map`/`.grep`/index pipe is lazy exactly when its SOURCE is:
+            // Rakudo's `.is-lazy` on a map/grep Seq delegates to the source
+            // iterator, so `(1..3).map(*+1)` and `gather {...}.map(*+1)` are
+            // both `False` while `(1..Inf).map(*+1)` is `True`. Treating every
+            // non-`SkipFirst` pipe as lazy made a pipe over a `gather` render
+            // the `(...)` placeholder and refuse `.elems`.
+            // `pipe_bottoms_out_finite` is the conservative complement (it
+            // answers `false` for any source it cannot prove finite), so an
+            // unrecognized source keeps the old lazy answer and this can never
+            // turn an infinite pipe into a hang.
+        self
+                .lazy_pipe
+                .as_ref()
+                .is_some_and(|_| !self.pipe_bottoms_out_finite())
             // The `__mutsu_preserve_lazy_on_array_assign` marker is set
             // exclusively by an explicit `lazy` prefix / `.lazy` method call
             // (see `dispatch_core_str.rs`), including on an already-finite
@@ -165,6 +177,21 @@ impl LazyList {
             // in Rakudo) — so the marker alone is sufficient regardless of
             // whether the list also carries a coroutine/body/compiled_code.
             || self.is_lazy_marked()
+    }
+
+    /// Whether a pull has read this list to the end of its source (see the
+    /// `exhausted` field).
+    // Cost: O(1).
+    pub(crate) fn is_exhausted(&self) -> bool {
+        self.exhausted.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Record that a pull reached the end of this list's source: every
+    /// element is now in `cache`.
+    // Cost: O(1).
+    pub(crate) fn mark_exhausted(&self) {
+        self.exhausted
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Whether gist/Str/raku should render a `...` placeholder rather than

@@ -640,6 +640,7 @@ fn lazy_list_roundtrips_by_identity() {
         deleted_indices: Default::default(),
         descriptor: None,
         generator_origin: None,
+        exhausted: Default::default(),
         itemized: false,
     });
     match roundtrip(ValueRepr::LazyList(node.clone())) {

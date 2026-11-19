@@ -55,6 +55,13 @@ impl Interpreter {
         self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
+        // Fewer elements than asked for: the source ended (#17908).
+        if r
+            .as_ref()
+            .is_ok_and(|items| items.len() < needed.saturating_sub(from))
+        {
+            list.mark_exhausted();
+        }
         // See force_lazy_list_vm: array-context elements store Any, not Nil,
         // and are itemized like any other element store.
         if list.in_array_context() {

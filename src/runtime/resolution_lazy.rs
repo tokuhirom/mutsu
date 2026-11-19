@@ -14,7 +14,12 @@ impl Interpreter {
     /// is a method call however late it is forced: a `{*}` in it is `Nil`
     /// (#10746).
     pub(super) fn force_lazy_list(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
-        self.in_method_call(|interp| interp.force_lazy_list_body(list))
+        let forced = self.in_method_call(|interp| interp.force_lazy_list_body(list));
+        // A full force read the source to its end (#17908).
+        if forced.is_ok() {
+            list.mark_exhausted();
+        }
+        forced
     }
 
     fn force_lazy_list_body(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
