@@ -237,11 +237,7 @@ fn method_decl_body_with_my(
         rest,
         &body,
     );
-    super::super::sub::note_written_spans(
-        &mut spans,
-        &name,
-        name_written,
-    );
+    super::super::sub::note_written_spans(&mut spans, &name, name_written);
     Ok((
         rest,
         Stmt::MethodDecl {
