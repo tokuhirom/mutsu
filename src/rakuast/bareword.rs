@@ -177,6 +177,26 @@ pub(super) fn package_resolves(names: &NameScope, stem: &str) -> bool {
     name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
         || setting_type(stem)
         || declared_kind(names, stem) == Some(DeclaredKind::Type)
+        // A package a `use`d module's scan declared (`NativeCall::Types`).
+        || crate::parser::is_user_declared_type(stem)
+}
+
+/// The package a `use` statement loads, or `None` for a pragma (`use lib`,
+/// `use v6.e`, `use MONKEY-SEE-NO-EVAL`) and a version-only `use`. Any
+/// `:ver<>`-style adverb on the name is dropped.
+// Cost: O(k), k = length of `module`.
+fn loaded_module_name(module: &str) -> Option<&str> {
+    let bytes = module.as_bytes();
+    let end = (0..bytes.len())
+        .find(|&i| {
+            bytes[i] == b':' && bytes.get(i + 1) != Some(&b':') && (i == 0 || bytes[i - 1] != b':')
+        })
+        .unwrap_or(bytes.len());
+    let name = &module[..end];
+    let pragma = name.starts_with(|c: char| !c.is_ascii_uppercase())
+        || name.starts_with("MONKEY")
+        || name.is_empty();
+    (!pragma).then_some(name)
 }
 
 /// Record a declared type name, together with the stub packages a qualified
@@ -305,6 +325,21 @@ fn collect_declared_names(
                 | Stmt::RoleDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. }
                 | Stmt::Package { name, .. } => self.insert_nested_type(*name),
+                // `use Test;` loads a package: raku resolves `Test`,
+                // `Test::EXPORT::DEFAULT` and the like at parse time (measured on
+                // 2026.11: `Test` is a `Type::Simple`, `Test::EXPORT::` a
+                // `Term::Name`; `Test::Nope::` is still a `Call::Name`).
+                Stmt::Use { module, .. } => {
+                    if let Some(module) = loaded_module_name(module) {
+                        let module = Symbol::intern(module);
+                        insert_declared_type(module, self.0);
+                        let export = qualified(module, Symbol::intern("EXPORT"));
+                        insert_declared_type(export, self.0);
+                        for tag in ["DEFAULT", "ALL"] {
+                            insert_declared_type(qualified(export, Symbol::intern(tag)), self.0);
+                        }
+                    }
+                }
                 // `my \x = 5` / `my \x := $s` declares the term `x`.
                 Stmt::Ast(node) => {
                     match node.as_ref() {
