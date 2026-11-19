@@ -813,6 +813,18 @@ impl Interpreter {
             .map(|pkg| pkg.map(|pkg| pkg.as_str()))
     }
 
+    /// Whether the main unit imported a type under the short name `name`, whatever
+    /// package is running: `$*CU` built inside a module's routine describes the
+    /// unit being compiled, whose `use`d types live in the `GLOBAL` aliases.
+    // Cost: O(1) expected, two hashed lookups.
+    pub(crate) fn main_unit_imports_type(&self, name: &str) -> bool {
+        self.types
+            .package_type_aliases
+            .get("GLOBAL")
+            .and_then(|entries| entries.get(name))
+            .is_some_and(|target| self.has_type_direct(target))
+    }
+
     /// Look `name` up in a per-package table starting from a *known* owner
     /// package and walking up its `::` chain. For sites where the anchor is not
     /// the running frame but a specific declaration — e.g. a CStruct attribute

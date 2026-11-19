@@ -14,7 +14,11 @@ impl Interpreter {
         // `TT::Foo`).
         let cu = crate::unit_source_text::compile_time_cu(
             &|routine| self.unit_routine_imported(routine),
-            &|name| self.has_class(name) || self.slang_minted_type(name),
+            &|name| {
+                self.has_class(name)
+                    || self.slang_minted_type(name)
+                    || self.main_unit_imports_type(name)
+            },
         );
         crate::parser::clear_parser_lib_paths();
         cu
