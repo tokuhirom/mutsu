@@ -133,11 +133,17 @@ impl Compiler {
         // (`PROCESS::<$x>++`) is not a container to bind: the read-increment-
         // write path below stores through `IndexAssignPseudoStashNamed`, as
         // `PROCESS::<$x> += 1` does. A bound temporary holds a snapshot of
-        // the stash, and the increment went into it (#18120).
+        // the stash, and the increment went into it (#18120). A package
+        // stash's `$` entry (`GLOBAL::<$G>++`, `Foo::<$n>--`) is the package
+        // variable, which the same path writes through `SetGlobal`; binding
+        // the entry of a variable that does not exist yet had no container
+        // to bind, and the increment was lost (#18127).
         if let Expr::Index { target, index, .. } = expr
             && let Expr::PseudoStash(stash) = target.as_ref()
-            && matches!(stash.as_str(), "MY::" | "PROCESS::" | "CALLER::LEXICAL::")
-            && matches!(index.as_ref(), Expr::Literal(lit) if lit.as_str().is_some())
+            && let Expr::Literal(lit) = index.as_ref()
+            && let Some(key) = lit.as_str()
+            && (matches!(stash.as_str(), "MY::" | "PROCESS::" | "CALLER::LEXICAL::")
+                || key.starts_with('$'))
         {
             return false;
         }

@@ -247,6 +247,26 @@ impl Interpreter {
             .write(|table| table.mark_term_or_scalar(key, term));
     }
 
+    /// Record a package-qualified store key written by a `$` assignment
+    /// (`SetGlobal` of `Pkg::name`) as a scalar, unless it is already a term:
+    /// a sigil-less qualified env name is a `$` variable (a term's key carries
+    /// the `\\` prefix, ADR-12441), but the stash cannot tell an
+    /// uppercase-leading one from a type without this mark (#18127).
+    // Cost: O(|name|) for the qualified test and the symbol interning; O(1)
+    // table probes when already recorded.
+    pub(crate) fn note_qualified_scalar_store(&self, name: &str) {
+        if name.starts_with(['@', '%', '&', '*', '\\', '$'])
+            || !crate::qualified::is_qualified_str(name)
+        {
+            return;
+        }
+        let sym = Symbol::intern(name);
+        if self.our_table().is_term_key(sym) {
+            return;
+        }
+        self.our_table_mark_term(sym, false);
+    }
+
     /// A mutable root for the stored `our` variable `key` (as spelled), for
     /// the in-place mutation chokepoint (`env_root_descended_mut`). The stored
     /// value is pinned in this thread's pin slot (`LexicalState::our_var_pin`)

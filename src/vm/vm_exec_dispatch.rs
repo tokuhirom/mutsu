@@ -3330,6 +3330,15 @@ impl Interpreter {
                 // before the block).  `::('name')` falls back to this store.
                 if !unit_lexical_write && !our_scalar_write {
                     self.set_our_var(name.clone(), val.clone());
+                    // A package-qualified `$` write (`$GLOBAL::G = 1`,
+                    // `GLOBAL::<$G> = 1`) creates the package's `$G`; its
+                    // store key carries no sigil, so record that it is a
+                    // scalar, or an uppercase-leading name lists as a term
+                    // `G` and `GLOBAL::<$G>` misses it (#18127, #17364). A
+                    // bind (`Foo::<Bar> := 42`) installs a term instead.
+                    if !is_bind_ctx && !is_rebind {
+                        self.note_qualified_scalar_store(&name);
+                    }
                 }
                 // Eager `our`-alias sync: a package-qualified store (`$Foo::b = v`)
                 // must be visible immediately through the lexical alias (`$b`)
