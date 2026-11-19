@@ -127,8 +127,8 @@ mod tests {
         let stmts = vec![Stmt::Expr(crate::ast::Expr::Literal(
             crate::value::Value::regex("a".to_owned()),
         ))];
-        let error =
-            finish_unit_in(names, stmts).expect_err("a regex value without source tree must refuse");
+        let error = finish_unit_in(names, stmts)
+            .expect_err("a regex value without source tree must refuse");
         let reported = refusal(error);
         assert!(reported.message.contains("MUTSU_RAKUAST"));
         assert!(
