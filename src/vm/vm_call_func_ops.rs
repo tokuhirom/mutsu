@@ -1294,7 +1294,15 @@ impl Interpreter {
                         .map(|entry| (entry.def_pkg, Arc::clone(&entry.cf)))
                 {
                     let arity_usize = arity as usize;
-                    if self.stack.len() >= arity_usize && !call_has_slip {
+                    // A Junction argument must reach the slow dispatch, which
+                    // autothreads it: none of this hit's three call routes
+                    // does, so the named one bound the Junction itself and
+                    // refused it against `Any` (#18198).
+                    let stack_has_junction = self.stack.len() >= arity_usize
+                        && self.stack[self.stack.len() - arity_usize..]
+                            .iter()
+                            .any(|v| matches!(v.view(), ValueView::Junction { .. }));
+                    if self.stack.len() >= arity_usize && !call_has_slip && !stack_has_junction {
                         let start = self.stack.len() - arity_usize;
                         // Pooled args buffer (mirrors the two light-call cached
                         // paths above): `drain(..).collect()` was one malloc/free
@@ -1323,11 +1331,6 @@ impl Interpreter {
                             &args,
                             decoded_sources.as_deref(),
                         );
-                        // A Junction arg must reach the slow dispatch, which
-                        // autothreads it (this cache hit bypasses that check).
-                        let has_junction = args
-                            .iter()
-                            .any(|v| matches!(v.view(), ValueView::Junction { .. }));
                         let mainline_capture_blocked =
                             self.light_call_blocked_by_mainline_capture(name_str);
                         // Run the body against the routine's OWN nested-sub
@@ -1340,7 +1343,6 @@ impl Interpreter {
                         let body_fns = cf.compiled_fns.clone();
                         let compiled_fns = body_fns.as_deref().unwrap_or(compiled_fns);
                         let result = if !named_share
-                            && !has_junction
                             && !mainline_capture_blocked
                             && Self::is_light_call_eligible(&cf, name_str)
                         {
