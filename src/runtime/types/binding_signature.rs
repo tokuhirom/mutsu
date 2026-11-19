@@ -3197,7 +3197,7 @@ impl Interpreter {
                     // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
                     // param name — so binding the default here does not disturb them.
                     let value = self.omitted_optional_param_value(pd);
-                    self.check_omitted_optional_subset(pd, &value)?;
+                    self.check_omitted_optional_value(pd, &value)?;
                     // A named alias binds only its leaf variable (below); skip
                     // binding the parameter's own name in that form.
                     if !pd.named_alias {
@@ -4443,7 +4443,7 @@ impl Interpreter {
                 } else if pd.optional_marker || !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
                     let value = self.omitted_optional_param_value(pd);
-                    self.check_omitted_optional_subset(pd, &value)?;
+                    self.check_omitted_optional_value(pd, &value)?;
                     // An omitted optional still runs its `where` post-constraint,
                     // against the type object it would bind (#8089). An anonymous
                     // optional (`$? where { $*KERNEL.bits == 64 }`) binds nothing

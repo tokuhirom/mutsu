@@ -15,7 +15,7 @@ impl Interpreter {
     /// subset itself: Rakudo binds `Str` for an omitted `S :$s` with `subset S
     /// of Str where ...` (and `Int` for `UInt $x?`) in every language
     /// version, then checks the subset's predicate against it
-    /// ([`Self::check_omitted_optional_subset`]). Binding the subset's own type
+    /// ([`Self::check_omitted_optional_value`]). Binding the subset's own type
     /// object instead made that check vacuous, because `S` trivially is an
     /// `S`. (A `my S $v` *variable* is different: before 6.e it does hold the
     /// subset type object -- `nominal_type_object_name_for_constraint`.)
@@ -104,10 +104,12 @@ impl Interpreter {
     /// "Constraint type check failed ... expected S but got Str (Str)" when
     /// `S`'s predicate rejects the `Str` type object. A non-subset nominal
     /// type always accepts its own type object, so only a subset can fail.
-    /// The definedness smiley is not checked here: whether `Int:D $x?` may be
-    /// omitted is a separate question this does not decide.
+    ///
+    /// A `:D` parameter cannot bind its type object either: an omitted
+    /// `Str:D :$d` or `Int:D $x?` with no default dies with
+    /// `X::Parameter::InvalidConcreteness`, as Rakudo's binder does (#18075).
     // Cost: O(1) plus the subset predicate's own body.
-    pub(crate) fn check_omitted_optional_subset(
+    pub(crate) fn check_omitted_optional_value(
         &mut self,
         pd: &ParamDef,
         value: &Value,
@@ -118,7 +120,26 @@ impl Interpreter {
         let Some(constraint) = &pd.type_constraint else {
             return Ok(());
         };
-        let (base, _) = strip_type_smiley(constraint);
+        let (base, smiley) = strip_type_smiley(constraint);
+        if smiley == Some(":D")
+            && let ValueView::Package(pkg) = value.view()
+        {
+            let got = crate::value::user_facing_type_name(&pkg.resolve()).to_string();
+            let routine = self
+                .dispatch
+                .samewith_context_stack
+                .last()
+                .map(|ctx| ctx.name.to_string())
+                .unwrap_or_else(|| "<anon>".to_string());
+            return Err(RuntimeError::parameter_invalid_concreteness(
+                base,
+                &got,
+                &routine,
+                &pd.name,
+                true,
+                pd.is_invocant,
+            ));
+        }
         if base != "UInt" && !self.is_subset_type_name(base) {
             return Ok(());
         }

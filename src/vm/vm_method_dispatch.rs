@@ -2379,7 +2379,7 @@ impl Interpreter {
                 // An omitted optional's implicit default still has to satisfy
                 // a subset constraint (`method m(S $s?)`), as in the slow binder.
                 let val = self.omitted_optional_param_value(pd);
-                if let Err(e) = self.check_omitted_optional_subset(pd, &val) {
+                if let Err(e) = self.check_omitted_optional_value(pd, &val) {
                     unwind_fast_bind!();
                     return Err(e);
                 }
