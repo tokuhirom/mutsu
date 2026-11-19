@@ -737,6 +737,12 @@ impl Compiler {
         // `(state buf32 $w .= new)[3] = 77` and `($a, 42, $b)[1, 3] = ...`
         // subscript what the parentheses hold, so the shape dispatch below looks
         // through the marker the parser records for every `(...)`.
+        // `GLOBAL::<%Z><a> = 5`: the package stash's entry is the package
+        // variable, written the way `%GLOBAL::Z<a> = 5` is (#18204).
+        if let Some(target) = super::stash_entry_var::chain_with_stash_entry_var(target) {
+            self.compile_expr_index_assign(&target, index, value, outer_positional, spelling);
+            return;
+        }
         let original_target = target;
         let target = target.peel_parens();
         if self.compile_nested_index_bind_source(target, index, value, outer_positional) {
