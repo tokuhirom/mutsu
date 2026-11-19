@@ -59,6 +59,12 @@ struct ModuleScanResult {
     /// `SQLT_NUM` is a `constant ... is export` in the sibling
     /// DBDish::Oracle::Native.
     value_terms: Vec<String>,
+    /// The subset of `value_terms` whose initializer is a type the scan
+    /// resolved (`my constant CArray is export = NativeCall::Types::CArray`):
+    /// rakudo evaluates the initializer at compile time, so such a name is a
+    /// type in the importer's RakuAST (`Type::Simple`), not a `Term::Name`.
+    #[serde(default)]
+    type_constants: Vec<String>,
     /// EXPORTHOW::DECLARE declarator keywords the module exports, as
     /// `(keyword, HOW type name)` pairs. A `use` of the module makes each
     /// keyword parse as a class-like declarator for the rest of the unit.
@@ -463,6 +469,9 @@ fn apply_scan_types(scan: &ModuleScanResult, import_tags: Option<&[String]>) {
     // can see it, exactly like an enum value.
     for name in &scan.value_terms {
         register_imported_value_term(name);
+    }
+    for name in &scan.type_constants {
+        register_imported_type_constant(name);
     }
     // A module that computes its exports in `sub EXPORT` can install a value
     // under a CORE term keyword's own name, which the parser would otherwise
@@ -949,8 +958,19 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // parsing the declaration, so — unlike a type name — there is no AST node
     // to walk; the scan's own scope stack is the record. Callable term symbols
     // (`sub term:<foo>`) are excluded: those really can take arguments.
+    let mut type_constants: Vec<String> = Vec::new();
     let (mut value_terms, imported_value_terms): (Vec<String>, Vec<String>) = SCOPES.with(|s| {
         let scopes = s.borrow();
+        type_constants.extend(
+            decls
+                .constant_aliases
+                .iter()
+                .filter(|(_, init)| {
+                    crate::known_types::is_known_type_constraint(init)
+                        || scopes.iter().any(|scope| scope.user_types.contains(init))
+                })
+                .map(|(name, _)| name.clone()),
+        );
         let own = scopes
             .iter()
             .flat_map(|scope| {
@@ -1140,6 +1160,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         enum_values,
         tagged_enum_values,
         value_terms,
+        type_constants,
         declare_keywords: decls.declare_keywords,
         supersede_keywords: decls.supersede_keywords,
         type_index_incomplete,

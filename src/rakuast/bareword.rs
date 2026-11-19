@@ -61,6 +61,10 @@ impl<'s> DeclaredNames<'s> {
                 .into_iter()
                 .map(|name| (name, DeclaredKind::Term)),
         );
+        // A constant a `use` brought in that holds a type object is a type.
+        for name in crate::parser::imported_type_constant_names() {
+            found.insert(name, DeclaredKind::Type);
+        }
         collect_declared_names(names, stmts, &mut found);
         Self {
             names,
