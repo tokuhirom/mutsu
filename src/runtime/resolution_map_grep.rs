@@ -407,8 +407,14 @@ impl Interpreter {
         // they belong to the callback's code object (once per clone, behind
         // `OpCode::FirstPhaser`), while an inlined `do` block is a fresh
         // clone on every entry and would run them on every call (#18024).
+        // A body that declares a lexical type (`my class Inner`) is compiled
+        // as that block too: its scope exit takes the type's name out of
+        // scope after each call, where the top-level chunk left it bound
+        // in the enclosing scope (#18178).
         let normalized_body =
-            if crate::compiler::Compiler::has_block_leave_worthy_phasers(&normalized_body) {
+            if crate::compiler::Compiler::has_block_leave_worthy_phasers(&normalized_body)
+                || crate::compiler::Compiler::stmts_declare_lexical_types(&normalized_body)
+            {
                 let (mut stmts, body): (Vec<_>, Vec<_>) =
                     normalized_body.into_iter().partition(|s| {
                         matches!(
