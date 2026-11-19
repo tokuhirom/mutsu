@@ -5251,6 +5251,7 @@ impl Compiler {
                     self.note_block_lexical_type(*name);
                     self.record_block_lexical_type_decl(*name);
                 }
+                self.record_scope_type_decl(stmt);
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.add_class_decl_plan(&stmt, Default::default());
                 self.code.emit(OpCode::RegisterDecl(idx));
@@ -5291,6 +5292,7 @@ impl Compiler {
                 // Same as RegisterClass above: a role method has no creation op,
                 // and `add_role_decl_plan`'s method-body compile pass harvests
                 // the lexicals its methods write.
+                self.record_scope_type_decl(stmt);
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.add_role_decl_plan(&stmt, Default::default());
                 self.code.emit(OpCode::RegisterDecl(idx));
