@@ -367,7 +367,7 @@ impl Interpreter {
                 // CHECK-time diagnostic. Valid converted units are checked
                 // after lowering, when imported names have been resolved.
                 let (types, terms) = caller_names;
-                let stmts = match crate::rakuast::frontend::round_trip_eval(
+                let stmts = match crate::rakuast::frontend::finish_eval_unit(
                     &stmts,
                     crate::rakuast::frontend::eval_scope(types, terms, op_names),
                 ) {
