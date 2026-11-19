@@ -342,6 +342,7 @@ impl Interpreter {
                     ) || name.starts_with('*')
                         || name.get(1..).is_some_and(|rest| rest.starts_with('*'))
                 }) && (authoritative || !env.contains_key_sym(*sym))
+                    && captured_name_reachable(cc, *sym)
                 {
                     env.insert_sym(*sym, val.clone());
                 }
@@ -2550,6 +2551,7 @@ impl Interpreter {
                         "self" | "?CLASS" | "?ROLE" | "__mutsu_declared_method_capture"
                     )
                 }) && (authoritative || !env.contains_key_sym(*sym))
+                    && captured_name_reachable(cc, *sym)
                 {
                     env.insert_sym(*sym, val.clone());
                 }
@@ -3336,6 +3338,18 @@ impl<'a> Iterator for MergeEntries<'a> {
             MergeEntries::Overlay(it) => it.next(),
         }
     }
+}
+
+/// Whether a method body can reach the entry `sym` of its defining scope's
+/// capture (`MethodDef::captured_env`): a name it mentions, or anything when
+/// the body's lookups cannot be bounded (`CompiledCode::mentions_name_memo`).
+/// The capture of an `.^add_method` closure literal is the whole scope it was
+/// written in, so installing every entry on every call cost the size of that
+/// scope twice, once to insert and once more to merge back.
+/// Internal `__mutsu_*` keys are always installed.
+// Cost: O(1) after the chunk's first call (see `mentions_name_memo`).
+fn captured_name_reachable(cc: &CompiledCode, sym: Symbol) -> bool {
+    cc.mentions_name_memo(sym) != Some(false) || sym.starts_with("__mutsu_")
 }
 
 fn merge_method_env(
