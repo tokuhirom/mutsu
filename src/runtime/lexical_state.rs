@@ -188,7 +188,7 @@ pub(crate) struct LexicalState {
     /// file's lexical is read from this unit instead of the caller's
     /// (`Interpreter::running_compunit_lexical_unit`).
     pub(crate) candidate_scope_unit: Option<(Symbol, usize)>,
-    /// Bumped by [`Interpreter::unit_lexicals_cow_mut`] and
+    /// Bumped by [`Interpreter::unit_lexicals_write`] and
     /// [`Interpreter::package_lexicals_write`], the funnels through which
     /// `unit_lexicals` and `package_lexicals` are mutated. TRIR's per-routine
     /// free-variable cache (`trir_outer_cache`) is keyed on it together with
