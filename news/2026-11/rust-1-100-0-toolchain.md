@@ -11,5 +11,5 @@ Fallout fixed in the same change: six new `clippy` findings (a duplicated `#[all
 lookup for `#[test]` binaries. Cargo 1.100 builds the unit-test executable under
 `target/<profile>/build/<pkg>/<hash>/out/` instead of `deps/`, so the old relative `modules/`
 candidates missed and every `use Test` inside a `#[test]` failed with "Could not find Test". A
-`#[cfg(test)]`-only candidate rooted at `CARGO_MANIFEST_DIR` restores it; shipped binaries search
-exactly the same locations as before.
+new candidate, taken only for a path of the form `<root>/target/<profile>/build/..`, restores it for
+unit and integration tests; installed binaries search exactly the same locations as before.

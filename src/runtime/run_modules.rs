@@ -352,14 +352,18 @@ impl Interpreter {
                 if dir.file_name().is_some_and(|n| n == "deps") {
                     candidates.push(dir.join("..").join("..").join("..").join("modules"));
                 }
-                // Cargo 1.100's build-dir layout puts the test binary in
+                // Cargo 1.100's build-dir layout puts a test binary in
                 // `target/<profile>/build/<pkg>/<hash>/out/`, which is neither
-                // `deps` nor close to `modules/`; a `#[test]` build knows its
-                // own checkout, so ask it directly.
-                #[cfg(test)]
-                candidates.push(
-                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("modules"),
-                );
+                // `deps` nor near `modules/`. Taken only when the path really
+                // is `<root>/target/<profile>/build/..`, so an installed
+                // layout can't reach a stray `modules/` through it.
+                if let Some(build) = dir.ancestors().find(|a| a.file_name().is_some_and(|n| n == "build"))
+                    && let Some(target) = build.parent().and_then(|p| p.parent())
+                    && target.file_name().is_some_and(|n| n == "target")
+                    && let Some(root) = target.parent()
+                {
+                    candidates.push(root.join("modules"));
+                }
                 candidates.into_iter().find(|c| c.is_dir())
             })
         };
