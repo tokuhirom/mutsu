@@ -39,7 +39,7 @@ sub same($src, $expected, $desc) {
 }
 {
     my @e = exprs(Q[class B1:ver<1.0>:auth<me> { }]);
-    like @e[0].gist, /'Name.from-identifier("B1", colonpairs => ('/, 'the adverbs are colonpairs of the name';
+    like @e[0].gist, /'Name::Part::Simple.new("B1"),' \s* 'colonpairs => ('/, 'the adverbs are colonpairs of the name';
     like @e[0].gist, /'key   => "ver"' .* 'key   => "auth"'/, 'in the written order';
     like @e[0].gist, /'processors => <words val>'/, 'with word-quoted values';
     my @m = exprs(Q[module M1:ver<v1.2> is export { }]);

@@ -6,3 +6,9 @@ rakudo 2026.11, instead of `.new(` around a `Name`. mutsu's `.raku`/`.gist` now 
 same, which was the largest single difference class in the `.AST` text corpus (about 900
 of 4300 sampled statements). The tests that pinned the old spelling are updated; they
 pass under rakudo 2026.11 too.
+
+A name with colonpairs (`class A:ver<1.0>`, `sub infix:<+>`) likewise prints as
+`Name.new(Name::Part::Simple.new("A"), colonpairs => (...))`, and the `.AST` text golden
+(`ci/ast-text-corpus/rakudo.tsv`) is re-recorded on rakudo 2026.11 for the same files. Fourteen
+statements that matched the older rakudo text but not 2026.11's stay out of
+`identical.tsv` until they are fixed.
