@@ -55,27 +55,39 @@ fn package_stash_entry_var(stash: &str, key: &str) -> Option<Expr> {
 /// qualified variable it names; `None` for any other chain.
 // Cost: O(d + |stash| + |key|), d = subscript and paren depth.
 pub(super) fn chain_with_stash_entry_var(expr: &Expr) -> Option<Expr> {
-    match expr {
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-        } => {
-            if let Expr::PseudoStash(stash) = target.as_ref() {
-                let Expr::Literal(lit) = index.as_ref() else {
-                    return None;
-                };
-                return package_stash_entry_var(stash, lit.as_str()?);
+    // The subscripts from the outermost down, and the link below them.
+    let mut levels = Vec::new();
+    let mut cur = expr;
+    let var = loop {
+        match cur {
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+                spelling,
+            } => {
+                if let Expr::PseudoStash(stash) = target.as_ref() {
+                    let Expr::Literal(lit) = index.as_ref() else {
+                        return None;
+                    };
+                    break package_stash_entry_var(stash, lit.as_str()?)?;
+                }
+                levels.push((index, *is_positional, *spelling));
+                cur = target;
             }
-            Some(Expr::Index {
-                target: Box::new(chain_with_stash_entry_var(target)?),
-                index: index.clone(),
-                is_positional: *is_positional,
-                spelling: *spelling,
-            })
+            Expr::Grouped(inner) => cur = inner,
+            _ => return None,
         }
-        Expr::Grouped(inner) => chain_with_stash_entry_var(inner),
-        _ => None,
-    }
+    };
+    Some(
+        levels
+            .into_iter()
+            .rev()
+            .fold(var, |target, (index, is_positional, spelling)| Expr::Index {
+                target: Box::new(target),
+                index: index.clone(),
+                is_positional,
+                spelling,
+            }),
+    )
 }
