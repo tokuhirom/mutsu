@@ -298,7 +298,14 @@ impl Interpreter {
                 let positional = def.param_defs.iter().filter(|p| !p.named);
                 let mut flags: Vec<bool> = positional
                     .clone()
-                    .map(|p| p.binds_caller_container() && !p.is_variadic())
+                    // A method's invocant (a `my method` called as a sub,
+                    // `STORE SELF, $v`) is the object itself, never read
+                    // through.
+                    .map(|p| {
+                        (p.binds_caller_container() && !p.is_variadic())
+                            || p.is_invocant
+                            || p.implicit_invocant
+                    })
                     .collect();
                 // A positional arg past the declared ones never binds a
                 // container parameter -- except to a variadic `is raw` slurpy
@@ -328,7 +335,11 @@ impl Interpreter {
             }
             // A value parameter binds what the Proxy FETCHes, not the
             // variable that holds it.
+            // Only a parameter the callee's own signature says binds a value
+            // reads a Proxy out of the variable that holds it: an unresolved
+            // callee (a lexical `my method` called as a sub) keeps it.
             if !arg.is_proxy_value()
+                && i < keeps.len()
                 && let Some(proxy) = bound_proxy(arg)
             {
                 *arg = loan_env!(self, auto_fetch_proxy(&proxy))?;
