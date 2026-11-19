@@ -701,7 +701,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 body,
                 return_type.as_deref(),
             )?;
-            super::routine_origins::apply(&mut node, spans.as_deref(), param_defs);
+            super::name_parts::apply_method_name(names, &mut node, spans.as_deref(), param_defs);
             super::symbolic_deref::replace_declarator_name(names, &mut node, name_expr.as_ref())?;
             // The traits are the ones the source wrote, in written order; the
             // execution fields the parser folded them into are not read back.

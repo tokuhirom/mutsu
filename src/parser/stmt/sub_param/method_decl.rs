@@ -134,6 +134,7 @@ fn method_decl_body_with_my(
         (rest, name, None)
     };
     let name_span = crate::parser::primary::source_span(name_start, rest);
+    let name_written = &name_start[..name_start.len() - rest.len()];
     let (rest, _) = ws(rest)?;
 
     let mut signature_start = None;
@@ -227,7 +228,7 @@ fn method_decl_body_with_my(
     let mut param_defs = param_defs;
     crate::ast::does_target::mark_does_targets(&name, &mut param_defs, &body);
     crate::ast::routine_trait::attach(&mut body, traits.source_traits);
-    let spans = super::super::sub::routine_spans(
+    let mut spans = super::super::sub::routine_spans(
         name_span,
         signature_start,
         &param_defs,
@@ -236,6 +237,7 @@ fn method_decl_body_with_my(
         rest,
         &body,
     );
+    super::super::sub::note_written_spans(&mut spans, &name, name_written);
     Ok((
         rest,
         Stmt::MethodDecl {
