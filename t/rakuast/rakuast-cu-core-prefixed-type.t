@@ -12,7 +12,7 @@ CHECK {
         if $n ~~ RakuAST::Type::Simple {
             my $name = $n.name.canonicalize;
             %kind{$name} = $n.resolution.^name;
-            %lexical{$name} = $n.resolution.lexical-name;
+            %lexical{$name} = (try $n.resolution.lexical-name) // "";
             %value{$name} = $n.compile-time-value.^name;
         }
         $n.visit-children(&walk) if $n.^can("visit-children");
