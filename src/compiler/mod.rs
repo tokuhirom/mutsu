@@ -1075,6 +1075,7 @@ mod declaration_plan_tests {
     }
 }
 mod adverb_interp;
+mod with_defined;
 mod amp_scope;
 mod atomic_elem_forms;
 mod atomic_target;
