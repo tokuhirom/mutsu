@@ -11,6 +11,7 @@ mod registration_class_body_aliases;
 mod registration_class_body_attr;
 mod registration_class_body_does;
 mod registration_class_body_exit;
+mod registration_class_body_reentry;
 mod registration_class_body_method;
 mod registration_class_body_tail;
 pub(crate) mod registration_class_body_method_forms;
