@@ -1336,18 +1336,30 @@ impl Interpreter {
         // and seven lookups per attribute on every method exit that had any
         // ContainerRef in scope, so a method call on a class with many
         // attributes (Text::CSV has ~45) paid for all of them (#9494).
-        let frame_refs = self.frame_container_refs(code);
+        // Each ContainerRef name, read as each attribute spelling it could be:
+        // (bare attribute name, candidate rank, value). The rank is the
+        // candidate order the per-attribute scan used to probe — bare, `!x`,
+        // `.x`, `@!x`, `@.x`, `%!x`, `%.x` — and the lowest-ranked match wins.
+        const TWIGILS: [&str; 6] = ["!", ".", "@!", "@.", "%!", "%."];
+        let mut frame_refs = self.frame_container_refs(code);
+        // A name yields a reading the scan below can keep only through a
+        // twigil spelling (ranks 1-6) or as a bare name the frame does not
+        // declare itself (rank 0, `reconcile_bare_reading_owned`); the
+        // `retain` below drops every other reading whatever the attribute
+        // keys are. Applying that same test here, before the attribute cell
+        // is looked up, lets the exit of a method whose `:=` binds are all to
+        // its own `my` locals or parameters (AttrX::Mooish's
+        // `my $attr-var := self.get_value($instance)`) stop at once.
+        frame_refs.retain(|(name, _)| {
+            TWIGILS.iter().any(|t| name.starts_with(t))
+                || Self::reconcile_bare_reading_owned(code, param_defs, name)
+        });
         if frame_refs.is_empty() {
             return None;
         }
         // Looked up only now: the common exit has no ContainerRef in scope
         // and needs no cell at all (#8880).
         let cell = self.method_attr_cell(base, owner_class)?;
-        // Each ContainerRef name, read as each attribute spelling it could be:
-        // (bare attribute name, candidate rank, value). The rank is the
-        // candidate order the per-attribute scan used to probe — bare, `!x`,
-        // `.x`, `@!x`, `@.x`, `%!x`, `%.x` — and the lowest-ranked match wins.
-        const TWIGILS: [&str; 6] = ["!", ".", "@!", "@.", "%!", "%."];
         let mut readings: Vec<(&str, usize, &Value)> = Vec::new();
         for (name, v) in &frame_refs {
             readings.push((name, 0, v));
