@@ -133,6 +133,8 @@ impl Interpreter {
     // O(s + f) for a registered routine, s = visible env names that are not
     // plain user lexicals, f = the routine's free vars: its code object carries
     // a filtered capture (`routine_code_object_env`), not the live env tier.
+    // A non-local read also scans the chunk's own declarations, O(p + t),
+    // p = its `sub` plans, t = its `regex`/`token`/`rule` plans.
     pub(super) fn exec_get_code_var_op(
         &mut self,
         code: &CompiledCode,
@@ -188,6 +190,20 @@ impl Interpreter {
         {
             // The code object closes over this activation (#12692).
             let own = self.capture_lexsub_activation(code, own);
+            self.stack.push(own);
+            return Ok(());
+        }
+        // So is a `my regex` / `token` / `rule` declared in this chunk: it is
+        // the scope's `&name`, which an outer `my &name` does not shadow
+        // (#17878).
+        if !name_is_qualified
+            && code
+                .token_decl_plans
+                .iter()
+                .any(|p| p.name.as_str() == name)
+            && let own = self.resolve_code_var_unshadowed(name)
+            && !own.is_nil()
+        {
             self.stack.push(own);
             return Ok(());
         }

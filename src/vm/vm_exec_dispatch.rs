@@ -6502,7 +6502,8 @@ impl Interpreter {
             }
             // Cost: O(s + f) for a registered routine, s = visible env names that are not plain
             // user lexicals, f = the routine's free vars (its code object's filtered capture,
-            // `routine_code_object_env`); O(1) for a `&`-sigil local.
+            // `routine_code_object_env`); O(1) for a `&`-sigil local. Plus O(p + t) for a non-local
+            // read, p/t = the chunk's own `sub` / `regex`-`token`-`rule` declaration plans.
             OpCode::GetCodeVar(name_idx) => {
                 self.exec_get_code_var_op(code, *name_idx, None)?;
                 *ip += 1;
