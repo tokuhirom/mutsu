@@ -1166,6 +1166,20 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
                     .then(|| external("RakuAST::Declaration::Import", &name))
                     .flatten();
             }
+            // A multi-part name (`RakuAST::Lookup`, `X::AdHoc`) is found through its
+            // package, not as one lexical of the setting: a resolved constant.
+            if crate::qualified::is_qualified_str(&name) {
+                return Some(Value::rakuast(Box::new(RakuAstNode {
+                    origin: Default::default(),
+                    class: C::DeclarationResolvedConstant,
+                    fields: vec![RakuAstField {
+                        name: Some("compile-time-value"),
+                        value: RakuAstFieldValue::Node(Value::package(
+                            crate::symbol::Symbol::intern(&name),
+                        )),
+                    }],
+                })));
+            }
             external("RakuAST::Declaration::External::Constant", &name)
         }
         _ => None,
