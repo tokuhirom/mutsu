@@ -482,7 +482,14 @@ impl Interpreter {
         // the loop-parameter test that is precise -- a genuine capture of a
         // `my` declared before the closure bakes `Some(slot)` and is
         // unaffected.
-        if matches!(parent_slots.get(i), Some(None)) && code.for_loop_param_syms.contains(&sym) {
+        // The same holds for a sigilless binding (a term key, `\\x`): a
+        // `my \\x` of a nested block declared after the closure is another
+        // binding, and its still-unset slot read as `Nil` where the closure
+        // means the outer `\\x` (#18176).
+        if matches!(parent_slots.get(i), Some(None))
+            && (code.for_loop_param_syms.contains(&sym)
+                || sym.with_str(|s| s.starts_with(crate::term_names::TERM_PREFIX)))
+        {
             return None;
         }
         // The last slot of that name (the innermost shadow), through the
