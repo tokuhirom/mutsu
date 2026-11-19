@@ -544,6 +544,14 @@ impl Interpreter {
                 } else {
                     val
                 }
+            } else if !is_deferred
+                && attr.default_is_seed
+                && let Some(seed) = plan.seed_defaults.get(i).and_then(|m| m.get())
+            {
+                // The parser's synthesized type-object default (`has Str $.x`)
+                // already evaluated for this class: the same memo `.new`'s
+                // native constructor reads (`NativeCtorPlan::seed_defaults`).
+                Self::coerce_attr_value_by_sigil(seed.clone(), *sigil)
             } else if !is_deferred && let Some(arg) = default {
                 // Bind `self`/`?CLASS`/the already-set attributes and switch
                 // to the class package for class-scoped sub lookups — the
@@ -570,6 +578,19 @@ impl Interpreter {
                     crate::runtime::attr_build_defaults::AttrDeclScope::of(attr),
                 )?;
                 self.reify_list_attr_value(&val, *sigil)?;
+                // Remember a seed default's type object for the next
+                // construction, under the condition `.new`'s native
+                // constructor memoizes it: the value is a type object that
+                // passes the attribute's type check.
+                if attr.default_is_seed
+                    && matches!(val.view(), ValueView::Package(_))
+                    && attr_type_constraint
+                        .as_deref()
+                        .is_none_or(|c| self.type_matches_value(c, &val))
+                    && let Some(cell) = plan.seed_defaults.get(i)
+                {
+                    let _ = cell.set(val.clone());
+                }
                 let val = Self::coerce_attr_value_by_sigil(val, *sigil);
                 if *sigil == '$' && val.is_nil() {
                     self.attr_store_nil_default(cn_resolved, attr_name, '$', val)
@@ -918,7 +939,11 @@ impl Interpreter {
         inv: &Value,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
-        let class_attrs_info = self.collect_class_attributes(class_key);
+        // The attribute list is class shape: the cached per-class plan holds
+        // it (dropped with the dispatch caches at every class-shape mutation),
+        // so a construction does not re-collect it from the MRO.
+        let plan = self.native_ctor_plan(crate::symbol::Symbol::intern(class_key));
+        let class_attrs_info = &*plan.class_attrs;
         if !class_attrs_info.iter().any(|a| a.is_required.is_some()) {
             return Ok(());
         }
@@ -926,7 +951,7 @@ impl Interpreter {
             return Ok(());
         };
         let attrs = attributes.as_map();
-        for attr in &class_attrs_info {
+        for attr in class_attrs_info.iter() {
             let Some(reason) = &attr.is_required else {
                 continue;
             };
@@ -939,7 +964,7 @@ impl Interpreter {
             }) {
                 continue;
             }
-            let key = super::attribute_storage_key(&class_attrs_info, &attr.name, attr.sigil);
+            let key = super::attribute_storage_key(class_attrs_info, &attr.name, attr.sigil);
             // Unset is: absent, `Nil`, or still holding a TYPE OBJECT -- which
             // is what the pre-BUILD seed leaves (`Any` for an untyped
             // attribute, the declared type for `has Str $.key is required`).
