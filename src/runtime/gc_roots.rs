@@ -273,7 +273,7 @@ impl Interpreter {
         for inner in self.module.module_scope_lexicals.values() {
             visit_map_values(visitor, inner);
         }
-        for inner in self.lexicals.unit_lexicals.values() {
+        for inner in self.lexicals.unit_lexicals.read().values() {
             visit_map_values(visitor, inner);
         }
         visit_map_values(visitor, &self.lexicals.escaped_our_lexical_cells);

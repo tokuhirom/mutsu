@@ -919,10 +919,12 @@ impl Interpreter {
                         self.locals[slot_idx] = cell.clone();
                         self.env_mut().insert(name.clone(), cell.clone());
                     }
-                    self.unit_lexicals_cow_mut()
-                        .entry(unit_key.clone())
-                        .or_default()
-                        .insert(name, cell);
+                    self.unit_lexicals_write(|table| {
+                        table
+                            .entry(unit_key.clone())
+                            .or_default()
+                            .insert(name, cell);
+                    });
                     captured_any = true;
                 }
                 if captured_any {

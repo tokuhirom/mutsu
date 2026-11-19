@@ -83,6 +83,10 @@ pub(crate) struct LexicalState {
     /// another thread's rebind of the key cannot free it meanwhile. One slot:
     /// the next pin replaces it, once the previous reference is gone.
     pub(crate) our_var_pin: Value,
+    /// This thread's pin slot for an in-place mutation of a `unit_lexicals`
+    /// entry (`Interpreter::unit_lexical_slot_mut`, #18136): the same device
+    /// as `our_var_pin`, for the compunit statics world table.
+    pub(crate) unit_lexical_pin: Value,
     /// The process-level dynamics written at run time (`$PROCESS::OUT = ...`,
     /// `PROCESS::<$name> := value`, a `$*name = ...` that lands on the process
     /// binding), keyed by the dynamic-var env key (`*name`/`@*name`/`%*name`).
@@ -162,21 +166,21 @@ pub(crate) struct LexicalState {
     /// Distinct from `module_scope_lexicals`, which is a *last-resort* read-only
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
-    pub(crate) unit_lexicals: std::sync::Arc<PackageLexicals>,
+    pub(crate) unit_lexicals: crate::runtime::world_cell::WorldCell<PackageLexicals>,
     /// The declared element/key types of a unit's own file-scope `@`/`%`
     /// lexicals, keyed by unit and then by the env metadata lane
     /// (`__mutsu_type::%h`, `__mutsu_hash_key_type::%h`), each a `Str`.
     /// The module body runs in its loader's env, so those lanes are taken out
     /// of it when the load ends, like the values moving into `unit_lexicals`;
     /// the unit's routines read them here (#13086, `vm_unit_lexical_meta_lanes`).
-    pub(crate) unit_lexical_meta_lanes: std::sync::Arc<PackageLexicals>,
+    pub(crate) unit_lexical_meta_lanes: crate::runtime::world_cell::WorldCell<PackageLexicals>,
     /// The compunits of loaded module files with no `unit` declarator whose
     /// own file-scope lexicals live in `unit_lexicals` under the compunit's
     /// own key (its source path) rather than a unit package's. Their routines
     /// run in `GLOBAL`, so no package candidate finds them; the running
     /// frame's declaring file does (`Interpreter::compunit_lexical_bucket`,
     /// ADR-12529 §3, slice 24). Empty unless such a module was loaded.
-    pub(crate) compunit_lexical_units: std::sync::Arc<rustc_hash::FxHashSet<Symbol>>,
+    pub(crate) compunit_lexical_units: crate::runtime::world_cell::WorldCell<rustc_hash::FxHashSet<Symbol>>,
     /// The compunit and routine-stack depth of a multi candidate being
     /// matched (`Interpreter::with_candidate_scope`). Its `where` clauses run
     /// before any frame of the candidate exists, so the running frame is the
@@ -417,13 +421,14 @@ impl LexicalState {
             nested_capture_cell_names: Default::default(),
             our_vars: Default::default(),
             our_var_pin: Value::NIL,
+            unit_lexical_pin: Value::NIL,
             process_dynamics: process_stash::ProcessStash::default(),
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: Default::default(),
             class_body_static_names: Default::default(),
             class_body_static_types: Default::default(),
-            unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
-            unit_lexical_meta_lanes: std::sync::Arc::new(PackageLexicals::default()),
+            unit_lexicals: Default::default(),
+            unit_lexical_meta_lanes: Default::default(),
             compunit_lexical_units: Default::default(),
             candidate_scope_unit: None,
             mainline_lexical_subs: Default::default(),
@@ -476,15 +481,17 @@ impl LexicalState {
             // ADR-17216 slice 4b: one `our` store for the whole process.
             our_vars: self.our_vars.share(),
             our_var_pin: Value::NIL,
+            unit_lexical_pin: Value::NIL,
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: self.package_lexicals.share(),
             class_body_static_names: self.class_body_static_names.share(),
             class_body_static_types: self.class_body_static_types.share(),
-            unit_lexicals: self.unit_lexicals.clone(),
-            unit_lexical_meta_lanes: self.unit_lexical_meta_lanes.clone(),
-            compunit_lexical_units: self.compunit_lexical_units.clone(),
+            // ADR-17216 §2.5: compunit statics are one world table (#18136).
+            unit_lexicals: self.unit_lexicals.share(),
+            unit_lexical_meta_lanes: self.unit_lexical_meta_lanes.share(),
+            compunit_lexical_units: self.compunit_lexical_units.share(),
             candidate_scope_unit: None,
             mainline_lexical_subs: self.mainline_lexical_subs.clone(),
             lexsub_free_aliases: self.lexsub_free_aliases.clone(),

@@ -391,6 +391,7 @@ pub(crate) use vm_user_subscript_lvalue::SubscriptCaptureKey;
 mod vm_unit_cell_shadow;
 mod vm_unit_hidden;
 pub(crate) mod vm_unit_lexical_meta_lanes;
+mod vm_unit_lexical_world;
 mod vm_zen_slice;
 pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;
 mod vm_assign_expr_lane;

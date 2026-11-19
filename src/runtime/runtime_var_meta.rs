@@ -579,7 +579,7 @@ impl Interpreter {
         let meta_key = self.type_meta_key_cached(name_sym);
         // A unit's own `@`/`%` lexical keeps its lane in the unit's record
         // once its load ended (#13086).
-        Self::type_record_constraint(self.declared_meta_lane(meta_key)?)
+        Self::type_record_constraint(&self.declared_meta_lane(meta_key)?)
     }
 
     /// [`Self::var_type_constraint_value_sym`] for a variable the running code
@@ -928,7 +928,9 @@ impl Interpreter {
         name_sym: Symbol,
     ) -> Option<String> {
         let meta_key = Self::hash_key_meta_key_for_sym(name_sym);
-        if let Some(ValueView::Str(tc)) = self.declared_meta_lane(meta_key).map(Value::view) {
+        if let Some(lane) = self.declared_meta_lane(meta_key)
+            && let ValueView::Str(tc) = lane.view()
+        {
             return Some(tc.as_str().to_owned());
         }
         self.attr_hash_key_constraint(name)
@@ -943,7 +945,9 @@ impl Interpreter {
         attr_tc: Option<&str>,
     ) -> Option<String> {
         let meta_key = Self::hash_key_meta_key_for_sym(name_sym);
-        if let Some(ValueView::Str(tc)) = self.declared_meta_lane(meta_key).map(Value::view) {
+        if let Some(lane) = self.declared_meta_lane(meta_key)
+            && let ValueView::Str(tc) = lane.view()
+        {
             return Some(tc.as_str().to_owned());
         }
         let (_, key_type) = crate::runtime::types::split_object_hash_constraint(attr_tc?);
@@ -960,6 +964,7 @@ impl Interpreter {
         let stored = self
             .env()
             .get_record_in_frame(meta_key)
+            .cloned()
             .or_else(|| self.unit_lexical_meta_lane(meta_key))?;
         match stored.view() {
             ValueView::Str(tc) => Some(tc.as_str().to_owned()),

@@ -95,8 +95,8 @@ impl Interpreter {
             None => {
                 if !self.topic_state.name_bound_by_loop_param(var_name)
                     || !code.local_slots_of(var_sym).is_empty()
-                    || !self.lexicals.unit_lexicals.is_empty()
-                        && self.lexicals.unit_lexicals.contains_name(var_name)
+                    || !self.lexicals.unit_lexicals.read().is_empty()
+                        && self.lexicals.unit_lexicals.read().contains_name(var_name)
                 {
                     return None;
                 }

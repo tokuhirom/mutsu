@@ -179,8 +179,10 @@ impl Interpreter {
             && let Some(v) = self
                 .lexicals
                 .unit_lexicals
+                .read()
                 .get(&owner.bucket)
                 .and_then(|m| m.get(name))
+                .cloned()
         {
             return Some(celled(v.clone()));
         }
@@ -216,9 +218,13 @@ impl Interpreter {
         }
         let pkg = self.current_package_sym();
         if !crate::qualified::is_global_package(pkg) {
-            if let Some(v) =
-                Self::lookup_in_package_chain(&self.lexicals.unit_lexicals, pkg.as_str(), name)
-            {
+            let unit_value = Self::lookup_in_package_chain(
+                &self.lexicals.unit_lexicals.read(),
+                pkg.as_str(),
+                name,
+            )
+            .cloned();
+            if let Some(v) = unit_value {
                 return Some(celled(v.clone()));
             }
             if let Some(v) = self.module_scope_lexical_for_owner(pkg.as_str(), name) {

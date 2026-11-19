@@ -105,10 +105,11 @@ impl Interpreter {
         for lane in &body_lanes {
             if let Some(ValueView::Str(tc)) = self.env().get_sym(*lane).map(Value::view) {
                 let tc = tc.as_str().to_owned();
-                crate::runtime::cow_table_mut(&mut self.lexicals.unit_lexical_meta_lanes)
-                    .entry(name.clone())
-                    .or_default()
-                    .insert(lane.resolve(), Value::str(tc.clone()));
+                self.lexicals.unit_lexical_meta_lanes.write(|t| {
+                    t.entry(name.clone())
+                        .or_default()
+                        .insert(lane.resolve(), Value::str(tc.clone()));
+                });
                 self.lexicals.class_body_static_types.write(|t| {
                     t.entry(name.clone())
                         .or_default()
