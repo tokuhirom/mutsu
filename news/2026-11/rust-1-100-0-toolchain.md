@@ -13,3 +13,7 @@ lookup for `#[test]` binaries. Cargo 1.100 builds the unit-test executable under
 candidates missed and every `use Test` inside a `#[test]` failed with "Could not find Test". A
 new candidate, taken only for a path of the form `<root>/target/<profile>/build/..`, restores it for
 unit and integration tests; installed binaries search exactly the same locations as before.
+
+The Miri job's pinned nightly moves from `nightly-2026-08-01` (rustc 1.99) to `nightly-2026-09-01`
+(rustc 1.100.0-nightly), because the new `rust-version` makes cargo refuse the older nightly. The
+wasm32 lint pass also flagged one `needless_bool` that only exists with `cfg(unix)` off.

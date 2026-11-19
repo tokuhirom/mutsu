@@ -1053,9 +1053,9 @@ jobs:
       # actions bump PR #10433 failed exactly so).
       - name: Install pinned nightly with Miri
         run: |
-          rustup toolchain install nightly-2026-08-01 --profile minimal \
+          rustup toolchain install nightly-2026-09-01 --profile minimal \
             --component miri --component rust-src --no-self-update
-          rustup default nightly-2026-08-01
+          rustup default nightly-2026-09-01
 
       - name: Cache cargo (rust-cache)
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
