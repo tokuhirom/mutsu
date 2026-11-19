@@ -229,16 +229,17 @@ impl Interpreter {
     }
 
     /// Run the element store `store` on the package-block `@`/`%` lexical
-    /// `name` when that is what a frame with no binding of its own for `name`
-    /// resolves it to: the env-centric store paths find the container under
+    /// `name` when that is what the running code's reads resolve it to
+    /// (`package_scope_lexical_in`, ahead of the env): the env-centric store paths find the container under
     /// the name for the duration, and whatever they leave there is the
     /// store's new value. Anything else runs `store` unchanged.
     ///
     /// Still needed for the `Named` shape only: a package-block lexical lives in
     /// the package store, not in a local slot of the running code, so no
     /// `StorePlace::Slot` ever reaches it (ADR-14632).
-    // Cost: O(1) around `store` (one env probe, one store lookup and, when the
-    // store ran against a package lexical, one store write).
+    // Cost: O(f) around `store`, f = |code.routine_scoped_free| (usually 0;
+    // one store lookup, two env overlay probes and, when the store ran
+    // against a package lexical, one store write).
     pub(super) fn with_package_lexical_seeded<T>(
         &mut self,
         code: &CompiledCode,
@@ -247,24 +248,39 @@ impl Interpreter {
     ) -> T {
         let name = Self::const_str(code, name_idx);
         let sym = code.const_sym(name_idx);
+        // The store resolves the name exactly as the read does
+        // (`GetHashVar`/`GetArrayVar` ask `package_scope_lexical_in` before
+        // the env): a frame whose env merely *sees* the name -- a closure's
+        // capture answering it ahead of its callers (#18237) -- otherwise
+        // stored into that env copy while every read kept answering from the
+        // package store, so the write was lost.
         let seed = if name.starts_with(['@', '%'])
             && !self.lexicals.package_lexicals.read().is_empty()
             && code.local_slots_of(sym).is_empty()
-            && !self.env().contains_key_sym(sym)
+            // A package-qualified name the read answers from `our_vars` first.
+            && !((crate::qualified::is_package_hash(sym) || crate::qualified::is_package_array(sym))
+                && self.get_our_var(name).is_some())
         {
-            self.package_scope_lexical(name)
+            self.package_scope_lexical_in(code, name)
         } else {
             None
         };
         let Some(seed) = seed else {
             return store(self);
         };
+        // The frame's env may bind the name itself (a promoted capture copy):
+        // the seed stands in for it during the store and it comes back
+        // afterwards, and a binding of an outer tier is never tombstoned.
+        let shadowed = self.env().overlay_get_sym(sym).cloned();
         self.env_mut().insert_sym(sym, seed);
         let result = store(self);
-        if let Some(stored) = self.env_mut().remove_sym(sym) {
+        if let Some(stored) = self.env_mut().remove_overlay_sym(sym) {
             self.store_package_scope_lexical(name, stored);
             // TRIR's free-variable cache may hold the replaced value.
             self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
+        }
+        if let Some(previous) = shadowed {
+            self.env_mut().insert_sym(sym, previous);
         }
         result
     }
