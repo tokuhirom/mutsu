@@ -1121,9 +1121,11 @@ impl Interpreter {
             }
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
+            let static_drops = self.class_body_static_merge_drops(owner_class);
             let frame_syms = MethodFrameSyms {
                 params: method_def.param_syms(),
                 locals: cc.locals_syms(),
+                statics: &static_drops,
             };
             let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
             let (mut merged_env, wrote_caller, changed_caller_locals, capture_writes) =
@@ -3027,9 +3029,11 @@ impl Interpreter {
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
+                let static_drops = self.class_body_static_merge_drops(owner_class);
                 let frame_syms = MethodFrameSyms {
                     params: method_def.param_syms(),
                     locals: cc.locals_syms(),
+                    statics: &static_drops,
                 };
                 let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
                 let (mut merged, wrote_caller, changed_caller_locals, capture_writes) =
@@ -3292,6 +3296,11 @@ fn bound_by_sub_signature(param_defs: &[crate::ast::ParamDef], name: &str) -> bo
 pub(super) struct MethodFrameSyms<'a> {
     pub(super) params: &'a [Symbol],
     pub(super) locals: &'a [Symbol],
+    /// The owner class's body statics and their type lanes
+    /// (`Interpreter::class_body_static_merge_drops`): names both callers'
+    /// `is_method_local` drop, tested here by symbol after the captured-write
+    /// bookkeeping instead of by string at the end.
+    pub(super) statics: &'a [Symbol],
 }
 
 impl MethodFrameSyms<'_> {
@@ -3451,6 +3460,13 @@ fn merge_method_env(
             }
             if captured.is_some_and(|c| c.contains_key_sym(*k)) {
                 capture_writes.push((*k, v.clone()));
+            }
+            // A class-body static of the owner class (or one of its type
+            // lanes), which every method call injects into its frame: dropped
+            // by `is_method_local` below in any case, decided here by symbol
+            // before the per-key string work (#17335).
+            if frame_syms.statics.contains(k) {
+                return None;
             }
             // An entry the callee overlay merely *inherited* would merge back a
             // value the caller already holds. A nested method call flattens the
