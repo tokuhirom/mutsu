@@ -342,7 +342,7 @@ impl Interpreter {
                     ) || name.starts_with('*')
                         || name.get(1..).is_some_and(|rest| rest.starts_with('*'))
                 }) && (authoritative || !env.contains_key_sym(*sym))
-                    && captured_name_reachable(cc, *sym)
+                    && captured_name_reachable(cc, method_def, *sym)
                 {
                     env.insert_sym(*sym, val.clone());
                 }
@@ -2551,7 +2551,7 @@ impl Interpreter {
                         "self" | "?CLASS" | "?ROLE" | "__mutsu_declared_method_capture"
                     )
                 }) && (authoritative || !env.contains_key_sym(*sym))
-                    && captured_name_reachable(cc, *sym)
+                    && captured_name_reachable(cc, method_def, *sym)
                 {
                     env.insert_sym(*sym, val.clone());
                 }
@@ -3340,16 +3340,54 @@ impl<'a> Iterator for MergeEntries<'a> {
     }
 }
 
-/// Whether a method body can reach the entry `sym` of its defining scope's
-/// capture (`MethodDef::captured_env`): a name it mentions, or anything when
-/// the body's lookups cannot be bounded (`CompiledCode::mentions_name_memo`).
+/// Whether a method can reach the entry `sym` of its defining scope's
+/// capture (`MethodDef::captured_env`): a name its body mentions, or anything
+/// when the body's lookups cannot be bounded (`CompiledCode::mentions_name_memo`)
+/// or its signature can name the scope (`signature_reads_only_builtins`).
 /// The capture of an `.^add_method` closure literal is the whole scope it was
 /// written in, so installing every entry on every call cost the size of that
 /// scope twice, once to insert and once more to merge back.
 /// Internal `__mutsu_*` keys are always installed.
-// Cost: O(1) after the chunk's first call (see `mentions_name_memo`).
-fn captured_name_reachable(cc: &CompiledCode, sym: Symbol) -> bool {
-    cc.mentions_name_memo(sym) != Some(false) || sym.starts_with("__mutsu_")
+// Cost: O(p) for the signature test, p = parameters; the name test is O(1)
+// after the chunk's first call (see `mentions_name_memo`).
+fn captured_name_reachable(
+    cc: &CompiledCode,
+    method_def: &crate::runtime::MethodDef,
+    sym: Symbol,
+) -> bool {
+    cc.mentions_name_memo(sym) != Some(false)
+        || sym.starts_with("__mutsu_")
+        || !signature_reads_only_builtins(method_def)
+}
+
+/// Whether binding `method_def`'s signature reads nothing from the method's
+/// defining scope: every parameter is free of defaults, `where` clauses,
+/// sub-signatures and trait arguments, and every type it names (parameters
+/// and return) is a built-in one. A type capture (`T:U:`), a user type or a
+/// default expression can name a lexical of that scope, which the body's
+/// own mentions do not cover.
+// Cost: O(p), p = parameters.
+fn signature_reads_only_builtins(method_def: &crate::runtime::MethodDef) -> bool {
+    let builtin = |tc: &str| {
+        let base = tc
+            .strip_suffix(":D")
+            .or_else(|| tc.strip_suffix(":U"))
+            .or_else(|| tc.strip_suffix(":_"))
+            .unwrap_or(tc);
+        crate::runtime::utils::is_known_type_constraint(base)
+    };
+    method_def.return_type.as_deref().is_none_or(builtin)
+        && method_def.param_defs.iter().all(|pd| {
+            pd.default.is_none()
+                && pd.where_constraint.is_none()
+                && pd.sub_signature.is_none()
+                && pd.outer_sub_signature.is_none()
+                && pd.code_signature.is_none()
+                && pd.shape_constraints.is_none()
+                && pd.trait_args.is_empty()
+                && pd.type_capture.is_none()
+                && pd.type_constraint.as_deref().is_none_or(builtin)
+        })
 }
 
 fn merge_method_env(

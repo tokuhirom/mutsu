@@ -6,7 +6,7 @@ use MONKEY-SEE-NO-EVAL;
 # (free variables, names its ops carry, its own locals); a body that creates
 # closures or names lexicals reflectively still gets the whole scope.
 
-plan 9;
+plan 10;
 
 class C { has $.v = 3 }
 
@@ -21,6 +21,7 @@ sub install(::T, $offset, $label) {
     C.^add_method('counts', my method () { ++$counter });
     C.^add_method('reflective', my method () { EVAL '$label' });
     C.^add_method('outer-ref', my method () { $OUTER::label });
+    C.^add_method('defaulted', my method ($x = $offset) { $x });
     C.^compose;
 }
 
@@ -35,6 +36,8 @@ $c.counts;
 is $c.counts, 2, 'a write to a captured variable persists across calls';
 is $c.reflective, 'L', 'EVAL inside the method sees the captured scope';
 is $c.outer-ref, 'L', 'OUTER:: inside the method reaches the captured scope';
+
+is $c.defaulted, 10, 'a parameter default reads the captured scope';
 
 # Repeated calls keep answering from the captured scope.
 is (^3).map({ $c.plain }).join(','), '13,13,13', 'repeated calls see the capture';
