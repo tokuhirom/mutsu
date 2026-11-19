@@ -412,11 +412,14 @@ impl Interpreter {
         // `Bool::True`, a pseudo-package like `OUR::foo`, a same-compunit
         // `package Foo { }` block) is unaffected — see
         // `Interpreter::qualified_name_visible_here`.
+        // A type smiley (`Pkg::T:D`) names the same type, so the type's own
+        // name decides whether it is in scope.
+        let visibility_name = crate::runtime::types::strip_type_smiley(name).0;
         if name_is_qualified
-            && if self.is_my_scoped_type_name(name) {
-                !self.my_scoped_type_visible_here(name)
+            && if self.is_my_scoped_type_name(visibility_name) {
+                !self.my_scoped_type_visible_here(visibility_name)
             } else {
-                !self.qualified_name_visible_here(name)
+                !self.qualified_name_visible_here(visibility_name)
             }
         {
             return Err(RuntimeError::new(format!(
