@@ -440,36 +440,44 @@ impl Interpreter {
         if self.lexicals.package_lexicals.read().is_empty() {
             return;
         }
-        // A class nested in another sees the enclosing class bodies' `my`
-        // statics too (outermost first, so an inner declaration shadows).
+        let plan = self.class_body_statics_plan(class_name);
+        for (k, v) in plan.iter() {
+            self.env.insert_sym_noting(*k, v.clone());
+        }
+    }
+
+    /// Every env write [`Self::inject_class_body_statics`] makes for
+    /// `class_name`, in order: a class nested in another sees the enclosing
+    /// class bodies' `my` statics too (outermost first, so an inner
+    /// declaration shadows), then its own, each package's statics followed by
+    /// its typed lanes and its stale lanes (`Nil`).
+    // Cost: O(s), s = the statics of `class_name` and its enclosing packages.
+    pub(crate) fn collect_class_body_statics(&self, class_name: &str) -> Vec<(Symbol, Value)> {
+        let mut out = Vec::new();
         let enclosing: Vec<Symbol> = crate::qualified::package_ancestors(Symbol::intern(class_name))
             .skip(1)
             .collect();
         for outer in enclosing.into_iter().rev() {
-            self.inject_own_class_body_statics(outer.as_str());
+            self.collect_own_class_body_statics(outer.as_str(), &mut out);
         }
-        self.inject_own_class_body_statics(class_name);
+        self.collect_own_class_body_statics(class_name, &mut out);
+        out
     }
 
     // Cost: O(s), s = statics of `class_name`.
-    fn inject_own_class_body_statics(&mut self, class_name: &str) {
-        let to_inject: Vec<(String, Value)> =
-            match self.lexicals.package_lexicals.read().get(class_name) {
-                Some(statics) if !statics.is_empty() => statics
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                _ => return,
-            };
-        for (k, v) in to_inject {
-            self.env.insert(k, v);
+    fn collect_own_class_body_statics(&self, class_name: &str, out: &mut Vec<(Symbol, Value)>) {
+        match self.lexicals.package_lexicals.read().get(class_name) {
+            Some(statics) if !statics.is_empty() => {
+                out.extend(statics.iter().map(|(k, v)| (Symbol::intern(k), v.clone())));
+            }
+            _ => return,
         }
         for (k, v) in self.class_body_static_meta_lanes(class_name) {
-            self.env.insert(k, v);
+            out.push((Symbol::intern(&k), v));
         }
         for lane in self.class_body_static_stale_lanes(class_name) {
             // Not removed: an enclosing frame's entry would show through.
-            self.env.insert_sym(lane, Value::NIL);
+            out.push((lane, Value::NIL));
         }
     }
 

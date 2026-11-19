@@ -634,6 +634,9 @@ pub(crate) struct ResolutionCaches {
         u64,
         rustc_hash::FxHashMap<(Symbol, Symbol, MemoCheck), bool>,
     ),
+    /// What a method call on a class injects for the class-body statics it
+    /// sees, by class (`Interpreter::inject_class_body_statics`, #17335).
+    pub(crate) class_body_statics_plans: crate::runtime::class_body_statics_plan::Plans,
     pub(crate) mixin_straight_front: rustc_hash::FxHashMap<
         crate::runtime::MixinFrontKey,
         crate::runtime::MixinFrontEntry,
