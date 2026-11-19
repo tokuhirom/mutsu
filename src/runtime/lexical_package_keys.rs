@@ -55,4 +55,27 @@ impl Interpreter {
             && text.as_bytes()[head.as_str().len()] == 0)
             .then_some(storage)
     }
+
+    /// The storage name (`Inner\0<id>`) of the lexical type (`my class` /
+    /// `my role`) the running scope binds under the type-only key of `name`
+    /// -- also in a closure that captured that binding from the block that
+    /// declared it, after the block exited (#18177). `None` for a qualified
+    /// name or one no lexical type of this spelling is bound to here.
+    // Cost: O(1) expected: the key's process-wide absence probe, else one
+    // env walk of the type-only key.
+    pub(crate) fn bound_lexical_type_storage(&self, name: &str) -> Option<Symbol> {
+        if name.is_empty() || crate::qualified::is_qualified_str(name) {
+            return None;
+        }
+        let head = Symbol::intern(name);
+        let env = self.env();
+        let bound =
+            env.get_lexical_type_binding(crate::term_names::lexical_type_key_sym(head), head)?;
+        let ValueView::Package(storage) = bound.view() else {
+            return None;
+        };
+        let text = storage.as_str();
+        (text.len() > name.len() && text.starts_with(name) && text.as_bytes()[name.len()] == 0)
+            .then_some(storage)
+    }
 }

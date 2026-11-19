@@ -1024,6 +1024,11 @@ impl Interpreter {
                 }
             }
         }
+        // A lexical type in scope, or captured by the running closure from the
+        // block that declared it (#18177), is what the bare spelling names.
+        if let Some(storage) = self.bound_lexical_type_storage(lookup) {
+            return format!("{}{}", storage.as_str(), suffix);
+        }
         if let ValueView::Package(pkg) = self.resolve_indirect_type_name(lookup).view() {
             return format!("{}{}", pkg.resolve(), suffix);
         }
