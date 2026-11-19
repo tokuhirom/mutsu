@@ -3206,7 +3206,6 @@ impl Interpreter {
             trait_mod_writeback_value: None,
             trait_mod_attr_writeback_value: None,
             trait_mod_default_writeback: None,
-            hash_autovivify: false,
             caller_env_stack: Vec::new(),
             raku_cycle_guards: Default::default(),
             last_value: None,

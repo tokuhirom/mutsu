@@ -43,7 +43,9 @@ impl Compiler {
             Expr::Index { .. } if self.rw_tail_elems_only || self.rw_tail_block => {
                 let saved_av = std::mem::replace(&mut self.scalar_bind_autovivify, false);
                 let saved_terminal = std::mem::replace(&mut self.bind_terminal, false);
+                self.tail_raw_receiver = self.rw_tail_block;
                 self.compile_expr(arg);
+                self.tail_raw_receiver = false;
                 self.scalar_bind_autovivify = saved_av;
                 self.bind_terminal = saved_terminal;
                 if let Some(last) = self.code.ops.last_mut()

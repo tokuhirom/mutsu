@@ -188,6 +188,28 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        // An untyped `$` variable still holding `Any` is the receiver of a
+        // subscript in container mode (`my $c := $x<a>`): Rakudo's
+        // `Any.AT-KEY` hands back a container that vivifies the variable
+        // itself on the first write. Box the slot into its shared cell, which
+        // the deferred subscript then roots its path at (#17953).
+        let slot = idx as usize;
+        if self
+            .locals
+            .get(slot)
+            .is_some_and(crate::value::Value::is_any_type_object)
+            && let Some(name) = code.locals.get(slot)
+            && crate::env::is_user_variable_key(name)
+            && !name.starts_with(['@', '%', '&', '\\'])
+            && !code.state_locals.iter().any(|(s, _)| *s == slot)
+            && !code.our_locals.iter().any(|(s, _)| *s == slot)
+            && !self.type_constrained_unboxable(name)
+            && loan_env!(self, var_type_constraint(name)).is_none()
+        {
+            let sym = code.locals_sym.get(slot).copied();
+            self.exec_get_scalar_container_named(name, Some(idx), sym);
+            return Ok(());
+        }
         self.exec_get_local_op_inner(code, idx, true)
     }
 
