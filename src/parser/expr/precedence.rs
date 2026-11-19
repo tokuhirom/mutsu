@@ -32,6 +32,7 @@ mod list_infix_loop;
 mod list_infix_top;
 mod logic;
 mod logic2;
+mod logic_worry;
 mod operands;
 mod ternary;
 

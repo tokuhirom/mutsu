@@ -157,6 +157,7 @@ pub(crate) fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> 
             }
             last_list_assoc_op = Some(op);
         }
+        super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = if mode == ExprMode::Full {
@@ -253,6 +254,7 @@ pub(crate) fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr
         } else {
             break;
         };
+        super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
         let r = &r[len..];
         let (r, _) = ws(r)?;
         // `A && not B` / `A && so B`: loose unary `not`/`so` on the RHS of a
