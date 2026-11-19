@@ -174,6 +174,12 @@ impl Interpreter {
         // `$?CLASS` names this class only inside its body (ADR-12529): its
         // frame record is undone when the body finishes (ADR-14843).
         let fixtures_mark = self.begin_class_scope(Symbol::intern(name));
+        // A body run again (a `my class` in a routine, per entry) declares its
+        // `my`s afresh: the statics a previous run persisted must not answer a
+        // read of this run's body, which `package_scope_lexical` consults
+        // before the env its declarations write (#18088). The body's own exit
+        // persists them again (`persist_class_body_statics`).
+        self.forget_persisted_class_body_statics(name, declared_static_names);
         // The set of attributes valid for $!attr access: names declared
         // directly in this class body (precomputed by the compiler at plan
         // lowering, ADR-0019 D2a — `own_attribute_names` already covers the
