@@ -158,7 +158,7 @@ impl Interpreter {
     /// `RegisterSub` opcode invalidates after `register_compiled_sub_decl`,
     /// which already invalidated on whichever install path it took).
     #[track_caller]
-    fn sync_fn_resolve_gen(&mut self) {
+    pub(crate) fn sync_fn_resolve_gen(&mut self) {
         let version = self.routines().functions_version();
         if self.caches.fn_resolve_gen == version {
             return;

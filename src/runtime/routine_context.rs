@@ -22,6 +22,7 @@
 
 use std::sync::{Arc, RwLock};
 
+use super::fn_keys_index::SavedFnKeysIndex;
 use super::routine_tables::RoutineTables;
 use super::Interpreter;
 use crate::value::RoutineContextHandle;
@@ -31,8 +32,12 @@ pub(crate) type RoutineCell = RwLock<Arc<RoutineTables>>;
 
 /// The caller's routine tables, replaced by
 /// [`Interpreter::enter_closure_routine_context`] and handed back to
-/// [`Interpreter::leave_closure_routine_context`].
-pub(crate) struct SavedRoutineTables(Arc<RoutineTables>);
+/// [`Interpreter::leave_closure_routine_context`], together with the caller's
+/// base-name key index over them.
+pub(crate) struct SavedRoutineTables {
+    tables: Arc<RoutineTables>,
+    keys_index: SavedFnKeysIndex,
+}
 
 impl Interpreter {
     /// The handle a closure created now records: this context's routine-table
@@ -81,8 +86,18 @@ impl Interpreter {
         }
         let saved = std::mem::replace(&mut *ours, theirs);
         drop(ours);
+        // The base-name key index (`fn_keys_by_base`) describes the functions
+        // map it was filled from, and it is not tagged with that map's
+        // version: over the creator's map it would answer the caller's keys
+        // (an inner `sub` the caller's map lacks reads as unregistered, or one
+        // it has as registered). Set the caller's index aside and start an
+        // empty one over the installed map.
+        let keys_index = self.take_fn_keys_index();
         self.bump_routine_generation();
-        Some(SavedRoutineTables(saved))
+        Some(SavedRoutineTables {
+            tables: saved,
+            keys_index,
+        })
     }
 
     /// Put back what [`Self::enter_closure_routine_context`] replaced.
@@ -92,17 +107,22 @@ impl Interpreter {
             .types
             .routines
             .write()
-            .unwrap_or_else(|e| e.into_inner()) = saved.0;
+            .unwrap_or_else(|e| e.into_inner()) = saved.tables;
+        self.restore_fn_keys_index(saved.keys_index);
         self.bump_routine_generation();
     }
 
     /// Move the registry write generation: memos keyed by it cover what the
-    /// routine tables answer.
+    /// routine tables answer. `fn_resolve_gen` mirrors the installed
+    /// functions map's version, so the memos tagged with it follow the swap:
+    /// a version names one map content, so the ones tagged with the newly
+    /// installed map's version are valid again and the rest are retired.
     // Cost: O(1).
-    fn bump_routine_generation(&self) {
+    fn bump_routine_generation(&mut self) {
         self.types.registry_write_gen.store(
             crate::runtime::registry_gen::next_generation(),
             std::sync::atomic::Ordering::Relaxed,
         );
+        self.sync_fn_resolve_gen();
     }
 }

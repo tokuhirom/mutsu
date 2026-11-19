@@ -61,6 +61,12 @@ pub(crate) struct FnKeysIndexState {
     audit_scans: u64,
 }
 
+/// A base-name key index set aside by [`Interpreter::take_fn_keys_index`].
+pub(crate) struct SavedFnKeysIndex {
+    by_base: rustc_hash::FxHashMap<Symbol, Arc<[Symbol]>>,
+    state: FnKeysIndexState,
+}
+
 impl Interpreter {
     /// Debug-only staleness audit of one index entry: compare `keys` (what the
     /// index answered for `base`) with a fresh scan of the functions map, and
@@ -185,6 +191,25 @@ impl Interpreter {
     pub(crate) fn clear_fn_keys_index(&mut self) {
         self.dispatch.fn_keys_by_base.clear();
         self.dispatch.fn_keys_index = FnKeysIndexState::default();
+    }
+
+    /// Set the base-name key index aside and leave an empty one, for a swap of
+    /// the whole routine tables (`runtime::routine_context`): the index
+    /// describes the functions map it was filled from.
+    // Cost: O(1).
+    pub(crate) fn take_fn_keys_index(&mut self) -> SavedFnKeysIndex {
+        SavedFnKeysIndex {
+            by_base: std::mem::take(&mut self.dispatch.fn_keys_by_base),
+            state: std::mem::take(&mut self.dispatch.fn_keys_index),
+        }
+    }
+
+    /// Put back an index [`Self::take_fn_keys_index`] set aside, once the
+    /// tables it describes are installed again.
+    // Cost: O(1) (the dropped index is freed in O(b), b = its base names).
+    pub(crate) fn restore_fn_keys_index(&mut self, saved: SavedFnKeysIndex) {
+        self.dispatch.fn_keys_by_base = saved.by_base;
+        self.dispatch.fn_keys_index = saved.state;
     }
 
     /// Answer a miss on `base` (not in `fn_keys_by_base`) and index the answer.
