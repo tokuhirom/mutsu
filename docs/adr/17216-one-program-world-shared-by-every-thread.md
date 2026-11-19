@@ -270,6 +270,24 @@ A store of the cell already stored under a key is not a write.
 Imported routines (`runtime_module_exports`, which also file into
 `our_scoped_functions`) are lexical imports and are not published.
 
+### 3.6 Slice 4c: compunit statics (2026-11-19, #18136)
+
+The compunit statics store (`lexicals.unit_lexicals`: a module's file-scope
+`my` variables, the mainline buckets of ADR-0024) and its two companions
+(`unit_lexical_meta_lanes`, `compunit_lexical_units`) are `WorldCell`s, so a
+worker started before a module was loaded sees the module's statics. Writes
+go through `unit_lexicals_write`. Reads return owned values
+(`unit_lexical_slot`). The in-place mutation chokepoint pins the entry in a
+per-thread slot (`LexicalState::unit_lexical_pin`, a GC root), as §3.5 does
+for `our` variables. A rebind replaces the entry under the write lock
+(`unit_lexical_slot_replace`). TRIR's free-variable cache generation adds the
+table's world generation.
+
+The routine half of the same symptom is not a world table (§3.2): a closure
+carries the routine-table cell of the context that created it, and a call on
+another context runs against that context's tables (#18135,
+`runtime/routine_context.rs`).
+
 ## 4. Consequences
 
 - `start` and every other spawn see the program rakudo would show them: declarations, wraps,

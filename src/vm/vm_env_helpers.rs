@@ -717,7 +717,7 @@ impl Interpreter {
     /// Gated on the table being non-empty, so a program that loads no such module
     /// pays one `is_empty` test per variable access.
     pub(crate) fn unit_scope_lexical(&self, name: &str, name_sym: Option<Symbol>) -> Option<Value> {
-        self.unit_lexical_slot(name, name_sym).cloned()
+        self.unit_lexical_slot(name, name_sym)
     }
 
     /// The raw `ContainerRef` cell backing a compunit's own file-scope
@@ -768,7 +768,8 @@ impl Interpreter {
         if let Some(ValueView::ContainerRef(arc)) = self.lexsub_alias_slot(name).map(Value::view) {
             return Some(crate::gc::Gc::clone(&arc));
         }
-        if self.lexicals.unit_lexicals.is_empty() || !self.unit_lexicals_may_hold(name, None) {
+        if self.lexicals.unit_lexicals.read().is_empty() || !self.unit_lexicals_may_hold(name, None)
+        {
             return None;
         }
         if crate::runtime::utils::has_anon_marker(name) {
@@ -779,6 +780,7 @@ impl Interpreter {
             && let Some(ValueView::ContainerRef(arc)) = self
                 .lexicals
                 .unit_lexicals
+                .read()
                 .get(
                     eval_key
                         .as_deref()
@@ -851,7 +853,7 @@ impl Interpreter {
     // Cost: as `active_unit_lexical_bucket`.
     pub(super) fn active_unit_lexical_entry(
         &self,
-    ) -> Option<(&str, &rustc_hash::FxHashMap<String, Value>)> {
+    ) -> Option<(&str, std::cell::Ref<'_, crate::runtime::NameMap<Value>>)> {
         if self.lexicals.mainline_lexical_subs.is_empty() {
             return None;
         }
@@ -872,10 +874,11 @@ impl Interpreter {
             owners.iter().find(|owner| owner.runs_code(frame.code))?
         }
         .bucket;
-        let cells = self.lexicals.unit_lexicals.get(key)?;
-        if cells.is_empty() {
-            return None;
-        }
+        // A snapshot of the world table (ADR-17216 §2.5, #18136).
+        let cells = std::cell::Ref::filter_map(self.lexicals.unit_lexicals.read(), |table| {
+            table.get(key).filter(|cells| !cells.is_empty())
+        })
+        .ok()?;
         Some((key.as_str(), cells))
     }
 
@@ -917,42 +920,6 @@ impl Interpreter {
         }
     }
 
-    /// Mutable counterpart to [`Self::lookup_unit_lexical_chain`].
-    fn lookup_unit_lexical_chain_mut<'a>(
-        table: &'a mut crate::runtime::PackageLexicals,
-        candidate: &str,
-        name: &str,
-        owner: Option<crate::symbol::Symbol>,
-    ) -> Option<&'a mut Value> {
-        if !table.contains_name(name) {
-            return None;
-        }
-        let owner_is_ancestor = owner.is_some_and(|owner| {
-            candidate == owner.as_str()
-                || crate::qualified::package_ancestors(crate::symbol::Symbol::intern(candidate))
-                    .any(|package| package == owner)
-        });
-        let mut package = candidate;
-        let target = loop {
-            if table
-                .get(package)
-                .is_some_and(|entries| entries.contains_key(name))
-            {
-                break Some(package);
-            }
-            if owner.is_some_and(|owner| package == owner.as_str())
-                || owner.is_some() && !owner_is_ancestor
-            {
-                break None;
-            }
-            match crate::runtime::utils::rsplit_once_double_colon(package) {
-                Some((parent, _)) => package = parent,
-                None => break None,
-            }
-        }?;
-        table.get_value_mut(target, name)
-    }
-
     /// The store entry `name` names from the frame that is running, or `None`.
     ///
     /// A free reference reaches here in one of two shapes, exactly as it does for
@@ -978,7 +945,7 @@ impl Interpreter {
     /// empty-store early-outs, so a program with no unit lexicals never pays
     /// for it. Asking the symbol whether the name is qualified is a memoized
     /// flag read.
-    pub(crate) fn unit_lexical_slot(&self, name: &str, name_sym: Option<Symbol>) -> Option<&Value> {
+    pub(crate) fn unit_lexical_slot(&self, name: &str, name_sym: Option<Symbol>) -> Option<Value> {
         // A sub called through the code object its declaring activation
         // made reads that activation's cells from its capture (#12692).
         if self.env().frame_capture_holds_name(name, name_sym) {
@@ -986,9 +953,9 @@ impl Interpreter {
         }
         // mutsu#9111: a routine-nested sub's own binding of its free variable.
         if let Some(found) = self.lexsub_alias_slot_sym(name, name_sym) {
-            return Some(found);
+            return Some(found.clone());
         }
-        if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
+        if self.lexicals.unit_lexicals.read().is_empty() || name.is_empty() {
             return None;
         }
         if !self.unit_lexicals_may_hold(name, name_sym) {
@@ -1038,7 +1005,7 @@ impl Interpreter {
                 return None;
             }
             crate::vm::vm_stats::record_mainline_lexical_hit();
-            return Some(found);
+            return Some(found.clone());
         }
         // A package-less module file's own file-scope lexical, found by the
         // file the running routine was declared in.
@@ -1046,8 +1013,10 @@ impl Interpreter {
             return self
                 .lexicals
                 .unit_lexicals
+                .read()
                 .get(unit.as_str())
-                .and_then(|m| m.get(name));
+                .and_then(|m| m.get(name))
+                .cloned();
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
@@ -1062,20 +1031,19 @@ impl Interpreter {
                 return None;
             }
             return Self::lookup_unit_lexical_chain(
-                &self.lexicals.unit_lexicals,
+                &self.lexicals.unit_lexicals.read(),
                 cur,
                 bare,
                 lexical_owner,
-            );
+            )
+            .cloned();
         }
+        let table = self.lexicals.unit_lexicals.read();
         for candidate in self.unit_lexical_candidates(cur_sym).into_iter().flatten() {
-            if let Some(found) = Self::lookup_unit_lexical_chain(
-                &self.lexicals.unit_lexicals,
-                candidate.as_str(),
-                name,
-                lexical_owner,
-            ) {
-                return Some(found);
+            if let Some(found) =
+                Self::lookup_unit_lexical_chain(&table, candidate.as_str(), name, lexical_owner)
+            {
+                return Some(found.clone());
             }
         }
         None
@@ -1091,12 +1059,12 @@ impl Interpreter {
     /// up under its bare part, so it always may.
     // Cost: O(1) expected (one name-filter probe, rebuilt once after a
     // store mutation).
-    fn unit_lexicals_may_hold(&self, name: &str, name_sym: Option<Symbol>) -> bool {
+    pub(super) fn unit_lexicals_may_hold(&self, name: &str, name_sym: Option<Symbol>) -> bool {
         let qualified = match name_sym {
             Some(sym) => crate::qualified::is_qualified(sym),
             None => crate::qualified::is_qualified_str(name),
         };
-        qualified || self.lexicals.unit_lexicals.contains_name(name)
+        qualified || self.lexicals.unit_lexicals.read().contains_name(name)
     }
 
     /// The packages a free-variable read probes the unit-lexical store
@@ -1126,138 +1094,10 @@ impl Interpreter {
     /// scalars are in the store, keyed sigil-less, so a `@`/`%`/`&` name never
     /// resolves here.
     // Cost: O(1).
-    fn unit_lexical_scalar_split(
+    pub(super) fn unit_lexical_scalar_split(
         split: crate::qualified::QualifiedVar,
     ) -> Option<(&'static str, &'static str)> {
         matches!(split.sigil, "" | "$").then_some((split.pkg, split.bare))
-    }
-
-    /// Mutable counterpart of [`Self::unit_lexical_slot`] — identical
-    /// resolution algorithm (see its doc comment), `&mut Value` result. The
-    /// write-side chokepoint every container-mutation call site
-    /// (element-assign, `push`/`pop`/..., hash key-set/`:delete`) must go
-    /// through for the same reason [`Self::get_env_with_main_alias`] is the
-    /// read-side one: a compunit's own file-scope `@`/`%` (ADR-0039 slice 1)
-    /// must never be mutated through the loading scope's same-named `env`
-    /// entry. Consulted by [`Self::env_root_descended_mut`].
-    pub(crate) fn unit_lexical_slot_mut(
-        &mut self,
-        name: &str,
-        name_sym: Option<Symbol>,
-    ) -> Option<&mut Value> {
-        if self.env().frame_capture_holds_name(name, name_sym) {
-            return None;
-        }
-        if self.lexsub_alias_frame_active() && self.lexsub_alias_slot(name).is_some() {
-            return self.lexsub_alias_slot_mut(name);
-        }
-        if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
-            return None;
-        }
-        if !self.unit_lexicals_may_hold(name, name_sym) {
-            return None;
-        }
-        // An enclosing routine's own binding shadows the file-scope one.
-        if self.running_code_routine_scoped(name, name_sym) {
-            return None;
-        }
-        // A variable the running frame binds itself shadows the compunit's
-        // file-scope one of the same name: `my %seen` in a module routine
-        // whose file declares `%seen` too (`seed_env_from_container_slot`).
-        if self.frame_binds_own(name, name_sym) {
-            return None;
-        }
-        let lexical_owner = self.routine_stack().last().and_then(|frame| {
-            self.lexical_package_for_frame(frame.def_file)
-                .or(frame.lexical_package)
-        });
-        // Resolve WHICH unit-lexicals bucket (and, for the `::`-qualified
-        // case, which bare name) holds `name`, using only immutable
-        // accessors first — mirroring `unit_lexical_slot`'s own candidate
-        // order exactly. The single mutable borrow happens only in the
-        // return statement of each branch below, never inside its `if`
-        // condition: interleaving an early-returning mutable borrow with
-        // later immutable accessor calls in the same function does not
-        // borrow-check under NLL even though the borrow is never actually
-        // live past the `return`.
-        // Same split as `unit_lexical_slot`.
-        let split = crate::qualified::split_qualified_var(
-            name_sym.unwrap_or_else(|| crate::qualified::known_symbol(name)),
-        );
-        let own_bucket: Option<String> = if split.is_some() {
-            None
-        } else {
-            self.active_unit_lexical_bucket()
-                .filter(|bucket| {
-                    self.lexicals
-                        .unit_lexicals
-                        .get(*bucket)
-                        .is_some_and(|m| m.contains_key(name))
-                })
-                .map(str::to_string)
-        };
-        if let Some(bucket) = own_bucket {
-            // See `unit_lexical_slot`: a running loop's by-name parameter
-            // shadows the captured cell (#13420).
-            if self.topic_state.name_bound_by_loop_param(name) {
-                return None;
-            }
-            crate::vm::vm_stats::record_mainline_lexical_hit();
-            // `get_value_mut` keeps the table's name filter: the entry was
-            // proved to exist above and only its value is handed out, so
-            // nothing about the key set changes here.
-            return self.unit_lexicals_cow_mut().get_value_mut(&bucket, name);
-        }
-        // Same as `unit_lexical_slot`: a package-less module file's own.
-        if split.is_none()
-            && let Some(unit) = self.compunit_lexical_bucket(name)
-        {
-            return self
-                .unit_lexicals_cow_mut()
-                .get_value_mut(unit.as_str(), name);
-        }
-        // `&'static str` off the atomic symbol mirror: `current_package()` takes
-        // the `RwLock` and clones the `String` on every free-variable read.
-        let cur_sym = self.current_package_sym();
-        let cur: &str = cur_sym.as_str();
-        if let Some(split) = split {
-            // Only scalars are in the store (see `collect_unit_lexical_names`) and
-            // a scalar is keyed sigil-less, so the only sigil that can appear here
-            // is its own.
-            let (pkg, bare) = Self::unit_lexical_scalar_split(split)?;
-            if pkg != cur || crate::qualified::is_global_package(cur_sym) {
-                return None;
-            }
-            let bare = bare.to_string();
-            return Self::lookup_unit_lexical_chain_mut(
-                self.unit_lexicals_cow_mut(),
-                cur,
-                &bare,
-                lexical_owner,
-            );
-        }
-        // Same candidate order as `unit_lexical_slot`. The candidates are
-        // `Copy` symbols, so the read-only accessors are done before the
-        // mutable borrow of `self.lexicals.unit_lexicals` below starts.
-        for candidate in self.unit_lexical_candidates(cur_sym).into_iter().flatten() {
-            let candidate = candidate.as_str();
-            if Self::lookup_unit_lexical_chain(
-                &self.lexicals.unit_lexicals,
-                candidate,
-                name,
-                lexical_owner,
-            )
-            .is_some()
-            {
-                return Self::lookup_unit_lexical_chain_mut(
-                    self.unit_lexicals_cow_mut(),
-                    candidate,
-                    name,
-                    lexical_owner,
-                );
-            }
-        }
-        None
     }
 
     /// True when `name` resolves to a file-scope lexical of the compunit the
@@ -1282,10 +1122,12 @@ impl Interpreter {
     /// happens to hold under that key, which is exactly the aliasing this store
     /// removes.
     pub(crate) fn is_unit_lexical_of(&self, pkg: Symbol, name: &str) -> bool {
-        if self.lexicals.unit_lexicals.is_empty() || crate::qualified::is_global_package(pkg) {
+        if self.lexicals.unit_lexicals.read().is_empty() || crate::qualified::is_global_package(pkg)
+        {
             return false;
         }
-        Self::lookup_in_package_chain(&self.lexicals.unit_lexicals, pkg.as_str(), name).is_some()
+        Self::lookup_in_package_chain(&self.lexicals.unit_lexicals.read(), pkg.as_str(), name)
+            .is_some()
     }
 
     /// ADR-0024 counterpart of [`Self::is_unit_lexical_of`] for a mainline
@@ -1319,6 +1161,7 @@ impl Interpreter {
         };
         self.lexicals
             .unit_lexicals
+            .read()
             .get(bucket)
             .is_some_and(|m| m.contains_key(name))
     }
@@ -1356,6 +1199,7 @@ impl Interpreter {
             && let Some(ValueView::ContainerRef(arc)) = self
                 .lexicals
                 .unit_lexicals
+                .read()
                 .get(bucket)
                 .and_then(|m| m.get(name))
                 .map(Value::view)
@@ -1366,6 +1210,7 @@ impl Interpreter {
         match self
             .lexicals
             .unit_lexicals
+            .read()
             .get(
                 eval_key
                     .as_deref()
@@ -1442,7 +1287,7 @@ impl Interpreter {
         let scalar = !name.starts_with(['@', '%', '&']);
         if let Some(cell) = self
             .unit_lexical_slot(name, None)
-            .and_then(Self::binding_cell_of)
+            .and_then(|v| Self::binding_cell_of(&v))
         {
             Self::seat_in_binding_cell(val.clone(), cell, scalar, source_kind);
             return true;
@@ -1460,6 +1305,7 @@ impl Interpreter {
             || self.active_unit_lexical_bucket().is_some_and(|bucket| {
                 self.lexicals
                     .unit_lexicals
+                    .read()
                     .get(bucket)
                     .is_some_and(|m| m.contains_key(name))
             })
@@ -1476,13 +1322,7 @@ impl Interpreter {
         {
             fresh.set_binding_decision(decision);
         }
-        match self.unit_lexical_slot_mut(name, None) {
-            Some(slot) => {
-                *slot = container;
-                true
-            }
-            None => false,
-        }
+        self.unit_lexical_slot_replace(name, None, container)
     }
 
     /// Bind companion of [`Self::unit_scope_lexical_write`]: a `:=` installs a
@@ -1504,11 +1344,7 @@ impl Interpreter {
     /// reach the compunit's variable and vice versa
     /// (`t/free-var-bind-does-not-alias-caller-lexical.t`).
     pub(crate) fn unit_scope_lexical_bind(&mut self, name: &str, container: &Value) -> bool {
-        let Some(slot) = self.unit_lexical_slot_mut(name, None) else {
-            return false;
-        };
-        *slot = container.clone();
-        true
+        self.unit_lexical_slot_replace(name, None, container.clone())
     }
 
     /// Resolve an `OUR::`-qualified *variable* read (scalar/array/hash) scoped
@@ -3531,7 +3367,7 @@ impl Interpreter {
     /// compunit's file-scope variable.
     // Cost: O(l + d), l = the running code's locals, d = the frame's env
     // tiers.
-    fn frame_binds_own(&self, name: &str, name_sym: Option<Symbol>) -> bool {
+    pub(super) fn frame_binds_own(&self, name: &str, name_sym: Option<Symbol>) -> bool {
         // The running code must declare the name too: a routine that runs in
         // its caller's env (no frame root of its own) would otherwise find
         // the caller's same-named variable here.
@@ -3565,7 +3401,7 @@ impl Interpreter {
         slot: Option<u32>,
         store: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        let seed = if self.lexicals.unit_lexicals.is_empty() {
+        let seed = if self.lexicals.unit_lexicals.read().is_empty() {
             None
         } else {
             let name = Self::const_str(code, name_idx);

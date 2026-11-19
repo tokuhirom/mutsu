@@ -25,10 +25,7 @@ impl Interpreter {
         } else {
             pod.into_container_ref()
         };
-        self.unit_lexicals_cow_mut()
-            .entry(unit.to_string())
-            .or_default()
-            .insert("=pod".to_string(), cell);
+        self.unit_lexicals_write(|t| { t.entry(unit.to_string()).or_default().insert("=pod".to_string(), cell); });
     }
 
     /// A lexical pad over `entries`: a hash typed `BOOTContext`, which the

@@ -71,10 +71,9 @@ impl Interpreter {
             })
             .collect();
         if !declared.is_empty() {
-            crate::runtime::cow_table_mut(&mut self.lexicals.unit_lexical_meta_lanes)
-                .entry(unit.to_string())
-                .or_default()
-                .extend(declared);
+            self.lexicals.unit_lexical_meta_lanes.write(|table| {
+                table.entry(unit.to_string()).or_default().extend(declared);
+            });
         }
         for (lane, previous) in saved {
             match previous {
@@ -97,22 +96,26 @@ impl Interpreter {
     // Cost: O(1) env probe when no unit recorded a lane of that name;
     // otherwise O(d) for the frame's tiers plus `unit_lexical_meta_lane`.
     #[inline]
-    pub(crate) fn declared_meta_lane(&self, lane: Symbol) -> Option<&Value> {
-        let table = &self.lexicals.unit_lexical_meta_lanes;
-        if table.is_empty() || !table.contains_name(lane.as_str()) {
-            return self.env().get_record_sym(lane);
+    pub(crate) fn declared_meta_lane(&self, lane: Symbol) -> Option<Value> {
+        let recorded = {
+            let table = self.lexicals.unit_lexical_meta_lanes.read();
+            !table.is_empty() && table.contains_name(lane.as_str())
+        };
+        if !recorded {
+            return self.env().get_record_sym(lane).cloned();
         }
         self.env()
             .get_sym_in_frame(lane)
+            .cloned()
             .or_else(|| self.unit_lexical_meta_lane(lane))
-            .or_else(|| self.env().get_record_sym(lane))
+            .or_else(|| self.env().get_record_sym(lane).cloned())
     }
 
     /// The running unit's recorded lane `lane` (a `Str` type name).
     // Cost: O(1) when no unit recorded a lane of that name; otherwise O(c·d),
     // c = candidate packages (at most four), d = their `::` depth.
-    pub(crate) fn unit_lexical_meta_lane(&self, lane: Symbol) -> Option<&Value> {
-        let table = &self.lexicals.unit_lexical_meta_lanes;
+    pub(crate) fn unit_lexical_meta_lane(&self, lane: Symbol) -> Option<Value> {
+        let table = self.lexicals.unit_lexical_meta_lanes.read();
         let lane_name = lane.as_str();
         if table.is_empty() || !table.contains_name(lane_name) {
             return None;
@@ -120,7 +123,7 @@ impl Interpreter {
         if let Some(unit) = self.running_compunit_lexical_unit()
             && let Some(found) = table.get(unit.as_str()).and_then(|m| m.get(lane_name))
         {
-            return Some(found);
+            return Some(found.clone());
         }
         let owner = self.routine_stack().last().and_then(|frame| {
             self.lexical_package_for_frame(frame.def_file)
@@ -130,7 +133,8 @@ impl Interpreter {
             .into_iter()
             .flatten()
             .find_map(|candidate| {
-                Self::lookup_unit_lexical_chain(table, candidate.as_str(), lane_name, owner)
+                Self::lookup_unit_lexical_chain(&table, candidate.as_str(), lane_name, owner)
+                    .cloned()
             })
     }
 }

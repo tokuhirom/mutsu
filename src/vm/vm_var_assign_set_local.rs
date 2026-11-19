@@ -3111,7 +3111,7 @@ impl Interpreter {
                         .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some())
                         || self
                             .unit_lexical_slot(&resolved_source, None)
-                            .is_some_and(|slot| Self::binding_cell_of(slot).is_some())
+                            .is_some_and(|slot| Self::binding_cell_of(&slot).is_some())
                         || self
                             .env()
                             .get(&resolved_source)

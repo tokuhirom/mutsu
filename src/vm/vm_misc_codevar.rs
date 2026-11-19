@@ -681,8 +681,7 @@ impl Interpreter {
         let existing = self
             .unit_lexical_slot(&store_name, None)
             .filter(|v| v.is_container_ref())
-            .or_else(|| self.env().get(&store_name))
-            .cloned();
+            .or_else(|| self.env().get(&store_name).cloned());
         if let Some(existing) = existing
             && let ValueView::ContainerRef(arc) = existing.view()
         {

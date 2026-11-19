@@ -78,7 +78,6 @@ impl Interpreter {
         }
         self.unit_lexical_slot(name, None)
             .filter(|v| v.is_container_ref())
-            .cloned()
     }
 
     /// Replace the current package's plain `package_lexicals` entry `name`
