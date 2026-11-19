@@ -183,6 +183,21 @@ pub(super) fn package_resolves(names: &NameScope, stem: &str) -> bool {
         || declared_kind(names, stem) == Some(DeclaredKind::Type)
 }
 
+/// Whether `expr` is a bareword, or one the parser wrapped as an imported term
+/// (`CArray` after `use NativeCall`, a `Spelled` marker around the word).
+// Cost: O(1).
+pub(super) fn is_word_term(expr: &Expr) -> bool {
+    match expr {
+        Expr::Spelled(spelled) => {
+            matches!(
+                spelled.spelling,
+                crate::ast::spelled::Spelling::ImportedTerm
+            ) && spelled.expr.as_bare_word().is_some()
+        }
+        _ => expr.as_bare_word().is_some(),
+    }
+}
+
 /// Record a declared type name, together with the stub packages a qualified
 /// name implies: `class A::B { }` makes `A` resolve too, and raku renders a
 /// later bareword `A` as a `Type::Simple` (measured on 2026.09).
