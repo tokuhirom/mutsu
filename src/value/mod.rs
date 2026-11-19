@@ -4210,6 +4210,13 @@ pub(crate) struct LazyList {
     /// clone pulls its generated tail from this list instead of running the
     /// generator a second time (`Interpreter::fill_closure_sequence`).
     pub(crate) generator_origin: Option<crate::gc::Gc<LazyList>>,
+    /// Set once a pull has reached the end of this list's source: every
+    /// element is in `cache` and no generator can produce another. Rakudo's
+    /// `List.is-lazy` answers `False` from then on, whatever made the list
+    /// lazy (its `$!todo` is dropped once fully reified, #17908), so a
+    /// `lazy`-marked or pipe-backed list stops being lazy here. Never set for
+    /// an infinite generator, which no pull exhausts.
+    pub(crate) exhausted: std::sync::atomic::AtomicBool,
 }
 
 /// See [`LazyList::hyper_kind`].

@@ -1648,6 +1648,10 @@ impl Interpreter {
         self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
+        // A full force read the source to its end (#17908).
+        if r.is_ok() {
+            list.mark_exhausted();
+        }
         // An array-context lazy list IS the array's element store: a Nil the
         // pipe produced resets its fresh element container to Any, like any
         // other store into an untyped array element (ADR-0049 slice 3:

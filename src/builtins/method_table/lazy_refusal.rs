@@ -50,7 +50,7 @@ pub(super) fn reverse(
 
 // Cost: O(1).
 fn sum_reverse(target: &Value, list: &LazyList, args: &[Value], method: &str) -> Answer {
-    if !args.is_empty() || !list.is_genuinely_lazy() {
+    if !args.is_empty() || !list.is_lazy_now() {
         return None;
     }
     let what = reported_type(target);
@@ -87,7 +87,7 @@ pub(super) fn roll(
 
 // Cost: O(1).
 fn sample(target: &Value, list: &LazyList, args: &[Value], method: &str) -> Answer {
-    if args.len() > 1 || !list.is_genuinely_lazy() {
+    if args.len() > 1 || !list.is_lazy_now() {
         return None;
     }
     let what = match reported_type(target) {
@@ -126,7 +126,7 @@ pub(super) fn end(
     if reported_type(target) == "Seq" {
         return count(list, args, ".end");
     }
-    (args.is_empty() && list.is_genuinely_lazy()).then(|| {
+    (args.is_empty() && list.is_lazy_now()).then(|| {
         Err(RuntimeError::from_exception_value(cannot_lazy_exception(
             ".elems", "",
         )))
@@ -135,7 +135,7 @@ pub(super) fn end(
 
 // Cost: O(1).
 fn count(list: &LazyList, args: &[Value], action: &str) -> Answer {
-    (args.is_empty() && list.is_genuinely_lazy()).then(|| Ok(cannot_lazy_failure_onto(action, "")))
+    (args.is_empty() && list.is_lazy_now()).then(|| Ok(cannot_lazy_failure_onto(action, "")))
 }
 
 /// `tail`, with or without a count, dies: Rakudo's `Cannot tail a lazy list`.
@@ -146,7 +146,7 @@ pub(super) fn tail(
     list: &LazyList,
     args: &[Value],
 ) -> Answer {
-    if args.len() > 1 || !list.is_genuinely_lazy() {
+    if args.len() > 1 || !list.is_lazy_now() {
         return None;
     }
     Some(Err(RuntimeError::from_exception_value(
