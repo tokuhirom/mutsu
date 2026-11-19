@@ -2244,7 +2244,15 @@ fn construct_values(
     // constructors build (rakudo's `RakuAST::Lookup` helpers, used by
     // CSS::Specification::Compiler's `my RakuAST::Type::Simple $type .=
     // from-identifier-parts(|@module)`).
-    if class_name == "RakuAST::Type::Simple"
+    // `.raku` prints `Type::Setting` and `Type::Capture` over a plain name the
+    // same way, so the text must evaluate back.
+    let name_type = match class_name {
+        "RakuAST::Type::Simple" => Some(RakuAstClass::TypeSimple),
+        "RakuAST::Type::Setting" => Some(RakuAstClass::TypeSetting),
+        "RakuAST::Type::Capture" => Some(RakuAstClass::TypeCapture),
+        _ => None,
+    };
+    if let Some(class) = name_type
         && matches!(method, "from-identifier" | "from-identifier-parts")
     {
         let Some(name) = construct_values(names, "RakuAST::Name", method, args)? else {
@@ -2252,7 +2260,7 @@ fn construct_values(
         };
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
-            class: RakuAstClass::TypeSimple,
+            class,
             fields: vec![RakuAstField {
                 name: None,
                 value: RakuAstFieldValue::Node(name),

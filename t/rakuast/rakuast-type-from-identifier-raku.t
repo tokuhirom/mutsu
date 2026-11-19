@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 7;
 
 # `.raku` of a type over a plain name is the `from-identifier` call that builds
 # it, not `.new` around a `Name` (identical under rakudo).
@@ -15,3 +15,9 @@ is RakuAST::Type::Capture.new(RakuAST::Name.from-identifier("T")).raku,
 
 my $decl = Q|my Int $x|.AST.raku;
 like $decl, / 'type        => RakuAST::Type::Simple.from-identifier("Int"),' /, 'inside a declaration';
+
+# The printed form evaluates back to the same node.
+is RakuAST::Type::Setting.from-identifier("Int").raku, 'RakuAST::Type::Setting.from-identifier("Int")',
+    'Type::Setting.from-identifier builds the node';
+is RakuAST::Type::Capture.from-identifier("T").raku, 'RakuAST::Type::Capture.from-identifier("T")',
+    'Type::Capture.from-identifier builds the node';
