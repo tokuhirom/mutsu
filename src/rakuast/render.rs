@@ -174,13 +174,17 @@ fn render_type_from_identifier(node: &RakuAstNode, indent: usize) -> Option<Stri
         .then(|| format!("{}.{call}", node.class.printed_name()))
 }
 
-/// A name written with colonpairs (`class A:ver<1.0> { }`), which rakudo
-/// renders with the pairs inside the constructor call:
+/// A name written with colonpairs (`class A:ver<1.0> { }`, `sub infix:<+>`),
+/// which rakudo 2026.11 renders as the general constructor with the pairs
+/// after the parts:
 ///
 /// ```text
-/// RakuAST::Name.from-identifier("A", colonpairs => (
-///   RakuAST::ColonPair::Value.new(...),
-/// ))
+/// RakuAST::Name.new(
+///   RakuAST::Name::Part::Simple.new("A"),
+///   colonpairs => (
+///     RakuAST::ColonPair::Value.new(...),
+///   )
+/// )
 /// ```
 ///
 /// `indent` is the column of the line the name sits on.
@@ -190,40 +194,39 @@ fn render_name_with_colonpairs(node: &RakuAstNode, indent: usize) -> Option<Stri
     let RakuAstFieldValue::List(pairs) = &pairs.value else {
         return None;
     };
-    let head = if let Some(parts) = node.fields.iter().find(|f| f.name == Some("parts")) {
+    let identifiers = if let Some(parts) = node.fields.iter().find(|f| f.name == Some("parts")) {
         let RakuAstFieldValue::List(parts) = &parts.value else {
             return None;
         };
-        let identifiers = parts
+        parts
             .iter()
             .map(simple_part_identifier)
-            .collect::<Option<Vec<_>>>()?;
-        format!(
-            "RakuAST::Name.from-identifier-parts({}, colonpairs => (\n",
-            identifiers.join(",")
-        )
+            .collect::<Option<Vec<_>>>()?
     } else {
         let identifier = node.fields.iter().find(|f| f.name.is_none())?;
         let RakuAstFieldValue::Node(identifier) = &identifier.value else {
             return None;
         };
-        format!(
-            "RakuAST::Name.from-identifier({}, colonpairs => (\n",
-            render_leaf(identifier)
-        )
+        vec![render_leaf(identifier)]
     };
-    let mut s = head;
     let pad = " ".repeat(indent + 2);
+    let mut s = String::from("RakuAST::Name.new(\n");
+    for identifier in identifiers {
+        s.push_str(&format!(
+            "{pad}RakuAST::Name::Part::Simple.new({identifier}),\n"
+        ));
+    }
+    s.push_str(&format!("{pad}colonpairs => (\n"));
+    let pair_pad = " ".repeat(indent + 4);
     for pair in pairs {
-        s.push_str(&pad);
+        s.push_str(&pair_pad);
         match pair.view() {
-            ValueView::RakuAst(pair) => s.push_str(&render_node(pair, indent + 2)),
+            ValueView::RakuAst(pair) => s.push_str(&render_node(pair, indent + 4)),
             _ => s.push_str(&render_leaf(pair)),
         }
         s.push_str(",\n");
     }
-    s.push_str(&" ".repeat(indent));
-    s.push_str("))");
+    s.push_str(&format!("{pad})\n{})", " ".repeat(indent)));
     Some(s)
 }
 
