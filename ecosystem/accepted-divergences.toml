@@ -149,6 +149,19 @@ collects the object before exit, and DESTROY timing is unspecified (maintainer d
 2026-11-17, #17834)."""
 
 [[divergence]]
+dist = "MCP::Server"
+file = "t/21-elicitation-dispatch.rakutest"
+shape = { verdict = "fail", ok = 11, nok = 1, plan = 12, first_failure = "A round that answers only some of the questions" }
+issue = 17724
+reason = """the subtest assumes both `start`ed handlers have asked before the dispatcher's \
+`Promise.anyof` wake-up snapshots the round, and that `alpha` got the first key. rakudo passes \
+only on a cold pool, where one worker runs both blocks and the wake-up in FIFO order; after a \
+16-task pool warm-up it fails the same subtest in the same two ways (inner `not ok 1`/`3` or \
+`not ok 5`) 12 runs of 25. Nothing in the language orders two tasks' bodies, and mutsu will not \
+port rakudo's lazy pool activation to reproduce it (ADR-15967 §2.1/§3/§5, ADR-0105 §5; user \
+decision 2026-11-19, #17724, #14684)."""
+
+[[divergence]]
 dist = "NativeHelpers::Blob"
 file = "t/02-cstruct.rakutest"
 shape = { verdict = "die", ok = 0, nok = 0, plan = 34, first_failure = "Unknown VM; don't know how to compile test libraries" }

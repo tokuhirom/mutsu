@@ -254,3 +254,28 @@ the current MCP::Server release (0.7.2) is excluded from the ecosystem sweep and
 than kept as a nondeterministic `partial` (§5's #14684 row and §7's last bullet). The exclusion
 is pinned to that release (`MCP::Server@0.7.2` in `ecosystem/exclude.txt`, a version-pinned
 entry form added for it), so a new release is measured again automatically.
+
+## 10. Amendment (2026-11-19): `t/21` is an accepted divergence, not a release exclusion
+
+User decision: a test that fails only on the test's own assumption about rakudo's pool state is
+taken out of the tally per file, not by excluding the release. §9's `MCP::Server@0.7.2` line in
+`ecosystem/exclude.txt` is removed, and `t/21-elicitation-dispatch.rakutest` is recorded in
+`ecosystem/accepted-divergences.toml` (ADR-0130) with mutsu's exact failure shape, so the other
+23 files of the distribution stay measured and the distribution can read `green`. §5's #14684
+row and §7's last bullet now resolve this way.
+
+Re-measured 2026-11-19 (release build of main @ 5272654c, raku 2026.11, 4-core container), each
+run under the sweep's own harness (bwrap sandbox, the same `-I` list and cwd); "warm" runs the
+file through `EVALFILE` after `await (^16).map({ start { sleep 0.2 } })`, file unmodified:
+
+| run (25 each) | passes | failing shape (top level) | inner failures |
+|---|---|---|---|
+| raku, cold pool | 25/25 | — | — |
+| raku, warm pool | 13/25 | 12 × `fail`, ok 11, nok 1, plan 12, "A round that answers only some of the questions" | 11 × `not ok 5` (alpha did not get the first key); 1 × `not ok 1` + `not ok 3` (one question in the round) |
+| mutsu, cold | 6/25 | 19 × the same | 18 × `not ok 1` + `not ok 3`; 1 × `not ok 5` |
+| mutsu, warm | 18/25 | 7 × the same | 6 × `not ok 5`; 1 × `not ok 1` + `not ok 3` |
+
+Every mutsu failure is the top-level shape rakudo produces on a warm pool, and each inner shape
+also occurs on rakudo; no other shape (a die, a timeout, another subtest) appeared. The entry
+pins `verdict`, `ok`, `nok`, `plan` and `first_failure`, so any other failure of the file is
+graded normally again.

@@ -170,11 +170,14 @@ re-offers it and the next agent re-investigates the same dead end from scratch.
 **When a release's own suite depends on rakudo's implementation state** — it
 passes on rakudo only by accident (a pool size, a scheduling order) and fails
 there too when that state differs, so it is a test assumption rather than a
-mutsu gap — and the user decides the release is not a test target, pin the
-entry to that release: `Dist::Name@<version> <reason>`. The tools skip that
-version only; once the index carries a new release it is measured and queued
-again, and the stale line can be deleted then. Worked example: `MCP::Server@0.7.2`
-(its `t/21` subtest fails 3/10 on a warm-pool rakudo, ADR-15967 §2.1).
+mutsu gap — prefer an `accepted-divergences.toml` entry for the one file it
+affects, pinned to mutsu's exact failure shape, so the rest of the distribution
+stays measured and can turn green. Worked example: MCP::Server `t/21` (its
+subtest fails 12/25 on a warm-pool rakudo, ADR-15967 §2.1/§10). Only when the
+user decides a whole release is not a test target, pin an `exclude.txt` entry to
+that release: `Dist::Name@<version> <reason>`. The tools skip that version only;
+once the index carries a new release it is measured and queued again, and the
+stale line can be deleted then.
 
 **The `MoarVM::` namespace is out of scope** (user decision 2026-10-23). Those
 distributions inspect or drive MoarVM itself (its bytecode files, its profiler
