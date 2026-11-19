@@ -1259,17 +1259,7 @@ impl Compiler {
     /// slot the declaration never wrote (`{ my @a = 5,7,9 } (my @a).push: $_
     /// for ^3`). `declare_local` resolves get-or-create by name in the default
     /// build, so declaring here reuses the very slot the read resolves to.
-    ///
-    /// The staging temp of a list-assigning declaration
-    /// (`my ($a, $b) = EXPR`, `rakuast::signature_expand`) qualifies too,
-    /// although its `__` name is not a plain user lexical: only the
-    /// declaration's own synthetic block reads it, so its slot is its only
-    /// home. Read by name, it cost each destructure an env walk and kept the
-    /// temp's store mirrored into env (#16897).
     pub(super) fn container_slot_read_applies(sigiled: &str) -> bool {
-        if matches!(sigiled, "@__destructure_tmp__" | "%__destructure_tmp__") {
-            return true;
-        }
         if !sigiled.starts_with(['@', '%']) || !crate::env::is_plain_user_lexical(sigiled) {
             return false;
         }
