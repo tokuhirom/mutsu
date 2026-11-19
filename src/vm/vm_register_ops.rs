@@ -497,7 +497,6 @@ impl Interpreter {
         // S.iterator ... }`, `captures_own_declaration`) or the slot is
         // already a shared cell.
         if matches!(parent_slots.get(i), Some(None))
-            && sym.with_str(|s| s.starts_with(crate::term_names::TERM_PREFIX))
             && !own_declaration.contains(&sym)
             && !self.locals.get(slot).is_some_and(Value::is_container_ref)
         {

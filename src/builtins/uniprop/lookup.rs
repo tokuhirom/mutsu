@@ -399,11 +399,7 @@ pub(crate) fn unimatch(ch: char, prop_value: &str, prop_name: Option<&str>) -> b
 
     // 4. Block name (case and underscores normalized)
     let block = unimatch_block(ch);
-    if block_matches_bare(&block, prop_value) {
-        return true;
-    }
-
-    false
+    block_matches_bare(&block, prop_value)
 }
 
 /// Match against a specific named property.

@@ -128,6 +128,17 @@ impl Compiler {
         expr: &Expr,
         wrap: impl FnOnce(Expr) -> Expr,
     ) -> bool {
+        // An element below a package stash's entry (`GLOBAL::<%Z><a>++`) is
+        // an element of the package variable the entry names, incremented as
+        // `%GLOBAL::Z<a>++` is (#18204).
+        if !matches!(
+            expr,
+            Expr::Index { target, .. } if matches!(target.as_ref(), Expr::PseudoStash(_))
+        ) && let Some(chain) = super::stash_entry_var::chain_with_stash_entry_var(expr)
+        {
+            self.compile_expr(&wrap(chain));
+            return true;
+        }
         let root = elem_chain_root(expr);
         // A dynamic/lexical pseudo-stash entry written in one step
         // (`PROCESS::<$x>++`) is not a container to bind: the read-increment-

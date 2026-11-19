@@ -352,6 +352,16 @@ impl Interpreter {
                 return Ok(Self::native_how_instance("NQPClassHOW", &resolved));
             }
         }
+        // A role attribute's `.package` before composition: the role's generic
+        // `$?CLASS` placeholder (#18215).
+        if let ValueView::Package(name) = target.view()
+            && name.as_str() == crate::runtime::GENERIC_CLASS_TYPE
+        {
+            return Ok(Self::native_how_instance(
+                "Perl6::Metamodel::GenericHOW",
+                crate::runtime::GENERIC_CLASS_TYPE,
+            ));
+        }
         // Return CurriedRoleHOW for parameterized roles
         if let ValueView::ParametricRole {
             base_name,

@@ -382,6 +382,14 @@ impl Compiler {
                 self.code.emit(OpCode::ReactDone);
             }
             Expr::BareWord(name) => {
+                // `OUTER::OUTER::Inner` names the type that scope declares,
+                // whatever a nearer scope's same-named type shadows (#18213).
+                if let Some((bare, depth)) = Self::outer_qualified_bareword(name)
+                    && self.outer_declared_type(bare, depth).is_some()
+                {
+                    self.emit_outer_var_access(bare.to_string(), depth);
+                    return;
+                }
                 // `nqp::const::*` names are compile-time integer constants
                 // (binary read/write size/endian flags — see nqp_forms.rs).
                 if let Some(n) = super::nqp_forms::nqp_const_value(name) {

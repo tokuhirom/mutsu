@@ -45,6 +45,10 @@ pub(super) fn resolution_value(
             RakuAstClass::VarDeclarationSimple | RakuAstClass::ParameterTargetVar => {
                 crate::rakuast::node_accessor(node, "compile-time-value").map(Ok)
             }
+            // A multi-part core type name: the type object it holds.
+            RakuAstClass::DeclarationResolvedConstant => {
+                crate::rakuast::node_accessor(node, "compile-time-value").map(Ok)
+            }
             RakuAstClass::DeclarationImport => {
                 super::rakuast_compile_state::built_import_field(resolution, "compile-time-value")
                     .map(Ok)

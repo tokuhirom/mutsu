@@ -6,7 +6,7 @@ name = "mutsu-lsp"
 # ships.
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.99.0"
+rust-version = "1.100.0"
 license = "Artistic-2.0"
 description = "Language server for mutsu, targeting AI agents (ADR-0065)"
 
