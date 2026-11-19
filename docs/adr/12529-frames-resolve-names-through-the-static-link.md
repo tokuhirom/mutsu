@@ -1819,6 +1819,16 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      the block class. A value whose type name is a registered type is that
      type.
 
+   Release-build Ir against the merge base (JIT off / on): `bench-fib`
+   +0.51% / +1.00% (no closure calls; layout), `bench-tak` -0.74% / -1.07%,
+   `method-call` -1.61% / -1.53%, `poly-call` +0.36% / +0.38%, `bench-ctor`
+   -8.15% / -8.11% (allocations -16%: the type check no longer re-resolves a
+   registered argument type), `bench-multi-dispatch` -0.79% / -0.93%, and a
+   closure micro-benchmark of by-name reads from deep callers and from a
+   shadowing block -4.10% / -4.36%. A 23-distribution sample (Red, Cro::*,
+   Qwiratry, Monad, MCP::Server, AttrX::Mooish, FunctionalParsers, ...)
+   against the nightly ledger: no file regressed; Green went from 2/4 to 4/4.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
