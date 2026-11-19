@@ -71,7 +71,14 @@ impl Interpreter {
         } else {
             None
         };
-        let value = self.eval_param_default_expr(pd, default_expr);
+        // A default is code of the routine's own lexical scope, not a read of
+        // the caller's argument sources: it follows the frame's static link
+        // even though the binder around it runs with links suppressed
+        // (ADR-12529 phase 3). `:&cmp = &[cmp]` must not find a calling
+        // block's `my &infix:<cmp>` (#17630).
+        let value = crate::env::with_static_links_honoured(|| {
+            self.eval_param_default_expr(pd, default_expr)
+        });
         // A readonly parameter binds the value a Proxy default fetches
         // (`method decode($encoded = $.encoded)` with an `is rw` accessor
         // returning a Proxy), as it binds a supplied Proxy argument: its

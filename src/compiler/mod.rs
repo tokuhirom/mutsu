@@ -1076,6 +1076,8 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod amp_scope;
+mod unit_hidden_names;
+use unit_hidden_names::routine_may_name;
 mod atomic_elem_forms;
 mod atomic_target;
 pub(crate) mod begin_use;
@@ -1477,6 +1479,9 @@ pub(crate) struct Compiler {
     /// program scope (`CompiledCode::unit_hidden_lexicals`, #13604).
     unit_block_lexicals: HashSet<String>,
     unit_reflective_sub_keys: Vec<crate::symbol::Symbol>,
+    /// Every other routine declared at the unit's top level: its frame hides
+    /// the block-only lexicals its code names (`record_unit_hidden_lexicals`).
+    unit_top_sub_keys: Vec<crate::symbol::Symbol>,
     current_package: String,
     /// True when compiling inside a `unit module`/`unit class`/`unit role`
     /// body. Used to pre-qualify class/role declarations with the package
@@ -2273,6 +2278,7 @@ impl Compiler {
             compiled_functions: CompiledFns::default(),
             unit_block_lexicals: HashSet::new(),
             unit_reflective_sub_keys: Vec::new(),
+            unit_top_sub_keys: Vec::new(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
@@ -2837,6 +2843,8 @@ impl Compiler {
                 }
             }
             self.unit_reflective_sub_keys.extend_from_slice(keys);
+        } else if at_unit_top {
+            self.unit_top_sub_keys.extend_from_slice(keys);
         }
         out
     }
@@ -2852,7 +2860,7 @@ impl Compiler {
     // Cost: O(b + r * c), b = block-declared names, r = such routines, c = the
     // cost of copying one routine's compiled function.
     fn record_unit_hidden_lexicals(&mut self) {
-        if self.unit_reflective_sub_keys.is_empty() {
+        if self.unit_reflective_sub_keys.is_empty() && self.unit_top_sub_keys.is_empty() {
             return;
         }
         let top = self.local_scopes.get(self.unit_root_scope);
@@ -2880,6 +2888,29 @@ impl Compiler {
             let mut cf = CompiledFunction::clone(cf);
             std::sync::Arc::make_mut(&mut cf.code).unit_hidden_lexicals =
                 Some(std::sync::Arc::clone(&hidden));
+            self.compiled_functions.insert(key, cf);
+        }
+        // Any other top-level routine reads by name only what its code names
+        // (a `&infix:<cmp>` a body or a parameter default resolves, a free
+        // variable): its frame hides those of the block-only lexicals, so a
+        // mainline block that calls it does not lend it its own `my`
+        // (#17630). A routine that names none of them gets no set, and its
+        // frame pays nothing per call.
+        for key in std::mem::take(&mut self.unit_top_sub_keys) {
+            let Some(cf) = self.compiled_functions.get(&key) else {
+                continue;
+            };
+            let named: rustc_hash::FxHashSet<crate::symbol::Symbol> = hidden
+                .iter()
+                .copied()
+                .filter(|sym| routine_may_name(cf, *sym))
+                .collect();
+            if named.is_empty() {
+                continue;
+            }
+            let mut cf = CompiledFunction::clone(cf);
+            std::sync::Arc::make_mut(&mut cf.code).unit_hidden_lexicals =
+                Some(std::sync::Arc::new(named));
             self.compiled_functions.insert(key, cf);
         }
     }
