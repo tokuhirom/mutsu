@@ -1075,7 +1075,6 @@ mod declaration_plan_tests {
     }
 }
 mod adverb_interp;
-mod with_defined;
 mod amp_scope;
 mod atomic_elem_forms;
 mod atomic_target;
@@ -1134,6 +1133,7 @@ mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
+mod with_defined;
 mod with_topic_alias;
 pub(crate) use crate::op_names as helpers_ops;
 pub(crate) use helpers_method_body::method_body_key;
