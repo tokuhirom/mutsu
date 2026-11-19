@@ -197,7 +197,24 @@ pub(super) fn lower_composer(names: &NameScope, node: &RakuAstNode) -> Result<Ex
     }
     let pairs = match node.fields.as_slice() {
         [] => Vec::new(),
-        [_] => lower_pairs(names, node, named_child_or_positional(node)?)?,
+        [_] => {
+            let child = named_child_or_positional(node)?;
+            match lower_pairs(names, node, child) {
+                Ok(pairs) => pairs,
+                // A composer with a non-pair element (`{ a => 1, %h }`) hashes
+                // the list of its elements (#18079).
+                Err(_) => {
+                    let elements = match lower_expr(names, child)? {
+                        Expr::ArrayLiteral(items) => items,
+                        other => vec![other],
+                    };
+                    return Ok(Expr::Contextualizer {
+                        kind: crate::ast::ContextKind::HashComposer,
+                        inner: Box::new(Expr::ArrayLiteral(elements)),
+                    });
+                }
+            }
+        }
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::Hash(pairs, HashSpelling::Composer))

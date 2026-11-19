@@ -5,11 +5,11 @@ fn parse_hash_literal_with_hash_spread_expr() {
     let (rest, expr) = expression("{year => 1984, %args}").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args, .. } => {
-            assert_eq!(name, "hash");
-            assert_eq!(args.len(), 2);
-        }
-        _ => panic!("expected lowered hash() call"),
+        Expr::Contextualizer {
+            kind: crate::ast::ContextKind::HashComposer,
+            inner,
+        } => assert!(matches!(*inner, Expr::ArrayLiteral(ref items) if items.len() == 2)),
+        _ => panic!("expected a HashComposer contextualizer"),
     }
 }
 

@@ -1199,25 +1199,24 @@ mod tests {
         let (rest, expr) = primary("{year => 1984, %args}").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Call { name, args, .. } => {
-                assert_eq!(name, "hash");
-                assert_eq!(args.len(), 2);
+            Expr::Contextualizer {
+                kind: crate::ast::ContextKind::HashComposer,
+                inner,
+            } => {
+                let Expr::ArrayLiteral(items) = *inner else {
+                    panic!("expected the composer's element list");
+                };
+                assert_eq!(items.len(), 2);
                 assert!(matches!(
-                    &args[0],
+                    &items[0],
                     Expr::Binary {
                         op: crate::token_kind::TokenKind::FatArrow,
                         ..
                     }
                 ));
-                assert!(matches!(
-                    &args[1],
-                    Expr::Unary {
-                        op: crate::token_kind::TokenKind::Pipe,
-                        expr, ..
-                    } if matches!(expr.as_ref(), Expr::HashVar(n) if n.as_str() == "args")
-                ));
+                assert!(matches!(&items[1], Expr::HashVar(n) if n.as_str() == "args"));
             }
-            _ => panic!("expected hash() call lowering"),
+            _ => panic!("expected a HashComposer contextualizer"),
         }
     }
 
