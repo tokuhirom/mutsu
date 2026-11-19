@@ -361,13 +361,16 @@ impl Interpreter {
         // its set an entry even with no values for the block's own names: the
         // hook runs on every import and may return different code each time,
         // so such a set is never replayed (`lexical_import_replay`).
-        if capture.hook_values.is_empty() && capture.hook_routines.is_empty() {
-            self.module.lexical_import_hook_values.remove(&id);
-        } else {
-            self.module
-                .lexical_import_hook_values
-                .insert(id, std::sync::Arc::new(capture.hook_values));
-        }
+        let hook_values = (!capture.hook_values.is_empty() || !capture.hook_routines.is_empty())
+            .then(|| std::sync::Arc::new(capture.hook_values));
+        self.module.lexical_imports.write(|tables| match hook_values {
+            Some(values) => {
+                tables.hook_values.insert(id, values);
+            }
+            None => {
+                tables.hook_values.remove(&id);
+            }
+        });
         // A family an earlier `use` of this scope bound too (the provider and
         // a module extending its exported proto) is one family: this set's
         // dispatcher spans the earlier candidates as well.
@@ -381,7 +384,7 @@ impl Interpreter {
             Some(scope) if scope.unit == importer => scope.lexical_sets.clone(),
             _ => self
                 .module
-                .unit_lexical_sets
+                .lexical_imports.read().unit_sets
                 .get(&importer)
                 .cloned()
                 .unwrap_or_default(),
@@ -393,9 +396,9 @@ impl Interpreter {
             for earlier in &earlier_sets {
                 let Some(prior) = self
                     .module
-                    .lexical_set_families
+                    .lexical_imports.read().families
                     .get(earlier)
-                    .and_then(|families| families.get(name))
+                    .and_then(|families| families.get(name).cloned())
                 else {
                     continue;
                 };
@@ -406,9 +409,9 @@ impl Interpreter {
                 }
             }
         }
-        self.module
-            .lexical_set_families
-            .insert(id, multi_defs.clone());
+        self.module.lexical_imports.write(|tables| {
+            tables.families.insert(id, multi_defs.clone());
+        });
         let mut set = HashMap::new();
         for (package, name) in capture.routines {
             if set.contains_key(&name) {
@@ -497,19 +500,19 @@ impl Interpreter {
                 set.insert(name, binding);
             }
         }
-        if set
+        let binds_operator = set
             .values()
-            .any(|b| matches!(b, LexicalImport::Code(v) if Self::is_builtin_operator_dispatcher(v)))
-        {
-            self.module.lexical_operator_import_sets.insert(id);
-        } else {
-            self.module.lexical_operator_import_sets.remove(&id);
-        }
-        self.module
-            .lexical_import_sets
-            .insert(id, std::sync::Arc::new(set));
-        // Every `LexImportCall` site memo read under the old sets is stale.
-        self.module.lexical_import_gen = crate::runtime::registry_gen::next_generation();
+            .any(|b| matches!(b, LexicalImport::Code(v) if Self::is_builtin_operator_dispatcher(v)));
+        // One world write: the `LexImportCall` site memos are keyed by the
+        // table's generation, which it moves (#18137).
+        self.module.lexical_imports.write(|tables| {
+            if binds_operator {
+                tables.operator_sets.insert(id);
+            } else {
+                tables.operator_sets.remove(&id);
+            }
+            tables.sets.insert(id, std::sync::Arc::new(set));
+        });
     }
 
     /// Record the definition of each captured candidate of `dispatcher`,
@@ -629,10 +632,12 @@ impl Interpreter {
                 }
             }
             _ => {
-                let sets = self.module.unit_lexical_sets.entry(importer).or_default();
-                if !sets.contains(&id) {
-                    sets.push(id);
-                }
+                self.module.lexical_imports.write(|tables| {
+                    let sets = tables.unit_sets.entry(importer).or_default();
+                    if !sets.contains(&id) {
+                        sets.push(id);
+                    }
+                });
             }
         }
     }
@@ -643,7 +648,7 @@ impl Interpreter {
     pub(crate) fn unit_lexical_import_routines(&self) -> Vec<(Symbol, Value)> {
         let mut routines: Vec<(Symbol, Value)> = Vec::new();
         for id in self.running_unit_lexical_sets() {
-            let Some(set) = self.module.lexical_import_sets.get(&id) else {
+            let Some(set) = self.module.lexical_imports.read().sets.get(&id).cloned() else {
                 continue;
             };
             for (name, binding) in set.iter() {
@@ -665,8 +670,16 @@ impl Interpreter {
     /// sets, whichever unit is running.
     // Cost: O(s), s = import sets the unit filled.
     pub(crate) fn unit_import_routine(&self, unit: Symbol, name: &str) -> Option<Value> {
-        let sets = self.module.unit_lexical_sets.get(&unit)?;
-        let chain: Vec<Symbol> = sets.iter().rev().copied().collect();
+        let chain: Vec<Symbol> = self
+            .module
+            .lexical_imports
+            .read()
+            .unit_sets
+            .get(&unit)?
+            .iter()
+            .rev()
+            .copied()
+            .collect();
         match self.lexical_import_binding(&chain, Symbol::intern(name))? {
             LexicalImport::Code(value) => Some(value),
             LexicalImport::Routine(def) => Some(self.sub_value_from_function_def((*def).clone())),
@@ -702,12 +715,18 @@ impl Interpreter {
     /// first.
     // Cost: O(s), s = sets the unit filled.
     fn running_unit_lexical_sets(&self) -> impl Iterator<Item = Symbol> + '_ {
-        self.module
-            .unit_lexical_sets
-            .get(&self.executing_unit_sym_for_module_load())
-            .filter(|_| !self.module.unit_sets_hidden)
-            .into_iter()
-            .flat_map(|sets| sets.iter().rev().copied())
+        let sets: Vec<Symbol> = if self.module.unit_sets_hidden {
+            Vec::new()
+        } else {
+            self.module
+                .lexical_imports
+                .read()
+                .unit_sets
+                .get(&self.executing_unit_sym_for_module_load())
+                .map(|sets| sets.iter().rev().copied().collect())
+                .unwrap_or_default()
+        };
+        sets.into_iter()
     }
 
     /// The lexical import sets a BEGIN phaser sees, innermost first: the
@@ -853,7 +872,7 @@ impl Interpreter {
     pub(crate) fn lexically_imported_routine(&self, name: &str) -> bool {
         if self.module.import_scope_stack.is_empty()
             && self.module.eval_import_chain.is_none()
-            && self.module.unit_lexical_sets.is_empty()
+            && self.module.lexical_imports.read().unit_sets.is_empty()
         {
             return false;
         }
@@ -879,7 +898,7 @@ impl Interpreter {
     /// a by-name lookup (`::('&name')`, `&::("name")`).
     // Cost: O(s) plus building the code object.
     pub(crate) fn active_lexical_import_value(&self, name: &str) -> Option<Value> {
-        if self.module.import_scope_stack.is_empty() && self.module.unit_lexical_sets.is_empty() {
+        if self.module.import_scope_stack.is_empty() && self.module.lexical_imports.read().unit_sets.is_empty() {
             return None;
         }
         // The sets lexically around the lookup site, as for an `EVAL`: a
@@ -924,11 +943,11 @@ impl Interpreter {
         name: Symbol,
     ) -> Option<LexicalImport> {
         // No set binds a built-in operator's dispatcher: nothing to merge.
-        if self.module.lexical_operator_import_sets.is_empty() {
+        if self.module.lexical_imports.read().operator_sets.is_empty() {
             return self.lexical_import_binding(chain, name);
         }
         let mut found = chain.iter().filter_map(|id| {
-            match self.module.lexical_import_sets.get(id)?.get(&name)? {
+            match self.module.lexical_imports.read().sets.get(id)?.get(&name)? {
                 LexicalImport::Code(value) if Self::is_builtin_operator_dispatcher(value) => {
                     Some(value.clone())
                 }
@@ -987,7 +1006,7 @@ impl Interpreter {
         }
         chain
             .iter()
-            .find_map(|id| self.module.lexical_import_sets.get(id)?.get(&name).cloned())
+            .find_map(|id| self.module.lexical_imports.read().sets.get(id)?.get(&name).cloned())
     }
 }
 

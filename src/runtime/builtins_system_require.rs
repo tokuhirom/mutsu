@@ -813,9 +813,9 @@ impl Interpreter {
                 None => missing.push(symbol.clone()),
             }
         }
-        self.module
-            .lexical_import_hook_values
-            .insert(set, std::sync::Arc::new(values));
+        self.module.lexical_imports.write(|tables| {
+            tables.hook_values.insert(set, std::sync::Arc::new(values));
+        });
         if missing.is_empty() {
             Ok(())
         } else {

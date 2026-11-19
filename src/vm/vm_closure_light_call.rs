@@ -165,7 +165,7 @@ impl Interpreter {
     // Cost: O(1) while no set binds an operator; else O(n * c), n = the
     // body's prefixed ops, c = the chain's import sets.
     fn light_body_has_live_operator_import(&self, cc: &CompiledCode) -> bool {
-        if self.module.lexical_operator_import_sets.is_empty() {
+        if self.module.lexical_imports.read().operator_sets.is_empty() {
             return false;
         }
         cc.ops.iter().any(|op| {

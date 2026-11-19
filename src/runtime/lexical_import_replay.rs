@@ -160,7 +160,7 @@ impl Interpreter {
         let text = id.resolve();
         if text.contains(crate::runtime::lexical_imports::EVAL_UNIT_MARK)
             || text.contains(crate::runtime::lexical_imports::MODULE_UNIT_MARK)
-            || self.module.lexical_import_hook_values.contains_key(&id)
+            || self.module.lexical_imports.read().hook_values.contains_key(&id)
         {
             return None;
         }
@@ -210,7 +210,7 @@ impl Interpreter {
         if !unchanged {
             return None;
         }
-        let set = self.module.lexical_import_sets.get(&id)?;
+        let set = self.module.lexical_imports.read().sets.get(&id).cloned()?;
         if !set
             .values()
             .all(|b| matches!(b, LexicalImport::Routine(_) | LexicalImport::Code(_)))
@@ -288,7 +288,7 @@ impl Interpreter {
     // the first run started from (the scope's exit restores them); O(k + a)
     // otherwise, a = alias-table entries (one copy-on-write clone).
     pub(crate) fn replay_lexical_import(&mut self, id: Symbol) -> bool {
-        if !self.module.lexical_import_sets.contains_key(&id) {
+        if !self.module.lexical_imports.read().sets.contains_key(&id) {
             return false;
         }
         let Some(replay) = self.module.lexical_import_replays.get(&id).map(Arc::clone) else {

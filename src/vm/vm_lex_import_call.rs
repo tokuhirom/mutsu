@@ -58,7 +58,7 @@ impl Interpreter {
         // binds as a code object is never memoized, so the operator merge in
         // `lexical_import_operator_binding` still sees every call.
         let sites = code.constants.len();
-        let generation = self.module.lexical_import_gen;
+        let generation = self.module.lexical_imports.generation();
         let memoized = if call.is_some() {
             code.lex_import_sites
                 .cached(sites, name_idx as usize, generation, chain_idx)
