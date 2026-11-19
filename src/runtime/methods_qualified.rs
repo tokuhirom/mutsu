@@ -711,6 +711,39 @@ impl Interpreter {
             }
         }
         if let Some((owner, method_def)) = resolved {
+            // A `.wrap` of the method wraps the owner-bound call too (a
+            // Method object called as a value, `$obj.$m()`, #18049), with the
+            // owner's candidate as the chain's winner, as ordinary dispatch
+            // enters it (`class_dispatch.rs`).
+            let wrapped = self.enter_method_wrap_chain(
+                &inst_cn_str,
+                actual_method,
+                owner,
+                &method_def,
+                &args,
+                target.clone(),
+            );
+            match wrapped {
+                Ok(Some(outermost)) => {
+                    if let Some(saved) = saved_role_default_env {
+                        self.env = saved;
+                    }
+                    let mut call_args = vec![target.clone()];
+                    call_args.extend(args);
+                    self.shift_arg_sources_for_wrap_invocant();
+                    let result = self.call_sub_value(outermost, call_args);
+                    self.pop_method_samewith_context();
+                    self.dispatch.method_dispatch_stack.pop();
+                    return Some(result);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    if let Some(saved) = saved_role_default_env {
+                        self.env = saved;
+                    }
+                    return Some(Err(e));
+                }
+            }
             let attrs_map = attributes.to_map();
             // Reuse the (owner, method_def) this box's own E7-step-2 shadow
             // check just verified against `resolve_sequence` above, instead
