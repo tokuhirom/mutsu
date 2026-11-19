@@ -5366,10 +5366,12 @@ impl CompiledDeclExpr {
     // Cost: O(1).
     pub(crate) fn shadowable_term(&self) -> Option<(crate::symbol::Symbol, &Value)> {
         match self.code.ops.as_slice() {
-            [OpCode::GetShadowableTerm {
-                name_idx,
-                fallback_idx,
-            }] => Some((
+            [
+                OpCode::GetShadowableTerm {
+                    name_idx,
+                    fallback_idx,
+                },
+            ] => Some((
                 self.code.const_sym(*name_idx),
                 self.code.constants.get(*fallback_idx as usize)?,
             )),
