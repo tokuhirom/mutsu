@@ -357,6 +357,11 @@ impl Interpreter {
                 if p.type_name == "str" && !val.is_str_value() {
                     return None;
                 }
+                // A Proxy is FETCHed by the general binder; binding it here
+                // would hand the body the Proxy itself (#18099).
+                if val.is_proxy_value() {
+                    return None;
+                }
                 if p.implicit_any && !self.light_arg_is_any(val) {
                     return None;
                 }

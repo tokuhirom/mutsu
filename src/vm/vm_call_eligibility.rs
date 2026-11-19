@@ -475,7 +475,9 @@ impl Interpreter {
         !fn_name.is_empty()
             // A `Proxy` argument is FETCHed by the general binder; the light
             // binders would type-check the Proxy itself.
-            && !args.iter().any(|a| a.unwrap_varref().is_proxy_value())
+            && !args
+                .iter()
+                .any(|a| super::vm_call_helpers::bound_proxy(a).is_some())
             && if where_verified {
                 Self::light_signature_static_ok(cf, true)
             } else {
