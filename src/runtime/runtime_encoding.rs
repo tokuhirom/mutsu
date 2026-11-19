@@ -361,12 +361,6 @@ impl Interpreter {
                 return name.to_string();
             }
         }
-        // The type-only key first: it holds the lexical type even where a
-        // same-named `$name` took the bare key, and a closure carries it from
-        // the block that declared the type after the block exited (#18177).
-        if let Some(storage) = self.bound_lexical_type_storage(name) {
-            return storage.resolve();
-        }
         if let Some(ValueView::Package(p)) = self.env().get(name).map(Value::view) {
             let resolved = p.resolve();
             // Only trust this as an ADR-0047 lexical-class remap when `resolved`

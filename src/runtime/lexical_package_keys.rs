@@ -62,9 +62,17 @@ impl Interpreter {
     /// declared it, after the block exited (#18177). `None` for a qualified
     /// name or one no lexical type of this spelling is bound to here.
     // Cost: O(1) expected: the key's process-wide absence probe, else one
-    // env walk of the type-only key.
+    // env walk of the type-only key and one registry probe.
     pub(crate) fn bound_lexical_type_storage(&self, name: &str) -> Option<Symbol> {
-        if name.is_empty() || crate::qualified::is_qualified_str(name) {
+        // A core type's spelling keeps the existing resolution: a lexical
+        // refinement of it (`my class DateTime is DateTime`) is handled where
+        // it is declared, and code the runtime itself composes (the slang
+        // host's `grammar Raku::Grammar`, implicitly `is Grammar`) must not
+        // pick up a module's file-scope `my role Grammar`.
+        if name.is_empty()
+            || crate::qualified::is_qualified_str(name)
+            || crate::builtin_types::catalog::builtin_type_info(name).is_some()
+        {
             return None;
         }
         let head = Symbol::intern(name);
@@ -75,7 +83,13 @@ impl Interpreter {
             return None;
         };
         let text = storage.as_str();
-        (text.len() > name.len() && text.starts_with(name) && text.as_bytes()[name.len()] == 0)
-            .then_some(storage)
+        // A declaration binds its type-only key before its own header
+        // resolves (`my class DateTime is DateTime`): until the type is
+        // registered the spelling still names the outer one.
+        (text.len() > name.len()
+            && text.starts_with(name)
+            && text.as_bytes()[name.len()] == 0
+            && self.has_type_direct(text))
+        .then_some(storage)
     }
 }
