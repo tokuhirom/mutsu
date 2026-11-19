@@ -31,7 +31,11 @@ fn impl_phase(
         .map(crate::runtime::attach_target::resolver_scopes)
         .unwrap_or_default();
     let imported = |routine: &str| interp.unit_routine_imported(routine);
-    let imported_type = |name: &str| interp.has_class(name) || interp.slang_minted_type(name);
+    let imported_type = |name: &str| {
+        interp.has_class(name)
+            || interp.slang_minted_type(name)
+            || interp.main_unit_imports_type(name)
+    };
     crate::rakuast::resolve_node_in(target, &scopes, &imported, &imported_type);
     Some(Ok(Value::NIL))
 }
