@@ -767,7 +767,7 @@ fn config(lines: &Lines, text: &str) -> Option<Vec<(String, RakuAstNode)>> {
 /// it (or with no ranges when `at` is `None`).
 // Cost: O(n), n = length of the text, plus the parse.
 fn expression(lines: &Lines, text: &str, at: Option<usize>) -> Option<RakuAstNode> {
-    let (mut stmts, _) = crate::parser::parse_fragment_spelled(text).ok()?;
+    let (mut stmts, _) = crate::parser::parse_fragment_unfinalized(text).ok()?;
     let _origins = match at {
         Some(at) => {
             crate::ast_visit::walk_stmts_mut(&mut super::regex_call_origins::Shift(at), &mut stmts);

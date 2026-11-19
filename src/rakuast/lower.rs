@@ -34,6 +34,8 @@ pub fn lower(
     names: &crate::scope::NameScope,
     node: &RakuAstNode,
 ) -> Result<Vec<Stmt>, RuntimeError> {
+    // The tree the compiler receives carries no spellings (ADR-15760 §2.5).
+    let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let normalized = super::subclass::normalize_for_lower(node, 0)?;
     lower_normalized(names, normalized.as_ref().unwrap_or(node))
 }
@@ -55,11 +57,10 @@ fn lower_normalized(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, 
 }
 
 /// The passes a lowered unit goes through before the compiler sees it: the
-/// spellings come off, the priming scopes of a `*` are planted and the scope
-/// diagnostics are reported.
+/// priming scopes of a `*` are planted and the scope diagnostics are reported.
+/// A lowered tree carries no spellings: nothing that lowers keeps them.
 // Cost: O(n), n = size of the unit.
 pub(super) fn finish_unit(stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
-    super::unspell::strip(stmts);
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
     // positions, and there is no parser here. Run the same scope authority the
@@ -172,6 +173,9 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
 /// unit's closing passes (`finish_unit`) run on the whole unit later.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower_fragment(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // A production is parsed for its node (spellings kept); what it lowers to
+    // is executed and keeps none.
+    let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan(node);
     super::infix_func::reset();

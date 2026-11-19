@@ -244,7 +244,6 @@ mod type_lower;
 mod underscore_bindings;
 pub(crate) mod unit_source;
 mod unit_span;
-mod unspell;
 mod use_origins;
 mod use_stmt;
 mod user_postfix;
@@ -1973,7 +1972,7 @@ pub fn str_dot_ast_checked(
     unit_check: UnitCheck<'_>,
 ) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
-    let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    let (mut stmts, _finish) = crate::parse_dispatch::parse_source_unfinalized(source)?;
     let unit_docs = crate::parser::decl_doc::take_unit_docs();
     // Rakudo's `.AST` raises the compile errors running the code does
     // (ADR-15760 Amendment 1, slice 1c): a type or term used before its

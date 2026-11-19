@@ -6,13 +6,47 @@
 //! keeps that text (`QuotedString(processors => <words val>, segments =>
 //! ("a b  c",))`), so the parser wraps the term in [`Expr::Spelled`].
 //!
-//! Every parse does: the parser's tree is only ever consumed by the RakuAST
-//! conversion, and the lowered tree the compiler sees carries no wrapper. The
-//! wrapper holds only what RakuAST needs and the `Expr` does not have; the
-//! value stays in `expr`, so the two cannot disagree. A parse-time consumer
-//! that matches a shape looks through it with [`Expr::peel_parens`].
+//! Only a parse whose tree is read as RakuAST spells (`Str.AST`, a slang
+//! production, the analysis views): [`KeepSpellings`] is set around it. An
+//! executing parse builds the expression alone (ADR-15760 §2.4), so the tree the
+//! finalization lowers and the compiler sees carries no wrapper. The wrapper
+//! holds only what RakuAST needs and the `Expr` does not have; the value stays
+//! in `expr`, so the two cannot disagree. A parse-time consumer that matches a
+//! shape looks through it with [`Expr::peel_parens`].
+
+use std::cell::Cell;
 
 use super::Expr;
+
+thread_local! {
+    /// Whether the code running builds spellings: only a parse whose tree is
+    /// read as RakuAST does. A nested compilation unit (a module loaded while
+    /// a `.AST` parse runs) starts with it off (`parser::unit_state`).
+    pub(crate) static KEEP: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether [`Expr::spelled`] wraps: the parse in progress is read as RakuAST.
+// Cost: O(1).
+pub(crate) fn kept() -> bool {
+    KEEP.with(Cell::get)
+}
+
+/// While alive, spellings are built (`keep`) or not; restores the enclosing
+/// setting on drop.
+pub(crate) struct KeepSpellings(bool);
+
+impl KeepSpellings {
+    // Cost: O(1).
+    pub(crate) fn enter(keep: bool) -> Self {
+        KeepSpellings(KEEP.with(|k| k.replace(keep)))
+    }
+}
+
+impl Drop for KeepSpellings {
+    fn drop(&mut self) {
+        KEEP.with(|k| k.set(self.0));
+    }
+}
 
 /// How a term was written, when that is not recoverable from its value.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -185,9 +219,13 @@ impl Expr {
         }
     }
 
-    /// `expr`, wrapped to remember its `spelling`.
+    /// `expr`, wrapped to remember its `spelling` when the parse in progress
+    /// keeps spellings ([`kept`]); `expr` alone otherwise.
     // Cost: O(1), plus the cost of `spelling`.
     pub(crate) fn spelled(expr: Expr, spelling: impl FnOnce() -> Spelling) -> Expr {
+        if !kept() {
+            return expr;
+        }
         Expr::Spelled(Box::new(Spelled {
             expr,
             spelling: spelling(),

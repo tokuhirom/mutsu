@@ -30,7 +30,7 @@
 //! An attached range must also lie inside the range of the nearest enclosing
 //! term that has one; a range that does not is dropped.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 
@@ -46,26 +46,20 @@ thread_local! {
     static NOTES: RefCell<Option<Vec<(u64, SrcSpan)>>> = const { RefCell::new(None) };
 }
 
-thread_local! {
-    /// Whether the code running wants the origins of the terms it parses: only
-    /// `.AST` renders them. The executing round trip lowers the tree and
-    /// reads none, so noting them for it is wasted work.
-    static WANTED: Cell<bool> = const { Cell::new(false) };
+/// While alive, parses keep their spellings and note the ranges of their terms
+/// ([`begin`]): only a tree read as RakuAST (`.AST`) renders them. The
+/// executing finalization lowers the tree and reads neither, so building them
+/// for it is wasted work. One flag, `ast::spelled::KEEP`, is both.
+pub(crate) struct Wanted {
+    _keep: crate::ast::spelled::KeepSpellings,
 }
-
-/// While alive, spelled parses note the ranges of their terms ([`begin`]).
-pub(crate) struct Wanted(bool);
 
 impl Wanted {
     // Cost: O(1).
     pub(crate) fn enter() -> Self {
-        Wanted(WANTED.with(|w| w.replace(true)))
-    }
-}
-
-impl Drop for Wanted {
-    fn drop(&mut self) {
-        WANTED.with(|w| w.set(self.0));
+        Wanted {
+            _keep: crate::ast::spelled::KeepSpellings::enter(true),
+        }
     }
 }
 
@@ -86,7 +80,7 @@ impl Drop for Recording {
 /// them for one that does not.
 // Cost: O(1).
 pub(crate) fn begin(keep: bool) -> Recording {
-    let keep = keep && WANTED.with(Cell::get);
+    let keep = keep && crate::ast::spelled::kept();
     let previous = NOTES.with(|n| n.replace(keep.then(Vec::new)));
     Recording { previous }
 }
@@ -459,7 +453,7 @@ impl VisitMut for Walk {
 // Cost: O(1).
 pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
     unit.take(&NOTES, None);
-    unit.take_cell(&WANTED, false);
+    unit.take_cell(&crate::ast::spelled::KEEP, false);
     unit.take_cell(&LAST, (0, 0, None));
 }
 
