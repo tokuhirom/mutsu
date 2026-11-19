@@ -9,6 +9,7 @@ pass under rakudo 2026.11 too.
 
 A name with colonpairs (`class A:ver<1.0>`, `sub infix:<+>`) likewise prints as
 `Name.new(Name::Part::Simple.new("A"), colonpairs => (...))`, and the `.AST` text golden
-(`ci/ast-text-corpus/rakudo.tsv`) is re-recorded on rakudo 2026.11 for the same files. Fourteen
-statements that matched the older rakudo text but not 2026.11's stay out of
-`identical.tsv` until they are fixed.
+(`ci/ast-text-corpus/rakudo.tsv`) is re-recorded on rakudo 2026.11 for the same files. Four
+statements that matched the older rakudo text but differ from 2026.11's only in the
+`Name::Part::EmptyEdge` rename (#18241) leave `identical.tsv` until that is fixed; the
+re-recorded golden lets 852 more statements join it.
