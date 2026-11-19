@@ -199,17 +199,36 @@ impl Interpreter {
         {
             return None;
         }
+        // A role mixed into the metaobject (`$*PACKAGE.HOW does R`, as
+        // AttrX::Mooish does for every class it touches) is consulted before
+        // the metaobject's own methods: answer only when no mixed-in role
+        // provides the metamethod, as a method, a public attribute or a
+        // mixed-in value, and then from the metaobject the roles wrap.
+        let inner = match how.view() {
+            ValueView::Mixin(inner, mixins) => {
+                if mixins.get(meta_method).is_some() || self.mixin_role_has_method(how, meta_method)
+                {
+                    return None;
+                }
+                inner
+            }
+            _ => how.clone(),
+        };
         let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = how.view()
+        } = inner.view()
         else {
             return None;
         };
-        if !Self::is_metamodel_how(&class_name)
-            || self.has_user_method(class_name.as_str(), meta_method)
-        {
+        // A builtin metaclass, or a user subclass of one
+        // (`class CustomClassHOW is Metamodel::ClassHOW {}`) that declares no
+        // method of this name anywhere on its MRO: either way the answer is
+        // the builtin metamethod's.
+        let builtin_how = Self::is_metamodel_how(&class_name)
+            || self.is_metamodel_how_class(class_name.as_str());
+        if !builtin_how || self.has_user_method(class_name.as_str(), meta_method) {
             return None;
         }
         let how_args = self.how_dispatch_args(&attributes, meta_method, how_args);
