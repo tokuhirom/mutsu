@@ -3924,6 +3924,24 @@ mod tests {
     }
 
     #[test]
+    fn a_closure_frame_marked_outer_is_capture_reads_its_capture_before_callers() {
+        let mut program = Env::new();
+        program.insert("ps".into(), Value::int(10));
+        // The caller: a routine frame whose block binds `x` and `later`.
+        let caller = scoped_with(Env::scoped_child(program), &[("x", 1), ("later", 5)]);
+        let mut frame = Env::scoped_child(caller);
+        frame.set_capture_fallback(capture_of(&[("x", 2)]));
+        // Unmarked, the caller's block wins over the capture.
+        assert_eq!(frame.get_sym(s("x")), Some(&Value::int(1)));
+        frame.mark_outer_is_capture();
+        // Marked: the capture, then the program scope, before any caller.
+        assert_eq!(frame.get_sym(s("x")), Some(&Value::int(2)));
+        assert_eq!(frame.get_sym(s("ps")), Some(&Value::int(10)));
+        // A name neither binds still reaches the caller that declared it.
+        assert_eq!(frame.get_sym(s("later")), Some(&Value::int(5)));
+    }
+
+    #[test]
     fn a_callee_chained_over_a_closure_frame_still_sees_its_capture() {
         let mut frame = Env::scoped_child(Env::new());
         frame.set_capture_fallback(capture_of(&[("captured", 3)]));
