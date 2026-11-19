@@ -253,10 +253,7 @@ fn apply_sign(v: Value, sign: i32) -> Value {
 
 /// Validate underscore placement: no leading, trailing, or double underscores.
 fn validate_underscores(s: &str) -> bool {
-    if s.starts_with('_') || s.ends_with('_') || s.contains("__") {
-        return false;
-    }
-    true
+    !(s.starts_with('_') || s.ends_with('_') || s.contains("__"))
 }
 
 /// Strip underscores from a string, returning None if underscores are invalid.
