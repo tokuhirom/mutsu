@@ -132,6 +132,7 @@ mod vm_baggy_subclass_delegate;
 mod vm_bitwise_ops;
 mod vm_call_atomic;
 mod vm_call_autothread;
+mod vm_core_routine_autothread;
 mod vm_call_dispatch;
 mod vm_call_dispatcher_builtin;
 mod vm_call_eligibility;

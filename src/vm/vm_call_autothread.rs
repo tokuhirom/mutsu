@@ -978,12 +978,18 @@ impl Interpreter {
         // registry but never accept Mu or Junction — synthesize Any-typed param defs
         // so Junction args autothread through them (e.g. `&CALLER::LEXICAL::("infix:<eq>")`
         // called from Test.rakumod's `cmp-ok` with a Junction expected value).
-        if (name.starts_with("infix:<")
-            || name.starts_with("prefix:<")
-            || name.starts_with("postfix:<"))
-            && name.ends_with('>')
+        // A core routine none of whose candidates takes a Junction whole
+        // (`abs`, `chr`, `uc`) threads the same way (#18098).
+        let core_routine = super::vm_core_routine_autothread::core_routine_threads_junctions(name);
+        if core_routine
+            || ((name.starts_with("infix:<")
+                || name.starts_with("prefix:<")
+                || name.starts_with("postfix:<"))
+                && name.ends_with('>'))
         {
-            let n = if name.starts_with("prefix:<") || name.starts_with("postfix:<") {
+            let n = if core_routine {
+                args.len()
+            } else if name.starts_with("prefix:<") || name.starts_with("postfix:<") {
                 1usize
             } else {
                 2usize
