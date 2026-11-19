@@ -25,7 +25,14 @@ impl Interpreter {
         // `resolve_declared_type_name`; the body `DoesDecl` emitted
         // for an anonymous `class :: does R` did not, so it failed
         // with "Unknown role" for module-exported roles.
-        let role_name_str = self.resolve_declared_type_name(&raw_role_name);
+        // A lexical role in scope -- or captured by the running closure from
+        // the block that declared it, after the block exited (#18177) -- is
+        // what the bare spelling names, even where a same-named package role
+        // is registered.
+        let role_name_str = match self.bound_lexical_type_storage(&raw_role_name) {
+            Some(storage) => storage.resolve(),
+            None => self.resolve_declared_type_name(&raw_role_name),
+        };
         let base_role_name = role_name_str
             .split_once('[')
             .map(|(base, _)| base)

@@ -56,7 +56,18 @@ impl Interpreter {
                 let registry = self.registry();
                 registry.classes.contains_key(base) || registry.roles.contains_key(base)
             };
-            let resolved = if runtime::is_known_type_constraint(base)
+            // A lexical type the running scope binds names its own
+            // declaration, even where a same-named package type is
+            // registered -- also in a closure that captured it from the block
+            // that declared it, after the block exited (#18177).
+            let lexical = if runtime::is_known_type_constraint(base) || is_core_raku_type(base) {
+                None
+            } else {
+                self.bound_lexical_type_storage(base)
+            };
+            let resolved = if let Some(storage) = lexical {
+                Some(format!("{}{}", storage.as_str(), smiley.unwrap_or("")))
+            } else if runtime::is_known_type_constraint(base)
                 || is_core_raku_type(base)
                 || declared_type
             {

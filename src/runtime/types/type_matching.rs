@@ -391,6 +391,15 @@ impl Interpreter {
         // such as `constant time = int64` remains a nominal name and rejects
         // ordinary Int arguments even though Rakudo accepts them.
         if !package_qualified {
+            // A lexical type in scope (or captured by the running closure,
+            // #18177) is what its spelling names, even where a same-named
+            // package type is registered.
+            if bracket_start.is_none() && !constraint.contains('(') {
+                let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint);
+                if let Some(storage) = self.bound_lexical_type_storage(base) {
+                    return Some(format!("{}{}", storage.as_str(), smiley.unwrap_or("")));
+                }
+            }
             return self.type_alias_target(constraint);
         }
         // A compound name relative to the running package: `module Core {
