@@ -2271,6 +2271,23 @@ pub(super) fn splat_dimensions(dimensions: &[Expr]) -> std::borrow::Cow<'_, [Exp
     }
 }
 
+/// The word of an imported term (`CArray` after `use NativeCall`): the parser
+/// wraps it in a `Spelled` marker, but it names a type like any bareword.
+// Cost: O(1).
+fn imported_term_word(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Spelled(spelled)
+            if matches!(
+                spelled.spelling,
+                crate::ast::spelled::Spelling::ImportedTerm
+            ) =>
+        {
+            spelled.expr.as_bare_word()
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn subscript_dims_node(
     names: &NameScope,
     target: &Expr,
@@ -2285,7 +2302,7 @@ pub(super) fn subscript_dims_node(
         && assignee.is_none()
         && colonpairs.is_empty()
         && let [dim] = dims
-        && target.as_bare_word().is_some()
+        && let Some(_) = target.as_bare_word().or_else(|| imported_term_word(target))
         && let base = view_expr(names, target)?
         && base.class == RakuAstClass::TypeSimple
     {

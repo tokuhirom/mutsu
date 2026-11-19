@@ -958,19 +958,8 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // parsing the declaration, so — unlike a type name — there is no AST node
     // to walk; the scan's own scope stack is the record. Callable term symbols
     // (`sub term:<foo>`) are excluded: those really can take arguments.
-    let mut type_constants: Vec<String> = Vec::new();
     let (mut value_terms, imported_value_terms): (Vec<String>, Vec<String>) = SCOPES.with(|s| {
         let scopes = s.borrow();
-        type_constants.extend(
-            decls
-                .constant_aliases
-                .iter()
-                .filter(|(_, init)| {
-                    crate::known_types::is_known_type_constraint(init)
-                        || scopes.iter().any(|scope| scope.user_types.contains(init))
-                })
-                .map(|(name, _)| name.clone()),
-        );
         let own = scopes
             .iter()
             .flat_map(|scope| {
@@ -1014,6 +1003,14 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     type_names.extend(decls.type_names);
     let mut enum_type_names: Vec<String> = transitive_enum_types;
     enum_type_names.extend(decls.enum_type_names);
+    let type_constants: Vec<String> = decls
+        .constant_aliases
+        .iter()
+        .filter(|(_, init)| {
+            crate::known_types::is_known_type_constraint(init) || type_names.contains(init)
+        })
+        .map(|(name, _)| name.clone())
+        .collect();
     // The source-text fallbacks below see code only: Pod and heredoc bodies
     // are blanked out first.
     let code = source_scan::code_text(source);
