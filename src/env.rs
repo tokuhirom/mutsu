@@ -653,6 +653,11 @@ pub struct Env {
     /// misses the frame does not continue there (ADR-12529 phase 3,
     /// [`Self::mark_outer_is_foreign_unit`]).
     outer_is_foreign_unit: bool,
+    /// On a frame root running a closure: its capture is its lexical outer
+    /// (ADR-12529 phase 3, [`Self::mark_outer_is_capture`]). A lexically
+    /// scoped name that misses the frame's own tiers answers from the capture,
+    /// then from the program scope, before any caller frame.
+    outer_is_capture: bool,
     /// On a frame root: the frame is a routine's, so it owns its `$/` (with
     /// the capture views) and `$!`. A by-name lookup of one stops here
     /// instead of continuing into the caller frames (ADR-12529 phase 3,
@@ -896,6 +901,7 @@ impl Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -1066,6 +1072,7 @@ impl Env {
                     chain_has_routine_owner: false,
                     outer_is_unit: false,
                     outer_is_foreign_unit: false,
+                    outer_is_capture: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
                     import_tag: 0,
@@ -1094,6 +1101,7 @@ impl Env {
                 chain_has_routine_owner: arc_cmo,
                 outer_is_unit: false,
                 outer_is_foreign_unit: false,
+                outer_is_capture: false,
                 owns_routine_state: false,
                 capture_merged: OnceLock::new(),
                 import_tag: 0,
@@ -1127,6 +1135,7 @@ impl Env {
             chain_has_routine_owner: parent_cmo,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -1174,6 +1183,7 @@ impl Env {
             chain_has_routine_owner: parent_cmo,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -1343,6 +1353,7 @@ impl Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -1844,6 +1855,7 @@ impl Env {
                     chain_has_routine_owner: false,
                     outer_is_unit: false,
                     outer_is_foreign_unit: false,
+                    outer_is_capture: false,
                     owns_routine_state: false,
                     capture_merged: OnceLock::new(),
                     import_tag: 0,
@@ -1979,6 +1991,7 @@ impl Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -2170,6 +2183,7 @@ impl Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -2349,6 +2363,7 @@ impl Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -2541,6 +2556,7 @@ impl Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -2797,6 +2813,9 @@ impl Env {
                     // A program-scope binding the running code cannot see:
                     // the lookup ends with what a capture gave (#13604).
                     return found;
+                }
+                if let Some(v) = cur.closure_outer_hit(key) {
+                    return Some(v);
                 }
                 // A closure whose capture holds the variable takes the
                 // variable's record from that capture too, never from the
@@ -3602,6 +3621,7 @@ impl From<ValueMap> for Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,
@@ -3630,6 +3650,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             chain_has_routine_owner: false,
             outer_is_unit: false,
             outer_is_foreign_unit: false,
+            outer_is_capture: false,
             owns_routine_state: false,
             capture_merged: OnceLock::new(),
             import_tag: 0,

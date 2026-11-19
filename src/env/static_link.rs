@@ -602,6 +602,56 @@ impl Env {
         self.outer_is_foreign_unit = false;
     }
 
+    /// Mark this frame root, which runs a closure and carries its capture
+    /// (`set_capture_fallback`), as resolving lexicals through that capture
+    /// before its callers (ADR-12529 phase 3, #18175). A lexically scoped
+    /// name that misses the frame's own tiers answers from the capture --
+    /// the scope the closure was created in -- and then from the live
+    /// program scope; only a name neither binds walks on into the caller
+    /// frames ([`Self::closure_outer_hit`]). Without it a caller's block
+    /// that declares a same-named `my $X` or `my class Inner` answered a
+    /// closure written outside that block.
+    ///
+    /// Unlike a [`StaticLink`] this keeps the caller walk for a miss: the
+    /// capture is a snapshot of the creating scope, so a name that scope
+    /// declares *after* the closure (`my &a = { b() }; my &b = ...`) is not
+    /// in it, and the frame that created the closure is still the place
+    /// that binds it when it calls the closure.
+    // TODO: once a closure's outer is a live scope
+    // handle (ADR-12529 §2.2), a later declaration of the creating scope is
+    // read through it and the caller walk on a miss goes (phase 4).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn mark_outer_is_capture(&mut self) {
+        debug_assert!(self.frame_root, "only a frame root has a static link");
+        self.outer_is_capture = true;
+    }
+
+    /// What a closure frame root marked [`Self::mark_outer_is_capture`]
+    /// answers for `key` ahead of its callers: the capture's binding, else
+    /// the program scope's. `None` -- walk on into the callers -- for a name
+    /// that is not lexically scoped, a variable's record (it follows its
+    /// variable, `walk_with_fallback`), or a name neither binds.
+    // Cost: O(l + d), l = the capture's layers, d = caller-chain tiers walked
+    // to the program scope (only when the capture misses).
+    #[inline]
+    pub(super) fn closure_outer_hit(&self, key: Symbol) -> Option<&Value> {
+        if !self.outer_is_capture
+            || suppressed()
+            || key.shadow_meta_subject().is_some()
+            || !lexically_scoped(key)
+        {
+            return None;
+        }
+        if let Some(v) = self.fallback.as_deref().and_then(|fb| fb.get(&key)) {
+            return Some(v);
+        }
+        self.parent
+            .as_deref()
+            .map(Env::program_scope_from)
+            .and_then(|scope| scope.get_sym(key))
+    }
+
     /// Whether this env is a frame root marked by [`Self::mark_outer_is_unit`]
     /// with nothing bound in its own overlay -- a frame a callee that is also
     /// declared at program scope can run in without a root of its own, since
