@@ -489,6 +489,26 @@ impl Compiler {
         })
     }
 
+    /// Whether a statement list declares a lexical type (`my class`,
+    /// `my role`, `my grammar`) at its top level: a body compiled as its own
+    /// chunk must then run inside a block scope, whose exit takes the type's
+    /// name out of scope again (#18178).
+    // Cost: O(n), n = top-level statements.
+    pub(crate) fn stmts_declare_lexical_types(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::ClassDecl {
+                    is_lexical: true,
+                    ..
+                } | Stmt::RoleDecl {
+                    is_lexical: true,
+                    ..
+                }
+            )
+        })
+    }
+
     /// Position of a top-level `unit module`/`unit package` declaration in
     /// `stmts`, plus the constant-pool index of its qualified name. Used to
     /// emit the runtime package switch ahead of the sub-hoist pass, and to

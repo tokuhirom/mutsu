@@ -78,4 +78,18 @@ impl Compiler {
             && !self.local_map.contains_key(name)
             && !self.type_capture_locals.contains(name)
     }
+
+    /// Record a lexical type's env bindings -- its bare name and its
+    /// type-only key -- as declarations of the scope-isolating block being
+    /// compiled, so the block's exit reverts them like a `my $x` (#18178: a
+    /// `do { my class Inner }` left `Inner` bound to the block's class).
+    ///
+    /// Cost: O(1).
+    pub(super) fn record_block_lexical_type_decl(&mut self, name: Symbol) {
+        if self.block_decl_tracker.is_empty() {
+            return;
+        }
+        self.record_block_decl(&name.resolve());
+        self.record_block_decl(&crate::term_names::lexical_type_key_sym(name).resolve());
+    }
 }
