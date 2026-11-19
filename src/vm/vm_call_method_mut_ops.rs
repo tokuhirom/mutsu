@@ -903,7 +903,7 @@ impl Interpreter {
         // ADR-0058: a mutating method reads its ARGUMENTS' elements through
         // pure code (`@a.splice(1, 1, (7,8).map({...}))` flattens the Seq into
         // the array), so a still-deferred `.map` argument has to run first.
-        self.reify_map_grep_seq_args(&args)?;
+        self.reify_map_grep_seq_method_args(&target, method_sym, &args)?;
         // `.of` of a reflected element cell (`($t,)[0].VAR.of`) is the type the
         // cell was declared with, `Mu` for an unconstrained one (#15853).
         if method == "of"

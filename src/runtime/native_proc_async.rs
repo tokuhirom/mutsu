@@ -1186,19 +1186,9 @@ impl Interpreter {
                 };
 
                 if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
-                    let pid = pid as u32;
-                    if let Ok(map) = proc_stdin_map().lock()
-                        && let Some(stdin_arc) = map.get(&pid).cloned()
-                    {
-                        drop(map);
-                        if let Ok(mut guard) = stdin_arc.lock()
-                            && let Some(ref mut stdin) = *guard
-                        {
-                            use std::io::Write;
-                            let _ = stdin.write_all(&bytes);
-                            let _ = stdin.flush();
-                        }
-                    }
+                    let promise =
+                        super::native_proc_async_write::write_child_stdin(pid as u32, &bytes);
+                    return Ok((promise, attrs));
                 }
 
                 // Return a kept Promise
@@ -1462,19 +1452,9 @@ impl Interpreter {
                     .encode_with_encoding(&s, &enc)
                     .unwrap_or_else(|_| s.as_bytes().to_vec());
                 if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
-                    let pid = pid as u32;
-                    if let Ok(map) = proc_stdin_map().lock()
-                        && let Some(stdin_arc) = map.get(&pid).cloned()
-                    {
-                        drop(map);
-                        if let Ok(mut guard) = stdin_arc.lock()
-                            && let Some(ref mut stdin) = *guard
-                        {
-                            use std::io::Write;
-                            let _ = stdin.write_all(&bytes);
-                            let _ = stdin.flush();
-                        }
-                    }
+                    let promise =
+                        super::native_proc_async_write::write_child_stdin(pid as u32, &bytes);
+                    return Ok((promise, attrs));
                 }
                 let p = SharedPromise::new();
                 p.keep(Value::TRUE, String::new(), String::new());

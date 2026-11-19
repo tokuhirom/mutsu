@@ -581,6 +581,44 @@ impl Interpreter {
     /// too: zef's `Any.new(:specs($spec.values[0].map: {...}))` binds the
     /// mapped Seq to an `@.specs` attribute, and the binder reads its elements
     /// through pure code.
+    /// [`Self::reify_map_grep_seq_args`] at a METHOD call's argument boundary.
+    ///
+    /// A method a user class declares binds its arguments through its own
+    /// signature, and the binder pulls a Seq only as far as the parameter needs
+    /// (a slurpy flattens it, a `$x` keeps it whole) -- exactly as a sub call
+    /// does, which never forced here. Forcing it at the boundary instead ran a
+    /// `.map` over its whole source before the method's body had pulled one
+    /// element: Rakuish's `Stream.exec` hands `self!chunk-seq($rows)` a
+    /// 200 000-row `.map` and feeds the child as it pulls, so the child that
+    /// stops reading early never got its first line. Native methods
+    /// (`@a.splice(1, 1, SEQ)`) still read the elements through pure code and
+    /// keep the pull.
+    // Cost: O(1) amortized for a user method (one memoized MRO probe), else
+    // as `reify_map_grep_seq_args`.
+    pub(crate) fn reify_map_grep_seq_method_args(
+        &mut self,
+        target: &Value,
+        method_sym: Symbol,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if args.is_empty() {
+            return Ok(());
+        }
+        let class = match target.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name),
+            ValueView::Package(name) => Some(name),
+            _ => None,
+        };
+        // A private method (`self!m`, named `!m` here) is always one a class
+        // or role declared, so it binds through a signature too.
+        if let Some(class) = class
+            && (method_sym.as_str().starts_with('!') || self.has_user_method_of(class, method_sym))
+        {
+            return Ok(());
+        }
+        self.reify_map_grep_seq_args(args)
+    }
+
     pub(crate) fn reify_map_grep_seq_args(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
         for arg in args {
             self.reify_map_grep_seq(arg)?;
