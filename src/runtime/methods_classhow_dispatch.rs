@@ -210,7 +210,7 @@ impl Interpreter {
                 {
                     return None;
                 }
-                inner
+                Value::clone(inner)
             }
             _ => how.clone(),
         };
