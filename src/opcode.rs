@@ -8205,6 +8205,9 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Lazily-built: every name this chunk can look up in its env by name,
+    /// for [`Self::mentions_name_memo`] (`None` when it cannot be bounded).
+    pub(crate) mentioned_name_set: std::sync::OnceLock<Option<rustc_hash::FxHashSet<Symbol>>>,
     /// Whether the light closure call can run this body, and what it needs
     /// (#8335, `light_closure_shape`); settled on the first call.
     pub(crate) light_closure_shape:
@@ -8875,6 +8878,7 @@ impl CompiledCode {
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            mentioned_name_set: std::sync::OnceLock::new(),
             light_closure_shape: std::sync::OnceLock::new(),
             capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
@@ -9150,6 +9154,42 @@ impl CompiledCode {
     pub(crate) fn capture_free_var_set(&self) -> &rustc_hash::FxHashSet<Symbol> {
         self.free_var_sym_set
             .get_or_init(|| self.free_var_syms.iter().copied().collect())
+    }
+
+    /// Whether a lookup by name in this chunk's body can reach the env key
+    /// `key`: `None` when that cannot be bounded (the body names lexicals
+    /// reflectively, or creates closures, whose own constants this chunk does
+    /// not carry), else whether `key` is one of its free variables or locals, a string
+    /// constant (a type, bareword or routine name an op carries) or that
+    /// constant's `&name` form. Memoized per chunk.
+    // Cost: O(1) after the first call, which is O(f + c), f = free
+    // variables, c = constants.
+    pub(crate) fn mentions_name_memo(&self, key: Symbol) -> Option<bool> {
+        self.mentioned_name_set
+            .get_or_init(|| {
+                if self.needs_reflective_capture
+                    || self.static_name_lookup
+                    || !self.closure_compiled_codes.is_empty()
+                {
+                    return None;
+                }
+                let mut set: rustc_hash::FxHashSet<Symbol> =
+                    self.free_var_syms.iter().copied().collect();
+                // A local the frame seeds from the env (`LocalInit::Outer`).
+                set.extend(self.capture_local_set().iter().copied());
+                for v in &self.constants {
+                    if let ValueView::Str(s) = v.view() {
+                        set.insert(Symbol::intern(s.as_str()));
+                        set.insert(Symbol::intern(&format!("&{}", s.as_str())));
+                    }
+                }
+                for name in &self.outer_ref_names {
+                    set.insert(Symbol::intern(name));
+                }
+                Some(set)
+            })
+            .as_ref()
+            .map(|set| set.contains(&key))
     }
 
     /// Whether `name` is mentioned by this chunk: one of its free variables, or
