@@ -820,6 +820,15 @@ impl Interpreter {
         {
             return None;
         }
+        // The class's own `new` declined these arguments, so the VM left a
+        // named `.map`/`.grep`/gather Seq unread for it (a user method binds
+        // the Seq itself). The default constructor that runs instead is a
+        // built-in one: it fills an `@`/`%` attribute from the elements.
+        if !plan.eligible
+            && let Err(e) = self.reify_map_grep_seq_args(args)
+        {
+            return Some(Err(e));
+        }
         // A `Proxy` named argument is FETCHed as it lands in the attribute's
         // Scalar (ADR-0040 §9); the builder reads plain values.
         let fetched;

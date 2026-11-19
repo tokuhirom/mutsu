@@ -1490,7 +1490,11 @@ impl Interpreter {
                                 }
                                 return Err(constructor_positional_error(&class_name.resolve()));
                             }
-                            // Fall through to default constructor below
+                            // Fall through to the default constructor below:
+                            // a built-in one, which reads a named
+                            // `.map`/`.grep`/gather Seq the user `new` was
+                            // handed unread.
+                            self.reify_map_grep_seq_args(&args)?;
                         }
                     }
                 }
