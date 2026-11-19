@@ -382,6 +382,14 @@ impl Compiler {
                 self.code.emit(OpCode::ReactDone);
             }
             Expr::BareWord(name) => {
+                // `OUTER::OUTER::Inner` names the type that scope declares,
+                // whatever a nearer scope's same-named type shadows (#18213).
+                if let Some((bare, depth)) = Self::outer_qualified_bareword(name)
+                    && self.outer_declared_type(bare, depth).is_some()
+                {
+                    self.emit_outer_var_access(bare.to_string(), depth);
+                    return;
+                }
                 // `nqp::const::*` names are compile-time integer constants
                 // (binary read/write size/endian flags — see nqp_forms.rs).
                 if let Some(n) = super::nqp_forms::nqp_const_value(name) {
@@ -929,6 +937,34 @@ impl Compiler {
                     sugar: true,
                 });
                 self.insert_accessor_ref_marker(OpCode::ConsumeReifiedSeq);
+            }
+            // `.defined` on the topic or on a `with`'s once-evaluated temp
+            // (`with_desugar`: `(my $__with_tmp_N = X).defined`, and the
+            // statement modifier's `given X { if .defined { S } }`). The method
+            // reads its invocant and never writes the variable, so it asks the
+            // value the read (or the declaration) leaves on the stack instead
+            // of re-resolving the variable by name for a by-name
+            // `CallMethodMut`, which took the general method path (#18208).
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            } if args.is_empty()
+                && name == "defined"
+                && super::with_defined::is_defined_probe_target(target) =>
+            {
+                self.compile_expr(target);
+                let name_idx = self.code.add_constant(Value::str_from("defined"));
+                self.code.emit(OpCode::CallMethod {
+                    name_idx,
+                    arity: 0,
+                    modifier_idx: None,
+                    quoted: false,
+                    arg_sources_idx: None,
+                });
             }
             // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
             // pure grouping: they never introduce a container and never strip

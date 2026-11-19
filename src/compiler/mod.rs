@@ -1136,6 +1136,7 @@ mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
 mod stash_entry_var;
+mod with_defined;
 mod with_topic_alias;
 pub(crate) use crate::op_names as helpers_ops;
 pub(crate) use helpers_method_body::method_body_key;
@@ -3560,6 +3561,15 @@ impl Compiler {
             // The unit mainline's `OUTER::` is outside the unit: none of the
             // program's lexicals is there, and rakudo answers Nil (#17898).
             let idx = self.code.add_constant(Value::NIL);
+            self.code.emit(OpCode::LoadConst(idx));
+            return;
+        }
+        // A type the target scope declares is a compile-time constant: the
+        // type object of that very declaration (#18213).
+        if let Some(registered) = self.outer_declared_type(&bare, depth) {
+            let idx = self
+                .code
+                .add_constant(Value::package(Symbol::intern(&registered)));
             self.code.emit(OpCode::LoadConst(idx));
             return;
         }

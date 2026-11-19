@@ -2136,9 +2136,17 @@ impl Interpreter {
             // that never bound `MySession` in its own env. The plain string
             // bridge just above stays keyed on the bare name (a caller that
             // already passes a mangled constraint must still match unchanged).
-            let registry_key = self
-                .resolve_lexical_type_key(&package_name.resolve())
-                .unwrap_or_else(|| package_name.resolve().to_string());
+            // A value whose type name is itself a registered type is that type:
+            // a `my class Inner` in the running scope does not turn the
+            // package class `Inner` handed in as an argument into itself
+            // (#18175; a closure's capture answers `Inner` before its callers).
+            let package_str = package_name.resolve();
+            let registry_key = if self.has_type_direct(&package_str) {
+                package_str.to_string()
+            } else {
+                self.resolve_lexical_type_key(&package_str)
+                    .unwrap_or_else(|| package_str.to_string())
+            };
             if let Some((actual_base, actual_args)) =
                 Self::parse_parametric_type_name(&package_name.resolve())
                 && let Some((constraint_base, constraint_args)) =

@@ -1789,6 +1789,46 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    contents carry none, beside its descriptor name and `is default`, which
    it already kept.
 
+   **Slice 56 done** (`fix/18175-closure-reads-static-outer`, #18175): every
+   closure frame resolves a lexical through its outer before its callers, not
+   only a reflective one. A closure's frame root is marked
+   `outer_is_capture` (`Env::mark_outer_is_capture`, a flag like
+   `outer_is_unit`, no allocation per call): a lexically scoped name
+   (`static_link::lexically_scoped`) that misses the frame's own tiers answers
+   from the capture, then from the live program scope, and only then walks
+   the caller frames (`Env::closure_outer_hit`). A closure written in a
+   routine and called from a nested block of it used to read the block's
+   same-named `my $X` or `my class Inner`, because the block is a caller tier
+   above the capture.
+
+   - A miss still walks the callers. The capture is a creation-time
+     snapshot, so a code variable the creating scope declares after the
+     closure (`my &a = { b() }; my &b = ...`, CBOR::Simple's mutually
+     recursive decoders) is not in it; the creating frame, which calls the
+     closure, binds it. A reflective closure keeps the strict `StaticLink`,
+     which never reaches a caller for a lexical. The fallback goes when a
+     closure's outer is a live scope handle (§2.2, phase 4).
+   - `resolve_capture_slot` no longer binds a free variable to a slot the
+     creating frame had not declared at the creation point (a later block's
+     `my $X`, which the capture then answered as `Nil`); #18176 had done this
+     for sigilless terms only, where the old walk did not mask it.
+   - A type check re-resolved the *argument's* type name in the running
+     scope (`resolve_lexical_type_key` in `type_matches_value_resolved_why`),
+     so with the capture first, the package class `Inner` handed to a closure
+     whose parameter is typed with a block's `my class Inner` was taken for
+     the block class. A value whose type name is a registered type is that
+     type.
+
+   Release-build Ir against the merge base (JIT off / on): `bench-fib`
+   +0.51% / +1.00% (no closure calls; layout), `bench-tak` -0.74% / -1.07%,
+   `method-call` -1.61% / -1.53%, `poly-call` +0.36% / +0.38%, `bench-ctor`
+   -8.15% / -8.11% (allocations -16%: the type check no longer re-resolves a
+   registered argument type), `bench-multi-dispatch` -0.79% / -0.93%, and a
+   closure micro-benchmark of by-name reads from deep callers and from a
+   shadowing block -4.10% / -4.36%. A 23-distribution sample (Red, Cro::*,
+   Qwiratry, Monad, MCP::Server, AttrX::Mooish, FunctionalParsers, ...)
+   against the nightly ledger: no file regressed; Green went from 2/4 to 4/4.
+
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

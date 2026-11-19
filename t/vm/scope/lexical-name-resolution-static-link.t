@@ -10,7 +10,7 @@ use Test;
 # env; each names the ADR phase expected to fix it, and that phase drops the
 # `todo` when it does.
 
-plan 21;
+plan 27;
 
 # --- ordinary lexicals and parameters ------------------------------------
 
@@ -156,6 +156,51 @@ plan 21;
     my &f = mk(-> { $depth-value });
     sub deep($n) { $n == 0 ?? f() !! do { my $depth-value = 'dynamic'; deep($n - 1) } }
     is deep(5), 'lexical', 'a closure called at dynamic depth reads its lexical, not a caller\'s same-named one';
+}
+
+# --- a closure called inside a block of its creating routine (#18175) ----
+
+{
+    my $X = "outer";
+    sub d() {
+        my $outside = { $X };
+        { my $X = "block"; $outside() }
+    }
+    is d(), 'outer', 'a closure reads its outer lexical, not a block of its caller that redeclares it';
+
+    sub w() {
+        my $writer = { $X = "written" };
+        my $seen = { my $X = "block"; $writer(); $X }();
+        "$seen $X"
+    }
+    is w(), 'block written', 'a closure writes its outer lexical, not the caller block\'s';
+}
+
+{
+    class Inner18175 { method tag { "outer" } }
+    sub b() {
+        my $outside = { Inner18175.tag };
+        my @t;
+        {
+            my class Inner18175 { method tag { "block" } }
+            my $inside = { Inner18175.tag };
+            @t.push: $outside(), $inside();
+        }
+        @t.join(",")
+    }
+    is b(), 'outer,block', 'a closure names its outer type, not a block of its caller\'s lexical class';
+}
+
+{
+    sub f() { my &a = { b() ~ "!" }; my &b = { "b" }; a() }
+    is f(), 'b!', 'a closure calls a code variable its scope declares after it';
+
+    sub dyn() { my $c = { $*D18175 }; { my $*D18175 = "dyn"; $c() } }
+    is dyn(), 'dyn', 'a dynamic variable still resolves through the caller';
+
+    my $c;
+    { my class Inner18175 { method tag { "block" } }; $c = -> Inner18175 $x { $x.tag } }
+    dies-ok { $c(Inner18175) }, 'a closure parameter typed with a block class rejects the package class';
 }
 
 done-testing;

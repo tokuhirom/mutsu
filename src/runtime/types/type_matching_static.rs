@@ -378,10 +378,7 @@ impl Interpreter {
             return false;
         }
         // IO role: IO::Path and IO::Special do the IO role (IO::Handle does not).
-        if constraint == "IO" && matches!(value_type, "IO::Path" | "IO::Special") {
-            return true;
-        }
-        false
+        constraint == "IO" && matches!(value_type, "IO::Path" | "IO::Special")
     }
 
     /// Parse a sized native buffer constraint into `(mutable, width_bits)`.

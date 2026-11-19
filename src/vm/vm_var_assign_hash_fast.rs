@@ -187,12 +187,8 @@ impl Interpreter {
         // These are guards on the EARLY call only: declining here leaves the
         // preamble and the lane's original call site exactly as they were, so
         // no store changes destination because of them.
-        if self.unit_lexical_slot(var_name, None).is_some()
-            || self.our_package_container_key(var_name).is_some()
-        {
-            return false;
-        }
-        true
+        self.unit_lexical_slot(var_name, None).is_none()
+            && self.our_package_container_key(var_name).is_none()
     }
 
     /// The env-level guards both hash fast lanes share -- the element store

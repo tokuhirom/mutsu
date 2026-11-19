@@ -39,9 +39,30 @@ pub(crate) struct ScopeFrame {
     /// from the scope's start (`EVAL` before `my $y` names it, #10511).
     /// Compile-time only, like `scalar_types`.
     predeclared: std::collections::HashSet<String>,
+    /// The types this scope declares (`class`/`role`, `our` or `my`), by the
+    /// spelling the program writes, to the name the registry holds them
+    /// under (a `my` type's storage name `Name\0<decl-id>`). An `OUTER::`
+    /// lookup of a type resolves through it at compile time (#18213).
+    /// Compile-time only, like `scalar_types`.
+    types: HashMap<String, String>,
 }
 
 impl ScopeFrame {
+    /// Record that this scope declares the type spelled `name`, registered
+    /// as `registered`. A spelling's first declaration in the scope wins: a
+    /// stub (`my class C { ... }`) and its completion share the stub's
+    /// registration.
+    // Cost: O(|name| + |registered|).
+    pub(crate) fn record_type(&mut self, name: &str, registered: String) {
+        self.types.entry(name.to_string()).or_insert(registered);
+    }
+
+    /// The registry name of the type this scope declares as `name`.
+    // Cost: O(|name|).
+    pub(crate) fn declared_type(&self, name: &str) -> Option<&str> {
+        self.types.get(name).map(String::as_str)
+    }
+
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -94,6 +115,7 @@ impl FromIterator<(String, Option<u32>)> for ScopeFrame {
             slots: iter.into_iter().collect(),
             scalar_types: HashMap::new(),
             predeclared: std::collections::HashSet::new(),
+            types: HashMap::new(),
         }
     }
 }
