@@ -4,10 +4,10 @@
 //! Measured against rakudo 2026.09:
 //!
 //! ```text
-//! $::($n)         Var::Package(name => Name(Part::Empty, Part::Expression($n)), sigil => "$")
+//! $::($n)         Var::Package(name => Name(Part::EmptyEdge, Part::Expression($n)), sigil => "$")
 //! $::($n) = 5     ApplyInfix(Var::Package(…), Assignment(:item), 5)
-//! ::($n) = 5      ApplyInfix(Term::Name(Name(Part::Empty, Part::Expression($n))), Assignment, 5)
-//! &::($n)::f     Var::Package(Name(Part::Empty, Part::Expression($n), Part::Simple("f")), "&")
+//! ::($n) = 5      ApplyInfix(Term::Name(Name(Part::EmptyEdge, Part::Expression($n))), Assignment, 5)
+//! &::($n)::f     Var::Package(Name(Part::EmptyEdge, Part::Expression($n), Part::Simple("f")), "&")
 //! &CALLER::($n)::f has Part::Simple("CALLER") in place of Part::Empty.
 //! ```
 //!
@@ -24,7 +24,7 @@ use crate::ast::Expr;
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
-/// The `Name(Part::Empty, Part::Expression(EXPR))` of a dynamic lookup.
+/// The `Name(Part::EmptyEdge, Part::Expression(EXPR))` of a dynamic lookup.
 pub(super) fn indirect_name(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let part = RakuAstNode {
         origin: Default::default(),
@@ -103,7 +103,14 @@ pub(super) fn lower_indirect_code(
         return None;
     };
     let caller = match first.view() {
-        ValueView::RakuAst(part) if part.class == RakuAstClass::NamePartEmpty => false,
+        ValueView::RakuAst(part)
+            if matches!(
+                part.class,
+                RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge
+            ) =>
+        {
+            false
+        }
         ValueView::RakuAst(part)
             if part.class == RakuAstClass::NamePartSimple
                 && name_parts::part_identifier(first).as_deref() == Some("CALLER") =>
@@ -293,7 +300,7 @@ pub(super) fn lower_package_indirect(
 
 /// A declarator's `::(EXPR)` name (`sub ::("x") { }`, `method ::($n) { }`): the
 /// parser's name text and the name expression, read back from
-/// `Name(Part::Empty, Part::Expression(EXPR))`. A literal or bare word keeps
+/// `Name(Part::EmptyEdge, Part::Expression(EXPR))`. A literal or bare word keeps
 /// its text as the name, anything else the parser's placeholder.
 // Cost: O(n), n = nodes of the name expression.
 pub(super) fn lower_declarator_name(

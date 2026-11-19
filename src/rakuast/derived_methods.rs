@@ -57,7 +57,7 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
         ],
         TermEnum => &["name"],
         CallMetaMethod => &["args"],
-        Heredoc => &["has-variables", "processors"],
+        Heredoc => &["has-variables", "processors", "IMPL-AWAITS-BODY"],
         StubFail | StubDie | StubWarn => &["name"],
         // Rakudo's `Var::Compiler::Routine` is a lexical lookup of
         // `&?ROUTINE`; `Var::Compiler::Distribution` names `$?DISTRIBUTION`
@@ -237,6 +237,9 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
                 .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
         ),
         (QuotedString | Heredoc, "has-variables") => Some(Value::truth(quoted_has_variables(node))),
+        // A heredoc of a parsed tree has its body (only a heredoc still being
+        // parsed awaits it).
+        (Heredoc, "IMPL-AWAITS-BODY") => Some(Value::truth(false)),
         (Heredoc, "processors") => {
             Some(field(node, "processors").unwrap_or_else(|| Value::array(Vec::new())))
         }
