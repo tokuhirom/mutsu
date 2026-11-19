@@ -625,6 +625,23 @@ fn build(
                 check_status(&mut b, status);
             }
             OpCode::LexImportBuiltinOp { .. } => {
+                // While no import set in the process binds an operator
+                // (#18211), the op at i + 1 runs as itself: one inline load
+                // and branch, no helper call.
+                let flag_addr = std::ptr::addr_of!(
+                    crate::runtime::lexical_operator_import_flag::OPERATOR_IMPORT_POSSIBLE
+                ) as usize;
+                let flag_addr = b.ins().iconst(ptr, flag_addr as i64);
+                let possible = b.ins().load(
+                    types::I32,
+                    cranelift_codegen::ir::MemFlagsData::trusted(),
+                    flag_addr,
+                    0,
+                );
+                let probe = b.create_block();
+                let after = b.create_block();
+                b.ins().brif(possible, probe, &[], after, &[]);
+                b.switch_to_block(probe);
                 let opidx = b.ins().iconst(types::I32, i as i64);
                 let status = call_helper(
                     &mut b,
@@ -642,6 +659,8 @@ fn build(
                 b.ins().brif(skip, block_at[&(i + 2)], &[], next, &[]);
                 b.switch_to_block(next);
                 check_status(&mut b, status);
+                b.ins().jump(after, &[]);
+                b.switch_to_block(after);
             }
             OpCode::LexImportCall { .. } => {
                 let opidx = b.ins().iconst(types::I32, i as i64);

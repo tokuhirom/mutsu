@@ -505,6 +505,9 @@ impl Interpreter {
             .any(|b| matches!(b, LexicalImport::Code(v) if Self::is_builtin_operator_dispatcher(v)));
         // One world write: the `LexImportCall` site memos are keyed by the
         // table's generation, which it moves (#18137).
+        if binds_operator {
+            super::lexical_operator_import_flag::note_operator_import();
+        }
         self.module.lexical_imports.write(|tables| {
             if binds_operator {
                 tables.operator_sets.insert(id);

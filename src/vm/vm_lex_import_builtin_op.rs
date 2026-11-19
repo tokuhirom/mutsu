@@ -34,7 +34,8 @@ impl Interpreter {
         chain_idx: u32,
         name_idx: u32,
     ) -> bool {
-        self.module.lexical_imports.read().operator_sets.is_empty()
+        !crate::runtime::lexical_operator_import_flag::operator_import_possible()
+            || self.module.lexical_imports.read().operator_sets.is_empty()
             || (self.module.builtin_op_fallback_depth == 0
                 && code.lex_import_sites.operator_absent(
                     code.constants.len(),

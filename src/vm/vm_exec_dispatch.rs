@@ -5764,6 +5764,13 @@ impl Interpreter {
                     *ip += 1;
                 }
             }
+            // Cost: O(1) while no import set in the process binds an operator
+            // (#18211): the op at ip + 1 runs as itself.
+            OpCode::LexImportBuiltinOp { .. }
+                if !crate::runtime::lexical_operator_import_flag::operator_import_possible() =>
+            {
+                *ip += 1;
+            }
             // Cost: O(c) probe, c = enclosing `use`-blocks; then the op at
             // ip + 1, run here with the bound candidates in scope on a hit.
             OpCode::LexImportBuiltinOp {

@@ -17,7 +17,7 @@ use Test;
 #
 # https://github.com/tokuhirom/mutsu/issues/9047
 
-plan 11;
+plan 13;
 
 use lib 't/lib';
 use ExportHookShadowsTermKeyword;
@@ -44,3 +44,16 @@ is Bool::False.Int, 0, '... with the real Bool answers';
 nok Nil.defined, '`Nil` is unshadowed in the same compunit and keeps its CORE value';
 is Empty.elems, 0, '`Empty` likewise';
 nok Any.defined, '`Any` likewise';
+
+# A routine hot enough to be JIT-compiled reads the term through the same
+# run-time check (#18211: `GetShadowableTerm` is a JIT step op).
+sub hot-false() { False }
+sub hot-nil() { Nil }
+my $hits = 0;
+my $nils = 0;
+for ^3000 {
+    $hits++ if hot-false().Int == -1;
+    $nils++ unless hot-nil().defined;
+}
+is $hits, 3000, 'a hot routine still reads the hook-installed `False`';
+is $nils, 3000, 'and the unshadowed `Nil` fallback';
