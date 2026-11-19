@@ -2807,9 +2807,7 @@ impl Interpreter {
                             // token as before.
                             let _ = self.materialize_bound_slot_to_cell(code, slot, val);
                         }
-                    } else if !shared_rw_cell
-                        && let Some(val) = self.env().get(&source).cloned()
-                    {
+                    } else if !shared_rw_cell && let Some(val) = self.env().get(&source).cloned() {
                         self.locals[slot] = val;
                     }
                     applied.push(source);
