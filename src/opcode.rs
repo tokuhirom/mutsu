@@ -5356,6 +5356,30 @@ pub(crate) struct CompiledDeclExpr {
     pub(crate) reads_attributes: bool,
 }
 
+impl CompiledDeclExpr {
+    /// The CORE term keyword (`True`, `False`, `Nil`, ...) this chunk is, and
+    /// the constant it folds to, when the whole chunk is that one
+    /// `OpCode::GetShadowableTerm`: what a compunit that imported through a
+    /// `sub EXPORT` hook compiles `has Bool $.x = False` to (#9047). Whether
+    /// the constant is the answer is the caller's question: it is unless a
+    /// hook installed the name (`Interpreter::decl_arg_constant`).
+    // Cost: O(1).
+    pub(crate) fn shadowable_term(&self) -> Option<(crate::symbol::Symbol, &Value)> {
+        match self.code.ops.as_slice() {
+            [
+                OpCode::GetShadowableTerm {
+                    name_idx,
+                    fallback_idx,
+                },
+            ] => Some((
+                self.code.const_sym(*name_idx),
+                self.code.constants.get(*fallback_idx as usize)?,
+            )),
+            _ => None,
+        }
+    }
+}
+
 /// The argument of a declaration trait.
 ///
 /// `Literal` and `Compiled` are the ADR-0019 plan path: a constant argument

@@ -17,7 +17,7 @@ use Test;
 #
 # https://github.com/tokuhirom/mutsu/issues/9047
 
-plan 13;
+plan 15;
 
 use lib 't/lib';
 use ExportHookShadowsTermKeyword;
@@ -57,3 +57,11 @@ for ^3000 {
 }
 is $hits, 3000, 'a hot routine still reads the hook-installed `False`';
 is $nils, 3000, 'and the unshadowed `Nil` fallback';
+
+# An attribute default names the shadowed term too: the constructor must
+# evaluate it rather than store the Bool it would otherwise fold to (#16897).
+class WithDefault { has $.f = False; has $.n = Nil }
+sub make-defaults() { my @o; @o.push: WithDefault.new for ^200; @o }
+my @made = make-defaults();
+ok @made.grep(*.f.Int == -1) == 200, 'a hook-installed `False` is an attribute default';
+nok @made[0].n.defined, 'an unshadowed `Nil` default still resets the attribute';

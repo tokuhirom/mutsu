@@ -108,7 +108,7 @@ impl Interpreter {
         // initializers are all literal evaluates none (#9494).
         // A BUILD/TWEAK body is user code too.
         let runs_submethods = installed.has_build || installed.has_tweak;
-        if runs_submethods || !installed.evaluates_no_decl_expr() {
+        if runs_submethods || !installed.evaluates_no_decl_expr(self) {
             self.flatten_scoped_env();
         }
         let result = loan_env!(self, try_native_default_construct(class_sym, args))?;

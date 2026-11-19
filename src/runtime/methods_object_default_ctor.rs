@@ -129,7 +129,7 @@ impl Interpreter {
                 Self::bind_constructor_attribute(&mut attrs, attr_sym, attr_name, value);
                 continue;
             }
-            let default_literal = default_expr.as_ref().and_then(|arg| arg.literal());
+            let default_literal = default_expr.as_ref().and_then(|arg| self.decl_arg_constant(arg));
             match default_literal {
                 // Raku: assigning `Nil` resets a container to its declared
                 // type's default, so `has Str $.n = Nil` holds `Str` — exactly
