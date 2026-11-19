@@ -2286,10 +2286,6 @@ pub struct Interpreter {
     /// attribute's custom traits and folds it into the attribute's compiled
     /// default, exactly as if `is default(...)` had been written directly.
     pub(crate) trait_mod_default_writeback: Option<Value>,
-    /// When true, hash indexing with a missing key autovivifies (creates an
-    /// empty Hash entry and returns it).  Set during reduce with `is raw`
-    /// callbacks so that container semantics are preserved.
-    pub(crate) hash_autovivify: bool,
     /// Stack of caller environments for $CALLER:: / $DYNAMIC:: resolution.
     /// Each entry is a snapshot of the env at the point a sub/function was called.
     caller_env_stack: Vec<Env>,

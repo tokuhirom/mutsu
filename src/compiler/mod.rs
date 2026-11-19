@@ -1735,6 +1735,12 @@ pub(crate) struct Compiler {
     /// denotes, as for an `is rw` routine, but no other tail shape is
     /// (an assignment, `if`/`given` branches and ternaries stay values).
     rw_tail_block: bool,
+    /// Set by a Block's subscript tail (`{ $h<k> }`) for that subscript's
+    /// compile only: a plain variable receiver is read raw
+    /// (`emit_bind_chain_raw_target`), so a deferred entry token or the cell of
+    /// a variable still holding `Any` reaches `IndexTailElem` and the tail
+    /// extends the location instead of reading `Any` (#17953).
+    tail_raw_receiver: bool,
     /// How many `MarkSigillessBindSource` writability verdicts the code
     /// emitted so far leaves on the stack unpaired. `compile_stmt` notes the
     /// count before a declaration, so its `end_term_decl` knows whether this
@@ -2312,6 +2318,7 @@ impl Compiler {
             rw_tail: false,
             rw_tail_elems_only: false,
             rw_tail_block: false,
+            tail_raw_receiver: false,
             sigilless_bind_verdicts: 0,
             block_value_params: std::collections::HashSet::new(),
             rw_tail_branch: false,

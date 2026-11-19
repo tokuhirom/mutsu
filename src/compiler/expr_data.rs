@@ -573,6 +573,9 @@ impl Compiler {
         // When in scalar bind context (`:=`), emit IndexAutovivifyLazy so that
         // binding alone doesn't autovivify (deferred until assignment).
         let use_autovivify = self.scalar_bind_autovivify;
+        // A Block's subscript tail reads a plain variable receiver raw (see
+        // `tail_raw_receiver`); only this subscript's own receiver does.
+        let raw_receiver = std::mem::take(&mut self.tail_raw_receiver);
         let is_terminal = use_autovivify && self.bind_terminal;
         let lazy_op = if is_terminal {
             OpCode::IndexAutovivifyLazyTerminal {
@@ -840,7 +843,7 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(stash.clone()));
             self.code.emit(OpCode::GetPseudoStashKeyed(name_idx));
         } else {
-            if !(use_autovivify && self.emit_bind_chain_raw_target(target)) {
+            if !((use_autovivify || raw_receiver) && self.emit_bind_chain_raw_target(target)) {
                 self.compile_expr(target);
             }
             self.compile_subscript_index(index);

@@ -386,16 +386,25 @@ impl Interpreter {
             .checked_sub(2)
             .and_then(|at| self.stack.get(at))
             .is_some_and(|target| {
+                // The receiver read raw (`tail_raw_receiver`): a deferred
+                // entry token extends its path, and the cell of a variable
+                // still holding `Any` roots one (#17953).
+                match target.view() {
+                    ValueView::HashEntryRef { .. } => return true,
+                    ValueView::ContainerRef(cell)
+                        if crate::value::is_container_hole(
+                            &cell.lock().unwrap_or_else(|e| e.into_inner()),
+                        ) =>
+                    {
+                        return true;
+                    }
+                    _ => {}
+                }
                 let inner = target.deref_container();
                 // A typed-key object hash and a native / shaped array check
                 // their subscript on the plain read (`%h{'foo'}` on `%h{Int}`
                 // and `@native[10]` die); keep that path for them.
                 if self.hash_key_type(inner.descalarize()).is_some() {
-                    return false;
-                }
-                // An `is raw` reduce callback autovivifies through the plain
-                // read (`-> $h is raw, $k { $h{$k} }`).
-                if self.hash_autovivify {
                     return false;
                 }
                 match inner.view() {
@@ -412,18 +421,10 @@ impl Interpreter {
             });
         if has_elem_containers {
             self.exec_index_autovivify_lazy_op_raw_list_elem(true, is_positional, true)?;
-            // A missing entry came back as a deferred token: nothing exists to
-            // bind, so read what it reads as -- unless the block is being
-            // called as an assignment target (`&f(k) = v`, which sets
-            // `in_lvalue_assignment`): then the token is the location the
-            // write creates, as for an `is rw` routine's tail (Test::Mock's
-            // `overriding => { a => -> $i { state %a; %a{$i} } }`).
-            if !self.in_lvalue_assignment
-                && let Some(top) = self.stack.last_mut()
-                && top.is_hash_entry_ref_value()
-            {
-                *top = top.hash_entry_read();
-            }
+            // A missing entry comes back as the deferred token: the block's
+            // tail is the element's container, which vivifies the entry when
+            // something writes through it (`my $c := { %h<a> }(); $c = 5`),
+            // and reads as `Any` everywhere else (#17953).
             Ok(())
         } else {
             self.exec_index_op_with_positional(is_positional)?;
@@ -2296,11 +2297,7 @@ impl Interpreter {
             (ValueView::Hash(items), ValueView::Str(key)) => {
                 let v = self.resolve_hash_entry(&items, &key);
                 if v.is_nil() {
-                    if self.hash_autovivify {
-                        Value::hash_with_data(items.clone())
-                            .hash_autovivify(&key)
-                            .unwrap_or(Value::NIL)
-                    } else if items.declared_type.as_deref() == Some("PseudoStash") {
+                    if items.declared_type.as_deref() == Some("PseudoStash") {
                         // A symbol absent from `MY::`/`CALLER::` reads as `Nil`
                         // (not the Any type object of an ordinary hash miss).
                         Value::NIL
@@ -2315,13 +2312,7 @@ impl Interpreter {
                 let key_str = key.to_string();
                 let v = self.resolve_hash_entry(&items, &key_str);
                 if v.is_nil() {
-                    if self.hash_autovivify {
-                        Value::hash_with_data(items.clone())
-                            .hash_autovivify(&key_str)
-                            .unwrap_or(Value::NIL)
-                    } else {
-                        self.typed_container_default(&Value::hash_with_data(items.clone()))
-                    }
+                    self.typed_container_default(&Value::hash_with_data(items.clone()))
                 } else {
                     v
                 }
@@ -2356,13 +2347,7 @@ impl Interpreter {
                 };
                 let v = self.resolve_hash_entry(&items, &key_str);
                 if v.is_nil() {
-                    if self.hash_autovivify {
-                        Value::hash_with_data(items.clone())
-                            .hash_autovivify(&key_str)
-                            .unwrap_or(Value::NIL)
-                    } else {
-                        self.typed_container_default(&Value::hash_with_data(items.clone()))
-                    }
+                    self.typed_container_default(&Value::hash_with_data(items.clone()))
                 } else {
                     v
                 }

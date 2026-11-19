@@ -4,7 +4,6 @@ array_share_active
 carrier_writes
 container_element_proxy
 element_share_pending
-hash_autovivify
 in_does_rhs
 in_lvalue_assignment
 literal_native_args
