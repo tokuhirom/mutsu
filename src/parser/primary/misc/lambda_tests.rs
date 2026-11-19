@@ -15,9 +15,10 @@ fn is_hash(src: &str) -> bool {
     assert_eq!(rest, "", "{src:?} left unparsed input");
     match expr {
         Expr::Hash(..) => true,
-        // A body that mixes pairs with a spread compiles to a `hash(...)` call
-        // rather than an `Expr::Hash`; still the hash-composer reading.
-        Expr::Call { ref name, .. } => name.resolve() == "hash",
+        // A body that mixes pairs with a spread is a `HashComposer`
+        // contextualizer rather than an `Expr::Hash`; still the hash-composer
+        // reading.
+        Expr::Contextualizer { kind, .. } => kind == crate::ast::ContextKind::HashComposer,
         _ => false,
     }
 }

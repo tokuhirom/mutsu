@@ -883,8 +883,23 @@ impl Compiler {
             // lowers it to; it is its own node only so `.AST` can tell it from
             // a user-written call of the same name.
             Expr::Contextualizer { kind, inner } => {
+                // A `{ ... }` composer flattens its elements first, as the
+                // slurpy of rakudo's composer does: `{ a => 1, () }` is
+                // `{a => 1}`, where `(a => 1, ()).hash` has an odd count.
+                let target = if *kind == crate::ast::ContextKind::HashComposer {
+                    Box::new(Expr::MethodCall {
+                        target: inner.clone(),
+                        name: Symbol::intern("flat"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                        sugar: false,
+                    })
+                } else {
+                    inner.clone()
+                };
                 self.compile_expr(&Expr::MethodCall {
-                    target: inner.clone(),
+                    target,
                     name: Symbol::intern(kind.method()),
                     args: Vec::new(),
                     modifier: None,

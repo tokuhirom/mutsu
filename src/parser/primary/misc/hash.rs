@@ -4,7 +4,6 @@ use crate::parser::expr::expression;
 use crate::parser::helpers::split_angle_words;
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::primary::string::{double_quoted_string, single_quoted_string};
-use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 /// Parse hash literal body: key => val, :name(val), ... }
@@ -23,15 +22,17 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 return Ok((rest, Expr::Hash(pairs, crate::ast::HashSpelling::Composer)));
             }
             // `spread_args` already holds the pairs that came before each spread, in
-            // source order; only the trailing pairs are left in `pairs`.
-            let mut args = spread_args;
-            args.extend(hash_args_from_pairs(pairs));
+            // source order; only the trailing pairs are left in `pairs`. A
+            // composer with a non-pair element hashes the list of its elements
+            // (`.hash`, raku's `Circumfix::HashComposer`), never the
+            // user-visible `&hash` by name (#18079).
+            let mut elements = spread_args;
+            elements.extend(hash_args_from_pairs(pairs));
             return Ok((
                 rest,
-                Expr::Call {
-                    name: Symbol::intern("hash"),
-                    args,
-                    listop: false,
+                Expr::Contextualizer {
+                    kind: crate::ast::ContextKind::HashComposer,
+                    inner: Box::new(Expr::ArrayLiteral(elements)),
                 },
             ));
         }
@@ -122,11 +123,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
         match item {
             Expr::HashVar(name) => {
                 spread_args.extend(hash_args_from_pairs(std::mem::take(&mut pairs)));
-                spread_args.push(Expr::Unary {
-                    op: crate::token_kind::TokenKind::Pipe,
-                    expr: Box::new(Expr::HashVar(name)),
-                    word: false,
-                });
+                spread_args.push(Expr::HashVar(name));
             }
             Expr::Unary {
                 op: crate::token_kind::TokenKind::Pipe,

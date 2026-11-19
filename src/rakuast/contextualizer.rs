@@ -28,6 +28,7 @@ fn class_of(kind: ContextKind) -> RakuAstClass {
         ContextKind::Item => RakuAstClass::ContextualizerItem,
         ContextKind::List => RakuAstClass::ContextualizerList,
         ContextKind::Hash => RakuAstClass::ContextualizerHash,
+        ContextKind::HashComposer => RakuAstClass::CircumfixHashComposer,
     }
 }
 
@@ -38,6 +39,15 @@ pub(super) fn view_node(
     kind: ContextKind,
     inner: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
+    // `{ a => 1, %h }`: `Circumfix::HashComposer` holds the comma list of its
+    // elements itself, not a statement sequence (#18079).
+    if kind == ContextKind::HashComposer {
+        return Ok(RakuAstNode {
+            origin: Default::default(),
+            class: class_of(kind),
+            fields: vec![node_field(None, view_expr(names, inner)?)],
+        });
+    }
     // `$@(...)` / `$%(...)`: the inner contextualizer is the child itself;
     // otherwise the child is a `StatementSequence` of the parenthesized contents.
     let contents = match inner {

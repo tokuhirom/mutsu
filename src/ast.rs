@@ -1443,6 +1443,10 @@ pub(crate) enum ContextKind {
     List,
     /// `%(...)` with non-pair contents: raku's `Contextualizer::Hash`.
     Hash,
+    /// `{ a => 1, %h }`, a hash composer with a non-pair element: raku's
+    /// `Circumfix::HashComposer` over the comma list of its elements. It
+    /// hashes the list as `%(...)` does (#18079).
+    HashComposer,
 }
 
 impl Expr {
@@ -1474,7 +1478,7 @@ impl ContextKind {
         match self {
             Self::Item => "item",
             Self::List => "list",
-            Self::Hash => "hash",
+            Self::Hash | Self::HashComposer => "hash",
         }
     }
 }
