@@ -289,7 +289,16 @@ pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
     let flattened = if args.len() == 1 {
         match args[0].view() {
             ValueView::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
-            ValueView::Seq(vals) => vals.to_vec(),
+            // A `$`-held Seq (`ItemSeq`/`ItemList` view) is one element, as
+            // an itemized Array is (#18193).
+            ValueView::Seq(vals)
+                if !matches!(
+                    vals.view(),
+                    crate::value::SeqView::ItemSeq | crate::value::SeqView::ItemList
+                ) =>
+            {
+                vals.to_vec()
+            }
             ValueView::Slip(vals) => vals.to_vec(),
             // Same itemization guard as the Array arm above: an itemized
             // Hash (`my $h = {a=>1}; @a.append($h)`) is a single `$`-held
