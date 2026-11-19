@@ -14,7 +14,7 @@ measured gain") is not met, so no release-pipeline change was made.
 
 ## Setup
 
-- rustc 1.99.0, `rustup component add llvm-tools` (the distro `llvm-profdata` is LLVM 18 and
+- rustc 1.100.0, `rustup component add llvm-tools` (the distro `llvm-profdata` is LLVM 18 and
   cannot read rustc's LLVM 23 profiles; use the one under the toolchain's `lib/rustlib/*/bin`).
 - Instrumented build: `RUSTFLAGS="-Cprofile-generate=<dir>" CARGO_PROFILE_RELEASE_INCREMENTAL=false
   cargo build --release --bin mutsu --target-dir target/pgo-gen` (~10 min on 4 cores).

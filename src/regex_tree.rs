@@ -2092,8 +2092,7 @@ impl Parser {
             let mut quote = None;
             let mut escaped = false;
             let mut args_end = None;
-            for index in self.pos..self.chars.len() {
-                let ch = self.chars[index];
+            for (index, &ch) in self.chars.iter().enumerate().skip(self.pos) {
                 if escaped {
                     escaped = false;
                     continue;
