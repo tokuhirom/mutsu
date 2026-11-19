@@ -83,11 +83,13 @@ pub(super) fn chain_with_stash_entry_var(expr: &Expr) -> Option<Expr> {
         levels
             .into_iter()
             .rev()
-            .fold(var, |target, (index, is_positional, spelling)| Expr::Index {
-                target: Box::new(target),
-                index: index.clone(),
-                is_positional,
-                spelling,
+            .fold(var, |target, (index, is_positional, spelling)| {
+                Expr::Index {
+                    target: Box::new(target),
+                    index: index.clone(),
+                    is_positional,
+                    spelling,
+                }
             }),
     )
 }
