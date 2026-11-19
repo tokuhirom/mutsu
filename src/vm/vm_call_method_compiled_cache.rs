@@ -369,13 +369,25 @@ impl Interpreter {
                 | ValueView::ContainerRef(_)
                 | ValueView::Pair(..)
                 | ValueView::ValuePair(..)
-                | ValueView::Capture { .. }
                 // A `Proxy` dispatches on what its FETCH answers, which can
                 // change between calls: no cacheable key.
                 | ValueView::Proxy { .. }
                 // A `VarRef` nested inside a `VarRef` is not a shape the
                 // unwrap above produces; refuse it rather than guess.
                 | ValueView::VarRef { .. } => return false,
+                // A Capture argument is a plain positional value of the class
+                // `Capture`: no binder flattens it (only a call-site `|`
+                // does, which the callers refuse before keying), and a
+                // candidate that could look inside it (a sub-signature) makes
+                // the whole set value-dependent and uncached. AttrX::Mooish
+                // hands `\( :builder )` to `store-with-cb` on every lazy
+                // build, which this used to send down the uncached dispatch
+                // (#17335).
+                ValueView::Capture { .. } => {
+                    static CAPTURE: std::sync::OnceLock<crate::symbol::Symbol> =
+                        std::sync::OnceLock::new();
+                    *CAPTURE.get_or_init(|| crate::symbol::Symbol::intern("Capture"))
+                }
                 _ => {
                     // The scalar types every numeric/string call passes are
                     // interned once per process, not hashed per argument, and

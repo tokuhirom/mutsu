@@ -1121,9 +1121,11 @@ impl Interpreter {
             }
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
+            let static_drops = self.class_body_static_merge_drops(owner_class);
             let frame_syms = MethodFrameSyms {
                 params: method_def.param_syms(),
                 locals: cc.locals_syms(),
+                statics: &static_drops,
             };
             let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
             let (mut merged_env, wrote_caller, changed_caller_locals, capture_writes) =
@@ -1362,6 +1364,26 @@ impl Interpreter {
         let mut probe = String::new();
         {
             let cell_map = cell.as_map();
+            // Drop, before the scan over every attribute key, the readings
+            // the scan below rejects whatever the key is: a bare name the
+            // frame declared as a parameter or a `my` (or does not own as a
+            // slot), and a scalar `!x`/`.x` reading of an attribute with no
+            // sigilless-alias metadata. A method whose `:=` binds are all to
+            // its own `my` locals (AttrX::Mooish's `my $attr-var := ...`)
+            // then skips the scan entirely (#17335).
+            readings.retain(|&(rbare, rank, _)| match rank {
+                0 => Self::reconcile_bare_reading_owned(code, param_defs, rbare),
+                1 | 2 => {
+                    probe.clear();
+                    probe.push_str(ATTR_ALIAS_META_PREFIX);
+                    probe.push_str(rbare);
+                    cell_map.contains_key(probe.as_str())
+                }
+                _ => true,
+            });
+            if readings.is_empty() {
+                return None;
+            }
             for k in cell_map.keys() {
                 let ks = k.as_str();
                 if ks.starts_with(ATTR_ALIAS_META_PREFIX) {
@@ -1463,18 +1485,7 @@ impl Interpreter {
                     } {
                         continue;
                     }
-                    if rank == 0
-                        && !(code.locals.iter().any(|n| n == bare)
-                            && !crate::ast::param_defs_declare_lexical(param_defs, bare)
-                            && !code
-                                .my_declared_sym
-                                .contains(&crate::symbol::Symbol::intern(bare))
-                            // A `my` written inside an expression
-                            // (`f($!x, my $x := ...)`) is recorded apart.
-                            && !code
-                                .expr_declared_syms
-                                .contains(&crate::symbol::Symbol::intern(bare)))
-                    {
+                    if rank == 0 && !Self::reconcile_bare_reading_owned(code, param_defs, bare) {
                         continue;
                     }
                     best = Some((rank, v));
@@ -3018,9 +3029,11 @@ impl Interpreter {
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
+                let static_drops = self.class_body_static_merge_drops(owner_class);
                 let frame_syms = MethodFrameSyms {
                     params: method_def.param_syms(),
                     locals: cc.locals_syms(),
+                    statics: &static_drops,
                 };
                 let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
                 let (mut merged, wrote_caller, changed_caller_locals, capture_writes) =
@@ -3283,6 +3296,11 @@ fn bound_by_sub_signature(param_defs: &[crate::ast::ParamDef], name: &str) -> bo
 pub(super) struct MethodFrameSyms<'a> {
     pub(super) params: &'a [Symbol],
     pub(super) locals: &'a [Symbol],
+    /// The owner class's body statics and their type lanes
+    /// (`Interpreter::class_body_static_merge_drops`): names both callers'
+    /// `is_method_local` drop, tested here by symbol after the captured-write
+    /// bookkeeping instead of by string at the end.
+    pub(super) statics: &'a [Symbol],
 }
 
 impl MethodFrameSyms<'_> {
@@ -3442,6 +3460,13 @@ fn merge_method_env(
             }
             if captured.is_some_and(|c| c.contains_key_sym(*k)) {
                 capture_writes.push((*k, v.clone()));
+            }
+            // A class-body static of the owner class (or one of its type
+            // lanes), which every method call injects into its frame: dropped
+            // by `is_method_local` below in any case, decided here by symbol
+            // before the per-key string work (#17335).
+            if frame_syms.statics.contains(k) {
+                return None;
             }
             // An entry the callee overlay merely *inherited* would merge back a
             // value the caller already holds. A nested method call flattens the
