@@ -1286,8 +1286,17 @@ impl Interpreter {
                 // MRO walk (~7k instructions per assignment).
                 ValueView::Enum {
                     value: crate::value::EnumValue::Int(_),
+                    enum_type,
                     ..
-                } => constraint == "int" || crate::runtime::native_types::is_native_int_type(constraint),
+                } => {
+                    enum_type == constraint
+                        || constraint == "int"
+                        || crate::runtime::native_types::is_native_int_type(constraint)
+                }
+                // An enum value is of its own enum type: `PvtMode :$private`
+                // given `pvmAuto` (AttrX::Mooish's `invoke-opt`) otherwise
+                // walked the whole gauntlet to accept it (#17335).
+                ValueView::Enum { enum_type, .. } => enum_type == constraint,
                 ValueView::BigInt(_) => constraint == "Int",
                 ValueView::Num(_) => constraint == "Num" || constraint == "num",
                 // A `Rat $r` parameter otherwise walked the whole gauntlet

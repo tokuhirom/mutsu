@@ -217,8 +217,8 @@ impl Interpreter {
     /// class and every marker of the composition. A mixin's check reads only
     /// those: its inner value's type and its override keys (role markers,
     /// allomorph and value-mixin markers). Parameterized constraints, which
-    /// also read the role type arguments, are not admitted by the callers.
-    /// `None` for any other value.
+    /// also read the role type arguments, are not admitted by the callers. A
+    /// `Capture` is keyed by its kind alone. `None` for any other value.
     // Cost: O(1) for an instance; O(k log k) for a mixin, k = its markers
     // (sorted and interned into one key).
     fn memo_receiver_key(&self, left: &Value) -> Option<Symbol> {
@@ -250,6 +250,13 @@ impl Interpreter {
                     key.push_str(marker);
                 }
                 Some(Symbol::intern(&key))
+            }
+            // A Capture's checks read only its kind: it is always concrete,
+            // and the roles it does are the class's (`Capture:D $params` on
+            // AttrX::Mooish's `store-with-cb` / `invoke-opt`, #17335).
+            ValueView::Capture { .. } => {
+                static CAPTURE_KEY: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+                Some(*CAPTURE_KEY.get_or_init(|| Symbol::intern("\u{1}view\u{1}Capture")))
             }
             _ => None,
         }

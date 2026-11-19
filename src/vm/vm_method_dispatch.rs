@@ -1362,6 +1362,26 @@ impl Interpreter {
         let mut probe = String::new();
         {
             let cell_map = cell.as_map();
+            // Drop, before the scan over every attribute key, the readings
+            // the scan below rejects whatever the key is: a bare name the
+            // frame declared as a parameter or a `my` (or does not own as a
+            // slot), and a scalar `!x`/`.x` reading of an attribute with no
+            // sigilless-alias metadata. A method whose `:=` binds are all to
+            // its own `my` locals (AttrX::Mooish's `my $attr-var := ...`)
+            // then skips the scan entirely (#17335).
+            readings.retain(|&(rbare, rank, _)| match rank {
+                0 => Self::reconcile_bare_reading_owned(code, param_defs, rbare),
+                1 | 2 => {
+                    probe.clear();
+                    probe.push_str(ATTR_ALIAS_META_PREFIX);
+                    probe.push_str(rbare);
+                    cell_map.contains_key(probe.as_str())
+                }
+                _ => true,
+            });
+            if readings.is_empty() {
+                return None;
+            }
             for k in cell_map.keys() {
                 let ks = k.as_str();
                 if ks.starts_with(ATTR_ALIAS_META_PREFIX) {
@@ -1463,18 +1483,7 @@ impl Interpreter {
                     } {
                         continue;
                     }
-                    if rank == 0
-                        && !(code.locals.iter().any(|n| n == bare)
-                            && !crate::ast::param_defs_declare_lexical(param_defs, bare)
-                            && !code
-                                .my_declared_sym
-                                .contains(&crate::symbol::Symbol::intern(bare))
-                            // A `my` written inside an expression
-                            // (`f($!x, my $x := ...)`) is recorded apart.
-                            && !code
-                                .expr_declared_syms
-                                .contains(&crate::symbol::Symbol::intern(bare)))
-                    {
+                    if rank == 0 && !Self::reconcile_bare_reading_owned(code, param_defs, bare) {
                         continue;
                     }
                     best = Some((rank, v));
