@@ -37,8 +37,13 @@ impl Interpreter {
             let Some(fv_i) = cc.free_var_syms.iter().position(|s| s == sym) else {
                 continue;
             };
-            let Some(idx) = self.resolve_capture_slot(code, &cc.free_var_parent_slots, &cc.captures_own_declaration, fv_i, *sym)
-            else {
+            let Some(idx) = self.resolve_capture_slot(
+                code,
+                &cc.free_var_parent_slots,
+                &cc.captures_own_declaration,
+                fv_i,
+                *sym,
+            ) else {
                 continue;
             };
             if !code.rebound_slots.contains(&(idx as u32)) {

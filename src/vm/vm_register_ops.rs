@@ -540,9 +540,13 @@ impl Interpreter {
             if !sym.is_plain_user_lexical() {
                 continue;
             }
-            if let Some(slot) =
-                self.resolve_capture_slot(code, &callee.free_var_parent_slots, &callee.captures_own_declaration, i, *sym)
-                && let Some(val) = self.locals.get(slot)
+            if let Some(slot) = self.resolve_capture_slot(
+                code,
+                &callee.free_var_parent_slots,
+                &callee.captures_own_declaration,
+                i,
+                *sym,
+            ) && let Some(val) = self.locals.get(slot)
             {
                 env.insert_sym(*sym, val.clone());
                 installed.push(*sym);
@@ -1224,9 +1228,13 @@ impl Interpreter {
             // regex) can be missing from the cloned env. Pull this frame's
             // free-var slots from the live local store so such captures survive.
             for (i, sym) in cc.free_var_syms.iter().enumerate() {
-                if let Some(slot) =
-                    self.resolve_capture_slot(code, &cc.free_var_parent_slots, &cc.captures_own_declaration, i, *sym)
-                    && let Some(val) = self.locals.get(slot)
+                if let Some(slot) = self.resolve_capture_slot(
+                    code,
+                    &cc.free_var_parent_slots,
+                    &cc.captures_own_declaration,
+                    i,
+                    *sym,
+                ) && let Some(val) = self.locals.get(slot)
                 {
                     flat.insert_sym(*sym, val.clone());
                 }
@@ -1339,8 +1347,13 @@ impl Interpreter {
             if sym.is_frame_fixture() {
                 continue;
             }
-            if let Some(slot) = self.resolve_capture_slot(code, &cc.free_var_parent_slots, &cc.captures_own_declaration, i, *sym)
-                && let Some(val) = self.locals.get(slot)
+            if let Some(slot) = self.resolve_capture_slot(
+                code,
+                &cc.free_var_parent_slots,
+                &cc.captures_own_declaration,
+                i,
+                *sym,
+            ) && let Some(val) = self.locals.get(slot)
             {
                 env.insert_sym(*sym, val.clone());
             }
@@ -1539,9 +1552,13 @@ impl Interpreter {
                 // captured cell, then own local slot, then the enclosing env.
                 let resolved = if let Some(val) = inherited_cell {
                     val.clone()
-                } else if let Some(slot) =
-                    self.resolve_capture_slot(code, &cc.upvalue_parent_slots, &cc.captures_own_declaration, i, *sym)
-                    && let Some(val) = self.locals.get(slot)
+                } else if let Some(slot) = self.resolve_capture_slot(
+                    code,
+                    &cc.upvalue_parent_slots,
+                    &cc.captures_own_declaration,
+                    i,
+                    *sym,
+                ) && let Some(val) = self.locals.get(slot)
                 {
                     val.clone()
                 } else if sym.with_str(|s| s.starts_with('&'))
@@ -1808,7 +1825,14 @@ impl Interpreter {
         let has_mutated_instance_capture =
             cc.free_var_syms.iter().enumerate().any(|(fv_i, sym)| {
                 code.captured_mutated_locals.contains(sym)
-                    && self.resolve_capture_slot(code, &cc.free_var_parent_slots, &cc.captures_own_declaration, fv_i, *sym)
+                    && self
+                        .resolve_capture_slot(
+                            code,
+                            &cc.free_var_parent_slots,
+                            &cc.captures_own_declaration,
+                            fv_i,
+                            *sym,
+                        )
                         .is_some_and(|idx| {
                             matches!(self.locals[idx].view(), ValueView::Instance { .. })
                         })
@@ -1869,8 +1893,13 @@ impl Interpreter {
                 if has_unvouched_param_container
                     && code.needs_cell_captured_containers.contains(sym)
                     && !cc.authoritative_free_vars.contains(sym)
-                    && let Some(idx) =
-                        self.resolve_capture_slot(code, &cc.free_var_parent_slots, &cc.captures_own_declaration, fv_i, *sym)
+                    && let Some(idx) = self.resolve_capture_slot(
+                        code,
+                        &cc.free_var_parent_slots,
+                        &cc.captures_own_declaration,
+                        fv_i,
+                        *sym,
+                    )
                     && code.param_local_slots.contains(&(idx as u32))
                 {
                     self.box_decl_local_container_cell(code, idx, true);
@@ -1888,7 +1917,13 @@ impl Interpreter {
             // Emit-point slot (§1.3 slot bake, gated): the creator slot this
             // closure actually captures. Falls back to the rposition name
             // search (byte-identical with the gate off / for hand-built cc).
-            let baked_idx = self.resolve_capture_slot(code, &cc.free_var_parent_slots, &cc.captures_own_declaration, fv_i, *sym);
+            let baked_idx = self.resolve_capture_slot(
+                code,
+                &cc.free_var_parent_slots,
+                &cc.captures_own_declaration,
+                fv_i,
+                *sym,
+            );
             // Shadow trigger (C): the captured slot is one of several
             // same-named slots — by-name writeback cannot disambiguate, so a
             // cell is required regardless of the escape analysis (see the
@@ -2046,8 +2081,13 @@ impl Interpreter {
             if !crate::env::is_plain_user_lexical(&name) || !name.starts_with(['@', '%']) {
                 continue;
             }
-            let Some(idx) = self.resolve_capture_slot(code, &cc.free_var_parent_slots, &cc.captures_own_declaration, fv_i, *sym)
-            else {
+            let Some(idx) = self.resolve_capture_slot(
+                code,
+                &cc.free_var_parent_slots,
+                &cc.captures_own_declaration,
+                fv_i,
+                *sym,
+            ) else {
                 continue;
             };
             // Keep an existing cell when another emitter in the same supply
