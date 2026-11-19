@@ -254,7 +254,7 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
         },
         anonymous: false,
         name: name.to_string(),
-        expr: source.clone(),
+        expr: positional_param_source(name, source),
         type_constraint: name.starts_with('&').then(|| "Callable".to_string()),
         is_state: false,
         is_our: false,
@@ -266,6 +266,21 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
         constant: None,
         bind: None,
         where_constraint: None,
+    }
+}
+
+/// The initializer of a pointy `@` parameter declared from a control
+/// statement's condition value (`with EXPR -> @l`, `if EXPR -> @l`). The
+/// parameter binds the way a signature's `@` parameter does: an itemized
+/// aggregate binds as itself and a Seq through `PositionalBindFailover`
+/// (`DeitemizeForBind`'s `.list`). A plain `my @l = $tmp` would keep a
+/// `$`-held Seq as ONE element, as `@`-assignment must
+/// (`with $seq -> @l { @l.elems }` is the Seq's length, not 1).
+fn positional_param_source(name: &str, source: &Expr) -> Expr {
+    if name.starts_with('@') {
+        Expr::DeitemizeForBind(Box::new(source.clone()))
+    } else {
+        source.clone()
     }
 }
 
@@ -295,7 +310,7 @@ pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
         },
         anonymous: false,
         name: pd.name.clone(),
-        expr: source.clone(),
+        expr: positional_param_source(&pd.name, source),
         type_constraint: pd.pointy_type_constraint().map(str::to_string),
         is_state: false,
         is_our: false,
