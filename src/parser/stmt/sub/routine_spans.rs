@@ -76,9 +76,21 @@ pub(crate) fn mark_only(stmt: &mut Stmt) {
 /// name spells its symbol differently (`«<< >>»` vs `<<< >>>`).
 // Cost: O(n), n = length of the written name.
 pub(crate) fn note_written_name(stmt: &mut Stmt, written: &str) {
-    if let Stmt::SubDecl { name, spans, .. } = stmt
-        && let Some(spans) = spans
-        && written != name.resolve()
+    if let Stmt::SubDecl { name, spans, .. } = stmt {
+        note_written_spans(spans, &name.resolve(), written);
+    }
+}
+
+/// [`note_written_name`] on the spans themselves, for a declaration whose
+/// statement is not built yet (a method).
+// Cost: O(n), n = length of the written name.
+pub(crate) fn note_written_spans(
+    spans: &mut Option<Box<crate::ast::parsed::RoutineSpans>>,
+    canonical: &str,
+    written: &str,
+) {
+    if let Some(spans) = spans
+        && written != canonical
         && written
             .split_once(':')
             .is_some_and(|(_, quoted)| quoted.starts_with("<<") || quoted.starts_with('\u{ab}'))

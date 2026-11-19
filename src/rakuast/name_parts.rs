@@ -351,6 +351,19 @@ pub(super) fn apply_written_name(
     }
 }
 
+/// A method's written operator name (see [`apply_written_name`]), then its
+/// origins.
+// Cost: O(n), n = length of the written name plus the signature's size.
+pub(super) fn apply_method_name(
+    names: &crate::scope::NameScope,
+    node: &mut RakuAstNode,
+    spans: Option<&crate::ast::parsed::RoutineSpans>,
+    param_defs: &[crate::ast::ParamDef],
+) {
+    apply_written_name(names, node, spans);
+    super::routine_origins::apply(node, spans, param_defs);
+}
+
 fn operator_colonpairs(symbol: &str) -> RakuAstField {
     RakuAstField {
         name: Some("colonpairs"),
