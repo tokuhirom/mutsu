@@ -1080,6 +1080,16 @@ impl Value {
             }
             ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
             ValueView::Slip(_) if self.slip_is_itemized() => self.with_slip_itemized(false),
+            // A Seq carries its itemization on its handle (the `ItemSeq` /
+            // `ItemList` views `itemize_for_element_store` tags): the bare
+            // handle reads the same reification core. Without this arm
+            // `(a => $seq,).Map<a>` stays `$`-held and `C.new(|$map)` binds
+            // `@.a` to one Seq element instead of its values.
+            ValueView::Seq(body) => match body.view() {
+                crate::value::SeqView::ItemSeq => Value::seq_body(body.as_bare_seq_view()),
+                crate::value::SeqView::ItemList => Value::seq_body(body.as_list_view()),
+                _ => self,
+            },
             ValueView::Scalar(inner) => (*inner).clone(),
             ValueView::ContainerRef(cell) => cell.load().deitemize_element(),
             _ => self,
