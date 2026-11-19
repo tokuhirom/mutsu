@@ -82,8 +82,8 @@ impl Interpreter {
     pub(crate) fn module_lexical_import_set(
         &self,
         id: Symbol,
-    ) -> Option<&HashMap<Symbol, crate::runtime::lexical_imports::LexicalImport>> {
-        self.module.lexical_import_sets.get(&id).map(|set| &**set)
+    ) -> Option<std::sync::Arc<HashMap<Symbol, crate::runtime::lexical_imports::LexicalImport>>> {
+        self.module.lexical_imports.read().sets.get(&id).cloned()
     }
 
     /// Save current function/class/proto keys for lexical import scoping.

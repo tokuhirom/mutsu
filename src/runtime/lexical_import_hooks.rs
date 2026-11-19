@@ -132,7 +132,7 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn lexical_import_hook_value(&self, set: Symbol, name: Symbol) -> Option<Value> {
         self.module
-            .lexical_import_hook_values
+            .lexical_imports.read().hook_values
             .get(&set)?
             .get(&name)
             .cloned()
@@ -194,7 +194,7 @@ impl Interpreter {
     /// `chain` (innermost first) of the blocks lexically around the reader.
     // Cost: O(c), c = enclosing `use`-blocks.
     pub(crate) fn lexical_import_hook_term(&self, chain: &[Symbol], name: Symbol) -> Option<Value> {
-        if self.module.lexical_import_hook_values.is_empty() {
+        if self.module.lexical_imports.read().hook_values.is_empty() {
             return None;
         }
         let key = crate::runtime::term_names::term_key_sym(name);
@@ -203,7 +203,7 @@ impl Interpreter {
         }
         chain.iter().find_map(|id| {
             self.module
-                .lexical_import_hook_values
+                .lexical_imports.read().hook_values
                 .get(id)?
                 .get(&key)
                 .cloned()
@@ -215,14 +215,14 @@ impl Interpreter {
     /// check.
     // Cost: O(s + t), s = open import scopes' sets, t = their hook values.
     pub(crate) fn active_lexical_import_hook_terms(&self) -> Vec<String> {
-        if self.module.lexical_import_hook_values.is_empty() {
+        if self.module.lexical_imports.read().hook_values.is_empty() {
             return Vec::new();
         }
         self.active_lexical_import_chain()
             .iter()
-            .filter_map(|id| self.module.lexical_import_hook_values.get(id))
-            .flat_map(|values| values.keys())
-            .filter(|key| !self.env.frame_hides_unit_name(**key))
+            .filter_map(|id| self.module.lexical_imports.read().hook_values.get(id).cloned())
+            .flat_map(|values| values.keys().copied().collect::<Vec<_>>())
+            .filter(|key| !self.env.frame_hides_unit_name(*key))
             .filter_map(|key| {
                 crate::runtime::term_names::term_spelling(&key.resolve()).map(str::to_string)
             })
@@ -234,15 +234,15 @@ impl Interpreter {
     /// `use`s, for the unit's CHECK-time name checks.
     // Cost: O(s + t), s = the unit's top-level statements, t = their hook values.
     pub(crate) fn eval_unit_hook_terms(&self, stmts: &[Stmt]) -> Vec<String> {
-        if self.module.lexical_import_hook_values.is_empty() {
+        if self.module.lexical_imports.read().hook_values.is_empty() {
             return Vec::new();
         }
         crate::compiler::Compiler::eval_unit_use_set_ids(stmts)
             .into_iter()
             .flatten()
             .chain(self.module.eval_prerun_sets.iter().copied())
-            .filter_map(|id| self.module.lexical_import_hook_values.get(&id))
-            .flat_map(|values| values.keys())
+            .filter_map(|id| self.module.lexical_imports.read().hook_values.get(&id).cloned())
+            .flat_map(|values| values.keys().copied().collect::<Vec<_>>())
             .filter_map(|key| {
                 crate::runtime::term_names::term_spelling(&key.resolve()).map(str::to_string)
             })

@@ -513,7 +513,7 @@ impl Interpreter {
             let Some(bindings) = self.module_lexical_import_set(*set) else {
                 continue;
             };
-            for (name, binding) in bindings {
+            for (name, binding) in bindings.iter() {
                 let value = match binding {
                     crate::runtime::lexical_imports::LexicalImport::Code(value) => value.clone(),
                     // A `my sub ... is export` the module declares: the set

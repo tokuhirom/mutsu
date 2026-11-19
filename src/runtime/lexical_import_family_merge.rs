@@ -56,7 +56,7 @@ impl Interpreter {
             if is_family
                 && self
                     .module
-                    .lexical_set_families
+                    .lexical_imports.read().families
                     .get(set)
                     .is_some_and(|families| families.contains_key(&name))
             {
@@ -64,9 +64,9 @@ impl Interpreter {
             }
             let Some(LexicalImport::Code(prior)) = self
                 .module
-                .lexical_import_sets
+                .lexical_imports.read().sets
                 .get(set)
-                .and_then(|bindings| bindings.get(&name))
+                .and_then(|bindings| bindings.get(&name).cloned())
             else {
                 continue;
             };
@@ -119,7 +119,7 @@ impl Interpreter {
         };
         let hook_candidates = Self::captured_dispatch_candidates(&hook)?;
         let earlier = earlier_sets.iter().rev().find_map(|set| {
-            match self.module.lexical_import_sets.get(set)?.get(&name)? {
+            match self.module.lexical_imports.read().sets.get(set)?.get(&name)? {
                 LexicalImport::Code(value) if matches!(value.view(), ValueView::Sub(_)) => {
                     Some(value.clone())
                 }

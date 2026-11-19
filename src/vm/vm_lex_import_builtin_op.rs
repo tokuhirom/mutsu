@@ -34,12 +34,12 @@ impl Interpreter {
         chain_idx: u32,
         name_idx: u32,
     ) -> bool {
-        self.module.lexical_operator_import_sets.is_empty()
+        self.module.lexical_imports.read().operator_sets.is_empty()
             || (self.module.builtin_op_fallback_depth == 0
                 && code.lex_import_sites.operator_absent(
                     code.constants.len(),
                     name_idx as usize,
-                    self.module.lexical_import_gen,
+                    self.module.lexical_imports.generation(),
                     chain_idx,
                 ))
     }
@@ -62,7 +62,7 @@ impl Interpreter {
             return Ok(ip + 1);
         }
         let sites = code.constants.len();
-        let generation = self.module.lexical_import_gen;
+        let generation = self.module.lexical_imports.generation();
         let memoizable = self.module.builtin_op_fallback_depth == 0;
         let name = code.const_sym(name_idx);
         let dispatcher = code
@@ -131,7 +131,7 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Option<Result<Option<Value>, RuntimeError>> {
-        if self.module.lexical_operator_import_sets.is_empty() {
+        if self.module.lexical_imports.read().operator_sets.is_empty() {
             return None;
         }
         let chain = self

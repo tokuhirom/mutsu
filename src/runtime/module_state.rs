@@ -491,11 +491,13 @@ pub(crate) struct ModuleState {
     /// Environment keys installed by imports, with the units that imported
     /// each and its pseudo-stash spelling (`runtime::unit_env_imports`).
     pub(crate) unit_env_imports: crate::runtime::unit_env_imports::UnitEnvImports,
-    /// The lexical import set ids each unit's own top-level `use`s filled,
-    /// oldest first: the sets no import scope holds (a block's scope holds
-    /// its own, `ImportScopeSnapshot::lexical_sets`). A lookup by a run-time
-    /// name reads the running unit's after every open scope's.
-    pub(crate) unit_lexical_sets: HashMap<Symbol, Vec<Symbol>>,
+    /// The lexical import tables of ADR-8751 (the sets each `use` fills, their
+    /// multi families, hook values and operator sets, and each unit's
+    /// top-level sets): world state shared by every thread (ADR-17216,
+    /// #18137), so a closure run on a worker that started before a `use`
+    /// still reaches what that `use` imported. Its world generation names one
+    /// content of the sets: the `LexImportCall` site memos are keyed by it.
+    pub(crate) lexical_imports: crate::runtime::world_cell::WorldCell<LexicalImportTables>,
     /// The plain routines a `sub EXPORT` hook handed each unit's top-level
     /// `use` (`name` -> routine), kept past the env alias the import writes:
     /// a closure of that unit that runs later, in another frame's env (a
@@ -510,39 +512,6 @@ pub(crate) struct ModuleState {
     /// while non-zero, an import set binds no operator, so the fallback's own
     /// evaluation reaches the built-in.
     pub(crate) builtin_op_fallback_depth: u32,
-    /// ADR-8751 stage 1: the routines each block-scoped `use` binds, keyed by
-    /// the use's lexical import set id (`OpCode::UseModule::lexical_set_idx`)
-    /// and then by routine name. Filled the first time such a `use` runs; the
-    /// `OpCode::LexImportCall` sites lexically inside the block read it.
-    pub(crate) lexical_import_sets:
-        HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
-    /// Bumped whenever `lexical_import_sets` is written
-    /// (`Interpreter::finish_lexical_import_capture`); the per-site memo of a
-    /// `LexImportCall` (`LexImportSiteCaches`) is valid for one value of it.
-    /// Its values come from the process-wide generation sequence
-    /// (`registry_gen`), so a value names one content of the sets: a memo one
-    /// thread wrote into a shared chunk reads as current to another only when
-    /// both hold those very sets (a fork that has not imported since).
-    pub(crate) lexical_import_gen: u64,
-    /// The multi candidates each lexical import set binds per family, merged
-    /// with those of the earlier `use`s of its scope: a later `use` of the
-    /// same family name adds its candidates to the earlier ones rather than
-    /// hiding them.
-    pub(crate) lexical_set_families: HashMap<
-        Symbol,
-        HashMap<Symbol, Vec<std::sync::Arc<crate::ast::FunctionDef>>>,
-    >,
-    /// The values a `sub EXPORT` hook returned for the names the importing
-    /// block declares itself (ADR-8751), keyed by the use's lexical import
-    /// set id and then by the name's declaration key (`x`, `@a`, the term key
-    /// of a sigilless one). Refilled by every run of the `use`; the block's
-    /// `OpCode::GetHookExport` bindings read it.
-    pub(crate) lexical_import_hook_values:
-        HashMap<Symbol, std::sync::Arc<HashMap<Symbol, Value>>>,
-    /// The ids of the `lexical_import_sets` that bind a built-in operator's
-    /// dispatcher (ADR-8751 stage 2). A built-in op compiled under an import
-    /// chain asks the chain only while one exists (#13906).
-    pub(crate) lexical_operator_import_sets: HashSet<Symbol>,
     /// While an EVAL'd unit runs: the import sets lexically around the `EVAL`
     /// call (`Interpreter::eval_lexical_import_chain`), innermost first. A
     /// by-name lookup in the unit reads them instead of the sets of the
@@ -856,16 +825,10 @@ impl ModuleState {
             module_body_import_aliases: Default::default(),
             imported_exported_proto_tags: Default::default(),
             unit_env_imports: Default::default(),
-            unit_lexical_sets: HashMap::new(),
+            lexical_imports: Default::default(),
             unit_hook_routines: HashMap::new(),
             unit_sets_hidden: false,
             builtin_op_fallback_depth: 0,
-            lexical_import_sets: HashMap::new(),
-            lexical_import_gen: crate::runtime::Interpreter::fresh_registry_write_gen()
-                .into_inner(),
-            lexical_set_families: HashMap::new(),
-            lexical_import_hook_values: HashMap::new(),
-            lexical_operator_import_sets: HashSet::new(),
             eval_import_chain: None,
             eval_import_unit: None,
             eval_unit_functions_base: None,
@@ -986,17 +949,12 @@ impl ModuleState {
             module_body_import_aliases: self.module_body_import_aliases.clone(),
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             unit_env_imports: self.unit_env_imports.clone(),
-            unit_lexical_sets: self.unit_lexical_sets.clone(),
+            lexical_imports: self.lexical_imports.share(),
             unit_hook_routines: self.unit_hook_routines.clone(),
             unit_sets_hidden: false,
             builtin_op_fallback_depth: 0,
-            lexical_import_sets: self.lexical_import_sets.clone(),
             // The child copies the sets, so it shares their generation
             // (`registry_gen`).
-            lexical_import_gen: self.lexical_import_gen,
-            lexical_set_families: self.lexical_set_families.clone(),
-            lexical_import_hook_values: self.lexical_import_hook_values.clone(),
-            lexical_operator_import_sets: self.lexical_operator_import_sets.clone(),
             eval_import_chain: self.eval_import_chain.clone(),
             eval_import_unit: self.eval_import_unit,
             eval_unit_functions_base: self.eval_unit_functions_base.clone(),
@@ -1055,4 +1013,34 @@ mod tests {
         fn is_fx<K, V>(_: &std::sync::Arc<rustc_hash::FxHashMap<K, V>>) {}
         is_fx(&state.operator_import_units);
     }
+}
+
+/// The lexical import tables of ADR-8751, one world table
+/// (`ModuleState::lexical_imports`, #18137).
+#[derive(Clone, Default)]
+pub(crate) struct LexicalImportTables {
+    /// The routines each `use` binds, keyed by the use's lexical import set
+    /// id (`OpCode::UseModule::lexical_set_idx`) and then by routine name.
+    /// Filled the first time such a `use` runs; the `OpCode::LexImportCall`
+    /// sites lexically inside its scope read it.
+    pub(crate) sets: HashMap<Symbol, std::sync::Arc<HashMap<Symbol, super::lexical_imports::LexicalImport>>>,
+    /// The multi candidates each set binds per family, merged with those of
+    /// the earlier `use`s of its scope: a later `use` of the same family name
+    /// adds its candidates to the earlier ones rather than hiding them.
+    pub(crate) families: HashMap<Symbol, HashMap<Symbol, Vec<std::sync::Arc<crate::ast::FunctionDef>>>>,
+    /// The values a `sub EXPORT` hook returned for the names the importing
+    /// block declares itself, keyed by set id and then by the name's
+    /// declaration key (`x`, `@a`, the term key of a sigilless one). Refilled
+    /// by every run of the `use`; the block's `OpCode::GetHookExport`
+    /// bindings read it.
+    pub(crate) hook_values: HashMap<Symbol, std::sync::Arc<HashMap<Symbol, Value>>>,
+    /// The ids of the sets that bind a built-in operator's dispatcher
+    /// (ADR-8751 stage 2). A built-in op compiled under an import chain asks
+    /// the chain only while one exists (#13906).
+    pub(crate) operator_sets: HashSet<Symbol>,
+    /// The set ids each unit's own top-level `use`s filled, oldest first: the
+    /// sets no import scope holds (a block's scope holds its own,
+    /// `ImportScopeSnapshot::lexical_sets`). A lookup by a run-time name reads
+    /// the running unit's after every open scope's.
+    pub(crate) unit_sets: HashMap<Symbol, Vec<Symbol>>,
 }
