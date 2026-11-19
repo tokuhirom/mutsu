@@ -352,6 +352,14 @@ impl Interpreter {
                 if dir.file_name().is_some_and(|n| n == "deps") {
                     candidates.push(dir.join("..").join("..").join("..").join("modules"));
                 }
+                // Cargo 1.100's build-dir layout puts the test binary in
+                // `target/<profile>/build/<pkg>/<hash>/out/`, which is neither
+                // `deps` nor close to `modules/`; a `#[test]` build knows its
+                // own checkout, so ask it directly.
+                #[cfg(test)]
+                candidates.push(
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("modules"),
+                );
                 candidates.into_iter().find(|c| c.is_dir())
             })
         };

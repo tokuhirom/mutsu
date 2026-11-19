@@ -5,3 +5,11 @@ The pinned Rust toolchain moves from 1.99.0 to 1.100.0. Every pin is bumped toge
 workflows, `rust-version` in both manifests, `.mise.toml`, the Dockerfile builder image, and the
 version mentions in the README, site, docs and the `rustc-too-old` skill. The session-start hook
 derives its wanted version from those pins, so remote containers pick up 1.100.0 automatically.
+
+Fallout fixed in the same change: six new `clippy` findings (a duplicated `#[allow]`, four
+`needless_bool` guards, one `needless_range_loop`), one rustfmt reflow, and the bundled-module
+lookup for `#[test]` binaries. Cargo 1.100 builds the unit-test executable under
+`target/<profile>/build/<pkg>/<hash>/out/` instead of `deps/`, so the old relative `modules/`
+candidates missed and every `use Test` inside a `#[test]` failed with "Could not find Test". A
+`#[cfg(test)]`-only candidate rooted at `CARGO_MANIFEST_DIR` restores it; shipped binaries search
+exactly the same locations as before.
