@@ -75,18 +75,35 @@ impl Interpreter {
         );
         let is_method = !(package.is_empty() || crate::qualified::is_global_name(package));
         // The `:` invocant marker is only legal in a method's signature.
-        let src = if is_method {
-            format!("class __BuiltinCandidate {{ method __builtin_candidate {sig} {{ {die} }} }}")
-        } else {
-            format!("sub __builtin_candidate {sig} {{ {die} }}")
+        let src_with = |body: &str| {
+            if is_method {
+                format!(
+                    "class __BuiltinCandidate {{ method __builtin_candidate {sig} {{ {body} }} }}"
+                )
+            } else {
+                format!("sub __builtin_candidate {sig} {{ {body} }}")
+            }
         };
-        let (stmts, _) = crate::parser::parse_program(&src).ok()?;
+        let parse = |src: String| {
+            let (stmts, _) = crate::parser::parse_program(&src).ok()?;
+            find_routine_decl(stmts)
+        };
+        let mut decl = parse(src_with(&die))?;
+        // A sub candidate runs the built-in routine on the arguments its
+        // signature bound, through the setting's own binding (`CORE::`), so a
+        // program `multi` of the same name is not re-entered (#18009).
+        if !is_method
+            && let Some(forward) = forwarding_call(name, &decl.param_defs)
+            && let Some(forwarding) = parse(src_with(&forward))
+        {
+            decl = forwarding;
+        }
         let RoutineDecl {
             params,
             param_defs,
             body,
             return_type,
-        } = find_routine_decl(stmts)?;
+        } = decl;
         let mut env = self.env.clone();
         // The candidate's own return spec (`--> 0`, `--> Int`), as a declared
         // routine carries it: its signature prints it, and the frame's own is
@@ -116,6 +133,51 @@ impl Interpreter {
         }
         Some(code)
     }
+}
+
+/// The body of a setting sub candidate: a call of the built-in routine `name`
+/// through `CORE::`, passing on what each parameter bound. `None` when a
+/// parameter cannot be named in the call (an anonymous `Int:D`, a renamed
+/// named parameter, a literal or a sub-signature): such a candidate keeps the
+/// `die` body.
+// Cost: O(p), p = parameters.
+fn forwarding_call(name: &str, params: &[ParamDef]) -> Option<String> {
+    let mut args = Vec::with_capacity(params.len());
+    for param in params {
+        let pname = param.name.as_str();
+        if pname.is_empty()
+            || pname.starts_with("__")
+            || param.named_alias
+            || param.literal_value.is_some()
+            || param.sub_signature.is_some()
+            || param.is_invocant
+        {
+            return None;
+        }
+        let sigiled = pname.starts_with(['@', '%', '&']);
+        let var = if param.sigilless || sigiled {
+            pname.to_string()
+        } else {
+            format!("${pname}")
+        };
+        let arg = if param.named {
+            let key = pname.trim_start_matches(['@', '%', '&']);
+            if param.default.is_some() {
+                format!(":{key}({var})")
+            } else if sigiled {
+                format!("|(:{key}({var}) if {var})")
+            } else {
+                format!("|(:{key}({var}) if {var}.DEFINITE)")
+            }
+        } else if param.slurpy || param.double_slurpy {
+            format!("|{var}")
+        } else {
+            var
+        };
+        args.push(arg);
+    }
+    let quoted = format!("&{name}").replace('\\', "\\\\").replace('\'', "\\'");
+    Some(format!("CORE::{{'{quoted}'}}({})", args.join(", ")))
 }
 
 /// Rakudo prints a method's invocant as `Str:D $:: ...` (the `$:` marker
