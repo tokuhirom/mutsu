@@ -10,6 +10,7 @@ pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
             parse_word_logical_op(r)
         {
+            super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let sigil =
@@ -54,6 +55,7 @@ pub(crate) fn or_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_,
         if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
             parse_word_logical_op(r)
         {
+            super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = and_expr_no_assign_mode(r, mode)?;
@@ -110,6 +112,7 @@ fn and_chain_seeded(input: &str, seed: Expr) -> PResult<'_, Expr> {
         if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
             parse_word_logical_op(r)
         {
+            super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = wl_operand(r)?;
@@ -137,6 +140,7 @@ fn or_chain_continue(input: &str, left0: Expr) -> PResult<'_, Expr> {
         if let Some((op @ (LogicalOp::Or | LogicalOp::XorXor | LogicalOp::OrElse), len)) =
             parse_word_logical_op(r)
         {
+            super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, first) = wl_operand(r)?;
@@ -169,6 +173,7 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
             parse_word_logical_op(r)
         {
+            super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let sigil =
@@ -210,6 +215,7 @@ pub(crate) fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_
         if let Some((op @ (LogicalOp::And | LogicalOp::AndThen | LogicalOp::NotAndThen), len)) =
             parse_word_logical_op(r)
         {
+            super::logic_worry::warn_uncurried_whatever(&left, &r[..len], input);
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = not_expr_mode(r, mode)?;
