@@ -1,11 +1,11 @@
 //! The executing finalization of a compilation unit (ADR-15334 Stage 2, slice 9).
 //!
 //! An executing parse keeps the constructs of the migrated families in their
-//! RakuAST shape (`ParsedStmt` / `ParsedExpr`) and wraps a few terms in
-//! `Expr::Spelled`; the unit is finalized in place: each typed node is lowered
-//! where it stands, each spelling is taken off, and a construct the parser's own
-//! tree cannot stand for (a bareword to classify, a regex with code, an
-//! operator declaration, ...) is converted to RakuAST and lowered on its own.
+//! RakuAST shape (`ParsedStmt` / `ParsedExpr`) and builds no spellings
+//! (ADR-15760 §2.4); the unit is finalized in place: each typed node is lowered
+//! where it stands, and a construct the parser's own tree cannot stand for (a
+//! bareword to classify, a regex with code, an operator declaration, ...) is
+//! converted to RakuAST and lowered on its own.
 //! No `RakuAstNode` is built for the rest of the unit.
 //!
 //! `.AST` and `EVAL($ast)` do not come through here: they render and read the
@@ -50,7 +50,7 @@ impl Drop for Executing {
     }
 }
 
-/// Finalize the spelled compilation unit `stmts` for execution: the statements
+/// Finalize the parsed compilation unit `stmts` for execution: the statements
 /// the compiler receives.
 // Cost: O(n), n = size of the unit.
 pub(super) fn finalize_unit(
@@ -98,7 +98,7 @@ fn declares_routine(stmt: &Stmt) -> bool {
     }
 }
 
-/// Lowers every typed node and spelling of a tree where it stands, innermost
+/// Lowers every typed node of a tree where it stands, innermost
 /// first.
 struct Finalize<'s> {
     names: &'s NameScope,
