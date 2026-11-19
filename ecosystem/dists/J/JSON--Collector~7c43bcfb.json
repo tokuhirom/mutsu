@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/1795018078688397532' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/1795049507140470627' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 11,
-        "secs": 0.37,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,11 +28,11 @@
       "cmp": "no_baseline",
       "path": "t/02-callable.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/1795018080039730225' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/1795049510418533289' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.41,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -44,10 +44,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-18",
+    "date": "2026-11-19",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d3c18092",
+    "mutsu_commit": "d8802e93",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

@@ -24,6 +24,28 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/encoding.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
         "secs": 0.47,
         "skip": 0,
         "todo": 0,
@@ -34,31 +56,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/encoding.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.05,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.49,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,10 +80,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-18",
+    "date": "2026-11-19",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d3c18092",
+    "mutsu_commit": "d8802e93",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

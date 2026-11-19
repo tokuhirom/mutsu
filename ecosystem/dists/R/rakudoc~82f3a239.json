@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.21,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,30 +39,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.44,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller MAIN(); none of these signatures matches:",
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.22,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-cmd.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.51,
+        "secs": 3.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,7 +75,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.93,
+        "secs": 2.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -88,7 +87,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.15,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -98,7 +97,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.49,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +109,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.51,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -120,7 +119,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 6.25,
+        "secs": 7.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,10 +134,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-18",
+    "date": "2026-11-19",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d3c18092",
+    "mutsu_commit": "d8802e93",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -149,13 +148,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AK/RAKUDOC/a7a50254f8fc018bcfabdea8529bec408c358659.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 4,
     "mutsu_assertions": 21,
-    "parity_files": 3,
-    "regressed_files": 1
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.2.6"
 }

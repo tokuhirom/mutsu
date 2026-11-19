@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.02,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,11 +39,11 @@
       "cmp": "no_baseline",
       "path": "t/02-platform.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-libc-2-256945/musl' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/ariza-libc-2-449168/musl' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 5,
         "plan": 7,
-        "secs": 1.37,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 8,
-        "secs": 1.48,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 14,
-        "secs": 2.26,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 7,
-        "secs": 3.67,
+        "secs": 5.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 1.31,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,7 +113,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 8,
-        "secs": 2.04,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -127,7 +127,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 8,
-        "secs": 1.66,
+        "secs": 2.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -137,11 +137,11 @@
       "cmp": "no_baseline",
       "path": "t/11-native.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/ariza-native-err-2-943037: Read-only file system",
+        "first_failure": "Failed to open file /tmp/ariza-native-err-2-97833: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 36,
-        "secs": 4.71,
+        "secs": 5.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -151,11 +151,11 @@
       "cmp": "no_baseline",
       "path": "t/12-launcher.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-launcher-2-153344' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ariza-launcher-2-92409' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 2.45,
+        "secs": 2.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -169,7 +169,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 9,
-        "secs": 2.7,
+        "secs": 2.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -183,7 +183,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 12,
-        "secs": 2.36,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -197,7 +197,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 2.65,
+        "secs": 2.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -211,7 +211,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 2.17,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -225,7 +225,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 9,
-        "secs": 1.34,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -239,7 +239,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 16,
-        "secs": 3.24,
+        "secs": 3.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -249,11 +249,11 @@
       "cmp": "no_baseline",
       "path": "t/19-installer-update.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-update-installer-2-446916/root' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/ariza-update-installer-2-399846/root' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.67,
+        "secs": 3.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -265,7 +265,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.14,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -275,7 +275,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.09,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -285,11 +285,11 @@
       "cmp": "no_baseline",
       "path": "t/20-update-coordinator.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-update-2-465390' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ariza-update-2-789028' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 1.7,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -299,11 +299,11 @@
       "cmp": "no_baseline",
       "path": "t/21-update-integration.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-update-integration-2-371006/root' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/ariza-update-integration-2-401390/root' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 2.3,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -313,11 +313,11 @@
       "cmp": "no_baseline",
       "path": "t/22-distro-handles.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-distro-handles-2-500588' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ariza-distro-handles-2-403412' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 2,
         "plan": 3,
-        "secs": 1.83,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -327,11 +327,11 @@
       "cmp": "no_baseline",
       "path": "t/23-elf.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ariza-elf-2-972990' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ariza-elf-2-212133' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 1.85,
+        "secs": 2.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -360,10 +360,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-18",
+    "date": "2026-11-19",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d3c18092",
+    "mutsu_commit": "d8802e93",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
