@@ -57,6 +57,9 @@ pub(crate) struct MethodCallPlan {
     pub(crate) def: std::sync::Arc<crate::runtime::MethodDef>,
     /// The fast-path gate's `can_skip_merge` for this key.
     pub(crate) can_skip_merge: bool,
+    /// The method needs none of the general binder's optional machinery
+    /// and runs in the lean frame (`vm_method_lean_frame`).
+    pub(crate) lean: bool,
 }
 
 /// An argument whose fast-path gate reading is fixed by its type key.
@@ -225,10 +228,23 @@ impl Interpreter {
         if !gate.fast || gate.has_rw_params || gate.has_attr_aliases {
             return None;
         }
+        let receiver = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            _ => return None,
+        };
+        let lean = super::vm_method_lean_frame::lean_frame_eligible(
+            self,
+            def,
+            cc,
+            owner,
+            receiver,
+            gate.can_skip_merge,
+        );
         Some(std::sync::Arc::new(MethodCallPlan {
             owner,
             def: std::sync::Arc::clone(def),
             can_skip_merge: gate.can_skip_merge,
+            lean,
         }))
     }
 
@@ -300,7 +316,19 @@ impl Interpreter {
             .expect("a planned method is compiled");
         let empty_fns = CompiledFns::default();
         let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
-        let method_result = self.call_compiled_method_fast(
+        let method_result = if plan.lean && self.lean_args_ok(&args) {
+            self.call_compiled_method_lean(
+                class_sym.as_str(),
+                owner,
+                method_sym,
+                def,
+                cc,
+                args,
+                target.clone(),
+                fns_ref,
+            )
+        } else {
+            self.call_compiled_method_fast(
             class_sym.as_str(),
             owner,
             method_sym,
@@ -310,7 +338,8 @@ impl Interpreter {
             target.clone(),
             fns_ref,
             plan.can_skip_merge,
-        );
+        )
+        };
         if pushed_dispatch {
             self.pop_method_dispatch();
         }

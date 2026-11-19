@@ -12,7 +12,7 @@ impl Interpreter {
     /// inherited methods retain that owner. A metamethod instead belongs to
     /// each receiver's HOW, including dynamically composed receiver types.
     // Cost: O(1), except O(n) to intern a metamethod receiver name of n bytes.
-    fn scope_method_state(&self, method_name: &str, receiver_class_name: &str, owner: Symbol) {
+    pub(super) fn scope_method_state(&self, method_name: &str, receiver_class_name: &str, owner: Symbol) {
         let owner = if method_name.starts_with('^') {
             Symbol::intern(receiver_class_name)
         } else {
@@ -1315,7 +1315,7 @@ impl Interpreter {
     /// consumer that needs the post-method map (proxy_fetch) re-snapshots the
     /// live cell on demand instead — so the common exit pays no `to_map()`
     /// (full attr-map clone) at all.
-    fn reconcile_attrs(
+    pub(super) fn reconcile_attrs(
         &self,
         base: &Value,
         owner_class: &str,
@@ -1520,7 +1520,7 @@ impl Interpreter {
     /// Whether `owner_class` and `receiver_class` each declare any attribute
     /// `is default(...)` (evaluated, or deferred from a parametric role).
     // Cost: O(1) expected (four hash probes).
-    fn attr_default_classes(&self, owner_class: &str, receiver_class: &str) -> (bool, bool) {
+    pub(super) fn attr_default_classes(&self, owner_class: &str, receiver_class: &str) -> (bool, bool) {
         let registry = self.registry();
         let has = |class: &str| {
             registry.class_attribute_defaults.has_class(class)
@@ -1646,7 +1646,7 @@ impl Interpreter {
     /// aliases. The light-frame fast path skips the slow path's readonly
     /// snapshot, so each newly-marked name is recorded on the current call frame
     /// and dropped in `pop_call_frame`.
-    fn mark_fast_method_params_readonly(&mut self, method_def: &crate::runtime::MethodDef) {
+    pub(super) fn mark_fast_method_params_readonly(&mut self, method_def: &crate::runtime::MethodDef) {
         // Interned once per def, not per call (#10961).
         let name_syms = method_def.param_def_name_syms();
         for (pd, &sym) in method_def.param_defs.iter().zip(name_syms) {
@@ -1804,7 +1804,7 @@ impl Interpreter {
     /// latch would leave `placeholder_var_possible()` reading false while such
     /// a key is live.
     // Cost: O(p * q), p = bound parameters, q = the method's parameters.
-    fn insert_fast_param_values_by_name(
+    pub(super) fn insert_fast_param_values_by_name(
         &mut self,
         param_values: &super::vm_param_values::ParamValues<'_>,
         method_def: &crate::runtime::MethodDef,
@@ -2798,96 +2798,19 @@ impl Interpreter {
         // the slow path above.
         let saved_lexical_fatal_mode =
             std::mem::replace(&mut self.module.lexical_fatal_mode, cc.method_fatal_pragma);
-        let mut ip = 0;
-        let mut result = Ok(());
-        let mut explicit_return: Option<Value> = None;
-        let mut fail_bypass = false;
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
-        let frame_caller_code = self.current_code;
-        while ip < cc.ops.len() {
-            // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
-            // start, run the whole body natively when the chunk is hot and
-            // Tier A-compilable; the native outcome threads through the same
-            // match arms below.
-            let step = if ip == 0
-                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
-            {
-                ip = cc.ops.len();
-                r
-            } else {
-                self.exec_one_backedge_polled(cc, &mut ip, compiled_fns, polls)
-            };
-            match step {
-                Ok(()) => {}
-                Err(mut e) if e.is_leave => {
-                    let routine_key = crate::qualified::qualified(owner_sym, method_sym);
-                    let matches_frame = if let Some(_target_id) = e.leave_callable_id() {
-                        false
-                    } else if let Some(target_routine) = e.leave_routine() {
-                        target_routine == routine_key.as_str()
-                    } else {
-                        e.label.is_none()
-                    };
-                    if matches_frame {
-                        e.is_leave = false;
-                        e.control = None;
-                        let ret_val = e.return_value.unwrap_or(Value::NIL);
-                        explicit_return = Some(ret_val.clone());
-                        self.stack.truncate(saved_stack_depth);
-                        self.stack.push(ret_val.clone());
-                        self.resolve_frame_let_saves(let_mark, &ret_val);
-                        result = Ok(());
-                        break;
-                    }
-                    loan_env!(self, restore_let_saves(let_mark));
-                    result = Err(e);
-                    break;
-                }
-                Err(e)
-                    if e.return_value.is_some()
-                        && !e.is_yield_signal()
-                        && !cc.lets_succeed_through(&e) =>
-                {
-                    if let Some(target_id) = e.return_target_callable_id()
-                        && target_id != method_callable_id
-                    {
-                        loan_env!(self, restore_let_saves(let_mark));
-                        result = Err(e);
-                        break;
-                    }
-                    let ret_val = e.return_value.unwrap();
-                    explicit_return = Some(ret_val.clone());
-                    self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val.clone());
-                    self.resolve_frame_let_saves(let_mark, &ret_val);
-                    result = Ok(());
-                    break;
-                }
-                Err(e) if e.is_fail() => {
-                    if e.fail_passes_frame(Some(method_callable_id)) {
-                        loan_env!(self, restore_let_saves(let_mark));
-                        result = Err(e);
-                        break;
-                    }
-                    fail_bypass = true;
-                    let failure = self.fail_error_to_failure_value(&e);
-                    loan_env!(self, restore_let_saves(let_mark));
-                    self.stack.truncate(saved_stack_depth);
-                    self.stack.push(failure);
-                    result = Ok(());
-                    break;
-                }
-                Err(e) => {
-                    loan_env!(self, restore_let_saves(let_mark));
-                    result = Err(e);
-                    break;
-                }
-            }
-            if self.is_halted() {
-                break;
-            }
-        }
-        self.current_code = frame_caller_code;
+        let super::vm_method_body_run::MethodBodyOutcome {
+            result,
+            explicit_return,
+            fail_bypass,
+        } = self.run_compiled_method_body(
+            cc,
+            compiled_fns,
+            owner_sym,
+            method_sym,
+            method_callable_id,
+            saved_stack_depth,
+            let_mark,
+        );
 
         // The return path reads values across frames.
         if marked_frame {
@@ -3120,23 +3043,7 @@ impl Interpreter {
         // Only commit the reconcile snapshot when `:=` recovery adjusted it
         // beyond the cell contents (see `call_compiled_method` exit).
         final_result.map(|v| {
-            let adjusted = match (base.view(), v.view()) {
-                (
-                    ValueView::Instance {
-                        class_name,
-                        attributes: base_attrs,
-                        id: base_id,
-                    },
-                    ValueView::Instance { id: ret_id, .. },
-                ) if base_id == ret_id => {
-                    if let Some(ref m) = reconciled {
-                        Value::write_back_sharing(&base_attrs, class_name, m.clone(), base_id)
-                    } else {
-                        Value::instance_sharing_cell(&base_attrs, class_name, base_id)
-                    }
-                }
-                _ => v,
-            };
+            let adjusted = Self::method_frame_result_sharing(&base, v, &reconciled);
             (adjusted, reconciled)
         })
     }
