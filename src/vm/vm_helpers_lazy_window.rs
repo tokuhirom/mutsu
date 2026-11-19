@@ -56,8 +56,7 @@ impl Interpreter {
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
         // Fewer elements than asked for: the source ended (#17908).
-        if r
-            .as_ref()
+        if r.as_ref()
             .is_ok_and(|items| items.len() < needed.saturating_sub(from))
         {
             list.mark_exhausted();

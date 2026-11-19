@@ -80,8 +80,9 @@ pub(crate) fn elems(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
     if let ValueView::LazyList(list) = target.view() {
         // Only a GENUINELY lazy list refuses `.elems`; a plain `gather {...}`
         // Seq, a `.map`/`.grep` pipe over a finite source and an
-        // `IO::CatHandle` pull are not lazy (`is_genuinely_lazy`).
-        if !list.is_genuinely_lazy() {
+        // `IO::CatHandle` pull are not lazy, and neither is a list a pull
+        // has read to its end (`is_lazy_now`, #17908).
+        if !list.is_lazy_now() {
             return None;
         }
         return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));

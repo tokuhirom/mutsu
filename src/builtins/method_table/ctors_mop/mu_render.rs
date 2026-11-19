@@ -226,7 +226,7 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
         // (raku: `(...)`). Finite/`cat_pull` lazy lists fall through to force.
         ValueView::LazyList(ll)
             if (method == "gist" || method == "raku")
-                && ll.renders_lazy_placeholder()
+                && ll.renders_lazy_now()
                 // A bare lazy Seq's `.raku` reifies a prefix, which needs the
                 // interpreter (`Interpreter::lazy_seq_raku`): decline.
                 && !(method != "gist" && !ll.in_array_context()) =>

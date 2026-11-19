@@ -419,7 +419,7 @@ fn render(
     list: &LazyList,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    if !args.is_empty() || !list.renders_lazy_placeholder() {
+    if !args.is_empty() || !list.renders_lazy_now() {
         return None;
     }
     if method == "raku" && Interpreter::lazy_seq_raku_applies(list) {

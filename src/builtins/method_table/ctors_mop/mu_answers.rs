@@ -69,7 +69,7 @@ pub(crate) fn not(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError
 /// `Mu.is-lazy`: whether the receiver produces its values on demand without
 /// a known end. An `Iterator` instance answers its stored flag; a consumed
 /// Seq or `gather` list throws `X::Seq::Consumed`; any other `LazyList` asks
-/// `is_genuinely_lazy`, the one authority for it (a plain `gather` or a finite
+/// `is_lazy_now`, the one authority for it (a plain `gather` or a finite
 /// `.map` pipe is not lazy); everything else is lazy only when it is a lazy
 /// array, an infinite range or a lazy `Seq`.
 // Cost: O(1), the invocant's own lazy flag or range end.
@@ -89,7 +89,7 @@ pub(in crate::builtins::method_table) fn is_lazy(
             if is_gather && crate::value::lazylist_is_consumed(&list) {
                 return Some(Err(crate::value::seq_consumed_error()));
             }
-            Some(Ok(Value::truth(list.is_genuinely_lazy())))
+            Some(Ok(Value::truth(list.is_lazy_now())))
         }
         _ => Some(Ok(Value::truth(
             crate::builtins::methods_0arg::is_value_lazy(target),

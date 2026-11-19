@@ -541,7 +541,7 @@ impl Interpreter {
             return Value::truth(lazy);
         }
         let value_is_lazy = |v: &Value| match v.view() {
-            ValueView::LazyList(list) => list.is_genuinely_lazy(),
+            ValueView::LazyList(list) => list.is_lazy_now(),
             ValueView::Array(_, kind) if kind.is_lazy() => true,
             ValueView::Range(..)
             | ValueView::RangeExcl(..)

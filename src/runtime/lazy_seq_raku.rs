@@ -16,7 +16,7 @@ impl Interpreter {
     /// a genuinely lazy bare `Seq`. A lazy `@` array keeps the `[...]`
     /// placeholder.
     pub(crate) fn lazy_seq_raku_applies(ll: &crate::value::LazyList) -> bool {
-        ll.renders_lazy_placeholder() && !ll.in_array_context()
+        ll.renders_lazy_now() && !ll.in_array_context()
     }
 
     /// The `.raku` text of a lazy bare `Seq`: its first 100 elements, `...`

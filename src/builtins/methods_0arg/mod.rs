@@ -198,7 +198,7 @@ pub(crate) fn native_method_0arg_cascade(
 pub(crate) fn is_lazy_count_source(target: &Value) -> bool {
     match target.view() {
         ValueView::Array(_, kind) => kind.is_lazy(),
-        ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
+        ValueView::LazyList(ll) => ll.is_lazy_now(),
         _ => false,
     }
 }
