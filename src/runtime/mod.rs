@@ -1858,8 +1858,20 @@ pub(crate) mod end_order {
     pub(crate) fn slot(end_index: Option<u32>, seq: u64) -> u64 {
         match end_index {
             Some(index) => index as u64,
-            None => seq,
+            None => seq << SEQ_SHIFT,
         }
+    }
+
+    /// The low bits of a registration-keyed slot: the ENDs one module installs
+    /// under a position reserved for its `use` (#18183) are numbered there,
+    /// between the sequence numbers around the reservation.
+    pub(crate) const SEQ_SHIFT: u32 = 16;
+
+    /// The slot of the `k`-th END installed under the reserved sequence
+    /// number `seq`.
+    // Cost: O(1).
+    pub(crate) fn reserved_slot(seq: u64, k: u64) -> u64 {
+        (seq << SEQ_SHIFT) + k.min((1 << SEQ_SHIFT) - 1)
     }
 }
 

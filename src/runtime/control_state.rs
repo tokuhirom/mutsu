@@ -50,6 +50,16 @@ pub(crate) struct ControlState {
     /// compunit runs. See `load_module` for why a `use` reached from an `EVAL`
     /// is not `end_order::MODULE`.
     pub(crate) module_load_order: Vec<u64>,
+    /// END install positions reserved at parse time for a main-unit `use`
+    /// the compile-time loader leaves to run time (`Test`, a `use` with a
+    /// `:if` or an argument list), keyed by module (#18183). rakudo installs
+    /// every `use` at compile time in source order, so such a module's ENDs
+    /// belong where its `use` is, not where its run-time load happens to
+    /// register them: after every module the parse loaded ahead of it.
+    pub(crate) reserved_module_end_slots: rustc_hash::FxHashMap<String, u64>,
+    /// While a module with a reserved slot loads: the reserved position and
+    /// the number of ENDs installed under it so far.
+    pub(crate) module_end_reservation: Option<(u64, u64)>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
     /// Only consulted for phasers that were NOT pre-installed by
     /// `preregister_main_end_phasers` (a module's, an `EVAL`'s, an rvalue

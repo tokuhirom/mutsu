@@ -39,6 +39,7 @@ impl CompileTimeLoader for Interpreter {
             request.has_condition,
             request.has_arg && request.literal_args.is_none(),
         ) else {
+            self.reserve_module_end_slot(request);
             return LoadOutcome::NotTaken;
         };
         let (bare, _) = Self::split_dist_selectors(module);
@@ -201,6 +202,34 @@ impl CompileTimeLoader for Interpreter {
 }
 
 impl Interpreter {
+    /// Reserve the END install position of a main-unit `use` this loader
+    /// leaves to run time (#18183): its ENDs then run where rakudo, which
+    /// installs every `use` at compile time, runs them -- before those of the
+    /// modules an earlier `use` loaded, after those of a later one's.
+    ///
+    /// Only the main unit's own `use`s reserve: a module's `use`s run during
+    /// that module's load, which is already in order. A module loaded once
+    /// keeps its first reservation.
+    // Cost: O(|module|).
+    fn reserve_module_end_slot(&mut self, request: &UseRequest<'_>) {
+        if !self.control.module_load_order.is_empty()
+            || request.tags.iter().any(|t| t == "from")
+        {
+            return;
+        }
+        let (bare, _) = Self::split_dist_selectors(request.module);
+        if self.module.loaded_modules.contains(bare)
+            || self.control.reserved_module_end_slots.contains_key(bare)
+        {
+            return;
+        }
+        let seq = self.control.end_phaser_seq;
+        self.control.end_phaser_seq += 1;
+        self.control
+            .reserved_module_end_slots
+            .insert(bare.to_string(), seq);
+    }
+
     /// Run `parse`, the parse of a unit this interpreter is about to run, with
     /// this interpreter as its compile-time loader. A parse that failed because
     /// a `use` failed to load reports the load's error.
