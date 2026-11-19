@@ -24,7 +24,7 @@ plan 16;
 my $arrow = Q[method m(--> Int) { 1 }].AST.gist;
 ok $arrow.contains('RakuAST::Method.new('),
     'a method with a `-->` return type renders as a RakuAST::Method';
-ok $arrow.contains('returns    => RakuAST::Type::Simple.new('),
+ok $arrow.contains('returns    => RakuAST::Type::Simple.from-identifier('),
     'a `-->` return type renders as Signature.returns';
 ok $arrow.contains('parameters => ()'),
     'a parameter-less method signature renders its empty parameter list as ()';
@@ -33,7 +33,7 @@ nok $arrow.contains('RakuAST::Trait::'),
 
 my $arrow_p = Q[method m($x --> Int) { 1 }].AST.gist;
 ok $arrow_p.contains('RakuAST::ParameterTarget::Var.new(')
-    && $arrow_p.contains('returns    => RakuAST::Type::Simple.new('),
+    && $arrow_p.contains('returns    => RakuAST::Type::Simple.from-identifier('),
     'a method signature can carry both parameters and a `-->` return type';
 
 # --- read side: the `returns` / `of` traits ---------------------------------
@@ -57,7 +57,7 @@ nok Q[method m() { 1 }].AST.gist.contains('signature'),
 my $in_class = Q[class C { method m(--> Int) { 1 } }].AST.gist;
 ok $in_class.contains('RakuAST::Method.new('),
     'a method declared in a class body renders as a RakuAST::Method';
-ok $in_class.contains('returns    => RakuAST::Type::Simple.new('),
+ok $in_class.contains('returns    => RakuAST::Type::Simple.from-identifier('),
     'a class method carries its `-->` return type in the signature';
 
 # --- introspection ----------------------------------------------------------

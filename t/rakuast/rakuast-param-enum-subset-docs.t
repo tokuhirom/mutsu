@@ -15,7 +15,7 @@ sub stmt-raku(Str $src, Int $n = 0) { flat($src.AST.statements[$n].raku) }
 is stmt-raku(Q"sub f(#| the arg
  $x) { }
 "),
-    'RakuAST::Statement::Expression.new( expression => RakuAST::Sub.new( name => RakuAST::Name.from-identifier("f"), signature => RakuAST::Signature.new( parameters => ( RakuAST::Parameter.new( type => RakuAST::Type::Setting.new( RakuAST::Name.from-identifier("Any") ), target => RakuAST::ParameterTarget::Var.new( name => "\$x" ), optional => False ).declarator-docs( leading => ( "the arg", ) ), ) ), body => RakuAST::Blockoid.new( RakuAST::StatementList.new() ) ) )',
+    'RakuAST::Statement::Expression.new( expression => RakuAST::Sub.new( name => RakuAST::Name.from-identifier("f"), signature => RakuAST::Signature.new( parameters => ( RakuAST::Parameter.new( type => RakuAST::Type::Setting.from-identifier("Any"), target => RakuAST::ParameterTarget::Var.new( name => "\$x" ), optional => False ).declarator-docs( leading => ( "the arg", ) ), ) ), body => RakuAST::Blockoid.new( RakuAST::StatementList.new() ) ) )',
     'a leading doc on a parameter';
 ok stmt-raku(Q"sub f($x #= trailing
 ) { }
@@ -31,5 +31,5 @@ enum E <a b>;
 is stmt-raku(Q"#| doc
 subset S of Int where * > 0;
 "),
-    'RakuAST::Statement::Expression.new( expression => RakuAST::Type::Subset.new( name => RakuAST::Name.from-identifier("S"), where => RakuAST::ApplyInfix.new( left => RakuAST::Term::Whatever.new, infix => RakuAST::Infix.new(">"), right => RakuAST::IntLiteral.new(0) ), traits => ( RakuAST::Trait::Of.new( RakuAST::Type::Simple.new( RakuAST::Name.from-identifier("Int") ) ), ) ).declarator-docs( leading => ( "doc", ) ) )',
+    'RakuAST::Statement::Expression.new( expression => RakuAST::Type::Subset.new( name => RakuAST::Name.from-identifier("S"), where => RakuAST::ApplyInfix.new( left => RakuAST::Term::Whatever.new, infix => RakuAST::Infix.new(">"), right => RakuAST::IntLiteral.new(0) ), traits => ( RakuAST::Trait::Of.new( RakuAST::Type::Simple.from-identifier("Int") ), ) ).declarator-docs( leading => ( "doc", ) ) )',
     'a leading doc on a subset';

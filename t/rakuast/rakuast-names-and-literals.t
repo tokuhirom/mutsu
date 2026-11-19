@@ -16,7 +16,7 @@ sub exprs($src) { $src.AST.statements.map(*.expression) }
 # --- nested declarations are reached by their composed names
 {
     my @e = exprs(Q[class Outer { class Inner { }; method m { Outer::Inner } }; Outer::Inner.new]);
-    like @e[0].gist, /'Type::Simple.new(' \s* 'RakuAST::Name.from-identifier-parts("Outer","Inner")'/,
+    like @e[0].gist, /'Type::Simple.from-identifier-parts("Outer","Inner")'/,
         'a class nested in a class is Outer::Inner';
     my @m = exprs(Q[module M1 { class C { }; our sub foo { 1 }; our constant c = 5 }; M1::C.new; M1::foo; M1::c]);
     isa-ok @m[1].operand, RakuAST::Type::Simple, 'M1::C is a type';

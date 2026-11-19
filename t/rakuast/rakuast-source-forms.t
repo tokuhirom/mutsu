@@ -19,9 +19,7 @@ is Q[sub f($a?) { }; f 1; f(1); f;].AST.gist, q:to/END/.chomp, 'call without par
           signature => RakuAST::Signature.new(
             parameters => (
               RakuAST::Parameter.new(
-                type     => RakuAST::Type::Setting.new(
-                  RakuAST::Name.from-identifier("Any")
-                ),
+                type     => RakuAST::Type::Setting.from-identifier("Any"),
                 target   => RakuAST::ParameterTarget::Var.new(
                   name => "\$a"
                 ),
@@ -307,9 +305,7 @@ is Q[Num(1); Array[Int]; Hash[Int](1);].AST.gist, q:to/END/.chomp, 'type calls';
     RakuAST::StatementList.new(
       RakuAST::Statement::Expression.new(
         expression => RakuAST::ApplyPostfix.new(
-          operand => RakuAST::Type::Simple.new(
-            RakuAST::Name.from-identifier("Num")
-          ),
+          operand => RakuAST::Type::Simple.from-identifier("Num"),
           postfix => RakuAST::Call::Term.new(
             args => RakuAST::ArgList.new(
               RakuAST::IntLiteral.new(1)
@@ -319,26 +315,18 @@ is Q[Num(1); Array[Int]; Hash[Int](1);].AST.gist, q:to/END/.chomp, 'type calls';
       ),
       RakuAST::Statement::Expression.new(
         expression => RakuAST::Type::Parameterized.new(
-          base-type => RakuAST::Type::Simple.new(
-            RakuAST::Name.from-identifier("Array")
-          ),
+          base-type => RakuAST::Type::Simple.from-identifier("Array"),
           args      => RakuAST::ArgList.new(
-            RakuAST::Type::Simple.new(
-              RakuAST::Name.from-identifier("Int")
-            )
+            RakuAST::Type::Simple.from-identifier("Int")
           )
         )
       ),
       RakuAST::Statement::Expression.new(
         expression => RakuAST::ApplyPostfix.new(
           operand => RakuAST::Type::Parameterized.new(
-            base-type => RakuAST::Type::Simple.new(
-              RakuAST::Name.from-identifier("Hash")
-            ),
+            base-type => RakuAST::Type::Simple.from-identifier("Hash"),
             args      => RakuAST::ArgList.new(
-              RakuAST::Type::Simple.new(
-                RakuAST::Name.from-identifier("Int")
-              )
+              RakuAST::Type::Simple.from-identifier("Int")
             )
           ),
           postfix => RakuAST::Call::Term.new(
@@ -448,9 +436,7 @@ is Q[sub f($a) { }; (f(1) for ^2).join('|');].AST.gist, q:to/END/.chomp, 'parent
           signature => RakuAST::Signature.new(
             parameters => (
               RakuAST::Parameter.new(
-                type     => RakuAST::Type::Setting.new(
-                  RakuAST::Name.from-identifier("Any")
-                ),
+                type     => RakuAST::Type::Setting.from-identifier("Any"),
                 target   => RakuAST::ParameterTarget::Var.new(
                   name => "\$a"
                 ),
@@ -868,9 +854,7 @@ is Q[sub f(Int) { }].AST.gist, q:to/END/.chomp, 'type-only parameter';
           signature => RakuAST::Signature.new(
             parameters => (
               RakuAST::Parameter.new(
-                type     => RakuAST::Type::Simple.new(
-                  RakuAST::Name.from-identifier("Int")
-                ),
+                type     => RakuAST::Type::Simple.from-identifier("Int"),
                 optional => False
               ),
             )
@@ -967,9 +951,7 @@ is Q[use Test; is-deeply(1, 1, :a(1)); throws-like({ 1 }, X::OutOfRange, :messag
                 )
               )
             ),
-            RakuAST::Type::Simple.new(
-              RakuAST::Name.from-identifier-parts("X","OutOfRange")
-            ),
+            RakuAST::Type::Simple.from-identifier-parts("X","OutOfRange"),
             RakuAST::ColonPair::Value.new(
               key   => "message",
               value => RakuAST::Circumfix::Parentheses.new(
@@ -1120,9 +1102,7 @@ class AlsoUser { also is AlsoBase; }|.AST.gist, q:to/END/.chomp, '`also is Paren
                 RakuAST::Statement::Also.new(
                   traits => (
                     RakuAST::Trait::Is.new(
-                      type => RakuAST::Type::Simple.new(
-                        RakuAST::Name.from-identifier("AlsoBase")
-                      )
+                      type => RakuAST::Type::Simple.from-identifier("AlsoBase")
                     ),
                   )
                 )

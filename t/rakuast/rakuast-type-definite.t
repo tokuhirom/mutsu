@@ -15,9 +15,7 @@ is Q[my Int:D $x = 5].AST.gist, q:to/END/.chomp, 'Int:D -> Type::Definedness(def
       RakuAST::Statement::Expression.new(
         expression => RakuAST::VarDeclaration::Simple.new(
           type        => RakuAST::Type::Definedness.new(
-            base-type => RakuAST::Type::Simple.new(
-              RakuAST::Name.from-identifier("Int")
-            ),
+            base-type => RakuAST::Type::Simple.from-identifier("Int"),
             definite  => True
           ),
           sigil       => "\$",
@@ -36,7 +34,7 @@ is Q[my Int:U $x].AST.gist.contains('definite  => False'), True, 'Int:U -> defin
 # --- the base type is a nested Type::Simple ---------------------------------
 my $g = Q[my Str:D $s = "hi"].AST.gist;
 ok $g.contains('type        => RakuAST::Type::Definedness.new(')
-    && $g.contains('base-type => RakuAST::Type::Simple.new(')
-    && $g.contains('RakuAST::Name.from-identifier("Str")')
+    && $g.contains('base-type => RakuAST::Type::Simple.from-identifier(')
+    && $g.contains('.from-identifier("Str")')
     && $g.contains('definite  => True'),
     'Str:D -> Definedness over a Type::Simple base';

@@ -16,9 +16,7 @@ isa-ok $trusts, RakuAST::Trait::Trusts, 'Trait::Trusts.new(type => ...) construc
 isa-ok $trusts, RakuAST::Trait, '... and is a RakuAST::Trait';
 is $trusts.type.name.canonicalize, 'TrustedOne', '... with the type accessor';
 is $trusts.raku, 'RakuAST::Trait::Trusts.new(
-  type => RakuAST::Type::Simple.new(
-    RakuAST::Name.from-identifier("TrustedOne")
-  )
+  type => RakuAST::Type::Simple.from-identifier("TrustedOne")
 )', '... and renders as rakudo does';
 
 class TrustedOne { }

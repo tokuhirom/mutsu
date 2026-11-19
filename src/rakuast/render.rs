@@ -42,6 +42,9 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
         return render_node(&shown, indent);
     }
     let name = node.class.printed_name();
+    if let Some(rendered) = render_type_from_identifier(node, indent) {
+        return rendered;
+    }
     if node.class == RakuAstClass::Name
         && !node.fields.iter().any(|f| f.name == Some("colonpairs"))
         && let Some(rendered) = render_name_parts(node, indent)
@@ -135,6 +138,40 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
     s.push_str(&" ".repeat(indent));
     s.push(')');
     s
+}
+
+/// `Type::Simple`, `Type::Setting` and `Type::Capture` over a plain name are
+/// rendered by rakudo as the `from-identifier` / `from-identifier-parts` call
+/// that builds them (`RakuAST::Type::Simple.from-identifier("Int")`), not as
+/// `.new` around the `Name`.
+// Cost: O(n), n = parts of the name.
+fn render_type_from_identifier(node: &RakuAstNode, indent: usize) -> Option<String> {
+    if !matches!(
+        node.class,
+        RakuAstClass::TypeSimple | RakuAstClass::TypeSetting | RakuAstClass::TypeCapture
+    ) {
+        return None;
+    }
+    let [field] = node.fields.as_slice() else {
+        return None;
+    };
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return None;
+    };
+    let ValueView::RakuAst(name) = value.view() else {
+        return None;
+    };
+    if field.name.is_some()
+        || name.class != RakuAstClass::Name
+        || name.fields.iter().any(|f| f.name == Some("colonpairs"))
+    {
+        return None;
+    }
+    let rendered = render_node(name, indent);
+    let call = rendered.strip_prefix("RakuAST::Name.")?;
+    // The general `Name.new(...)` has no `from-identifier` spelling.
+    call.starts_with("from-identifier")
+        .then(|| format!("{}.{call}", node.class.printed_name()))
 }
 
 /// A name written with colonpairs (`class A:ver<1.0> { }`), which rakudo

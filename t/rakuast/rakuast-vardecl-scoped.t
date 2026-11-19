@@ -13,9 +13,7 @@ is Q[my Int $x = 5].AST.gist, q:to/END/.chomp, 'my Int $x = 5 -> Type::Simple + 
     RakuAST::StatementList.new(
       RakuAST::Statement::Expression.new(
         expression => RakuAST::VarDeclaration::Simple.new(
-          type        => RakuAST::Type::Simple.new(
-            RakuAST::Name.from-identifier("Int")
-          ),
+          type        => RakuAST::Type::Simple.from-identifier("Int"),
           sigil       => "\$",
           desigilname => RakuAST::Name.from-identifier("x"),
           initializer => RakuAST::Initializer::Assign.new(
@@ -45,9 +43,7 @@ is Q[state $x].AST.gist.contains('scope       => "state"'), True, 'state $x -> s
 # --- `our Int $x`: scope then type ------------------------------------------
 is Q[our Int $x].AST.gist.contains(q:to/FRAG/.chomp), True, 'our Int $x -> scope then type';
           scope       => "our",
-          type        => RakuAST::Type::Simple.new(
-            RakuAST::Name.from-identifier("Int")
-          ),
+          type        => RakuAST::Type::Simple.from-identifier("Int"),
     FRAG
 
 # --- plain `my $x` still has neither scope nor type -------------------------

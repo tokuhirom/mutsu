@@ -128,9 +128,7 @@ role ConstructedParent { method marker { 'constructed' } }
 my $constructed-role = RakuAST::Role.new(
     name => RakuAST::Name.from-identifier('ConstructedChild'),
     traits => (
-        RakuAST::Trait::Does.new(RakuAST::Type::Simple.new(
-            RakuAST::Name.from-identifier('ConstructedParent')
-        )),
+        RakuAST::Trait::Does.new(RakuAST::Type::Simple.from-identifier('ConstructedParent')),
         RakuAST::Trait::Is.new(name => RakuAST::Name.from-identifier('rw')),
     ),
     body => RakuAST::RoleBody.new(body => RakuAST::Blockoid.new(RakuAST::StatementList.new()))

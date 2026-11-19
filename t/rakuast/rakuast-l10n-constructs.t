@@ -30,9 +30,7 @@ plan 27;
 is Q[Nil].AST.gist, q:to/END/.chomp, 'Nil -> Type::Simple';
     RakuAST::StatementList.new(
       RakuAST::Statement::Expression.new(
-        expression => RakuAST::Type::Simple.new(
-          RakuAST::Name.from-identifier("Nil")
-        )
+        expression => RakuAST::Type::Simple.from-identifier("Nil")
       )
     )
     END
@@ -120,9 +118,7 @@ is Q[subset P1 of Int where * > 0].AST.gist, q:to/END/.chomp, 'subset -> Type::S
           ),
           traits => (
             RakuAST::Trait::Of.new(
-              RakuAST::Type::Simple.new(
-                RakuAST::Name.from-identifier("Int")
-              )
+              RakuAST::Type::Simple.from-identifier("Int")
             ),
           )
         )
@@ -209,9 +205,7 @@ is Q[class S2 { submethod BUILD($x) { 1 } }].AST.gist, q:to/END/.chomp, 'submeth
                     signature => RakuAST::Signature.new(
                       parameters => (
                         RakuAST::Parameter.new(
-                          type     => RakuAST::Type::Setting.new(
-                            RakuAST::Name.from-identifier("Any")
-                          ),
+                          type     => RakuAST::Type::Setting.from-identifier("Any"),
                           target   => RakuAST::ParameterTarget::Var.new(
                             name => "\$x"
                           ),

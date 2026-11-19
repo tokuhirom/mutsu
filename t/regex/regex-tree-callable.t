@@ -48,9 +48,7 @@ RakuAST::StatementList.new(
       signature => RakuAST::Signature.new(
         parameters => (
           RakuAST::Parameter.new(
-            type     => RakuAST::Type::Setting.new(
-              RakuAST::Name.from-identifier("Any")
-            ),
+            type     => RakuAST::Type::Setting.from-identifier("Any"),
             target   => RakuAST::ParameterTarget::Var.new(
               name => "\$x"
             ),

@@ -48,8 +48,8 @@ ok flat($src2.AST.statements[1].expression).contains('Var::Package'), 'its calle
 
 # Class traits keep the written order of is / does / hides.
 my $decl = 'role R3a { }; role R3b { }; ';
-ok flat(($decl ~ 'my class C3 hides R3a is R3b { }').AST.statements[2].expression).contains('Trait::Hides.new( Type::Simple.new( Name.from-identifier("R3a") ) ), Trait::Is.new'), 'hides before is';
-ok flat(($decl ~ 'my class C3 is R3b hides R3a { }').AST.statements[2].expression).contains('Trait::Is.new( type => Type::Simple.new( Name.from-identifier("R3b") ) ), Trait::Hides'), 'is before hides';
+ok flat(($decl ~ 'my class C3 hides R3a is R3b { }').AST.statements[2].expression).contains('Trait::Hides.new( Type::Simple.from-identifier("R3a") ), Trait::Is.new'), 'hides before is';
+ok flat(($decl ~ 'my class C3 is R3b hides R3a { }').AST.statements[2].expression).contains('Trait::Is.new( type => Type::Simple.from-identifier("R3b") ), Trait::Hides'), 'is before hides';
 
 # A placeholder in a routine with its own signature is an error while the tree is built.
 throws-like { 'sub () { $^foo }.(42)'.AST }, X::Signature::Placeholder, 'a placeholder under an explicit empty signature';

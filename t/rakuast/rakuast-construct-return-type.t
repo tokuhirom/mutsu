@@ -26,9 +26,7 @@ is $signature.returns.name.gist, 'RakuAST::Name.from-identifier("Int")',
 is $signature.gist, q:to/END/.chomp, 'Signature.gist renders returns like Rakudo';
     RakuAST::Signature.new(
       parameters => (),
-      returns    => RakuAST::Type::Simple.new(
-        RakuAST::Name.from-identifier("Int")
-      )
+      returns    => RakuAST::Type::Simple.from-identifier("Int")
     )
     END
 my @signature-methods = RakuAST::Signature.^methods(:local)>>.name;
@@ -42,9 +40,7 @@ is $returns-trait.type, $type,
     'Trait::Returns.type exposes the constructed type node';
 is $returns-trait.gist, q:to/END/.chomp, 'Trait::Returns.gist renders like Rakudo';
     RakuAST::Trait::Returns.new(
-      RakuAST::Type::Simple.new(
-        RakuAST::Name.from-identifier("Int")
-      )
+      RakuAST::Type::Simple.from-identifier("Int")
     )
     END
 
@@ -55,9 +51,7 @@ is $of-trait.type, $type,
     'Trait::Of.type exposes the constructed type node';
 is $of-trait.gist, q:to/END/.chomp, 'Trait::Of.gist renders like Rakudo';
     RakuAST::Trait::Of.new(
-      RakuAST::Type::Simple.new(
-        RakuAST::Name.from-identifier("Int")
-      )
+      RakuAST::Type::Simple.from-identifier("Int")
     )
     END
 ok RakuAST::Trait::Returns.^can('new').elems > 0

@@ -57,6 +57,6 @@ is Q[class C2 { method m { 1 } }].AST.gist, q:to/END/.chomp, 'method in class bo
 my $g = Q[class C3 { method m($x) { $x } }].AST.gist;
 ok $g.contains('expression => RakuAST::Method.new(')
     && $g.contains('signature => RakuAST::Signature.new(')
-    && $g.contains('type     => RakuAST::Type::Setting.new(')
+    && $g.contains('type     => RakuAST::Type::Setting.from-identifier(')
     && $g.contains('name => "\$x"'),
     'method with a parameter -> Method + Signature + Type::Setting';
