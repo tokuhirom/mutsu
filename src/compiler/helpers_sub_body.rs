@@ -1523,6 +1523,7 @@ impl Compiler {
         self.inherit_outer_code_var_names(&mut sub_compiler);
         self.inherit_enclosing_scopes(&mut sub_compiler);
         self.inherit_block_lexsubs(&mut sub_compiler);
+        self.inherit_block_lexical_types(&mut sub_compiler);
         sub_compiler.implicit_underscore = param_defs
             .iter()
             .any(|pd| pd.name == "@_" && pd.block_param);
