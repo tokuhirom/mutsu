@@ -160,6 +160,7 @@ RakuAST::Grammar	repr	RakuAST::Package
 RakuAST::Grammar	resolution	RakuAST::Package
 RakuAST::Grammar	scope	RakuAST::Package
 RakuAST::Grammar	traits	RakuAST::Package
+RakuAST::Heredoc	IMPL-AWAITS-BODY	RakuAST::Heredoc
 RakuAST::Heredoc	has-variables	RakuAST::QuotedString
 RakuAST::Heredoc	processors	RakuAST::QuotedString
 RakuAST::Heredoc	stop	RakuAST::Heredoc

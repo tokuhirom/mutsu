@@ -12,7 +12,7 @@ sub code-var($source) {
 my $plain = code-var(Q[my $p = "CORE"; &::($p)::uc("x")]);
 is $plain.^name, 'RakuAST::Var::Package', 'the indirect routine is a package variable';
 is $plain.sigil, '&', 'the code sigil is retained';
-is $plain.name.parts[0].^name, 'RakuAST::Name::Part::Empty',
+is $plain.name.parts[0].^name, 'RakuAST::Name::Part::EmptyEdge',
     'a root-qualified package has an empty leading part';
 is $plain.name.parts[1].^name, 'RakuAST::Name::Part::Expression',
     'the package expression is kept as a name part';
@@ -33,7 +33,7 @@ is EVAL(Q[my $p = "CORE"; &CALLER::($p)::uc("x")].AST), 'X',
     'a CALLER-qualified indirect call round-trips';
 
 my $name = RakuAST::Name.new(
-    RakuAST::Name::Part::Empty.new,
+    RakuAST::Name::Part::EmptyEdge.new,
     RakuAST::Name::Part::Expression.new(RakuAST::StrLiteral.new('CORE')),
     RakuAST::Name::Part::Simple.new('uc'),
 );

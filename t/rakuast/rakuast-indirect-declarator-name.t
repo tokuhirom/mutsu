@@ -3,7 +3,7 @@ use Test;
 use experimental :rakuast;
 
 # `sub ::(EXPR)`, `method ::(EXPR)` and `class ::(EXPR)` name the declaration
-# with a computed name: `Name(Part::Empty, Part::Expression(EXPR))`.
+# with a computed name: `Name(Part::EmptyEdge, Part::Expression(EXPR))`.
 plan 10;
 
 for <sub method class> -> $kind {

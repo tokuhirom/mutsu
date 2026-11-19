@@ -1119,7 +1119,7 @@ is Q[class ::ColonsD { }].AST.gist, q:to/END/.chomp, '`class ::Name`';
       RakuAST::Statement::Expression.new(
         expression => RakuAST::Class.new(
           name => RakuAST::Name.new(
-            RakuAST::Name::Part::Empty.new,
+            RakuAST::Name::Part::EmptyEdge.new,
             RakuAST::Name::Part::Simple.new("ColonsD")
           ),
           body => RakuAST::Block.new(

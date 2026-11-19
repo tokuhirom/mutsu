@@ -430,9 +430,10 @@ pub enum RakuAstClass {
     // tree can retain the exact Name shape.
     NamePartExpression,
     // The empty edge of a name: the leading `::` of `::Foo` / `::($x)` and the
-    // trailing `::` of a stash lookup `Foo::`. Rakudo 2026.09 spells it
-    // `Name::Part::Empty`; rakudo/rakudo#6771 renames it to
-    // `Name::Part::EmptyEdge`, so both spellings are modelled and accepted.
+    // trailing `::` of a stash lookup `Foo::`. Rakudo 2026.09 spelled it
+    // `Name::Part::Empty`; rakudo/rakudo#6771 (2026.11) renamed it to
+    // `Name::Part::EmptyEdge`, which is what `.AST` emits; `Empty` is still
+    // accepted on input.
     NamePartEmpty,
     NamePartEmptyEdge,
     ArgList,
@@ -1265,11 +1266,11 @@ pub fn type_object_is_package(class_name: &str) -> bool {
 /// The rakudo class a mutsu-only node class answers the hierarchy as. mutsu
 /// models two spellings rakudo folds into another class: `Call::BlockMethod`
 /// (rakudo renders `$x.&{...}` as a `Call::TermAsMethod`) and
-/// `Name::Part::EmptyEdge` (an `Empty` part at a name's edge).
+/// `Name::Part::Empty` (the pre-2026.11 spelling of `Name::Part::EmptyEdge`).
 fn measured_name(class_name: &str) -> &str {
     match class_name {
         "RakuAST::Call::BlockMethod" => "RakuAST::Call::TermAsMethod",
-        "RakuAST::Name::Part::EmptyEdge" => "RakuAST::Name::Part::Empty",
+        "RakuAST::Name::Part::Empty" => "RakuAST::Name::Part::EmptyEdge",
         _ => class_name,
     }
 }

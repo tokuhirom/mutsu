@@ -5,7 +5,7 @@ use Test;
 
 my $absolute = Q[role Child is ::Exception { }].AST.statements[0].expression.traits[0].type;
 isa-ok $absolute, RakuAST::Type::Simple, 'an absolute parent is a simple type';
-isa-ok $absolute.name.parts[0], RakuAST::Name::Part::Empty, 'the leading empty name part is retained';
+isa-ok $absolute.name.parts[0], RakuAST::Name::Part::EmptyEdge, 'the leading empty name part is retained';
 isa-ok $absolute.name.parts[1], RakuAST::Name::Part::Simple, 'the parent identifier remains a separate name part';
 
 my $parameterized = Q[role R[$m] { }; class C does R['append'] { }].AST.statements[1].expression.traits[0].type;

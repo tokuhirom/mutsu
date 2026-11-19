@@ -93,6 +93,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     interp_row!("RakuAST::FatArrow", "value", node_value),
     row!("RakuAST::FunctionInfix", "function"),
     row!("RakuAST::Grammar", "declarator"),
+    row!("RakuAST::Heredoc", "IMPL-AWAITS-BODY"),
     row!("RakuAST::Heredoc", "stop"),
     row!("RakuAST::Infix", "is-resolved"),
     row!("RakuAST::Infix", "operator"),

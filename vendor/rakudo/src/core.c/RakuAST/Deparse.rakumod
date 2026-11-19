@@ -973,8 +973,7 @@ CODE
     method syn-type($ast, :$skip) {
         # a derived type, such as a coercion, deparses its base type
         # through this method, so it must not be highlighted twice
-        my int $named = nqp::istype($ast,RakuAST::Type::Simple)
-          || nqp::istype($ast,RakuAST::Type::Setting);
+        my int $named = nqp::istype($ast,RakuAST::Type::Simple);
         my str $name  = self.deparse($named ?? $ast.name !! $ast);
 
         return "" if $skip && $skip eq $name;
@@ -1703,6 +1702,13 @@ CODE
 
     multi method deparse(RakuAST::Heredoc:D $ast --> Str:D) {
         my @processors = $ast.processors;
+
+        # a heredoc whose body has not arrived yet only has its opener
+        if $ast.IMPL-AWAITS-BODY {
+            my $delimiter := $ast.IMPL-PENDING-DELIMITER;
+            my ($open, $close) = self.delimiters-for($delimiter);
+            return self.multiple-processors($delimiter, @processors, :$open, :$close);
+        }
         @processors.push('heredoc');
 
         # the text is indented with the whitespace of the stop marker, a
@@ -1851,7 +1857,7 @@ CODE
                 if nqp::istype($_,RakuAST::Name::Part::Expression) {
                     '(' ~ self.deparse(.expr) ~ ')'
                 }
-                elsif nqp::istype($_,RakuAST::Name::Part::Empty) {
+                elsif nqp::istype($_,RakuAST::Name::Part::EmptyEdge) {
                     ''
                 }
                 else {

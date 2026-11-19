@@ -11,8 +11,8 @@ my $multi = RakuAST::Name.from-identifier-parts('Foo', 'Bar', 'baz');
 my $global = RakuAST::Name.from-identifier-parts('GLOBAL', 'x');
 my $core = RakuAST::Name.from-identifier-parts('CORE', 'x');
 my $parent = RakuAST::Name.from-identifier-parts('PARENT', 'x');
-my $anon = RakuAST::Name.new(RakuAST::Name::Part::Empty.new, RakuAST::Name::Part::Empty.new);
-my $pkg = RakuAST::Name.new(RakuAST::Name::Part::Simple.new('Foo'), RakuAST::Name::Part::Empty.new);
+my $anon = RakuAST::Name.new(RakuAST::Name::Part::EmptyEdge.new, RakuAST::Name::Part::EmptyEdge.new);
+my $pkg = RakuAST::Name.new(RakuAST::Name::Part::Simple.new('Foo'), RakuAST::Name::Part::EmptyEdge.new);
 
 is $foo.is-identifier, 1, 'a lone simple part is an identifier';
 is $multi.is-identifier, 0, 'a qualified name is not';

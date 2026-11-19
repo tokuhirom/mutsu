@@ -57,7 +57,7 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
         ],
         TermEnum => &["name"],
         CallMetaMethod => &["args"],
-        Heredoc => &["has-variables", "processors"],
+        Heredoc => &["has-variables", "processors", "IMPL-AWAITS-BODY"],
         StubFail | StubDie | StubWarn => &["name"],
         // Rakudo's `Var::Compiler::Routine` is a lexical lookup of
         // `&?ROUTINE`; `Var::Compiler::Distribution` names `$?DISTRIBUTION`
@@ -237,6 +237,9 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
                 .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Mu"))),
         ),
         (QuotedString | Heredoc, "has-variables") => Some(Value::truth(quoted_has_variables(node))),
+        // A heredoc of a parsed tree has its body (only a heredoc still being
+        // parsed awaits it).
+        (Heredoc, "IMPL-AWAITS-BODY") => Some(Value::truth(false)),
         (Heredoc, "processors") => {
             Some(field(node, "processors").unwrap_or_else(|| Value::array(Vec::new())))
         }
@@ -505,8 +508,14 @@ fn is_empty_part(part: &Value) -> bool {
                 RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge
             )
         }
-        // A hand-built name may hold the `Name::Part::Empty` type object.
-        ValueView::Package(name) => name.with_str(|n| n == "RakuAST::Name::Part::Empty"),
+        // A hand-built name may hold the `Name::Part::EmptyEdge` type object
+        // (or the pre-2026.11 `Empty`).
+        ValueView::Package(name) => name.with_str(|n| {
+            matches!(
+                n,
+                "RakuAST::Name::Part::EmptyEdge" | "RakuAST::Name::Part::Empty"
+            )
+        }),
         _ => false,
     }
 }

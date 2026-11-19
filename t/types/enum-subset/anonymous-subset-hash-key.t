@@ -11,8 +11,8 @@ sub key-type($source) {
 my $type = key-type(Q[class Keyed1 { has Str %.bla{subset :: of Str where any("ble", "blob")}; }]);
 is $type.^name, 'RakuAST::Type::Subset', 'the hash key remains a Type::Subset';
 is $type.name.parts.elems, 2, 'the anonymous subset has both measured name parts';
-is $type.name.parts[0].^name, 'RakuAST::Name::Part::Empty', 'the name starts with Rakudo’s empty part';
-is $type.name.parts[1].^name, 'RakuAST::Name::Part::Empty', 'the anonymous subset keeps both empty name parts';
+is $type.name.parts[0].^name, 'RakuAST::Name::Part::EmptyEdge', 'the name starts with Rakudo’s empty part';
+is $type.name.parts[1].^name, 'RakuAST::Name::Part::EmptyEdge', 'the anonymous subset keeps both empty name parts';
 is $type.traits[0].^name, 'RakuAST::Trait::Of', 'the explicit base remains a Trait::Of';
 is $type.where.^name, 'RakuAST::Call::Name', 'the subset predicate stays structured';
 

@@ -27,13 +27,13 @@ sub name-parts($src) {
     $src.AST.statements[*-1].expression.name.parts.map(*.^name).join(',')
 }
 is name-parts(Q|::("A")::Bar|),
-    'RakuAST::Name::Part::Empty,RakuAST::Name::Part::Expression,RakuAST::Name::Part::Simple',
+    'RakuAST::Name::Part::EmptyEdge,RakuAST::Name::Part::Expression,RakuAST::Name::Part::Simple',
     'RakuAST keeps the static tail as Simple parts';
 is name-parts(Q|::("A")::|),
-    'RakuAST::Name::Part::Empty,RakuAST::Name::Part::Expression,RakuAST::Name::Part::Empty',
-    'RakuAST ends a trailing :: with the Empty type object';
-nok Q|::("A")::|.AST.statements[0].expression.name.parts[*-1].DEFINITE,
-    'the trailing edge is the type object, not an instance';
+    'RakuAST::Name::Part::EmptyEdge,RakuAST::Name::Part::Expression,RakuAST::Name::Part::EmptyEdge',
+    'RakuAST ends a trailing :: with an EmptyEdge instance';
+ok Q|::("A")::|.AST.statements[0].expression.name.parts[*-1].DEFINITE,
+    'the trailing edge is an instance (rakudo 2026.11), like the leading one';
 
 is EVAL(Q|class INT3 { class Bar { } }; my $m = 'INT3'; ::($m)::Bar.^name|.AST), 'INT3::Bar',
     'the static tail round-trips through .AST.EVAL';
