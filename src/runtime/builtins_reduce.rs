@@ -249,7 +249,7 @@ impl Interpreter {
         let assoc = self.callable_reduce_assoc(&callable);
         let is_thunky = Self::is_thunky_reduce_op(&callable);
 
-        let result = match assoc {
+        match assoc {
             OpAssoc::Right => {
                 let mut acc = items.last().cloned().unwrap();
                 let mut right_edge = items.len().saturating_sub(1);
@@ -356,9 +356,7 @@ impl Interpreter {
                 }
                 out.map(|()| acc)
             }
-        };
-
-        result
+        }
     }
 
     /// Call one reduce/produce step. Compiled-first: a `Sub` carrying bytecode

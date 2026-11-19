@@ -2312,9 +2312,7 @@ impl Interpreter {
                 let key_str = key.to_string();
                 let v = self.resolve_hash_entry(&items, &key_str);
                 if v.is_nil() {
-                    {
-                        self.typed_container_default(&Value::hash_with_data(items.clone()))
-                    }
+                    self.typed_container_default(&Value::hash_with_data(items.clone()))
                 } else {
                     v
                 }
@@ -2349,9 +2347,7 @@ impl Interpreter {
                 };
                 let v = self.resolve_hash_entry(&items, &key_str);
                 if v.is_nil() {
-                    {
-                        self.typed_container_default(&Value::hash_with_data(items.clone()))
-                    }
+                    self.typed_container_default(&Value::hash_with_data(items.clone()))
                 } else {
                     v
                 }
