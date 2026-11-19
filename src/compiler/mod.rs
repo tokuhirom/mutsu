@@ -1133,6 +1133,7 @@ mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
+mod stash_entry_var;
 mod with_topic_alias;
 pub(crate) use crate::op_names as helpers_ops;
 pub(crate) use helpers_method_body::method_body_key;
