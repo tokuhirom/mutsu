@@ -3532,6 +3532,15 @@ impl Compiler {
             self.code.emit(OpCode::LoadConst(idx));
             return;
         }
+        // A type the target scope declares is a compile-time constant: the
+        // type object of that very declaration (#18213).
+        if let Some(registered) = self.outer_declared_type(&bare, depth) {
+            let idx = self
+                .code
+                .add_constant(Value::package(Symbol::intern(&registered)));
+            self.code.emit(OpCode::LoadConst(idx));
+            return;
+        }
         if self.try_emit_outer_capture_read(&bare, depth) {
             return;
         }
