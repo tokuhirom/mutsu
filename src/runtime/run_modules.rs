@@ -821,9 +821,24 @@ impl Interpreter {
             None if self.env.get("__mutsu_in_eval").is_some() => super::end_order::RUNTIME,
             None => super::end_order::MODULE,
         };
+        // A main-unit `use` the parse left to run time installs its ENDs at
+        // the position the parse reserved for it (#18183).
+        let reservation = if self.control.module_load_order.is_empty() {
+            self.control
+                .reserved_module_end_slots
+                .remove(module)
+                .map(|seq| (seq, 0))
+        } else {
+            None
+        };
+        let saved_reservation = match reservation {
+            Some(r) => self.control.module_end_reservation.replace(r),
+            None => self.control.module_end_reservation,
+        };
         self.control.module_load_order.push(order);
         let result = self.load_module_inner(module, None);
         self.control.module_load_order.pop();
+        self.control.module_end_reservation = saved_reservation;
         result.map(|_precompiled| ())
     }
 
