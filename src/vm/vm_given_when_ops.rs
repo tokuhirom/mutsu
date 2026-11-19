@@ -147,10 +147,24 @@ impl Interpreter {
             topic
         };
         let given_pointy_topic_value_depth = self.topic_state.given_pointy_topic_values.len();
+        // An `@` pointy parameter is a signature parameter: a Seq topic binds
+        // to it through `PositionalBindFailover` (`.cache`), as a routine's
+        // `@` parameter does (`with $seq -> @l`, `given (1,2).Seq -> @l`).
+        // The parameter then holds the cached List, not the topic itself, so
+        // there is nothing to alias and no writeback (`$seq` keeps its Seq).
+        let mut bound_through_failover = false;
         if has_pointy_topic_binding {
+            let mut pointy_value = body_topic.clone().into_deref();
+            if pointy_param.as_deref().is_some_and(|p| p.starts_with('@'))
+                && let ValueView::Seq(body) = pointy_value.view()
+            {
+                body.mark_cache_requested();
+                pointy_value = Value::seq_list_view(&body);
+                bound_through_failover = true;
+            }
             self.topic_state
                 .given_pointy_topic_values
-                .push(body_topic.clone().into_deref());
+                .push(pointy_value);
         }
         self.env_mut().insert("_".to_string(), body_topic);
         loan_env!(self, set_when_matched(false));
@@ -195,7 +209,8 @@ impl Interpreter {
         // detached copy: it records no param name above, and `$_` is back at the
         // enclosing topic by now, so a writeback would store that unrelated
         // value into the source element.
-        let detached_pointy_copy = restore_outer_topic && pointy_param.is_none();
+        let detached_pointy_copy =
+            (restore_outer_topic && pointy_param.is_none()) || bound_through_failover;
         let restore = move |this: &mut Self, write_back: bool| {
             let write_back = write_back && !detached_pointy_copy;
             // Body execution (including any nested `BlockLocalScope`) has
