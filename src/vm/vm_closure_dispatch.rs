@@ -280,7 +280,13 @@ impl Interpreter {
         // built and dropped by the binder). Hand the caller's frame back so a
         // later `running_code()` never dereferences freed bytecode.
         let saved_code = self.current_code;
+        // A closure created on another execution context resolves its names
+        // through that context's routine tables (#18135).
+        let saved_routines = self.enter_closure_routine_context(&data.routine_ctx);
         let result = self.call_compiled_closure_in_unit(data, cc, args, topic, compiled_fns);
+        if let Some(saved) = saved_routines {
+            self.leave_closure_routine_context(saved);
+        }
         self.current_code = saved_code;
         self.current_unit = saved_unit;
         result

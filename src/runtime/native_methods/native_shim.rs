@@ -107,5 +107,6 @@ pub(in crate::runtime) fn native_method_shim(
         _state_scope_guard: None,
         captured_readonly: None,
         routine_cell: Default::default(),
+        routine_ctx: Default::default(),
     }))
 }

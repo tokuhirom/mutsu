@@ -54,6 +54,7 @@ impl Interpreter {
                 _state_scope_guard: None,
                 captured_readonly: None,
                 routine_cell: Default::default(),
+                routine_ctx: Default::default(),
             };
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(

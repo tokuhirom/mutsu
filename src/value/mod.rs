@@ -671,7 +671,9 @@ pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_payload;
 mod param_copy;
 pub(crate) mod routine_cell;
+pub(crate) mod routine_context_handle;
 pub(crate) use routine_cell::{RoutineCell, RoutinePrototype};
+pub(crate) use routine_context_handle::RoutineContextHandle;
 mod quanthash_store;
 pub(crate) mod raku_repr;
 mod rakuast_arg_list;
@@ -1881,6 +1883,11 @@ pub struct SubData {
     /// The routine's identity for `does` (ADR-11827): the roles composed into
     /// it, shared by every value of the same routine.
     pub(crate) routine_cell: RoutineCell,
+    /// The execution context this closure was created in, whose routine
+    /// tables its by-name calls resolve through when another thread runs it
+    /// (#18135, `runtime::routine_context`). Unset for code objects not built
+    /// by a closure-creation op.
+    pub(crate) routine_ctx: RoutineContextHandle,
 }
 
 /// See [`SubData::captured_readonly`].

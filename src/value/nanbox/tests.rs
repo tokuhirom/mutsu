@@ -278,6 +278,7 @@ fn sample_sub() -> Gc<SubData> {
         _state_scope_guard: None,
         captured_readonly: None,
         routine_cell: Default::default(),
+        routine_ctx: Default::default(),
     })
 }
 
