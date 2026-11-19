@@ -1396,13 +1396,16 @@ impl NativeCtorPlan {
     /// any more: every initializer is absent, a literal, or a seed default
     /// already memoized in `seed_defaults`, and no attribute has a `where`.
     /// Such a construction neither reads nor temporarily rebinds the caller's
-    /// env (see `try_ctor_lane`).
+    /// env (see `try_ctor_lane`). A term keyword no `sub EXPORT` hook
+    /// installed counts as the literal it folds to
+    /// (`Interpreter::decl_arg_constant`, #16897).
     // Cost: O(a), a = attributes.
-    pub(crate) fn evaluates_no_decl_expr(&self) -> bool {
+    pub(crate) fn evaluates_no_decl_expr(&self, interp: &Interpreter) -> bool {
         self.class_attrs.iter().enumerate().all(|(i, a)| {
             a.where_constraint.is_none()
                 && match &a.default {
                     None | Some(crate::opcode::DeclTraitArg::Literal(_)) => true,
+                    Some(arg) if interp.decl_arg_constant(arg).is_some() => true,
                     Some(_) => {
                         a.default_is_seed
                             && self.seed_defaults.get(i).is_some_and(|c| c.get().is_some())
