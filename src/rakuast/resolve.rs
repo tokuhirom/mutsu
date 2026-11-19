@@ -1161,6 +1161,13 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             if let Some(package) = scopes.find(&name) {
                 return Some(package.clone());
             }
+            // `CORE::Int` names the setting's own `Int`: the same external constant.
+            if let Some(bare) = name.strip_prefix("CORE::")
+                && !crate::qualified::is_qualified_str(bare)
+                && crate::core_type_names::contains(bare)
+            {
+                return external("RakuAST::Declaration::External::Constant", bare);
+            }
             if !crate::core_type_names::contains(&name) {
                 return (scopes.imported_type)(&name)
                     .then(|| external("RakuAST::Declaration::Import", &name))
