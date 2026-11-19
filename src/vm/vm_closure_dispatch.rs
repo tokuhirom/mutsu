@@ -904,23 +904,33 @@ impl Interpreter {
             .then(|| self.enter_package_guarded_sym(data.package));
             // Armed right before the bind, which takes it at its entry.
             self.dispatch.pending_nominal_verified = nominal_verified;
-            match loan_env!(
-                self,
-                // `param_name_syms.params` is `data.params` interned once per
-                // code object, so the legacy (pointy-block / placeholder)
-                // binding path names each parameter without re-hashing it per
-                // call (#8302).
-                bind_function_args_values_with_legacy_syms(
-                    &data.param_defs,
-                    &data.params,
-                    &param_name_syms.params,
-                    &args,
-                    crate::runtime::types::CalleeArgsUsage {
-                        reads: Some((cc.reads_args_array, cc.reads_args_hash)),
-                        is_block: !cc.is_routine,
-                    }
+            // The binder reads the caller's argument sources by name (a `|c`
+            // capture's cells, an `is rw` alias), so it runs with static links
+            // suppressed, as a named routine's bind does: the closure frame's
+            // capture-first lookup (`mark_outer_is_capture`) would otherwise
+            // answer a caller's `my $e` from the closure's capture or the
+            // program scope. A parameter default still follows the frame's
+            // static link (`with_static_links_honoured`).
+            let bound = crate::env::with_static_links_suppressed(|| {
+                loan_env!(
+                    self,
+                    // `param_name_syms.params` is `data.params` interned once per
+                    // code object, so the legacy (pointy-block / placeholder)
+                    // binding path names each parameter without re-hashing it per
+                    // call (#8302).
+                    bind_function_args_values_with_legacy_syms(
+                        &data.param_defs,
+                        &data.params,
+                        &param_name_syms.params,
+                        &args,
+                        crate::runtime::types::CalleeArgsUsage {
+                            reads: Some((cc.reads_args_array, cc.reads_args_hash)),
+                            is_block: !cc.is_routine,
+                        }
+                    )
                 )
-            ) {
+            });
+            match bound {
                 Ok(bindings) => bindings,
                 Err(e) => {
                     self.truncate_routine_stack(routine_base);
