@@ -322,7 +322,15 @@ impl Interpreter {
     fn push_end_phaser_ordered(&mut self, body: Vec<Stmt>, order_base: u64, index: Option<u32>) {
         let captured_env = self.env.clone();
         let package = self.current_package();
-        let order = order_base + super::end_order::slot(index, self.control.end_phaser_seq);
+        let order = match self.control.module_end_reservation.as_mut() {
+            // A module whose `use` reserved its install position (#18183).
+            Some((seq, k)) if order_base == super::end_order::MODULE => {
+                let order = super::end_order::reserved_slot(*seq, *k);
+                *k += 1;
+                order
+            }
+            _ => order_base + super::end_order::slot(index, self.control.end_phaser_seq),
+        };
         self.control.end_phaser_seq += 1;
         let mark = self.control.end_phaser_capture_seq;
         self.control.end_phaser_capture_seq += 1;

@@ -27,7 +27,7 @@ impl Interpreter {
     // Cost: O(1) when no package-less module file was loaded; otherwise O(b),
     // b = inlined block frames on top of the running routine's.
     pub(crate) fn running_compunit_lexical_unit(&self) -> Option<Symbol> {
-        if self.lexicals.compunit_lexical_units.is_empty() {
+        if self.lexicals.compunit_lexical_units.read().is_empty() {
             return None;
         }
         // A multi candidate being matched has no frame yet: its declaring
@@ -38,6 +38,7 @@ impl Interpreter {
             return self
                 .lexicals
                 .compunit_lexical_units
+                .read()
                 .contains(&unit)
                 .then_some(unit);
         }
@@ -53,6 +54,7 @@ impl Interpreter {
             return self
                 .lexicals
                 .compunit_lexical_units
+                .read()
                 .contains(&unit)
                 .then_some(unit);
         }
@@ -65,6 +67,7 @@ impl Interpreter {
         let unit = self.unit_of_source_sym(Some(def_file));
         self.lexicals
             .compunit_lexical_units
+            .read()
             .contains(&unit)
             .then_some(unit)
     }
@@ -76,6 +79,7 @@ impl Interpreter {
         let unit = self.running_compunit_lexical_unit()?;
         self.lexicals
             .unit_lexicals
+            .read()
             .get(unit.as_str())
             .is_some_and(|m| m.contains_key(name))
             .then_some(unit)
@@ -85,17 +89,19 @@ impl Interpreter {
     /// `def_file`, for a caller that knows the routine's declaring file
     /// without a frame for it (TRIR pushes none).
     // Cost: O(1).
-    pub(crate) fn compunit_lexical_of_file(&self, def_file: Symbol, name: &str) -> Option<&Value> {
-        if self.lexicals.compunit_lexical_units.is_empty() {
+    pub(crate) fn compunit_lexical_of_file(&self, def_file: Symbol, name: &str) -> Option<Value> {
+        if self.lexicals.compunit_lexical_units.read().is_empty() {
             return None;
         }
         let unit = self.unit_of_source_sym(Some(def_file));
-        if !self.lexicals.compunit_lexical_units.contains(&unit) {
+        if !self.lexicals.compunit_lexical_units.read().contains(&unit) {
             return None;
         }
         self.lexicals
             .unit_lexicals
+            .read()
             .get(unit.as_str())
             .and_then(|m| m.get(name))
+            .cloned()
     }
 }

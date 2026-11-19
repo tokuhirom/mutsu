@@ -821,9 +821,24 @@ impl Interpreter {
             None if self.env.get("__mutsu_in_eval").is_some() => super::end_order::RUNTIME,
             None => super::end_order::MODULE,
         };
+        // A main-unit `use` the parse left to run time installs its ENDs at
+        // the position the parse reserved for it (#18183).
+        let reservation = if self.control.module_load_order.is_empty() {
+            self.control
+                .reserved_module_end_slots
+                .remove(module)
+                .map(|seq| (seq, 0))
+        } else {
+            None
+        };
+        let saved_reservation = match reservation {
+            Some(r) => self.control.module_end_reservation.replace(r),
+            None => self.control.module_end_reservation,
+        };
         self.control.module_load_order.push(order);
         let result = self.load_module_inner(module, None);
         self.control.module_load_order.pop();
+        self.control.module_end_reservation = saved_reservation;
         result.map(|_precompiled| ())
     }
 
@@ -1744,10 +1759,7 @@ impl Interpreter {
                         } else {
                             value.clone().into_container_ref()
                         };
-                        self.unit_lexicals_cow_mut()
-                            .entry(unit.to_string())
-                            .or_default()
-                            .insert(name.clone(), cell);
+                        self.unit_lexicals_write(|t| { t.entry(unit.to_string()).or_default().insert(name.clone(), cell); });
                     }
                 }
                 // A unit's ordinary `our $x` loses its bare binding too: rakudo
@@ -1803,8 +1815,7 @@ impl Interpreter {
             };
             let lexical_bucket = unit_name.clone().or_else(|| {
                 (!unit_lex_names.is_empty() || !file_scope_constants.is_empty()).then(|| {
-                    crate::runtime::cow_table_mut(&mut self.lexicals.compunit_lexical_units)
-                        .insert(module_unit_for_loading_stack);
+                    self.lexicals.compunit_lexical_units.write(|units| { units.insert(module_unit_for_loading_stack); });
                     module_unit_for_loading_stack.resolve()
                 })
             });
@@ -1817,10 +1828,7 @@ impl Interpreter {
                     } else {
                         value.into_container_ref()
                     };
-                    self.unit_lexicals_cow_mut()
-                        .entry(unit.to_string())
-                        .or_default()
-                        .insert(name, cell);
+                    self.unit_lexicals_write(|t| { t.entry(unit.to_string()).or_default().insert(name, cell); });
                 }
             }
             if let Some(unit) = lexical_bucket.as_deref()
@@ -1846,10 +1854,7 @@ impl Interpreter {
                         self.mark_fresh_cell_declared_untyped(&cell, name);
                         cell
                     };
-                    self.unit_lexicals_cow_mut()
-                        .entry(unit.to_string())
-                        .or_default()
-                        .insert(name.clone(), cell);
+                    self.unit_lexicals_write(|t| { t.entry(unit.to_string()).or_default().insert(name.clone(), cell); });
                 }
                 for (name, saved) in saved_unit_lex {
                     match saved {
@@ -1874,10 +1879,7 @@ impl Interpreter {
                 } else {
                     pod.into_container_ref()
                 };
-                self.unit_lexicals_cow_mut()
-                    .entry(unit.to_string())
-                    .or_default()
-                    .insert("=pod".to_string(), cell);
+                self.unit_lexicals_write(|t| { t.entry(unit.to_string()).or_default().insert("=pod".to_string(), cell); });
             }
             // Likewise the module's `$=finish`, which its routines read after
             // the load; a caller that had none gets none back.
@@ -1889,10 +1891,7 @@ impl Interpreter {
                 } else {
                     finish.into_container_ref()
                 };
-                self.unit_lexicals_cow_mut()
-                    .entry(unit.to_string())
-                    .or_default()
-                    .insert("=finish".to_string(), cell);
+                self.unit_lexicals_write(|t| { t.entry(unit.to_string()).or_default().insert("=finish".to_string(), cell); });
             }
             if !importer_had_finish {
                 self.env.remove("=finish");

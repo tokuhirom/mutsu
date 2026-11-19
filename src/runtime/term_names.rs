@@ -67,7 +67,7 @@ impl Interpreter {
             // compunit's lexicals when the load ended; a frame that is not a
             // routine call -- a class attribute's default -- finds it there.
             self.unit_lexical_slot(key, Some(key_sym))
-                .map(Value::deref_container)
+                .map(|v| v.deref_container())
                 .or_else(|| self.module_imported_lexical(key).cloned())
                 .or_else(|| self.module_scope_lexical(key).cloned())
                 // A package block's own `my constant`, kept for its routines in

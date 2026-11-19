@@ -209,17 +209,18 @@ impl Interpreter {
     }
 
     fn set_hoist_store_entry(&mut self, pending: &HoistPendingCell, value: Option<Value>) {
-        let bucket = self.unit_lexicals_cow_mut().get_mut(&pending.unit_key);
-        if let Some(bucket) = bucket {
-            match value {
-                Some(v) => {
-                    bucket.insert(pending.name.clone(), v);
-                }
-                None => {
-                    bucket.remove(&pending.name);
+        self.unit_lexicals_write(|table| {
+            if let Some(bucket) = table.get_mut(&pending.unit_key) {
+                match value {
+                    Some(v) => {
+                        bucket.insert(pending.name.clone(), v);
+                    }
+                    None => {
+                        bucket.remove(&pending.name);
+                    }
                 }
             }
-        }
+        });
     }
 
     /// Before a mainline declaration's store into `slot`: the cell a mainline
@@ -231,7 +232,7 @@ impl Interpreter {
     // when the slot holds the captured cell, p = sub plans of `code`, v =
     // their free variables.
     pub(super) fn mainline_capture_at(&self, code: &CompiledCode, slot: usize) -> Option<Value> {
-        if self.lexicals.unit_lexicals.is_empty() || !self.vardecl_context().get() {
+        if self.lexicals.unit_lexicals.read().is_empty() || !self.vardecl_context().get() {
             return None;
         }
         let eval_key = self.eval_unit_declaring_key();
@@ -247,12 +248,14 @@ impl Interpreter {
         let captured = self
             .lexicals
             .unit_lexicals
+            .read()
             .get(
                 eval_key
                     .as_deref()
                     .unwrap_or(crate::runtime::MAINLINE_UNIT_KEY),
             )?
-            .get(name)?;
+            .get(name)?
+            .clone();
         let ValueView::ContainerRef(captured_cell) = captured.view() else {
             return None;
         };
@@ -299,18 +302,19 @@ impl Interpreter {
         // the name the way they did before they captured it.
         let entry = new.is_container_ref().then_some(new);
         let key = self.eval_unit_declaring_key();
-        if let Some(bucket) = self
-            .unit_lexicals_cow_mut()
-            .get_mut(key.as_deref().unwrap_or(crate::runtime::MAINLINE_UNIT_KEY))
-        {
-            match entry {
-                Some(v) => {
-                    bucket.insert(name, v);
-                }
-                None => {
-                    bucket.remove(&name);
+        self.unit_lexicals_write(|table| {
+            if let Some(bucket) =
+                table.get_mut(key.as_deref().unwrap_or(crate::runtime::MAINLINE_UNIT_KEY))
+            {
+                match entry {
+                    Some(v) => {
+                        bucket.insert(name, v);
+                    }
+                    None => {
+                        bucket.remove(&name);
+                    }
                 }
             }
-        }
+        });
     }
 }

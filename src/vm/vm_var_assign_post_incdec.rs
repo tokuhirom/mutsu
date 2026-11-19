@@ -1062,11 +1062,11 @@ impl Interpreter {
         // variable (`unit_lexical_slot`) before the env key, which belongs to
         // whatever scope called in (mutsu#10114).
         let cell = match gate_slot {
-            Some(s) => self.locals.get(s),
+            Some(s) => self.locals.get(s).cloned(),
             None => self
                 .unit_lexical_slot(&name, None)
                 .filter(|v| v.is_container_ref())
-                .or_else(|| self.env().get_sym(name_sym)),
+                .or_else(|| self.env().get_sym(name_sym).cloned()),
         }
         .and_then(|v| match v.descalarize().view() {
             ValueView::ContainerRef(cell) => Some(cell.clone()),

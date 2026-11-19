@@ -18,7 +18,7 @@ mod unmerged_package_vars;
 /// A per-package table of per-name entries: `package -> name -> V`, carrying
 /// the name filter that lets a failed package-chain walk cost one hash probe
 /// instead of one per tier per candidate. See the module.
-pub(crate) use package_keyed::PackageKeyed;
+pub(crate) use package_keyed::{NameMap, PackageKeyed};
 pub(crate) use registration_class_decl::BUILTIN_PARENT_TYPES;
 pub(crate) use tolerance::approx_eq_f64;
 /// The compunit / package-block lexical stores (`unit_lexicals`,
@@ -1858,8 +1858,20 @@ pub(crate) mod end_order {
     pub(crate) fn slot(end_index: Option<u32>, seq: u64) -> u64 {
         match end_index {
             Some(index) => index as u64,
-            None => seq,
+            None => seq << SEQ_SHIFT,
         }
+    }
+
+    /// The low bits of a registration-keyed slot: the ENDs one module installs
+    /// under a position reserved for its `use` (#18183) are numbered there,
+    /// between the sequence numbers around the reservation.
+    pub(crate) const SEQ_SHIFT: u32 = 16;
+
+    /// The slot of the `k`-th END installed under the reserved sequence
+    /// number `seq`.
+    // Cost: O(1).
+    pub(crate) fn reserved_slot(seq: u64, k: u64) -> u64 {
+        (seq << SEQ_SHIFT) + k.min((1 << SEQ_SHIFT) - 1)
     }
 }
 
@@ -1947,11 +1959,19 @@ pub(crate) fn cow_table_mut<T: Clone>(table: &mut std::sync::Arc<T>) -> &mut T {
 impl Interpreter {
     /// The single mutation funnel for `unit_lexicals`, bumping
     /// [`LexicalState::unit_lexical_gen`](crate::runtime::lexical_state::LexicalState::unit_lexical_gen) so caches keyed on it invalidate.
-    /// Every `cow_table_mut(&mut self.lexicals.unit_lexicals)` goes through here.
+    ///
+    /// The table is world state shared by every thread (ADR-17216 §2.5,
+    /// #18136): `f` runs under its write lock and the result is published to
+    /// every thread, so `f` must not touch `unit_lexicals` itself.
+    // Cost: O(1) plus `f`; the table is copied (O(n), n = entries) only while
+    // another thread holds a snapshot of it.
     #[inline]
-    pub(crate) fn unit_lexicals_cow_mut(&mut self) -> &mut PackageLexicals {
+    pub(crate) fn unit_lexicals_write<R>(
+        &mut self,
+        f: impl FnOnce(&mut PackageLexicals) -> R,
+    ) -> R {
         self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
-        cow_table_mut(&mut self.lexicals.unit_lexicals)
+        self.lexicals.unit_lexicals.write(f)
     }
 
     /// The generation TRIR's free-variable cache (`trir_outer_cache`) is
@@ -1966,6 +1986,7 @@ impl Interpreter {
         self.lexicals
             .unit_lexical_gen
             .wrapping_add(self.lexicals.package_lexicals.generation())
+            .wrapping_add(self.lexicals.unit_lexicals.generation())
     }
 
     /// The mutation funnel for `package_lexicals`. It bumps the same
