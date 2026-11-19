@@ -267,6 +267,7 @@ impl Interpreter {
             visitor.visit_value(value);
         }
         visitor.visit_value(&self.lexicals.our_var_pin);
+        visitor.visit_value(&self.lexicals.unit_lexical_pin);
         for inner in self.lexicals.package_lexicals.read().values() {
             visit_map_values(visitor, inner);
         }
