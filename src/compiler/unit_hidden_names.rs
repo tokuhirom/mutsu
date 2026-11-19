@@ -30,8 +30,8 @@ pub(super) fn routine_may_name(cf: &CompiledFunction, sym: Symbol) -> bool {
 }
 
 /// Whether `code` can look `sym` up by name past its own frame: a free
-/// variable, a string constant an op names (a routine, type or bareword, and
-/// its `&` form) or an `OUTER::` name. Its own parameters and locals are not
+/// variable, an `OUTER::` name, or -- for a code variable, a sigilless term
+/// or a type-shaped name -- a string constant an op carries. Its own parameters and locals are not
 /// counted: the frame answers them before any link, so hiding them would only
 /// cost the routine its light call (`vm_call_light`, which gives a frame with
 /// a hidden set a root of its own). Code that names lexicals by string, or
@@ -54,13 +54,21 @@ fn code_may_name(code: &CompiledCode, sym: Symbol) -> bool {
         if code.locals.iter().any(|local| local == name) {
             return false;
         }
-        code.outer_ref_names.iter().any(|outer| outer == name)
-            || code.constants.iter().any(|v| match v.view() {
-                ValueView::Str(s) => {
-                    let s = s.as_str();
-                    s == name || name.strip_prefix('&') == Some(s)
-                }
-                _ => false,
-            })
+        if code.outer_ref_names.iter().any(|outer| outer == name) {
+            return true;
+        }
+        // A string constant names a code variable (`GetCodeVar`, a call by
+        // name: `&helper`, `&infix:<cmp>`), a sigilless term or a type-shaped
+        // bareword. A `$`/`@`/`%` variable is read by name only as a free
+        // variable, so a method name (`.key`) is not a read of a block's
+        // `$key`.
+        let spelled = match name.strip_prefix(['&', crate::term_names::TERM_PREFIX]) {
+            Some(bare) => bare,
+            None if name.starts_with(|c: char| c.is_ascii_uppercase()) => name,
+            None => return false,
+        };
+        code.constants
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Str(s) if s.as_str() == spelled))
     })
 }
