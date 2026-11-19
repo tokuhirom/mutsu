@@ -12,6 +12,7 @@
 //! [`file_named_candidate`]: Interpreter::file_named_candidate
 
 use super::super::*;
+use crate::symbol::wk;
 use crate::value::regex_caps::{CapNode, MatchTarget};
 use std::sync::Arc;
 
@@ -101,35 +102,39 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
     ) -> Result<(), RuntimeError> {
-        let snapshot: HashMap<Symbol, Value> =
-            self.env.iter().map(|(k, v)| (*k, v.clone())).collect();
-        let saved_match = self.env.get("/").cloned();
-        let saved_topic = self.env.get("_").cloned();
-        let saved_made = self.env.get("made").cloned();
+        let saved_match = self.env.get_sym(wk::match_var()).cloned();
+        let saved_topic = self.env.get_sym(wk::topic()).cloned();
+        let saved_made = self.env.get_sym(wk::made()).cloned();
         let saved_in_block = self.regex_state.in_regex_code_block;
         self.regex_state.in_regex_code_block = true;
+        // The caller lexicals the action rebinds are the by-name writes its
+        // code makes, which every by-name writer logs into the carrier set
+        // (`note_caller_env_write`): no snapshot of the whole env is needed to
+        // find them afterwards.
+        let carrier = self.begin_carrier();
         let result = self.invoke_grammar_actions(match_obj, actions, rule_name);
+        let written = self.end_carrier(carrier);
         self.regex_state.in_regex_code_block = saved_in_block;
-        for (key, saved) in [("/", saved_match), ("_", saved_topic), ("made", saved_made)] {
+        for (key, saved) in [
+            (wk::match_var(), saved_match),
+            (wk::topic(), saved_topic),
+            (wk::made(), saved_made),
+        ] {
             match saved {
                 Some(value) => {
-                    self.env.insert(key.to_string(), value);
+                    self.env.insert_sym(key, value);
                 }
                 None => {
-                    self.env.remove(key);
+                    self.env.remove_sym(key);
                 }
             }
         }
-        for (k, v) in &self.env {
-            if snapshot.get(k).is_none_or(|old| !old.same_binding(v)) {
-                let name = k.resolve();
-                if matches!(name.as_str(), "/" | "_" | "made") {
-                    continue;
-                }
-                if let Some(set) = self.carrier_writes.as_mut() {
-                    set.insert(name.clone());
-                }
-                self.pending_local_updates.push((name, v.clone()));
+        for name in written {
+            if matches!(name.as_str(), "/" | "_" | "made") {
+                continue;
+            }
+            if let Some(value) = self.env.get(&name).cloned() {
+                self.pending_local_updates.push((name, value));
             }
         }
         result.map(|_| ())

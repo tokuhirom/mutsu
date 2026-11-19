@@ -275,6 +275,29 @@ impl MatchNode {
     }
 }
 
+/// What the grammar-action walk needs of one Match node (see
+/// [`Value::match_action_walk_node`]).
+#[derive(Default)]
+pub(crate) struct ActionWalkNode {
+    /// The named captures, as `.hash` presents each slot.
+    pub(crate) named: Vec<(Symbol, Value)>,
+    /// The hidden `<.foo>` subrule matches that carry an action.
+    pub(crate) silent: Vec<Value>,
+    /// The positional captures, as `.list` presents each slot.
+    pub(crate) positional: Vec<Value>,
+    /// The node's own `:my $*x` values at its reduction.
+    pub(crate) reduce_vars: Vec<(String, Value)>,
+    /// The winning `:sym<...>` variant, for a proto-regex candidate.
+    pub(crate) sym: Option<Symbol>,
+}
+
+impl ActionWalkNode {
+    /// A node with no child captures of any kind.
+    pub(crate) fn is_leaf(&self) -> bool {
+        self.named.is_empty() && self.positional.is_empty() && self.silent.is_empty()
+    }
+}
+
 /// Leaf Match for a quantified-capture entry with a recorded span.
 ///
 /// Under a *grammar* parse this has to be a lazy `ValueRepr::Match` rather than
@@ -445,51 +468,46 @@ impl Value {
         Value::lazy_match(Arc::new(cap), node.target.clone())
     }
 
-    /// The per-match `:my $*x` values recorded at reduce time, read straight
-    /// from the capture node of a still-lazy Match (no materialization).
-    /// `None` for eager/materialized Matches or when the rule declared none.
-    /// Used by the action walk's leaf fast path, which must re-install them
-    /// around the leaf's action (same as the main walk's `reduce_time_vars`).
-    pub(crate) fn match_reduce_time_vars_lazy(&self) -> Option<Vec<(String, Value)>> {
+    /// The structure the grammar-action walk reads from a node, taken
+    /// straight from the capture node of an UNMATERIALIZED lazy Match: the
+    /// child slots render exactly as `.hash`/`.list` would expose them (lazy
+    /// child Matches), but the node itself is never forced. `None` for an
+    /// eager or already-materialized Match; the walk reads its attribute map
+    /// instead.
+    // Cost: O(k), k = this node's capture slots.
+    pub(crate) fn match_action_walk_node(&self) -> Option<ActionWalkNode> {
         let node = self.0.as_match_node()?;
         if node.forced().is_some() {
             return None;
         }
         let kids = node.cap.kids();
-        if kids.regex_vars.is_empty() {
-            return None;
+        let mut walk = ActionWalkNode {
+            sym: node.cap.sym,
+            ..ActionWalkNode::default()
+        };
+        if node.cap.children.is_none() {
+            return Some(walk);
         }
-        Some(
-            kids.regex_vars
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        )
-    }
-
-    /// Non-forcing peek for the grammar-action walk: for an UNMATERIALIZED
-    /// lazy Match, report `(is_childless_leaf, sym_variant)` straight from the
-    /// capture node. `None` for eager/materialized Matches — the caller falls
-    /// back to reading the attribute map.
-    pub(crate) fn match_walk_peek(&self) -> Option<(bool, Option<String>)> {
-        let node = self.0.as_match_node()?;
-        if node.forced().is_some() {
-            return None;
+        for (key, slot) in kids.named.iter() {
+            if key.starts_with(SILENT_ACTION_MARKER_PREFIX) {
+                walk.silent
+                    .extend(slot.nodes.iter().map(|sc| node.lazy_child(sc)));
+                continue;
+            }
+            walk.named
+                .push((*key, Value::named_slot_value(slot, &node.target)));
         }
-        let kids = node.cap.kids();
-        let has_named = kids
-            .named
-            .keys()
-            .any(|k| !k.starts_with(SILENT_ACTION_MARKER_PREFIX));
-        let has_list = !kids.positional.is_empty();
-        let has_silent = kids
-            .named
+        walk.positional = kids
+            .positional
             .iter()
-            .any(|(k, slot)| k.starts_with(SILENT_ACTION_MARKER_PREFIX) && !slot.nodes.is_empty());
-        Some((
-            !has_named && !has_list && !has_silent,
-            node.cap.sym.map(|s| s.resolve()),
-        ))
+            .map(|slot| Value::pos_slot_value(slot, &node.target))
+            .collect();
+        walk.reduce_vars = kids
+            .regex_vars
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        Some(walk)
     }
 }
 

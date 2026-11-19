@@ -42,6 +42,23 @@ pub(crate) fn positional_key_sym(i: usize) -> Symbol {
     }
 }
 
+/// The env key `$<name>` is stored under (`<name>`), memoized per name: the
+/// action walk installs one per named capture of every node it calls an
+/// action for, and formatting plus interning the key was most of that.
+// Cost: O(1) expected.
+pub(crate) fn angle_key_sym(name: Symbol) -> Symbol {
+    thread_local! {
+        static ANGLE_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    if let Some(key) = ANGLE_KEYS.with(|m| m.borrow().get(&name).copied()) {
+        return key;
+    }
+    let key = Symbol::intern(&format!("<{}>", name.resolve()));
+    ANGLE_KEYS.with(|m| m.borrow_mut().insert(name, key));
+    key
+}
+
 /// How many positional capture slots an action call saves and restores.
 pub(super) const SAVED_POSITIONAL_SLOTS: usize = 10;
 
@@ -52,11 +69,13 @@ impl Interpreter {
     /// Overlay-only, exactly like the `env.iter()` scan it replaces: a binding
     /// inherited from an enclosing call frame is not this action's to hide.
     pub(super) fn take_action_named_captures(&mut self) -> Vec<(Symbol, Value)> {
-        let (_, angle_keys) = crate::symbol::capture_shaped_symbols();
-        let saved: Vec<(Symbol, Value)> = angle_keys
-            .iter()
-            .filter_map(|key| self.env.overlay_get_sym(*key).map(|v| (*key, v.clone())))
-            .collect();
+        let mut saved: Vec<(Symbol, Value)> = Vec::new();
+        let env = &self.env;
+        crate::symbol::for_each_angle_capture_symbol(|key| {
+            if let Some(v) = env.overlay_get_sym(key) {
+                saved.push((key, v.clone()));
+            }
+        });
         for (key, _) in &saved {
             self.env.remove_sym(*key);
         }
@@ -71,11 +90,15 @@ impl Interpreter {
     /// capture name that did not exist when the save ran, and the scan this
     /// replaces saw those too.
     pub(super) fn restore_action_named_captures(&mut self, saved: Vec<(Symbol, Value)>) {
-        let (_, angle_keys) = crate::symbol::capture_shaped_symbols();
-        for key in angle_keys {
-            if self.env.overlay_get_sym(key).is_some() {
-                self.env.remove_sym(key);
+        let mut installed: Vec<Symbol> = Vec::new();
+        let env = &self.env;
+        crate::symbol::for_each_angle_capture_symbol(|key| {
+            if env.overlay_get_sym(key).is_some() {
+                installed.push(key);
             }
+        });
+        for key in installed {
+            self.env.remove_sym(key);
         }
         for (key, value) in saved {
             self.env.insert_sym(key, value);
