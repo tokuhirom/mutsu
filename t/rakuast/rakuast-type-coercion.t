@@ -14,9 +14,7 @@ is Q[my Int() $x].AST.gist, q:to/END/.chomp, 'Int() -> Type::Coercion(base-type)
       RakuAST::Statement::Expression.new(
         expression => RakuAST::VarDeclaration::Simple.new(
           type        => RakuAST::Type::Coercion.new(
-            base-type => RakuAST::Type::Simple.new(
-              RakuAST::Name.from-identifier("Int")
-            )
+            base-type => RakuAST::Type::Simple.from-identifier("Int")
           ),
           sigil       => "\$",
           desigilname => RakuAST::Name.from-identifier("x")
@@ -26,5 +24,5 @@ is Q[my Int() $x].AST.gist, q:to/END/.chomp, 'Int() -> Type::Coercion(base-type)
     END
 
 # --- the base type is a nested Type::Simple ---------------------------------
-is Q[my Str() $s].AST.gist.contains('base-type => RakuAST::Type::Simple.new('), True,
+is Q[my Str() $s].AST.gist.contains('base-type => RakuAST::Type::Simple.from-identifier('), True,
     'coercion base is a Type::Simple';

@@ -40,7 +40,7 @@ ok param-of(Q{sub f($x where { $_ > 0 }) { $x }}).gist.contains('RakuAST::Block.
 
 # --- a typed parameter keeps both fields ------------------------------------
 my $typed = param-of(Q{sub f(Int $x where * > 0) { $x }});
-ok $typed.gist.contains('RakuAST::Name.from-identifier("Int")')
+ok $typed.gist.contains('RakuAST::Type::Simple.from-identifier("Int")')
     && $typed.gist.contains('where'),
     'a typed where-constrained parameter keeps its type and its constraint';
 

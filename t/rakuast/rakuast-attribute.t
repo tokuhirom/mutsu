@@ -24,8 +24,8 @@ is Q[class A2 { has $!y }].AST.gist.contains('twigil      => "!"'), True, 'has $
 # --- typed attribute keeps its Type::Simple (implicit type default ignored) --
 my $typed = Q[class A3 { has Int $.z }].AST.gist;
 ok $typed.contains('scope       => "has"')
-    && $typed.contains('type        => RakuAST::Type::Simple.new(')
-    && $typed.contains('RakuAST::Name.from-identifier("Int")')
+    && $typed.contains('type        => RakuAST::Type::Simple.from-identifier(')
+    && $typed.contains('.from-identifier("Int")')
     && $typed.contains('twigil      => "."')
     && !$typed.contains('initializer'),
     'has Int $.z -> Type::Simple, no spurious initializer';

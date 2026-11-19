@@ -12,8 +12,8 @@ plan 5;
 
 # --- read side: the gist has the Type::Simple constraint --------------------
 my $g = Q[sub f(Int $x) { $x }].AST.gist;
-ok $g.contains('RakuAST::Type::Simple.new(')
-    && $g.contains('RakuAST::Name.from-identifier("Int")'),
+ok $g.contains('RakuAST::Type::Simple.from-identifier(')
+    && $g.contains('.from-identifier("Int")'),
     'a typed parameter renders with a Type::Simple';
 
 # --- a typed parameter is accepted and used --------------------------------

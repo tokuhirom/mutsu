@@ -18,7 +18,7 @@ plan 21;
 
 # --- read side: the `-->` arrow lands in the signature ----------------------
 my $arrow = Q[sub f(--> Int) { 1 }].AST.gist;
-ok $arrow.contains('returns    => RakuAST::Type::Simple.new('),
+ok $arrow.contains('returns    => RakuAST::Type::Simple.from-identifier('),
     'a `-->` return type renders as Signature.returns';
 ok $arrow.contains('parameters => ()'),
     'a parameter-less signature renders its empty parameter list as ()';
@@ -27,7 +27,7 @@ nok $arrow.contains('RakuAST::Trait::'),
 
 my $arrow_p = Q[sub f($x --> Int) { 1 }].AST.gist;
 ok $arrow_p.contains('RakuAST::ParameterTarget::Var.new(')
-    && $arrow_p.contains('returns    => RakuAST::Type::Simple.new('),
+    && $arrow_p.contains('returns    => RakuAST::Type::Simple.from-identifier('),
     'a signature can carry both parameters and a `-->` return type';
 
 # --- read side: the `returns` / `of` traits ---------------------------------
@@ -74,7 +74,7 @@ is EVAL(Q[sub f($x) of Int { $x + 1 }; f(4)].AST), 5,
 my $pointy = Q[my $f = -> $x --> Int { $x }].AST.gist;
 ok $pointy.contains('RakuAST::PointyBlock.new('),
     'a single-parameter pointy block still renders as a PointyBlock';
-ok $pointy.contains('returns    => RakuAST::Type::Simple.new('),
+ok $pointy.contains('returns    => RakuAST::Type::Simple.from-identifier('),
     'a pointy block renders its `-->` return type in the signature';
 is EVAL(Q[my $f = -> $x --> Int { $x * 3 }; $f(4)].AST), 12,
     'a pointy block return type round-trips through EVAL';

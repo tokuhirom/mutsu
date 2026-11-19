@@ -32,9 +32,7 @@ sub install($name, $parameter, $body-name) {
     )
 }
 
-my $int-type = RakuAST::Type::Simple.new(
-    RakuAST::Name.from-identifier('Int')
-);
+my $int-type = RakuAST::Type::Simple.from-identifier('Int');
 isa-ok $int-type, RakuAST::Type::Simple, 'Type::Simple.new constructs a type';
 is $int-type.name.gist, RakuAST::Name.from-identifier('Int').gist,
     'a constructed simple type exposes its name';
@@ -45,7 +43,7 @@ my $typed = RakuAST::Parameter.new(
 );
 is $typed.type, $int-type, 'a typed parameter exposes its type';
 is $typed.target.name, '$x', 'a typed parameter exposes its target';
-ok $typed.gist.contains('type   => RakuAST::Type::Simple.new('),
+ok $typed.gist.contains('type   => RakuAST::Type::Simple.from-identifier('),
     'a typed parameter renders like Rakudo';
 lives-ok { install('constructed-typed', $typed, '$x') },
     'a typed parameter lowers through EVAL';

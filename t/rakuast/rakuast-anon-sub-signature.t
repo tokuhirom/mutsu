@@ -27,7 +27,7 @@ nok $anon.contains('RakuAST::PointyBlock'),
     'a parameterised anonymous sub is not a PointyBlock';
 nok $anon.contains('name        => RakuAST::Name'),
     'an anonymous sub carries no name field';
-ok $anon.contains('type     => RakuAST::Type::Setting.new('),
+ok $anon.contains('type     => RakuAST::Type::Setting.from-identifier('),
     "an anonymous sub's parameters carry the implicit Type::Setting(Any)";
 
 my $multi = Q[my $f = sub ($a, $b) { $a + $b }].AST.gist;
@@ -56,7 +56,7 @@ ok Q[my $f = { 42 }].AST.gist.contains('RakuAST::Block.new('),
     'a bare block still renders as a RakuAST::Block';
 
 # --- read side: `-->` in an anonymous sub signature -------------------------
-ok Q[my $f = sub ($x --> Int) { $x }].AST.gist.contains('returns    => RakuAST::Type::Simple.new('),
+ok Q[my $f = sub ($x --> Int) { $x }].AST.gist.contains('returns    => RakuAST::Type::Simple.from-identifier('),
     'an anonymous sub renders its `-->` return type in the signature';
 
 # --- introspection ----------------------------------------------------------

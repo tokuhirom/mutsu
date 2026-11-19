@@ -27,7 +27,7 @@ plan 16;
 # --- class traits: read ------------------------------------------------------
 my $is = Q{class T1 is Int { }}.AST.gist;
 ok $is.contains('RakuAST::Trait::Is.new('), '`is Parent` renders a Trait::Is';
-ok $is.contains('type => RakuAST::Type::Simple.new('),
+ok $is.contains('type => RakuAST::Type::Simple.from-identifier('),
     '`is Parent` carries its parent as a named `type`';
 
 my $does = Q{role T2R { }; class T2 does T2R { }}.AST.gist;

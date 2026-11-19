@@ -28,10 +28,10 @@ plan 14;
 
 # --- read: a declared type renders like a builtin one ------------------------
 my $cls = Q{class D1 { }; D1.new}.AST.gist;
-ok $cls.contains('RakuAST::Type::Simple.new(') && $cls.contains('RakuAST::Name.from-identifier("D1")'),
+ok $cls.contains('RakuAST::Type::Simple.from-identifier(') && $cls.contains('RakuAST::Name.from-identifier("D1")'),
     'a declared class used as a term renders as Type::Simple';
 
-ok Q{role D2 { }; D2.^name}.AST.gist.contains('RakuAST::Type::Simple.new('),
+ok Q{role D2 { }; D2.^name}.AST.gist.contains('RakuAST::Type::Simple.from-identifier('),
     'a declared role used as a term renders as Type::Simple';
 
 # --- read: a declared constant renders as Term::Name -------------------------

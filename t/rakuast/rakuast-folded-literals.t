@@ -10,7 +10,7 @@ plan 15;
 sub expr(Str $src) { $src.AST.statements[0].expression }
 
 isa-ok expr(Q[Any]), RakuAST::Type::Simple, 'Any is a Type::Simple';
-like expr(Q[Any]).gist, /'Name.from-identifier("Any")'/, 'naming Any';
+like expr(Q[Any]).gist, /'Type::Simple.from-identifier("Any")'/, 'naming Any';
 
 isa-ok expr(Q[1e0]), RakuAST::NumLiteral, '1e0 is a NumLiteral';
 is expr(Q[1e0]).gist, 'RakuAST::NumLiteral.new(1e0)', 'and renders as a Num literal';

@@ -20,7 +20,7 @@ is $capture.^name, 'RakuAST::Type::Capture',
 is $capture.name.gist, RakuAST::Name.from-identifier('T').gist,
     'the type capture exposes its captured name';
 ok $ast.gist.contains('type-captures => (')
-    && $ast.gist.contains('RakuAST::Type::Capture.new('),
+    && $ast.gist.contains('RakuAST::Type::Capture.from-identifier('),
     'the read direction renders Parameter.type-captures';
 ok 'name' (elem) RakuAST::Type::Capture.^methods(:local)>>.name,
     'Type::Capture introspection exposes its name accessor';

@@ -13,13 +13,13 @@ use Test;
 
 plan 5;
 
-ok Q{if 1 { class NE1 { } }; NE1.new}.AST.gist.contains('RakuAST::Type::Simple.new('),
+ok Q{if 1 { class NE1 { } }; NE1.new}.AST.gist.contains('RakuAST::Type::Simple.from-identifier('),
     'a class declared in an if body';
-ok Q{my $f = -> { class NE2 { } }; NE2.new}.AST.gist.contains('RakuAST::Type::Simple.new('),
+ok Q{my $f = -> { class NE2 { } }; NE2.new}.AST.gist.contains('RakuAST::Type::Simple.from-identifier('),
     'a class declared in a pointy block';
 ok Q{for 1 { constant NE3 = 5 }; NE3}.AST.gist.contains('RakuAST::Term::Name.new('),
     'a constant declared in a loop body';
-ok Q{my $x = do { class NE4 { } }; NE4.new}.AST.gist.contains('RakuAST::Type::Simple.new('),
+ok Q{my $x = do { class NE4 { } }; NE4.new}.AST.gist.contains('RakuAST::Type::Simple.from-identifier('),
     'a class declared in a do block';
-ok Q{while 0 { enum NE5 <a b> }; NE5}.AST.gist.contains('RakuAST::Type::Simple.new('),
+ok Q{while 0 { enum NE5 <a b> }; NE5}.AST.gist.contains('RakuAST::Type::Simple.from-identifier('),
     'an enum declared in a while body';

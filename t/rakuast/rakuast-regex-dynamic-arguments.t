@@ -742,7 +742,7 @@ ok !GDynamicMultiParameterSignatureColonPairArgument.parse('a').defined,
 my $typed_signature_ast =
     Q[/<word(:expected(-> Int $candidate { $candidate == 42 }))>/].AST;
 my $typed_signature_gist = $typed_signature_ast.gist;
-ok $typed_signature_gist.contains('RakuAST::Type::Simple.new('),
+ok $typed_signature_gist.contains('RakuAST::Type::Simple.from-identifier('),
     'a typed signature keeps its simple type node';
 ok $typed_signature_gist.contains('name => "\\$candidate"'),
     'a typed signature keeps its parameter target';
@@ -860,7 +860,7 @@ ok !GDynamicDefaultedSignatureColonPairArgument.parse('a').defined,
 my $typed_default_signature_ast =
     Q[/<word(:expected(-> Int $candidate = 42 { $candidate == 42 }))>/].AST;
 my $typed_default_signature_gist = $typed_default_signature_ast.gist;
-ok $typed_default_signature_gist.contains('RakuAST::Type::Simple.new('),
+ok $typed_default_signature_gist.contains('RakuAST::Type::Simple.from-identifier('),
     'a typed defaulted signature keeps its simple type node';
 ok $typed_default_signature_gist.contains('default => RakuAST::IntLiteral.new(42)'),
     'a typed defaulted signature keeps its default expression';

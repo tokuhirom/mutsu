@@ -11,17 +11,20 @@ sub desigil(Str $src) { $src.AST.statements[0].expression.desigilname }
 
 my $n = desigil(Q[my $today:foo<g h>]);
 is $n.raku, Q:to/END/.chomp, 'a word-quoted colonpair';
-RakuAST::Name.from-identifier("today", colonpairs => (
-  RakuAST::ColonPair::Value.new(
-    key   => "foo",
-    value => RakuAST::QuotedString.new(
-      processors => <words val>,
-      segments   => (
-        RakuAST::StrLiteral.new("g h"),
+RakuAST::Name.new(
+  RakuAST::Name::Part::Simple.new("today"),
+  colonpairs => (
+    RakuAST::ColonPair::Value.new(
+      key   => "foo",
+      value => RakuAST::QuotedString.new(
+        processors => <words val>,
+        segments   => (
+          RakuAST::StrLiteral.new("g h"),
+        )
       )
-    )
-  ),
-))
+    ),
+  )
+)
 END
 is $n.colonpairs.elems, 1, '.colonpairs';
 

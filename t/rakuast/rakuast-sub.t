@@ -19,9 +19,7 @@ is Q[sub foo($x) { $x }].AST.gist, q:to/END/.chomp, 'sub -> Sub(name, signature 
           signature => RakuAST::Signature.new(
             parameters => (
               RakuAST::Parameter.new(
-                type     => RakuAST::Type::Setting.new(
-                  RakuAST::Name.from-identifier("Any")
-                ),
+                type     => RakuAST::Type::Setting.from-identifier("Any"),
                 target   => RakuAST::ParameterTarget::Var.new(
                   name => "\$x"
                 ),
@@ -66,9 +64,7 @@ is Q[sub foo() { 42 }].AST.gist, Q[sub foo { 42 }].AST.gist,
 # --- a defaulted parameter renders `default =>`, still typed ----------------
 is Q[sub g($x = 5) { $x }].AST.gist.contains(q:to/FRAG/.chomp), True, 'defaulted sub param keeps its Type::Setting';
               RakuAST::Parameter.new(
-                type    => RakuAST::Type::Setting.new(
-                  RakuAST::Name.from-identifier("Any")
-                ),
+                type    => RakuAST::Type::Setting.from-identifier("Any"),
                 target  => RakuAST::ParameterTarget::Var.new(
                   name => "\$x"
                 ),

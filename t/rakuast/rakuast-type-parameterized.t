@@ -14,13 +14,9 @@ is Q[my Array[Int] $x].AST.gist, q:to/END/.chomp, 'Array[Int] -> Type::Parameter
       RakuAST::Statement::Expression.new(
         expression => RakuAST::VarDeclaration::Simple.new(
           type        => RakuAST::Type::Parameterized.new(
-            base-type => RakuAST::Type::Simple.new(
-              RakuAST::Name.from-identifier("Array")
-            ),
+            base-type => RakuAST::Type::Simple.from-identifier("Array"),
             args      => RakuAST::ArgList.new(
-              RakuAST::Type::Simple.new(
-                RakuAST::Name.from-identifier("Int")
-              )
+              RakuAST::Type::Simple.from-identifier("Int")
             )
           ),
           sigil       => "\$",
@@ -33,11 +29,11 @@ is Q[my Array[Int] $x].AST.gist, q:to/END/.chomp, 'Array[Int] -> Type::Parameter
 # --- multi-argument `Hash[Str, Int]` ----------------------------------------
 my $h = Q[my Hash[Str, Int] $g].AST.gist;
 ok $h.contains('RakuAST::Type::Parameterized.new(')
-    && $h.contains('RakuAST::Name.from-identifier("Hash")')
-    && $h.contains('RakuAST::Name.from-identifier("Str")')
-    && $h.contains('RakuAST::Name.from-identifier("Int")'),
+    && $h.contains('.from-identifier("Hash")')
+    && $h.contains('.from-identifier("Str")')
+    && $h.contains('.from-identifier("Int")'),
     'Hash[Str, Int] -> two type args in the ArgList';
 
 # --- the base type is a nested Type::Simple ---------------------------------
-is Q[my Array[Str] $a].AST.gist.contains('base-type => RakuAST::Type::Simple.new('), True,
+is Q[my Array[Str] $a].AST.gist.contains('base-type => RakuAST::Type::Simple.from-identifier('), True,
     'parameterised base is a Type::Simple';

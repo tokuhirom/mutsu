@@ -12,8 +12,8 @@ use Test;
 plan 5;
 
 # --- read side: a type term renders as Type::Simple -------------------------
-ok Q{my $t = Int}.AST.gist.contains('RakuAST::Type::Simple.new(')
-    && Q{my $t = Int}.AST.gist.contains('RakuAST::Name.from-identifier("Int")'),
+ok Q{my $t = Int}.AST.gist.contains('RakuAST::Type::Simple.from-identifier(')
+    && Q{my $t = Int}.AST.gist.contains('.from-identifier("Int")'),
     'a bare type name renders as Type::Simple';
 
 # --- smartmatch against a type (the slice-18 boundary) ----------------------
