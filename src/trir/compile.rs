@@ -146,8 +146,7 @@ impl<'a> TrirCompiler<'a> {
             Some("True") => Some(Value::TRUE),
             Some("False") => Some(Value::FALSE),
             Some(rt) if crate::runtime::Interpreter::is_fast_return_type_name(rt) => {
-                let (fast, smiley) =
-                    crate::opcode::CompiledFunction::return_fast_plan(Some(rt));
+                let (fast, smiley) = crate::opcode::CompiledFunction::return_fast_plan(Some(rt));
                 return_check = Some(super::TrReturnCheck {
                     spec: rt.to_string(),
                     fast,

@@ -187,8 +187,8 @@ fn unprovable_shapes_decline() {
         ),
         ("an array parameter", "my sub f(@a) { nqp::elems(@a) }"),
         (
-            "a nominal return type needs the general path's coercion",
-            "my sub f(int $a --> Int) { nqp::add_i($a, 1) }",
+            "a coercion return type needs the general path's coercion",
+            "my sub f(int $a --> Int()) { nqp::add_i($a, 1) }",
         ),
         (
             "`int / int` is a Rat in Raku, not integer division",
