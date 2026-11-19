@@ -49,7 +49,7 @@ is expr(Q[class A2 {}]).augmented, False, 'a class is not augmented';
 
 # Name.is-anonymous / .is-empty
 is RakuAST::Name.from-identifier('a').is-anonymous, 0, 'an identifier is not anonymous';
-is RakuAST::Name.new(RakuAST::Name::Part::Empty, RakuAST::Name::Part::Empty).is-anonymous,
+is RakuAST::Name.new(RakuAST::Name::Part::EmptyEdge, RakuAST::Name::Part::EmptyEdge).is-anonymous,
     True, '`::` is anonymous';
 is RakuAST::Name.from-identifier('a').is-empty, 0, 'an identifier is not empty';
 is RakuAST::Name.new.is-empty, 1, 'a name without parts is empty';

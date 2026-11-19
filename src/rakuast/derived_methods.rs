@@ -505,8 +505,14 @@ fn is_empty_part(part: &Value) -> bool {
                 RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge
             )
         }
-        // A hand-built name may hold the `Name::Part::Empty` type object.
-        ValueView::Package(name) => name.with_str(|n| n == "RakuAST::Name::Part::Empty"),
+        // A hand-built name may hold the `Name::Part::EmptyEdge` type object
+        // (or the pre-2026.11 `Empty`).
+        ValueView::Package(name) => name.with_str(|n| {
+            matches!(
+                n,
+                "RakuAST::Name::Part::EmptyEdge" | "RakuAST::Name::Part::Empty"
+            )
+        }),
         _ => false,
     }
 }

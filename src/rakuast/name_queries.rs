@@ -44,7 +44,14 @@ fn classify(part: &Value) -> Part {
             RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge => Part::Empty,
             _ => Part::Other,
         },
-        ValueView::Package(name) if name.with_str(|n| n == "RakuAST::Name::Part::Empty") => {
+        ValueView::Package(name)
+            if name.with_str(|n| {
+                matches!(
+                    n,
+                    "RakuAST::Name::Part::Empty" | "RakuAST::Name::Part::EmptyEdge"
+                )
+            }) =>
+        {
             Part::Empty
         }
         _ => Part::Other,

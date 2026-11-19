@@ -93,11 +93,7 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     ),
     (
         "RakuAST::Name::Part::EmptyEdge",
-        &[
-            "RakuAST::Name::Part::EmptyEdge",
-            "RakuAST::Name::Part::Empty",
-            "RakuAST::Name::Part",
-        ],
+        &["RakuAST::Name::Part::EmptyEdge", "RakuAST::Name::Part"],
     ),
     (
         "RakuAST::Name::Part::Expression",

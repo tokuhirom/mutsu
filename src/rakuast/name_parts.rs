@@ -1,13 +1,12 @@
 //! `RakuAST::Name` parts beyond plain identifiers: the empty edge of a name
 //! (`::Foo`, `::($x)`, `Foo::`) and the shapes the lowerer recognises.
 //!
-//! Rakudo 2026.09 spells the empty edge `RakuAST::Name::Part::Empty`.
-//! rakudo/rakudo#6771 renames it to `RakuAST::Name::Part::EmptyEdge`, because
-//! it can only be the first or the last part of a name; both spellings are
-//! accepted on the way in, and `.AST` keeps emitting `Empty` like Rakudo
-//! 2026.09 does. The two positions are stored differently, as measured: the
-//! leading `::` is an instance (`Empty.new`), the trailing `::` of a stash
-//! lookup is the bare type object (`Empty`).
+//! Rakudo 2026.09 spelled the empty edge `RakuAST::Name::Part::Empty`;
+//! rakudo/rakudo#6771 (in 2026.11) renamed it to `RakuAST::Name::Part::EmptyEdge`,
+//! because it can only be the first or the last part of a name. `.AST` emits
+//! `EmptyEdge` like Rakudo 2026.11, and the old `Empty` spelling is still
+//! accepted on the way in. Both edges are `EmptyEdge` instances; a hand-built
+//! name may still hold the bare type object, which is accepted too.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::{Value, ValueView};
@@ -72,20 +71,19 @@ pub(super) fn part_identifier(value: &Value) -> Option<String> {
     }
 }
 
-/// The leading `::` of a name: an `Empty` instance.
+/// The leading `::` of a name: an `EmptyEdge` instance.
 pub(super) fn leading_empty() -> Value {
     Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
-        class: RakuAstClass::NamePartEmpty,
+        class: RakuAstClass::NamePartEmptyEdge,
         fields: Vec::new(),
     }))
 }
 
-/// The trailing `::` of a stash lookup: the `Empty` type object itself.
+/// The trailing `::` of a stash lookup: an `EmptyEdge` instance too (rakudo
+/// 2026.11; 2026.09 stored the bare type object here).
 pub(super) fn trailing_empty() -> Value {
-    Value::package(crate::symbol::Symbol::intern(
-        RakuAstClass::NamePartEmpty.printed_name(),
-    ))
+    leading_empty()
 }
 
 pub(super) fn simple_part(name: &str) -> Value {

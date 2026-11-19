@@ -3,7 +3,7 @@ use Test;
 
 # `<::(EXPR)>` calls the rule whose name EXPR computes. Measured on rakudo
 # 2026.09, it is a Regex::Assertion::Named whose name is
-# Name(Part::Empty, Part::Expression(EXPR)), with `capturing => True` unless it
+# Name(Part::EmptyEdge, Part::Expression(EXPR)), with `capturing => True` unless it
 # is written `<.::(EXPR)>`; an alias `<q=::(EXPR)>` wraps it in
 # Regex::Assertion::Alias.
 
@@ -13,7 +13,7 @@ my $named = Q[/ <::("alpha")> /].AST.statements[0].expression.body;
 $named = $named.regex if $named.^name eq 'RakuAST::Regex::WithWhitespace';
 my $named-gist = $named.gist;
 like $named-gist, /^ 'RakuAST::Regex::Assertion::Named.new('/, 'a symbolic call is an Assertion::Named';
-like $named-gist, /'RakuAST::Name::Part::Empty.new,' \s+ 'RakuAST::Name::Part::Expression.new('/,
+like $named-gist, /'RakuAST::Name::Part::EmptyEdge.new,' \s+ 'RakuAST::Name::Part::Expression.new('/,
     'its name is an empty part and an expression part';
 like $named-gist, /'capturing => True'/, 'it captures';
 

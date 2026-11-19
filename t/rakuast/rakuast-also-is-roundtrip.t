@@ -16,7 +16,7 @@ is ::('RtKid').new.who, 'base', 'the lowered class inherits from the parent';
 is-deeply ::('RtKid').^parents(:local).map(*.^name).List, ('RtBase',), 'the parent is recorded once';
 
 my $colons = Q|class ::RtColons { method m { 42 } }|.AST;
-like $colons.gist, /'Name::Part::Empty.new'/, '`class ::Name` keeps the leading empty part';
+like $colons.gist, /'Name::Part::EmptyEdge.new'/, '`class ::Name` keeps the leading empty part';
 EVAL $colons;
 is ::('RtColons').m, 42, 'and the lowered class is declared';
 
