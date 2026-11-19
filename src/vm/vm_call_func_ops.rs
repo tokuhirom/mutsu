@@ -1892,6 +1892,14 @@ impl Interpreter {
             ));
         }
         let start = self.stack.len() - arity;
+        // A variable bound to a missing element reaches a raw/rw parameter as
+        // its entry token, not as the element's current value (#18186).
+        if arg_sources_idx.is_some()
+            && let Some((sources, _)) = self.decode_arg_sources_shared(code, arg_sources_idx)
+        {
+            let target = self.stack[start - 1].clone();
+            self.pass_entry_tokens_to_raw_params(code, &target, start, &sources);
+        }
         // A closure body made of pure value ops runs light, straight off the
         // stack (#8335).
         if let Some(result) =

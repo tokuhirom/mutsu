@@ -2793,8 +2793,21 @@ impl Interpreter {
                     // and must still refresh their caller's local.
                     let shared_rw_cell = baked_raw.is_some()
                         && matches!(self.locals[slot].view(), ValueView::ContainerRef(_));
-                    if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
-                        && !shared_rw_cell
+                    // A variable `:=`-bound to a missing element holds the
+                    // deferred entry token: the callee's write is a write
+                    // through the variable, which creates the element and
+                    // installs its cell, as `$c = 5` would (#18186).
+                    if matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. }) {
+                        if let Some(val) = self.env().get(&source).cloned()
+                            && !matches!(val.view(), ValueView::HashEntryRef { .. })
+                            && val != self.locals[slot].hash_entry_read()
+                        {
+                            // TODO: a failed store (a constrained element)
+                            // cannot surface from this drain; it keeps the
+                            // token as before.
+                            let _ = self.materialize_bound_slot_to_cell(code, slot, val);
+                        }
+                    } else if !shared_rw_cell
                         && let Some(val) = self.env().get(&source).cloned()
                     {
                         self.locals[slot] = val;

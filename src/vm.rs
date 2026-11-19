@@ -166,6 +166,7 @@ pub(crate) use vm_method_return_spec::MethodReturnSpecMemo;
 pub(crate) use vm_method_role_bindings::MethodRoleBindingsMemo;
 mod vm_call_light_typed;
 mod vm_call_light_uint;
+mod vm_call_token_args;
 mod vm_call_method_compiled;
 mod vm_call_method_compiled_cache;
 mod vm_call_method_compiled_coerce;
