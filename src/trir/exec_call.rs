@@ -308,7 +308,11 @@ impl Interpreter {
             .and_then(|target| self.bind_lvalue_unit_redirect(&target));
         let result = match self.trir_declared_amp_callable(chunk, call.name) {
             Some(callable) => self.vm_call_sub_value(callable, args),
-            None => self.call_function(&name, args),
+            None => match self.trir_user_routine_shadowing_builtin(&name, &args) {
+                Ok(Some(def)) => self.call_routine_def(&def, args),
+                Ok(None) => self.call_function(&name, args),
+                Err(e) => Err(e),
+            },
         };
         self.end_lvalue_unit_redirect(unit_redirect);
         self.trir_gen_settle(chunk, site, armed);
@@ -373,6 +377,28 @@ impl Interpreter {
         let v = self.call_method_with_values(target, &name, args)?;
         self.trir.os.push(v);
         Ok(())
+    }
+
+    /// The user routine a generic call site names when that name is also a
+    /// built-in routine's (`my sub parse-base(...)` beside the core
+    /// `parse-base`). `call_function` is the built-in funnel: its arms answer
+    /// a built-in name before any user routine is consulted, so a TRIR body
+    /// calling its own `parse-base` reached the core one. The VM's call op
+    /// resolves the declared routine first (`find_compiled_function_memo`);
+    /// this is that order for `CallGen`. `None` for a name no user routine
+    /// declares, which keeps every other call on the funnel unchanged.
+    // Cost: O(1) for a name that is not a built-in's or that no user routine
+    // declares; otherwise one candidate resolution, O(c * p), c = the name's
+    // candidates, p = their parameters.
+    fn trir_user_routine_shadowing_builtin(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Option<std::sync::Arc<crate::ast::FunctionDef>>, RuntimeError> {
+        if !Self::is_builtin_function(name) || !self.has_function(name) {
+            return Ok(None);
+        }
+        self.resolve_function_with_types(name, args)
     }
 
     /// Which of the routine named `name`'s first 64 positional parameters are
