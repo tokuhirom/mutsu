@@ -73,10 +73,7 @@ impl Compiler {
         }
         let sym = Symbol::intern(name);
         self.enclosing_lexical_types.contains(&sym)
-            && !self
-                .block_lexical_type_decls
-                .iter()
-                .any(|&(_, d)| d == sym)
+            && !self.block_lexical_type_decls.iter().any(|&(_, d)| d == sym)
             && !self.sigilless_locals.contains(name)
             && !self.local_map.contains_key(name)
             && !self.type_capture_locals.contains(name)
