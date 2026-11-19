@@ -29,10 +29,17 @@ impl Interpreter {
         if let Some(value) = arg.literal() {
             return Some(value);
         }
-        let crate::opcode::DeclTraitArg::Compiled(chunk) = arg else {
-            return None;
+        // A class attribute's default is still kept as its expression (the
+        // registration walks the source declaration), any other declaration
+        // argument as a compiled chunk.
+        let (name, fallback) = match arg {
+            crate::opcode::DeclTraitArg::Ast(expr) => match &**expr {
+                crate::ast::Expr::ShadowableTermKeyword { name, value } => (*name, value),
+                _ => return None,
+            },
+            crate::opcode::DeclTraitArg::Compiled(chunk) => chunk.shadowable_term()?,
+            crate::opcode::DeclTraitArg::Literal(_) => return None,
         };
-        let (name, fallback) = chunk.shadowable_term()?;
         (!self.module.export_term_override_names.contains(&name)).then_some(fallback)
     }
 }
