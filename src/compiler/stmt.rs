@@ -215,6 +215,16 @@ impl Compiler {
         let Some(source) = expr.container_var_key() else {
             return false;
         };
+        // A `with`'s once-evaluated temp lives in a raw local slot that only
+        // its own `SetLocalRaw` writes (`compile_expr_do_stmt`). Promoting
+        // it to a shared cell would park that cell in the env, where the next
+        // `GetLocal` of the slot adopts it -- so a `with X -> \d` inside a loop
+        // kept answering the first iteration's value (#18377). Nothing can
+        // reassign the temp through the share, so there is nothing to share:
+        // the target takes the value itself.
+        if crate::with_desugar::is_tmp_name(&source) {
+            return false;
+        }
         self.with_escape(true, |c| c.compile_expr(expr));
         let name_idx = self.code.add_constant(Value::str(source));
         self.code.emit(OpCode::MarkArrayShareSource(name_idx));
