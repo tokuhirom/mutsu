@@ -1022,14 +1022,16 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
             Some(field_children(&rest))
         }
         RakuAstClass::Parameter => {
-            // An explicit type (a `Type::Simple` or `Int:D`'s
-            // `Type::Definedness`, not the implicit `Any` setting type)
-            // belongs to the declaration of the target too.
+            // An explicit type (a `Type::Simple`, `Int:D`'s
+            // `Type::Definedness` or an application `Array[Int]`, not the
+            // implicit `Any` setting type) belongs to the declaration of the
+            // target too.
             let explicit_type = node_value("type").filter(|t| {
                 matches!(t.view(), ValueView::RakuAst(n)
                 if matches!(
                     n.class,
                     RakuAstClass::TypeSimple
+                        | RakuAstClass::TypeParameterized
                         | RakuAstClass::TypeDefinedness
                         | RakuAstClass::TypeAnyDefinedness
                 ))

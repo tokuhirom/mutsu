@@ -560,6 +560,9 @@ pub(crate) struct RoutineSpans {
     /// From the first parameter to the end of the last; an empty `( )` sits at
     /// its `)`, and a routine with no parentheses has none.
     pub(crate) signature: SrcSpan,
+    /// The return part of the signature (`Int` of `--> Int`).
+    #[serde(default)]
+    pub(crate) returns: SrcSpan,
     pub(crate) block: BlockSpans,
     /// The traits written after the signature, in source order, one per
     /// trait the `.AST` parse records (`ast::routine_trait`).

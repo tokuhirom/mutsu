@@ -149,6 +149,22 @@ fn pointy_block(node: &mut RakuAstNode) {
         return;
     };
     if parameters.is_empty() {
+        // `-> --> Int { ... }`: the `Signature` is the return part.
+        let returned = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+            let rest = text.strip_prefix("->")?;
+            let lead = rest.len() - rest.trim_start().len();
+            returns_before_brace(&rest[lead..], from + 2 + lead)
+        });
+        if let Some((arrow, ret, brace)) = returned {
+            with_child(node, "signature", |signature| {
+                super::origin::set_span(signature, SrcSpan::new(arrow, ret.to as usize));
+                with_child(signature, "returns", |ty| {
+                    super::routine_origins::type_origin(ty, ret)
+                });
+            });
+            blockoid(node, brace, to);
+            return;
+        }
         // `-> { ... }`: the empty `Signature` sits right after the arrow.
         let brace = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
             let rest = text.strip_prefix("->")?;
@@ -169,20 +185,69 @@ fn pointy_block(node: &mut RakuAstNode) {
         let rest = text.strip_prefix("->")?;
         let base = from + 2;
         let (spans, at) = super::signature_decl_origins::scan(rest, &parameters, base)?;
-        rest[at..].starts_with('{').then_some((spans, base + at))
+        if rest[at..].starts_with('{') {
+            return Some((spans, None, base + at));
+        }
+        // `-> $x --> Int { ... }`: a return part between the parameters and
+        // the braces.
+        let lead = rest[at..].len() - rest[at..].trim_start().len();
+        let (_, ret, brace) = returns_before_brace(&rest[at + lead..], base + at + lead)?;
+        Some((spans, Some(ret), brace))
     });
-    let Some((spans, brace)) = placed else {
+    let Some((spans, returns, brace)) = placed else {
         return;
     };
     let whole = SrcSpan::new(
         spans.first().map_or(0, |s| s.param.from as usize),
-        spans.last().map_or(0, |s| s.param.to as usize),
+        returns.map_or_else(
+            || spans.last().map_or(0, |s| s.param.to as usize),
+            |ret| ret.to as usize,
+        ),
     );
     with_child(node, "signature", |signature| {
         super::origin::set_span(signature, whole);
         super::signature_decl_origins::place(signature, &spans);
+        if let Some(ret) = returns {
+            with_child(signature, "returns", |ty| {
+                super::routine_origins::type_origin(ty, ret)
+            });
+        }
     });
     blockoid(node, brace, to);
+}
+
+/// A pointy block's `--> RETURN {`: `text` starts at the `-->`, written at
+/// byte `base`. The arrow's offset, the return part's range (blanks around it
+/// excluded) and the offset of the `{` after it; `None` unless the return part
+/// is a plain word, literal or type application.
+// Cost: O(n), n = length of the return part.
+fn returns_before_brace(text: &str, base: usize) -> Option<(usize, SrcSpan, usize)> {
+    let after = text.strip_prefix("-->")?;
+    let lead = after.len() - after.trim_start().len();
+    let mut depth = 0usize;
+    let brace = after.char_indices().skip(lead).find_map(|(at, c)| match c {
+        '[' => {
+            depth += 1;
+            None
+        }
+        ']' => {
+            depth = depth.saturating_sub(1);
+            None
+        }
+        '{' if depth == 0 => Some(Some(at)),
+        '(' | ')' | '"' | '\'' | '<' | '#' | '}' => Some(None),
+        _ => None,
+    })??;
+    let written = after[lead..brace].trim_end();
+    if written.is_empty() {
+        return None;
+    }
+    let start = base + 3 + lead;
+    Some((
+        base,
+        SrcSpan::new(start, start + written.len()),
+        base + 3 + brace,
+    ))
 }
 
 /// The offset of the `{` that follows the first word of `from..to`, when the

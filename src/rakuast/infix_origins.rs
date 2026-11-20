@@ -32,6 +32,11 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
+        RakuAstClass::TypeParameterized => {
+            if let Some((from, to)) = byte_range(node) {
+                super::type_origins::parameterized(node, SrcSpan::new(from, to));
+            }
+        }
         RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
             super::list_origins::circumfix(node)
         }

@@ -335,8 +335,9 @@ pub(crate) fn sub_decl_body(
     let (rest, (params, mut param_defs, return_type)) = if has_explicit_signature {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        signature_start = Some(r);
+        let sig_from = r;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
+        signature_start = Some((sig_from, r));
         validate_signature_params(&pd)?;
         reject_invocant_in_sub(&pd)?;
         reject_attr_params_in_sub(&pd)?;
