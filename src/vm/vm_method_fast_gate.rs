@@ -278,7 +278,12 @@ impl Interpreter {
                     if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                         return false;
                     }
-                    let result = pos >= positional_arg_count && pd.default.is_some();
+                    // A shareable constant default is bound by the fast binder
+                    // (`CompiledFunction::const_fill_for_param`, the sub light
+                    // path's fill).
+                    let result = pos >= positional_arg_count
+                        && pd.default.is_some()
+                        && crate::opcode::CompiledFunction::const_fill_for_param(pd).is_none();
                     pos += 1;
                     result
                 })
