@@ -80,6 +80,20 @@ pub(super) fn leading_empty() -> Value {
     }))
 }
 
+/// The anonymous name `::` of a declaration (`subset :: where ...`):
+/// `Name(EmptyEdge, EmptyEdge)`.
+// Cost: O(1).
+pub(super) fn anonymous_name() -> RakuAstNode {
+    RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::Name,
+        fields: vec![RakuAstField {
+            name: Some("parts"),
+            value: RakuAstFieldValue::List(vec![leading_empty(), trailing_empty()]),
+        }],
+    }
+}
+
 /// The trailing `::` of a stash lookup: an `EmptyEdge` instance too (rakudo
 /// 2026.11; 2026.09 stored the bare type object here).
 pub(super) fn trailing_empty() -> Value {

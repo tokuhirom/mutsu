@@ -65,6 +65,7 @@ mod loop_bind;
 mod named_docs;
 pub(crate) mod nested_methods;
 pub(crate) mod operator_props;
+pub(crate) mod operator_purity;
 pub(crate) mod origin_range;
 mod package_trait_origins;
 mod parsed_view;
@@ -207,6 +208,8 @@ mod regex_view;
 mod render;
 mod resolve;
 pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_in};
+mod colon_pairs;
+mod constant_decl;
 mod loop_step;
 mod role;
 mod role_header;
@@ -440,6 +443,8 @@ pub enum RakuAstClass {
     NamePartEmpty,
     NamePartEmptyEdge,
     ArgList,
+    /// `:a:!b:42c` written as a term: the colonpairs, one positional child each.
+    ColonPairs,
     // Phase 2: variables, declarations, operators.
     VarLexical,
     VarLexicalConstant,
@@ -849,6 +854,7 @@ impl RakuAstClass {
             NamePartEmpty => "RakuAST::Name::Part::Empty",
             NamePartEmptyEdge => "RakuAST::Name::Part::EmptyEdge",
             ArgList => "RakuAST::ArgList",
+            ColonPairs => "RakuAST::ColonPairs",
             VarLexical => "RakuAST::Var::Lexical",
             VarLexicalConstant => "RakuAST::Var::Lexical::Constant",
             VarCompilerBlock => "RakuAST::Var::Compiler::Block",
@@ -1412,6 +1418,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::NamePartEmpty,
     RakuAstClass::NamePartEmptyEdge,
     RakuAstClass::ArgList,
+    RakuAstClass::ColonPairs,
     RakuAstClass::VarLexical,
     RakuAstClass::VarLexicalConstant,
     RakuAstClass::VarCompilerBlock,
@@ -2578,13 +2585,19 @@ fn construct_class(
                 .collect(),
         }))));
     }
-    if class_name == "RakuAST::ArgList" && method == "new" {
+    if (class_name == "RakuAST::ArgList" || class_name == "RakuAST::ColonPairs") && method == "new"
+    {
         for arg in args {
             require_any_rakuast(arg, "RakuAST::ArgList.new", "arguments")?;
         }
+        let class = if class_name == "RakuAST::ArgList" {
+            RakuAstClass::ArgList
+        } else {
+            RakuAstClass::ColonPairs
+        };
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
-            class: RakuAstClass::ArgList,
+            class,
             fields: args
                 .iter()
                 .cloned()
@@ -4223,6 +4236,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::RegexInternalModifierSigspace
             | RakuAstClass::RegexInternalModifierRatchet
             | RakuAstClass::ArgList
+            | RakuAstClass::ColonPairs
             | RakuAstClass::SemiList
             | RakuAstClass::StatementList
             | RakuAstClass::IntLiteral

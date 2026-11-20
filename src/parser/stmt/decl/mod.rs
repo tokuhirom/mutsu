@@ -17,6 +17,7 @@ mod use_decl;
 
 // Re-export public items that were previously accessible from the flat `decl` module.
 pub(in crate::parser) use constant_subset::inline_subset_term;
+pub(crate) use constant_subset::{ANON_SUBSET_PREFIX, mint_anon_subset_name};
 pub(in crate::parser::stmt) use constant_subset::{constant_decl, constant_stmt, subset_decl};
 pub(crate) use enum_decl::{anon_enum_decl, enum_decl};
 pub(crate) use handles::handle_specs_from_term;
