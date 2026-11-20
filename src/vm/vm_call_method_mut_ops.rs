@@ -1922,10 +1922,10 @@ impl Interpreter {
                             | "one"
                     );
                     if is_array_method
-                        && !self.has_user_method(&cn, method)
+                        && !self.has_user_method(cn, method)
                         && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
-                            .mro_readonly(&cn)
+                            .mro_readonly(cn)
                             .iter()
                             .any(|n| Self::is_positional_base(n))
                     {

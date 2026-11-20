@@ -398,7 +398,7 @@ impl Interpreter {
         // A wrapped accessor must use the full dispatch path so its wrapper's
         // `callsame` can reach the accessor terminal. The pure read below has
         // no dispatch frame and would otherwise bypass the wrapper entirely.
-        if let Some(owner) = self.attribute_accessor_owner(&cn, method)
+        if let Some(owner) = self.attribute_accessor_owner(cn, method)
             && self
                 .registry()
                 .method_wrap_chain(owner.as_str(), method, 0)
@@ -419,7 +419,7 @@ impl Interpreter {
         // names that also name a builtin ever noticed — `MVMArrayB.elems`
         // answered `1` and `.any` built a Junction, which is how
         // `NativeHelpers::Blob` came away with a junction instead of a body.
-        if let Some(registered) = self.cstruct_class_name(&cn)
+        if let Some(registered) = self.cstruct_class_name(cn)
             && matches!(
                 self.resolve_user_method_or_accessor_sym(&registered, method_sym),
                 Some(crate::runtime::UserMethodOrAccessor::Accessor)
@@ -489,7 +489,7 @@ impl Interpreter {
         // reports as a public accessor, so reading it by the bare name falls
         // through to the interpreter (which denies the access).
         if !matches!(
-            self.resolve_user_method_or_accessor_sym(&cn, method_sym),
+            self.resolve_user_method_or_accessor_sym(cn, method_sym),
             Some(crate::runtime::UserMethodOrAccessor::Accessor)
         ) {
             return None;
@@ -500,7 +500,7 @@ impl Interpreter {
         // with the wrapped-accessor terminal (`rw_accessor_container`); when it
         // declines (a read-only or aggregate accessor) the plain read below
         // answers, as raku's decontainerized value does.
-        if want_ref && let Some(cell_val) = self.rw_accessor_container(target, &cn, method) {
+        if want_ref && let Some(cell_val) = self.rw_accessor_container(target, cn, method) {
             return Some(Ok(cell_val));
         }
         // Public accessor confirmed. Read its backing value, stored under the
@@ -529,7 +529,7 @@ impl Interpreter {
                 // hands the Proxy itself back, as before.
                 let out = if out.is_proxy_value()
                     && !self
-                        .collect_class_attributes(&cn)
+                        .collect_class_attributes(cn)
                         .into_iter()
                         .any(|attr| attr.is_public && attr.name == method && attr.is_rw)
                 {
@@ -545,7 +545,7 @@ impl Interpreter {
                 // plain scalar read skips the MRO attribute collection, which
                 // clones every attribute definition (#10229).
                 let attr = if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_)) {
-                    self.find_public_class_attribute(&cn, method)
+                    self.find_public_class_attribute(cn, method)
                 } else {
                     None
                 };
@@ -563,7 +563,7 @@ impl Interpreter {
                 } else {
                     Self::accessor_read_value('$', out)
                 };
-                if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
+                if let Some(msg) = self.class_attribute_deprecated(cn, method) {
                     loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
                 // Aggregate accessors are normally kept on the interpreter
@@ -581,10 +581,10 @@ impl Interpreter {
                     // fresh array and `.push`/`.append` on the result never
                     // reached the attribute (#11902).
                     && !self.has_container_type_metadata(&out)
-                    && let Some(tc) = self.get_attr_type_constraint(&cn, method)
+                    && let Some(tc) = self.get_attr_type_constraint(cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
-                    let tc = self.attribute_reported_constraint(&cn, method, &tc);
+                    let tc = self.attribute_reported_constraint(cn, method, &tc);
                     let (value_type, key_type) =
                         crate::runtime::types::split_object_hash_constraint(&tc);
                     let sigil = if matches!(out.view(), ValueView::Hash(_)) {
@@ -643,8 +643,8 @@ impl Interpreter {
         let cn = class_name.as_str();
         if !target.instance_is_exception_by_name()
             || attributes.as_map().contains_key("message")
-            || !self.has_user_method(&cn, "message")
-            || self.has_user_method(&cn, method)
+            || !self.has_user_method(cn, "message")
+            || self.has_user_method(cn, method)
         {
             return Ok(None);
         }
@@ -872,9 +872,9 @@ impl Interpreter {
             return false;
         }
         let cn = class_name.as_str();
-        !self.has_user_method(&cn, method)
+        !self.has_user_method(cn, method)
             && self
-                .mro_readonly(&cn)
+                .mro_readonly(cn)
                 .iter()
                 .any(|n| Self::is_positional_base(n))
     }
@@ -1996,11 +1996,11 @@ impl Interpreter {
                 } = target.view()
                 {
                     let cn = class_name.as_str();
-                    if !self.has_user_method(&cn, method)
+                    if !self.has_user_method(cn, method)
                         && !Self::is_type_identity_method(method)
                         && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
-                            .mro_readonly(&cn)
+                            .mro_readonly(cn)
                             .iter()
                             .any(|n| Self::is_positional_base(n))
                     {
