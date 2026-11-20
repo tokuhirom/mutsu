@@ -92,9 +92,9 @@ impl Compiler {
             return None;
         }
         // The body is parsed here, not by the unit's parse, so no lowering
-        // pass has taken the spellings (a late-classified bareword, `{ Q }`)
+        // pass has taken the parse marks (a late-classified bareword, `{ Q }`)
         // off it: the compiler accepts none.
-        crate::ast::spelled::strip_spelling(&mut expr);
+        crate::ast::spelled::strip_parse_marks(&mut expr);
         Some(Expr::AnonSub {
             body: vec![Stmt::Expr(expr)],
             is_rw: false,

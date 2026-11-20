@@ -937,7 +937,24 @@ fn postfix_expr_loop_from<'a>(
     // is every `.meth` chained onto it (`$a .foo.bar`).
     let mut pending_dotty = false;
     let mut dotty_chain = false;
+    // Iterations left until the `.^meth` call a hyper `».^meth` handed back
+    // has been parsed (`Spelling::HyperMetaMethod`).
+    let mut hyper_meta_wait = 0u8;
     loop {
+        if hyper_meta_wait > 0 {
+            hyper_meta_wait -= 1;
+            if hyper_meta_wait == 0
+                && matches!(
+                    expr.peel_spelled(),
+                    Expr::MethodCall {
+                        modifier: Some('^'),
+                        ..
+                    }
+                )
+            {
+                expr = Expr::spelled(expr, || crate::ast::spelled::Spelling::HyperMetaMethod);
+            }
+        }
         if std::mem::take(&mut pending_dotty) {
             expr = dotty_infix_call(expr);
         }
@@ -2620,6 +2637,7 @@ fn postfix_expr_loop_from<'a>(
                 })
             {
                 rest = after_hyper;
+                hyper_meta_wait = 2;
                 continue;
             }
             // Hyper dotted postfix update: >>.++ / >>.--
