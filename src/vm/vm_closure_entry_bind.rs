@@ -103,9 +103,7 @@ fn entry_param(pd: &ParamDef) -> Option<EntryParam> {
     }
     if pd.sigilless {
         // `\x` or `Mu \x`; no trait (a sigilless parameter is raw already).
-        if !pd.traits.is_empty()
-            || !matches!(pd.type_constraint.as_deref(), None | Some("Mu"))
-        {
+        if !pd.traits.is_empty() || !matches!(pd.type_constraint.as_deref(), None | Some("Mu")) {
             return None;
         }
         let name = crate::symbol::Symbol::intern(&pd.name);
