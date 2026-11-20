@@ -375,7 +375,10 @@ impl Interpreter {
             return Ok(());
         }
         let v = self.call_method_with_values(target, &name, args)?;
-        self.trir.os.push(v);
+        // Raku method call sites HLL-ize their result, as `CallMethod` does
+        // (`hllize_method_return`): a raw `VMHash` handed back by a method
+        // reads as a `Hash` to the caller, in the JIT tier as in the VM.
+        self.trir.os.push(Self::hllize_value(v));
         Ok(())
     }
 

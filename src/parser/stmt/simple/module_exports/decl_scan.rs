@@ -47,6 +47,9 @@ pub(super) struct ModuleDecls {
     pub(super) tagged_enum_values: Vec<(String, Vec<String>)>,
     /// Bare names of `constant` declarations.
     pub(super) constant_names: Vec<String>,
+    /// `(name, initializer)` of each exported `constant NAME = Some::Type`:
+    /// the initializer is a bareword, so the constant may name a type.
+    pub(super) constant_aliases: Vec<(String, String)>,
     /// Exported routines, by name.
     pub(super) exports: HashMap<String, InlineModuleExport>,
     /// `(keyword, HOW type name)` pairs from `EXPORTHOW::DECLARE` packages.
@@ -439,8 +442,15 @@ impl<'ast> Visit<'ast> for DeclScan {
                 is_our,
                 export_tags,
                 constant,
+                expr,
                 ..
             } => {
+                if constant.is_some()
+                    && *is_export
+                    && let crate::ast::Expr::BareWord(init) = expr
+                {
+                    self.out.constant_aliases.push((name.clone(), init.clone()));
+                }
                 // An exported variable is the package variable of the package
                 // it is declared in; an exported constant may be `my`-scoped.
                 // Only one on the package spine is known to be declared when
