@@ -645,35 +645,6 @@ fn table_block(
     ))
 }
 
-/// The `Doc::LegacyRow` of a table row.
-// Cost: O(size of the row).
-fn row_node(row: &super::pod_table::Row) -> RakuAstNode {
-    let field = |name: &'static str, value: RakuAstFieldValue| RakuAstField {
-        name: Some(name),
-        value,
-    };
-    let mut fields = Vec::new();
-    if let Some(dividers) = &row.dividers {
-        fields.push(field(
-            "column-dividers",
-            RakuAstFieldValue::Node(Value::str(dividers.clone())),
-        ));
-    }
-    fields.push(field(
-        "column-offsets",
-        RakuAstFieldValue::List(row.offsets.iter().map(|&o| Value::int(o)).collect()),
-    ));
-    fields.push(field(
-        "cells",
-        RakuAstFieldValue::List(row.cells.iter().map(|c| Value::str(c.clone())).collect()),
-    ));
-    RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::DocLegacyRow,
-        fields,
-    }
-}
-
 /// The abbreviated `=formula` block at line `i`: one line only, the rest of
 /// its own line or else the next non-blank one, with each run of blanks one
 /// space (a trailing run too); the lines after it are code.
@@ -749,6 +720,12 @@ fn config(lines: &Lines, text: &str) -> Option<Vec<(String, RakuAstNode)>> {
             Some(after) => (true, after),
             None => (false, after),
         };
+        // `:34name` is `:name(34)`.
+        let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let (number, after) = after.split_at(digits);
+        if negated && !number.is_empty() {
+            return None;
+        }
         let name_len = after
             .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-')))
             .unwrap_or(after.len());
@@ -757,8 +734,18 @@ fn config(lines: &Lines, text: &str) -> Option<Vec<(String, RakuAstNode)>> {
         }
         let name = &after[..name_len];
         let tail = &after[name_len..];
-        let (value, used) = if let Some(inner) = tail.strip_prefix('(') {
-            let len = super::regex_call_origins::args_len(inner)?;
+        // (rakudo 2026.11 dies on a `{...}` value holding a single pair:
+        // "Cannot find method 'context' on object of type NQPMu".)
+        let close = match tail.chars().next() {
+            Some('(') => Some(')'),
+            Some('[') => Some(']'),
+            Some('{') => Some('}'),
+            _ => None,
+        };
+        let (value, used) = if !number.is_empty() {
+            (Some(number.trim_start_matches('0')), 0)
+        } else if let Some(close) = close {
+            let len = super::regex_call_origins::bracketed_len(&tail[1..], close)?;
             (None, 1 + len + 1)
         } else if let Some(inner) = tail.strip_prefix('<') {
             (None, 1 + inner.find('>')? + 1)
@@ -769,6 +756,7 @@ fn config(lines: &Lines, text: &str) -> Option<Vec<(String, RakuAstNode)>> {
         let pair = &rest[..end];
         let node = match value {
             // `:flag` is `True`, `:!flag` is `False`.
+            Some("") => expression(lines, "0", None)?,
             Some(word) => expression(lines, word, None)?,
             None => {
                 let at = pair.as_ptr() as usize - lines.base;
@@ -933,6 +921,18 @@ fn verbatim(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize
     Some((parts, i))
 }
 
+/// The `Doc::Paragraph` of a table cell's `text` (rakudo's
+/// `Paragraph.from-string`): `Some(None)` for a cell without a formatting
+/// code, which stays a plain string, `None` for text the reader does not
+/// take.
+// Cost: O(n), n = length of the text.
+pub(super) fn cell_paragraph(text: &str) -> Option<Option<RakuAstNode>> {
+    Some(match part_in("table", text.to_string())? {
+        Part::Para(atoms) => Some(paragraph_node(&atoms)),
+        _ => None,
+    })
+}
+
 /// The `Doc::Paragraph` of `atoms`.
 // Cost: O(size of the atoms).
 fn paragraph_node(atoms: &[Atom]) -> RakuAstNode {
@@ -1044,7 +1044,7 @@ impl Block {
                     Part::Text(text) => Value::str(text.clone()),
                     Part::Para(atoms) => Value::rakuast(Box::new(paragraph_node(atoms))),
                     Part::Block(block) => Value::rakuast(Box::new(block.node())),
-                    Part::Row(row) => Value::rakuast(Box::new(row_node(row))),
+                    Part::Row(row) => Value::rakuast(Box::new(super::pod_table::row_node(row))),
                 })
                 .collect();
             fields.push(RakuAstField {
