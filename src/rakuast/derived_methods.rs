@@ -251,11 +251,10 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         ),
         // The declaration without the compiler's attachments: the node itself.
         (TypeEnum, "clean-clone") => Some(Value::rakuast(Box::new(node.clone()))),
-        (CallMetaMethod | CallQuotedMethod, "args") => {
-            Some(field(node, "args").unwrap_or_else(|| {
-                super::empty_fields::empty_node(node, "args", ArgList)
-            }))
-        }
+        (CallMetaMethod | CallQuotedMethod, "args") => Some(
+            field(node, "args")
+                .unwrap_or_else(|| super::empty_fields::empty_node(node, "args", ArgList)),
+        ),
         (StubFail, "name") => Some(Value::str_from("...")),
         (StubDie, "name") => Some(Value::str_from("!!!")),
         (StubWarn, "name") => Some(Value::str_from("???")),
