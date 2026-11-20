@@ -33,6 +33,14 @@ impl VisitMut for Shift {
 /// (the `)` excluded), when brackets and quotes in it balance plainly.
 // Cost: O(n), n = length of the text.
 pub(super) fn args_len(text: &str) -> Option<usize> {
+    bracketed_len(text, ')')
+}
+
+/// The byte length of the text starting right after an opening bracket, up
+/// to the `close` that ends it (excluded), when brackets and quotes in it
+/// balance plainly.
+// Cost: O(n), n = length of the text.
+pub(super) fn bracketed_len(text: &str, close: char) -> Option<usize> {
     let mut stack: Vec<char> = Vec::new();
     let mut chars = text.char_indices();
     while let Some((at, c)) = chars.next() {
@@ -40,7 +48,7 @@ pub(super) fn args_len(text: &str) -> Option<usize> {
             '(' | '[' | '{' => stack.push(c),
             ')' | ']' | '}' => {
                 let Some(open) = stack.pop() else {
-                    return (c == ')').then_some(at);
+                    return (c == close).then_some(at);
                 };
                 if !matches!((open, c), ('(', ')') | ('[', ']') | ('{', '}')) {
                     return None;
