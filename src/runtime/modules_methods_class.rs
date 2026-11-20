@@ -62,6 +62,7 @@ mod methods_grammar;
 mod methods_grammar_revision_e;
 mod methods_grammar_action_call;
 mod methods_grammar_action_env;
+mod methods_grammar_action_walk;
 mod methods_grammar_method_start;
 mod methods_grammar_wrapped_start;
 pub(crate) mod methods_instance_ops;

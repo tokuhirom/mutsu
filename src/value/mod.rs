@@ -657,7 +657,7 @@ pub(crate) mod match_helpers;
 mod match_lazy;
 pub(crate) mod match_view;
 pub(crate) mod which_id;
-pub(crate) use match_lazy::MatchNode;
+pub(crate) use match_lazy::{ActionWalkNode, MatchNode};
 mod mix_weight;
 mod mixin_type_name;
 use mixin_type_name::NameSuffixMemo;

@@ -97,4 +97,42 @@ impl Interpreter {
         }
         result
     }
+
+    /// [`Self::call_action_method`] for a method the caller already resolved
+    /// to its compiled user definition.
+    // Cost: O(1) beyond the method's own call.
+    pub(super) fn call_action_method_resolved(
+        &mut self,
+        actions: &Value,
+        method: Symbol,
+        owner: Symbol,
+        def: &std::sync::Arc<crate::runtime::MethodDef>,
+        match_obj: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let Some(code) = def.compiled_code.clone() else {
+            return self.call_action_method(actions, method.as_str(), match_obj);
+        };
+        let Some(class) = Self::actions_class_sym(actions) else {
+            return self.call_action_method(actions, method.as_str(), match_obj);
+        };
+        self.record_slang_action(actions, method.as_str(), match_obj);
+        let own = super::slang_class_replay::own_action_scope(actions, method.as_str());
+        if own {
+            super::slang_class_replay::enter_own_action();
+        }
+        let result = self.dispatch_compiled_method(
+            class,
+            owner,
+            method,
+            def,
+            &code,
+            actions.clone(),
+            vec![match_obj.clone()],
+            None,
+        );
+        if own {
+            super::slang_class_replay::leave_own_action();
+        }
+        result
+    }
 }

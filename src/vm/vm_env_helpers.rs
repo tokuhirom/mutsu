@@ -2240,7 +2240,7 @@ impl Interpreter {
     /// Begin a carrier region: start logging by-name env writes. Returns the
     /// previously-active log (if a carrier was already running, e.g. nested
     /// EVAL) so the caller can restore + merge on `end_carrier`. See Slice B.
-    pub(super) fn begin_carrier(&mut self) -> Option<std::collections::HashSet<String>> {
+    pub(crate) fn begin_carrier(&mut self) -> Option<std::collections::HashSet<String>> {
         self.carrier_writes
             .replace(std::collections::HashSet::new())
     }
@@ -2252,7 +2252,7 @@ impl Interpreter {
     /// `writeback_carrier_writes` — but only on the success path: if the carrier
     /// errored, the frame unwinds, so reconciling its slots is moot (yet the log
     /// state must still be restored here so a `Some` does not leak into a CATCH).
-    pub(super) fn end_carrier(
+    pub(crate) fn end_carrier(
         &mut self,
         saved: Option<std::collections::HashSet<String>>,
     ) -> std::collections::HashSet<String> {
