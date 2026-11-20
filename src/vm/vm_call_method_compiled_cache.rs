@@ -739,17 +739,24 @@ impl Interpreter {
         {
             return Ok(Some((co, cd.clone())));
         }
-        // 2. Non-multi HashMap cache.
+        // 2. Non-multi HashMap cache. A cached `None` says the class has no
+        // candidate of this name at all (step 4 records one only then), which
+        // no argument list can change (#18282).
         if let Some(hit) = self
             .caches
             .method_resolve_cache
             .get(&(class_sym, method_sym))
             .cloned()
-            && let Some((owner, ref def)) = hit
-            && !def.is_multi
         {
-            self.caches.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
-            return Ok(hit);
+            match hit {
+                None => return Ok(None),
+                Some((owner, ref def)) if !def.is_multi => {
+                    self.caches.last_method_resolve =
+                        Some((class_sym, method_sym, owner, def.clone()));
+                    return Ok(hit);
+                }
+                Some(_) => {}
+            }
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
         if let Some(mut arg_keys) = self.multi_arg_type_keys_with_named(args)
@@ -789,7 +796,14 @@ impl Interpreter {
         // adr0019-e2-e4-resolver-core (#7540) design decision 5.
         let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target)?;
         let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
-        if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
+        // A miss is cached only when the class has no candidate of this name:
+        // a multi set whose candidates merely did not bind THESE arguments may
+        // still answer another call.
+        let cacheable = match &resolved_arc {
+            Some((_, def)) => !def.is_multi,
+            None => self.method_sequence_is_empty(cn, method_sym),
+        };
+        if cacheable {
             self.caches
                 .method_resolve_cache
                 .insert((class_sym, method_sym), resolved_arc.clone());

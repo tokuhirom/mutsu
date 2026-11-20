@@ -315,9 +315,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     }
     let lvalue = lower_expr(names, operand)?;
     let lower_temporized = |temporized: Temporized| {
-        super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::Temporize(Box::new(
-            temporized,
-        )))
+        super::lower_parsed_stmt(
+            names,
+            crate::ast::parsed::ParsedStmt::Temporize(Box::new(temporized)),
+        )
     };
     if let Expr::Call { name, args, .. } = &lvalue
         && *name == crate::symbol::Symbol::intern("undefine")

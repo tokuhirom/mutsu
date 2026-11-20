@@ -207,6 +207,7 @@ mod vm_caret_can_lane;
 mod vm_catch_dispatch;
 mod vm_clone_lane;
 mod vm_closure_dispatch;
+mod vm_closure_entry_bind;
 mod vm_closure_light_bind;
 mod vm_closure_light_call;
 mod vm_closure_light_def_bind;

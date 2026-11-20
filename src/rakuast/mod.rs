@@ -1674,9 +1674,10 @@ pub(crate) fn lower_statement_assign(node: crate::ast::parsed::Assign) -> crate:
 /// hand-built node.
 // Cost: O(n), n = size of the construct.
 pub(crate) fn lower_parsed_stmt(
+    names: &NameScope,
     node: crate::ast::parsed::ParsedStmt,
 ) -> Result<crate::ast::Stmt, RuntimeError> {
-    conditional_lower::lower_parsed(node)
+    conditional_lower::lower_parsed(names, node)
 }
 
 /// The `Name` node of the identifier `identifier`, written where `origin` says.
@@ -2033,8 +2034,6 @@ pub fn compile_time_compunit(
         return Ok(cu);
     };
     let mut node = RakuAstNode::clone(node);
-    // The routines this unit declares, not those of the last unit lowered.
-    shadowed_terms::scan(&node);
     resolve::annotate(&mut node, imported, imported_type);
     Ok(Value::rakuast(Box::new(node)))
 }
@@ -2117,7 +2116,6 @@ pub fn compunit_of_tree(
         return cu;
     };
     let mut node = RakuAstNode::clone(node);
-    shadowed_terms::scan(&node);
     resolve::annotate(&mut node, imported, imported_type);
     Value::rakuast(Box::new(node))
 }

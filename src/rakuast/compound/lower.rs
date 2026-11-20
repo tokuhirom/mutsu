@@ -20,7 +20,7 @@ fn operator(node: &CompoundAssign) -> Result<CompoundAssignOp, PError> {
 /// current value.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PError> {
-    lower_compound_expression_with(node, crate::parser::is_user_declared_value_term)
+    lower_compound_expression_with(node, &crate::parser::is_user_declared_value_term)
 }
 
 /// [`lower_compound_expression`] where `is_term` says which barewords name a
@@ -29,7 +29,7 @@ pub(crate) fn lower_compound_expression(node: CompoundAssign) -> Result<Expr, PE
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_expression_with(
     node: CompoundAssign,
-    is_term: fn(&str) -> bool,
+    is_term: &dyn Fn(&str) -> bool,
 ) -> Result<Expr, PError> {
     match node.meta {
         CompoundMeta::Reverse => return Ok(lower_reverse(node)),
@@ -61,14 +61,14 @@ pub(crate) fn lower_compound_expression_with(
 /// as a statement.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement(node: CompoundAssign) -> Result<Stmt, PError> {
-    lower_compound_statement_with(node, crate::parser::is_user_declared_value_term)
+    lower_compound_statement_with(node, &crate::parser::is_user_declared_value_term)
 }
 
 /// [`lower_compound_statement`] with the caller's notion of a sigilless term.
 // Cost: O(n), n = size of the target and source.
 pub(crate) fn lower_compound_statement_with(
     node: CompoundAssign,
-    is_term: fn(&str) -> bool,
+    is_term: &dyn Fn(&str) -> bool,
 ) -> Result<Stmt, PError> {
     if matches!(node.meta, CompoundMeta::Dotty | CompoundMeta::TopicDotty) {
         return Ok(lower_dotty_statement(node, is_term));
@@ -328,7 +328,7 @@ fn lower_reverse(node: CompoundAssign) -> Expr {
 pub(crate) fn lower_dotty(
     node: CompoundAssign,
     as_statement: bool,
-    is_term: fn(&str) -> bool,
+    is_term: &dyn Fn(&str) -> bool,
 ) -> Expr {
     let CompoundAssign {
         target,
@@ -360,7 +360,7 @@ pub(crate) fn lower_dotty(
 /// sigilless term is a type object (`C .= new`): the statement assigns to it,
 /// which dies as on rakudo ("Cannot modify an immutable 'C' type object").
 // Cost: O(n), n = size of the target and the call.
-pub(crate) fn lower_dotty_statement(node: CompoundAssign, is_term: fn(&str) -> bool) -> Stmt {
+pub(crate) fn lower_dotty_statement(node: CompoundAssign, is_term: &dyn Fn(&str) -> bool) -> Stmt {
     if let Expr::BareWord(name) = &node.target
         && !is_term(name)
     {

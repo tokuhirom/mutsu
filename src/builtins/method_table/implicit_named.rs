@@ -44,24 +44,20 @@ pub(crate) fn strip_undeclared_nameds(method: &str, args: &[Value]) -> Option<Ve
     if !super::names_any_row(method) {
         return None;
     }
-    let kept: Vec<Value> = args
-        .iter()
-        .filter(|a| {
-            if !a.is_string_pair_value() {
-                return true;
-            }
-            match a.view() {
-                ValueView::Pair(key, _) => super::some_row_binds_named(method, key.as_str()),
-                _ => true,
-            }
-        })
-        .cloned()
-        .collect();
-    if kept.len() == args.len() {
-        None
-    } else {
-        Some(kept)
+    let bound = |a: &Value| {
+        if !a.is_string_pair_value() {
+            return true;
+        }
+        match a.view() {
+            ValueView::Pair(key, _) => super::some_row_binds_named(method, key.as_str()),
+            _ => true,
+        }
+    };
+    // Every named bound (the common case): no copy of the argument list.
+    if args.iter().all(bound) {
+        return None;
     }
+    Some(args.iter().filter(|a| bound(a)).cloned().collect())
 }
 
 #[cfg(test)]

@@ -133,7 +133,7 @@ pub(super) fn lower_chained(names: &NameScope, node: &RakuAstNode) -> Result<Stm
     let chain = super::lower::lower_expr(names, &with_innermost_operand(node, variable)?)?;
     let mut form = form.clone();
     form.chain = Some(Box::new(chain));
-    super::lower_parsed_stmt(ParsedStmt::MethodAssignDecl(form))
+    super::lower_parsed_stmt(names, ParsedStmt::MethodAssignDecl(form))
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.

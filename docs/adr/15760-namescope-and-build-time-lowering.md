@@ -370,11 +370,12 @@ the passes that truly run on a whole unit (`whatever_curry::mark`, the scope dia
 
 ### 7.3 Slices
 
-- **2a (structural).** The finalization is driven by list close: `stmtlist` hands each completed list to the
-  finalization context, which still holds the whole-unit pre-scans (computed from the unit as parsed so far plus an
-  end-of-unit pass for what is not yet known). No behaviour change; `finalize_unit` becomes the driver of the unit's
-  own list only.
-- **2b (behavioural).** The pre-scans become "declared so far" (§7.2 (c)); measured against raku and the full roast.
+- **2a (structural).** The finalization's unit state moves from thread-locals into the `NameScope` and the purity of
+  the finalization is audited (§7.5, condition 1). No behaviour change. (The first draft of this slice drove the
+  finalization by list close while still feeding it whole-unit pre-scans; that is not possible without the
+  behaviour change of 2b, because the pre-scans need the statements after the list, so the move is in 2b.)
+- **2b (behavioural).** The finalization is driven by the close of each statement list, with "declared so far"
+  inputs (§7.2 (c)); measured against raku and the full roast.
 - **2c (structural).** Qualification folded in (§7.2 (d)).
 - **2d.** `finalize_unit` and the executing `qualify_type_names` call deleted; frontend cost measured against
   Amendment 1 of ADR-15334.
@@ -398,3 +399,21 @@ independent PR run against the full roast. Two conditions on the implementation,
    converted), and records the finding in this section.
 2. **The keyword-shadow case stays open.** `say 1; sub say {...}` (§7.2 (c)) is checked in slice 2b's census for
    real-world harm and the result recorded here.
+
+**Condition 1, finding (slice 2a, 2026-11-20).** Audit of what `finalize_unit` and the lowering it calls write
+outside the tree they return:
+
+| Effect | Where | Safe to repeat / to run inside another unit? |
+| --- | --- | --- |
+| the unit's facts (shadowed setting names, sigilless terms, packages, routines) and the per-list keyword and operator scopes | `shadowed_terms`, `declared_routines`, `infix_func` | **Was not**: thread-locals reset and overwritten per unit with no restore, so a finalization inside another clobbered it and readers outside a unit (the `$*CU` annotation, a CHECK-time node) saw whichever unit ran last. Slice 2a moves them into the `NameScope` (`UnitGuard` installs a unit's facts with fresh per-list stacks and restores the enclosing unit's on drop; `ListScope` opens one list's scope). |
+| the parser's lexical scope: `with_rakuast_lexical_scope` push/pop, and `register_rakuast_user_sub_binding` of each `sub` / `my &f` / `use` of a list | `finalize`, `lower` | Yes: guard-scoped; the registration repeats what the parser registered for the same statement (a set insert). At list close (2b) it registers into the list's own scope, which the parser opened. |
+| guard-scoped thread-locals: `underscore_bindings`, `anon_state` frames, `label_context`, `EXECUTING`, `KeepSpellings` | lowering helpers | Yes: each restores on drop. |
+| monotonic counters for minted names (compound and dotty temporaries, `supply` emitters, `temp` saves, anonymous sigilless sources, `if` binds) | `compound`, `dotty_assign`, `supply_lower`, `temporize`, `sigilless_lower`, `if_branch` | Yes: a re-finalization mints fresh names, so its tree differs only in those names, and the abandoned tree is discarded with them. Identity tests therefore avoid these constructs. |
+| `use v6.x` met while lowering a statement list re-sets the parser's language version | `lower::lower_stmt_list` | Yes: the parser set the same version at the same `use`. At list close (2b) it is still the value the parser has. |
+
+**The allow-list (§7.2 (a)) registers nothing.** Converting an operator routine notes it in the list's operator scope
+(scoped, above); a package holding a nested-block method, `temp Type.meth = v`, a `Signature` literal, the
+deferred `X::Obsolete`, an interpolating `s///` replacement and a classified bareword build only the returned tree
+(types and operators are registered by the parser when it builds the node, and by the run time when the unit runs).
+Pinned by `src/rakuast/finalize_purity_tests.rs`: finalizing the same units again (in the same and in a fresh
+`NameScope`) gives the same tree, and finalizing units while another unit's facts are installed leaves them intact.

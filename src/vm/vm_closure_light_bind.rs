@@ -66,8 +66,13 @@ impl Interpreter {
         args: &[Value],
     ) -> bool {
         if !param_syms.light_bindable {
-            return match param_syms.light_def_params.as_deref() {
-                Some(params) => self.closure_light_def_bind(data, params, args),
+            if let Some(params) = param_syms.light_def_params.as_deref()
+                && self.closure_light_def_bind(data, params, args)
+            {
+                return true;
+            }
+            return match param_syms.entry_params.as_deref() {
+                Some(params) => self.closure_entry_bind(data, params, args),
                 None => false,
             };
         }

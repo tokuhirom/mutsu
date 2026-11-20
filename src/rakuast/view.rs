@@ -2573,7 +2573,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             | Spelling::ZipChain
             | Spelling::HyperSlip
             | Spelling::HyperCallTerm
-            | Spelling::ColonPairs => super::colon_pairs::view_written(names, spelled),
+            | Spelling::ColonPairs
+            | Spelling::IndirectTail(_) => super::colon_pairs::view_written(names, spelled),
             Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
             Spelling::RadixNumber => super::radix_number::view_node(names, &spelled.expr),
             Spelling::ColonPairValue(_)
@@ -6002,7 +6003,8 @@ pub(super) fn colonpair_spelling(
         BinaryForm::ColonPairFalse => colonpair_false_expr(expr),
         BinaryForm::ColonPairVariable => colonpair_variable_expr(names, expr),
         BinaryForm::ColonPairValue => colonpair_value_expr(names, expr),
-        BinaryForm::ColonPairBracketed => colonpair_bracketed_expr(names, expr),
+        // `:a<x y>` / `:a[1, 2]`: over the bracketed value, no parentheses.
+        BinaryForm::ColonPairBracketed => colonpair_value_node(names, expr, false),
         BinaryForm::ColonPairNumber => colonpair_number_expr(names, expr),
         BinaryForm::Infix | BinaryForm::QuotedKey | BinaryForm::CaretPrefix => return None,
         BinaryForm::DoesDeclInit => return None,
@@ -6138,13 +6140,6 @@ pub(super) fn colonpair_value_expr(
     expr: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     colonpair_value_node(names, expr, true)
-}
-
-/// `:a<x y>` / `:a[1, 2]`: the colonpair over the bracketed value itself, a
-/// word-quote or an array composer, with no parentheses around it.
-// Cost: O(n), n = size of the pair.
-fn colonpair_bracketed_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    colonpair_value_node(names, expr, false)
 }
 
 // Cost: O(n), n = size of the pair.

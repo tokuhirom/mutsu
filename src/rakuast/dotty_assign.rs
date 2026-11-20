@@ -101,7 +101,7 @@ pub(crate) fn dot_assign_target(name: &str) -> Expr {
 pub(crate) fn wrap_dot_assign_with_terms(
     target: Expr,
     method_call_fn: impl Fn(Expr) -> Expr,
-    is_term: fn(&str) -> bool,
+    is_term: &dyn Fn(&str) -> bool,
 ) -> Expr {
     let source = target.clone();
     let method_call = method_call_fn(source.clone());
@@ -116,7 +116,7 @@ pub(crate) fn wrap_dot_assign_with_terms(
 fn expand_dot_assign(
     target: Expr,
     method_call_fn: &impl Fn(Expr) -> Expr,
-    is_term: fn(&str) -> bool,
+    is_term: &dyn Fn(&str) -> bool,
 ) -> Expr {
     // Unwrap Grouped and identity `.self` calls to get at the lvalue. `.self`
     // returns its invocant unchanged, so `(X.self).=meth` is exactly `X.=meth`

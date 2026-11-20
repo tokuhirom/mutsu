@@ -5,7 +5,6 @@
 //! the parser makes the same choice at parse time, but the node does not say
 //! which one it meant, so lowering re-derives it from the unit's declarations.
 
-use std::cell::RefCell;
 use std::collections::HashSet;
 
 use super::lower::{leaf_str, named_child, named_child_or_positional};
@@ -14,44 +13,19 @@ use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Stmt;
 use crate::ast::parsed::ParsedStmt;
 use crate::ast_visit::Visit;
+use crate::scope::{ListScope, ListStack, NameScope, UnitFacts, UnitGuard};
 use crate::value::ValueView;
 
-thread_local! {
-    static SHADOWED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    /// The sigilless terms the unit declares: `my \x`, `constant x`, a `\x`
-    /// parameter. Unlike `SHADOWED`, only the declared name counts.
-    static TERMS: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    /// The names of the packages the unit declares (`class Nil`, `role X`,
-    /// `grammar G`, `module M`, `package P`).
-    static PACKAGES: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-    /// The `True` / `False` terms each enclosing statement list redeclares
-    /// (`constant True = 42`), innermost last. Unlike `SHADOWED` these are
-    /// scoped: the redeclaration holds in its own block and what is nested in it.
-    static KEYWORD_SCOPES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Pops the scope [`enter_scope`] pushed.
-pub(super) struct KeywordScope;
-
-impl Drop for KeywordScope {
-    fn drop(&mut self) {
-        KEYWORD_SCOPES.with(|s| {
-            s.borrow_mut().pop();
-        });
-    }
-}
-
-/// Start a statement list: a `True` / `False` it declares is visible to the
-/// rest of it and to what it contains, as in the parser.
+/// Opens a statement list's scope for the `True` / `False` it redeclares, which
+/// holds in its own block and what is nested in it, as in the parser.
 // Cost: O(1).
-pub(super) fn enter_scope() -> KeywordScope {
-    KEYWORD_SCOPES.with(|s| s.borrow_mut().push(HashSet::new()));
-    KeywordScope
+pub(super) fn enter_scope(names: &NameScope) -> ListScope<'_> {
+    ListScope::enter(names, ListStack::Keywords)
 }
 
 /// Record the `True` / `False` term the statement `stmt` declares, if it does.
 // Cost: O(1).
-pub(super) fn note_keyword_declaration(stmt: &RakuAstNode) {
+pub(super) fn note_keyword_declaration(names: &NameScope, stmt: &RakuAstNode) {
     let target = if stmt.class == RakuAstClass::StatementExpression {
         match named_child(stmt, "expression") {
             Ok(inner) => inner,
@@ -72,39 +46,39 @@ pub(super) fn note_keyword_declaration(stmt: &RakuAstNode) {
         _ => None,
     };
     if let Some(name) = name.filter(|n| n == "True" || n == "False") {
-        KEYWORD_SCOPES.with(|s| {
-            if let Some(scope) = s.borrow_mut().last_mut() {
-                scope.insert(name);
-            }
-        });
+        names.note_in_list(ListStack::Keywords, name);
     }
 }
 
 /// Whether an enclosing statement list redeclares the term `True` / `False`.
 // Cost: O(s), s = open scopes.
-pub(super) fn is_keyword_shadowed(name: &str) -> bool {
-    KEYWORD_SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(name)))
+pub(super) fn is_keyword_shadowed(names: &NameScope, name: &str) -> bool {
+    names.in_open_list(ListStack::Keywords, name)
 }
 
-/// Record the names `root` declares that lowering resolves other names
-/// against: the constants it redeclares, its sigilless terms, its packages and
-/// its routines (`declared_routines`). One walk of the unit finds all four.
+/// Install, for the unit `root` while the guard lives, the names it declares
+/// that lowering resolves other names against: the constants it redeclares,
+/// its sigilless terms, its packages and its routines. One walk of the unit
+/// finds all four.
 // Cost: O(n), n = nodes in the unit.
-pub(super) fn scan(root: &RakuAstNode) {
-    KEYWORD_SCOPES.with(|s| s.borrow_mut().clear());
+pub(super) fn scan<'a>(names: &'a NameScope, root: &RakuAstNode) -> UnitGuard<'a> {
     let mut found = Found::default();
     walk(root, false, &mut found);
-    SHADOWED.with(|s| *s.borrow_mut() = found.shadowed);
-    TERMS.with(|t| *t.borrow_mut() = found.terms);
-    PACKAGES.with(|p| *p.borrow_mut() = found.packages);
-    super::declared_routines::set(found.routines);
+    UnitGuard::enter(
+        names,
+        UnitFacts {
+            shadowed: found.shadowed,
+            terms: found.terms,
+            packages: found.packages,
+            routines: found.routines,
+        },
+    )
 }
 
 /// [`scan`] for an executing unit, which is the parser's own statements: the
 /// same four facts, read from the statements themselves.
 // Cost: O(n), n = nodes in the unit.
-pub(super) fn scan_stmts(stmts: &[Stmt]) {
-    KEYWORD_SCOPES.with(|s| s.borrow_mut().clear());
+pub(super) fn scan_stmts<'a>(names: &'a NameScope, stmts: &[Stmt]) -> UnitGuard<'a> {
     let mut facts = Facts::default();
     crate::ast_visit::walk_stmts(&mut facts, stmts);
     let Facts {
@@ -115,10 +89,15 @@ pub(super) fn scan_stmts(stmts: &[Stmt]) {
     } = facts;
     let mut all_shadowed = terms.clone();
     all_shadowed.extend(shadowed);
-    SHADOWED.with(|s| *s.borrow_mut() = all_shadowed);
-    TERMS.with(|t| *t.borrow_mut() = terms);
-    PACKAGES.with(|p| *p.borrow_mut() = packages);
-    super::declared_routines::set(routines);
+    UnitGuard::enter(
+        names,
+        UnitFacts {
+            shadowed: all_shadowed,
+            terms,
+            packages,
+            routines,
+        },
+    )
 }
 
 /// What the parser's statements declare that lowering resolves names against:
@@ -186,30 +165,30 @@ impl<'ast> Visit<'ast> for Facts {
     }
 }
 
-/// Whether the unit last passed to [`scan`] declares a package named `name`.
+/// Whether the unit being lowered declares a package named `name`.
 /// A declared `class Nil` makes `Nil` that type, not the setting's `Nil` term.
-// Cost: O(1).
-pub(super) fn declares_package(name: &str) -> bool {
-    PACKAGES.with(|p| p.borrow().contains(name))
+// Cost: O(k), k = length of `name`.
+pub(super) fn declares_package(names: &NameScope, name: &str) -> bool {
+    names.unit().packages.contains(name)
 }
 
-/// Whether the unit last passed to [`scan`] declares a sigilless term `name`.
-// Cost: O(1).
-pub(super) fn is_declared_term(name: &str) -> bool {
-    TERMS.with(|t| t.borrow().contains(name))
+/// Whether the unit being lowered declares a sigilless term `name`.
+// Cost: O(k), k = length of `name`.
+pub(super) fn is_declared_term(names: &NameScope, name: &str) -> bool {
+    names.unit().terms.contains(name)
 }
 
 /// Whether `name` is a sigilless value term the unit declares or the parser
 /// scope it is lowered in knows (a term imported from a module).
 // Cost: O(s), s = open parser scopes.
-pub(super) fn is_value_term(name: &str) -> bool {
-    is_declared_term(name) || crate::parser::is_user_declared_value_term(name)
+pub(super) fn is_value_term(names: &NameScope, name: &str) -> bool {
+    is_declared_term(names, name) || crate::parser::is_user_declared_value_term(name)
 }
 
-/// Whether the unit last passed to [`scan`] declares a term named `name`.
-// Cost: O(1).
-pub(super) fn is_shadowed(name: &str) -> bool {
-    SHADOWED.with(|s| s.borrow().contains(name))
+/// Whether the unit being lowered declares a term named `name`.
+// Cost: O(k), k = length of `name`.
+pub(super) fn is_shadowed(names: &NameScope, name: &str) -> bool {
+    names.unit().shadowed.contains(name)
 }
 
 fn is_term_declaration(class: RakuAstClass) -> bool {

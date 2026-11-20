@@ -50,6 +50,41 @@ pub(crate) struct NameScope {
     caller_trait_types: HashSet<String>,
     /// The operator routines (`infix:<…>`) the calling scope makes visible.
     caller_operators: HashSet<String>,
+    /// What the unit being finalized or lowered declares anywhere, installed for
+    /// that unit by [`UnitGuard`] (ADR-15760 §7.5): the finalization's unit
+    /// state is this value's, not a thread's, so a finalization never clobbers
+    /// an enclosing one.
+    unit: RefCell<UnitFacts>,
+    /// The `True` / `False` terms each enclosing statement list redeclares
+    /// (`constant True = 42`), innermost last.
+    keyword_scopes: RefCell<Vec<HashSet<String>>>,
+    /// The `infix:<…>` routines each enclosing statement list declares,
+    /// innermost last.
+    operator_scopes: RefCell<Vec<HashSet<String>>>,
+}
+
+/// What a unit declares anywhere that lowering resolves a name against: the
+/// constants and terms that shadow a setting name, its sigilless terms, its
+/// packages and its routines.
+#[derive(Clone, Default, Debug)]
+pub(crate) struct UnitFacts {
+    /// Names whose setting meaning the unit shadows (`constant e`, `-> \pi {}`).
+    pub(crate) shadowed: HashSet<String>,
+    /// The sigilless terms the unit declares (`my \x`, `constant x`, `\x`).
+    pub(crate) terms: HashSet<String>,
+    /// The packages the unit declares (`class Nil`, `module M`).
+    pub(crate) packages: HashSet<String>,
+    /// The routines the unit declares (`sub f`, `my &f`, a `&f` parameter).
+    pub(crate) routines: HashSet<String>,
+}
+
+/// Which per-list scope stack of a [`NameScope`] a [`ListScope`] opens.
+#[derive(Clone, Copy)]
+pub(crate) enum ListStack {
+    /// `True` / `False` redeclarations.
+    Keywords,
+    /// `infix:<…>` declarations.
+    Operators,
 }
 
 impl NameScope {
@@ -162,6 +197,85 @@ impl NameScope {
     // Cost: O(k), k = length of `routine`.
     pub(crate) fn caller_declares_operator(&self, routine: &str) -> bool {
         self.caller_operators.contains(routine)
+    }
+}
+
+impl NameScope {
+    fn stack(&self, which: ListStack) -> &RefCell<Vec<HashSet<String>>> {
+        match which {
+            ListStack::Keywords => &self.keyword_scopes,
+            ListStack::Operators => &self.operator_scopes,
+        }
+    }
+
+    /// The unit facts installed by the innermost [`UnitGuard`].
+    // Cost: O(1).
+    pub(crate) fn unit(&self) -> std::cell::Ref<'_, UnitFacts> {
+        self.unit.borrow()
+    }
+
+    /// Record `name` in the innermost open list of `which`.
+    // Cost: O(k), k = length of `name`.
+    pub(crate) fn note_in_list(&self, which: ListStack, name: String) {
+        if let Some(scope) = self.stack(which).borrow_mut().last_mut() {
+            scope.insert(name);
+        }
+    }
+
+    /// Whether an open list of `which` holds `name`.
+    // Cost: O(s), s = open lists.
+    pub(crate) fn in_open_list(&self, which: ListStack, name: &str) -> bool {
+        self.stack(which)
+            .borrow()
+            .iter()
+            .any(|scope| scope.contains(name))
+    }
+}
+
+/// Installs one unit's [`UnitFacts`], with empty per-list scope stacks, while
+/// it lives; the enclosing unit's are restored on drop.
+pub(crate) struct UnitGuard<'a> {
+    names: &'a NameScope,
+    facts: UnitFacts,
+    keywords: Vec<HashSet<String>>,
+    operators: Vec<HashSet<String>>,
+}
+
+impl<'a> UnitGuard<'a> {
+    // Cost: O(1).
+    pub(crate) fn enter(names: &'a NameScope, facts: UnitFacts) -> Self {
+        UnitGuard {
+            names,
+            facts: std::mem::replace(&mut *names.unit.borrow_mut(), facts),
+            keywords: std::mem::take(&mut *names.keyword_scopes.borrow_mut()),
+            operators: std::mem::take(&mut *names.operator_scopes.borrow_mut()),
+        }
+    }
+}
+
+impl Drop for UnitGuard<'_> {
+    fn drop(&mut self) {
+        *self.names.unit.borrow_mut() = std::mem::take(&mut self.facts);
+        *self.names.keyword_scopes.borrow_mut() = std::mem::take(&mut self.keywords);
+        *self.names.operator_scopes.borrow_mut() = std::mem::take(&mut self.operators);
+    }
+}
+
+/// One statement list's scope on a per-list stack of a [`NameScope`], popped
+/// on drop.
+pub(crate) struct ListScope<'a>(&'a NameScope, ListStack);
+
+impl<'a> ListScope<'a> {
+    // Cost: O(1).
+    pub(crate) fn enter(names: &'a NameScope, which: ListStack) -> Self {
+        names.stack(which).borrow_mut().push(HashSet::new());
+        ListScope(names, which)
+    }
+}
+
+impl Drop for ListScope<'_> {
+    fn drop(&mut self) {
+        self.0.stack(self.1).borrow_mut().pop();
     }
 }
 

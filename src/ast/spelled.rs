@@ -186,6 +186,10 @@ pub(crate) enum Spelling {
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,
+    /// `$::(EXPR)::a::b`: a symbolic lookup with a static tail, which the
+    /// parser runs as `$::(EXPR ~ "::a" ~ "::b")`; the tail's names. RakuAST
+    /// keeps the name's parts.
+    IndirectTail(Vec<Box<str>>),
     /// `my $c = :a:!b:42c`: colonpairs written one after another as a term,
     /// which the parser runs as the list of them; RakuAST keeps `ColonPairs`.
     ColonPairs,

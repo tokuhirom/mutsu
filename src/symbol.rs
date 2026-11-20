@@ -139,6 +139,18 @@ pub(crate) fn for_each_capture_shaped_symbol(mut f: impl FnMut(Symbol)) {
     }
 }
 
+/// [`for_each_capture_shaped_symbol`] restricted to the `<name>`-shaped
+/// symbols. The same rule holds: `f` must not intern a symbol.
+// Cost: O(a), a = angle-shaped symbols interned so far.
+pub(crate) fn for_each_angle_capture_symbol(mut f: impl FnMut(Symbol)) {
+    let guard = capture_shaped()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for &sym in guard.1.iter() {
+        f(sym);
+    }
+}
+
 pub(crate) fn capture_shaped_symbols() -> (Vec<Symbol>, Vec<Symbol>) {
     let guard = capture_shaped().read().unwrap();
     guard.clone()

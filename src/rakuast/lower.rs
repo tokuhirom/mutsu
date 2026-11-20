@@ -42,8 +42,7 @@ pub fn lower(
 
 fn lower_normalized(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
-    super::shadowed_terms::scan(node);
-    super::infix_func::reset();
+    let _unit = super::shadowed_terms::scan(names, node);
     let mut stmts = crate::parser::with_rakuast_lexical_scope(|| lower_stmts(names, node))?;
     finish_unit(&mut stmts)?;
     // A parsed unit has its bare type names qualified by the package they are
@@ -86,8 +85,8 @@ pub(super) fn lower_stmts(
     node: &RakuAstNode,
 ) -> Result<Vec<Stmt>, RuntimeError> {
     // Operators the list declares are scoped to it.
-    let _operators = super::infix_func::enter_scope();
-    let _keywords = super::shadowed_terms::enter_scope();
+    let _operators = super::infix_func::enter_scope(names);
+    let _keywords = super::shadowed_terms::enter_scope(names);
     match node.class {
         RakuAstClass::CompUnit => lower_stmt_list(names, named_child(node, "statement-list")?),
         _ => super::anon_state::with_frame(|| lower_stmt_list(names, node)),
@@ -141,8 +140,8 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
                 if child.class == RakuAstClass::DocBlock {
                     continue;
                 }
-                super::infix_func::note_declaration(child);
-                super::shadowed_terms::note_keyword_declaration(child);
+                super::infix_func::note_declaration(names, child);
+                super::shadowed_terms::note_keyword_declaration(names, child);
                 if let Some(line) = super::origin::line_of(child) {
                     stmts.push(Stmt::SetLine(line, crate::ast::SrcSpan::NONE));
                 }
@@ -177,8 +176,7 @@ pub(super) fn lower_fragment(names: &NameScope, node: &RakuAstNode) -> Result<St
     // is executed and keeps none.
     let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
-    super::shadowed_terms::scan(node);
-    super::infix_func::reset();
+    let _unit = super::shadowed_terms::scan(names, node);
     crate::parser::with_rakuast_lexical_scope(|| lower_stmt(names, node))
 }
 
@@ -314,7 +312,7 @@ fn lower_modified(
             {
                 Stmt::Ast(node)
             }
-            other => finish_kept(other)?,
+            other => finish_kept(names, other)?,
         }
     };
     super::modifier_lower::lower(Modified {
@@ -378,9 +376,12 @@ fn lower_signature_bind(
     }
     let signature = lower_expr(names, left)?;
     let rhs = lower_expr(names, named_child(node, "right")?)?;
-    super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::SignatureBind { signature, rhs })
-        .map(Some)
-        .map_err(|_| unsupported(node))
+    super::lower_parsed_stmt(
+        names,
+        crate::ast::parsed::ParsedStmt::SignatureBind { signature, rhs },
+    )
+    .map(Some)
+    .map_err(|_| unsupported(node))
 }
 
 /// The modifier a `StatementModifier::*` node is.
@@ -409,15 +410,15 @@ const SHADOWABLE_STATEMENTS: [&str; 14] = [
 ];
 
 fn lower_stmt_inner(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    finish_kept(lower_stmt_kept(names, node)?)
+    finish_kept(names, lower_stmt_kept(names, node)?)
 }
 
 /// The statement a lowering built, lowered if it is a parser node kept in its
 /// written shape ([`lower_stmt_kept`]).
 // Cost: O(n), n = size of the statement.
-fn finish_kept(stmt: Stmt) -> Result<Stmt, RuntimeError> {
+fn finish_kept(names: &NameScope, stmt: Stmt) -> Result<Stmt, RuntimeError> {
     match stmt {
-        Stmt::Ast(node) => super::lower_parsed_stmt(*node),
+        Stmt::Ast(node) => super::lower_parsed_stmt(names, *node),
         other => Ok(other),
     }
 }
@@ -480,11 +481,11 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
         // `done VALUE` is `emit VALUE; done`.
         RakuAstClass::CallNameWithoutParentheses
             if call_name_str(node).is_ok_and(|n| n == "done")
-                && !super::declared_routines::is_declared("done")
+                && !super::declared_routines::is_declared(names, "done")
                 && named_child(node, "args").is_ok_and(|args| args.fields.len() == 1) =>
         {
             let value = arg_exprs(names, node)?.remove(0);
-            super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::DoneValue(value))
+            super::lower_parsed_stmt(names, crate::ast::parsed::ParsedStmt::DoneValue(value))
         }
         // A bare `done` is the react/supply completion unless a lexical
         // `&done` shadows it; the compiler decides that for the bare word
@@ -691,7 +692,7 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses
             if call_name_str(node).is_ok_and(|n| {
                 SHADOWABLE_STATEMENTS.contains(&n.as_str())
-                    && (super::declared_routines::is_declared(&n)
+                    && (super::declared_routines::is_declared(names, &n)
                         || super::declared_routines::is_user_call(node))
             }) =>
         {
@@ -819,8 +820,11 @@ fn lower_comma_declarations(
             declarations.push(Stmt::Expr(lower_expr(names, child)?));
         }
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::CommaDecls(declarations))
-        .map(Some)
+    super::conditional_lower::lower_parsed(
+        names,
+        crate::ast::parsed::ParsedStmt::CommaDecls(declarations),
+    )
+    .map(Some)
 }
 
 // Cost: O(n + t), n = Native node fields, t = its traits.
@@ -1212,7 +1216,7 @@ fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
                 is_our: false,
                 form: crate::ast::parsed::SigillessForm::CallAssign,
             },
-            super::shadowed_terms::is_declared_term,
+            &|name| super::shadowed_terms::is_declared_term(names, name),
         );
     }
     let form = match init.class {
@@ -1230,7 +1234,7 @@ fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
             is_our: false,
             form,
         },
-        super::shadowed_terms::is_declared_term,
+        &|name| super::shadowed_terms::is_declared_term(names, name),
     )
 }
 
@@ -1282,11 +1286,11 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     Ok(match dotty_parts(names, node)? {
         Dotty::Call(call) => call,
-        Dotty::Assign(compound) => super::compound::lower::lower_dotty(
-            compound,
-            as_statement,
-            super::shadowed_terms::is_declared_term,
-        ),
+        Dotty::Assign(compound) => {
+            super::compound::lower::lower_dotty(compound, as_statement, &|name| {
+                super::shadowed_terms::is_declared_term(names, name)
+            })
+        }
     })
 }
 
@@ -1296,10 +1300,11 @@ pub(super) fn lower_dotty_assign(
 fn lower_dotty_statement(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(match dotty_parts(names, node)? {
         Dotty::Call(call) => Stmt::Expr(call),
-        Dotty::Assign(compound) => super::compound::lower::lower_dotty_statement(
-            compound,
-            super::shadowed_terms::is_declared_term,
-        ),
+        Dotty::Assign(compound) => {
+            super::compound::lower::lower_dotty_statement(compound, &|name| {
+                super::shadowed_terms::is_declared_term(names, name)
+            })
+        }
     })
 }
 
@@ -3245,7 +3250,7 @@ fn lower_named_call(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
         _ => None,
     };
     if let Some(kind) = kind
-        && !super::declared_routines::is_declared(&name)
+        && !super::declared_routines::is_declared(names, &name)
     {
         let flow = |label, value| Expr::ControlFlow {
             kind,
@@ -3272,7 +3277,7 @@ fn lower_named_call(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
     // (its argument is evaluated once, in boolean context), not a sub call.
     if matches!(name.as_str(), "not" | "so")
         && args.len() == 1
-        && !super::declared_routines::is_declared(&name)
+        && !super::declared_routines::is_declared(names, &name)
         && !super::declared_routines::is_user_call(node)
     {
         let op = if name == "not" {
@@ -3287,7 +3292,7 @@ fn lower_named_call(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
         });
     }
     if let Some(line) = super::origin::current_line() {
-        if args.is_empty() && super::declared_routines::is_declared(&name) {
+        if args.is_empty() && super::declared_routines::is_declared(names, &name) {
             args.push(crate::parser::callsite_line_arg(line));
         }
         crate::parser::stamp_call_site_markers(&name, line, &mut args);
@@ -3335,7 +3340,7 @@ pub(super) fn arg_list_exprs(
 /// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
 /// coverage boundary.
 pub(super) fn lower_var_decl(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    finish_kept(lower_var_decl_kept(names, node)?)
+    finish_kept(names, lower_var_decl_kept(names, node)?)
 }
 
 /// A declaration in expression position (`(my Int $x .= new(4)).^name`,
@@ -3360,7 +3365,7 @@ pub(super) fn lower_expression_declaration(
                     None => crate::ast::method_assign_decl::expand(*form),
                 }
             }
-            other => super::lower_parsed_stmt(other)?,
+            other => super::lower_parsed_stmt(names, other)?,
         },
         other => other,
     })
@@ -3383,11 +3388,14 @@ pub(super) fn lower_var_decl_kept(
             return Err(unsupported(node));
         };
         let name = name.clone();
-        return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::WillDecl {
-            decl: Box::new(declaration),
-            name,
-            phasers,
-        });
+        return super::conditional_lower::lower_parsed(
+            names,
+            crate::ast::parsed::ParsedStmt::WillDecl {
+                decl: Box::new(declaration),
+                name,
+                phasers,
+            },
+        );
     }
     if !is_attribute && let Some((stripped, roles)) = super::var_does::split(node)? {
         let declaration = lower_var_decl_plain(names, &stripped)?;
@@ -3599,8 +3607,9 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         {
             return Err(unsupported(node));
         }
-        return super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::BindDecl(
-            Box::new(Stmt::VarDecl {
+        return super::conditional_lower::lower_parsed(
+            names,
+            crate::ast::parsed::ParsedStmt::BindDecl(Box::new(Stmt::VarDecl {
                 anonymous,
                 name,
                 expr,
@@ -3617,8 +3626,8 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
                     .then_some(crate::ast::bind_decl::BindKind::Scalar),
                 marks,
                 where_constraint,
-            }),
-        ));
+            })),
+        );
     }
     Ok(Stmt::VarDecl {
         anonymous,
@@ -3674,9 +3683,9 @@ pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNo
 /// bareword. Shared by `Term::Enum` and `Term::Name`, which rakudo both
 /// resolve against the setting.
 // Cost: O(1).
-pub(super) fn term_identifier_expr(name: &str) -> Expr {
+pub(super) fn term_identifier_expr(names: &NameScope, name: &str) -> Expr {
     match name {
-        "True" | "False" if !super::shadowed_terms::is_keyword_shadowed(name) => {
+        "True" | "False" if !super::shadowed_terms::is_keyword_shadowed(names, name) => {
             let value = Value::truth(name == "True");
             // In a unit that imported through a run-time `sub EXPORT` hook the
             // parser keeps the keyword shadowable (#9047); so does lowering.
@@ -3691,7 +3700,7 @@ pub(super) fn term_identifier_expr(name: &str) -> Expr {
         }
         // `Empty` is the empty Slip literal the parser folds it to (a
         // `BareWord("Empty")` as a `use` argument would be read as a tag).
-        "Empty" if !super::shadowed_terms::is_shadowed(name) => {
+        "Empty" if !super::shadowed_terms::is_shadowed(names, name) => {
             let value = Value::slip_arc(std::sync::Arc::new(Vec::new()));
             if crate::parser::term_keywords_shadowable() {
                 Expr::ShadowableTermKeyword {
@@ -3704,13 +3713,13 @@ pub(super) fn term_identifier_expr(name: &str) -> Expr {
         }
         // The math constants are the numeric literals the parser folds them to,
         // unless the unit declares a term of that name.
-        "pi" | "\u{3c0}" if !super::shadowed_terms::is_shadowed(name) => {
+        "pi" | "\u{3c0}" if !super::shadowed_terms::is_shadowed(names, name) => {
             Expr::Literal(Value::num(std::f64::consts::PI))
         }
-        "tau" | "\u{3c4}" if !super::shadowed_terms::is_shadowed(name) => {
+        "tau" | "\u{3c4}" if !super::shadowed_terms::is_shadowed(names, name) => {
             Expr::Literal(Value::num(std::f64::consts::TAU))
         }
-        "e" | "\u{1D452}" if !super::shadowed_terms::is_shadowed(name) => {
+        "e" | "\u{1D452}" if !super::shadowed_terms::is_shadowed(names, name) => {
             Expr::Literal(Value::num(std::f64::consts::E))
         }
         _ => Expr::BareWord(name.to_string()),
@@ -4607,6 +4616,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         // A signature declaration in expression position (`if my ($a, $b) = …`)
         // is the parser's expansion wrapped in a `DoStmt`.
         RakuAstClass::VarDeclarationSignature => Ok(Expr::DoStmt(Box::new(finish_kept(
+            names,
             super::signature_decl::lower(names, node)?,
         )?))),
         // `:(Int $x)`: the `Signature` value the parser builds for the literal.
@@ -5273,7 +5283,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         // the parser's `Nil` literal instead (`term_literals`), which is what
         // `is default` restores on assignment.
         RakuAstClass::TypeSimple => match simple_type_name(names, node, node)?.as_str() {
-            "Nil" if !super::shadowed_terms::declares_package("Nil") => {
+            "Nil" if !super::shadowed_terms::declares_package(names, "Nil") => {
                 Ok(Expr::Literal(Value::NIL))
             }
             name => Ok(Expr::BareWord(name.to_string())),
@@ -5337,7 +5347,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         // `True`/`False` -> the Bool literal; any other setting enum value
         // (`Less`, `Kept`) -> the bareword the parser produces for it.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
-            ValueView::Str(s) if !s.is_empty() => Ok(term_identifier_expr(&s)),
+            ValueView::Str(s) if !s.is_empty() => Ok(term_identifier_expr(names, &s)),
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.

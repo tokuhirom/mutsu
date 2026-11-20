@@ -243,6 +243,14 @@ fn props(node: &RakuAstNode) -> Option<Props> {
         RakuAstClass::MetaInfixNegate | RakuAstClass::MetaInfixHyper => {
             inner_infix(node).map_or_else(|| infix_props(node), |i| props(&i).unwrap_or_default())
         }
+        // `=` itself: item assignment with `:item`, list assignment otherwise.
+        RakuAstClass::Assignment => {
+            let item = node
+                .fields
+                .iter()
+                .any(|f| matches!(f.value, RakuAstFieldValue::Adverb("item")));
+            Props::builtin("infix", if item { "=>" } else { "=" })
+        }
         RakuAstClass::MetaInfixAssign => {
             let inner = inner_infix(node)
                 .and_then(|i| props(&i))
