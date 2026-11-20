@@ -20,7 +20,10 @@ pub(super) fn place_nested(
     source: &str,
 ) {
     for (at, end, block) in nested {
-        place(list, at, end, &block, source);
+        // A block no `Blockoid` takes lies in a statement of the unit's own list.
+        if !place(list, at, end, &block, source) {
+            insert_in_list(list, at, end, &block, source);
+        }
     }
 }
 
@@ -93,6 +96,51 @@ fn place_in_value(
     }
 }
 
+/// Whether `at` lies inside a parenthesised or bracketed list of `node` and in no
+/// quoted text: rakudo reads a Pod block written there and puts it after the
+/// statement (`my @a = (1,` / `=begin pod` ... `2);`), where in a string or a
+/// heredoc the same lines are text. A position outside any such list stays
+/// text to this reader (exact or absent).
+// Cost: O(n), n = nodes of the statement.
+fn inside_list(node: &RakuAstNode, at: usize) -> bool {
+    fn walk(node: &RakuAstNode, at: usize, list: &mut bool) -> bool {
+        if let Some((from, to)) = byte_range(node)
+            && !(from <= at && at < to)
+        {
+            return true;
+        }
+        match node.class {
+            RakuAstClass::QuotedString
+            | RakuAstClass::Heredoc
+            | RakuAstClass::QuotedRegex
+            | RakuAstClass::QuotedRegexRx => return false,
+            RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
+                *list = true;
+            }
+            _ => {}
+        }
+        for field in &node.fields {
+            let ok = match &field.value {
+                RakuAstFieldValue::Node(v) => child_ok(v, at, list),
+                RakuAstFieldValue::List(items) => items.iter().all(|v| child_ok(v, at, list)),
+                _ => true,
+            };
+            if !ok {
+                return false;
+            }
+        }
+        true
+    }
+    fn child_ok(value: &Value, at: usize, list: &mut bool) -> bool {
+        match value.view() {
+            ValueView::RakuAst(child) => walk(child, at, list),
+            _ => true,
+        }
+    }
+    let mut list = false;
+    walk(node, at, &mut list) && list
+}
+
 /// Insert `block` among the statements of `list` by offset, widening the
 /// list's range to the union of its items. A block that a statement of the
 /// list contains or starts inside is text to rakudo's reader: left out.
@@ -119,7 +167,7 @@ fn insert_in_list(
         let Some((from, to)) = byte_range(child) else {
             return;
         };
-        if (from < at && at < to) || (at < from && from < end) {
+        if (from < at && at < to && !inside_list(child, at)) || (at < from && from < end) {
             return;
         }
         ranges.push(Some((from, to)));
