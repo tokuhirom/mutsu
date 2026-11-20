@@ -300,20 +300,35 @@ pub(crate) fn written_control_args(arg: &Expr) -> &[Expr] {
     }
 }
 
-/// Take every spelling off `expr` and everything inside it (ADR-12199).
+/// Take every parse-time mark off `expr` and everything inside it: a spelling
+/// (ADR-12199) and an imported-term node, which becomes the word it stands for
+/// (what `rakuast::bareword::imported_term_expr` lowers a plain one to).
 ///
 /// A tree the compiler builds from source text at compile time (the thunk of
-/// a regex literal's `"..."` atom) comes straight from a parser entry point
-/// that has not been through the lowering's own stripping pass.
+/// a regex literal's `"..."` atom, a signature literal's default) comes straight
+/// from a parser entry point and is not finalized like a compilation unit.
 // Cost: O(n), n = size of the tree.
-pub(crate) fn strip_spelling(expr: &mut Expr) {
+pub(crate) fn strip_parse_marks(expr: &mut Expr) {
     use crate::ast_visit::{VisitMut, walk_expr_mut};
     struct Strip;
     impl VisitMut for Strip {
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
-            while matches!(expr, Expr::Spelled(_)) {
-                if let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Whatever) {
-                    *expr = spelled.expr;
+            loop {
+                match std::mem::replace(expr, Expr::Whatever) {
+                    Expr::Spelled(spelled) => *expr = spelled.expr,
+                    Expr::Ast(node) => match *node {
+                        super::parsed::ParsedExpr::ImportedTerm(word) => {
+                            *expr = Expr::BareWord(word);
+                        }
+                        other => {
+                            *expr = Expr::Ast(Box::new(other));
+                            break;
+                        }
+                    },
+                    other => {
+                        *expr = other;
+                        break;
+                    }
                 }
             }
             walk_expr_mut(self, expr);
