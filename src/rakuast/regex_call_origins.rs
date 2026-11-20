@@ -15,7 +15,8 @@ use crate::ast_visit::VisitMut;
 use crate::scope::NameScope;
 use crate::value::Value;
 
-/// Moves every term range of a fragment by the fragment's offset in the unit.
+/// Moves every term range and statement position of a fragment by the
+/// fragment's offset in the unit.
 pub(super) struct Shift(pub(super) usize);
 
 impl VisitMut for Shift {
@@ -26,6 +27,16 @@ impl VisitMut for Shift {
             *at = SrcSpan::new(at.from as usize + self.0, at.to as usize + self.0);
         }
         crate::ast_visit::walk_expr_mut(self, expr);
+    }
+
+    // A statement's line marker (inside a block of the fragment) moves too.
+    fn visit_stmt_mut(&mut self, stmt: &mut crate::ast::Stmt) {
+        if let crate::ast::Stmt::SetLine(_, span) = stmt
+            && span.is_some()
+        {
+            *span = SrcSpan::new(span.from as usize + self.0, span.to as usize + self.0);
+        }
+        crate::ast_visit::walk_stmt_mut(self, stmt);
     }
 }
 
@@ -131,6 +142,19 @@ pub(super) fn place(
     let _origins = super::expr_origins::strip(&mut stmts);
     let range = SrcSpan::new(base, base + text.len());
     let _statement = super::expr_origins::InStatement::enter(Some(range));
+    // The fragment's own arguments are converted: a block among them keeps
+    // the statement positions the regex tree's copy was parsed without, so
+    // each term finds its range by its shape.
+    let mut args = args;
+    if let Some(parsed) = call_args(&stmts)
+        && parsed.len() == args.args.len()
+    {
+        for (arg, parsed) in args.args.iter_mut().zip(parsed) {
+            if print(arg) != print(&parsed) {
+                *arg = parsed;
+            }
+        }
+    }
     let mut list = super::view::regex_arg_list(names, &args).ok()?;
     super::origin::set_span(&mut list, range);
     let field = node.fields.iter_mut().find(|f| f.name == Some("args"))?;
@@ -149,4 +173,26 @@ pub(super) fn placed(names: &NameScope, expr: &Expr, mut node: RakuAstNode) -> R
     }
     super::infix_origins::derive(names, &mut node);
     node
+}
+
+/// The arguments of the one `say(...)` call `stmts` hold.
+// Cost: O(a), a = size of the arguments.
+fn call_args(stmts: &[crate::ast::Stmt]) -> Option<Vec<Expr>> {
+    let call = stmts.iter().find_map(|stmt| match stmt {
+        crate::ast::Stmt::Expr(expr) => Some(expr),
+        _ => None,
+    })?;
+    let Expr::Call { args, .. } = call else {
+        return None;
+    };
+    Some(args.clone())
+}
+
+/// A structural fingerprint of `expr`.
+// Cost: O(n), n = size of `expr`.
+fn print(expr: &Expr) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = rustc_hash::FxHasher::default();
+    expr.hash(&mut hasher);
+    hasher.finish()
 }
