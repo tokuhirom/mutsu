@@ -318,3 +318,21 @@ pub(super) fn initializer_value(same: bool, field: Option<&RakuAstField>) -> Opt
     };
     literal.then(|| value.clone())
 }
+
+/// The `traits` field of an attribute declaration whose default is `value`:
+/// its `Trait::WillBuild`.
+// Cost: O(1).
+pub(super) fn will_build_field(value: Value) -> RakuAstField {
+    let trait_node = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::TraitWillBuild,
+        fields: vec![RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(value),
+        }],
+    };
+    RakuAstField {
+        name: Some("traits"),
+        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
+    }
+}

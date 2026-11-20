@@ -2021,25 +2021,12 @@ pub(super) fn var_declaration(
     if let Some(wb) = will_build {
         // The same written default: the trait holds the initializer's node.
         let same = matches!(init, Some(Initializer::Assign(e)) if std::ptr::eq(e, wb));
-        let value = match super::attribute_decl::initializer_value(same, fields.last()) {
-            Some(value) => RakuAstField {
-                name: None,
-                value: RakuAstFieldValue::Node(value),
-            },
-            None => node_field(None, view_expr(names, wb)?),
+        let shared = super::attribute_decl::initializer_value(same, fields.last());
+        let value = match shared {
+            Some(value) => value,
+            None => Value::rakuast(Box::new(view_expr(names, wb)?)),
         };
-        let trait_node = RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitWillBuild,
-            fields: vec![value],
-        };
-        fields.insert(
-            traits_at,
-            RakuAstField {
-                name: Some("traits"),
-                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
-            },
-        );
+        fields.insert(traits_at, super::attribute_decl::will_build_field(value));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
