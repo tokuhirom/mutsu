@@ -100,7 +100,7 @@ impl Props {
     }
 }
 
-fn symbol_text(node: &RakuAstNode) -> Option<String> {
+pub(super) fn symbol_text(node: &RakuAstNode) -> Option<String> {
     node.fields.iter().find_map(|f| match &f.value {
         RakuAstFieldValue::Node(v) => match v.view() {
             ValueView::Str(s) => Some(s.to_string()),

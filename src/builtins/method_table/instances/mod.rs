@@ -68,6 +68,7 @@ mod rakuast_multi_candidate;
 mod rakuast_name_queries;
 pub(crate) mod rakuast_node;
 mod rakuast_operator_props;
+mod rakuast_operator_purity;
 mod rakuast_parameter_queries;
 mod rakuast_phases;
 mod rakuast_quoted_literal;
@@ -141,6 +142,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_doc_edit::ROWS,
     rakuast_operator_props::ROWS,
     rakuast_operator_props::DEFAULT_ROWS,
+    rakuast_operator_purity::ROWS,
     rakuast_literal_queries::ROWS,
     rakuast_quoted_literal::ROWS,
     rakuast_doc_row::ROWS,
