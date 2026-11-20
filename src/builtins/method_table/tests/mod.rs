@@ -255,12 +255,11 @@ fn no_row_is_registered_twice() {
                 // A deferral base is reached by `invoke_base` only, never by a
                 // walk, so a late row may stand behind it too.
                 first.flags.contains(RowFlags::DEFERRAL_BASE)
-                    || !(matches!(first.handler, Handler::Interp(_))
-                        && first.flags.contains(RowFlags::OWNER_ONLY))
+                    || !(first.handler.needs_interp() && first.flags.contains(RowFlags::OWNER_ONLY))
             });
         assert!(
             distinct_first
-                && matches!(row.handler, Handler::Interp(_))
+                && row.handler.needs_interp()
                 && row.flags.contains(RowFlags::OWNER_ONLY)
                 && twins.insert(key),
             "{}.{} has two rows",
@@ -694,7 +693,9 @@ fn dump_rows() {
             Handler::Pure(_) => "Pure",
             Handler::Narrow(_) => "Narrow",
             Handler::Named(_) => "Named",
-            Handler::Interp(_) => "Interp",
+            // Reported with its interpreter half: the report's kinds predate
+            // the pure-first rows.
+            Handler::Interp(_) | Handler::InterpPureFirst(..) => "Interp",
             Handler::Mut(_) => "Mut",
         };
         let mut flags = Vec::new();

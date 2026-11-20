@@ -26,12 +26,12 @@ type Answer = Option<Result<Value, RuntimeError>>;
 const ARGS_NAMED: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
 
 macro_rules! row {
-    ($owner:literal, $name:literal, $arity:literal, $handler:ident) => {
+    ($owner:literal, $name:literal, $arity:literal, $pure:ident, $handler:ident) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: $arity,
-            handler: Handler::Interp($handler),
+            handler: Handler::InterpPureFirst($pure, $handler),
             flags: ARGS_NAMED,
             named: &[],
         }
@@ -42,21 +42,21 @@ macro_rules! row {
 macro_rules! search_rows {
     ($owner:literal) => {
         &[
-            row!($owner, "contains", 1, contains),
-            row!($owner, "contains", 2, contains),
-            row!($owner, "starts-with", 1, starts_with),
-            row!($owner, "ends-with", 1, ends_with),
-            row!($owner, "index", 1, index),
-            row!($owner, "index", 2, index),
-            row!($owner, "rindex", 1, rindex),
-            row!($owner, "rindex", 2, rindex),
-            row!($owner, "substr", 1, substr),
-            row!($owner, "substr", 2, substr),
-            row!($owner, "substr-eq", 1, substr_eq),
-            row!($owner, "substr-eq", 2, substr_eq),
-            row!($owner, "comb", 1, comb),
-            row!($owner, "comb", 2, comb),
-            row!($owner, "wordcase", 0, wordcase),
+            row!($owner, "contains", 1, contains_pure, contains),
+            row!($owner, "contains", 2, contains_pure, contains),
+            row!($owner, "starts-with", 1, starts_with_pure, starts_with),
+            row!($owner, "ends-with", 1, ends_with_pure, ends_with),
+            row!($owner, "index", 1, index_pure, index),
+            row!($owner, "index", 2, index_pure, index),
+            row!($owner, "rindex", 1, rindex_pure, rindex),
+            row!($owner, "rindex", 2, rindex_pure, rindex),
+            row!($owner, "substr", 1, substr_pure, substr),
+            row!($owner, "substr", 2, substr_pure, substr),
+            row!($owner, "substr-eq", 1, substr_eq_pure, substr_eq),
+            row!($owner, "substr-eq", 2, substr_eq_pure, substr_eq),
+            row!($owner, "comb", 1, comb_pure, comb),
+            row!($owner, "comb", 2, comb_pure, comb),
+            row!($owner, "wordcase", 0, wordcase_pure, wordcase),
         ]
     };
 }
@@ -74,11 +74,71 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
     all
 }
 
-/// Whether the pure candidate binds the call: one plain-scalar needle and no
-/// adverb.
+/// Whether the pure candidate binds the call: one plain-scalar needle. The
+/// pure half runs only for a call with no adverb (`dispatch::call`).
 // Cost: O(1).
-fn one_plain_needle(args: &[Value], named: Named<'_>) -> bool {
-    named.pairs().is_empty() && args.len() == 1 && plain_needle(&args[0])
+fn one_plain_needle(args: &[Value]) -> bool {
+    args.len() == 1 && plain_needle(&args[0])
+}
+
+// The pure halves of the rows (`Handler::InterpPureFirst`): each answers the
+// argument forms its routine's pure candidate binds, and declines the rest to
+// the interpreter half below.
+
+// Cost: as `str_search::contains`.
+fn contains_pure(t: &Value, args: &[Value]) -> Answer {
+    one_plain_needle(args).then(|| super::str_search::contains(t, args))
+}
+
+// Cost: O(m), m = chars of the needle.
+fn starts_with_pure(t: &Value, args: &[Value]) -> Answer {
+    one_plain_needle(args).then(|| super::str_search::starts_with(t, args))
+}
+
+// Cost: O(m), m = chars of the needle.
+fn ends_with_pure(t: &Value, args: &[Value]) -> Answer {
+    one_plain_needle(args).then(|| super::str_search::ends_with(t, args))
+}
+
+// Cost: as `str_search::index`.
+fn index_pure(t: &Value, args: &[Value]) -> Answer {
+    one_plain_needle(args).then(|| super::str_search::index(t, args))
+}
+
+// Cost: as `str_search::rindex`.
+fn rindex_pure(t: &Value, args: &[Value]) -> Answer {
+    one_plain_needle(args).then(|| super::str_search::rindex(t, args))
+}
+
+/// The pure slice for in-range `Int` positions; a `Range`, a `WhateverCode`,
+/// a negative or out-of-range position is the interpreter's.
+// Cost: O(k) amortized, k = chars returned.
+fn substr_pure(t: &Value, args: &[Value]) -> Answer {
+    if !args.iter().all(plain_needle) {
+        return None;
+    }
+    super::str_search::substr(t, args)
+}
+
+// Cost: O(m), m = chars of the needle.
+fn substr_eq_pure(t: &Value, args: &[Value]) -> Answer {
+    if !args.iter().all(plain_needle) {
+        return None;
+    }
+    super::str_args::substr_eq(t, args)
+}
+
+// Cost: O(n), n = chars of the invocant.
+fn comb_pure(t: &Value, args: &[Value]) -> Answer {
+    if !one_plain_needle(args) {
+        return None;
+    }
+    crate::builtins::comb::native_comb_method(t, args)
+}
+
+// Cost: O(n), n = chars of the invocant.
+fn wordcase_pure(t: &Value, args: &[Value]) -> Answer {
+    Some(super::str::wordcase(t, args))
 }
 
 /// Whether a needle is one the pure candidates read through its string form:
@@ -97,9 +157,6 @@ fn plain_needle(arg: &Value) -> bool {
 /// `contains($needle, $pos?, :i, :m)`.
 // Cost: as `str_search::contains` for a plain needle; see `dispatch_contains`.
 fn contains(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if one_plain_needle(args, named) {
-        return Some(super::str_search::contains(t, args));
-    }
     // A regex needle built in a sub from its lexicals reads them through the
     // scope it closed over, as `.match` does.
     Some(i.with_regex_closure_scope(args.first().cloned(), |me| {
@@ -110,36 +167,24 @@ fn contains(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) ->
 /// `starts-with($needle, :i, :m)`.
 // Cost: O(m), m = chars of the needle.
 fn starts_with(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if one_plain_needle(args, named) {
-        return Some(super::str_search::starts_with(t, args));
-    }
     Some(i.dispatch_starts_with(t.clone(), &joined(args, named)))
 }
 
 /// `ends-with($needle, :i, :m)`.
 // Cost: O(m), m = chars of the needle.
 fn ends_with(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if one_plain_needle(args, named) {
-        return Some(super::str_search::ends_with(t, args));
-    }
     Some(i.dispatch_ends_with(t.clone(), &joined(args, named)))
 }
 
 /// `index($needle, $pos?, :i, :m)`.
 // Cost: as `str_search::index` for a plain needle; see `dispatch_index`.
 fn index(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if one_plain_needle(args, named) {
-        return Some(super::str_search::index(t, args));
-    }
     Some(i.dispatch_index(t.clone(), &joined(args, named)))
 }
 
 /// `rindex($needle, $pos?)`.
 // Cost: as `str_search::rindex` for a plain needle; see `dispatch_rindex`.
 fn rindex(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if one_plain_needle(args, named) {
-        return Some(super::str_search::rindex(t, args));
-    }
     Some(i.dispatch_rindex(t.clone(), &joined(args, named)))
 }
 
@@ -148,24 +193,12 @@ fn rindex(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> A
 /// position.
 // Cost: O(k) amortized, k = chars returned.
 fn substr(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if named.pairs().is_empty()
-        && args.iter().all(plain_needle)
-        && let Some(answer) = super::str_search::substr(t, args)
-    {
-        return Some(answer);
-    }
     Some(i.dispatch_substr(t.clone(), &joined(args, named)))
 }
 
 /// `substr-eq($needle, $pos?, :i, :m)`.
 // Cost: O(m), m = chars of the needle.
 fn substr_eq(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if named.pairs().is_empty()
-        && args.iter().all(plain_needle)
-        && let Some(answer) = super::str_args::substr_eq(t, args)
-    {
-        return Some(answer);
-    }
     Some(i.dispatch_substr_eq(t.clone(), &joined(args, named)))
 }
 
@@ -174,11 +207,6 @@ fn substr_eq(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -
 /// call, as `~~` does, since a regex may close over its defining scope).
 // Cost: O(n), n = chars of the invocant, plus the pattern's matching cost.
 fn comb(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if one_plain_needle(args, named)
-        && let Some(answer) = crate::builtins::comb::native_comb_method(t, args)
-    {
-        return Some(answer);
-    }
     let args = joined(args, named);
     let matcher = args.first().cloned();
     i.with_regex_closure_scope(matcher, |me| me.dispatch_comb_with_args(t.clone(), &args))
@@ -187,8 +215,5 @@ fn comb(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Ans
 /// `wordcase(:&filter, :$where)`.
 // Cost: O(n) plus one `:where` smartmatch and one `:filter` call per word.
 fn wordcase(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>) -> Answer {
-    if named.pairs().is_empty() {
-        return Some(super::str::wordcase(t, args));
-    }
     Some(i.dispatch_wordcase(t.clone(), &joined(args, named)))
 }
