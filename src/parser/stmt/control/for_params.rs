@@ -398,7 +398,9 @@ fn destructure_spans(input: &str, rest: &str, ty: Option<&str>) -> crate::ast::p
         param: span(input, rest),
         type_: ty
             .filter(|ty| input.starts_with(ty))
-            .map_or(crate::ast::SrcSpan::NONE, |ty| span(input, &input[ty.len()..])),
+            .map_or(crate::ast::SrcSpan::NONE, |ty| {
+                span(input, &input[ty.len()..])
+            }),
         ..Default::default()
     }
 }
