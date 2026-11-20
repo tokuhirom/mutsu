@@ -371,6 +371,19 @@ impl ActionWalkNode {
         }
     }
 
+    /// The walk node of a lazy Match with nothing left to dispatch below it
+    /// (see `Value::match_lazy_walk_is_done`): what
+    /// [`Value::match_action_walk_node`] would build for it, without the scan.
+    // Cost: O(1), no allocation.
+    pub(crate) fn lazy_done(sym: Option<Symbol>) -> Self {
+        Self {
+            sym,
+            has_named_hash: true,
+            captures: WalkCaptures::Lazy,
+            ..Self::default()
+        }
+    }
+
     /// Nothing below this node is left to dispatch.
     pub(crate) fn has_no_children(&self) -> bool {
         self.named_children.is_empty()

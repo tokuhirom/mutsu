@@ -196,6 +196,9 @@ impl Interpreter {
         // below (its subrules all dispatched at their reduction) needs no walk
         // node: skipping it is all a start rule without an action costs after
         // a parse (#18207).
+        // With an action of its own, such a node gets an empty walk node
+        // (nothing to descend into, no allocation).
+        let mut done_node = None;
         let target = match (target, match_obj.match_lazy_sym()) {
             (target, Some(sym)) => {
                 let own = match target {
@@ -205,14 +208,17 @@ impl Interpreter {
                         self.node_action_method(actions_class, rule_name, sym)
                     }
                 };
-                if own.0.is_none() && match_obj.match_lazy_walk_is_done() {
-                    return Ok(match_obj);
+                if match_obj.match_lazy_walk_is_done() {
+                    if own.0.is_none() {
+                        return Ok(match_obj);
+                    }
+                    done_node = Some(ActionWalkNode::lazy_done(sym));
                 }
                 Some(own)
             }
             (target, None) => target,
         };
-        let node = match match_obj.match_action_walk_node() {
+        let node = match done_node.or_else(|| match_obj.match_action_walk_node()) {
             Some(node) => node,
             None => match Self::eager_action_walk_node(&match_obj) {
                 Some(found) => found,
