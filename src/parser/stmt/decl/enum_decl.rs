@@ -355,17 +355,13 @@ fn words_form(text: &str, variants: &[(String, Option<Expr>)]) -> EnumVariantFor
 }
 
 /// The form of a `<< >>` / `« »` body that began at `start` and ended where
-/// `after` begins: the text as written when it holds only words, since the
-/// variants keep neither the spacing nor which words were colonpair atoms
-/// (`:k(7)`), and a body with atoms stays the plain quote-words form.
+/// `after` begins: the text as written, since the variants keep neither the
+/// spacing nor which words were colonpair atoms (`:k(7)`); the view reads the
+/// atoms back from the text (`QuoteWordsAtom`, #18299).
 // Cost: O(n), n = length of the body.
 fn quote_words_form(start: &str, after: &str) -> EnumVariantForm {
     let written = start[..start.len() - after.len()].trim_end();
-    if written.contains(':') {
-        EnumVariantForm::QuoteWords
-    } else {
-        EnumVariantForm::WrittenQuoteWords(written.into())
-    }
+    EnumVariantForm::WrittenQuoteWords(written.into())
 }
 
 /// The form of a static parenthesized body: the elements as written when one
