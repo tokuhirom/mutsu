@@ -1,11 +1,10 @@
 //! The env ceremony around one grammar action-method call.
 //!
-//! An action method sees `$<name>` and `$0`..`$9` for *its own* match, so both
-//! `invoke_grammar_actions` and its lazy leaf fast path
-//! ([`Interpreter::invoke_leaf_action_lazy`]) have to hide whatever the parent
-//! action left under those names, install this match's, and put the parent's
-//! back afterwards. That save/restore used to be spelled inline — twice, once
-//! per call site — as an `O(env)` scan filtering `k.starts_with("<") &&
+//! An action method that does not bind its own `$/` sees `$<name>` and
+//! `$0`..`$9` for *its own* match through the env, so the action walk
+//! (`methods_grammar_action_walk`) has to hide whatever the parent action left
+//! under those names, install this match's, and put the parent's back
+//! afterwards. That save/restore used to be spelled inline as an `O(env)` scan filtering `k.starts_with("<") &&
 //! k.ends_with(">")` plus `for i in 0..10 { env.remove(&i.to_string()) }`.
 //!
 //! Both spellings ask a question the symbol table already answers. Filtering
