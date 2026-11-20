@@ -260,13 +260,32 @@ impl Interpreter {
         let ValueView::Instance { class_name, .. } = self.stack[target_idx].view() else {
             return None;
         };
+        // A call asked for a container (the right side of `:=`) keys apart
+        // exactly as at the late gate (`plain_method_lane_key`), so a hit
+        // replays the outcome recorded for such a call; the request is
+        // consumed by the hit, as the full path consumes it.
+        let want_ref = self.accessor_ref_pending;
         if arity == 0 {
             self.refresh_method_caches_for_generation();
-            let key = (class_name, method_sym, Vec::new());
-            if !self.caches.plain_method_lane.contains(&key) {
+            let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
+            arg_keys.clear();
+            if want_ref {
+                arg_keys.push(super::vm_method_call_plan::want_ref_marker());
+            }
+            let key = (class_name, method_sym, arg_keys);
+            let hit = self.caches.plain_method_lane.contains(&key);
+            let plan = if hit {
+                self.method_call_plan_for_hit(&key)
+            } else {
+                None
+            };
+            let mut arg_keys = key.2;
+            arg_keys.clear();
+            self.caches.plain_method_lane_scratch = arg_keys;
+            if !hit {
                 return None;
             }
-            let plan = self.method_call_plan_for_hit(&key);
+            self.accessor_ref_pending = false;
             let target = self.stack.pop()?;
             // What the stretch leaves behind for a call without arguments.
             self.caches.ctor_lane_candidate = None;
@@ -308,6 +327,9 @@ impl Interpreter {
         let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
         let mut plan = None;
         let hit = self.plain_lane_arg_keys_into(&args, &mut arg_keys) && {
+            if want_ref {
+                arg_keys.push(super::vm_method_call_plan::want_ref_marker());
+            }
             let key = (class_name, method_sym, arg_keys);
             let hit = self.caches.plain_method_lane.contains(&key);
             if hit {
@@ -322,6 +344,7 @@ impl Interpreter {
             self.stack.extend(args);
             return None;
         }
+        self.accessor_ref_pending = false;
         let target = self.stack.pop()?;
         // What the stretch leaves behind for a call with these arguments.
         self.caches.ctor_lane_candidate = None;
