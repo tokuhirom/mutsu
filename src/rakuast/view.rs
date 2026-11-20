@@ -3027,8 +3027,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                         | crate::ast::parsed::ParsedStmt::MethodAssignDecl(_) | crate::ast::parsed::ParsedStmt::SignatureBind { .. } | crate::ast::parsed::ParsedStmt::SignatureDecl(_) | crate::ast::parsed::ParsedStmt::Temporize(_))
             ) =>
         {
-            let statement =
+            let mut statement =
                 view_stmt(names, stmt)?.ok_or_else(|| unsupported("declaration term"))?;
+            super::routine_origins::package_origins(names, &mut statement, stmt);
             statement
                 .fields
                 .iter()
