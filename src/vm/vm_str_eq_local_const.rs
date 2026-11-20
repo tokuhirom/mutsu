@@ -25,8 +25,7 @@ impl Interpreter {
         negate: bool,
     ) -> Result<(), RuntimeError> {
         let kind = if negate { StrCmp::Ne } else { StrCmp::Eq };
-        if let Some(equal) = self.str_eq_local_const_narrow(code, slot as usize, const_idx, kind)
-        {
+        if let Some(equal) = self.str_eq_local_const_narrow(code, slot as usize, const_idx, kind) {
             self.stack.push(Value::truth(equal != negate));
             return Ok(());
         }
