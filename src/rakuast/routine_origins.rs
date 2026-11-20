@@ -388,6 +388,10 @@ pub(super) fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         super::type_origins::parameterized(ty, span);
         return;
     }
+    if ty.class == RakuAstClass::TypeCoercion {
+        super::type_origins::coercion(ty, span);
+        return;
+    }
     // `Int:D`: the inner `Type::Simple` spans all of it, its `Name` only the
     // name before the smiley.
     let smiled = matches!(
