@@ -119,7 +119,16 @@ impl VisitMut for Strip {
             *expr = spelled.expr;
         }
         if let Some(span) = span {
-            self.0.insert(expr as *const Expr as usize, span);
+            // A `WhateverCurry` marker has no node of its own: the view renders
+            // its body, which is the term the range belongs to. Kept on the
+            // marker, the range would go unread while the body, finding no
+            // slot, took the range of another term of its shape (`*.a` in
+            // `f(*.a, *.a > 1)`).
+            let mut term: &Expr = expr;
+            while let Expr::WhateverCurry(body, ..) = term {
+                term = body;
+            }
+            self.0.insert(term as *const Expr as usize, span);
         }
         crate::ast_visit::walk_expr_mut(self, expr);
     }

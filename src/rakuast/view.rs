@@ -6171,15 +6171,9 @@ fn colonpair_value_node(
         },
         _ => view_expr(names, right)?,
     };
-    let is_direct_block = parenthesize
-        && matches!(
-            right.as_ref(),
-            Expr::AnonSub { is_block: true, .. }
-                | Expr::Block(_)
-                | Expr::Hash(_, crate::ast::HashSpelling::Composer)
-        )
-        || crate::ast::placeholders::is_implicit_placeholder_block(right);
-    if is_direct_block || !parenthesize {
+    // `:a{...}` is `ColonPairBracketed`: its block or hash composer is the
+    // value itself, while `:a({...})` keeps its parentheses.
+    if !parenthesize {
         return Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::ColonPairValue,

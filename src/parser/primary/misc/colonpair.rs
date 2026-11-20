@@ -647,7 +647,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(block_or_hash),
-                form: crate::ast::BinaryForm::ColonPairValue,
+                form: crate::ast::BinaryForm::ColonPairBracketed,
             },
         ));
     }
