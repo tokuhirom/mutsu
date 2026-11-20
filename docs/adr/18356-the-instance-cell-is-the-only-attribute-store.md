@@ -54,7 +54,7 @@ copy of an attribute that anything must reconcile, mirror or write back:
 - **D1. Binds seat at bind time.** Every `:=` whose target is an attribute — `$!x`, `@!x`,
   `%!x`, the public forms, and the twigil-less `has $x` alias — writes the bound container (or
   value) into the instance when it runs. The method exit does no attribute work. This retires
-  `reconcile_attrs`.
+  `reconcile_attrs` and its frame-ownership helper (`vm_reconcile_bare_reading.rs`).
 - **D2. Aggregate attributes are addressed through the attribute site, not by name.** A
   mutating op on `@!x`/`%!x` mutates the container the cell holds. A whole-value store writes
   the cell. ADR-0121 D3's `(layout id, slot)` site cache resolves the slot. A miss — a role
