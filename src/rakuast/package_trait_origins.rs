@@ -320,7 +320,7 @@ pub(super) fn handles_term(trait_node: &mut RakuAstNode, whole: SrcSpan) {
         RakuAstClass::TermWhatever => super::origin::set_span(held, term),
         RakuAstClass::QuotedString => {
             let Some((open, close)) =
-                super::unit_source::with_text(term, |t| super::origin::word_brackets(t))
+                super::unit_source::with_text(term, super::origin::word_brackets)
             else {
                 return;
             };
