@@ -4,7 +4,7 @@ use Test;
 # prologue (#18320): evaluated in the method frame, in parameter order, with
 # `self`, attributes and earlier parameters visible.
 
-plan 21;
+plan 24;
 
 my @log;
 sub note-default($what) { @log.push($what); $what }
@@ -79,3 +79,19 @@ is @zs.join(','), '42,42,42', 'a fresh caller variable per iteration is aliased 
 is $r.get(:x(7)), 7, 'a named is raw parameter reads a literal';
 dies-ok { $r.set(:x(7)) }, 'a named is raw parameter bound to a literal is read-only';
 is (^3).map({ $r.relay(Str) }).join(','), 'Str,Str,Str', 'a raw parameter relayed as a named is raw argument';
+
+# AttrX::Mooish's `invoke-opt` shape: a typed constant default the fast binder
+# cannot fill, and an enum default on an `is copy` parameter.
+my enum PvtMode <pvmForce pvmNever pvmAsAttr pvmAuto>;
+class I {
+    method io(Mu $inv, Str $opt, Capture:D $params = \(), :$strict = False,
+              PvtMode :$private is copy = pvmAuto) {
+        $private = pvmAsAttr if $private == pvmAuto;
+        "$opt {$params.elems} $strict $private"
+    }
+}
+my $io = I.new;
+is (^3).map({ $io.io(1, 'b') }).join('|'), 'b 0 False pvmAsAttr|b 0 False pvmAsAttr|b 0 False pvmAsAttr',
+    'a Capture:D and an enum is copy default, repeatedly';
+is $io.io(1, 'f', \(1, 2), :strict, :private(pvmNever)), 'f 2 True pvmNever', 'supplied arguments win';
+throws-like { $io.io(1, 'x', \(), :private(5)) }, Exception, 'a supplied argument is still type-checked';

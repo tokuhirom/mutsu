@@ -41,16 +41,17 @@ pub(crate) struct DeferredDefault {
 
 /// Whether `pd`'s shape is one the default prologue binds: a `$` scalar
 /// (positional or named, never an alias or an attributive one) with a
-/// precompiled default, no trait but `is copy` / `is raw`, and no
+/// precompiled or constant default, no trait but `is copy` / `is raw`, and no
 /// constraint the default's binding would have to do more than type-check
 /// and coerce.
 // Cost: O(t + len(tc)), t = traits, tc = the constraint's spelling.
 pub(crate) fn default_prologue_shape_ok(pd: &ParamDef) -> bool {
-    pd.default.is_some()
-        && pd
-            .code
+    pd.default.as_ref().is_some_and(|default| {
+        pd.code
             .get()
             .is_some_and(|code| code.default_chunk.is_some())
+            || crate::opcode::CompiledFunction::constant_default_value(default).is_some()
+    })
         && !pd.is_invocant
         && !pd.sigilless
         && !pd.slurpy
@@ -197,8 +198,17 @@ impl Interpreter {
             let Some(default_expr) = pd.default.as_ref() else {
                 continue;
             };
-            crate::vm::vm_stats::record_param_default_prologue();
-            let value = self.eval_param_default_scoped(pd, default_expr)?;
+            // A constant the fast binder could not fill (its constraint is
+            // not one `const_fill_for_param` checks: `Capture:D $p = \()`)
+            // binds as itself; anything else runs its precompiled chunk.
+            let value = match crate::opcode::CompiledFunction::constant_default_value(default_expr)
+            {
+                Some(value) => value,
+                None => {
+                    crate::vm::vm_stats::record_param_default_prologue();
+                    self.eval_param_default_scoped(pd, default_expr)?
+                }
+            };
             let value = self.checked_default_param_value(pd, value)?;
             let value = if pd.traits.iter().any(|t| t == "copy") {
                 value.detach_shared_container()
