@@ -38,9 +38,16 @@
 //! cached Nil or lazy thunk is not served (the chain's default and force
 //! steps own those).
 //!
-//! The cache holds one frame's entries: filling for another frame clears it.
-//! Frames are told apart by their invocation id, which every call path draws
-//! fresh, so an entry can never answer for a later call.
+//! **Mainline and bare-block subs** (ADR-0024) are served the same way: their
+//! free variable's binding is the cell captured into the routine's
+//! `unit_lexicals` bucket, also fixed for the call (a `:=` seats the new
+//! binding inside that cell rather than replacing it). ADR-18244 stage B.
+//!
+//! Entries are kept per frame, in call order: frames are told apart by their
+//! invocation id, which every call path draws fresh and which grows with call
+//! depth, so an entry can never answer for a later call, and a caller's
+//! entries survive the calls it makes. Filling for a frame drops the entries
+//! of callees that returned (a larger id).
 
 use super::*;
 
@@ -49,7 +56,7 @@ pub(crate) type LexSubFreeCache = Vec<(u64, Symbol, Value)>;
 
 /// Entries kept per frame; a sub with more free variables reads the rest the
 /// long way.
-const LEXSUB_FREE_CACHE_CAP: usize = 16;
+const LEXSUB_FREE_CACHE_CAP: usize = 32;
 
 impl Interpreter {
     /// The probes of `GetGlobal`'s chain that run ahead of the alias and whose
@@ -69,7 +76,8 @@ impl Interpreter {
     /// resolved to its alias cell, read from the cell. `None` when nothing is
     /// cached for the running frame or a guard fails: the caller then takes
     /// the full chain.
-    // Cost: O(c + l), c = cached entries (at most 16), l = as the guards.
+    // Cost: O(c + l), c = the running frame's cached entries plus any a
+    // returned callee left above them (at most 32), l = as the guards.
     #[inline]
     pub(super) fn lexsub_free_cache_read(&self, name: &str, name_sym: Symbol) -> Option<Value> {
         if self.lexicals.lexsub_free_cache.is_empty() {
@@ -80,10 +88,15 @@ impl Interpreter {
             return None;
         }
         let id = frame.invocation_id;
+        // Entries are in call order (a callee's invocation id is larger than
+        // its caller's): this frame's are at the top, above them only a
+        // returned callee's leftovers.
         let (_, _, cell) = self
             .lexicals
             .lexsub_free_cache
             .iter()
+            .rev()
+            .take_while(|(owner, _, _)| *owner >= id)
             .find(|(owner, sym, _)| *owner == id && *sym == name_sym)?;
         if !self.lexsub_free_cache_guards_hold(name) {
             return None;
@@ -98,8 +111,9 @@ impl Interpreter {
     /// Record the alias cell of the free variable `name_sym`, after the full
     /// chain answered `val` for it, when the module docs' conditions show the
     /// answer was that cell.
-    // Cost: O(1) when the running frame is no routine-nested sub; otherwise
-    // the alias lookup, O(a + d), a = the sub's aliases, d = env chain depth.
+    // Cost: O(1) when no routine captures an outer lexical; otherwise the
+    // alias lookup, O(a + d), a = the sub's aliases, d = env chain depth, or
+    // the bucket lookup, O(o), o = same-named routines that captured.
     pub(super) fn lexsub_free_cache_fill(
         &mut self,
         code: &CompiledCode,
@@ -107,13 +121,13 @@ impl Interpreter {
         name_sym: Symbol,
         val: &Value,
     ) {
-        if self.lexicals.lexsub_free_aliases.is_empty()
+        if (self.lexicals.lexsub_free_aliases.is_empty()
+            && self.lexicals.mainline_lexical_subs.is_empty())
             || !crate::env::is_plain_user_lexical(name)
             || name.starts_with(['$', '@', '%', '&', '*', '!', '.', '^', '?'])
             || name == "_"
             || crate::qualified::is_qualified(name_sym)
             || code.free_var_rebinds.contains(&name_sym)
-            || !self.lexsub_alias_frame_active()
         {
             return;
         }
@@ -129,8 +143,26 @@ impl Interpreter {
         {
             return;
         }
-        let Some(cell) = self.lexsub_alias_slot_sym(name, Some(name_sym)) else {
-            return;
+        // The binding the chain answered from: a routine-nested sub's alias
+        // (mutsu#9111), or the cell a mainline / bare-block sub captured into
+        // its ADR-0024 bucket. Either is fixed for the call; a module's
+        // file-scope store is not (a `:=` there replaces the cell).
+        let cell = if self.lexsub_alias_frame_active() {
+            let Some(cell) = self.lexsub_alias_slot_sym(name, Some(name_sym)) else {
+                return;
+            };
+            cell.clone()
+        } else {
+            let Some(cell) = self
+                .active_unit_lexical_entry()
+                .and_then(|(_, cells)| cells.get(name).cloned())
+            else {
+                return;
+            };
+            if !cell.is_container_ref() {
+                return;
+            }
+            cell
         };
         // A shared cell (a variable the declaring frame boxed) is read through
         // on every hit; a plain value (a read-only parameter the alias holds
@@ -138,12 +170,18 @@ impl Interpreter {
         if !cell.deref_clone().same_binding(val) {
             return;
         }
-        let cell = cell.clone();
         let cache = &mut self.lexicals.lexsub_free_cache;
-        if cache.first().is_some_and(|(owner, _, _)| *owner != id) {
-            cache.clear();
+        // A returned callee's entries (a larger id) are dead; a caller's (a
+        // smaller id) stay for when it runs again.
+        while cache.last().is_some_and(|(owner, _, _)| *owner > id) {
+            cache.pop();
         }
-        if cache.len() < LEXSUB_FREE_CACHE_CAP && !cache.iter().any(|(_, sym, _)| *sym == name_sym)
+        if cache.len() < LEXSUB_FREE_CACHE_CAP
+            && !cache
+                .iter()
+                .rev()
+                .take_while(|(owner, _, _)| *owner == id)
+                .any(|(_, sym, _)| *sym == name_sym)
         {
             cache.push((id, name_sym, cell));
         }
