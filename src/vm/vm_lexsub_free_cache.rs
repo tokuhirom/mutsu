@@ -98,7 +98,8 @@ impl Interpreter {
             .rev()
             .take_while(|(owner, _, _)| *owner >= id)
             .find(|(owner, sym, _)| *owner == id && *sym == name_sym)?;
-        if !self.lexsub_free_cache_guards_hold(name) {
+        // The first read's placeholder (see `lexsub_free_cache_fill`).
+        if cell.is_nil() || !self.lexsub_free_cache_guards_hold(name) {
             return None;
         }
         let val = cell.deref_clone();
