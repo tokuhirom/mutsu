@@ -132,6 +132,43 @@ impl Interpreter {
         value
     }
 
+    /// Whether a named argument `key` is consumed by one of `param_defs`'
+    /// explicit named parameters (and so stays out of a named slurpy). Mirrors
+    /// the slow binder's `explicit_named_keys` (and rakudo): the container
+    /// sigil is stripped, then the attribute twigil, so an attributive named
+    /// param (`:$!x` -> name "!x") consumes the caller key "x".
+    // Cost: O(p), p = parameters.
+    pub(crate) fn named_arg_consumed(param_defs: &[ParamDef], key: &str) -> bool {
+param_defs
+            .iter()
+            .filter(|pd| (pd.named || pd.name.starts_with(':')) && !pd.slurpy)
+            .any(|pd| {
+                let bare = if let Some(rest) = pd.name.strip_prefix(':') {
+                    rest
+                } else if let Some(rest) = pd
+                    .name
+                    .strip_prefix("@:")
+                    .or_else(|| pd.name.strip_prefix("%:"))
+                    .or_else(|| pd.name.strip_prefix("&:"))
+                {
+                    rest
+                } else {
+                    let after_sigil = pd
+                        .name
+                        .strip_prefix('@')
+                        .or_else(|| pd.name.strip_prefix('%'))
+                        .or_else(|| pd.name.strip_prefix('&'))
+                        .unwrap_or(&pd.name);
+                    after_sigil
+                        .strip_prefix('!')
+                        .or_else(|| after_sigil.strip_prefix('.'))
+                        .or_else(|| after_sigil.strip_prefix('*'))
+                        .unwrap_or(after_sigil)
+                };
+                bare == key
+            })
+    }
+
     /// Compute the implicit `*%_` slurpy of a method: a Hash of the named
     /// arguments not consumed by an explicit named parameter (an empty Hash when
     /// there are none). Every method exposes `%_` so its body can reference it --
@@ -154,34 +191,7 @@ impl Interpreter {
                 // strip the container sigil, then the attribute twigil, so an
                 // attributive named param (`:$!x` -> name "!x") consumes the
                 // caller key "x" and keeps it out of `%_`.
-                let consumed = param_defs
-                    .iter()
-                    .filter(|pd| (pd.named || pd.name.starts_with(':')) && !pd.slurpy)
-                    .any(|pd| {
-                        let bare = if let Some(rest) = pd.name.strip_prefix(':') {
-                            rest
-                        } else if let Some(rest) = pd
-                            .name
-                            .strip_prefix("@:")
-                            .or_else(|| pd.name.strip_prefix("%:"))
-                            .or_else(|| pd.name.strip_prefix("&:"))
-                        {
-                            rest
-                        } else {
-                            let after_sigil = pd
-                                .name
-                                .strip_prefix('@')
-                                .or_else(|| pd.name.strip_prefix('%'))
-                                .or_else(|| pd.name.strip_prefix('&'))
-                                .unwrap_or(&pd.name);
-                            after_sigil
-                                .strip_prefix('!')
-                                .or_else(|| after_sigil.strip_prefix('.'))
-                                .or_else(|| after_sigil.strip_prefix('*'))
-                                .unwrap_or(after_sigil)
-                        };
-                        bare == *key
-                    });
+                let consumed = Self::named_arg_consumed(param_defs, key);
                 if !consumed {
                     implicit_named.insert(key.to_string(), val.clone());
                 }
