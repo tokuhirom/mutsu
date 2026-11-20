@@ -1076,6 +1076,7 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod amp_scope;
+mod mu_bind_decl;
 mod unit_hidden_names;
 use unit_hidden_names::routine_may_name;
 mod atomic_elem_forms;

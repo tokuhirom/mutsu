@@ -806,6 +806,11 @@ impl Interpreter {
         if self.exec_set_local_decl_fast(code, idx) {
             return Ok(());
         }
+        // The same for a `$` scalar's `my $x := <value>` declaration (see
+        // `exec_set_local_bind_decl_fast`).
+        if self.exec_set_local_bind_decl_fast(code, idx) {
+            return Ok(());
+        }
         // A re-assignment to a tied container (`my %h is Foo; %h = ...`, Foo
         // `does Associative`/`Positional`) routes through the class's `STORE`,
         // preserving the tied instance, instead of overwriting the slot with a

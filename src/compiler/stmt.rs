@@ -1377,6 +1377,24 @@ impl Compiler {
                         }
                     }
                     Some(tc) if tc.starts_with("::") => Some("NQPMu".to_string()),
+                    // `my Mu $x := EXPR`: a `:=` declaration checks only the
+                    // binding against its constraint, and every value binds to
+                    // `Mu`. The declared type is unobservable after the bind --
+                    // `.VAR` is the bound value or container, and a later
+                    // rebind checks against `Mu` exactly as an untyped `$x`
+                    // does -- so the declaration compiles as `my $x := EXPR`,
+                    // without the type ops' registry and env work.
+                    Some(tc)
+                        if self.mu_constraint_is_unobservable_bind(
+                            &tc,
+                            name,
+                            *bind,
+                            marks,
+                            *is_state || *is_our || *is_dynamic || constant.is_some(),
+                        ) =>
+                    {
+                        None
+                    }
                     // A constraint naming a `constant` type alias is its
                     // target, settled here as rakudo settles it at compile
                     // time (#13728).
