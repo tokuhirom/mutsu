@@ -66,7 +66,12 @@ fn call(
         Handler::Interp(f) => f(interp?, target, positional, named).map(|r| (r, false)),
         Handler::InterpPureFirst(pure, f) => {
             let interp = interp?;
-            match named.pairs().is_empty().then(|| pure(target, positional)).flatten() {
+            match named
+                .pairs()
+                .is_empty()
+                .then(|| pure(target, positional))
+                .flatten()
+            {
                 Some(r) => Some((r, rerunnable)),
                 None => f(interp, target, positional, named).map(|r| (r, false)),
             }

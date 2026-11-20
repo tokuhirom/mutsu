@@ -255,8 +255,7 @@ fn no_row_is_registered_twice() {
                 // A deferral base is reached by `invoke_base` only, never by a
                 // walk, so a late row may stand behind it too.
                 first.flags.contains(RowFlags::DEFERRAL_BASE)
-                    || !(first.handler.needs_interp()
-                        && first.flags.contains(RowFlags::OWNER_ONLY))
+                    || !(first.handler.needs_interp() && first.flags.contains(RowFlags::OWNER_ONLY))
             });
         assert!(
             distinct_first
