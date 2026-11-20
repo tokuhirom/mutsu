@@ -1,5 +1,21 @@
 use super::*;
 
+/// The parse-level state [`Value::make_parse_result_match`] writes onto the
+/// start rule's capture node.
+#[derive(Default)]
+pub(crate) struct ParseResultExtras {
+    /// The start rule's `.made` (`ast`).
+    pub(crate) made: Option<Value>,
+    /// The `:actions` object the parse ran with.
+    pub(crate) actions: Option<Value>,
+    /// The `:sym<...>` variant a proto start rule matched through.
+    pub(crate) sym: Option<crate::symbol::Symbol>,
+    /// Alias name to original rule name, for the action walk.
+    pub(crate) capture_alias_map: crate::value::regex_caps::CaptureAliasMap,
+    /// The cursor position when a `)>` marker narrowed `.to` short of it.
+    pub(crate) pos: Option<usize>,
+}
+
 impl Value {
     /// Create a Match object with captures and the shared subject.
     ///
@@ -49,6 +65,61 @@ impl Value {
         cursor: Option<Value>,
         target: crate::value::regex_caps::MatchTarget,
     ) -> Self {
+        let cap = Self::match_cap_node_full(from, to, positional, named, regex_vars, cursor);
+        Value::lazy_match(std::sync::Arc::new(cap), target)
+    }
+
+    /// The finished `.parse`/`.subparse` result: the start rule's Match, still
+    /// lazy, carrying the parse-level state on its own capture node (the
+    /// action-made `.ast`, the `:actions` object, the winning `:sym<...>`
+    /// variant of a proto start rule, the capture alias map and a `)>`-narrowed
+    /// cursor position).
+    ///
+    /// Writing those onto the node instead of rebuilding the Match as an eager
+    /// `Instance` with them added keeps the result unmaterialized: the rebuild
+    /// forced the attribute map, cloned it and dropped the original, about
+    /// 11k instructions on every grammar parse (#18207). A forced read of the
+    /// result sees the same attributes, since the materialization renders
+    /// them from the node.
+    // Cost: O(n + p + v), n/p/v = the named, positional and regex-variable slots copied.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn make_parse_result_match(
+        from: i64,
+        to: i64,
+        positional: &[crate::value::regex_caps::PosSlot],
+        named: &crate::value::regex_caps::NamedCaptureMap,
+        regex_vars: &crate::value::regex_caps::RegexVarMap,
+        cursor: Option<Value>,
+        target: crate::value::regex_caps::MatchTarget,
+        extras: ParseResultExtras,
+    ) -> Self {
+        let mut cap = Self::match_cap_node_full(from, to, positional, named, regex_vars, cursor);
+        if let Some(made) = extras.made {
+            cap.made.set(made);
+        }
+        cap.sym = extras.sym;
+        if !extras.capture_alias_map.is_empty() {
+            cap.kids_mut().capture_alias_map = extras.capture_alias_map;
+        }
+        if extras.actions.is_some() {
+            cap.kids_mut().actions = extras.actions;
+        }
+        if extras.pos.is_some() {
+            cap.kids_mut().pos = extras.pos;
+        }
+        Value::lazy_match(std::sync::Arc::new(cap), target)
+    }
+
+    /// The top-level capture node [`Self::make_match_object_full_with_regex_vars`] presents.
+    // Cost: O(n + p + v), n/p/v = the named, positional and regex-variable slots copied.
+    fn match_cap_node_full(
+        from: i64,
+        to: i64,
+        positional: &[crate::value::regex_caps::PosSlot],
+        named: &crate::value::regex_caps::NamedCaptureMap,
+        regex_vars: &crate::value::regex_caps::RegexVarMap,
+        cursor: Option<Value>,
+    ) -> crate::value::regex_caps::CapNode {
         // A level a numbered alias renumbered files its positional captures by
         // name until it is settled (#10895); a caller holding such axes
         // unsettled gets them settled here.
@@ -76,9 +147,10 @@ impl Value {
                 regex_vars: regex_vars.clone(),
                 cursor,
                 pos: None,
+                actions: None,
             })
         });
-        let cap = crate::value::regex_caps::CapNode {
+        crate::value::regex_caps::CapNode {
             from: from.max(0) as usize,
             to: to.max(0) as usize,
             sym: None,
@@ -87,8 +159,7 @@ impl Value {
             children,
             match_memo: Default::default(),
             reduced: Default::default(),
-        };
-        Value::lazy_match(std::sync::Arc::new(cap), target)
+        }
     }
 
     /// Build a user-visible Match, omitting terminal alternation-only holes

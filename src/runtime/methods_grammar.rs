@@ -1334,9 +1334,18 @@ impl Interpreter {
                     captures.clone(),
                 );
             }
-            let alias_map = captures.take_capture_alias_map();
+            let extras = crate::value::ParseResultExtras {
+                made: self.env.get_sym(crate::symbol::wk::made()).cloned(),
+                actions: actions_obj.clone(),
+                // A parse that started directly at a proto token (`:rule` naming
+                // a proto) matched via one `:sym<...>` candidate; record it so
+                // action dispatch can call the sym-specific method.
+                sym: start_rule_sym.as_deref().map(Symbol::intern),
+                capture_alias_map: captures.take_capture_alias_map(),
+                pos: captures.narrowed_pos(),
+            };
             let cursor = captures.take_cursor();
-            let match_obj = Value::make_match_object_full_with_regex_vars(
+            let match_obj = Value::make_parse_result_match(
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
@@ -1344,40 +1353,25 @@ impl Interpreter {
                 captures.regex_vars(),
                 cursor,
                 gtarget,
-            )
-            .with_match_cursor_pos(captures.narrowed_pos());
-            let match_obj = {
-                let mut updates: Vec<(&str, Value)> = Vec::new();
-                if let Some(ast) = self.env.get("made").cloned() {
-                    updates.push(("ast", ast));
-                }
-                if let Some(ref act) = actions_obj {
-                    updates.push(("actions", act.clone()));
-                }
-                // A parse that started directly at a proto token (`:rule` naming
-                // a proto) matched via one `:sym<...>` candidate; record it so
-                // action dispatch can call the sym-specific method.
-                if let Some(ref sym) = start_rule_sym {
-                    updates.push(("sym_variant", Value::str(sym.clone())));
-                }
-                if !alias_map.is_empty() {
-                    let alias_hash: ValueMap = alias_map
-                        .iter()
-                        .map(|(k, v)| (k.as_str().to_string(), Value::str(v.as_str().to_string())))
-                        .collect();
-                    updates.push(("capture_alias_map", Value::hash_bare_values(alias_hash)));
-                }
-                match_obj.match_with_attrs(updates).unwrap_or(match_obj)
-            };
+                extras,
+            );
             // Reset stale numeric/named capture vars from any previous match.
             self.reset_capture_env_vars();
-            // Set named capture env vars from match object
-            let named_v = match_obj.match_named();
-            if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
-                for (k, v) in named_hash.iter() {
-                    let key = super::methods_grammar_action_env::angle_key_sym(Symbol::intern(k));
-                    self.env.insert_sym(key, v.clone());
-                }
+            // Set named capture env vars from the match's own capture node,
+            // which leaves the result unmaterialized (#18207).
+            let named = match match_obj.match_lazy_named_values() {
+                Some(named) => named,
+                None => match match_obj.match_named().as_ref().map(Value::view) {
+                    Some(ValueView::Hash(named_hash)) => named_hash
+                        .iter()
+                        .map(|(k, v)| (Symbol::intern(k), v.clone()))
+                        .collect(),
+                    _ => Vec::new(),
+                },
+            };
+            for (k, v) in named {
+                let key = super::methods_grammar_action_env::angle_key_sym(k);
+                self.env.insert_sym(key, v);
             }
             self.env.assign_match_var(match_obj.clone());
 

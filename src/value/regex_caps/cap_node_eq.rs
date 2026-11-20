@@ -34,6 +34,8 @@ fn children_alike(a: &CapChildren, b: &CapChildren) -> bool {
         && b.regex_vars.is_empty()
         && a.cursor.is_none()
         && b.cursor.is_none()
+        && a.actions.is_none()
+        && b.actions.is_none()
         && a.capture_alias_map == b.capture_alias_map
         && a.positional.len() == b.positional.len()
         && a.positional

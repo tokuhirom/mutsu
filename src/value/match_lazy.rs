@@ -159,7 +159,9 @@ impl MatchNode {
             // never carries them. Answering `None` here rather than falling
             // through keeps a probe for one from forcing the materialization.
             "pos" => self.cap.kids().pos.map(|pos| Value::Int(pos as i64)),
-            "actions" | "__failed_match__" => None,
+            // `actions` is on the start rule's node of a parse only.
+            "actions" => self.cap.kids().actions.clone(),
+            "__failed_match__" => None,
             crate::value::match_view::CURSOR_REGEXSUB_ATTR => None,
             _ => self.force_attrs().as_map().get(name).cloned(),
         }
@@ -250,6 +252,9 @@ impl MatchNode {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             attrs.insert(wk::match_reduce_time_vars(), Value::hash_bare_values(vars));
+        }
+        if let Some(actions) = &kids.actions {
+            attrs.insert("actions", actions.clone());
         }
         if !kids.capture_alias_map.is_empty() {
             let alias_hash: ValueMap = kids
@@ -608,6 +613,26 @@ impl Value {
     /// eager or already-materialized Match; the walk reads its attribute map
     /// instead.
     // Cost: O(k), k = this node's capture slots.
+    /// The named captures of an unforced lazy Match, as its `.hash` presents
+    /// each slot, read from the capture node without materializing the
+    /// Match. `None` for an eager or already-forced Match.
+    // Cost: O(k), k = the node's named capture slots.
+    pub(crate) fn match_lazy_named_values(&self) -> Option<Vec<(Symbol, Value)>> {
+        let node = self.0.as_match_node()?;
+        if node.forced().is_some() {
+            return None;
+        }
+        Some(
+            node.cap
+                .kids()
+                .named
+                .iter()
+                .filter(|(key, _)| !key.starts_with(SILENT_ACTION_MARKER_PREFIX))
+                .map(|(key, slot)| (*key, Value::named_slot_value(slot, &node.target)))
+                .collect(),
+        )
+    }
+
     pub(crate) fn match_action_walk_node(&self) -> Option<ActionWalkNode> {
         let node = self.0.as_match_node()?;
         if node.forced().is_some() {
