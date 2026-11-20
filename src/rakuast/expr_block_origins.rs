@@ -225,19 +225,22 @@ fn returns_before_brace(text: &str, base: usize) -> Option<(usize, SrcSpan, usiz
     let after = text.strip_prefix("-->")?;
     let lead = after.len() - after.trim_start().len();
     let mut depth = 0usize;
-    let brace = after.char_indices().skip(lead).find_map(|(at, c)| match c {
-        '[' => {
-            depth += 1;
-            None
-        }
-        ']' => {
-            depth = depth.saturating_sub(1);
-            None
-        }
-        '{' if depth == 0 => Some(Some(at)),
-        '(' | ')' | '"' | '\'' | '<' | '#' | '}' => Some(None),
-        _ => None,
-    })??;
+    let brace = after
+        .char_indices()
+        .skip(lead)
+        .find_map(|(at, c)| match c {
+            '[' => {
+                depth += 1;
+                None
+            }
+            ']' => {
+                depth = depth.saturating_sub(1);
+                None
+            }
+            '{' if depth == 0 => Some(Some(at)),
+            '(' | ')' | '"' | '\'' | '<' | '#' | '}' => Some(None),
+            _ => None,
+        })??;
     let written = after[lead..brace].trim_end();
     if written.is_empty() {
         return None;

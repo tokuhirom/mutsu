@@ -22,8 +22,7 @@ pub(super) fn parameterized(node: &mut RakuAstNode, span: SrcSpan) {
         return;
     }
     let from = span.from as usize;
-    let Some(shape) = super::unit_source::with_text(span, |written| application_shape(written))
-    else {
+    let Some(shape) = super::unit_source::with_text(span, application_shape) else {
         return;
     };
     super::origin::set_span(node, span);
