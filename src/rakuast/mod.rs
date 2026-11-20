@@ -2002,6 +2002,20 @@ pub fn str_dot_ast_checked(
     source: &str,
     unit_check: UnitCheck<'_>,
 ) -> Result<Value, RuntimeError> {
+    // A unit numbered like an `EVAL`'s (`.fileline` is `EVAL_0:1`).
+    let unit_name = crate::unit_source_file::next_eval_unit_name();
+    parse_unit_ast(names, source, unit_check, Some(&unit_name))
+}
+
+/// [`str_dot_ast_checked`] for a unit named `file` (`None`: the unit being
+/// compiled, whose `$*CU` names the running file).
+// Cost: O(n), n = source length (the parse dominates).
+fn parse_unit_ast(
+    names: &NameScope,
+    source: &str,
+    unit_check: UnitCheck<'_>,
+    file: Option<&str>,
+) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
     let (mut stmts, _finish) = crate::parse_dispatch::parse_source_unfinalized(source)?;
     let unit_docs = crate::parser::decl_doc::take_unit_docs();
@@ -2011,7 +2025,7 @@ pub fn str_dot_ast_checked(
     post_declared::check(&stmts, names)?;
     unit_check(&stmts)?;
     // The origins of the tree index this text (ADR-10723 §4).
-    let _source = unit_source::Scope::enter(source);
+    let _source = unit_source::Scope::enter_file(source, file);
     let _origins = expr_origins::strip(&mut stmts);
     let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
@@ -2032,7 +2046,8 @@ pub fn compile_time_compunit(
     imported: &dyn Fn(&str) -> bool,
     imported_type: &dyn Fn(&str) -> bool,
 ) -> Result<Value, RuntimeError> {
-    let cu = str_dot_ast_compunit(names, source, &no_unit_check)?;
+    let statement_list = parse_unit_ast(names, source, &no_unit_check, None)?;
+    let cu = wrap_compunit(statement_list, source);
     let ValueView::RakuAst(node) = cu.view() else {
         return Ok(cu);
     };
@@ -4146,6 +4161,12 @@ pub(crate) fn is_unwalked_field(node: &RakuAstNode, field: &RakuAstField) -> boo
 // Cost: O(f), f = fields of the node.
 pub(crate) fn origin_line_of(node: &RakuAstNode) -> Option<i64> {
     origin::line_of(node)
+}
+
+/// The `RakuAST::Origin` `node` carries, if it has one.
+// Cost: O(1).
+pub(crate) fn origin_value_of(node: &RakuAstNode) -> Option<Value> {
+    origin::origin_of(node)
 }
 
 /// The lookup classes [`resolve`] gives a resolution (`is-resolved` and

@@ -77,6 +77,18 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("add-statement", a[0].clone())),
     node_row!("RakuAST::StatementList", "unshift-statement", |t, a| t
         .rakuast_add_child("unshift-statement", a[0].clone())),
+    node_row!("RakuAST::StatementList", "add-doc-block", |t, a| t
+        .rakuast_add_child("add-doc-block", a[0].clone())),
+    // `insert-doc-block($i, $block)`: rakudo splices the block in among the
+    // statements as `insert-statement` does, without counting code ones.
+    MethodRow {
+        owner: "RakuAST::StatementList",
+        name: "insert-doc-block",
+        arity: 2,
+        handler: Handler::Narrow(|t, a| t.rakuast_insert_statement(&a[0], &a[1])),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
     MethodRow {
         owner: "RakuAST::StatementList",
         name: "insert-statement",
@@ -177,6 +189,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
+    origin_row!("RakuAST::Origin::Source", "original-file", 0, original_file),
     origin_row!("RakuAST::Origin::Source", "orig", 0, source_orig),
     origin_row!(
         "RakuAST::Origin::Source",
@@ -207,10 +220,44 @@ fn fileline(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
     let Some(line) = line else {
         return Some(Ok(Value::NIL));
     };
-    let file = crate::unit_source_file::current()
-        .map(|file| file.resolve().to_string())
+    // The unit the node was parsed in (`EVAL_0` for a `Str.AST`), else the
+    // unit running now.
+    let file = origin_file(node)
+        .or_else(|| crate::unit_source_file::current().map(|file| file.resolve().to_string()))
         .unwrap_or_default();
     Some(Ok(Value::str(format!("{file}:{line}"))))
+}
+
+/// The `original-file` of the source a node's origin points into.
+// Cost: O(1).
+fn origin_file(node: &crate::rakuast::RakuAstNode) -> Option<String> {
+    let origin = crate::rakuast::origin_value_of(node)?;
+    let ValueView::Instance { attributes, .. } = origin.view() else {
+        return None;
+    };
+    let source = attributes.as_map().get("source")?.clone();
+    source_original_file(&source)
+}
+
+/// `Origin::Source.original-file` of `source`, when it records one.
+// Cost: O(1).
+fn source_original_file(source: &Value) -> Option<String> {
+    let ValueView::Instance { attributes, .. } = source.view() else {
+        return None;
+    };
+    attributes
+        .as_map()
+        .get(crate::rakuast::unit_source::ORIGINAL_FILE_ATTR)
+        .and_then(|v| v.as_str().map(str::to_string))
+}
+
+/// `Origin::Source.original-file`: the unit the source was parsed as
+/// (`EVAL_0` for a `Str.AST`), `Nil` when it was not recorded.
+// Cost: O(1).
+fn original_file(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    Some(Ok(
+        source_original_file(target).map_or(Value::NIL, Value::str)
+    ))
 }
 
 /// `Origin.from` / `Origin.to`: the character range the node occupies.

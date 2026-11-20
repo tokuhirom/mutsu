@@ -14,10 +14,12 @@ use std::rc::Rc;
 
 use crate::ast::SrcSpan;
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// The attributes of an `Origin::Source` instance.
 pub(crate) const ORIG_ATTR: &str = "orig";
+/// The `Origin::Source` attribute naming the unit (`original-file`).
+pub(crate) const ORIGINAL_FILE_ATTR: &str = "original-file";
 pub(crate) const LINE_STARTS_ATTR: &str = "line-starts";
 
 /// The hidden attribute of an `Origin` instance that holds the line its node
@@ -50,10 +52,19 @@ pub(super) struct Scope {
 }
 
 impl Scope {
-    /// Install `text` as the current unit's source.
-    // Cost: O(n), n = length of `text` (one pass for the line index).
-    pub(super) fn enter(text: &str) -> Scope {
-        let unit = Rc::new(UnitSource::new(text));
+    /// Install `text`, the unit named `file` (`EVAL_3` for a `Str.AST`), as
+    /// the current unit's source: its `Origin::Source.original-file`.
+    // Cost: O(n), n = length of `text`.
+    pub(super) fn enter_file(text: &str, file: Option<&str>) -> Scope {
+        let mut unit = UnitSource::new(text);
+        if let Some(file) = file
+            && let ValueView::Instance { attributes, .. } = unit.source.view()
+        {
+            let mut attrs = attributes.as_map().clone();
+            attrs.insert(ORIGINAL_FILE_ATTR.to_string(), Value::str_from(file));
+            unit.source = Value::make_instance(Symbol::intern("RakuAST::Origin::Source"), attrs);
+        }
+        let unit = Rc::new(unit);
         let previous = CURRENT.with(|c| c.replace(Some(unit)));
         Scope { previous }
     }

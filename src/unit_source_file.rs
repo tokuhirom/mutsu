@@ -30,6 +30,16 @@ thread_local! {
     static UNIT_SOURCE_FILE: Cell<Option<Symbol>> = const { Cell::new(None) };
 }
 
+/// The synthesized name of the next `EVAL`-style compilation unit: `EVAL_0`,
+/// `EVAL_1`, ... One counter per process, shared by `EVAL` and `Str.AST`
+/// (rakudo numbers both alike: `Q[1].AST` after two `EVAL`s is `EVAL_2`).
+// Cost: O(1).
+pub(crate) fn next_eval_unit_name() -> String {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static EVAL_UNIT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    format!("EVAL_{}", EVAL_UNIT_COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
 /// The file every chunk built on this thread right now belongs to.
 #[inline]
 pub(crate) fn current() -> Option<Symbol> {

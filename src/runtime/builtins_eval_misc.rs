@@ -275,9 +275,7 @@ impl Interpreter {
     /// name is actually synthesized, so an `EVAL ..., :filename` call does not
     /// advance it (rakudo behaves the same way).
     fn next_eval_unit_name() -> String {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static EVAL_UNIT_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        format!("EVAL_{}", EVAL_UNIT_COUNTER.fetch_add(1, Ordering::Relaxed))
+        crate::unit_source_file::next_eval_unit_name()
     }
 
     /// Is this compilation-unit name a *pseudo* name rather than a path?
