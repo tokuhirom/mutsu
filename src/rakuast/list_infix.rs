@@ -9,6 +9,20 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 
+/// The `zip(...)` call a chain of three or more `Z` operands runs as,
+/// remembering that it was written as the chain (`Spelling::ZipChain`).
+// Cost: O(1).
+fn zip_chain_call(args: Vec<Expr>) -> Expr {
+    Expr::spelled(
+        Expr::Call {
+            name: Symbol::intern("zip"),
+            args,
+            listop: false,
+        },
+        || crate::ast::spelled::Spelling::ZipChain,
+    )
+}
+
 /// Finalize a flat (comma-separated) parenthesized list.
 /// Lifts embedded meta-ops (X/Z), minmax, and handles Whatever-curry.
 pub(crate) fn finalize_paren_list(items: Vec<Expr>) -> Expr {
@@ -25,7 +39,7 @@ pub(crate) fn finalize_paren_list(items: Vec<Expr>) -> Expr {
     // (the Z/X meta-op already produces a list result)
     if lifted.len() == 1
         && (matches!(&lifted[0], Expr::MetaOp { .. })
-            || matches!(&lifted[0], Expr::Call { name, .. } if *name == Symbol::intern("zip")))
+            || matches!(lifted[0].peel_spelled(), Expr::Call { name, .. } if *name == Symbol::intern("zip")))
     {
         return maybe_curry_xz_metaop(lifted.into_iter().next().unwrap());
     }
@@ -398,11 +412,7 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                         form: Default::default(),
                     });
                 }
-                return Expr::Call {
-                    name: Symbol::intern("zip"),
-                    args,
-                    listop: false,
-                };
+                return zip_chain_call(args);
             }
             let left = normalize_chained_zip_meta(*left);
             let right = normalize_chained_zip_meta(*right);
@@ -447,11 +457,7 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                         form: Default::default(),
                     });
                 }
-                return Expr::Call {
-                    name: Symbol::intern("zip"),
-                    args,
-                    listop: false,
-                };
+                return zip_chain_call(args);
             }
 
             Expr::MetaOp {
@@ -535,11 +541,7 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
                     form: Default::default(),
                 });
             }
-            Expr::Call {
-                name: Symbol::intern("zip"),
-                args,
-                listop: false,
-            }
+            zip_chain_call(args)
         } else {
             // Left-fold the columns into a nested meta-op chain. This handles X
             // chains of any arity (`a X~ b X~ c` => `(a X~ b) X~ c`, previously

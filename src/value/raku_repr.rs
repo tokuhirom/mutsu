@@ -5,22 +5,44 @@ use num_traits::{Signed, Zero};
 /// backslash the sigil/interpolation metacharacters, map the named control
 /// escapes (`\0 \b \t \n \r`), and render every other control character
 /// (Unicode category Cc: U+0000-U+001F, U+007F-U+009F) as `\x[HEX]` with
-/// upper-case, no-leading-zero hex. Non-control characters pass through as-is.
+/// upper-case, no-leading-zero hex. A grapheme that would not round-trip
+/// written out -- one led by a `Prepend` codepoint (it would join the closing
+/// quote or the text after it), or one led by a combiner with no base (at the
+/// start, or after a control character) -- is written as the codepoints of
+/// the whole grapheme, `\x[600,62]`. Everything else passes through as-is.
 // Cost: O(n), n = chars of `s`.
 pub(crate) fn escape_raku_str(s: &str) -> String {
+    use crate::grapheme_break::{UnicodeSegmentation, extends_previous, is_prepend};
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
-    let mut prev: Option<char> = None;
-    for c in s.chars() {
-        // A grapheme-extending mark with no base (string start, or right after
-        // a control character, which is a hard grapheme break) would merge
-        // visually into the preceding output and not round-trip.
-        if prev.is_none_or(|p| p.is_control()) && !c.is_control() && extends_grapheme(c) {
-            out.push_str(&format!("\\x[{:X}]", c as u32));
-            prev = Some(c);
+    // Whether the output so far ends where no grapheme can continue: the
+    // opening quote, or a control character.
+    let mut at_break = true;
+    for grapheme in s.graphemes(true) {
+        let Some(first) = grapheme.chars().next() else {
+            continue;
+        };
+        if is_prepend(first) || (at_break && !first.is_control() && extends_previous(first)) {
+            let codepoints: Vec<String> =
+                grapheme.chars().map(|c| format!("{:X}", c as u32)).collect();
+            out.push_str("\\x[");
+            out.push_str(&codepoints.join(","));
+            out.push(']');
+            at_break = false;
             continue;
         }
-        prev = Some(c);
+        for c in grapheme.chars() {
+            push_raku_char(&mut out, c);
+        }
+        at_break = grapheme.chars().last().is_some_and(char::is_control);
+    }
+    out.push('"');
+    out
+}
+
+/// One character of a `Str.raku` body, escaped as needed.
+// Cost: O(1).
+fn push_raku_char(out: &mut String, c: char) {
         match c {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
@@ -37,19 +59,6 @@ pub(crate) fn escape_raku_str(s: &str) -> String {
             c if c.is_control() => out.push_str(&format!("\\x[{:X}]", c as u32)),
             c => out.push(c),
         }
-    }
-    out.push('"');
-    out
-}
-
-/// True when `c` attaches to a preceding base character (Extend / combining).
-// Cost: O(1).
-fn extends_grapheme(c: char) -> bool {
-    use crate::grapheme_break::UnicodeSegmentation;
-    let mut buf = [0u8; 8];
-    let mut t = String::from("a");
-    t.push_str(c.encode_utf8(&mut buf));
-    t.graphemes(true).count() == 1
 }
 
 /// Format a BigRat with a terminating decimal as an exact decimal string.

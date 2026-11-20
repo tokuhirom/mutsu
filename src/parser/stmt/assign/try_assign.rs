@@ -206,7 +206,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // BIND-POS/ASSIGN-POS (a wrong `is_positional` sent a `%h<k> := v` to the
         // non-existent BIND-POS, dropping to the generic path that replaced the
         // whole tied container).
-        let (r_after, index_expr, is_positional) = if let Some(inner) = r.strip_prefix('<') {
+        let (r_after, index_expr, is_positional, spelling) = if let Some(inner) = r.strip_prefix('<') {
             // `<...>` is word-quoting (a literal string key), NOT an expression.
             // Parsing the inside as an expression mis-reads `%h<b> := 5` — `b>`
             // is taken as a `b > ...` comparison, so the chained bind never
@@ -237,7 +237,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 )
             };
             let (r_after, _) = ws(&inner[end + 1..])?;
-            (r_after, index_expr, false)
+            (r_after, index_expr, false, crate::ast::IndexSpelling::Angle)
         } else {
             let closing = if r.as_bytes()[0] == b'[' { ']' } else { '}' };
             let is_positional = closing == ']';
@@ -277,7 +277,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             };
             let (r_idx, _) = parse_char(r_idx, closing)?;
             let (r_after, _) = ws(r_idx)?;
-            (r_after, index_expr, is_positional)
+            (r_after, index_expr, is_positional, crate::ast::IndexSpelling::default())
         };
         // Check for binding assignment (:= or ::=)
         if let Some(stripped) = r_after
@@ -310,7 +310,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     Box::new(target),
                     Box::new(index_expr),
                     is_positional,
-                    Default::default(),
+                    spelling,
                     rhs,
                 ),
             ));
@@ -358,7 +358,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     target: Box::new(target),
                     index: Box::new(index_expr),
                     is_positional,
-                    spelling: Default::default(),
+                    spelling,
                 },
                 rhs,
             );

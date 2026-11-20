@@ -2,6 +2,7 @@
 use super::*;
 
 pub(super) const ROWS: &[MethodRow] = &[
+    row!("RakuAST::Trait::Type", "type"),
     row!("RakuAST::Trait::Will", "IMPL-TRAIT-NAME"),
     row!("RakuAST::Trait::Will", "block"),
     row!("RakuAST::Trait::Will", "phase"),
@@ -68,6 +69,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::Var::Package", "name"),
     row!("RakuAST::Var::Package", "sigil"),
     row!("RakuAST::Var::PositionalCapture", "index"),
+    row!("RakuAST::Var::Slang", "name"),
     interp_row!(
         "RakuAST::VarDeclaration::Constant",
         "compile-time-value",

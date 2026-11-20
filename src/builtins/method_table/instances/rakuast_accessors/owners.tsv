@@ -738,6 +738,7 @@ RakuAST::Var::NamedCapture	sigil	RakuAST::Var::NamedCapture
 RakuAST::Var::Package	name	RakuAST::Var::Package
 RakuAST::Var::Package	sigil	RakuAST::Var::Package
 RakuAST::Var::PositionalCapture	index	RakuAST::Var::PositionalCapture
+RakuAST::Var::Slang	name	RakuAST::Var::Slang
 RakuAST::VarDeclaration::Anonymous	default-scope	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Anonymous	initializer	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Anonymous	original-type	RakuAST::VarDeclaration::Simple
