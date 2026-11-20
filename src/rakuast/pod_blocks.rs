@@ -150,6 +150,8 @@ fn parse_atoms(
     let mut buf = String::new();
     let mut at = 0;
     let mut previous: Option<char> = None;
+    // Unclosed `<` / `«` of the code's text read so far.
+    let mut nest = 0usize;
     loop {
         let rest = &text[at..];
         let Some(ch) = rest.chars().next() else {
@@ -159,6 +161,7 @@ fn parse_atoms(
             break;
         };
         if let Some(closer) = closer
+            && nest == 0
             && rest.starts_with(closer)
         {
             at += closer.len();
@@ -295,8 +298,12 @@ fn parse_atoms(
                 continue;
             }
         }
-        if closer.is_some() && matches!(ch, '<' | '>' | '«' | '»') {
-            return None;
+        // A balanced `<...>` / `«...»` inside a code is its text, codes in it
+        // still read (`C< infix:<+> >`, `C<< < B<foo> > >>`).
+        if closer.is_some() && matches!(ch, '<' | '«') {
+            nest += 1;
+        } else if closer.is_some() && matches!(ch, '>' | '»') {
+            nest = nest.checked_sub(1)?;
         }
         buf.push(ch);
         previous = Some(ch);
@@ -451,7 +458,13 @@ fn block_flat(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             }
             let (base, level) = split_level(kind);
             if name == "for" {
-                let (text, next) = paragraph(lines, i + 1, None, false, None)?;
+                // A later line indented further keeps or loses its blanks as
+                // in a delimited block (`=for head1` keeps, `=for item` not).
+                if i + 1 < lines.text.len() && lines.indent(i + 1) > 0 {
+                    return None;
+                }
+                let (text, next) =
+                    paragraph(lines, i + 1, None, true, continuation_trimmed(&base))?;
                 let parts = if text.is_empty() {
                     Vec::new()
                 } else {
@@ -529,13 +542,23 @@ fn block_flat(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             {
                 return None;
             }
-            let first = rest.trim();
+            let mut first = rest.trim();
+            // `=item # one`: a leading `# ` makes the block numbered.
+            let mut config = Vec::new();
+            if let Some(after) = first.strip_prefix('#')
+                && after.starts_with(char::is_whitespace)
+            {
+                config.push(("numbered".to_string(), expression(lines, "1", None)?));
+                first = after.trim_start();
+            }
+            // `=head1 a` / `  b`: an indented later line keeps or loses its
+            // blanks as in a delimited block of the type.
             let (text, next) = paragraph(
                 lines,
                 i + 1,
                 (!first.is_empty()).then_some(first),
-                false,
-                None,
+                true,
+                continuation_trimmed(&base),
             )?;
             let parts = if text.is_empty() {
                 Vec::new()
@@ -549,7 +572,7 @@ fn block_flat(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                     level,
                     form: Form::Abbreviated,
                     margin: None,
-                    config: Vec::new(),
+                    config,
                     parts,
                     from,
                     to,
@@ -595,7 +618,8 @@ fn table_block(
     };
     let table =
         super::pod_table::read(&lines.text[i + 1..end + usize::from(form != Form::Delimited)])?;
-    if table.header_row {
+    // The legacy heuristic applies only without an explicit `:header-row`.
+    if table.header_row && !config.iter().any(|(key, _)| key == "header-row") {
         config.push(("header-row".to_string(), expression(lines, "0", None)?));
     }
     let parts = table
