@@ -35,8 +35,8 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
         return;
     }
     let mut pass = Qualify {
-        declared: decls.declared,
-        local_names: decls.local_names,
+        declared: &decls.declared,
+        local_names: &decls.local_names,
         packages: Vec::new(),
         scopes: Vec::new(),
         pinned: Vec::new(),
@@ -49,6 +49,69 @@ pub(crate) fn qualify_program(stmts: &mut [Stmt]) {
             pass.pinned.pop();
         }
     });
+}
+
+/// Qualifies a unit statement by statement, as the finalization reaches each
+/// top-level statement (ADR-15760 §7.2 (d)): the `our` types a package declares
+/// are known from the statement that declares them on, as rakudo sees them.
+/// `qualify_program` stays for a tree with no finalization (`EVAL($ast)`).
+pub(crate) struct UnitQualify {
+    declared: HashSet<String>,
+    local_names: HashSet<String>,
+    /// Per top-level statement, the core-named `my` types a later one declares.
+    later: Vec<HashSet<String>>,
+    /// The `unit` packages an earlier statement opened: they hold the rest of
+    /// the unit.
+    open_units: Vec<Option<&'static str>>,
+}
+
+impl UnitQualify {
+    /// For the unit whose top-level statements are `top`.
+    // Cost: O(t), t = top-level statements.
+    pub(crate) fn new(top: &[Stmt]) -> Self {
+        UnitQualify {
+            declared: HashSet::new(),
+            local_names: HashSet::new(),
+            later: later_core_types(top),
+            open_units: Vec::new(),
+        }
+    }
+
+    /// Qualify the finalized top-level statement `stmt`, the `index`-th of the
+    /// unit's list.
+    // Cost: O(n * d), n = size of `stmt`, d = package nesting depth.
+    pub(crate) fn statement(&mut self, index: usize, stmt: &mut Stmt) {
+        let mut decls = PackageTypes {
+            packages: self.open_units.clone(),
+            ..PackageTypes::default()
+        };
+        decls.visit_stmt(stmt);
+        self.declared.extend(decls.declared);
+        self.local_names.extend(decls.local_names);
+        let pinned = self.later.get(index).cloned().unwrap_or_default();
+        if self.open_units.is_empty()
+            && !decls.opens_package
+            && !decls.block_use
+            && !decls.shadows_core
+            && pinned.is_empty()
+        {
+            return;
+        }
+        let mut pass = Qualify {
+            declared: &self.declared,
+            local_names: &self.local_names,
+            packages: self.open_units.clone(),
+            scopes: vec![HashMap::new()],
+            pinned: vec![pinned],
+        };
+        pass.visit_stmt_mut(stmt);
+        // A `unit` package the statement opened stays open for the ones after it.
+        self.open_units = pass
+            .packages
+            .iter()
+            .map(|p| p.map(|name| crate::symbol::Symbol::intern(name).as_str()))
+            .collect();
+    }
 }
 
 /// The package a statement opens: its name, or `None` for a `my`-scoped
@@ -238,8 +301,8 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
 }
 
 struct Qualify<'d> {
-    declared: HashSet<String>,
-    local_names: HashSet<String>,
+    declared: &'d HashSet<String>,
+    local_names: &'d HashSet<String>,
     packages: Vec<Option<&'d str>>,
     /// The types each open statement list binds lexically, by source name:
     /// the types a block's `use` imports, under their qualified names, and

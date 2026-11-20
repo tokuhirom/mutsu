@@ -79,6 +79,7 @@ pub(super) fn finalize_unit(
         later_terms: Vec::new(),
         seen_terms: Vec::new(),
         declared_types: std::collections::HashSet::new(),
+        qualify: crate::parser::UnitQualify::new(&stmts),
     };
     crate::parser::with_rakuast_lexical_scope(|| {
         finalize.visit_stmts_mut(&mut stmts);
@@ -124,6 +125,9 @@ struct Finalize<'s> {
     /// The short names of the types the unit declares anywhere: a bareword of
     /// that name may be one of them, not the setting's.
     declared_types: std::collections::HashSet<String>,
+    /// The type positions of each finalized top-level statement are qualified
+    /// from the packages declared so far (ADR-15760 §7.2 (d)).
+    qualify: crate::parser::UnitQualify,
 }
 
 impl Finalize<'_> {
@@ -599,12 +603,13 @@ impl Finalize<'_> {
     /// a statement before a declaration sees the setting's meaning of the name,
     /// as in rakudo, even inside a routine body.
     fn visit_top_listed(&mut self, body: &mut [Stmt]) {
-        for stmt in body.iter_mut() {
+        for (index, stmt) in body.iter_mut().enumerate() {
             super::bareword::declare_statement(self.names, stmt);
             super::shadowed_terms::declare_statement(self.names, stmt);
             self.declared_types
                 .extend(unit_type_names(std::slice::from_ref(stmt)));
             self.visit_listed(stmt);
+            self.qualify.statement(index, stmt);
             crate::parser::register_rakuast_user_sub_binding(stmt);
         }
     }

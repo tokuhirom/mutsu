@@ -29,7 +29,7 @@ pub(crate) fn cache_tag() -> &'static str {
 
 /// Finish a parsed compilation unit for the compiler (ADR-15760 §2.5): its
 /// typed nodes are lowered where they stand, and the
-/// passes that run on a whole unit (type qualification, the frame-state ops)
+/// passes that run on a whole unit (the frame-state ops)
 /// are applied. An executing parse builds no spellings (ADR-15760 §2.4); only a
 /// `.AST` parse does.
 // Cost: O(n), n = size of the unit.
@@ -62,10 +62,9 @@ pub(crate) fn finish_unit_in(
     // A slang's overrides of core actions see the parsed unit before it is
     // finalized (ADR-15762 slice 3).
     super::slang_bridge::apply_action_overrides(&mut stmts)?;
+    // The finalization also qualifies the type names of each statement
+    // (ADR-15760 §7.2 (d)).
     let mut lowered = super::finalize::finalize_unit(names, stmts)?;
-    // The parse keeps bare type names for the conversion; the
-    // lowered tree gets the qualification an ordinary parse does.
-    crate::parser::qualify_type_names(&mut lowered);
     crate::parser::p6_frame_state::lower_program(&mut lowered);
     Ok(lowered)
 }
