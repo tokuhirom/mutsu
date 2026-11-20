@@ -329,16 +329,16 @@ impl Interpreter {
             )
         } else {
             self.call_compiled_method_fast(
-            class_sym.as_str(),
-            owner,
-            method_sym,
-            def,
-            cc,
-            args,
-            target.clone(),
-            fns_ref,
-            plan.can_skip_merge,
-        )
+                class_sym.as_str(),
+                owner,
+                method_sym,
+                def,
+                cc,
+                args,
+                target.clone(),
+                fns_ref,
+                plan.can_skip_merge,
+            )
         };
         if pushed_dispatch {
             self.pop_method_dispatch();

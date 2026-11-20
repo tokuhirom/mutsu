@@ -12,7 +12,12 @@ impl Interpreter {
     /// inherited methods retain that owner. A metamethod instead belongs to
     /// each receiver's HOW, including dynamically composed receiver types.
     // Cost: O(1), except O(n) to intern a metamethod receiver name of n bytes.
-    pub(super) fn scope_method_state(&self, method_name: &str, receiver_class_name: &str, owner: Symbol) {
+    pub(super) fn scope_method_state(
+        &self,
+        method_name: &str,
+        receiver_class_name: &str,
+        owner: Symbol,
+    ) {
         let owner = if method_name.starts_with('^') {
             Symbol::intern(receiver_class_name)
         } else {
@@ -1520,7 +1525,11 @@ impl Interpreter {
     /// Whether `owner_class` and `receiver_class` each declare any attribute
     /// `is default(...)` (evaluated, or deferred from a parametric role).
     // Cost: O(1) expected (four hash probes).
-    pub(super) fn attr_default_classes(&self, owner_class: &str, receiver_class: &str) -> (bool, bool) {
+    pub(super) fn attr_default_classes(
+        &self,
+        owner_class: &str,
+        receiver_class: &str,
+    ) -> (bool, bool) {
         let registry = self.registry();
         let has = |class: &str| {
             registry.class_attribute_defaults.has_class(class)
@@ -1646,7 +1655,10 @@ impl Interpreter {
     /// aliases. The light-frame fast path skips the slow path's readonly
     /// snapshot, so each newly-marked name is recorded on the current call frame
     /// and dropped in `pop_call_frame`.
-    pub(super) fn mark_fast_method_params_readonly(&mut self, method_def: &crate::runtime::MethodDef) {
+    pub(super) fn mark_fast_method_params_readonly(
+        &mut self,
+        method_def: &crate::runtime::MethodDef,
+    ) {
         // Interned once per def, not per call (#10961).
         let name_syms = method_def.param_def_name_syms();
         for (pd, &sym) in method_def.param_defs.iter().zip(name_syms) {

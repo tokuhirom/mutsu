@@ -106,7 +106,9 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
         return true;
     }
     !pd.name.is_empty()
-        && !pd.name.starts_with(['@', '%', '&', '!', '.', '^', ':', '$'])
+        && !pd
+            .name
+            .starts_with(['@', '%', '&', '!', '.', '^', ':', '$'])
         && pd.name != "self"
         && !pd.named
         && !pd.slurpy
@@ -137,11 +139,7 @@ impl Interpreter {
     /// The only per-call check a lean frame makes; a refusal sends the call
     /// to the general binder, which raises the error.
     // Cost: O(a), a = arguments.
-    pub(super) fn lean_args_ok(
-        &mut self,
-        def: &crate::runtime::MethodDef,
-        args: &[Value],
-    ) -> bool {
+    pub(super) fn lean_args_ok(&mut self, def: &crate::runtime::MethodDef, args: &[Value]) -> bool {
         let mut params = def
             .param_defs
             .iter()
@@ -178,8 +176,7 @@ impl Interpreter {
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         let unit = self.unit_of_source_sym(cc.source_file);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
-        let result =
-            self.call_compiled_method_lean_in_unit(
+        let result = self.call_compiled_method_lean_in_unit(
             receiver_class_name,
             owner_sym,
             method_sym,
