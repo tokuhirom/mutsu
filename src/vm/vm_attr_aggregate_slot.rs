@@ -29,8 +29,13 @@ use super::*;
 pub(super) enum AttrOpPre {
     /// The by-name path's snapshot (also `None` for a non-attribute target).
     Named(Option<Value>),
-    /// The aggregate attribute slot `slot`, refreshed to `container`.
-    Slot { slot: usize, container: Value },
+    /// The aggregate attribute slot `slot`, refreshed to `container`, and
+    /// what the frame's env bound the attribute's name to before the op.
+    Slot {
+        slot: usize,
+        container: Value,
+        env_before: Option<Value>,
+    },
 }
 
 impl Interpreter {
@@ -43,8 +48,9 @@ impl Interpreter {
 
     /// Prologue of a whole-container op (`ArrayPush`, `CallMethodMut`) on
     /// `name_idx` held in `target_slot`.
-    // Cost: O(1) for an aggregate attribute slot on a site-cache hit; the
-    // by-name snapshot's cost otherwise.
+    // Cost: O(d) for an aggregate attribute slot on a site-cache hit, d = the
+    // frame's env tiers (one in-frame probe); the by-name snapshot's cost
+    // otherwise.
     pub(super) fn attr_container_op_prologue(
         &mut self,
         code: &CompiledCode,
@@ -76,7 +82,8 @@ impl Interpreter {
     /// `target_slot` is not one. An attribute the cell does not hold yet (a
     /// fresh instance's unvivified slot) leaves the slot as it is: the op
     /// autovivifies a container into it, and the epilogue stores that.
-    // Cost: O(1) on a site-cache hit; `read_attr_cell_by_key` otherwise.
+    // Cost: O(d) on a site-cache hit, d = the frame's env tiers;
+    // `read_attr_cell_by_key` otherwise.
     fn aggregate_attr_slot_refresh(
         &mut self,
         code: &CompiledCode,
@@ -90,12 +97,18 @@ impl Interpreter {
             }
             None => self.locals[slot].clone(),
         };
-        Some(AttrOpPre::Slot { slot, container })
+        let env_before = self.env().get_sym_in_frame(code.locals_sym[slot]).cloned();
+        Some(AttrOpPre::Slot {
+            slot,
+            container,
+            env_before,
+        })
     }
 
     /// Epilogue of a whole-container op: see the module docs.
-    // Cost: O(1) for a slot the op did not rebind; one attribute store when
-    // it did; the by-name mirror's cost for `AttrOpPre::Named`.
+    // Cost: O(d) for a slot the op did not rebind, d = the frame's env tiers;
+    // plus one attribute store when it did; the by-name mirror's cost for
+    // `AttrOpPre::Named`.
     pub(super) fn attr_container_op_epilogue(
         &mut self,
         code: &CompiledCode,
@@ -104,9 +117,11 @@ impl Interpreter {
     ) {
         match pre {
             AttrOpPre::Named(pre) => self.mirror_attr_env_to_cell(code, name_idx, pre),
-            AttrOpPre::Slot { slot, container } => {
-                self.aggregate_attr_slot_store_back(code, slot, &container)
-            }
+            AttrOpPre::Slot {
+                slot,
+                container,
+                env_before,
+            } => self.aggregate_attr_slot_store_back(code, slot, &container, env_before),
         }
     }
 
@@ -120,15 +135,38 @@ impl Interpreter {
     ) {
         match pre {
             AttrOpPre::Named(pre) => self.mirror_attr_elem_env_to_cell(code, name_idx, pre),
-            AttrOpPre::Slot { slot, container } => {
-                self.aggregate_attr_slot_store_back(code, slot, &container)
-            }
+            AttrOpPre::Slot {
+                slot,
+                container,
+                env_before,
+            } => self.aggregate_attr_slot_store_back(code, slot, &container, env_before),
         }
     }
 
-    /// Store the slot into the attribute when the op rebound it.
-    // Cost: O(1), plus one attribute store when the slot was rebound.
-    fn aggregate_attr_slot_store_back(&self, code: &CompiledCode, slot: usize, container: &Value) {
+    /// Store the slot into the attribute when the op rebound it. A mutating
+    /// method that answers a new container rather than mutating in place
+    /// (`@!a.push(|@v)` through the general dispatch) leaves it in the frame's
+    /// env under the attribute's name, the way it rebinds any named receiver.
+    /// The slot adopts that binding when the op changed it (`env_before`): an
+    /// entry the op did not write is an older by-name store's copy, not the
+    /// attribute.
+    // Cost: O(d), d = the frame's env tiers (one in-frame probe), plus one
+    // attribute store when the slot was rebound.
+    fn aggregate_attr_slot_store_back(
+        &mut self,
+        code: &CompiledCode,
+        slot: usize,
+        container: &Value,
+        env_before: Option<Value>,
+    ) {
+        let sym = code.locals_sym[slot];
+        if let Some(rebound) = self.env().get_sym_in_frame(sym)
+            && env_before
+                .as_ref()
+                .is_none_or(|before| !before.same_binding(rebound))
+        {
+            self.locals[slot] = rebound.clone();
+        }
         if self.locals[slot].same_binding(container) {
             return;
         }
