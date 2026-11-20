@@ -44,9 +44,10 @@ impl Interpreter {
             && pd.name.len() > 1
             && pd.name.starts_with('%')
             && pd.name != "%_"
-            && pd.name[1..]
+            && pd
+                .name
                 .as_bytes()
-                .first()
+                .get(1)
                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
             && pd.type_constraint.is_none()
             && pd.type_capture.is_none()
