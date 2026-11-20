@@ -86,7 +86,7 @@ impl Interpreter {
     /// spoiler is raised; the generic body then runs as before.
     // Cost: O(1).
     #[inline]
-    fn exec_native_int_step(&mut self, code: &CompiledCode, slot: usize, k: IncDec) -> bool {
+    pub(super) fn exec_native_int_step(&mut self, code: &CompiledCode, slot: usize, k: IncDec) -> bool {
         if !code.native_int_step_slot(slot) {
             return false;
         }

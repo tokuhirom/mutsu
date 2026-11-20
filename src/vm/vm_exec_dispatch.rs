@@ -5214,6 +5214,12 @@ impl Interpreter {
                     _ => unreachable!(),
                 };
                 if let Some(val) = self.stack.pop() {
+                    // A word with no payload (`$i++;`, a sunk comparison)
+                    // has nothing to sink: none of the cases below applies.
+                    if val.is_payload_free_word() {
+                        *ip += 1;
+                        return Ok(());
+                    }
                     // A Proxy in sink context is FETCHed, as Rakudo decontainerizes
                     // it (`$obj.rw-accessor;` runs the FETCH, which may die).
                     // Not for `SinkPopCall`: `f() = 1` on an `is rw` routine
