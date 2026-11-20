@@ -7,7 +7,7 @@ use Test;
 # would rewrite is refused there and still answers what the full dispatch
 # answers.
 
-plan 14;
+plan 16;
 
 my class Token {
     has Str  $.kind is required;
@@ -85,4 +85,15 @@ dies-ok { Token.new(name => 'x') }, '... after the class is in the lane';
     my class Typed { has Int $.n }
     for ^2 { Typed.new(n => 1) }
     throws-like { Typed.new(n => 'x') }, X::TypeCheck, 'a type check still fails on a later call';
+}
+
+{
+    class L { has @.items; has $.s }
+    my @l;
+    for 1..3 -> $i {
+        my $m = (1, 2).map(* * $i);
+        @l.push: L.new(items => (1, 2).map(* * $i), s => $m);
+    }
+    is @l.map({ .items.join(',') }).join(' | '), '1,2 | 2,4 | 3,6', 'a .map Seq fills an @ attribute';
+    is @l.map({ .s.join(',') }).join(' | '), '1,2 | 2,4 | 3,6', 'a .map Seq held in a variable';
 }

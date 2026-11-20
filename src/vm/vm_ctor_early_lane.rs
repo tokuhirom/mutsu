@@ -101,16 +101,15 @@ impl Interpreter {
     }
 
     /// Whether a named argument could carry something the deferred-`Seq`
-    /// reification touches (`reify_map_grep_seq_args`): a `Seq`, a lazy list
-    /// or a container that might hold one. Every other value, the common
-    /// case, makes that pass a no-op. A pure tag probe.
-    // Cost: O(1).
+    /// reification touches (`reify_map_grep_seq_args`): a `Seq` or a lazy
+    /// list, directly or inside a container. Every other value, the common
+    /// case, makes that pass a no-op.
+    // Cost: O(1): tag probes, and one container read.
     fn ctor_arg_may_hold_lazy(arg: &Value) -> bool {
         let ValueView::Pair(_, value) = arg.view() else {
             return true;
         };
-        value.is_seq_value()
-            || value.is_container_ref()
-            || value.is_lazy_list_value()
+        let holds_lazy = |v: &Value| v.is_seq_value() || v.is_lazy_list_value();
+        holds_lazy(value) || (value.is_container_ref() && holds_lazy(&value.deref_container()))
     }
 }
