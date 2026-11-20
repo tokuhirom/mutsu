@@ -2497,11 +2497,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 view_expr(names, &spelled.expr)
             }
             Spelling::Heredoc { stop, body } => heredoc_node(names, &spelled.expr, stop, *body),
-            Spelling::EmptyStatement => Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::StatementEmpty,
-                fields: Vec::new(),
-            }),
+            Spelling::EmptyStatement => Ok(super::spelled_nodes::statement_empty()),
+            Spelling::HyperMetaMethod => {
+                super::spelled_nodes::hyper_meta_method(names, &spelled.expr)
+            }
             Spelling::CaptureAdverbs => super::match_vars::view_with_adverbs(names, &spelled.expr),
             Spelling::UserPrefixOperator => {
                 super::user_prefix::view_spelled_core(names, &spelled.expr)

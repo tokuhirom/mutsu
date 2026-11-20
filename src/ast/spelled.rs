@@ -154,6 +154,10 @@ pub(crate) enum Spelling {
     /// parser runs as `$_++`. RakuAST keeps it as a `Term::TopicCall` of the
     /// `Postfix`.
     TopicPostfix,
+    /// `@a».^name` / `@a>>.^name`: a metamethod call is not distributed, so the
+    /// parser keeps the plain call, while RakuAST wraps its postfix in
+    /// `MetaPostfix::Hyper`.
+    HyperMetaMethod,
     /// The `$!` a bare `die` / `fail` throws again: the parser supplies it as
     /// the argument, while RakuAST keeps the call without arguments.
     ImplicitError,

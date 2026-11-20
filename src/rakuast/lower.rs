@@ -5733,6 +5733,11 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     if super::dynamic_method::is_dynamic(inner) {
                         return super::dynamic_method::lower_hyper(names, operand, inner);
                     }
+                    // `@a».^name`: a metamethod call is not distributed, so the
+                    // hyper lowers to the plain call (`Spelling::HyperMetaMethod`).
+                    if inner.class == RakuAstClass::CallMetaMethod {
+                        return lower_method_postfix(names, operand, inner);
+                    }
                     let (name, quoted) = match inner.class {
                         RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => {
                             (call_name_str(inner)?, false)
