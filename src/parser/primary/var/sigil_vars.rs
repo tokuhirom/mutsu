@@ -364,17 +364,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
         let name = &after_lt[..end];
         if !name.is_empty() {
             let after_gt = &after_lt[end + 1..];
-            return Ok((
-                after_gt,
-                Expr::MethodCall {
-                    target: Box::new(Expr::CaptureVar(name.to_string())),
-                    name: crate::symbol::Symbol::intern("list"),
-                    args: vec![],
-                    modifier: None,
-                    quoted: false,
-                    sugar: true,
-                },
-            ));
+            return Ok((after_gt, Expr::named_capture_sigiled(name, '@')));
         }
     }
     // `@%hash` applies list context to a hash variable (`.list`).
@@ -566,17 +556,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
         let name = &after_lt[..end];
         if !name.is_empty() {
             let after_gt = &after_lt[end + 1..];
-            return Ok((
-                after_gt,
-                Expr::MethodCall {
-                    target: Box::new(Expr::CaptureVar(name.to_string())),
-                    name: crate::symbol::Symbol::intern("hash"),
-                    args: vec![],
-                    modifier: None,
-                    quoted: false,
-                    sugar: false,
-                },
-            ));
+            return Ok((after_gt, Expr::named_capture_sigiled(name, '%')));
         }
     }
     // `%@array` applies hash context to an array variable (`.hash`).
@@ -683,10 +663,14 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
         } else {
             (rest, Vec::new())
         };
+        // The `self` is marked, so RakuAST keeps `Var::Attribute::Public("&.name")`.
+        let target = Expr::spelled(Expr::BareWord("self".to_string()), || {
+            crate::ast::spelled::Spelling::AttributeCall('&')
+        });
         return Ok((
             rest,
             Expr::MethodCall {
-                target: Box::new(Expr::BareWord("self".to_string())),
+                target: Box::new(target),
                 name: crate::symbol::Symbol::intern(&name),
                 args,
                 modifier: None,

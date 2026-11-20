@@ -1,8 +1,8 @@
 //! The RakuAST frontend (ADR-10723 Stages 0 and 3).
 //!
 //! Every compilation unit (the main program, every `EVAL` string, every `use`d
-//! module and `require`d file) is parsed with its spellings kept and finalized
-//! in place before it is compiled ([`super::finalize`]): the typed nodes of the
+//! module and `require`d file) is parsed without spellings (ADR-15760 §2.4) and
+//! finalized in place before it is compiled ([`super::finalize`]): the typed nodes of the
 //! migrated families are lowered where they stand. There is no opt-out.
 //!
 //! The coverage of the `view` and `lower` arms that the `MUTSU_RAKUAST=convert`
@@ -27,18 +27,20 @@ pub(crate) fn cache_tag() -> &'static str {
     "ast"
 }
 
-/// Run a parsed compilation unit through the RakuAST round trip. Every unit is
-/// parsed with its spellings kept (ADR-12199): the conversion reads them, and
-/// the lowering hands the compiler the same tree it would have had without
-/// them.
-pub(crate) fn round_trip_unit(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip_owned(&NameScope::default(), stmts).map_err(refusal)
+/// Finish a parsed compilation unit for the compiler (ADR-15760 §2.5): its
+/// typed nodes are lowered where they stand, and the
+/// passes that run on a whole unit (type qualification, the frame-state ops)
+/// are applied. An executing parse builds no spellings (ADR-15760 §2.4); only a
+/// `.AST` parse does.
+// Cost: O(n), n = size of the unit.
+pub(crate) fn finish_unit(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
+    finish_unit_in(&NameScope::default(), stmts).map_err(refusal)
 }
 
-/// A refusal of the round trip as the mode reports it. An error that already
-/// carries an exception is the unit's own compile-time failure (a deferred
-/// `X::Obsolete`, which rakudo throws while compiling), not a gap in the
-/// conversion, and passes through unchanged.
+/// A refusal of the finalization as the frontend reports it. An error that
+/// already carries an exception is the unit's own compile-time failure (a
+/// deferred `X::Obsolete`, which rakudo throws while compiling), not a gap in
+/// the conversion, and passes through unchanged.
 fn refusal(err: RuntimeError) -> RuntimeError {
     if err.exception.is_some() {
         return err;
@@ -49,16 +51,10 @@ fn refusal(err: RuntimeError) -> RuntimeError {
     ))
 }
 
-/// `parse → RakuAST → lower`, the pipeline the RakuAST frontend replaces the
-/// parser's tree with.
-pub(crate) fn round_trip(names: &NameScope, stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip_owned(names, stmts.to_vec())
-}
-
-/// [`round_trip`] for a unit the caller owns: the origins come off the tree
+/// [`finish_unit`] in the name scope `names`: the origins come off the tree
 /// in place, with no copy of it.
 // Cost: O(n), n = size of the unit.
-pub(crate) fn round_trip_owned(
+pub(crate) fn finish_unit_in(
     names: &NameScope,
     stmts: Vec<Stmt>,
 ) -> Result<Vec<Stmt>, RuntimeError> {
@@ -67,18 +63,23 @@ pub(crate) fn round_trip_owned(
     // finalized (ADR-15762 slice 3).
     super::slang_bridge::apply_action_overrides(&mut stmts)?;
     let mut lowered = super::finalize::finalize_unit(names, stmts)?;
-    // The spelled parse keeps bare type names for the conversion; the
+    // The parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.
     crate::parser::qualify_type_names(&mut lowered);
     crate::parser::p6_frame_state::lower_program(&mut lowered);
     Ok(lowered)
 }
 
-/// [`round_trip_unit`] for an `EVAL` string, whose bare names may be declared
+/// [`finish_unit`] for an `EVAL` string, whose bare names may be declared
 /// by the scope that called it: `names` holds those names and the operator
-/// routines the calling scope makes visible.
-pub(crate) fn round_trip_eval(stmts: &[Stmt], names: NameScope) -> Result<Vec<Stmt>, RuntimeError> {
-    round_trip(&names, stmts).map_err(refusal)
+/// routines the calling scope makes visible. The caller keeps `stmts` to
+/// report a refusal against.
+// Cost: O(n), n = size of the unit.
+pub(crate) fn finish_eval_unit(
+    stmts: &[Stmt],
+    names: NameScope,
+) -> Result<Vec<Stmt>, RuntimeError> {
+    finish_unit_in(&names, stmts.to_vec()).map_err(refusal)
 }
 
 /// The scope an `EVAL` string's calling scope makes: the names it declares,
@@ -125,8 +126,8 @@ mod tests {
         let stmts = vec![Stmt::Expr(crate::ast::Expr::Literal(
             crate::value::Value::regex("a".to_owned()),
         ))];
-        let error =
-            round_trip(names, &stmts).expect_err("a regex value without source tree must refuse");
+        let error = finish_unit_in(names, stmts)
+            .expect_err("a regex value without source tree must refuse");
         let reported = refusal(error);
         assert!(reported.message.contains("MUTSU_RAKUAST"));
         assert!(

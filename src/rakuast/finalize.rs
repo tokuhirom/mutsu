@@ -1,11 +1,11 @@
 //! The executing finalization of a compilation unit (ADR-15334 Stage 2, slice 9).
 //!
 //! An executing parse keeps the constructs of the migrated families in their
-//! RakuAST shape (`ParsedStmt` / `ParsedExpr`) and wraps a few terms in
-//! `Expr::Spelled`; the unit is finalized in place: each typed node is lowered
-//! where it stands, each spelling is taken off, and a construct the parser's own
-//! tree cannot stand for (a bareword to classify, a regex with code, an
-//! operator declaration, ...) is converted to RakuAST and lowered on its own.
+//! RakuAST shape (`ParsedStmt` / `ParsedExpr`) and builds no spellings
+//! (ADR-15760 §2.4); the unit is finalized in place: each typed node is lowered
+//! where it stands, and a construct the parser's own tree cannot stand for (a
+//! bareword to classify, a regex with code, an operator declaration, ...) is
+//! converted to RakuAST and lowered on its own.
 //! No `RakuAstNode` is built for the rest of the unit.
 //!
 //! `.AST` and `EVAL($ast)` do not come through here: they render and read the
@@ -50,7 +50,7 @@ impl Drop for Executing {
     }
 }
 
-/// Finalize the spelled compilation unit `stmts` for execution: the statements
+/// Finalize the parsed compilation unit `stmts` for execution: the statements
 /// the compiler receives.
 // Cost: O(n), n = size of the unit.
 pub(super) fn finalize_unit(
@@ -58,6 +58,8 @@ pub(super) fn finalize_unit(
     mut stmts: Vec<Stmt>,
 ) -> Result<Vec<Stmt>, RuntimeError> {
     let _executing = Executing::enter();
+    // The lowering of a converted construct builds no spellings either.
+    let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
     let _declared = super::bareword::DeclaredNames::collect(names, &stmts);
@@ -96,7 +98,7 @@ fn declares_routine(stmt: &Stmt) -> bool {
     }
 }
 
-/// Lowers every typed node and spelling of a tree where it stands, innermost
+/// Lowers every typed node of a tree where it stands, innermost
 /// first.
 struct Finalize<'s> {
     names: &'s NameScope,
@@ -247,11 +249,6 @@ impl Finalize<'_> {
 
 impl VisitMut for Finalize<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        body.retain(|s| match s {
-            // A `;` that ends no statement runs nothing and is no block's value.
-            Stmt::Expr(Expr::Spelled(spelled)) => !carried::is_empty_statement(spelled),
-            _ => true,
-        });
         let top = std::mem::take(&mut self.top);
         let line = self.line.take();
         self.later_terms.push(setting_terms_declared_in(body));
@@ -275,8 +272,6 @@ impl VisitMut for Finalize<'_> {
         self.line = line;
     }
 
-    // A spelling only annotates the expression it wraps (ADR-12199): an
-    // executing parse builds the expression alone.
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         // What a slang production stands for was lowered when the parser built it.
         if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::Lowered { .. }))
@@ -312,10 +307,7 @@ impl VisitMut for Finalize<'_> {
         }
         // An expression the parser's tree cannot stand for (a bareword to
         // classify, a regex with code, ...) is converted and lowered on its own.
-        let mut inner = &*expr;
-        while let Expr::Spelled(spelled) = inner {
-            inner = &spelled.expr;
-        }
+        let inner = &*expr;
         // An `nqp::` bareword: the classifier's answer is the lowering's own.
         if let Expr::BareWord(word) = inner
             && let Some(term) = super::bareword::nqp_term(names, word)
@@ -343,21 +335,16 @@ impl VisitMut for Finalize<'_> {
         if !carried::expr_carried(inner) {
             // A plain term the classifier resolves (`my \x`, a constant): see
             // `bareword::term_expr`. Only a word that is not carried as a type
-            // name, and only unspelled: a spelling (`ImportedTerm`, `LabelTerm`)
-            // tells the conversion how the parse resolved the word.
+            // name.
             if let Expr::BareWord(word) = &*expr
                 && let Some(term) = super::bareword::term_expr(names, word)
             {
                 *expr = term;
                 return;
             }
-            // An imported term (`Spelling::ImportedTerm`): see `bareword::imported_term_expr`.
-            if let Expr::Spelled(spelled) = &*expr
-                && matches!(
-                    spelled.spelling,
-                    crate::ast::spelled::Spelling::ImportedTerm
-                )
-                && let Expr::BareWord(word) = &spelled.expr
+            // An imported term: see `bareword::imported_term_expr`.
+            if let Expr::Ast(node) = &*expr
+                && let ParsedExpr::ImportedTerm(word) = node.as_ref()
                 && let Some(term) = super::bareword::imported_term_expr(names, word)
             {
                 *expr = term;
@@ -401,11 +388,6 @@ impl VisitMut for Finalize<'_> {
                 Err(err) => self.fail(err),
             }
             return;
-        }
-        while matches!(expr, Expr::Spelled(_)) {
-            if let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Whatever) {
-                *expr = spelled.expr;
-            }
         }
         if matches!(expr, Expr::Ast(node) if matches!(node.as_ref(), ParsedExpr::Assign(_)))
             && let Expr::Ast(node) = std::mem::replace(expr, Expr::Whatever)
@@ -739,8 +721,8 @@ mod tests {
     }
 
     fn finalized(names: &crate::scope::NameScope, source: &str) -> String {
-        let (spelled, _) = crate::parse_dispatch::parse_source_spelled(source).unwrap();
-        shape(crate::rakuast::frontend::round_trip(names, &spelled).unwrap())
+        let (spelled, _) = crate::parse_dispatch::parse_source_unfinalized(source).unwrap();
+        shape(crate::rakuast::frontend::finish_unit_in(names, spelled).unwrap())
     }
 
     fn ordinary(source: &str) -> String {
@@ -809,7 +791,7 @@ mod tests {
     fn a_regex_with_code_is_converted_where_it_stands() {
         let names = &crate::scope::NameScope::default();
         let (spelled, _) =
-            crate::parse_dispatch::parse_source_spelled("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
-        let _ = crate::rakuast::frontend::round_trip(names, &spelled).expect("it lowers");
+            crate::parse_dispatch::parse_source_unfinalized("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
+        let _ = crate::rakuast::frontend::finish_unit_in(names, spelled).expect("it lowers");
     }
 }

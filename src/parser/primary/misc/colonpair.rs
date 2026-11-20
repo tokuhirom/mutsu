@@ -445,7 +445,11 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         {
             let name = &after_sigil[1..1 + end];
             let rest = &after_sigil[1 + end + 1..];
-            let var_expr = Expr::CaptureVar(name.to_string());
+            // `:@<fie>` / `:%<foe>` read the capture through the written sigil.
+            let var_expr = match sigil {
+                "$" => Expr::CaptureVar(name.to_string()),
+                _ => Expr::named_capture_sigiled(name, if sigil == "@" { '@' } else { '%' }),
+            };
             return Ok((
                 rest,
                 Expr::Binary {

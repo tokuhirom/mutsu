@@ -254,6 +254,7 @@ pub(super) fn parsed_expr_node(
         ParsedExpr::ObjectHash(entries) => super::hash_literal::object_hash_node(names, entries),
         ParsedExpr::WordList(list) => super::word_list::list_node(names, list),
         ParsedExpr::WordsAtom(atom) => super::word_list::atom_node(names, atom),
+        ParsedExpr::ImportedTerm(name) => Ok(super::term_name::imported(names, name)),
         ParsedExpr::SubscriptAdverbs(s) => {
             super::subscript_adverb::postcircumfix_node(names, &s.subscript, &s.pairs)
         }

@@ -129,6 +129,7 @@ mod doc_source;
 mod doc_str;
 mod imaginary_literal;
 mod radix_number;
+mod spelled_nodes;
 mod topic_postfix;
 pub(crate) use doc_str::legacy_row_text;
 mod dynamic_method;
@@ -206,6 +207,7 @@ mod regex_view;
 mod render;
 mod resolve;
 pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_in};
+mod loop_step;
 mod role;
 mod role_header;
 mod role_implicit;
@@ -235,6 +237,7 @@ mod temporize;
 mod term_name;
 mod thunk;
 mod topic_subscript;
+mod trait_order;
 mod type_args;
 mod type_build;
 mod type_call;
@@ -244,11 +247,11 @@ mod type_lower;
 mod underscore_bindings;
 pub(crate) mod unit_source;
 mod unit_span;
-mod unspell;
 mod use_origins;
 mod use_stmt;
 mod user_postfix;
 mod user_prefix;
+mod zip_chain;
 pub(crate) use user_prefix::user_prefix_overrides_core;
 mod var_decl_constructor;
 mod var_does;
@@ -451,6 +454,8 @@ pub enum RakuAstClass {
     // A dynamic variable `$*x`: its whole spelling, twigil included.
     VarDynamic,
     VarDoc,
+    /// `$~MAIN`: a slang variable (rakudo keeps only the name, whatever the sigil).
+    VarSlang,
     VarDeclarationSimple,
     InitializerAssign,
     InitializerCallAssign,
@@ -855,6 +860,7 @@ impl RakuAstClass {
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
             VarDoc => "RakuAST::Var::Doc",
+            VarSlang => "RakuAST::Var::Slang",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
             InitializerCallAssign => "RakuAST::Initializer::CallAssign",
@@ -1164,6 +1170,16 @@ impl RakuAstClass {
     pub fn is_simple_variable(self) -> bool {
         matches!(self, RakuAstClass::VarLexical | RakuAstClass::VarDynamic)
     }
+
+    /// Whether a `:$x` colonpair's value can be this class: any variable the
+    /// grammar's `<variable>` reads (`:$=pod`, `:$^f`, `:$<fee>`, `:$~MAIN`,
+    /// `:$?PACKAGE`, ...), as rakudo's `ColonPair::Variable` keeps it.
+    // Cost: O(1).
+    pub fn is_colonpair_variable(self) -> bool {
+        let name = self.printed_name();
+        name.starts_with("RakuAST::Var::")
+            || name.starts_with("RakuAST::VarDeclaration::Placeholder::")
+    }
 }
 
 /// Whether a RakuAST type object lists another in its MRO (`.^isa`; roles
@@ -1407,6 +1423,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
     RakuAstClass::VarDoc,
+    RakuAstClass::VarSlang,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
     RakuAstClass::InitializerCallAssign,
@@ -1973,7 +1990,7 @@ pub fn str_dot_ast_checked(
     unit_check: UnitCheck<'_>,
 ) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
-    let (mut stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
+    let (mut stmts, _finish) = crate::parse_dispatch::parse_source_unfinalized(source)?;
     let unit_docs = crate::parser::decl_doc::take_unit_docs();
     // Rakudo's `.AST` raises the compile errors running the code does
     // (ADR-15760 Amendment 1, slice 1c): a type or term used before its

@@ -34,6 +34,8 @@ pub fn lower(
     names: &crate::scope::NameScope,
     node: &RakuAstNode,
 ) -> Result<Vec<Stmt>, RuntimeError> {
+    // The tree the compiler receives carries no spellings (ADR-15760 §2.5).
+    let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let normalized = super::subclass::normalize_for_lower(node, 0)?;
     lower_normalized(names, normalized.as_ref().unwrap_or(node))
 }
@@ -55,11 +57,10 @@ fn lower_normalized(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, 
 }
 
 /// The passes a lowered unit goes through before the compiler sees it: the
-/// spellings come off, the priming scopes of a `*` are planted and the scope
-/// diagnostics are reported.
+/// priming scopes of a `*` are planted and the scope diagnostics are reported.
+/// A lowered tree carries no spellings: nothing that lowers keeps them.
 // Cost: O(n), n = size of the unit.
 pub(super) fn finish_unit(stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
-    super::unspell::strip(stmts);
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
     // positions, and there is no parser here. Run the same scope authority the
@@ -172,6 +173,9 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
 /// unit's closing passes (`finish_unit`) run on the whole unit later.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower_fragment(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // A production is parsed for its node (spellings kept); what it lowers to
+    // is executed and keeps none.
+    let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     super::shadowed_terms::scan(node);
     super::infix_func::reset();
@@ -1391,7 +1395,11 @@ fn lower_constant(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runtime
         },
     };
     let init = named_child(node, "initializer")?;
-    if init.class != RakuAstClass::InitializerAssign {
+    // A constant runs `:=` the same as `=`.
+    if !matches!(
+        init.class,
+        RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
+    ) {
         return Err(unsupported(node));
     }
     let expr = lower_expr(names, named_child_or_positional(init)?)?;
@@ -3179,6 +3187,8 @@ fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
             ValueView::Str(s) => Ok(format!("$={}", s.as_str())),
             _ => Err(unsupported(node)),
         },
+        // `Var::Slang.new(name => "MAIN")` is `$~MAIN`.
+        RakuAstClass::VarSlang => Ok(format!("$~{}", leaf_str(node, "name")?)),
         // `$.x` -> the whole spelling is the `name`; the `$.x(1)` form (an
         // `args` field) is a method call, which the parser keeps elsewhere.
         RakuAstClass::VarAttributePublic if !node.fields.iter().any(|f| f.name == Some("args")) => {
@@ -4962,6 +4972,13 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             if call.class == RakuAstClass::Postfix {
                 return super::topic_postfix::lower(call);
             }
+            // `.(args)`: a call of the topic.
+            if call.class == RakuAstClass::CallTerm {
+                return Ok(Expr::CallOn {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    args: arg_exprs(names, call)?,
+                });
+            }
             if super::topic_subscript::is_subscript(call) {
                 return super::topic_subscript::lower(names, call);
             }
@@ -5352,6 +5369,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         | RakuAstClass::VarPackage
         | RakuAstClass::VarDynamic
         | RakuAstClass::VarDoc
+        | RakuAstClass::VarSlang
         | RakuAstClass::VarAttribute
         | RakuAstClass::VarAttributePublic => {
             let name = variable_spelling(node)?;
@@ -5716,8 +5734,16 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     if inner.class == RakuAstClass::Postfix {
                         return super::hyper_subscript::lower_postfix_operator(operand, inner);
                     }
+                    if inner.class == RakuAstClass::PostfixPower {
+                        return super::postfix_power::lower_hyper_power(inner, operand);
+                    }
                     if super::dynamic_method::is_dynamic(inner) {
                         return super::dynamic_method::lower_hyper(names, operand, inner);
+                    }
+                    // `@a».^name`: a metamethod call is not distributed, so the
+                    // hyper lowers to the plain call (`Spelling::HyperMetaMethod`).
+                    if inner.class == RakuAstClass::CallMetaMethod {
+                        return lower_method_postfix(names, operand, inner);
                     }
                     let (name, quoted) = match inner.class {
                         RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => {

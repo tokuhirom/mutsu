@@ -29,7 +29,8 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
             | crate::ast::parsed::ParsedExpr::ObjectHash(_)
             | crate::ast::parsed::ParsedExpr::WordList(_)
             | crate::ast::parsed::ParsedExpr::WordsAtom(_)
-            | crate::ast::parsed::ParsedExpr::InlineSubset(_) => false,
+            | crate::ast::parsed::ParsedExpr::InlineSubset(_)
+            | crate::ast::parsed::ParsedExpr::ImportedTerm(_) => false,
         },
         _ => false,
     }

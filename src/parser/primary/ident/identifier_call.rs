@@ -404,9 +404,13 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             term_expr(rest)?
         };
     // The operand is a module name whether or not the unit keeps the term's
-    // spelling (an import makes a bareword an `ImportedTerm`).
+    // shape (an import makes a bareword a `ParsedExpr::ImportedTerm`).
     let target_raw = match target_raw {
         Expr::Spelled(spelled) if matches!(spelled.expr, Expr::BareWord(_)) => spelled.expr,
+        Expr::Ast(node) => match *node {
+            crate::ast::parsed::ParsedExpr::ImportedTerm(name) => Expr::BareWord(name),
+            node => Expr::Ast(Box::new(node)),
+        },
         other => other,
     };
     let module_name_for_parse = match &target_raw {
@@ -2814,10 +2818,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // Method-like: .new, .elems etc. is handled at expression level
     let is_imported_function = crate::parser::is_imported_function(&name);
     let expr = Expr::BareWord(name);
-    let expr = if crate::parser::term_keywords_shadowable() || is_imported_function {
-        Expr::spelled(expr, || Spelling::ImportedTerm)
-    } else {
-        expr
+    let expr = match expr {
+        Expr::BareWord(name)
+            if crate::parser::term_keywords_shadowable() || is_imported_function =>
+        {
+            crate::ast::parsed::imported_term(name)
+        }
+        other => other,
     };
     Ok((rest, expr))
 }

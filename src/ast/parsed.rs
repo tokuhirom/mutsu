@@ -322,6 +322,20 @@ pub(crate) enum ParsedExpr {
     /// interpolation). It lowers to the runtime's words call
     /// (`rakuast::word_list::lower_words_atom`).
     WordsAtom(WordsAtom),
+    /// A bareword the parse resolved as an imported term: a value an import
+    /// declared (`e` from a module that exports one), or any word of a unit
+    /// that imported through a run-time `EXPORT` hook (#9047). The import
+    /// shadows what the word means in the setting, so the finalization does not
+    /// classify it again (`Term::Name` with the source-bareword mark). It lowers
+    /// to the word itself (`rakuast::bareword::imported_term_expr`).
+    ImportedTerm(String),
+}
+
+/// The term a bareword the parse resolved as an imported term stands for
+/// ([`ParsedExpr::ImportedTerm`]).
+// Cost: O(1).
+pub(crate) fn imported_term(name: String) -> Expr {
+    Expr::Ast(Box::new(ParsedExpr::ImportedTerm(name)))
 }
 
 /// The words of a word quote and its source.
@@ -589,6 +603,20 @@ pub(crate) struct TypeDeclSpans {
     /// `is export` on a subset; none when not written.
     #[serde(default)]
     pub(crate) export: TraitSpans,
+    /// Where `of` and `is export` stand among the declaration's rendered
+    /// trait clauses, counted in written order from 0; the other clauses (an
+    /// enum's `does`, a subset's own `is` traits) take the remaining places in
+    /// their order.
+    #[serde(default)]
+    pub(crate) order: TraitOrder,
+}
+
+/// The written places of the `of` and `is export` clauses; see
+/// [`TypeDeclSpans::order`].
+#[derive(Debug, Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TraitOrder {
+    pub(crate) of: u8,
+    pub(crate) export: u8,
 }
 
 /// Where a parameter was written: all of it (type, traits and default

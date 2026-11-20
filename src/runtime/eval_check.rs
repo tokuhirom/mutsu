@@ -408,7 +408,7 @@ impl Interpreter {
         ) {
             Ok((stmts, _)) => {
                 let (types, terms) = caller_names;
-                let stmts = crate::rakuast::frontend::round_trip_eval(
+                let stmts = crate::rakuast::frontend::finish_eval_unit(
                     &stmts,
                     crate::rakuast::frontend::eval_scope(types, terms, op_names),
                 )?;

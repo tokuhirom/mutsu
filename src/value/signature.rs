@@ -36,10 +36,10 @@ pub(crate) fn install_synth_compile(compile: SynthCompile) {
 fn synthesized_thunk(name: &str, mut body: Vec<Stmt>, is_rw: bool) -> Value {
     // A signature literal (`:(%a = {:a(2)})`) reaches here straight from the
     // parser's expression entry, which has not been through the lowering pass
-    // that takes the spellings off a tree (ADR-12199): the compiler accepts none.
+    // that takes the parse marks off a tree (ADR-12199): the compiler accepts none.
     for stmt in &mut body {
         if let Stmt::Expr(expr) = stmt {
-            crate::ast::spelled::strip_spelling(expr);
+            crate::ast::spelled::strip_parse_marks(expr);
         }
     }
     let Some(compile) = SYNTH_COMPILE.get() else {

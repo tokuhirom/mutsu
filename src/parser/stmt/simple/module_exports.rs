@@ -59,6 +59,12 @@ struct ModuleScanResult {
     /// `SQLT_NUM` is a `constant ... is export` in the sibling
     /// DBDish::Oracle::Native.
     value_terms: Vec<String>,
+    /// The subset of `value_terms` whose initializer is a type the scan
+    /// resolved (`my constant CArray is export = NativeCall::Types::CArray`):
+    /// rakudo evaluates the initializer at compile time, so such a name is a
+    /// type in the importer's RakuAST (`Type::Simple`), not a `Term::Name`.
+    #[serde(default)]
+    type_constants: Vec<String>,
     /// EXPORTHOW::DECLARE declarator keywords the module exports, as
     /// `(keyword, HOW type name)` pairs. A `use` of the module makes each
     /// keyword parse as a class-like declarator for the rest of the unit.
@@ -463,6 +469,9 @@ fn apply_scan_types(scan: &ModuleScanResult, import_tags: Option<&[String]>) {
     // can see it, exactly like an enum value.
     for name in &scan.value_terms {
         register_imported_value_term(name);
+    }
+    for name in &scan.type_constants {
+        register_imported_type_constant(name);
     }
     // A module that computes its exports in `sub EXPORT` can install a value
     // under a CORE term keyword's own name, which the parser would otherwise
@@ -893,7 +902,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // `use`s from loading at parse time (ADR-17558 §7.6).
     let saved_effects_seen = super::take_unit_effects_seen();
     let ((stmts, _), nested) =
-        nested_imports::collect(|| crate::parser::parse_program_partial_spelled(source));
+        nested_imports::collect(|| crate::parser::parse_program_partial_unfinalized(source));
     super::restore_unit_effects_seen(saved_effects_seen);
     // A best-effort parse silently drops every statement it cannot parse — a
     // `class`/`constant` among them. The names in such a statement are missing
@@ -994,6 +1003,14 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     type_names.extend(decls.type_names);
     let mut enum_type_names: Vec<String> = transitive_enum_types;
     enum_type_names.extend(decls.enum_type_names);
+    let type_constants: Vec<String> = decls
+        .constant_aliases
+        .iter()
+        .filter(|(_, init)| {
+            crate::known_types::is_known_type_constraint(init) || type_names.contains(init)
+        })
+        .map(|(name, _)| name.clone())
+        .collect();
     // The source-text fallbacks below see code only: Pod and heredoc bodies
     // are blanked out first.
     let code = source_scan::code_text(source);
@@ -1140,6 +1157,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         enum_values,
         tagged_enum_values,
         value_terms,
+        type_constants,
         declare_keywords: decls.declare_keywords,
         supersede_keywords: decls.supersede_keywords,
         type_index_incomplete,
