@@ -304,6 +304,30 @@ pub(crate) fn register_imported_value_term(name: &str) {
     });
 }
 
+/// Mark an imported sigilless value term as holding a type object (`my
+/// constant CArray is export = NativeCall::Types::CArray`): a bareword naming
+/// it renders as a type in RakuAST. It stays a value term for the parser.
+pub(crate) fn register_imported_type_constant(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let scope = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        scope.imported_type_constants.insert(name.to_string());
+    });
+}
+
+/// The imported value terms that hold a type object, see
+/// [`register_imported_type_constant`].
+pub(crate) fn imported_type_constant_names() -> Vec<String> {
+    SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .flat_map(|scope| scope.imported_type_constants.iter().cloned())
+            .collect()
+    })
+}
+
 /// Record that this compunit has `use`d a module whose export set is computed
 /// by a run-time `sub EXPORT` hook, so the CORE term keywords may be lexically
 /// shadowed by whatever that hook installs (#9047).

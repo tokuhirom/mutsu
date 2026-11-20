@@ -131,7 +131,9 @@ impl Compiler {
             && !self.fold_ctx.saw_operator_decl.load(Ordering::Relaxed)
             // Any user operator registered anywhere in the process (a module
             // loaded before this EVAL/block was compiled) disables folding.
-            && crate::vm::vm_jit::USER_INFIX_DECLS.load(Ordering::Relaxed) == 0
+            // Recorded as a compile input: a cached compile made while no
+            // operator was registered must not be reused once one is.
+            && super::compile_inputs::no_user_infix_decls()
     }
 
     /// Fold `left op right` into a single value, or `None` to compile normally.
