@@ -22,9 +22,14 @@ impl Interpreter {
         // defer to the NATIVE grammar parse — the base candidate that is not a
         // `MethodDef` and so never appears in the dispatch candidates (YAMLish's
         // `method parse` does `nextwith($input, :actions(Actions))`).
+        // Everything the probes below ask of the class and the method name
+        // alone, memoized per `(class, method)` for one registry generation
+        // (`method_frame_facts`); only the receiver-value tests run per call.
+        let facts = self.method_frame_facts(receiver_class, method_name);
+        let native_storage = Self::invocant_carries_native_storage(&invocant);
         let grammar_parse_override = matches!(method_name, "parse" | "subparse" | "parsefile")
-            && self.class_is_grammar(receiver_class)
-            && self.has_user_method(receiver_class, method_name);
+            && facts.user_method
+            && self.class_is_grammar(receiver_class);
         // A user BUILDALL/POPULATE/clone (e.g. installed by a custom HOW via
         // `add_method` — OO::Monitors) likewise needs an MRO frame even as a
         // single candidate, so its `callsame` reaches the NATIVE base
@@ -41,14 +46,14 @@ impl Interpreter {
         // "Cannot resolve caller". (Raku lets a plain SUB see an enclosing
         // dispatcher, but a method call always establishes its own, so the leak
         // is only ever wrong.)
-        let new_base_override = matches!(method_name, "new" | "bless")
-            && self.has_user_method_including_role(receiver_class, method_name);
+        let new_base_override =
+            matches!(method_name, "new" | "bless") && facts.user_method_including_role;
         // `Mu`'s own answers (`defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, and `gist`
         // and `perl` everywhere, `Str`/`raku` of a type object) are the base candidate too.
         let mu_base_override = (matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
             // A container subclass (`is Array`, `is Hash`) defers to its storage's
             // answer instead (`container_protocol_override`).
-            || (!Self::invocant_carries_native_storage(&invocant)
+            || (!native_storage
                 && (matches!(
                     method_name,
                     "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "perl" | "say"
@@ -65,7 +70,7 @@ impl Interpreter {
                         )
                         && crate::value::numeric_payload::numeric_subclass_payload(&invocant)
                             .is_none()))))
-            && self.has_user_method_including_role(receiver_class, method_name);
+            && facts.user_method_including_role;
         // A user (or role-composed) override of a native container protocol
         // method on an `is Hash`/`is Array`/`is BagHash`-style subclass is the
         // same situation: the native behavior on the instance's backing storage
@@ -75,9 +80,9 @@ impl Interpreter {
         // `Mu`'s own names (`new`, `BUILDALL`, `POPULATE`, `clone`) are answered
         // by the `Mu` base candidate above the storage's: `Array.new` on the
         // backing array is not what `nextwith` from a user `new` reaches.
-        let container_protocol_override = Self::invocant_carries_native_storage(&invocant)
+        let container_protocol_override = native_storage
             && !matches!(method_name, "new" | "BUILDALL" | "POPULATE" | "clone")
-            && self.has_user_method_including_role(receiver_class, method_name);
+            && facts.user_method_including_role;
         // A user method that shadows an ancestor's auto-generated public
         // attribute accessor of the same name (`has $.body = ""` in a parent,
         // `method body(...) { ...callwith()... }` in the child) needs an MRO
@@ -88,10 +93,8 @@ impl Interpreter {
         // and silently answering Nil instead of reading the attribute
         // (Email::MIME's `Email::Simple` subclass overrides the auto `body`
         // reader this way).
-        let accessor_owner = super::user_method_probe_memo::probe_key(method_name)
-            .and_then(|name| self.first_public_accessor_owner(receiver_class, name));
-        let accessor_base_override =
-            accessor_owner.is_some() && self.has_user_method(receiver_class, method_name);
+        let accessor_owner = facts.accessor_owner;
+        let accessor_base_override = accessor_owner.is_some() && facts.user_method;
         // A user method on a subclass of a builtin metamodel HOW (OO::Monitors'
         // `MonitorHOW.new_type`) is the same situation once more: its base
         // candidate is the native metamethod (`native_metamodel_base`),
@@ -100,8 +103,7 @@ impl Interpreter {
         // one -- `use-ok 'Terminal::ANSI'` loads a `monitor` from inside the
         // `multi sub use-ok`, whose multi frame answered instead, handing back
         // the wrong value and breaking the class declaration.
-        let metamodel_base_override = self.is_metamodel_how_class(receiver_class)
-            && self.has_user_method(receiver_class, method_name);
+        let metamodel_base_override = facts.metamodel_how && facts.user_method;
         // A method the user `augment`ed onto a core type: the builtin of the
         // receiver's type is the last candidate (`DeferralEntry::Native`).
         let core_type_override = self.core_type_receiver_has_user_override(&invocant, method_name);
@@ -109,7 +111,7 @@ impl Interpreter {
         // the last candidate (`DeferralEntry::Native`, `any_base_native_entry`).
         let any_base_override = matches!(method_name, "gist" | "Str" | "raku")
             && matches!(invocant.view(), ValueView::Instance { .. })
-            && self.has_user_method(receiver_class, method_name);
+            && facts.user_method;
         // A grammar's own `method ws` / `alpha` / ...: the built-in rule on the
         // cursor is the last candidate (`DeferralEntry::Native`).
         // A user method on a class whose MRO reaches a built-in method of the
@@ -124,17 +126,17 @@ impl Interpreter {
         let builtin_ancestor_override = !matches!(
             invocant.view(),
             ValueView::Package(_) | ValueView::Mixin(..)
-        ) && !Self::invocant_carries_native_storage(&invocant)
-            && self.has_user_method(receiver_class, method_name)
+        ) && !native_storage
+            && facts.user_method
             && self.class_reaches_builtin_method(receiver_class, method_name);
         let grammar_rule_override = super::regex::regex_builtin_rule::is_builtin_rule_name(method_name)
             && matches!(invocant.view(), ValueView::Instance { .. })
-            && self.class_is_grammar(receiver_class)
-            && self.has_user_method(receiver_class, method_name);
+            && facts.user_method
+            && self.class_is_grammar(receiver_class);
         let how_receiver = metamodel_base_override
             || (matches!(invocant.view(), ValueView::Mixin(..))
                 && Self::how_target_from_value(&invocant).is_some()
-                && self.has_user_method_including_role(receiver_class, method_name));
+                && facts.user_method_including_role);
         let native_base_override = grammar_parse_override
             || how_receiver
             || grammar_rule_override
@@ -154,9 +156,7 @@ impl Interpreter {
         // The structural shape depends only on
         // (class, method), so it is memoized in `dispatch_multi_candidate` and
         // invalidated with the other method caches on any registry change.
-        if !native_base_override
-            && !self.has_multiple_dispatch_candidates(receiver_class, method_name)
-        {
+        if !native_base_override && !facts.multiple_candidates {
             return Ok(Self::empty_method_dispatch_frame(
                 receiver_class,
                 invocant,
@@ -179,10 +179,7 @@ impl Interpreter {
         // levels, while the expansion lists it once. With the winner already
         // resolved there is nothing else this build could observe or raise,
         // so the boundary is returned before the per-call match and clones.
-        if !native_base_override
-            && winner.is_some()
-            && self.deferral_expansion_shared(receiver_class, method_name).len() <= 1
-        {
+        if !native_base_override && winner.is_some() && facts.expansion_at_most_one {
             return Ok(Self::empty_method_dispatch_frame(
                 receiver_class,
                 invocant,

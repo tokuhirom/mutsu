@@ -481,6 +481,11 @@ pub(crate) struct ResolutionCaches {
     /// after the call has started` (see `method_dispatch_lazy`). Structural,
     /// cleared with `dispatch_multi_candidate`.
     pub(crate) deferral_build_context_free: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized `(class, method) -> what building a method dispatch frame asks
+    /// of the class and method name alone` (`method_frame_facts`).
+    /// Structural, cleared with `dispatch_multi_candidate`.
+    pub(crate) method_frame_facts:
+        rustc_hash::FxHashMap<(Symbol, Symbol), crate::runtime::method_frame_facts::MethodFrameFacts>,
     /// A method candidate's parameter list with its `where` clauses dropped,
     /// keyed by the original list's address (`resolution_lazy_where`). The
     /// entry holds the original too, so the address cannot be reused while
