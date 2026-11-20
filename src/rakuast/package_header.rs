@@ -241,7 +241,7 @@ pub(super) fn lower_with_header(
     {
         header.export_tags.take();
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::PackageHeader {
+    super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::PackageHeader {
         decl: Box::new(stmt),
         name,
         header,

@@ -35,8 +35,6 @@ use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
-use std::cell::RefCell;
-use std::collections::HashSet;
 
 /// The hidden field holding an `ApplyListInfix`'s adverbs.
 pub(super) const ADVERBS: &str = "adverbs";
@@ -247,39 +245,16 @@ fn keeps_native_dispatch(name: &str) -> bool {
     )
 }
 
-thread_local! {
-    /// The operators declared in each enclosing statement list, innermost last.
-    static SCOPES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
-}
-
-/// Pops the scope [`enter_scope`] pushed.
-pub(super) struct ScopeGuard;
-
-impl Drop for ScopeGuard {
-    fn drop(&mut self) {
-        SCOPES.with(|s| {
-            s.borrow_mut().pop();
-        });
-    }
-}
-
 /// Start a statement list: operators declared in it are visible to the rest of
 /// it and to what it contains, as in the parser.
 // Cost: O(1).
-pub(super) fn enter_scope() -> ScopeGuard {
-    SCOPES.with(|s| s.borrow_mut().push(HashSet::new()));
-    ScopeGuard
-}
-
-/// Forget every scope (a new unit starts).
-// Cost: O(s), s = open scopes.
-pub(super) fn reset() {
-    SCOPES.with(|s| s.borrow_mut().clear());
+pub(super) fn enter_scope(names: &NameScope) -> crate::scope::ListScope<'_> {
+    crate::scope::ListScope::enter(names, crate::scope::ListStack::Operators)
 }
 
 /// Record the `infix:<…>` the statement `stmt` declares, if it declares one.
 // Cost: O(1).
-pub(super) fn note_declaration(stmt: &RakuAstNode) {
+pub(super) fn note_declaration(names: &NameScope, stmt: &RakuAstNode) {
     let target = if stmt.class == RakuAstClass::StatementExpression {
         match named_child(stmt, "expression") {
             Ok(inner) => inner,
@@ -292,11 +267,7 @@ pub(super) fn note_declaration(stmt: &RakuAstNode) {
         return;
     };
     if name.starts_with("infix:<") && name.ends_with('>') {
-        SCOPES.with(|s| {
-            if let Some(scope) = s.borrow_mut().last_mut() {
-                scope.insert(name);
-            }
-        });
+        names.note_in_list(crate::scope::ListStack::Operators, name);
     }
 }
 
@@ -305,7 +276,7 @@ pub(super) fn note_declaration(stmt: &RakuAstNode) {
 // Cost: O(s), s = open scopes.
 fn is_declared(names: &NameScope, name: &str) -> bool {
     let routine = format!("infix:<{name}>");
-    SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(&routine)))
+    names.in_open_list(crate::scope::ListStack::Operators, &routine)
         || super::bareword::caller_declares_operator(names, &routine)
         || crate::parser::lowering_imported_routine(&routine)
 }

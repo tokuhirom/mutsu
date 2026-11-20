@@ -17,6 +17,7 @@ fn scope_declarations(scope: &RakuAstNode) -> HashMap<String, Value> {
     let noop = |_: &str| false;
     let mut scopes = Scopes {
         scopes: vec![HashMap::new()],
+        declared_routine: &noop,
         imported: &noop,
         imported_type: &noop,
         shadowed: &noop,
@@ -73,6 +74,8 @@ fn annotate_in(
 ) {
     let mut scopes = Scopes {
         scopes: outer,
+        // A node built at CHECK time is not a unit: no routine of it is hoisted.
+        declared_routine: &|_| false,
         imported,
         imported_type,
         shadowed: &|_| false,

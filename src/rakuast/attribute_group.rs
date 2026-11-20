@@ -172,7 +172,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         };
         attributes.push(super::attribute_decl::lower(names, member)?);
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeGroup(
+    super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::AttributeGroup(
         attributes,
     ))
 }
@@ -197,7 +197,7 @@ pub(super) fn lower_colon(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
         };
         attributes.push(super::attribute_decl::lower(names, member)?);
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeColonArglist(
+    super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::AttributeColonArglist(
         attributes,
     ))
 }

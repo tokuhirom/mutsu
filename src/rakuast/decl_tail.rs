@@ -324,7 +324,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Stmt
             Ok(tail) => tail,
             Err(error) => return Some(Err(error)),
         };
-        return Some(lower_tail(head, tail));
+        return Some(lower_tail(names, head, tail));
     }
     let (sigil, name) = declared_variable(&head)?;
     let seed = var_lexical(sigil, name);
@@ -332,12 +332,12 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Stmt
         Ok(tail) => tail,
         Err(error) => return Some(Err(error)),
     };
-    Some(lower_tail(head, tail))
+    Some(lower_tail(names, head, tail))
 }
 
 // Cost: O(1).
-fn lower_tail(head: Stmt, tail: Expr) -> Result<Stmt, RuntimeError> {
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::DeclTail {
+fn lower_tail(names: &NameScope, head: Stmt, tail: Expr) -> Result<Stmt, RuntimeError> {
+    super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::DeclTail {
         head: Box::new(head),
         tail,
     })

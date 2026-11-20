@@ -137,7 +137,7 @@ pub(super) fn lower_coercion(names: &NameScope, node: &RakuAstNode) -> Result<Ex
     };
     let base = &spelling[..open];
     let inner = &spelling[open + 1..spelling.len() - 1];
-    if inner.is_empty() && super::declared_routines::is_declared(base) {
+    if inner.is_empty() && super::declared_routines::is_declared(names, base) {
         return Ok(Expr::Literal(Value::package(
             crate::symbol::Symbol::intern(&format!("{base}(Any)")),
         )));

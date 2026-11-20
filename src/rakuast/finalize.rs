@@ -64,10 +64,9 @@ pub(super) fn finalize_unit(
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
     let _declared = super::bareword::DeclaredNames::collect(names, &stmts);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
-    super::shadowed_terms::scan_stmts(&stmts);
-    super::infix_func::reset();
-    let _operators = super::infix_func::enter_scope();
-    let _keywords = super::shadowed_terms::enter_scope();
+    let _unit = super::shadowed_terms::scan_stmts(names, &stmts);
+    let _operators = super::infix_func::enter_scope(names);
+    let _keywords = super::shadowed_terms::enter_scope(names);
     let mut finalize = Finalize {
         names,
         failed: None,
@@ -232,8 +231,8 @@ impl Finalize<'_> {
         let line = self.line;
         let converted = super::view::view_stmt(names, stmt).and_then(|node| match node {
             Some(node) => {
-                super::infix_func::note_declaration(&node);
-                super::shadowed_terms::note_keyword_declaration(&node);
+                super::infix_func::note_declaration(names, &node);
+                super::shadowed_terms::note_keyword_declaration(names, &node);
                 super::origin::with_line(line, || super::lower::lower_stmt(names, &node)).map(Some)
             }
             None => Ok(None),
@@ -407,7 +406,7 @@ impl VisitMut for Finalize<'_> {
             self.compound_operands(&mut compound);
             match super::compound::lower::lower_compound_expression_with(
                 compound,
-                super::shadowed_terms::is_value_term,
+                &|name| super::shadowed_terms::is_value_term(self.names, name),
             ) {
                 Ok(lowered) => *expr = lowered,
                 Err(err) => self.fail(RuntimeError::new(format!("{err:?}"))),
@@ -530,7 +529,7 @@ impl VisitMut for Finalize<'_> {
             self.compound_operands(&mut compound);
             match super::compound::lower::lower_compound_statement_with(
                 compound,
-                super::shadowed_terms::is_value_term,
+                &|name| super::shadowed_terms::is_value_term(self.names, name),
             ) {
                 Ok(lowered) => *stmt = lowered,
                 Err(err) => self.fail(RuntimeError::new(format!("{err:?}"))),
@@ -572,7 +571,7 @@ impl VisitMut for Finalize<'_> {
         if matches!(stmt, Stmt::Ast(node) if !matches!(node.as_ref(), ParsedStmt::RoutineTraits(_)))
             && let Stmt::Ast(node) = std::mem::replace(stmt, Stmt::Last(None))
         {
-            match super::lower_parsed_stmt(*node) {
+            match super::lower_parsed_stmt(self.names, *node) {
                 Ok(lowered) => *stmt = lowered,
                 Err(err) => self.fail(err),
             }

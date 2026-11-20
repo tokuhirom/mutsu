@@ -12,18 +12,12 @@
 //! The scan ignores scoping (a declaration anywhere in the unit counts), which
 //! is the same approximation `shadowed_terms` makes for the math constants.
 
-use std::cell::RefCell;
-use std::collections::HashSet;
 
 use super::lower::{call_name_str, leaf_str};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::Value;
 use crate::value::ValueView;
-
-thread_local! {
-    static DECLARED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
-}
 
 /// The parser's decision that this call targets a user or imported routine.
 /// RakuAST's printed call has no field for that choice, but lowering must not
@@ -73,16 +67,11 @@ pub(super) fn is_user_call_field(field: &RakuAstField) -> bool {
     field.name == Some(USER_CALL)
 }
 
-/// Replace the routine names the unit declares (found by `shadowed_terms::scan`).
-// Cost: O(1).
-pub(super) fn set(found: HashSet<String>) {
-    DECLARED.with(|d| *d.borrow_mut() = found);
-}
-
-/// Whether the unit last passed to [`set`] declares a routine named `name`.
-// Cost: O(1).
-pub(super) fn is_declared(name: &str) -> bool {
-    DECLARED.with(|d| d.borrow().contains(name))
+/// Whether the unit being lowered declares a routine named `name` (found by
+/// `shadowed_terms::scan`).
+// Cost: O(k), k = length of `name`.
+pub(super) fn is_declared(names: &crate::scope::NameScope, name: &str) -> bool {
+    names.unit().routines.contains(name)
 }
 
 /// The routine name `node` itself declares (not its children): a named `sub`,

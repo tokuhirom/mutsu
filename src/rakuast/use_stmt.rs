@@ -648,7 +648,7 @@ pub(super) fn lower_use(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         site: 0,
     };
     Ok(match inline_proto {
-        Some(proto) => super::lower_parsed_stmt(crate::ast::parsed::ParsedStmt::InlineProtoUse {
+        Some(proto) => super::lower_parsed_stmt(names, crate::ast::parsed::ParsedStmt::InlineProtoUse {
             proto: Box::new(proto),
             use_stmt: Box::new(use_stmt),
         })?,

@@ -753,7 +753,7 @@ pub(super) fn term_expr(names: &NameScope, name: &str) -> Option<Expr> {
     if super::label_context::lookup(name).is_some() {
         return None;
     }
-    Some(super::lower::term_identifier_expr(name))
+    Some(super::lower::term_identifier_expr(names, name))
 }
 
 /// A plain-identifier type word (a native type such as `uint8`, a setting or

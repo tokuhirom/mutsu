@@ -94,7 +94,9 @@ fn statement_list_span(body: &[Stmt], blockoid: SrcSpan) -> SrcSpan {
 /// compile-time errors of the construct are raised at parse time.
 // Cost: O(n), n = size of the construct (twice).
 pub(crate) fn finish(node: ParsedStmt) -> Result<Stmt, crate::value::RuntimeError> {
-    crate::rakuast::lower_parsed_stmt(node.clone())?;
+    // The parse-time lowering only raises the construct's compile-time errors;
+    // the unit's own declarations are not known yet, so it runs in no scope.
+    crate::rakuast::lower_parsed_stmt(&crate::scope::NameScope::default(), node.clone())?;
     Ok(Stmt::Ast(Box::new(node)))
 }
 
