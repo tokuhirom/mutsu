@@ -202,6 +202,11 @@ impl Interpreter {
                 if method_def.default_prologue(idx) && !Self::named_param_supplied(pd, args) {
                     return true;
                 }
+                // A supplied `:$x is raw` was classified with the container
+                // parameters above (`container_light`).
+                if Self::method_named_container_param_ok(pd) && container_light {
+                    return true;
+                }
                 Self::named_param_fast_eligible(
                     pd,
                     args,

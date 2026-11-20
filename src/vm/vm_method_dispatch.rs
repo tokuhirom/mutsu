@@ -2159,6 +2159,17 @@ impl Interpreter {
                     }
                 });
                 let val = match bound {
+                    // A `:$x is raw` the gate admitted
+                    // (`method_container_args_light`) and the promotion
+                    // rewrote: a shared cell or a Proxy aliases the caller's
+                    // container, anything else is a read-only term.
+                    Some(v) if pd.binds_caller_container() => {
+                        let v = crate::runtime::types::unwrap_varref_value(v);
+                        if !(v.is_container_ref() || v.is_proxy_value()) {
+                            raw_readonly_params.push(binding_sym);
+                        }
+                        v
+                    }
                     // `@`-sigiled (attributive) named param: re-home a List
                     // into an Array (mirrors `bind_param_value`); scalar named
                     // params are item bindings (mirrors the slow binder's

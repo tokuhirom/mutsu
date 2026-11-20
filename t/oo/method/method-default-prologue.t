@@ -4,7 +4,7 @@ use Test;
 # prologue (#18320): evaluated in the method frame, in parameter order, with
 # `self`, attributes and earlier parameters visible.
 
-plan 16;
+plan 21;
 
 my @log;
 sub note-default($what) { @log.push($what); $what }
@@ -61,3 +61,21 @@ $sum += $c.attr for ^50;
 is $sum, 300, 'a deferred default in a loop';
 
 is $c.topic, 'Any', 'a default reading the topic sees the method\'s own fresh topic';
+
+# A supplied `:$x is raw` aliases the caller's variable; a literal is read-only.
+class R {
+    method set(:$x is raw) { $x = 42 }
+    method get(:$x is raw) { $x }
+    method m(Mu $i is raw, Mu :$type is raw = Int) { $type.^name }
+    method relay(Mu $type is raw) { self.m(1, :$type) }
+}
+my $r = R.new;
+my $rv = 1;
+$r.set(:x($rv));
+is $rv, 42, 'a named is raw parameter writes through to the caller variable';
+my @zs;
+for ^3 { my $z = 0; $r.set(:x($z)); @zs.push($z) }
+is @zs.join(','), '42,42,42', 'a fresh caller variable per iteration is aliased each time';
+is $r.get(:x(7)), 7, 'a named is raw parameter reads a literal';
+dies-ok { $r.set(:x(7)) }, 'a named is raw parameter bound to a literal is read-only';
+is (^3).map({ $r.relay(Str) }).join(','), 'Str,Str,Str', 'a raw parameter relayed as a named is raw argument';

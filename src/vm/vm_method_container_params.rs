@@ -95,6 +95,61 @@ impl Interpreter {
             })
     }
 
+    /// Whether the named container parameter `pd` has a shape this path
+    /// binds: a `$`-sigiled `:$x is raw` (no other trait, no alias, no
+    /// `where`, no sub-signature), with the constraint rule of
+    /// [`Self::method_container_param_ok`].
+    // Cost: O(t + len(tc)), t = traits, tc = the constraint's spelling.
+    pub(crate) fn method_named_container_param_ok(pd: &crate::ast::ParamDef) -> bool {
+        pd.named
+            && !pd.sigilless
+            && pd.traits.len() == 1
+            && pd.traits[0] == "raw"
+            && !pd.named_alias
+            && !pd.slurpy
+            && !pd.double_slurpy
+            && !pd.is_invocant
+            && !pd.is_does_target()
+            && pd.name != "_"
+            && pd
+                .name
+                .as_bytes()
+                .first()
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+            && pd.where_constraint.is_none()
+            && pd.sub_signature.is_none()
+            && pd.outer_sub_signature.is_none()
+            && pd.code_signature.is_none()
+            && pd.literal_value.is_none()
+            && pd.type_capture.is_none()
+            && pd.type_constraint.as_deref().is_none_or(|tc| {
+                !tc.contains('(')
+                    && !crate::runtime::native_types::is_native_int_type(tc)
+                    && !matches!(tc, "str" | "num" | "num32" | "num64")
+            })
+    }
+
+    /// The argument the named parameter `pd` binds: the index and value of
+    /// the rightmost Pair whose key is the parameter's (the one the fast
+    /// binder takes), or `None` when the call supplies none.
+    // Cost: O(a), a = arguments.
+    pub(crate) fn named_container_arg(
+        pd: &crate::ast::ParamDef,
+        args: &[Value],
+    ) -> Option<(usize, Value)> {
+        let key = Self::named_param_fast_match_key(pd)?;
+        args.iter().enumerate().rev().find_map(|(i, a)| {
+            let a = a.unwrap_varref();
+            if !a.is_string_pair_value() {
+                return None;
+            }
+            match a.view() {
+                ValueView::Pair(k, v) if k.as_str() == key => Some((i, v.clone())),
+                _ => None,
+            }
+        })
+    }
+
     /// Classify argument `arg_idx` (`arg`) of the container parameter `pd`
     /// the way the general binder would bind it, or `None` for every shape
     /// whose binding needs that binder: an attribute, dynamic, topic or
@@ -114,6 +169,16 @@ impl Interpreter {
             .pending_call_arg_sources()
             .filter(|sources| sources.len() == arg_count)
             .map(|sources| sources.get(arg_idx).cloned().flatten());
+        // A named argument's source is recorded as `key=source`
+        // (`:$type` → `type=type`); `arg` is then the Pair's value.
+        let source = if pd.named {
+            match source {
+                Some(Some(encoded)) => Some(Some(encoded.split_once('=')?.1.to_string())),
+                other => other,
+            }
+        } else {
+            source
+        };
         let bind = match source {
             Some(Some(name)) => self.method_container_source_bind(&name, arg)?,
             // The call site says the argument is no variable -- or it recorded
@@ -287,13 +352,26 @@ impl Interpreter {
             if !(pd.binds_caller_container() || pd.is_does_target()) {
                 continue;
             }
-            // An omitted named `is raw` parameter binds its default, which
-            // the default prologue evaluates (`vm_method_default_prologue`):
-            // there is no caller container to alias.
-            if pd.named
-                && method_def.default_prologue(idx)
-                && !Self::named_param_supplied(pd, args)
-            {
+            if pd.named {
+                // A named `is raw` parameter binds the argument the call
+                // supplied for it, classified like a positional one; an
+                // omitted one binds its default, which the default prologue
+                // evaluates (`vm_method_default_prologue`): there is no
+                // caller container to alias.
+                if !Self::method_named_container_param_ok(pd) {
+                    return false;
+                }
+                match Self::named_container_arg(pd, args) {
+                    Some((arg_idx, value)) => {
+                        match self.method_container_arg_bind(pd, arg_idx, &value, args.len()) {
+                            Some(bind) if bind.writable() && cc.uses_dispatcher => return false,
+                            Some(_) => {}
+                            None => return false,
+                        }
+                    }
+                    None if method_def.default_prologue(idx) => {}
+                    None => return false,
+                }
                 continue;
             }
             if !Self::method_container_param_ok(pd) {
@@ -340,37 +418,71 @@ impl Interpreter {
             if !pd.binds_caller_container() {
                 continue;
             }
-            let Some(idx) = idx else { continue };
-            match self.method_container_arg_bind(pd, idx, &args[idx], arg_count) {
-                Some(MethodContainerBind::RelayHeld(slot)) => {
-                    args[idx] = self.locals[slot as usize].clone();
-                }
-                Some(MethodContainerBind::Promote(slot)) => {
-                    let Some(Some(name)) = self
-                        .pending_call_arg_sources()
-                        .and_then(|sources| sources.get(idx).cloned())
-                    else {
-                        continue;
-                    };
-                    let Some(code_addr) = (self.current_code != 0).then_some(self.current_code)
-                    else {
-                        continue;
-                    };
-                    // SAFETY: `current_code` is the address of the live
-                    // bytecode frame's `CompiledCode` -- the caller running the
-                    // method call -- which `vm_call_*` keeps alive for the whole
-                    // frame; the promotion below does not return into it.
-                    let code = unsafe { &*(code_addr as *const CompiledCode) };
-                    let inner = crate::runtime::types::unwrap_varref_value(args[idx].clone());
-                    let cell = self.capture_rw_arg_cell(code, &name, inner, Some(slot));
-                    self.register_container_cell_constraint_for_name(&cell, &name);
-                    args[idx] = cell;
-                }
-                Some(MethodContainerBind::Readonly) => {
-                    args[idx] = crate::runtime::types::unwrap_varref_value(args[idx].clone());
-                }
-                Some(MethodContainerBind::Relay | MethodContainerBind::Proxy) | None => {}
+            if pd.named {
+                self.promote_method_named_container_arg(pd, args);
+                continue;
             }
+            let Some(idx) = idx else { continue };
+            let arg = std::mem::replace(&mut args[idx], Value::NIL);
+            args[idx] = self.promoted_container_arg(pd, idx, arg, arg_count);
+        }
+    }
+
+    /// [`Self::promote_method_container_args`] for the named container
+    /// parameter `pd`: the Pair carrying its argument is rebuilt around the
+    /// promoted value.
+    // Cost: O(a), a = arguments, plus one cell promotion.
+    fn promote_method_named_container_arg(&mut self, pd: &crate::ast::ParamDef, args: &mut [Value]) {
+        let Some((idx, value)) = Self::named_container_arg(pd, args) else {
+            return;
+        };
+        let arg_count = args.len();
+        let promoted = self.promoted_container_arg(pd, idx, value, arg_count);
+        if let Some(key) = Self::named_param_fast_match_key(pd) {
+            args[idx] = Value::pair(key.to_string(), promoted);
+        }
+    }
+
+    /// The value the admitted container argument `arg` (argument `idx` of
+    /// `arg_count`) of `pd` binds as: a caller variable's shared cell
+    /// (promoting its slot when it holds a plain value), or the value itself.
+    // Cost: O(1), plus one cell promotion.
+    fn promoted_container_arg(
+        &mut self,
+        pd: &crate::ast::ParamDef,
+        idx: usize,
+        arg: Value,
+        arg_count: usize,
+    ) -> Value {
+        match self.method_container_arg_bind(pd, idx, &arg, arg_count) {
+            Some(MethodContainerBind::RelayHeld(slot)) => self.locals[slot as usize].clone(),
+            Some(MethodContainerBind::Promote(slot)) => {
+                let name = self
+                    .pending_call_arg_sources()
+                    .and_then(|sources| sources.get(idx).cloned())
+                    .flatten()
+                    .map(|name| match name.split_once('=') {
+                        Some((_, source)) if pd.named => source.to_string(),
+                        _ => name,
+                    });
+                let Some(name) = name else {
+                    return arg;
+                };
+                let Some(code_addr) = (self.current_code != 0).then_some(self.current_code) else {
+                    return arg;
+                };
+                // SAFETY: `current_code` is the address of the live
+                // bytecode frame's `CompiledCode` -- the caller running the
+                // method call -- which `vm_call_*` keeps alive for the whole
+                // frame; the promotion below does not return into it.
+                let code = unsafe { &*(code_addr as *const CompiledCode) };
+                let inner = crate::runtime::types::unwrap_varref_value(arg);
+                let cell = self.capture_rw_arg_cell(code, &name, inner, Some(slot));
+                self.register_container_cell_constraint_for_name(&cell, &name);
+                cell
+            }
+            Some(MethodContainerBind::Readonly) => crate::runtime::types::unwrap_varref_value(arg),
+            Some(MethodContainerBind::Relay | MethodContainerBind::Proxy) | None => arg,
         }
     }
 }
