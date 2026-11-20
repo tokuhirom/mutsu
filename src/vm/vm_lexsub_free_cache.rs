@@ -138,6 +138,30 @@ impl Interpreter {
             return;
         }
         let id = frame.invocation_id;
+        // The first read of a name in a call only marks it (a `Nil`
+        // placeholder, which `lexsub_free_cache_read` never serves): the
+        // lookup below costs about what one more chain walk does, so a name a
+        // call reads once is not worth it. The second read fills the entry.
+        let cache = &mut self.lexicals.lexsub_free_cache;
+        // A returned callee's entries (a larger id) are dead; a caller's (a
+        // smaller id) stay for when it runs again.
+        while cache.last().is_some_and(|(owner, _, _)| *owner > id) {
+            cache.pop();
+        }
+        let top = cache
+            .iter()
+            .rposition(|(owner, sym, _)| *owner != id || *sym == name_sym)
+            .filter(|&i| cache[i].0 == id);
+        let slot = match top {
+            None => {
+                if cache.len() < LEXSUB_FREE_CACHE_CAP {
+                    cache.push((id, name_sym, Value::NIL));
+                }
+                return;
+            }
+            Some(i) if cache[i].2.is_nil() => i,
+            Some(_) => return,
+        };
         if !self.lexsub_free_cache_guards_hold(name)
             || self.env().frame_capture_holds_name(name, Some(name_sym))
         {
@@ -173,20 +197,8 @@ impl Interpreter {
         if !cell.deref_clone().same_binding(val) {
             return;
         }
-        let cache = &mut self.lexicals.lexsub_free_cache;
-        // A returned callee's entries (a larger id) are dead; a caller's (a
-        // smaller id) stay for when it runs again.
-        while cache.last().is_some_and(|(owner, _, _)| *owner > id) {
-            cache.pop();
-        }
-        if cache.len() < LEXSUB_FREE_CACHE_CAP
-            && !cache
-                .iter()
-                .rev()
-                .take_while(|(owner, _, _)| *owner == id)
-                .any(|(_, sym, _)| *sym == name_sym)
-        {
-            cache.push((id, name_sym, cell));
+        if let Some(entry) = self.lexicals.lexsub_free_cache.get_mut(slot) {
+            entry.2 = cell;
         }
     }
 }
