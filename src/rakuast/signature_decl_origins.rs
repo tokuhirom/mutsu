@@ -24,6 +24,11 @@ pub(super) struct Written {
     /// A named parameter `:$x`: written with the colon, which the parameter's
     /// range includes and its target's does not.
     named: bool,
+    /// The `?` / `!` an `optional` field may have been written as.
+    marker: Option<char>,
+    /// The byte range of the default (`$x = 42`), which the parameter's range
+    /// runs to.
+    default: Option<(usize, usize)>,
 }
 
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
@@ -104,8 +109,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 matches!(
                     f.name,
                     Some(
-                        "default"
-                            | "where"
+                        "where"
                             | "type-captures"
                             | "invocant"
                             | "array-shape"
@@ -137,6 +141,21 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     true
                 }
             };
+            // `$x?` / `:$x!`: an `optional` the default would not give.
+            let marker = match param.fields.iter().find(|f| f.name == Some("optional")) {
+                None => None,
+                Some(field) => {
+                    let RakuAstFieldValue::Node(value) = &field.value else {
+                        return None;
+                    };
+                    Some(if value.truthy() { '?' } else { '!' })
+                }
+            };
+            // `$x = 42`: the default must carry its range.
+            let default = match child(param, "default") {
+                None => None,
+                Some(value) => Some(super::infix_origins::byte_range(value)?),
+            };
             if target.class == RakuAstClass::ParameterTargetTerm {
                 let name = leaf_text(child_at(target, 0)?)?;
                 return Some(Written {
@@ -144,6 +163,8 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     var: name,
                     term: true,
                     named,
+                    marker,
+                    default,
                 });
             }
             if target.class != RakuAstClass::ParameterTargetVar {
@@ -154,6 +175,8 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 var: leaf_text(target)?,
                 term: false,
                 named,
+                marker,
+                default,
             })
         })
         .collect()
@@ -249,6 +272,21 @@ pub(super) fn scan(
         inner[at..].strip_prefix(written.var.as_str())?;
         let var = SrcSpan::new(base + at, base + at + written.var.len());
         at += written.var.len();
+        // A pointy block's positional parameter is `optional => False` with
+        // nothing written: the marker is read when it is there.
+        if let Some(marker) = written.marker
+            && inner[at..].starts_with(marker)
+        {
+            at += 1;
+        }
+        if let Some((from, to)) = written.default {
+            let rest = inner[at..].trim_start().strip_prefix('=')?;
+            let value_at = inner.len() - rest.trim_start().len();
+            if base + value_at != from || to < base + value_at {
+                return None;
+            }
+            at = to - base;
+        }
         out.push(Spans {
             param: SrcSpan::new(base + start, base + at),
             var,
