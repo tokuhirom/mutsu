@@ -38,9 +38,10 @@ pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, R
                 fields: Vec::new(),
             };
             if !args.is_empty() {
-                call_term
-                    .fields
-                    .push(super::view::node_field(Some("args"), super::view::arg_list(names, args)?));
+                call_term.fields.push(super::view::node_field(
+                    Some("args"),
+                    super::view::arg_list(names, args)?,
+                ));
             }
             Ok(RakuAstNode {
                 origin: Default::default(),

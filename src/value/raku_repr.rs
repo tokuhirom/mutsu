@@ -23,8 +23,10 @@ pub(crate) fn escape_raku_str(s: &str) -> String {
             continue;
         };
         if is_prepend(first) || (at_break && !first.is_control() && extends_previous(first)) {
-            let codepoints: Vec<String> =
-                grapheme.chars().map(|c| format!("{:X}", c as u32)).collect();
+            let codepoints: Vec<String> = grapheme
+                .chars()
+                .map(|c| format!("{:X}", c as u32))
+                .collect();
             out.push_str("\\x[");
             out.push_str(&codepoints.join(","));
             out.push(']');
@@ -43,22 +45,22 @@ pub(crate) fn escape_raku_str(s: &str) -> String {
 /// One character of a `Str.raku` body, escaped as needed.
 // Cost: O(1).
 fn push_raku_char(out: &mut String, c: char) {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '$' => out.push_str("\\$"),
-            '@' => out.push_str("\\@"),
-            '%' => out.push_str("\\%"),
-            '&' => out.push_str("\\&"),
-            '{' => out.push_str("\\{"),
-            '\0' => out.push_str("\\0"),
-            '\u{8}' => out.push_str("\\b"),
-            '\t' => out.push_str("\\t"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            c if c.is_control() => out.push_str(&format!("\\x[{:X}]", c as u32)),
-            c => out.push(c),
-        }
+    match c {
+        '\\' => out.push_str("\\\\"),
+        '"' => out.push_str("\\\""),
+        '$' => out.push_str("\\$"),
+        '@' => out.push_str("\\@"),
+        '%' => out.push_str("\\%"),
+        '&' => out.push_str("\\&"),
+        '{' => out.push_str("\\{"),
+        '\0' => out.push_str("\\0"),
+        '\u{8}' => out.push_str("\\b"),
+        '\t' => out.push_str("\\t"),
+        '\n' => out.push_str("\\n"),
+        '\r' => out.push_str("\\r"),
+        c if c.is_control() => out.push_str(&format!("\\x[{:X}]", c as u32)),
+        c => out.push(c),
+    }
 }
 
 /// Format a BigRat with a terminating decimal as an exact decimal string.

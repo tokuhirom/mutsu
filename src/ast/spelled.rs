@@ -223,7 +223,11 @@ impl Expr {
     /// `@`, `$<name>.hash` otherwise.
     // Cost: O(|name|).
     pub(crate) fn named_capture_call(name: &str, sigil: char) -> Expr {
-        let (method, sugar) = if sigil == '@' { ("list", true) } else { ("hash", false) };
+        let (method, sugar) = if sigil == '@' {
+            ("list", true)
+        } else {
+            ("hash", false)
+        };
         Expr::MethodCall {
             target: Box::new(Expr::CaptureVar(name.to_string())),
             name: crate::symbol::Symbol::intern(method),
