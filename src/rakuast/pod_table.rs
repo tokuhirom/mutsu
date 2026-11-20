@@ -59,14 +59,17 @@ fn is_row_divider(c: char) -> bool {
 fn is_ws(c: char) -> bool {
     matches!(
         c,
-        ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+        ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
     )
 }
 
 /// The byte offset of character `at` of `line` (its length past the end).
 // Cost: O(at).
 fn byte_at(line: &str, at: usize) -> usize {
-    line.char_indices().nth(at).map_or(line.len(), |(byte, _)| byte)
+    line.char_indices()
+        .nth(at)
+        .map_or(line.len(), |(byte, _)| byte)
 }
 
 /// The table of `raw`, the lines of the block's body.
