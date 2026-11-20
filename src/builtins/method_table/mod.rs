@@ -126,7 +126,7 @@ pub(crate) use dispatch::{
     invoke_in, invoke_mro, invoke_mro_late, invoke_mut, invoke_owner, invoke_owner_raw,
     shapeless_row, try_dispatch_in,
 };
-pub(crate) use implicit_named::strip_undeclared_nameds;
+pub(crate) use implicit_named::{strip_undeclared_nameds, strip_undeclared_nameds_sym};
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use mutating::type_object_owners as mut_type_object_owners;
 pub(crate) use owner_pure::invoke_owner_pure;

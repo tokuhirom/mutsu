@@ -1351,7 +1351,7 @@ impl Interpreter {
         // for this cascade: if it declines, the original `args` (nameds intact)
         // go on to the by-name dispatchers, the constructors and the user
         // method, none of which may lose a named.
-        let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
+        let cascade_stripped = crate::builtins::strip_undeclared_nameds_sym(method_sym, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
         let inherited_adhoc = (!bypass_native_fastpath)
             .then(|| self.inherited_adhoc_method(&target, method, cascade_args))
@@ -1760,7 +1760,7 @@ impl Interpreter {
         // named argument the method does not accept is dropped here too. The
         // filtered list reaches ONLY these three: `dispatch_new_and_constructors`
         // and everything after it below still sees the call's own `args`.
-        let by_name_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
+        let by_name_stripped = crate::builtins::strip_undeclared_nameds_sym(method_sym, &args);
         let by_name_args: &[Value] = by_name_stripped.as_deref().unwrap_or(&args);
 
         // Primary method dispatch by name (group 1: string, IO, coercion, misc)

@@ -53,53 +53,6 @@ impl Interpreter {
         self.has_user_method_of(class, method) || self.has_user_method_of(class, fallback_sym())
     }
 
-    /// The action-method name the winning proto-regex variant dispatches to.
-    ///
-    /// The winning-variant marker records only the adverb's *value* (`num`),
-    /// which two different declaration spellings share:
-    ///
-    /// | declaration | action method |
-    /// | --- | --- |
-    /// | `token pair:sym<num>` | `method pair:sym<num>` |
-    /// | `token pair:num` (bare adverb) | `method pair:num` |
-    ///
-    /// So the name is recovered by asking the actions class which of the two it
-    /// actually declares, preferring the `:sym<...>` spelling (by far the more
-    /// common one, and the only one that binds a `<sym>` literal). With no
-    /// actions class to ask, the `:sym<...>` spelling is assumed.
-    pub(crate) fn variant_action_method_name(
-        &mut self,
-        actions_class: Option<&str>,
-        rule_name: &str,
-        sym_val: &str,
-    ) -> String {
-        let bracketed = if sym_val.contains('<') || sym_val.contains('>') {
-            format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}")
-        } else {
-            format!("{rule_name}:sym<{sym_val}>")
-        };
-        let Some(cn) = actions_class else {
-            return bracketed;
-        };
-        if self.has_user_method(cn, &bracketed) {
-            return bracketed;
-        }
-        let bare = format!("{rule_name}:{sym_val}");
-        if self.has_user_method(cn, &bare) {
-            return bare;
-        }
-        // A shorthand proto candidate (`rule modifier:<null>`) has the same
-        // runtime variant value as `rule modifier:sym<null>`, but its grammar
-        // action method keeps the shorthand spelling. Try that spelling after
-        // the established `:sym<>` and bare-adverb forms so existing action
-        // dispatch remains preferred when both declarations are present.
-        let shorthand = format!("{rule_name}:<{sym_val}>");
-        if self.has_user_method(cn, &shorthand) {
-            return shorthand;
-        }
-        bracketed
-    }
-
     /// [`Self::invoke_grammar_actions`], but at most once per capture node
     /// within one parent's child walk.
     ///
@@ -202,9 +155,10 @@ impl Interpreter {
     pub(crate) fn node_action_method(
         &mut self,
         actions_class: Option<Symbol>,
-        rule_name: &str,
+        rule: Symbol,
         sym: Option<Symbol>,
     ) -> NodeActionTarget {
+        let rule_name = rule.as_str();
         let sym_method = sym.map(|sym| {
             let class_name = actions_class.map(|cn| cn.resolve());
             self.variant_action_method_name(class_name.as_deref(), rule_name, &sym.resolve())
@@ -219,11 +173,8 @@ impl Interpreter {
                 return (Some(Some(name)), sym_method);
             }
         }
-        if !rule_name.is_empty() {
-            let name = Symbol::intern(rule_name);
-            if self.actions_answer_method_of(class, name) {
-                return (Some(Some(name)), sym_method);
-            }
+        if !rule_name.is_empty() && self.actions_answer_method_of(class, rule) {
+            return (Some(Some(rule)), sym_method);
         }
         (None, sym_method)
     }
@@ -239,7 +190,33 @@ impl Interpreter {
         if match_obj.match_node_reduced() {
             return Ok(match_obj);
         }
-        let node = match match_obj.match_action_walk_node() {
+        // An unforced lazy node with no action of its own and nothing pending
+        // below (its subrules all dispatched at their reduction) needs no walk
+        // node: skipping it is all a start rule without an action costs after
+        // a parse (#18207).
+        // With an action of its own, such a node gets an empty walk node
+        // (nothing to descend into, no allocation).
+        let mut done_node = None;
+        let target = match (target, match_obj.match_lazy_sym()) {
+            (target, Some(sym)) => {
+                let own = match target {
+                    Some(target) => target,
+                    None => {
+                        let actions_class = Self::actions_class_sym(actions);
+                        self.node_action_method(actions_class, Symbol::intern(rule_name), sym)
+                    }
+                };
+                if match_obj.match_lazy_walk_is_done() {
+                    if own.0.is_none() {
+                        return Ok(match_obj);
+                    }
+                    done_node = Some(ActionWalkNode::lazy_done(sym));
+                }
+                Some(own)
+            }
+            (target, None) => target,
+        };
+        let node = match done_node.or_else(|| match_obj.match_action_walk_node()) {
             Some(node) => node,
             None => match Self::eager_action_walk_node(&match_obj) {
                 Some(found) => found,
@@ -250,7 +227,7 @@ impl Interpreter {
             Some(target) => target,
             None => {
                 let actions_class = Self::actions_class_sym(actions);
-                self.node_action_method(actions_class, rule_name, node.sym)
+                self.node_action_method(actions_class, Symbol::intern(rule_name), node.sym)
             }
         };
         let has_own_action = own_action.is_some();

@@ -20,6 +20,53 @@
 use super::*;
 
 impl Interpreter {
+    /// The action-method name the winning proto-regex variant dispatches to.
+    ///
+    /// The winning-variant marker records only the adverb's *value* (`num`),
+    /// which two different declaration spellings share:
+    ///
+    /// | declaration | action method |
+    /// | --- | --- |
+    /// | `token pair:sym<num>` | `method pair:sym<num>` |
+    /// | `token pair:num` (bare adverb) | `method pair:num` |
+    ///
+    /// So the name is recovered by asking the actions class which of the two it
+    /// actually declares, preferring the `:sym<...>` spelling (by far the more
+    /// common one, and the only one that binds a `<sym>` literal). With no
+    /// actions class to ask, the `:sym<...>` spelling is assumed.
+    pub(crate) fn variant_action_method_name(
+        &mut self,
+        actions_class: Option<&str>,
+        rule_name: &str,
+        sym_val: &str,
+    ) -> String {
+        let bracketed = if sym_val.contains('<') || sym_val.contains('>') {
+            format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}")
+        } else {
+            format!("{rule_name}:sym<{sym_val}>")
+        };
+        let Some(cn) = actions_class else {
+            return bracketed;
+        };
+        if self.has_user_method(cn, &bracketed) {
+            return bracketed;
+        }
+        let bare = format!("{rule_name}:{sym_val}");
+        if self.has_user_method(cn, &bare) {
+            return bare;
+        }
+        // A shorthand proto candidate (`rule modifier:<null>`) has the same
+        // runtime variant value as `rule modifier:sym<null>`, but its grammar
+        // action method keeps the shorthand spelling. Try that spelling after
+        // the established `:sym<>` and bare-adverb forms so existing action
+        // dispatch remains preferred when both declarations are present.
+        let shorthand = format!("{rule_name}:<{sym_val}>");
+        if self.has_user_method(cn, &shorthand) {
+            return shorthand;
+        }
+        bracketed
+    }
+
     /// Call the action method for one reduced node: the proto variant's
     /// `rule:sym<...>` method when the node carries one and the actions class
     /// answers it, else the plain `rule_name` method. Returns whether an

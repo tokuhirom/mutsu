@@ -159,7 +159,9 @@ impl MatchNode {
             // never carries them. Answering `None` here rather than falling
             // through keeps a probe for one from forcing the materialization.
             "pos" => self.cap.kids().pos.map(|pos| Value::Int(pos as i64)),
-            "actions" | "__failed_match__" => None,
+            // `actions` is on the start rule's node of a parse only.
+            "actions" => self.cap.kids().actions.clone(),
+            "__failed_match__" => None,
             crate::value::match_view::CURSOR_REGEXSUB_ATTR => None,
             _ => self.force_attrs().as_map().get(name).cloned(),
         }
@@ -250,6 +252,9 @@ impl MatchNode {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             attrs.insert(wk::match_reduce_time_vars(), Value::hash_bare_values(vars));
+        }
+        if let Some(actions) = &kids.actions {
+            attrs.insert("actions", actions.clone());
         }
         if !kids.capture_alias_map.is_empty() {
             let alias_hash: ValueMap = kids
@@ -366,6 +371,19 @@ impl ActionWalkNode {
         }
     }
 
+    /// The walk node of a lazy Match with nothing left to dispatch below it
+    /// (see `Value::match_lazy_walk_is_done`): what
+    /// [`Value::match_action_walk_node`] would build for it, without the scan.
+    // Cost: O(1), no allocation.
+    pub(crate) fn lazy_done(sym: Option<Symbol>) -> Self {
+        Self {
+            sym,
+            has_named_hash: true,
+            captures: WalkCaptures::Lazy,
+            ..Self::default()
+        }
+    }
+
     /// Nothing below this node is left to dispatch.
     pub(crate) fn has_no_children(&self) -> bool {
         self.named_children.is_empty()
@@ -427,7 +445,7 @@ impl ActionWalkNode {
 /// Whether a positional group's capture node can still dispatch an action:
 /// it has captures of its own to descend into, or it was filed under an
 /// aliased rule name, and its action has not run yet.
-fn group_may_dispatch(sc: &CapNode) -> bool {
+pub(super) fn group_may_dispatch(sc: &CapNode) -> bool {
     (sc.children.is_some() || sc.action_name.is_some() || sc.sym.is_some()) && !sc.reduced.get()
 }
 
