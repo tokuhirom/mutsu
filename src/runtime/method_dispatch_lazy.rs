@@ -35,7 +35,9 @@ pub(crate) struct PendingMethodCall {
     receiver_class: Symbol,
     method_name: Symbol,
     invocant: Value,
-    args: Vec<Value>,
+    /// Shared with the call's samewith context (both are read-only copies of
+    /// the call's arguments).
+    args: std::sync::Arc<[Value]>,
     winner: Option<MethodDispatchWinner>,
 }
 
@@ -51,7 +53,7 @@ pub(crate) struct PendingMethodDispatch {
 impl PendingMethodDispatch {
     /// The values this entry keeps alive, for the GC root walk.
     pub(crate) fn roots(&self) -> (&Value, &[Value]) {
-        (&self.call.invocant, self.call.args.as_slice())
+        (&self.call.invocant, &self.call.args)
     }
 }
 
@@ -144,8 +146,8 @@ impl Interpreter {
         let receiver_class = receiver_sym.as_str();
         let method_name = method_sym.as_str();
         // Always push samewith context so samewith() can find the method name/invocant
-        self.push_method_samewith_context_named(
-            receiver_class,
+        let shared_args = self.push_method_samewith_context_named(
+            receiver_sym,
             name,
             args,
             Some(invocant.clone()),
@@ -198,7 +200,8 @@ impl Interpreter {
                     receiver_class: receiver_sym,
                     method_name: method_sym,
                     invocant,
-                    args: args.to_vec(),
+                    // The samewith context's copy, when it made one.
+                    args: shared_args.unwrap_or_else(|| std::sync::Arc::from(args)),
                     winner,
                 },
             });
@@ -284,6 +287,25 @@ impl Interpreter {
         free
     }
 
+    /// [`Self::is_metamodel_how_class`], memoized per class for one registry
+    /// write generation: a method call in a program that names `samewith` or
+    /// a deferral builtin asks it on every call, and the answer is a function
+    /// of the class's MRO and parents only (#18267).
+    // Cost: O(1) amortized; a miss is `is_metamodel_how_class`'s O(m + p),
+    // m = MRO length, p = parents.
+    pub(crate) fn is_metamodel_how_class_sym(&mut self, class: Symbol) -> bool {
+        if !self.registry().has_metamodel_how_classes {
+            return false;
+        }
+        self.refresh_method_caches_for_generation();
+        if let Some(&how) = self.caches.metamodel_how_class.get(&class) {
+            return how;
+        }
+        let how = self.is_metamodel_how_class(class.as_str());
+        self.caches.metamodel_how_class.insert(class, how);
+        how
+    }
+
     /// Pop a method dispatch frame (must only be called if push returned true).
     ///
     /// The innermost live frame is the one being popped, and it is on top of
@@ -351,7 +373,7 @@ impl Interpreter {
             let built = self.build_method_dispatch_frame(
                 &receiver_class,
                 &call.method_name.resolve(),
-                call.args,
+                call.args.to_vec(),
                 call.invocant,
                 entry.dispatch_token,
                 call.winner,
@@ -388,8 +410,14 @@ impl Interpreter {
 }
 /// See [`Interpreter::deferral_build_is_context_free`].
 fn param_match_is_context_free(pd: &ParamDef) -> bool {
-    let reads_call_site =
-        pd.sigilless || pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw"));
+    // Only `is rw` asks the call site: a candidate matches when the argument
+    // is a writable variable, which the call's source names and the source's
+    // readonly mark decide (`method_args_match`). An `is raw` or sigilless
+    // parameter accepts any argument, a value as well as a container, so its
+    // verdict is a function of the argument values a pending entry keeps.
+    // AttrX::Mooish's `Mu $instance is raw` methods built their frames eagerly
+    // on every call before (#18267).
+    let reads_call_site = pd.traits.iter().any(|t| t == "rw");
     // A `where` clause is not on this list: rakudo checks a deferral
     // candidate's constraints when the dispatch resumes (`callsame` & co.), in
     // the callee's dynamic scope, not when the call is made — so a late build

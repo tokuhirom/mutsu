@@ -1933,7 +1933,7 @@ impl Interpreter {
                             self.dispatch
                                 .samewith_context_stack
                                 .last()
-                                .and_then(|c| c.args.clone())
+                                .and_then(|c| c.args.as_deref().map(<[Value]>::to_vec))
                         })
                         .unwrap_or_default(),
                 };

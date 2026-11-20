@@ -131,6 +131,7 @@ impl Interpreter {
         self.caches.classhow_can_cache.clear();
         self.caches.deferral_build_context_free.clear();
         self.caches.method_frame_facts.clear();
+        self.caches.metamodel_how_class.clear();
         self.caches.nominal_param_defs.clear();
         self.caches.builtin_method_reached.clear();
         self.caches.builtin_method_from_mu.clear();

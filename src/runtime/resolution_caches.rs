@@ -486,6 +486,10 @@ pub(crate) struct ResolutionCaches {
     /// Structural, cleared with `dispatch_multi_candidate`.
     pub(crate) method_frame_facts:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::runtime::method_frame_facts::MethodFrameFacts>,
+    /// Memoized `class -> is a user HOW (a subclass of a builtin metamodel
+    /// class)` (`Interpreter::is_metamodel_how_class_sym`). A function of the
+    /// class's MRO and parents, cleared with the other method caches.
+    pub(crate) metamodel_how_class: rustc_hash::FxHashMap<Symbol, bool>,
     /// A method candidate's parameter list with its `where` clauses dropped,
     /// keyed by the original list's address (`resolution_lazy_where`). The
     /// entry holds the original too, so the address cannot be reused while
