@@ -215,6 +215,16 @@ impl Compiler {
         let Some(source) = expr.container_var_key() else {
             return false;
         };
+        // A `with`'s once-evaluated temp (`with %h -> \d`, which desugars to
+        // `my \d = $__with_tmp_N`) is a compiler temporary in a raw local
+        // slot that no name reaches (#18315). It already holds the container
+        // itself, unitemized, so the plain store binds the same object; a
+        // share mark would promote the temp BY NAME into an env cell that its
+        // next raw store never updates, and every later iteration would bind
+        // the first one's container.
+        if crate::with_desugar::is_tmp_name(&source) {
+            return false;
+        }
         self.with_escape(true, |c| c.compile_expr(expr));
         let name_idx = self.code.add_constant(Value::str(source));
         self.code.emit(OpCode::MarkArrayShareSource(name_idx));
