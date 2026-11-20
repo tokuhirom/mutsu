@@ -404,10 +404,9 @@ impl VisitMut for Finalize<'_> {
                 unreachable!("checked above");
             };
             self.compound_operands(&mut compound);
-            match super::compound::lower::lower_compound_expression_with(
-                compound,
-                &|name| super::shadowed_terms::is_value_term(self.names, name),
-            ) {
+            match super::compound::lower::lower_compound_expression_with(compound, &|name| {
+                super::shadowed_terms::is_value_term(self.names, name)
+            }) {
                 Ok(lowered) => *expr = lowered,
                 Err(err) => self.fail(RuntimeError::new(format!("{err:?}"))),
             }
@@ -527,10 +526,9 @@ impl VisitMut for Finalize<'_> {
                 unreachable!("checked above");
             };
             self.compound_operands(&mut compound);
-            match super::compound::lower::lower_compound_statement_with(
-                compound,
-                &|name| super::shadowed_terms::is_value_term(self.names, name),
-            ) {
+            match super::compound::lower::lower_compound_statement_with(compound, &|name| {
+                super::shadowed_terms::is_value_term(self.names, name)
+            }) {
                 Ok(lowered) => *stmt = lowered,
                 Err(err) => self.fail(RuntimeError::new(format!("{err:?}"))),
             }

@@ -376,9 +376,12 @@ fn lower_signature_bind(
     }
     let signature = lower_expr(names, left)?;
     let rhs = lower_expr(names, named_child(node, "right")?)?;
-    super::lower_parsed_stmt(names, crate::ast::parsed::ParsedStmt::SignatureBind { signature, rhs })
-        .map(Some)
-        .map_err(|_| unsupported(node))
+    super::lower_parsed_stmt(
+        names,
+        crate::ast::parsed::ParsedStmt::SignatureBind { signature, rhs },
+    )
+    .map(Some)
+    .map_err(|_| unsupported(node))
 }
 
 /// The modifier a `StatementModifier::*` node is.
@@ -817,8 +820,11 @@ fn lower_comma_declarations(
             declarations.push(Stmt::Expr(lower_expr(names, child)?));
         }
     }
-    super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::CommaDecls(declarations))
-        .map(Some)
+    super::conditional_lower::lower_parsed(
+        names,
+        crate::ast::parsed::ParsedStmt::CommaDecls(declarations),
+    )
+    .map(Some)
 }
 
 // Cost: O(n + t), n = Native node fields, t = its traits.
@@ -1280,11 +1286,11 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     Ok(match dotty_parts(names, node)? {
         Dotty::Call(call) => call,
-        Dotty::Assign(compound) => super::compound::lower::lower_dotty(
-            compound,
-            as_statement,
-            &|name| super::shadowed_terms::is_declared_term(names, name),
-        ),
+        Dotty::Assign(compound) => {
+            super::compound::lower::lower_dotty(compound, as_statement, &|name| {
+                super::shadowed_terms::is_declared_term(names, name)
+            })
+        }
     })
 }
 
@@ -1294,10 +1300,11 @@ pub(super) fn lower_dotty_assign(
 fn lower_dotty_statement(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(match dotty_parts(names, node)? {
         Dotty::Call(call) => Stmt::Expr(call),
-        Dotty::Assign(compound) => super::compound::lower::lower_dotty_statement(
-            compound,
-            &|name| super::shadowed_terms::is_declared_term(names, name),
-        ),
+        Dotty::Assign(compound) => {
+            super::compound::lower::lower_dotty_statement(compound, &|name| {
+                super::shadowed_terms::is_declared_term(names, name)
+            })
+        }
     })
 }
 
@@ -3381,11 +3388,14 @@ pub(super) fn lower_var_decl_kept(
             return Err(unsupported(node));
         };
         let name = name.clone();
-        return super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::WillDecl {
-            decl: Box::new(declaration),
-            name,
-            phasers,
-        });
+        return super::conditional_lower::lower_parsed(
+            names,
+            crate::ast::parsed::ParsedStmt::WillDecl {
+                decl: Box::new(declaration),
+                name,
+                phasers,
+            },
+        );
     }
     if !is_attribute && let Some((stripped, roles)) = super::var_does::split(node)? {
         let declaration = lower_var_decl_plain(names, &stripped)?;
@@ -3597,8 +3607,9 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
         {
             return Err(unsupported(node));
         }
-        return super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::BindDecl(
-            Box::new(Stmt::VarDecl {
+        return super::conditional_lower::lower_parsed(
+            names,
+            crate::ast::parsed::ParsedStmt::BindDecl(Box::new(Stmt::VarDecl {
                 anonymous,
                 name,
                 expr,
@@ -3615,8 +3626,8 @@ fn lower_var_decl_plain(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, R
                     .then_some(crate::ast::bind_decl::BindKind::Scalar),
                 marks,
                 where_constraint,
-            }),
-        ));
+            })),
+        );
     }
     Ok(Stmt::VarDecl {
         anonymous,

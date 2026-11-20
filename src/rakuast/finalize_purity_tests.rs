@@ -52,13 +52,17 @@ fn a_finalization_inside_another_unit_restores_its_state() {
     let _unit = super::super::shadowed_terms::scan_stmts(&names, &outer);
     let _operators = super::super::infix_func::enter_scope(&names);
     assert!(super::super::shadowed_terms::is_shadowed(&names, "e"));
-    assert!(super::super::declared_routines::is_declared(&names, "hello"));
+    assert!(super::super::declared_routines::is_declared(
+        &names, "hello"
+    ));
     for source in SOURCES {
         let _ = finalized(&names, source);
     }
     assert!(super::super::shadowed_terms::is_shadowed(&names, "e"));
     assert!(super::super::shadowed_terms::is_declared_term(&names, "x"));
-    assert!(super::super::declared_routines::is_declared(&names, "hello"));
+    assert!(super::super::declared_routines::is_declared(
+        &names, "hello"
+    ));
     assert!(!super::super::declared_routines::is_declared(&names, "f"));
     assert!(!super::super::shadowed_terms::is_shadowed(&names, "True"));
 }

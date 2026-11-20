@@ -12,7 +12,6 @@
 //! The scan ignores scoping (a declaration anywhere in the unit counts), which
 //! is the same approximation `shadowed_terms` makes for the math constants.
 
-
 use super::lower::{call_name_str, leaf_str};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};

@@ -337,10 +337,13 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Stmt
 
 // Cost: O(1).
 fn lower_tail(names: &NameScope, head: Stmt, tail: Expr) -> Result<Stmt, RuntimeError> {
-    super::conditional_lower::lower_parsed(names, crate::ast::parsed::ParsedStmt::DeclTail {
-        head: Box::new(head),
-        tail,
-    })
+    super::conditional_lower::lower_parsed(
+        names,
+        crate::ast::parsed::ParsedStmt::DeclTail {
+            head: Box::new(head),
+            tail,
+        },
+    )
 }
 
 // Cost: O(v), v = number of variables in the grouped declaration.
