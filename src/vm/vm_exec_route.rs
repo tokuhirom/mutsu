@@ -154,6 +154,7 @@ impl Interpreter {
             | OpCode::SmartMatchExpr { .. }
             | OpCode::Spaceship
             | OpCode::StrEq
+            | OpCode::StrEqLocalConst { .. }
             | OpCode::StrGe
             | OpCode::StrGt
             | OpCode::StrLe

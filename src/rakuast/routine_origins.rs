@@ -311,12 +311,53 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
         parameter(
             &mut node,
             param.spans.param,
-            param.spans.target,
+            alias_target(param),
             param.spans.type_,
         );
         list_origins(&mut node, "traits", &param.spans.traits);
+        if let Some(inner) = &param.sub_signature {
+            sub_signature(&mut node, inner);
+        }
         *value = Value::rakuast(Box::new(node));
     }
+}
+
+/// `:key($k)`: a renamed named parameter is one `Parameter` whose target is
+/// the variable at the end of the alias chain.
+// Cost: O(a), a = levels of the alias chain.
+fn alias_target(param: &ParamDef) -> crate::ast::SrcSpan {
+    let mut cur = param;
+    while cur.named
+        && cur.named_alias
+        && let Some([next]) = cur.sub_signature.as_deref()
+    {
+        cur = next;
+    }
+    if cur.spans.target.is_some() {
+        cur.spans.target
+    } else {
+        param.spans.target
+    }
+}
+
+/// `($a, $b)`: the `sub-signature` of a destructuring parameter runs from its
+/// first parameter to its last, inside the brackets.
+// Cost: O(p), p = parameters of the sub-signature, nested ones included.
+fn sub_signature(node: &mut RakuAstNode, params: &[ParamDef]) {
+    let (Some(first), Some(last)) = (params.first(), params.last()) else {
+        return;
+    };
+    if !first.spans.param.is_some() || !last.spans.param.is_some() {
+        return;
+    }
+    let whole = crate::ast::SrcSpan::new(
+        first.spans.param.from as usize,
+        last.spans.param.to as usize,
+    );
+    with_child(node, "sub-signature", |signature| {
+        parameters(signature, params);
+        super::origin::set_span(signature, whole);
+    });
 }
 
 /// Give the `signature` of the pointy block `block` of a `for` loop

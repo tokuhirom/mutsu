@@ -2013,6 +2013,19 @@ pub(crate) enum OpCode {
     /// the collapsed result, so it always pushes a plain `Bool`. See
     /// [`Self::StrEq`] for the shared coercion.
     StrNe,
+    /// `$local eq 'literal'` (or `ne` when `negate`), fused: compare a local
+    /// slot's plain `Str` with a `Str` constant in place, without cloning
+    /// either onto the stack (ADR-18357 D1). Stack: `[] → [Bool]`.
+    ///
+    /// Emitted only for a plain lexical and a literal operand outside every
+    /// lexical-import scope. When the slot is not a plain `Str` read, or a
+    /// user candidate of the operator is in scope, it runs exactly what
+    /// `GetLocal(slot); LoadConst(const_idx); StrEq` would (ADR-18357 D3).
+    StrEqLocalConst {
+        slot: u32,
+        const_idx: u32,
+        negate: bool,
+    },
     /// Infix `lt` (string less than, by codepoint). Stack: `[left, right] → [Bool]` (right on top). See
     /// [`Self::StrEq`] for the shared coercion and Junction threading.
     StrLt,
@@ -8177,6 +8190,11 @@ pub(crate) struct CompiledCode {
     /// from, for one registry write generation (see
     /// `Interpreter::try_method_site_lane`).
     pub(crate) method_sites: crate::value::MethodSiteCaches,
+    /// Lazily-built per-op verdict of the method-site lane's static checks
+    /// (`vm_method_site_static`): `true` at a `CallMethod`/`CallMethodMut`
+    /// whose name, arity, argument sources and receiver variable leave the
+    /// lane free to answer it. Indexed by op position.
+    pub(crate) method_site_static: std::sync::OnceLock<Box<[bool]>>,
     /// #18028: one memo per string constant, remembering that a `CallFunc`
     /// naming that constant reached the built-in routine's native arm, for
     /// one registry write generation (see `Interpreter::try_native_call_site`).
@@ -8685,6 +8703,7 @@ impl CompiledCode {
             let slot = match op {
                 OpCode::GetLocal(slot)
                 | OpCode::GetLocalRaw(slot)
+                | OpCode::StrEqLocalConst { slot, .. }
                 | OpCode::SetLocal(slot)
                 | OpCode::SetLocalRaw(slot)
                 | OpCode::AssignExprLocal(slot)
@@ -8911,6 +8930,7 @@ impl CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             method_sites: Default::default(),
+            method_site_static: std::sync::OnceLock::new(),
             native_call_sites: Default::default(),
             lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
@@ -8974,6 +8994,14 @@ impl CompiledCode {
                 .collect()
         });
         slots.get(idx).copied().flatten()
+    }
+
+    /// Whether local slot `idx` is a private aggregate attribute (`@!x`,
+    /// `%!x`), whose slot holds the instance's own container (ADR-18356 D2).
+    // Cost: O(1) (the memoized `local_attr_key` table).
+    #[inline]
+    pub(crate) fn is_private_aggregate_attr_slot(&self, idx: usize) -> bool {
+        matches!(self.local_attr_key(idx), Some((_, true, '@' | '%')))
     }
 
     /// Whether local slot `idx` is a *statically plain* read: one where every
