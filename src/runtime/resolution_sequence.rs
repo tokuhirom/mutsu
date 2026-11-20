@@ -252,6 +252,17 @@ impl Interpreter {
         )
     }
 
+    /// Whether the candidate sequence [`Self::resolve_via_sequence_cache`]
+    /// cached for `(cn, method_sym)` holds no candidate at all, so that every
+    /// argument list resolves to nothing. `false` when no sequence is cached.
+    // Cost: O(1) expected.
+    pub(crate) fn method_sequence_is_empty(&self, cn: &str, method_sym: Symbol) -> bool {
+        self.caches
+            .resolved_seq_cache
+            .get(&(TypeId::intern(cn), method_sym))
+            .is_some_and(|seq| seq.candidates.is_empty())
+    }
+
     /// Build the ordered user-candidate sequence for `chain` (an E1 TypeId MRO,
     /// most-derived first) and `name`: every non-private, non-submethod-shadowed
     /// candidate at every level, in stored declaration order. Mirrors the
