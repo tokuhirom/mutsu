@@ -3762,6 +3762,10 @@ impl Interpreter {
             // A plain `@`/`%` lexical is slot-authoritative on the same terms
             // as a plain scalar (ADR-0039 §4.2's third bullet): its readers
             // reach it by slot or upvalue, so the env mirror is skipped.
+        } else if code.local_attr_key(idx).is_some() && !val.is_container_ref() {
+            // An attribute's store is `self`'s cell, which the store below
+            // writes and every `$!x` read reads (ADR-18356): the frame keeps
+            // no by-name copy of it.
         } else {
             self.set_env_with_main_alias(name, val.clone());
         }
