@@ -1299,6 +1299,9 @@ impl Interpreter {
         code: &CompiledCode,
         param_defs: &[crate::ast::ParamDef],
     ) -> Option<AttrMap> {
+        if std::env::var_os("MUTSU_CENSUS_NO_RECONCILE").is_some() {
+            return None;
+        }
         // A `:=` attr override can only be observed as a ContainerRef value in
         // THIS frame's locals or env overlay (the bind op writes it there).
         // Deliberately overlay-only: a caller-frame ContainerRef (e.g. a boxed
