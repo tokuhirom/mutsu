@@ -161,6 +161,32 @@ impl Interpreter {
         self.str_cmp_values_core(kind, left, right)
     }
 
+    /// The answer of string comparison `kind` on the top two stack values,
+    /// when both are plain `Str`s and no user candidate of the operator is in
+    /// scope; `None` (stack untouched) otherwise. The narrow form of
+    /// [`Self::str_cmp_values`] (ADR-18357 stage 2): a plain `Str` operand
+    /// needs no `.Stringy` coercion, is not a Junction to thread and not a
+    /// Blob to compare bytewise, so the answer is the `str_prim` routine's.
+    // Cost: O(p), p = common prefix (O(1) for `eq`/`ne` of different
+    // lengths); O(1) when it declines.
+    #[inline]
+    pub(super) fn plain_str_cmp_on_stack(&self, kind: StrCmp) -> Option<bool> {
+        let len = self.stack.len();
+        if len < 2 {
+            return None;
+        }
+        let l = self.stack[len - 2].as_str()?;
+        let r = self.stack[len - 1].as_str()?;
+        if self.user_infix_override(kind.infix_name()) {
+            return None;
+        }
+        Some(match kind {
+            StrCmp::Eq => crate::builtins::str_prim::str_eq(l, r),
+            StrCmp::Ne => !crate::builtins::str_prim::str_eq(l, r),
+            _ => kind.holds(crate::builtins::str_prim::str_order(l, r)),
+        })
+    }
+
     /// [`Self::str_cmp_values`] without the user-candidate probe: the CORE
     /// operator (`&CORE::infix:<eq>`, #15922).
     // Cost: as `str_cmp_values`.
