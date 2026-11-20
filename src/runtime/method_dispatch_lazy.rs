@@ -23,7 +23,9 @@ use crate::symbol::Symbol;
 pub(super) struct MethodDispatchWinner {
     pub(super) owner: Symbol,
     pub(super) fingerprint: u64,
-    pub(super) rw_params: Vec<(usize, String)>,
+    /// Shared with the winner's def (`MethodDef::rw_scalar_positionals`):
+    /// almost every frame is popped unbuilt, so a call copies nothing.
+    pub(super) rw_params: std::sync::Arc<[(usize, String)]>,
 }
 
 /// The arguments of [`Interpreter::build_method_dispatch_frame`], kept until
@@ -160,7 +162,7 @@ impl Interpreter {
         let winner = chosen.map(|(owner, def)| MethodDispatchWinner {
             owner,
             fingerprint: self.method_def_fingerprint(def),
-            rw_params: super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs),
+            rw_params: def.rw_scalar_positionals(),
         });
         if !self.deferral_build_is_context_free_sym(
             receiver_sym,

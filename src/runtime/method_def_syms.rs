@@ -25,6 +25,8 @@ pub(crate) struct MethodDefSyms {
     named_fast: OnceLock<Box<[Option<NamedFast>]>>,
     /// Memo of [`super::MethodDef::default_prologue`].
     default_prologue: OnceLock<Box<[bool]>>,
+    /// Memo of [`super::MethodDef::rw_scalar_positionals`].
+    rw_scalar_positionals: OnceLock<std::sync::Arc<[(usize, String)]>>,
     /// Memo of [`super::MethodDef::has_container_params`].
     container_params: OnceLock<bool>,
     /// `role_param_bindings`' names interned, with the very bindings list
@@ -139,6 +141,17 @@ impl super::MethodDef {
             .get(i)
             .copied()
             .unwrap_or(false)
+    }
+
+    /// `rw_scalar_positional_params` of this def's signature, shared: a
+    /// deferral frame records it on every call of a method in a program that
+    /// names a deferral builtin, and almost never reads it.
+    // Cost: O(1) after the first call; O(p) once, p = parameters.
+    #[inline]
+    pub(crate) fn rw_scalar_positionals(&self) -> std::sync::Arc<[(usize, String)]> {
+        std::sync::Arc::clone(self.syms.rw_scalar_positionals.get_or_init(|| {
+            super::builtins_dispatch_next::rw_scalar_positional_params(&self.param_defs).into()
+        }))
     }
 
     /// Whether a non-invocant parameter binds the caller's container
