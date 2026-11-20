@@ -175,10 +175,12 @@ mod tests {
     fn trivia_and_terminators() {
         assert_eq!(trivia_len("  # c\n  #\x60(x) 1"), Some(14));
         assert_eq!(trivia_len("\n=begin pod\n"), None);
-        assert_eq!(trivia_len(" #| doc\n"), None);
+        // Declarator comments are trivia, line and bracketed forms alike.
+        assert_eq!(trivia_len(" #| doc\n"), Some(8));
+        assert_eq!(trivia_len("#|( a\n b ) 1"), Some(11));
         assert_eq!(terminators_end(" ;; # c\n ; }"), Some(10));
         assert_eq!(terminators_end(" # c\n }"), Some(0));
-        assert_eq!(terminators_end("; #= d\n;"), None);
+        assert_eq!(terminators_end("; #= d\n;"), Some(8));
         assert_eq!(statement_list_end(" # c\n 1 ; # d\n", 6, 7), Some(9));
         assert_eq!(statement_list_end(" 1; x", 1, 2), None);
     }
