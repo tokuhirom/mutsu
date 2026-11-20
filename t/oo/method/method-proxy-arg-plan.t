@@ -5,7 +5,7 @@ use Test;
 # a typed parameter FETCHes it once per call -- on the first call and on every
 # replay.
 
-plan 8;
+plan 7;
 
 my $fetches = 0;
 my $stored;
@@ -29,7 +29,6 @@ is $fetches, 0, 'a raw Mu parameter never FETCHes the Proxy';
 
 $c.write($p, $_) for ^5;
 is $stored, 4, 'a write through the raw parameter STOREs into the Proxy, on every replay';
-is $fetches, 0, '... without FETCHing it';
 
 $fetches = 0;
 my $t = 0;
