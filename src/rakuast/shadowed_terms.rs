@@ -83,7 +83,7 @@ pub(super) fn scan_stmts<'a>(names: &'a NameScope, stmts: &[Stmt]) -> UnitGuard<
     UnitGuard::enter(names, facts_of(stmts))
 }
 
-/// [`scan_stmts`] for a unit finalized in source order (ADR-15760 §7.2 (c)):
+/// The facts of `scan_stmts` for a unit finalized in source order (ADR-15760 §7.2 (c)):
 /// only its routines are installed up front (a routine is hoisted); each
 /// top-level statement adds the rest as it is reached ([`declare_statement`]).
 // Cost: O(n), n = nodes in the unit.
