@@ -172,7 +172,7 @@ impl Interpreter {
     #[inline]
     pub(super) fn plain_str_cmp_on_stack(&self, kind: StrCmp) -> Option<bool> {
         let len = self.stack.len();
-        if len < 2 {
+        if len < 2 || !crate::opcode_native_int_step::narrow_ops_enabled() {
             return None;
         }
         let l = self.stack[len - 2].as_str()?;
