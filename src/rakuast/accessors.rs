@@ -192,6 +192,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
                 RakuAstClass::StatementList | RakuAstClass::SemiList
             ))
         || (method == "args" && node.class == RakuAstClass::ArgList)
+        || (method == "colonpairs" && node.class == RakuAstClass::ColonPairs)
         || (method == "atoms" && node.class == RakuAstClass::DocParagraph)
     {
         let items = node

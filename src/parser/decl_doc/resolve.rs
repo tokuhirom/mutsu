@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use super::{Site, SiteIdent, Table};
+use super::{Comment, Site, SiteIdent, Table};
 use crate::decl_doc::{DeclDoc, DocComment, DocDeclKind};
 
 /// The innermost site of `sites` enclosing offset `at` that `pick` accepts.
@@ -22,8 +22,8 @@ fn enclosing(
 
 /// Hand every comment to the declaration it documents (see the module docs).
 fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
-    let mut leading: HashMap<usize, Vec<&str>> = HashMap::new();
-    let mut trailing: HashMap<usize, Vec<&str>> = HashMap::new();
+    let mut leading: HashMap<usize, Vec<&Comment>> = HashMap::new();
+    let mut trailing: HashMap<usize, Vec<&Comment>> = HashMap::new();
     for (&at, comment) in &t.comments {
         let owner = if comment.trailing {
             t.sites
@@ -40,19 +40,29 @@ fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
             } else {
                 &mut leading
             };
-            texts.entry(owner).or_default().push(&comment.text);
+            texts.entry(owner).or_default().push(comment);
         }
     }
     let mut docs: HashMap<usize, DeclDoc> = HashMap::new();
-    for (owner, texts) in leading {
+    // The joined text is what `.WHY` answers; the lines are the comments as
+    // written, which RakuAST keeps.
+    let join = |comments: &[&Comment]| {
+        comments
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let raws = |comments: &[&Comment]| comments.iter().map(|c| c.raw.clone()).collect();
+    for (owner, comments) in leading {
         let doc = docs.entry(owner).or_default();
-        doc.leading = Some(texts.join(" "));
-        doc.leading_lines = texts.iter().map(|t| t.to_string()).collect();
+        doc.leading = Some(join(&comments));
+        doc.leading_lines = raws(&comments);
     }
-    for (owner, texts) in trailing {
+    for (owner, comments) in trailing {
         let doc = docs.entry(owner).or_default();
-        doc.trailing = Some(texts.join(" "));
-        doc.trailing_lines = texts.iter().map(|t| t.to_string()).collect();
+        doc.trailing = Some(join(&comments));
+        doc.trailing_lines = raws(&comments);
     }
     docs
 }

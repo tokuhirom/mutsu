@@ -44,6 +44,7 @@ roast/S02-literals/listquote.t	0
 roast/S02-literals/listquote.t	1
 roast/S02-literals/listquote.t	2
 roast/S02-literals/listquote.t	3
+roast/S02-literals/listquote.t	4
 roast/S02-literals/listquote.t	5
 roast/S02-literals/listquote.t	6
 roast/S02-literals/listquote.t	7
@@ -148,6 +149,7 @@ roast/S02-types/version-stress.t	0
 roast/S02-types/version-stress.t	1
 roast/S02-types/version-stress.t	2
 roast/S02-types/version-stress.t	3
+roast/S02-types/version-stress.t	4
 roast/S02-types/version-stress.t	5
 roast/S02-types/version-stress.t	6
 roast/S02-types/version-stress.t	7
@@ -1646,14 +1648,18 @@ roast/S26-documentation/block-trailing.t	0
 roast/S26-documentation/block-trailing.t	1
 roast/S26-documentation/block-trailing.t	2
 roast/S26-documentation/block-trailing.t	3
+roast/S26-documentation/block-trailing.t	4
 roast/S26-documentation/block-trailing.t	5
+roast/S26-documentation/block-trailing.t	6
 roast/S26-documentation/block-trailing.t	7
 roast/S26-documentation/block-trailing.t	8
+roast/S26-documentation/block-trailing.t	9
 roast/S26-documentation/block-trailing.t	10
 roast/S26-documentation/block-trailing.t	11
 roast/S26-documentation/block-trailing.t	12
 roast/S26-documentation/block-trailing.t	13
 roast/S26-documentation/block-trailing.t	14
+roast/S26-documentation/block-trailing.t	15
 roast/S26-documentation/block-trailing.t	16
 roast/S26-documentation/block-trailing.t	17
 roast/S26-documentation/block-trailing.t	18
@@ -1669,6 +1675,7 @@ roast/S26-documentation/block-trailing.t	27
 roast/S26-documentation/block-trailing.t	28
 roast/S26-documentation/block-trailing.t	29
 roast/S26-documentation/block-trailing.t	30
+roast/S26-documentation/block-trailing.t	31
 roast/S26-documentation/block-trailing.t	32
 roast/S26-documentation/block-trailing.t	33
 roast/S26-documentation/block-trailing.t	34
@@ -1702,6 +1709,7 @@ roast/S26-documentation/block-trailing.t	61
 roast/S26-documentation/block-trailing.t	62
 roast/S26-documentation/block-trailing.t	63
 roast/S26-documentation/block-trailing.t	64
+roast/S26-documentation/block-trailing.t	65
 roast/S26-documentation/block-trailing.t	66
 roast/S26-documentation/block-trailing.t	67
 roast/S26-documentation/block-trailing.t	68
@@ -2341,6 +2349,7 @@ roast/integration/advent2011-day05.t	5
 roast/integration/advent2011-day05.t	6
 roast/integration/advent2012-day03.t	0
 roast/integration/advent2012-day03.t	1
+roast/integration/advent2012-day03.t	2
 roast/integration/advent2012-day03.t	3
 roast/integration/advent2012-day03.t	4
 roast/integration/advent2012-day03.t	5

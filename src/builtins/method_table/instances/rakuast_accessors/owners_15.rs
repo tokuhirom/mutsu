@@ -3,6 +3,18 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Var::Lexical::Constant",
+        &[
+            "RakuAST::Var::Lexical::Constant",
+            "RakuAST::Var::Lexical",
+            "RakuAST::Var",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Var::NamedCapture",
         &[
             "RakuAST::Var::NamedCapture",
