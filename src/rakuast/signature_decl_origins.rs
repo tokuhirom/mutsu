@@ -21,6 +21,9 @@ pub(super) struct Written {
     /// A sigilless `\x` parameter: written with the backslash, its target is
     /// the name alone.
     term: bool,
+    /// A named parameter `:$x`: written with the colon, which the parameter's
+    /// range includes and its target's does not.
+    named: bool,
 }
 
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
@@ -103,7 +106,6 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     Some(
                         "default"
                             | "where"
-                            | "names"
                             | "type-captures"
                             | "invocant"
                             | "array-shape"
@@ -116,12 +118,32 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 return None;
             }
             let target = child(param, "target")?;
+            // `:$x`: one name, the variable's own.
+            let named = match param.fields.iter().find(|f| f.name == Some("names")) {
+                None => false,
+                Some(field) => {
+                    let RakuAstFieldValue::List(names) = &field.value else {
+                        return None;
+                    };
+                    let [name] = names.as_slice() else {
+                        return None;
+                    };
+                    let var = leaf_text(target)?;
+                    if target.class != RakuAstClass::ParameterTargetVar
+                        || name.as_str().is_none_or(|n| var.get(1..) != Some(n))
+                    {
+                        return None;
+                    }
+                    true
+                }
+            };
             if target.class == RakuAstClass::ParameterTargetTerm {
                 let name = leaf_text(child_at(target, 0)?)?;
                 return Some(Written {
                     ty: parameter_type(param)?,
                     var: name,
                     term: true,
+                    named,
                 });
             }
             if target.class != RakuAstClass::ParameterTargetVar {
@@ -131,6 +153,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 ty: parameter_type(param)?,
                 var: leaf_text(target)?,
                 term: false,
+                named,
             })
         })
         .collect()
@@ -147,8 +170,43 @@ fn parameter_type(param: &RakuAstNode) -> Option<Option<String>> {
         Some(ty) if ty.class == RakuAstClass::TypeSimple => {
             Some(Some(leaf_text(child_at(ty, 0)?)?))
         }
+        // `Int:D`, `Array[Int]`, `Str(Int)`: read back from the text (an empty
+        // name, see [`type_word_len`]).
+        Some(ty)
+            if matches!(
+                ty.class,
+                RakuAstClass::TypeDefinedness
+                    | RakuAstClass::TypeAnyDefinedness
+                    | RakuAstClass::TypeParameterized
+                    | RakuAstClass::TypeCoercion
+            ) =>
+        {
+            Some(Some(String::new()))
+        }
         Some(_) => None,
     }
+}
+
+/// The length of the type written at the start of `text`: a name, then a
+/// bracketed application (`[Int]`) or coercion (`(Int)`), then a smiley.
+/// `None` when brackets do not balance plainly before a blank.
+// Cost: O(n), n = length of the type.
+fn type_word_len(text: &str) -> Option<usize> {
+    let mut at = text
+        .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':')))
+        .unwrap_or(text.len());
+    // `Int:D` stops before the smiley's colon only if a bracket follows.
+    if let Some(open @ ('[' | '(')) = text[at..].chars().next() {
+        let close = if open == '[' { ']' } else { ')' };
+        at += 1 + super::regex_call_origins::bracketed_len(&text[at + 1..], close)? + 1;
+        for smiley in [":D", ":U", ":_"] {
+            if text[at..].starts_with(smiley) {
+                at += smiley.len();
+                break;
+            }
+        }
+    }
+    (at > 0).then_some(at)
 }
 
 /// Read `parameters` back, in order, from `inner`, which starts at byte
@@ -166,9 +224,14 @@ pub(super) fn scan(
         let start = at;
         let mut ty = SrcSpan::NONE;
         if let Some(name) = &written.ty {
-            inner[at..].strip_prefix(name.as_str())?;
-            ty = SrcSpan::new(base + at, base + at + name.len());
-            at += name.len();
+            let len = if name.is_empty() {
+                type_word_len(&inner[at..])?
+            } else {
+                inner[at..].strip_prefix(name.as_str())?;
+                name.len()
+            };
+            ty = SrcSpan::new(base + at, base + at + len);
+            at += len;
             let gap = inner[at..].len() - inner[at..].trim_start().len();
             if gap == 0 {
                 return None;
@@ -177,6 +240,10 @@ pub(super) fn scan(
         }
         if written.term {
             inner[at..].strip_prefix('\\')?;
+            at += 1;
+        }
+        if written.named {
+            inner[at..].strip_prefix(':')?;
             at += 1;
         }
         inner[at..].strip_prefix(written.var.as_str())?;

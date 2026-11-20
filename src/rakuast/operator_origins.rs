@@ -188,7 +188,7 @@ fn colonpair_value(node: &mut RakuAstNode) {
         let written = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
             text.strip_prefix(':')?
                 .strip_prefix(key.as_str())?
-                .starts_with('<')
+                .starts_with(['<', '«'])
                 .then_some(())
         });
         if written.is_some() && open < to {
