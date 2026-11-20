@@ -100,7 +100,7 @@ impl Interpreter {
             return None;
         };
         let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
-        if !args.is_empty() && !self.multi_arg_type_keys_into_with_named(args, &mut arg_keys) {
+        if !args.is_empty() && !self.plain_lane_arg_keys_into(args, &mut arg_keys) {
             arg_keys.clear();
             self.caches.plain_method_lane_scratch = arg_keys;
             return None;
@@ -298,7 +298,7 @@ impl Interpreter {
         self.refresh_method_caches_for_generation();
         let mut arg_keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
         let mut plan = None;
-        let hit = self.multi_arg_type_keys_into_with_named(&args, &mut arg_keys) && {
+        let hit = self.plain_lane_arg_keys_into(&args, &mut arg_keys) && {
             let key = (class_name, method_sym, arg_keys);
             let hit = self.caches.plain_method_lane.contains(&key);
             if hit {
@@ -372,7 +372,9 @@ impl Interpreter {
         else {
             return;
         };
-        if !self.plain_method_lane_class_eligible(class_sym) {
+        if !self.plain_method_lane_class_eligible(class_sym)
+            && !self.plain_method_lane_mixin_eligible(class_sym)
+        {
             return;
         }
         // With arguments, the native-method cascade must not have been asked:
@@ -420,5 +422,42 @@ impl Interpreter {
             .class_mro(&class_name)
             .iter()
             .any(|c| c == "IO::Handle" || c == "IO::Path")
+    }
+
+    /// A mixin type the runtime synthesized for `$obj does R` over a built-in
+    /// base whose stretch probes are audited to read only the class and the
+    /// method name, never the instance (#18267 stage 4).
+    ///
+    /// A mixin over a user-declared class is already
+    /// [`Self::plain_method_lane_class_eligible`] (it stays user-declared).
+    /// One over a built-in base is not, because a built-in class's probes
+    /// may read the instance. `Attribute` is the one base admitted: its only
+    /// probes in the stretch are the meta-row pair
+    /// (`prepare_attribute_set_value_arg`, `try_attribute_meta_row`), which
+    /// decide on the receiver's class, its MRO, the method name and whether a
+    /// user method of that name exists -- all fixed by the key and the
+    /// method generation. This is the receiver of AttrX::Mooish's attribute
+    /// methods (`Attribute+{AttrX::Mooish::Attribute}`).
+    ///
+    /// The mixin type's name is a registered class, stable for the
+    /// composition (the same `(base, roles)` always names the same class), so
+    /// it keys the lane exactly as a declared class does.
+    // Cost: O(r) once per `(class, method)` pair on the install side, r = the
+    // recipe's roles (the recipe is cloned out of the shared table).
+    pub(super) fn plain_method_lane_mixin_eligible(
+        &mut self,
+        class_sym: crate::symbol::Symbol,
+    ) -> bool {
+        const AUDITED_BASES: [&str; 1] = ["Attribute"];
+        let class_name = class_sym.as_str();
+        if !self.types.published_mixins.may_hold(class_name) {
+            return false;
+        }
+        let Some(recipe) = self.types.published_mixins.lookup(class_name) else {
+            return false;
+        };
+        AUDITED_BASES.contains(&recipe.base.as_str())
+            && self.registry().classes.contains_key(class_name)
+            && self.cstruct_class_name(class_name).is_none()
     }
 }

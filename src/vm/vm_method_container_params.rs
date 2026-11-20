@@ -154,6 +154,19 @@ impl Interpreter {
         if sym.is_some_and(|s| s.is_frame_fixture()) {
             return Some(MethodContainerBind::Readonly);
         }
+        // An attribute (`$!x`) whose slot already holds a shared cell read as
+        // that cell: the attribute's container IS the cell, so relaying it
+        // aliases exactly what the general binder aliases, and a write
+        // through the parameter lands in the attribute. An attribute holding
+        // a plain value would need its slot promoted; that stays the general
+        // binder's (AttrX::Mooish's `AttrProxy` relays `$!instance`, #18267).
+        if let Some(attr) = name.strip_prefix('!')
+            && !attr.is_empty()
+            && !attr.starts_with(['!', '.', '^', '*', '?'])
+            && matches!(arg.view(), ValueView::ContainerRef(_))
+        {
+            return Self::method_container_cell_ok(arg).then_some(MethodContainerBind::Relay);
+        }
         // The topic, attributes, dynamics, pseudo-packages and qualified
         // names each have their own rule in the general binder.
         if matches!(name, "" | "_" | "!" | "/")

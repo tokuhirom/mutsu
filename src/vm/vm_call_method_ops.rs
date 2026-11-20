@@ -375,7 +375,7 @@ impl Interpreter {
         has_modifier: bool,
         quoted: bool,
         want_ref: bool,
-    ) -> Option<Value> {
+    ) -> Option<Result<Value, RuntimeError>> {
         // A quoted name (`$obj."$name"()`) addresses the same accessor as the
         // bare one, except for a MOP pseudo-method name, which a quoted call
         // sends to a user method of that name: that one is taken here only
@@ -435,9 +435,9 @@ impl Interpreter {
                     .any(|attr| attr.is_public && attr.name == method && attr.is_rw)
                 && let Some(reference) = self.cstruct_field_ref(target, method)
             {
-                return Some(reference);
+                return Some(Ok(reference));
             }
-            return self.cstruct_field_value(target, method);
+            return self.cstruct_field_value(target, method).map(Ok);
         }
         if matches!(
             method,
@@ -501,7 +501,7 @@ impl Interpreter {
         // declines (a read-only or aggregate accessor) the plain read below
         // answers, as raku's decontainerized value does.
         if want_ref && let Some(cell_val) = self.rw_accessor_container(target, &cn, method) {
-            return Some(cell_val);
+            return Some(Ok(cell_val));
         }
         // Public accessor confirmed. Read its backing value, stored under the
         // public name or the `!`-suffixed private storage name. This mirrors the
@@ -522,16 +522,24 @@ impl Interpreter {
                 // `.VAR` mixin) is transparent to a plain accessor read.
                 let out = v.deref_container();
                 // A Proxy in the slot (AttrX::Mooish's lazy attribute) is read
-                // through by a non-rw accessor: the full dispatch FETCHes it. An
-                // `is rw` accessor hands the Proxy itself back, as before.
-                if out.is_proxy_value()
+                // through by a non-rw accessor: FETCHed here, through the VM's
+                // closure call, as the full dispatch's accessor read does it
+                // (the full dispatch reached that read only through the
+                // interpreter's method cascade, ~#18267). An `is rw` accessor
+                // hands the Proxy itself back, as before.
+                let out = if out.is_proxy_value()
                     && !self
                         .collect_class_attributes(&cn)
                         .into_iter()
                         .any(|attr| attr.is_public && attr.name == method && attr.is_rw)
                 {
-                    return None;
-                }
+                    match self.auto_fetch_proxy(&out) {
+                        Ok(fetched) => fetched,
+                        Err(e) => return Some(Err(e)),
+                    }
+                } else {
+                    out
+                };
                 // Only an Array/Hash value is affected by either use of the
                 // declaration below (decontainerizing, type tagging), so a
                 // plain scalar read skips the MRO attribute collection, which
@@ -591,9 +599,9 @@ impl Interpreter {
                             sigil, value_type,
                         ),
                     };
-                    return Some(self.tag_container_metadata(out, info));
+                    return Some(Ok(self.tag_container_metadata(out, info)));
                 }
-                Some(out)
+                Some(Ok(out))
             }
             // A grammar cursor is minted without BUILD, so an unset declared
             // attribute reads as its uninitialised value (the type object, an
@@ -602,7 +610,7 @@ impl Interpreter {
                 None
             }
             // Public accessor exists but the attribute is unset.
-            None => Some(Value::NIL),
+            None => Some(Ok(Value::NIL)),
         }
     }
 
@@ -1409,7 +1417,7 @@ impl Interpreter {
             // not dirty the caller's locals (Slice 6.3 — removes the per-accessor
             // env->locals pull that dominated method-heavy code like bench-class).
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "accessor");
-            self.stack.push(val);
+            self.stack.push(val?);
             return Ok(());
         }
         // A `.wrap`ped accessor declines the fast path above (its wrappers must

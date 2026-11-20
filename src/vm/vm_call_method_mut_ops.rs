@@ -1110,10 +1110,27 @@ impl Interpreter {
         match self.plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
             Some(lane_key) if self.plain_method_lane_hit(&lane_key) => {
                 self.caches.plain_method_lane_candidate = None;
+                // ADR-15737 D1 at the late gate (#18267 stage 4): the
+                // arguments here are exactly the ones the dispatch tail
+                // receives, so the tail's recorded outcome replays as on the
+                // early lane. A call the early lane refuses (a `VarRef`
+                // argument for an `is raw` parameter, a `|` spread) reaches
+                // only this gate.
+                let plan = self.method_call_plan_for_hit(&lane_key);
                 // Hand the key's buffer back: the next call's key reuses it.
                 let mut arg_keys = lane_key.2;
                 arg_keys.clear();
                 self.caches.plain_method_lane_scratch = arg_keys;
+                if let Some(plan) = plan {
+                    return self.run_method_call_plan(
+                        code,
+                        target_name,
+                        target,
+                        method_sym,
+                        &plan,
+                        args,
+                    );
+                }
                 return self.run_plain_method_lane(
                     code,
                     target_name,
@@ -1234,6 +1251,7 @@ impl Interpreter {
             // Pure attribute read: does not mutate the invocant (see comment
             // above), so it does not dirty the caller's locals (Slice 6.3).
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
+            let val = val?;
             if !want_ref
                 && modifier.is_none()
                 && !Self::quoting_matters(quoted, method_sym.as_str())
