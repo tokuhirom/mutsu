@@ -708,6 +708,14 @@ pub(crate) struct ModuleState {
     /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
     /// `amp_param_shadowed_names`.
     pub(crate) export_amp_override_names: rustc_hash::FxHashSet<Symbol>,
+    /// Whether one of `export_amp_override_names` is a `postcircumfix`
+    /// operator (`&postcircumfix:<[ ]>`, `&postcircumfix:<{ }>`), the one
+    /// family that can answer an ordinary element read. The element-read
+    /// fast path asks this instead of whether ANY name was exported, so a
+    /// module whose `sub EXPORT` hands out an ordinary `&name` (Cro's
+    /// `&encode-percents`) leaves every subscript in the program on it.
+    /// Set with the name; never cleared, like the set.
+    pub(crate) export_amp_overrides_subscript: bool,
     /// The `&name` callables a `sub EXPORT` map handed to each compunit, keyed
     /// by the (importing file, bare name). `env` holds one `&name` slot for
     /// the whole program, so a second import of the same name (the script
@@ -861,6 +869,7 @@ impl ModuleState {
             monkey_typing: false,
             imported_compiled_fns: HashMap::new(),
             export_amp_override_names: Default::default(),
+            export_amp_overrides_subscript: false,
             unit_imported_callables: std::collections::HashMap::new(),
             export_term_override_names: std::collections::HashSet::new(),
         }
@@ -995,6 +1004,7 @@ impl ModuleState {
             // (`start { ... }` around Terminal::MultiProgress's `t.hide-cursor`,
             // #9339).
             export_amp_override_names: self.export_amp_override_names.clone(),
+            export_amp_overrides_subscript: self.export_amp_overrides_subscript,
             unit_imported_callables: self.unit_imported_callables.clone(),
             export_term_override_names: self.export_term_override_names.clone(),
         }
