@@ -14,6 +14,9 @@ struct UniqueFilterState {
     with_fn: Option<Value>,
     expires_seconds: Option<f64>,
     seen: Vec<(Value, crate::thread_compat::Instant)>,
+    /// `Supply.squish`: a value is a duplicate only of the one right before
+    /// it, so `seen` holds just the last key, replaced on every value.
+    squish: bool,
     /// `Supply.unique`'s own derived supplier: every value that passes the
     /// filter is forwarded here, exactly as a `map`/`grep` transform tap
     /// forwards to its downstream -- making `unique` a real pipeline stage
@@ -1193,6 +1196,8 @@ pub(in crate::runtime) enum SupplierEmitAction {
         as_fn: Option<Value>,
         with_fn: Option<Value>,
         tap_index: usize,
+        /// `Supply.squish`: record every key, not only the unique ones.
+        squish: bool,
     },
     ClassifyCheck {
         value: Value,
@@ -1440,6 +1445,7 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                         as_fn: uf.as_fn.clone(),
                         with_fn: uf.with_fn.clone(),
                         tap_index: idx,
+                        squish: uf.squish,
                     });
                 } else {
                     // Simple unique check (no :as, no :with) — use value equality
@@ -1447,9 +1453,14 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                         .seen
                         .iter()
                         .any(|(s, _)| values_identical(s, emitted_value));
-                    if !already_seen {
+                    if uf.squish {
+                        uf.seen.clear();
+                    }
+                    if !already_seen || uf.squish {
                         uf.seen
                             .push((emitted_value.clone(), crate::thread_compat::Instant::now()));
+                    }
+                    if !already_seen {
                         actions.push(SupplierEmitAction::ForwardEmit {
                             downstream_supplier_id: uf.downstream_supplier_id,
                             value: emitted_value.clone(),
@@ -1622,6 +1633,9 @@ pub(in crate::runtime) fn supplier_unique_mark_seen(
         && let Some(tap) = subs.taps.get_mut(tap_index)
         && let Some(ref mut uf) = tap.unique_filter
     {
+        if uf.squish {
+            uf.seen.clear();
+        }
         uf.seen.push((key, crate::thread_compat::Instant::now()));
     }
 }
@@ -1652,6 +1666,7 @@ pub(in crate::runtime) fn register_supplier_unique_transform_tap(
     as_fn: Option<Value>,
     with_fn: Option<Value>,
     expires_seconds: Option<f64>,
+    squish: bool,
 ) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
@@ -1668,6 +1683,7 @@ pub(in crate::runtime) fn register_supplier_unique_transform_tap(
                     with_fn,
                     expires_seconds,
                     seen: Vec::new(),
+                    squish,
                     downstream_supplier_id: downstream_sid,
                 }),
                 classify_state: None,

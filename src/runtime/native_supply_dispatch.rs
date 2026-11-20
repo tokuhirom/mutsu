@@ -795,7 +795,7 @@ impl Interpreter {
                 new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
-            "unique" => self.supply_unique(attributes, &args),
+            "unique" => self.supply_unique(attributes, &args, false),
             "classify" => self.supply_classify(attributes, &args, false),
             "categorize" => self.supply_classify(attributes, &args, true),
             "sort" => {
@@ -848,16 +848,7 @@ impl Interpreter {
                 }
                 Ok(self.make_supply_from_values(sorted, attributes))
             }
-            "squish" => {
-                let source_values = self.supply_get_values(attributes)?;
-                let squished = self.dispatch_squish(Value::array(source_values), &args)?;
-                let items = match squished.view() {
-                    ValueView::Array(items, ..) => items.to_vec(),
-                    ValueView::Seq(items) => items.to_vec(),
-                    _ => vec![squished.clone()],
-                };
-                Ok(self.make_supply_from_values(items, attributes))
-            }
+            "squish" => self.supply_unique(attributes, &args, true),
             "head" => {
                 // A `.share`d on-demand supply is headed like any on-demand
                 // one: its supplier only carries values once a tap started

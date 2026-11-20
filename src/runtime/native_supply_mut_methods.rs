@@ -1643,7 +1643,7 @@ impl Interpreter {
                 ))
             }
             "unique" => {
-                let result = self.supply_unique(&attrs, &args)?;
+                let result = self.supply_unique(&attrs, &args, false)?;
                 Ok((result, attrs))
             }
             _ => Err(RuntimeError::new(format!(

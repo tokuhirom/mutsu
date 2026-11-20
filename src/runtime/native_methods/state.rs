@@ -800,6 +800,7 @@ pub(crate) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<V
 /// (a live root could be missed), so we must not `try_lock`-and-skip.
 #[allow(dead_code)] // live once a collector consumes `visit_roots` (step 8)
 pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::RootVisitor) {
+    super::supply_derive_dedup::visit_dedup_roots(visitor);
     if let Ok(map) = supply_taps_map().lock() {
         for taps in map.values() {
             for v in taps {

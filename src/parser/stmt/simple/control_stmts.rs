@@ -730,9 +730,14 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
     )?;
     let (r_ws, _) = ws(rest)?;
     // Check for postfix operators on the block:
-    // - `.method(...)` after optional whitespace
+    // - `.method(...)` after optional whitespace on the same line
     // - `()` immediately after the block (no newline between `}` and `(`)
-    let has_postfix_dot = r_ws.starts_with('.') && !r_ws.starts_with("..");
+    // A `}` at the end of its line ends the statement, so a `.method` on the
+    // next line is a new statement calling the method on `$_`
+    // (`{ ... }\n.return with $no`), not a call on the block.
+    let has_postfix_dot = r_ws.starts_with('.')
+        && !r_ws.starts_with("..")
+        && !rest[..rest.len() - r_ws.len()].contains('\n');
     let has_immediate_call = rest.starts_with('(')
         || (rest.starts_with([' ', '\t'])
             && rest.trim_start_matches([' ', '\t']).starts_with('(')
