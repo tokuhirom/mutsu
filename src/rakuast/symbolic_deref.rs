@@ -54,40 +54,29 @@ pub(super) fn view_node(
     })
 }
 
-/// A marked `$::(EXPR)::a::b` (`Spelling::IndirectTail(n)`): the parser's
-/// `$::(EXPR ~ "::a" ~ "::b")` with its last `n` segments static, as
+/// A marked `$::(EXPR)::a::b` (`Spelling::IndirectTail`): the parser's
+/// `$::(EXPR ~ "::a" ~ "::b")` with its static tail names, as
 /// `Var::Package(Name(EmptyEdge, Part::Expression(EXPR), Part::Simple(a), ...))`.
 // Cost: O(n), n = nodes of the name expression.
 pub(super) fn view_indirect_tail(
     names: &NameScope,
     deref: &Expr,
-    tail: u8,
+    tail: &[Box<str>],
 ) -> Result<RakuAstNode, RuntimeError> {
     let Expr::SymbolicDeref { sigil, expr } = deref else {
         return view_expr(names, deref);
     };
+    // Each tail name is one `~ "::name"` the parser appended.
     let mut base = expr.as_ref();
-    let mut segments = Vec::with_capacity(usize::from(tail));
-    for _ in 0..tail {
+    for _ in tail {
         let Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::Tilde,
-            right,
             ..
         } = base
         else {
             return view_node(names, sigil, expr);
         };
-        let Some(segment) = (match right.as_ref() {
-            Expr::Literal(v) => v
-                .as_str()
-                .and_then(|s| s.strip_prefix("::"))
-                .map(str::to_string),
-            _ => None,
-        }) else {
-            return view_node(names, sigil, expr);
-        };
-        segments.push(segment);
         base = left;
     }
     let mut parts = vec![
@@ -98,7 +87,7 @@ pub(super) fn view_indirect_tail(
             fields: vec![node_field(None, view_expr(names, base)?)],
         })),
     ];
-    parts.extend(segments.iter().rev().map(|s| name_parts::simple_part(s)));
+    parts.extend(tail.iter().map(|name| name_parts::simple_part(name)));
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::VarPackage,

@@ -102,22 +102,22 @@ pub(in crate::parser) fn parse_symbolic_deref_segments(
     Ok((rest, combined))
 }
 
-/// The number of `::name` segments that follow a `$::(EXPR)` when every
-/// following segment is a static name (`$::($x)::a::b` is 2), else 0.
+/// The `::name` segments that follow a `$::(EXPR)` when every following
+/// segment is a static name (`$::($x)::a::b` has `a`, `b`), else none.
 // Cost: O(n), n = length of the tail.
-fn static_tail_len(mut rest: &str) -> u8 {
-    let mut n: u8 = 0;
+fn static_tail(mut rest: &str) -> Vec<Box<str>> {
+    let mut names = Vec::new();
     while let Some(after) = rest.strip_prefix("::") {
         if after.starts_with('(') {
-            return 0;
+            return Vec::new();
         }
-        let Ok((r, _)) = parse_ident_with_hyphens(after) else {
+        let Ok((r, name)) = parse_ident_with_hyphens(after) else {
             break;
         };
-        n = n.saturating_add(1);
+        names.push(name.into());
         rest = r;
     }
-    n
+    names
 }
 
 /// Parse a variable name from raw string (used in interpolation).
@@ -292,7 +292,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let (after_expr, first_expr) = crate::parser::expr::expression(after_colons)?;
         let (after_expr, _) = ws(after_expr)?;
         let (rest, _) = parse_char(after_expr, ')')?;
-        let tail = static_tail_len(rest);
+        let tail = static_tail(rest);
         let (rest, combined) = parse_symbolic_deref_segments(rest, first_expr)?;
         let deref = Expr::SymbolicDeref {
             sigil: "$".to_string(),
@@ -300,9 +300,10 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         };
         return Ok((
             rest,
-            match tail {
-                0 => deref,
-                n => Expr::spelled(deref, || crate::ast::spelled::Spelling::IndirectTail(n)),
+            if tail.is_empty() {
+                deref
+            } else {
+                Expr::spelled(deref, || crate::ast::spelled::Spelling::IndirectTail(tail))
             },
         ));
     }
