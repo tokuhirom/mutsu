@@ -1392,7 +1392,10 @@ fn lower_constant(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runtime
     };
     let init = named_child(node, "initializer")?;
     // A constant runs `:=` the same as `=`.
-    if !matches!(init.class, RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind) {
+    if !matches!(
+        init.class,
+        RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
+    ) {
         return Err(unsupported(node));
     }
     let expr = lower_expr(names, named_child_or_positional(init)?)?;

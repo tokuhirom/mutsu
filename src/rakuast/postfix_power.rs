@@ -16,7 +16,9 @@ use crate::value::RuntimeError;
 /// The `ApplyPostfix` of the `**` the parser built for a superscript power.
 // Cost: O(n), n = size of the operand.
 pub(super) fn view_power(names: &NameScope, power: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    if let Expr::HyperOp { op, left, right, .. } = power
+    if let Expr::HyperOp {
+        op, left, right, ..
+    } = power
         && op == "**"
         && let Expr::Literal(exponent) = &**right
     {

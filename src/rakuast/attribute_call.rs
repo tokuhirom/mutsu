@@ -77,7 +77,10 @@ fn public(
     name: Symbol,
     args: &[Expr],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut fields = vec![leaf_field(Some("name"), Value::str(format!("{sigil}.{name}")))];
+    let mut fields = vec![leaf_field(
+        Some("name"),
+        Value::str(format!("{sigil}.{name}")),
+    )];
     if sigil != '&' || !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(names, args)?));
     }

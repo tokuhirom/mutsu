@@ -20,7 +20,10 @@ fn type_trait(names: &NameScope, class: RakuAstClass, name: &str) -> Result<Valu
     Ok(Value::rakuast(Box::new(RakuAstNode {
         origin: Default::default(),
         class,
-        fields: vec![node_field(None, super::type_build::build_type_node(names, name)?)],
+        fields: vec![node_field(
+            None,
+            super::type_build::build_type_node(names, name)?,
+        )],
     })))
 }
 
@@ -38,7 +41,10 @@ pub(super) fn enum_traits(
         .collect::<Result<Vec<_>, _>>()?;
     // Without the spans, `is export` follows the roles.
     let at = spans.map_or(u8::MAX, |s| s.order.export);
-    Ok(interleave(does, export.into_iter().map(|e| (at, e)).collect()))
+    Ok(interleave(
+        does,
+        export.into_iter().map(|e| (at, e)).collect(),
+    ))
 }
 
 /// The `traits` of a `subset`: `is export`, its own `is` traits and the `of`
@@ -105,12 +111,18 @@ mod tests {
     fn places_the_fixed_traits_among_the_others() {
         let others = vec![Value::str_from("a"), Value::str_from("b")];
         let placed = vec![(2, Value::str_from("of")), (0, Value::str_from("export"))];
-        assert_eq!(names(&interleave(others, placed)), ["export", "a", "of", "b"]);
+        assert_eq!(
+            names(&interleave(others, placed)),
+            ["export", "a", "of", "b"]
+        );
     }
 
     #[test]
     fn a_place_past_the_end_appends() {
         let placed = vec![(5, Value::str_from("of"))];
-        assert_eq!(names(&interleave(vec![Value::str_from("a")], placed)), ["a", "of"]);
+        assert_eq!(
+            names(&interleave(vec![Value::str_from("a")], placed)),
+            ["a", "of"]
+        );
     }
 }

@@ -1131,8 +1131,13 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 export_tags,
             );
             let of = base_is_explicit.then_some(base.as_str());
-            let traits =
-                super::trait_order::subset_traits(names, export, custom_traits, of, spans.as_deref())?;
+            let traits = super::trait_order::subset_traits(
+                names,
+                export,
+                custom_traits,
+                of,
+                spans.as_deref(),
+            )?;
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -4524,7 +4529,11 @@ fn constant_declaration(
         _ => (RakuAstClass::InitializerAssign, expr),
     };
     let initializer = node_field(None, view_expr(names, expr)?);
-    let initializer = RakuAstNode { origin: Default::default(), class, fields: vec![initializer] };
+    let initializer = RakuAstNode {
+        origin: Default::default(),
+        class,
+        fields: vec![initializer],
+    };
     fields.push(node_field(Some("initializer"), initializer));
     Ok(Some(statement_expression(RakuAstNode {
         origin: Default::default(),

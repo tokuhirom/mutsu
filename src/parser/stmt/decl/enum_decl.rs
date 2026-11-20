@@ -347,7 +347,11 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
 fn words_form(text: &str, variants: &[(String, Option<Expr>)]) -> EnumVariantForm {
     let mut words = variants.iter().map(|(name, _)| name.as_str());
     let plain = text.split(' ').eq(&mut words) && !text.is_empty();
-    if plain { EnumVariantForm::Words } else { EnumVariantForm::WrittenWords(text.into()) }
+    if plain {
+        EnumVariantForm::Words
+    } else {
+        EnumVariantForm::WrittenWords(text.into())
+    }
 }
 
 /// The form of a `<< >>` / `« »` body that began at `start` and ended where
