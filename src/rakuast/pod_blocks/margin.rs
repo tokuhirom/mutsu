@@ -41,7 +41,9 @@ pub(super) fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
                 j += 1;
             }
         }
-        "end" | "config" | "table" | "formula" => return None,
+        // `    =config head2 :like<head1>`: one line, a directive.
+        "config" => i,
+        "end" | "table" | "formula" => return None,
         _ => {
             // A margin of one blank has a paragraph quirk of its own.
             if indent == 1 {
@@ -61,14 +63,9 @@ pub(super) fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             j - 1
         }
     };
-    // A line indented more than the margin keeps its extra blanks in some
-    // shapes and loses them in others: not read.
-    if (i + 1..=last).any(|j| {
-        let line = lines.text[j];
-        !lines.blank(j) && line[indent..].starts_with(char::is_whitespace)
-    }) {
-        return None;
-    }
+    // A line indented more than the margin keeps or loses its extra blanks
+    // by the block's type, as the unindented reader does (`=bold Turn` /
+    // `      into` keeps them, `=item` and `=begin pod` drop them).
     // The same quirk drops the blank line after a paragraph of a delimited
     // block.
     if indent == 1 && (i..=last).any(|j| lines.blank(j)) {
