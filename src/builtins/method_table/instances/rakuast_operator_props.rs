@@ -58,6 +58,7 @@ pub(super) static ROWS: &[MethodRow] = rows_for![
     "RakuAST::Postcircumfix::LiteralHashIndex",
     "RakuAST::DottyInfix::Call",
     "RakuAST::FunctionInfix",
+    "RakuAST::Assignment",
     "RakuAST::MetaInfix::Assign",
     "RakuAST::MetaInfix::Negate",
     "RakuAST::MetaInfix::Reverse",
