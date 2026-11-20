@@ -36,6 +36,58 @@ pub(super) fn view_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
+/// `$<word>` placed at its range: rakudo places its word quote (and the
+/// quote's text) between the angle brackets.
+// Cost: O(n), n = length of the variable's text.
+pub(super) fn named_capture_origins(node: &mut RakuAstNode) {
+    if node.class != RakuAstClass::VarNamedCapture {
+        return;
+    }
+    let Some((from, to)) = super::infix_origins::byte_range(node) else {
+        return;
+    };
+    let bracketed = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |t| {
+        let inner = t.get(1..)?.strip_prefix('<')?.strip_suffix('>')?;
+        (!inner.is_empty() && !inner.contains(['<', '>'])).then_some(())
+    });
+    if bracketed.is_none() {
+        return;
+    }
+    super::infix_origins::with_child_at(node, 0, |quote| {
+        super::origin::word_quote_inner(quote, crate::ast::SrcSpan::new(from + 2, to - 1))
+    });
+}
+
+/// How a `$<word>` / `$0` interpolated into a string is written, for placing
+/// it among the string's segments; `None` for any other node.
+// Cost: O(n), n = length of the name.
+pub(super) fn interpolated_text(node: &RakuAstNode) -> Option<String> {
+    match node.class {
+        RakuAstClass::VarPositionalCapture => match node.fields.first()?.value {
+            super::RakuAstFieldValue::Node(ref index) => match index.view() {
+                crate::value::ValueView::Int(index) => Some(format!("${index}")),
+                _ => None,
+            },
+            _ => None,
+        },
+        RakuAstClass::VarNamedCapture => {
+            let quote = super::infix_origins::child_at(node, 0)?;
+            let segments = quote.fields.iter().find(|f| f.name == Some("segments"))?;
+            let super::RakuAstFieldValue::List(items) = &segments.value else {
+                return None;
+            };
+            let [only] = items.as_slice() else {
+                return None;
+            };
+            let crate::value::ValueView::RakuAst(word) = only.view() else {
+                return None;
+            };
+            Some(format!("$<{}>", super::infix_origins::leaf_text(word)?))
+        }
+        _ => None,
+    }
+}
+
 /// `@<name>` / `%<name>`: the parser's `.list` / `.hash` of `$<name>`, as
 /// `Var::NamedCapture` with the written sigil.
 // Cost: O(|name|).

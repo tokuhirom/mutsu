@@ -31,9 +31,10 @@ impl EmptyOrigins {
 }
 
 /// The fields of `class` whose empty node Rakudo's `visit-children` visits,
-/// measured on rakudo 2026.09. A `Method`'s or a regex declaration's
-/// signature is not listed: Rakudo fills it with the implicit `self` / `%_`
-/// parameters, which mutsu does not model.
+/// measured on rakudo 2026.09. A `Method`'s signature is not listed: Rakudo
+/// fills it with the implicit `self` / `%_` parameters, which mutsu does not
+/// model. A regex declaration's stays empty (`token t { }`), and rakudo
+/// 2026.11 visits it.
 // Cost: O(1).
 fn visited(class: RakuAstClass) -> &'static [&'static str] {
     use RakuAstClass as C;
@@ -45,7 +46,11 @@ fn visited(class: RakuAstClass) -> &'static [&'static str] {
         | C::CallPrivateMethod
         | C::CallNameAsMethod
         | C::CallMetaMethod => &["args"],
-        C::Sub | C::PointyBlock => &["signature"],
+        C::Sub
+        | C::PointyBlock
+        | C::TokenDeclaration
+        | C::RuleDeclaration
+        | C::RegexDeclaration => &["signature"],
         _ => &[],
     }
 }

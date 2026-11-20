@@ -141,7 +141,9 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
 // Cost: O(1).
 fn parameter_type(param: &RakuAstNode) -> Option<Option<String>> {
     match child(param, "type") {
+        // The implicit `Any` of an untyped parameter is not written.
         None => Some(None),
+        Some(ty) if ty.class == RakuAstClass::TypeSetting => Some(None),
         Some(ty) if ty.class == RakuAstClass::TypeSimple => {
             Some(Some(leaf_text(child_at(ty, 0)?)?))
         }

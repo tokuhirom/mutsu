@@ -32,6 +32,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
+        RakuAstClass::VarNamedCapture => super::match_vars::named_capture_origins(node),
         RakuAstClass::TypeParameterized => {
             if let Some((from, to)) = byte_range(node) {
                 super::type_origins::parameterized(node, SrcSpan::new(from, to));
@@ -50,7 +51,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         RakuAstClass::TokenDeclaration
         | RakuAstClass::RuleDeclaration
-        | RakuAstClass::RegexDeclaration => super::regex_origins::declaration(names, node),
+        | RakuAstClass::RegexDeclaration => super::regex_decl_origins::declaration(names, node),
         RakuAstClass::Block
         | RakuAstClass::Sub
         | RakuAstClass::PointyBlock
