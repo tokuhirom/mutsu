@@ -13,12 +13,16 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         bare: &str,
     ) -> bool {
+        if !code.locals.iter().any(|n| n == bare)
+            || crate::ast::param_defs_declare_lexical(param_defs, bare)
+        {
+            return false;
+        }
         // `lookup`, not `intern`: a name never interned is in neither
-        // declared-symbol set.
+        // declared-symbol set. Asked only for a name the frame owns, which
+        // most readings are not.
         let sym = crate::symbol::Symbol::lookup(bare);
-        code.locals.iter().any(|n| n == bare)
-            && !crate::ast::param_defs_declare_lexical(param_defs, bare)
-            && !sym.is_some_and(|s| code.my_declared_sym.contains(&s))
+        !sym.is_some_and(|s| code.my_declared_sym.contains(&s))
             // A `my` written inside an expression
             // (`f($!x, my $x := ...)`) is recorded apart.
             && !sym.is_some_and(|s| code.expr_declared_syms.contains(&s))

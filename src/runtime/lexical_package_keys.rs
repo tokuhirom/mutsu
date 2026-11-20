@@ -69,13 +69,17 @@ impl Interpreter {
         // it is declared, and code the runtime itself composes (the slang
         // host's `grammar Raku::Grammar`, implicitly `is Grammar`) must not
         // pick up a module's file-scope `my role Grammar`.
-        if name.is_empty()
-            || crate::qualified::is_qualified_str(name)
+        if name.is_empty() {
+            return None;
+        }
+        // One lookup of the text serves both the qualification flag and the
+        // binding key below.
+        let head = crate::qualified::known_symbol(name);
+        if crate::qualified::is_qualified(head)
             || crate::builtin_types::catalog::builtin_type_info(name).is_some()
         {
             return None;
         }
-        let head = Symbol::intern(name);
         let env = self.env();
         let bound =
             env.get_lexical_type_binding(crate::term_names::lexical_type_key_sym(head), head)?;

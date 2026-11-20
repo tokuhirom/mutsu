@@ -269,6 +269,17 @@ impl Interpreter {
         let (Some(class), Some(method)) = (probe_key(class_name), probe_key(method_name)) else {
             return self.user_candidates_all_outranked_by_builtin_uncached(class_name, method_name);
         };
+        self.user_candidates_all_outranked_by_builtin_sym(class, method)
+    }
+
+    /// [`Self::user_candidates_all_outranked_by_builtin`] for names already
+    /// held as symbols.
+    // Cost: O(1) on a hit; a miss costs one MRO walk, O(d), d = MRO depth.
+    pub(crate) fn user_candidates_all_outranked_by_builtin_sym(
+        &mut self,
+        class: Symbol,
+        method: Symbol,
+    ) -> bool {
         self.probe_memo::<AllOutrankedByBuiltin>(class, method, |this| {
             this.user_candidates_all_outranked_by_builtin_uncached(
                 class.as_str(),

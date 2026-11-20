@@ -117,6 +117,10 @@ static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 // only default is `$desc = ''` should never appear in the first counter.
 static PARAM_DEFAULT_EVALS: AtomicU64 = AtomicU64::new(0);
 static PARAM_DEFAULT_CONSTS: AtomicU64 = AtomicU64::new(0);
+// The omitted parameters whose default the method fast binder's default
+// prologue evaluated (`vm_method_default_prologue`), in the callee frame
+// instead of the general binder.
+static PARAM_DEFAULT_PROLOGUE: AtomicU64 = AtomicU64::new(0);
 
 // Constant-pool interning (ADR-0006 §2.4). `CONST_POOL_ADDS` counts every
 // `CompiledCode::add_constant` call, `CONST_POOL_DEDUP_HITS` the ones that
@@ -1068,6 +1072,14 @@ pub(crate) fn record_param_default(evaluated: bool) {
     }
 }
 
+/// Record one default the method fast binder's default prologue evaluated.
+#[inline]
+pub(crate) fn record_param_default_prologue() {
+    if enabled() {
+        PARAM_DEFAULT_PROLOGUE.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 /// Record a write-through mirror of a local slot into env (`flush_local_to_env`).
 /// Each call mirrors one name-observable slot, so `slots` is 1 per call.
 #[inline]
@@ -1147,8 +1159,9 @@ pub(crate) fn dump() {
     );
     let default_evals = PARAM_DEFAULT_EVALS.load(Ordering::Relaxed);
     let default_consts = PARAM_DEFAULT_CONSTS.load(Ordering::Relaxed);
+    let default_prologue = PARAM_DEFAULT_PROLOGUE.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] param-defaults: evaluated={default_evals} (eval_block_value of the default AST) constant={default_consts} (immutable literal bound directly)"
+        "[mutsu vm-stats] param-defaults: evaluated={default_evals} (eval_block_value of the default AST) constant={default_consts} (immutable literal bound directly) prologue={default_prologue} (evaluated in the method frame by the fast binder)"
     );
     let const_adds = CONST_POOL_ADDS.load(Ordering::Relaxed);
     let const_hits = CONST_POOL_DEDUP_HITS.load(Ordering::Relaxed);

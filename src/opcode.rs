@@ -15347,8 +15347,6 @@ impl CompiledFunction {
                         // targeting an outer routine, requiring the routine stack.
                         | OpCode::CallOnValue { .. }
                         | OpCode::CallOnCodeVar { .. }
-                        // ForLoop may have FIRST/NEXT/LAST phasers that need proper state
-                        | OpCode::ForLoop(..)
             )
         });
         self.has_inner_subs = has_closures || has_other;

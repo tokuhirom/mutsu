@@ -77,6 +77,31 @@ pub(crate) fn split_qualified_var(name: Symbol) -> Option<QualifiedVar> {
     split
 }
 
+/// The package of the qualified variable `name`, as a symbol, with a leading
+/// `GLOBAL::` dropped (`$GLOBAL::V::x` names the variable `$V::x` does), or
+/// `None` when `name` is not qualified. Decided once per symbol, so a
+/// per-read caller does not look the package's text up again.
+// Cost: O(1) amortized (one memo probe; the first call per symbol splits and
+// interns the package).
+pub(crate) fn qualified_var_package(name: Symbol) -> Option<Symbol> {
+    thread_local! {
+        static PACKAGES: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Option<Symbol>>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    if !super::is_qualified(name) {
+        return None;
+    }
+    if let Some(pkg) = PACKAGES.with(|c| c.borrow().get(&name).copied()) {
+        return pkg;
+    }
+    let pkg = split_qualified_var(name)
+        .map(|split| super::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg)));
+    PACKAGES.with(|c| {
+        c.borrow_mut().insert(name, pkg);
+    });
+    pkg
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

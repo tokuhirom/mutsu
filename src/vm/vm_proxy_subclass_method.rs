@@ -70,8 +70,9 @@ impl Interpreter {
         {
             return None;
         }
-        let class = class_sym.as_str();
-        if !self.has_user_method_sym(class, method_sym) || self.is_native_method(class, method) {
+        if !self.has_user_method_of(class_sym, method_sym)
+            || self.is_native_method_sym(class_sym, method_sym)
+        {
             return None;
         }
         // `self` is the Proxy as a container: reading it FETCHes, its `.VAR`

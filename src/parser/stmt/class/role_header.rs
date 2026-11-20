@@ -93,7 +93,10 @@ pub(super) fn parse(mut rest: &str) -> PResult<'_, Header> {
                 super::class_decl::note_is(
                     &mut written,
                     &trait_name,
-                    (!tags.is_empty()).then_some(TraitArgument::ExportTags(tags)),
+                    // Only a written tag list is an argument (bare `is export`
+                    // has none, as in rakudo's tree).
+                    r.starts_with('(')
+                        .then_some(TraitArgument::ExportTags(tags)),
                 );
                 let r = skip_balanced_parens(r);
                 let (r, _) = ws(r)?;

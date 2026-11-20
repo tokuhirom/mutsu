@@ -19,6 +19,10 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
         super::origin::set_span(name, spans.name);
         operator_quote_origin(name, spans.name);
     });
+    // An empty `()` the node leaves out still has a range.
+    if spans.signature.is_some() && !node.fields.iter().any(|f| f.name == Some("signature")) {
+        super::empty_fields::set_span(node, "signature", spans.signature);
+    }
     with_child(node, "signature", |signature| {
         super::origin::set_span(signature, spans.signature);
         parameters(signature, params);
@@ -156,6 +160,9 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
         if let Some(first) = trait_node.fields.first_mut() {
             with_value(&mut first.value, |named| type_origin(named, at.name));
         }
+        if trait_node.class == RakuAstClass::TraitHandles {
+            super::package_trait_origins::handles_term(&mut trait_node, at.whole);
+        }
         *value = Value::rakuast(Box::new(trait_node));
     }
 }
@@ -164,7 +171,11 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
 /// under the `Statement::Expression` converted from `stmt`) its name's and
 /// block's origins.
 // Cost: O(f), f = fields of the nodes on the path.
-pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
+pub(super) fn package_origins(
+    names: &crate::scope::NameScope,
+    statement: &mut RakuAstNode,
+    stmt: &Stmt,
+) {
     if super::finalize::executing() {
         return;
     }
@@ -198,19 +209,30 @@ pub(super) fn package_origins(statement: &mut RakuAstNode, stmt: &Stmt) {
         block.span = crate::ast::SrcSpan::new(spans.name.from as usize, block.span.to as usize);
     }
     with_child(statement, "expression", |decl| {
+        // A name's adverbs (`E:ver<1>`) are part of the `Name`.
+        let mut name_end = spans.name.to as usize;
         with_child(decl, "name", |name| {
-            super::origin::set_span(name, spans.name)
+            if !spans.name.is_some() {
+                return;
+            }
+            name_end = super::package_trait_origins::name_adverbs(name, name_end);
+            super::origin::set_span(
+                name,
+                crate::ast::SrcSpan::new(spans.name.from as usize, name_end),
+            )
         });
         with_child(decl, "body", |body| block_origins(body, block));
         // The traits are written between the name and the block.
         if spans.name.is_some() && spans.block.blockoid.is_some() {
             super::package_trait_origins::apply(
+                names,
                 decl,
-                crate::ast::SrcSpan::new(
-                    spans.name.to as usize,
-                    spans.block.blockoid.from as usize,
-                ),
+                crate::ast::SrcSpan::new(name_end, spans.block.blockoid.from as usize),
             );
+        }
+        // Rakudo's package block starts at the first trait, which it visits.
+        if !matches!(stmt, Stmt::RoleDecl { .. }) && block.span.is_some() {
+            super::package_trait_origins::block_from_first_trait(decl, block.span);
         }
     });
 }

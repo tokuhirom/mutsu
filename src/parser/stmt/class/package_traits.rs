@@ -26,7 +26,11 @@ pub(crate) fn parse_package_is_traits(input: &str) -> PResult<'_, PackageTraits>
             let mut tags = Vec::new();
             super::class_decl::push_export_tags(after_name, &mut tags);
             parsed.export_tags = Some(tags.clone());
-            let source = (!tags.is_empty()).then_some(TraitArgument::ExportTags(tags));
+            // Only a written tag list is an argument (bare `is export` has
+            // none, as in rakudo's tree).
+            let source = after_name
+                .starts_with('(')
+                .then_some(TraitArgument::ExportTags(tags));
             (skip_balanced_parens(after_name), None, source)
         } else if after_name.starts_with('<') {
             let (after, words) = crate::parser::helpers::parse_trait_angle_arg(after_name)?;

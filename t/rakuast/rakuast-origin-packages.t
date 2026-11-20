@@ -21,7 +21,8 @@ my @s = $src.AST.statements;
 my $class = @s[0].expression;
 is range($class), '0..60', 'a class';
 is range($class.name), '6..10', 'its qualified name';
-is range($class.body), '18..60', 'its block';
+# Rakudo 2026.11 starts a package block at its first trait.
+is range($class.body), '11..60', 'its block, from its trait';
 is range($class.body.body), '18..60', 'its blockoid';
 is range($class.body.body.statement-list), '24..58',
     'its statement list, an `also` statement included';
