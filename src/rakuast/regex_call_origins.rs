@@ -63,6 +63,39 @@ pub(super) fn args_len(text: &str) -> Option<usize> {
     None
 }
 
+/// The byte length of a colon call's argument text (`<.name: ARGS>`) starting
+/// right after its `:`, up to the `>` that closes the assertion (excluded),
+/// when brackets and quotes in it balance plainly.
+// Cost: O(n), n = length of the text.
+pub(super) fn colon_args_len(text: &str) -> Option<usize> {
+    let mut stack: Vec<char> = Vec::new();
+    let mut chars = text.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '(' | '[' | '{' | '<' => stack.push(c),
+            '>' if stack.is_empty() => return Some(at),
+            ')' | ']' | '}' | '>' => {
+                let open = stack.pop()?;
+                if !matches!((open, c), ('(', ')') | ('[', ']') | ('{', '}') | ('<', '>')) {
+                    return None;
+                }
+            }
+            '\'' | '"' => loop {
+                match chars.next()?.1 {
+                    '\\' => {
+                        chars.next()?;
+                    }
+                    q if q == c => break,
+                    _ => {}
+                }
+            },
+            '#' | '\\' | '「' | '」' => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Give the `args` of `node`, the call assertion whose argument text `inner`
 /// starts at byte `at` of the unit, their ranges.
 // Cost: O(n), n = length of the argument text, plus the parse of it.

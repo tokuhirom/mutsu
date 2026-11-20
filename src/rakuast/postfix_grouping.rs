@@ -81,3 +81,39 @@ pub(super) fn restore(
 pub(super) fn is_source_field(field: &RakuAstField) -> bool {
     field.name == Some(SOURCE_GROUPING)
 }
+
+/// `%h<key>` as a regex call argument (`<word(%h<key>)>`): the
+/// `Postcircumfix::LiteralHashIndex` the regex parser recorded it as, placed
+/// where the argument was written when the fragment parse has its range.
+// Cost: O(n), n = size of the argument's node.
+pub(super) fn literal_hash_index(
+    names: &NameScope,
+    expr: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::Index {
+        target,
+        index,
+        is_positional: false,
+        ..
+    } = expr
+    else {
+        return Err(super::view::unsupported("literal hash index provenance"));
+    };
+    let mut node = view_node(
+        names,
+        target,
+        RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::PostcircumfixLiteralHashIndex,
+            fields: vec![node_field(
+                Some("index"),
+                super::view::view_expr(names, index)?,
+            )],
+        },
+    )?;
+    if let Some(span) = super::expr_origins::of(expr) {
+        super::origin::set_span(&mut node, span);
+        super::infix_origins::derive(names, &mut node);
+    }
+    Ok(node)
+}

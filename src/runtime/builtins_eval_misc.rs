@@ -43,13 +43,13 @@ impl Interpreter {
             )));
         }
         let value = positional.cloned().unwrap_or(Value::NIL);
-        self.env.insert("made".to_string(), value.clone());
+        self.env.insert_sym(crate::symbol::wk::made(), value.clone());
         self.regex_state.action_made = Some(value.clone());
         Ok(value)
     }
 
     pub(super) fn builtin_made(&self) -> Result<Value, RuntimeError> {
-        Ok(self.env.get("made").cloned().unwrap_or(Value::NIL))
+        Ok(self.env.get_sym(crate::symbol::wk::made()).cloned().unwrap_or(Value::NIL))
     }
 
     pub(crate) fn builtin_callframe(

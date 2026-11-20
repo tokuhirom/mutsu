@@ -40,7 +40,16 @@ pub(crate) fn strip_undeclared_nameds(method: &str, args: &[Value]) -> Option<Ve
     if !args.iter().any(|a| a.is_string_pair_value()) {
         return None;
     }
-    let method = Symbol::intern(method);
+    strip_undeclared_nameds_sym(Symbol::intern(method), args)
+}
+
+/// [`strip_undeclared_nameds`] for a caller that holds the method name
+/// interned already.
+// Cost: as `strip_undeclared_nameds`, without the intern.
+pub(crate) fn strip_undeclared_nameds_sym(method: Symbol, args: &[Value]) -> Option<Vec<Value>> {
+    if !args.iter().any(|a| a.is_string_pair_value()) {
+        return None;
+    }
     if !super::names_any_row(method) {
         return None;
     }

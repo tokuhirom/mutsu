@@ -341,6 +341,9 @@ impl Interpreter {
     /// iterates the whole Seq too. A no-op for every other value.
     // Cost: runs the gather body to completion.
     pub(crate) fn reify_gather_seq(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        if !value.is_seq_value() {
+            return Ok(());
+        }
         if let ValueView::Seq(body) = value.view()
             && body.is_gather_source()
         {

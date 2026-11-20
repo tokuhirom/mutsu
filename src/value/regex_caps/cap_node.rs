@@ -370,6 +370,9 @@ pub(crate) struct CapChildren {
     /// The cursor position (`.pos`) when a `)>` marker narrowed `.to` short
     /// of it; `None` when `.pos` is `.to`.
     pub(crate) pos: Option<usize>,
+    /// The `:actions` object of the parse whose start rule this node is
+    /// (`Match.actions`). `None` on every other node.
+    pub(crate) actions: Option<Value>,
 }
 
 impl CapNode {
@@ -462,6 +465,7 @@ impl RegexCaptures {
                 regex_vars: regex_vars.map(Arc::unwrap_or_clone).unwrap_or_default(),
                 cursor,
                 pos,
+                actions: None,
             })
         });
         CapNode {

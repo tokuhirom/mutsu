@@ -113,7 +113,7 @@ pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;
 pub(crate) use functions::{deitemize_flat_operand, flat_val, thread_junctions_in_items};
-pub(crate) use method_table::strip_undeclared_nameds;
+pub(crate) use method_table::{strip_undeclared_nameds, strip_undeclared_nameds_sym};
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{
     buf_get_int_items, fmt_item_iterates, fmt_joinable_target, fmt_native, is_buf_like,

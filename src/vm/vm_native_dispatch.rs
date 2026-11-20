@@ -294,7 +294,7 @@ impl Interpreter {
         // interceptor above (`contains` / `starts-with` / `ends-with` /
         // `substr-eq`) or declared on the method's rows; a name no row binds is
         // dropped (`method_table::implicit_named`).
-        let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
+        let stripped = crate::builtins::strip_undeclared_nameds_sym(method_sym, args);
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
         if args.len() == 1 {
             crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0]).or_else(
