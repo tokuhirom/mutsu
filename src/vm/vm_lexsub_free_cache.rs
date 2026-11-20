@@ -44,15 +44,18 @@
 //! binding inside that cell rather than replacing it). ADR-18244 stage B.
 //!
 //! Entries are kept per frame, in call order: frames are told apart by their
-//! invocation id, which every call path draws fresh and which grows with call
-//! depth, so an entry can never answer for a later call, and a caller's
-//! entries survive the calls it makes. Filling for a frame drops the entries
-//! of callees that returned (a larger id).
+//! invocation id, which every call path draws fresh, so an entry can never
+//! answer for a later call, and a caller's entries survive the calls it makes.
+//! Filling for a frame first drops the entries of frames that returned (one
+//! whose routine-stack index now holds another invocation). A name's first
+//! read in a call only leaves a placeholder; its second read fills it.
 
 use super::*;
 
-/// `LexicalState::lexsub_free_cache`: (frame invocation id, name, alias cell).
-pub(crate) type LexSubFreeCache = Vec<(u64, Symbol, Value)>;
+/// `LexicalState::lexsub_free_cache`: (frame invocation id, the frame's index
+/// in the routine stack, name, binding cell). The index makes "is this
+/// frame still live" one comparison.
+pub(crate) type LexSubFreeCache = Vec<(u64, u32, Symbol, Value)>;
 
 /// Entries kept per frame; a sub with more free variables reads the rest the
 /// long way.
@@ -91,13 +94,13 @@ impl Interpreter {
         // Entries are in call order (a callee's invocation id is larger than
         // its caller's): this frame's are at the top, above them only a
         // returned callee's leftovers.
-        let (_, _, cell) = self
+        let (_, _, _, cell) = self
             .lexicals
             .lexsub_free_cache
             .iter()
             .rev()
-            .take_while(|(owner, _, _)| *owner >= id)
-            .find(|(owner, sym, _)| *owner == id && *sym == name_sym)?;
+            .take_while(|(owner, _, _, _)| *owner >= id)
+            .find(|(owner, _, sym, _)| *owner == id && *sym == name_sym)?;
         // The first read's placeholder (see `lexsub_free_cache_fill`).
         if cell.is_nil() || !self.lexsub_free_cache_guards_hold(name) {
             return None;
@@ -143,24 +146,34 @@ impl Interpreter {
         // placeholder, which `lexsub_free_cache_read` never serves): the
         // lookup below costs about what one more chain walk does, so a name a
         // call reads once is not worth it. The second read fills the entry.
-        let cache = &mut self.lexicals.lexsub_free_cache;
-        // A returned callee's entries (a larger id) are dead; a caller's (a
-        // smaller id) stay for when it runs again.
-        while cache.last().is_some_and(|(owner, _, _)| *owner > id) {
-            cache.pop();
+        let depth = self.routine_stack().len() - 1;
+        // Drop the entries of frames that returned: a callee's (a larger id)
+        // and an earlier sibling call's (a smaller id, but no longer at its
+        // routine-stack index). A live caller's stay for when it runs again.
+        while let Some(&(owner, at, _, _)) = self.lexicals.lexsub_free_cache.last() {
+            let live = owner <= id
+                && self
+                    .routine_stack()
+                    .get(at as usize)
+                    .is_some_and(|f| f.invocation_id == owner);
+            if live {
+                break;
+            }
+            self.lexicals.lexsub_free_cache.pop();
         }
+        let cache = &mut self.lexicals.lexsub_free_cache;
         let top = cache
             .iter()
-            .rposition(|(owner, sym, _)| *owner != id || *sym == name_sym)
+            .rposition(|(owner, _, sym, _)| *owner != id || *sym == name_sym)
             .filter(|&i| cache[i].0 == id);
         let slot = match top {
             None => {
                 if cache.len() < LEXSUB_FREE_CACHE_CAP {
-                    cache.push((id, name_sym, Value::NIL));
+                    cache.push((id, depth as u32, name_sym, Value::NIL));
                 }
                 return;
             }
-            Some(i) if cache[i].2.is_nil() => i,
+            Some(i) if cache[i].3.is_nil() => i,
             Some(_) => return,
         };
         if !self.lexsub_free_cache_guards_hold(name)
@@ -199,7 +212,7 @@ impl Interpreter {
             return;
         }
         if let Some(entry) = self.lexicals.lexsub_free_cache.get_mut(slot) {
-            entry.2 = cell;
+            entry.3 = cell;
         }
     }
 }
