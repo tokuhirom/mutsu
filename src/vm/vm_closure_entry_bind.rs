@@ -14,7 +14,7 @@
 //! each of those calls paid the whole general binder, ~21k instructions of
 //! a ~38k closure call for `(Mu \obj, $attr)`.
 //!
-//! This is *not* a second binder. [`entry_params`] accepts a signature
+//! This is *not* a second binder. [`crate::closure_entry_params::entry_params`] accepts a signature
 //! whose every parameter is a plain positional `$` scalar (optionally
 //! `is raw`) or a sigilless `\x` / `Mu \x`, and settles once per code object
 //! what the general binder derives from each `ParamDef`.
@@ -33,114 +33,7 @@
 //!   Junction or a `Nil` reaches other arms — declined.
 
 use super::*;
-use crate::ast::{ParamDef, ReadonlyKind};
-use crate::light_closure_shape::is_plain_scalar_param_name;
-
-/// What binding one parameter does, settled from its `ParamDef`.
-#[derive(Debug)]
-enum EntryParamKind {
-    /// A positional `$` scalar: its itemization and the readonly mark the
-    /// general binder's readonly pass leaves on it.
-    Scalar {
-        bind: ScalarParamBind,
-        readonly: ReadonlyKind,
-        /// `is raw`: a caller variable would be aliased.
-        raw: bool,
-    },
-    /// A sigilless `\x`: bound as passed under its term key, with the two
-    /// sigilless meta keys the general binder writes for a value binding.
-    Sigilless {
-        alias_key: Symbol,
-        readonly_key: Symbol,
-    },
-}
-
-/// One parameter of a signature [`entry_params`] accepted.
-#[derive(Debug)]
-pub(crate) struct EntryParam {
-    /// The env key the parameter is stored under: the name for a `$`
-    /// parameter, the term key for a sigilless one.
-    storage: Symbol,
-    /// `ParamDef::name`, for the `&`-sigiled alias of a `Callable`.
-    name: Box<str>,
-    kind: EntryParamKind,
-    /// The parameter is implicitly `Any` (untyped); `false` for `Mu \x`.
-    implicit_any: bool,
-}
-
-/// The [`EntryParam`]s of `param_defs`, or `None` when the entry bind may not
-/// serve this signature.
-// Cost: O(p + t), p = parameters, t = their total trait count.
-pub(crate) fn entry_params(param_defs: &[ParamDef]) -> Option<Box<[EntryParam]>> {
-    if param_defs.is_empty() {
-        return None;
-    }
-    param_defs.iter().map(entry_param).collect()
-}
-
-// Cost: O(t + n), t = the parameter's trait count, n = its name length.
-fn entry_param(pd: &ParamDef) -> Option<EntryParam> {
-    let plain_positional = !pd.named
-        && !pd.named_alias
-        && !pd.slurpy
-        && !pd.double_slurpy
-        && !pd.onearg
-        && pd.default.is_none()
-        && pd.type_capture.is_none()
-        && pd.literal_value.is_none()
-        && pd.sub_signature.is_none()
-        && pd.where_constraint.is_none()
-        && pd.trait_args.is_empty()
-        && !pd.optional_marker
-        && pd.outer_sub_signature.is_none()
-        && pd.code_signature.is_none()
-        && !pd.is_invocant
-        && !pd.does_target
-        && pd.shape_constraints.is_none()
-        && !pd.block_param;
-    if !plain_positional || !is_plain_scalar_param_name(&pd.name) || pd.declares_self_lexical() {
-        return None;
-    }
-    if pd.sigilless {
-        // `\x` or `Mu \x`; no trait (a sigilless parameter is raw already).
-        if !pd.traits.is_empty() || !matches!(pd.type_constraint.as_deref(), None | Some("Mu")) {
-            return None;
-        }
-        let name = crate::symbol::Symbol::intern(&pd.name);
-        return Some(EntryParam {
-            storage: crate::term_names::term_key_sym(name),
-            name: pd.name.as_str().into(),
-            kind: EntryParamKind::Sigilless {
-                alias_key: crate::runtime::sigilless_alias_key(&pd.storage_name()),
-                readonly_key: crate::runtime::sigilless_readonly_key(&pd.storage_name()),
-            },
-            implicit_any: pd.type_constraint.is_none(),
-        });
-    }
-    // A `$` scalar: untyped, with no trait but `is raw`.
-    let raw = match pd.traits.as_slice() {
-        [] => false,
-        [t] if t == "raw" => true,
-        _ => return None,
-    };
-    if pd.type_constraint.is_some() {
-        return None;
-    }
-    Some(EntryParam {
-        storage: Symbol::intern(&pd.name),
-        name: pd.name.as_str().into(),
-        kind: EntryParamKind::Scalar {
-            bind: Interpreter::scalar_param_bind(pd),
-            readonly: if raw {
-                ReadonlyKind::Immutable
-            } else {
-                ReadonlyKind::Alias
-            },
-            raw,
-        },
-        implicit_any: true,
-    })
-}
+use crate::closure_entry_params::{EntryParam, EntryParamKind};
 
 /// Whether an argument binds to an [`EntryParam`] through the one general
 /// binder arm this path reproduces: a plain value (see
@@ -156,7 +49,7 @@ fn entry_arg_kind_ok(arg: &Value) -> bool {
 }
 
 impl Interpreter {
-    /// Bind `args` to a signature [`entry_params`] accepted (see the module
+    /// Bind `args` to a signature [`crate::closure_entry_params::entry_params`] accepted (see the module
     /// docs), or return `false` with nothing done.
     // Cost: O(p), p = parameter count.
     pub(super) fn closure_entry_bind(
@@ -233,7 +126,13 @@ impl Interpreter {
         for (param, arg) in params.iter().zip(args) {
             let arg = arg.unwrap_varref().clone();
             match param.kind {
-                EntryParamKind::Scalar { bind, readonly, .. } => {
+                EntryParamKind::Scalar { raw, readonly } => {
+                    // An untyped `$` is an item binding; `is raw` binds as passed.
+                    let bind = if raw {
+                        ScalarParamBind::Keep
+                    } else {
+                        ScalarParamBind::Itemize
+                    };
                     let val = Self::apply_scalar_param_bind(bind, arg);
                     if matches!(
                         val.view(),

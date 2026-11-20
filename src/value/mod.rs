@@ -1969,9 +1969,9 @@ pub(crate) struct ParamNameSyms {
     /// [`crate::vm::light_def_params`]; see there for what is refused.
     pub(crate) light_def_params: Option<Box<[crate::vm::LightDefParam]>>,
     /// The signature as the full closure entry's bind sees it
-    /// ([`crate::vm::entry_params`]), or `None` when that bind may not serve
+    /// ([`crate::closure_entry_params::entry_params`]), or `None` when that bind may not serve
     /// it; tried when the light binds decline.
-    pub(crate) entry_params: Option<Box<[crate::vm::EntryParam]>>,
+    pub(crate) entry_params: Option<Box<[crate::closure_entry_params::EntryParam]>>,
     /// How the light closure *call* (#13286, `vm_closure_light_call.rs`) may
     /// bind a legacy-path signature [`Self::light_bindable`] refuses, settled
     /// from the names alone. Only that call reads it: its body reaches no
@@ -2120,7 +2120,7 @@ impl SubData {
             } else {
                 crate::vm::light_def_params(&self.param_defs)
             };
-            let entry_params = crate::vm::entry_params(&self.param_defs);
+            let entry_params = crate::closure_entry_params::entry_params(&self.param_defs);
             let light_call_legacy = if light_bindable {
                 None
             } else if self.param_defs.is_empty()
