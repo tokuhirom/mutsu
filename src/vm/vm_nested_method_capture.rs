@@ -23,24 +23,33 @@ impl Interpreter {
     /// afresh. A write the call made to one of them (`my $i; method m { $i++ }`)
     /// has to outlive the call, or the next call starts from the declaration's
     /// value again: store the written values back into the registered method.
-    // Cost: O(w + m * w), w = the captured variables the call wrote, m = the
-    // package's methods (only when it wrote one).
+    /// `frame` is the dying call's env. A scalar shared as a cell (#13044) is
+    /// written through the cell and needs nothing here.
+    // Cost: O(1) for a method with no nested-capture group (every ordinary
+    // method); otherwise O(c + m * w), c = captured entries, m = the package's
+    // methods, w = the captured variables the call wrote (only when it wrote
+    // one).
     pub(super) fn persist_nested_capture_writes(
         &mut self,
         owner: Symbol,
         method_def: &crate::runtime::MethodDef,
-        writes: Vec<(Symbol, Value)>,
+        frame: &crate::env::Env,
     ) {
-        let group_key = Symbol::intern("__mutsu_nested_capture_group");
         let Some(captured) = method_def.captured_env.as_ref() else {
             return;
         };
+        let group_key = crate::symbol::wk::nested_capture_group();
         let Some(group) = captured.get_sym(group_key).cloned() else {
             return;
         };
-        let writes: Vec<(Symbol, Value)> = writes
-            .into_iter()
-            .filter(|(sym, _)| *sym != group_key)
+        let writes: Vec<(Symbol, Value)> = captured
+            .iter()
+            .filter(|(sym, old)| **sym != group_key && !old.is_container_ref())
+            .filter_map(|(sym, old)| {
+                let now = frame.get_sym(*sym)?;
+                (!crate::vm::vm_method_dispatch::cheaply_unchanged(old, now))
+                    .then(|| (*sym, now.clone()))
+            })
             .collect();
         if writes.is_empty() {
             return;
@@ -50,8 +59,6 @@ impl Interpreter {
                 && env.get_sym(group_key).is_some_and(|g| *g == group)
             {
                 for (sym, v) in &writes {
-                    // A scalar shared as a cell (#13044) was written through
-                    // the cell; the entry must stay the cell.
                     if env.get_sym(*sym).is_some_and(|old| !old.is_container_ref()) {
                         env.insert_sym(*sym, v.clone());
                     }
@@ -167,7 +174,7 @@ impl Interpreter {
             Value::int(1),
         );
         env.insert_sym(
-            Symbol::intern("__mutsu_nested_capture_group"),
+            crate::symbol::wk::nested_capture_group(),
             Value::int(i64::from(spec.group)),
         );
         let Some(owner) = owner else {

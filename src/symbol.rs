@@ -1032,8 +1032,10 @@ pub(crate) mod wk {
         /// The invocant, `self`. One of the fixed env keys every compiled
         /// method call writes on entry (see the family below).
         self_ => "self";
-        /// `$.foo` desugaring's alias for the invocant, written next to `self`.
-        anon_state => "__ANON_STATE#";
+        /// The group of the methods hoisted out of one nested block of a
+        /// package body, kept in their captures
+        /// (`Interpreter::persist_nested_capture_writes`).
+        nested_capture_group => "__mutsu_nested_capture_group";
         /// The capture of a call whose code reads it (`nqp::usecapture`),
         /// bound in the callee env for the return writeback of its cells
         /// (`runtime::call_capture`).
@@ -1173,10 +1175,9 @@ pub(crate) mod wk {
     /// method-entry family above covers. Only used by debug assertions and
     /// tests that check the string-keyed and symbol-keyed spellings agree.
     #[cfg(test)]
-    pub(crate) fn method_entry_keys() -> [(Symbol, &'static str); 6] {
+    pub(crate) fn method_entry_keys() -> [(Symbol, &'static str); 5] {
         [
             (self_(), "self"),
-            (anon_state(), "__ANON_STATE#"),
             (class_decl(), "?CLASS"),
             (role_decl(), "?ROLE"),
             (error_var(), "!"),

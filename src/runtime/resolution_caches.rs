@@ -637,10 +637,6 @@ pub(crate) struct ResolutionCaches {
     /// What a method call on a class injects for the class-body statics it
     /// sees, by class (`Interpreter::inject_class_body_statics`, #17335).
     pub(crate) class_body_statics_plans: crate::runtime::class_body_statics_plan::Plans,
-    /// The class-body static keys a method exit drops, by class
-    /// (`Interpreter::class_body_static_merge_drops`, #17335).
-    pub(crate) class_body_static_merge_drops:
-        crate::runtime::class_body_statics_plan::MergeDrops,
     pub(crate) mixin_straight_front: rustc_hash::FxHashMap<
         crate::runtime::MixinFrontKey,
         crate::runtime::MixinFrontEntry,

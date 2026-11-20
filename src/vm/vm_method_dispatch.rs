@@ -991,76 +991,6 @@ impl Interpreter {
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
             reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
-            // Callee-frame key predicate for the merge (formerly a per-call
-            // materialized HashSet<String>): the method's params and locals,
-            // the frame fixtures, the attribute twigil forms and sigilless
-            // aliases, and env-only `my` declarations (no compiled slot, e.g. a
-            // `my @x` declared in a `next unless my @x = ...` condition) — a
-            // self-recursive method must not leak the callee's `my @x` back
-            // into the caller's same-named `@x` (zef `!find-prereq-candidates`
-            // `@needed`). The light-call merge already excludes these via
-            // `declared_locals`.
-            let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
-            // The type parameters of the roles the receiver class composes are
-            // bound while an instance is constructed, so a class's own TWEAK /
-            // BUILD frame sees them; they are not the caller's variables
-            // (`Pk[Qos $qos]` and a caller's `my $qos` passed as `:$qos`).
-            let class_role_param_names: Vec<String> = self
-                .registry()
-                .class_role_param_bindings
-                .get(receiver_class_name)
-                .map(|bindings| bindings.keys().cloned().collect())
-                .unwrap_or_default();
-            let is_method_local = |s: &str| -> bool {
-                // `@_`/`%_` are rebound to the callee's own arguments by the
-                // slow bind path, so they are as frame-local as `_`: merging
-                // them back clobbered a caller's explicit `@_` parameter.
-                matches!(
-                    s,
-                    "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
-                ) || method_def.params.iter().any(|p| p == s)
-                    // An enum the method declares binds its keys in the method's
-                    // scope; rakudo installs them in the method's package, which
-                    // `record_package_enum_key` mirrors. Merged back they would
-                    // shadow a same-named key of the caller's own enum (#16361).
-                    || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
-                    || bound_by_sub_signature(&method_def.param_defs, s)
-                    || bound_by_type_capture(&method_def.param_defs, s)
-                    || cc.locals.iter().any(|l| !l.is_empty() && l == s)
-                    || cc.env_only_decls.iter().any(|n| n == s)
-                    || dynamic_decl_local(&cc.locals, s)
-                    // A composed role's type parameter (`T` of `role R[::T]` /
-                    // `role R[$T]`) is bound into the callee env for this
-                    // call only. Merging it back would clobber the caller's
-                    // own `$T` when the caller is another instance of the
-                    // same role composed with a different argument and the
-                    // call is a recursion into it (HTML::Tag's `render`).
-                    || method_def
-                        .role_param_bindings
-                        .as_deref()
-                        .is_some_and(|b| b.iter().any(|(n, _)| n == s))
-                    || class_role_param_names.iter().any(|n| n == s)
-                    || class_body_static_names
-                        .get(owner_class)
-                        .is_some_and(|names| names.contains(s))
-                    || attr_twigil_local(attributes, s)
-                    || (has_attr_aliases && attr_alias_local(attributes, s))
-                    // Sigilless alias/readonly markers for a method parameter
-                    // are frame-local bookkeeping. A raw parameter may reuse a
-                    // caller's name, so merging `__mutsu_sigilless_alias::p`
-                    // back would overwrite the caller's alias chain with the
-                    // callee's immediate argument name.
-                    || s.strip_prefix("__mutsu_sigilless_alias::")
-                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
-                    || s.strip_prefix("__mutsu_sigilless_readonly::")
-                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
-            };
-            let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
-                method_def.captured_env.as_ref().is_some_and(|c| {
-                    c.get_sym(sym)
-                        .is_some_and(|captured| cheaply_unchanged(captured, v))
-                })
-            };
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
@@ -1126,45 +1056,87 @@ impl Interpreter {
             }
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
-            let static_drops = self.class_body_static_merge_drops(owner_class);
-            let frame_syms = MethodFrameSyms {
-                params: method_def.param_syms(),
-                locals: cc.locals_syms(),
-                statics: &static_drops,
+            // The frame's writes reach the caller through the variables' own
+            // cells (ADR-12529, #18274 slice 3): what is left to carry is a
+            // runtime-named write (`CALLER::LEXICAL::<$x> = v`) and a nested
+            // method capture's plain value.
+            let carried = if self.pending_runtime_name_writes.is_empty() {
+                Vec::new()
+            } else {
+                // Callee-frame key predicate for the runtime-name carry: the method's params and locals,
+                // the frame fixtures, the attribute twigil forms and sigilless
+                // aliases, and env-only `my` declarations (no compiled slot, e.g. a
+                // `my @x` declared in a `next unless my @x = ...` condition) — a
+                // self-recursive method must not leak the callee's `my @x` back
+                // into the caller's same-named `@x` (zef `!find-prereq-candidates`
+                // `@needed`). The light-call merge already excludes these via
+                // `declared_locals`.
+                let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
+                // The type parameters of the roles the receiver class composes are
+                // bound while an instance is constructed, so a class's own TWEAK /
+                // BUILD frame sees them; they are not the caller's variables
+                // (`Pk[Qos $qos]` and a caller's `my $qos` passed as `:$qos`).
+                let class_role_param_names: Vec<String> = self
+                    .registry()
+                    .class_role_param_bindings
+                    .get(receiver_class_name)
+                    .map(|bindings| bindings.keys().cloned().collect())
+                    .unwrap_or_default();
+                let is_method_local = |s: &str| -> bool {
+                    // `@_`/`%_` are rebound to the callee's own arguments by the
+                    // slow bind path, so they are as frame-local as `_`: merging
+                    // them back clobbered a caller's explicit `@_` parameter.
+                    matches!(
+                        s,
+                        "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
+                    ) || method_def.params.iter().any(|p| p == s)
+                        // An enum the method declares binds its keys in the method's
+                        // scope; rakudo installs them in the method's package, which
+                        // `record_package_enum_key` mirrors. Merged back they would
+                        // shadow a same-named key of the caller's own enum (#16361).
+                        || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+                        || bound_by_sub_signature(&method_def.param_defs, s)
+                        || bound_by_type_capture(&method_def.param_defs, s)
+                        || cc.locals.iter().any(|l| !l.is_empty() && l == s)
+                        || cc.env_only_decls.iter().any(|n| n == s)
+                        || dynamic_decl_local(&cc.locals, s)
+                        // A composed role's type parameter (`T` of `role R[::T]` /
+                        // `role R[$T]`) is bound into the callee env for this
+                        // call only. Merging it back would clobber the caller's
+                        // own `$T` when the caller is another instance of the
+                        // same role composed with a different argument and the
+                        // call is a recursion into it (HTML::Tag's `render`).
+                        || method_def
+                            .role_param_bindings
+                            .as_deref()
+                            .is_some_and(|b| b.iter().any(|(n, _)| n == s))
+                        || class_role_param_names.iter().any(|n| n == s)
+                        || class_body_static_names
+                            .get(owner_class)
+                            .is_some_and(|names| names.contains(s))
+                        || attr_twigil_local(attributes, s)
+                        || (has_attr_aliases && attr_alias_local(attributes, s))
+                        // Sigilless alias/readonly markers for a method parameter
+                        // are frame-local bookkeeping. A raw parameter may reuse a
+                        // caller's name, so merging `__mutsu_sigilless_alias::p`
+                        // back would overwrite the caller's alias chain with the
+                        // callee's immediate argument name.
+                        || s.strip_prefix("__mutsu_sigilless_alias::")
+                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
+                        || s.strip_prefix("__mutsu_sigilless_readonly::")
+                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
+                };
+                self.carried_runtime_name_writes(&current_env, &is_method_local)
             };
-            let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
-            let (mut merged_env, wrote_caller, changed_caller_locals, capture_writes) =
-                merge_method_env(
-                    frame.saved_env,
-                    current_env,
-                    &frame_syms,
-                    &is_method_local,
-                    &is_unwritten_capture,
-                    method_def.captured_env.as_ref(),
-                );
+            self.persist_nested_capture_writes(owner_sym, method_def, &current_env);
+            drop(current_env);
+            let mut merged_env = frame.saved_env;
             for (name, v) in carried {
                 merged_env.insert(name, v);
             }
-            self.persist_nested_capture_writes(owner_sym, method_def, capture_writes);
-            // Precise dirty signal (Slice 6.3): the caller only needs an
-            // env->locals re-sync when this method actually merged a
-            // caller-visible write (captured-outer var, global, &sub) or wrote
-            // back an `is rw` param. A method that merged nothing leaves the
-            // caller's slots coherent -> stays "pure" so the opcode skips the
-            // env_dirty mark (no per-call locals pull).
-            self.dispatch.method_dispatch_pure = !wrote_caller && rw_writeback.is_empty();
-
-            // Slice F (env<->locals coherence): a method that mutated a captured
-            // outer lexical (`method bar { $Foo++ }` closing over an outer-block
-            // `$Foo`) merged the new value into `merged_env` (which becomes
-            // `self.env` below). Record those changed caller-visible names so the
-            // CallMethod / CallMethodMut op — which holds the caller's `code` —
-            // writes each value straight through to the caller's local slot,
-            // dropping the dependency on the reverse `sync_locals_from_env` pull.
-            for k in &changed_caller_locals {
-                self.pending_rw_writeback_sources
-                    .push(k.resolve().to_string());
-            }
+            // The caller only needs an env->locals re-sync when this method
+            // wrote back an `is rw` param.
+            self.dispatch.method_dispatch_pure = rw_writeback.is_empty();
 
             for (source_name, val) in &rw_writeback {
                 // A named `:$scalar` param bound from an `@`/`%` SOURCE THAT IS
@@ -2923,92 +2895,64 @@ impl Interpreter {
             let frame = self.pop_call_frame();
             self.set_env(frame.saved_env);
         } else {
-            // Inner calls may have modified env (globals, dynamics).
-            // Check if env was actually changed; if so, merge the changes
-            // into the saved env before restoring.
+            // The frame's writes reach the caller through the variables' own
+            // cells (ADR-12529, #18274 slice 3): only a runtime-named write and
+            // a nested method capture's plain value are carried.
             let frame = self.pop_call_frame();
             if self.env().ptr_eq(&frame.saved_env) {
-                // Env object unchanged -> nothing merged back (pure).
-                self.dispatch.method_dispatch_pure = true;
                 self.set_env(frame.saved_env);
             } else {
-                // Callee-frame key predicate for the merge (keys that should NOT
-                // leak to the caller): frame fixtures, params, attribute twigil
-                // forms, and compiled locals. No alias arm — the fast-path gate
-                // excludes alias-carrying instances.
-                let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
-                let is_method_local = |s: &str| -> bool {
-                    matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
-                        || method_def.params.iter().any(|p| p == s)
-                        // This call's role composition bindings (see the
-                        // primary merge path's matching arm).
-                        || role_binding_names.iter().any(|n| n == s)
-                        || method_def
-                            .role_param_bindings
-                            .as_deref()
-                            .is_some_and(|b| b.iter().any(|(n, _)| n == s))
-                        // As in the primary merge path above (#16361).
-                        || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
-                        || bound_by_sub_signature(&method_def.param_defs, s)
-                        || bound_by_type_capture(&method_def.param_defs, s)
-                        || cc.locals.iter().any(|l| !l.is_empty() && l == s)
-                        // Env-only `my` declarations (no compiled slot, e.g.
-                        // `if (my $file = ...)`) are frame state too — same
-                        // exclusion as the primary merge path above (Text::CSV's
-                        // `method csv` clobbered a same-named caller `$file`).
-                        || cc.env_only_decls.iter().any(|n| n == s)
-                        || dynamic_decl_local(&cc.locals, s)
-                        || class_body_static_names
-                            .get(owner_class)
-                            .is_some_and(|names| names.contains(s))
-                        || attrs_cell
-                            .as_ref()
-                            .is_some_and(|c| attr_twigil_local(&c.as_map(), s))
-                        || s.strip_prefix("__mutsu_sigilless_alias::")
-                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
-                        || s.strip_prefix("__mutsu_sigilless_readonly::")
-                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
-                };
-                let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
-                    method_def.captured_env.as_ref().is_some_and(|c| {
-                        c.get_sym(sym)
-                            .is_some_and(|captured| cheaply_unchanged(captured, v))
-                    })
-                };
-                // Own both envs (frame already popped above; take the live callee
-                // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
-                let static_drops = self.class_body_static_merge_drops(owner_class);
-                let frame_syms = MethodFrameSyms {
-                    params: method_def.param_syms(),
-                    locals: cc.locals_syms(),
-                    statics: &static_drops,
+                let carried = if self.pending_runtime_name_writes.is_empty() {
+                    Vec::new()
+                } else {
+                    // Callee-frame key predicate for the carry (keys that should
+                    // NOT leak to the caller): frame fixtures, params, attribute
+                    // twigil forms, and compiled locals.
+                    let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
+                    let is_method_local = |s: &str| -> bool {
+                        matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
+                                || method_def.params.iter().any(|p| p == s)
+                                // This call's role composition bindings (see the
+                                // primary merge path's matching arm).
+                                || role_binding_names.iter().any(|n| n == s)
+                                || method_def
+                                    .role_param_bindings
+                                    .as_deref()
+                                    .is_some_and(|b| b.iter().any(|(n, _)| n == s))
+                                // As in the primary merge path above (#16361).
+                                || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+                                || bound_by_sub_signature(&method_def.param_defs, s)
+                                || bound_by_type_capture(&method_def.param_defs, s)
+                                || cc.locals.iter().any(|l| !l.is_empty() && l == s)
+                                // Env-only `my` declarations (no compiled slot, e.g.
+                                // `if (my $file = ...)`) are frame state too — same
+                                // exclusion as the primary merge path above (Text::CSV's
+                                // `method csv` clobbered a same-named caller `$file`).
+                                || cc.env_only_decls.iter().any(|n| n == s)
+                                || dynamic_decl_local(&cc.locals, s)
+                                || class_body_static_names
+                                    .get(owner_class)
+                                    .is_some_and(|names| names.contains(s))
+                                || attrs_cell
+                                    .as_ref()
+                                    .is_some_and(|c| attr_twigil_local(&c.as_map(), s))
+                                || s.strip_prefix("__mutsu_sigilless_alias::")
+                                    .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
+                                || s.strip_prefix("__mutsu_sigilless_readonly::")
+                                    .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.storage_name() == name))
+                    };
+                    self.carried_runtime_name_writes(&current_env, &is_method_local)
                 };
-                let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
-                let (mut merged, wrote_caller, changed_caller_locals, capture_writes) =
-                    merge_method_env(
-                        frame.saved_env,
-                        current_env,
-                        &frame_syms,
-                        &is_method_local,
-                        &is_unwritten_capture,
-                        method_def.captured_env.as_ref(),
-                    );
+                self.persist_nested_capture_writes(owner_sym, method_def, &current_env);
+                drop(current_env);
+                let mut merged = frame.saved_env;
                 for (name, v) in carried {
                     merged.insert(name, v);
                 }
-                self.persist_nested_capture_writes(owner_sym, method_def, capture_writes);
-                // Precise dirty signal (Slice 6.3): re-sync the caller's locals
-                // only when the method merged a caller-visible write.
-                self.dispatch.method_dispatch_pure = !wrote_caller;
-                // Slice F: write captured-outer mutations straight through to the
-                // caller's local slot (see the primary merge path above).
-                for k in &changed_caller_locals {
-                    self.pending_rw_writeback_sources
-                        .push(k.resolve().to_string());
-                }
                 self.set_env(merged);
             }
+            self.dispatch.method_dispatch_pure = true;
         }
 
         // The caller env is restored now, so a name the callee held that the
@@ -3069,20 +3013,6 @@ impl Interpreter {
 fn no_role_binding_names() -> std::sync::Arc<[String]> {
     static EMPTY: std::sync::OnceLock<std::sync::Arc<[String]>> = std::sync::OnceLock::new();
     std::sync::Arc::clone(EMPTY.get_or_init(|| std::sync::Arc::from([])))
-}
-
-/// True if `name` could be the name of a caller compiled-local slot (and so a
-/// change to it could make a caller slot stale). Excludes names that are never
-/// stored as a local slot — compile-time/location vars (`?...`), pod (`=...`),
-/// dynamic and pseudo-global names (anything containing `*`, e.g. `$*OUT`,
-/// `*PERL`), and `__mutsu_` internal plumbing. Used by `merge_method_env` to keep
-/// the env_dirty signal precise. Conservative: an ordinary lexical (`$x`, `@y`,
-/// bare param, `!attr`) returns true so it is always re-synced when it changes.
-fn could_name_caller_local(name: &str) -> bool {
-    !(name.starts_with('?')
-        || name.starts_with('=')
-        || name.contains('*')
-        || name.starts_with("__mutsu_"))
 }
 
 /// O(1), conservative "is this value provably unchanged?" check used by
@@ -3229,76 +3159,6 @@ fn bound_by_sub_signature(param_defs: &[crate::ast::ParamDef], name: &str) -> bo
     })
 }
 
-/// The env keys every method frame writes for itself -- see the fixture
-/// inserts in `call_compiled_method` / `call_compiled_method_fast`; `$!` and
-/// the callable id are dropped by `merge_method_env`'s own predicates -- plus the
-/// method's parameters and compiled locals, all as symbols, for
-/// [`merge_method_env`]'s cheap first test.
-pub(super) struct MethodFrameSyms<'a> {
-    pub(super) params: &'a [Symbol],
-    pub(super) locals: &'a [Symbol],
-    /// The owner class's body statics and their type lanes
-    /// (`Interpreter::class_body_static_merge_drops`): names both callers'
-    /// `is_method_local` drop, tested here by symbol after the captured-write
-    /// bookkeeping instead of by string at the end.
-    pub(super) statics: &'a [Symbol],
-}
-
-impl MethodFrameSyms<'_> {
-    // Cost: O(p + l), p = parameters, l = compiled locals.
-    fn contains(&self, k: Symbol) -> bool {
-        use crate::symbol::wk;
-        k == wk::self_()
-            || k == wk::anon_state()
-            || k == wk::class_decl()
-            || k == wk::role_decl()
-            || k == wk::topic()
-            || k == wk::error_var()
-            || self.params.contains(&k)
-            || self.locals.contains(&k)
-    }
-}
-
-/// Merge the callee method frame's caller-visible overlay writes back into the
-/// saved caller env. Returns the merged env and a flag that is `true` iff the
-/// merge changed a value that could alias a caller compiled-local slot — the
-/// precise signal (Slice 6.3) that the caller must re-sync its locals. A method
-/// whose merge changed no such value leaves the caller's slots coherent, so no
-/// env->locals pull is needed.
-///
-/// Takes ownership of both `saved` (the caller env) and `current` (the callee's
-/// scoped overlay env). The callee's overlay is collected into a small `writes`
-/// list, then `current` is dropped: this releases the callee's parent-chain
-/// `Arc<Env>`, which (under the multi-tier overlay) shares `saved`'s overlay map.
-/// With that reference gone, `saved` is the sole owner of its overlay, so the
-/// in-place inserts mutate it without an `Arc::make_mut` deep copy -- the
-/// per-nested-call O(env) cost measured in PR #2683. `saved` is consumed (the
-/// caller discards it in favor of the returned env), so mutating it directly is
-/// safe and avoids the extra `saved.clone()`.
-/// The entries `merge_method_env` drives its merge from: the frame's write log
-/// (after a flatten) or its whole overlay.
-enum MergeEntries<'a> {
-    Log(&'a Env, std::slice::Iter<'a, Symbol>),
-    Overlay(std::collections::hash_map::Iter<'a, Symbol, Value>),
-}
-
-impl<'a> Iterator for MergeEntries<'a> {
-    type Item = (&'a Symbol, &'a Value);
-
-    // Cost: O(1) amortized per entry; a log key with no overlay value is skipped.
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            MergeEntries::Log(env, keys) => loop {
-                let k = keys.next()?;
-                if let Some(v) = env.overlay_get_sym(*k) {
-                    return Some((k, v));
-                }
-            },
-            MergeEntries::Overlay(it) => it.next(),
-        }
-    }
-}
-
 /// Whether a method can reach the entry `sym` of its defining scope's
 /// capture (`MethodDef::captured_env`): a name its body mentions, or anything
 /// when the body's lookups cannot be bounded (`CompiledCode::mentions_name_memo`)
@@ -3347,189 +3207,6 @@ fn signature_reads_only_builtins(method_def: &crate::runtime::MethodDef) -> bool
                 && pd.type_capture.is_none()
                 && pd.type_constraint.as_deref().is_none_or(builtin)
         })
-}
-
-fn merge_method_env(
-    mut saved: Env,
-    current: Env,
-    frame_syms: &MethodFrameSyms<'_>,
-    is_method_local: &dyn Fn(&str) -> bool,
-    is_unwritten_capture: &dyn Fn(Symbol, &Value) -> bool,
-    captured: Option<&Env>,
-) -> (Env, bool, Vec<Symbol>, Vec<(Symbol, Value)>) {
-    // A full method dispatch in the body flattens the frame's scoped env
-    // (`flatten_scoped_env`), after which "the overlay" is the whole visible
-    // scope -- every caller lexical and global -- rather than the frame's own
-    // writes, so scanning it cost O(scope) on every return of a method that
-    // called another one (#9494: ~117 entries per Text::CSV field method).
-    // The flatten leaves the frame's writes behind as a log, and every entry
-    // not in it is still the value inherited at the flatten, which the
-    // `cheaply_unchanged` test below would drop anyway; drive the merge from
-    // the log instead, exactly as the light-call return merge does (#7630).
-    // An enum, not a `Box<dyn Iterator>`: the box was one heap allocation per
-    // merging method call (#16098).
-    let entries = match current.frame_writes() {
-        Some(log) => MergeEntries::Log(&current, log.iter()),
-        None => MergeEntries::Overlay(current.overlay_iter()),
-    };
-    // The writes the frame made to the method's own captured lexicals, kept
-    // whether or not the caller has a binding of that name to merge into: the
-    // method closes over its own variable (`persist_nested_capture_writes`).
-    let mut capture_writes: Vec<(Symbol, Value)> = Vec::new();
-    let writes: Vec<(Symbol, Value)> = entries
-        .filter_map(|(k, v)| {
-            // The frame's own fixtures, parameters and compiled locals, by
-            // symbol: a subset of what `is_method_local` drops below (both
-            // callers' predicates name all three), decided by integer compares
-            // before any of the per-key string work. They are most of what a
-            // method frame writes (#9494).
-            if frame_syms.contains(*k) {
-                return None;
-            }
-            // A key the frame received from `method_def.captured_env` (the
-            // method's own DEFINING lexical scope) and never wrote is frame
-            // setup, not a caller-visible write. An authoritative capture
-            // overwrites the caller's same-named env entry on entry, so merging
-            // it back rebound the caller's variable to the method's defining
-            // scope: a `unit module M` with `my @arr` and a `class C is export`
-            // whose method merely READS `@arr` permanently repointed the
-            // consumer's own `my @arr` at the module's array. A key the method
-            // actually wrote still merges, so the "class declared in a routine
-            // mutates its captured outer lexical" propagation is untouched.
-            if is_unwritten_capture(*k, v) {
-                return None;
-            }
-            if captured.is_some_and(|c| c.contains_key_sym(*k)) {
-                capture_writes.push((*k, v.clone()));
-            }
-            // A class-body static of the owner class (or one of its type
-            // lanes), which every method call injects into its frame: dropped
-            // by `is_method_local` below in any case, decided here by symbol
-            // before the per-key string work (#17335).
-            if frame_syms.statics.contains(k) {
-                return None;
-            }
-            // An entry the callee overlay merely *inherited* would merge back a
-            // value the caller already holds. A nested method call flattens the
-            // scoped overlay, copying every parent lexical/global into the
-            // callee's (the same reason the `changed_caller_locals` scan below
-            // exists), so `submethod TWEAK(:$!spec) { }` -- an empty body --
-            // collected 26 of these on every call: `%*ENV`, `@*ARGS`, `$*OUT`,
-            // `$*CWD`, the type names in scope, `=pod`, and the caller's own
-            // lexicals. Re-inserting a value `cheaply_unchanged` proves identical
-            // is a no-op, so drop it here instead: it keeps the `writes` Vec
-            // empty and spares the caller env's `cow_mut` overlay clone.
-            //
-            // This cannot change `changed_caller_locals`: that scan pushes a key
-            // only when `saved.get_sym(k)` is absent or `cheaply_unchanged` is
-            // false, i.e. exactly the entries this test keeps.
-            //
-            // Ordered FIRST, ahead of the frame-key predicate below, because it
-            // is the cheap test that drops most keys: one Symbol-keyed
-            // `Env::get_sym` plus an O(1) compare, against a battery of string
-            // predicates that each need `Symbol::as_str()` (a thread-local
-            // round trip) and then scan the frame's params/locals/attributes by
-            // name. Both arms `return None`, so which one fires first cannot
-            // change the outcome for any key -- only how much it costs to reach
-            // it. On `benchmarks/bench-ctor.raku` the overlay carries ~24 keys
-            // per method call and this test alone accounts for ~19 of them.
-            if saved
-                .get_sym(*k)
-                .is_some_and(|old| cheaply_unchanged(old, v))
-            {
-                return None;
-            }
-            // Skip keys introduced by the method frame (params, self, attributes,
-            // locals) -- these must not leak back into the caller. The membership
-            // test is a call-site predicate over the frame's params/locals/attr
-            // names, replacing the former per-call materialized
-            // `HashSet<String>` (~dozens of String allocations per non-pure
-            // method call for a set consulted only against the few overlay keys).
-            if k.with_str(|s| {
-                is_method_local(s)
-                    // A Callable argument bound to a frame param/local also gets
-                    // an `&name` alias in the frame env (`bind_param_value`), so
-                    // `$in()` can dispatch by name. The alias is frame-internal:
-                    // merging it would shadow the caller's same-named package sub
-                    // with the argument value (`sub in` vs `csv(in => ...)`).
-                    || s.strip_prefix('&').is_some_and(is_method_local)
-                    // `$!` is scoped per routine: the method frame reset it to
-                    // Nil on entry, so merging it back would wipe the caller's
-                    // error variable (`$!.message; $!.rc` must both see it).
-                    || crate::symbol::is_routine_scoped_implicit_var(s)
-                    // A typed method-lexical's env-scoped constraint metadata
-                    // (`__mutsu_type::<local>`, from a typed param bind or
-                    // `SetVarTypeScoped`) is frame state: merging it back would
-                    // impose the method's constraint on a same-named caller
-                    // variable (the Text::CSV 66_formula.t leak, via env
-                    // instead of the global map).
-                    || s.strip_prefix("__mutsu_type::").is_some_and(is_method_local)
-                    // The same for an object hash's key type, which a class
-                    // injects with its body statics (`my %seen{List}` of a
-                    // `unit class`): merged back it rewrote the caller's
-                    // same-named `%seen{Any}`.
-                    || s.strip_prefix("__mutsu_hash_key_type::").is_some_and(is_method_local)
-            }) {
-                return None;
-            }
-            // An attribute alias (`$!d := $_` in a `TWEAK`) names a variable of
-            // the method frame -- the topic, a param or a local. That variable
-            // is not the caller's, so the alias must not outlive the frame:
-            // merged back, it left `$!d` aliased to the caller's own `$_`.
-            if k.starts_with("__mutsu_sigilless_alias::!")
-                && let ValueView::Str(source) = v.view()
-                && (source.as_str() == "_" || is_method_local(source.as_str()))
-            {
-                return None;
-            }
-            let keep = saved.contains_key_sym(*k)
-                || (k.starts_with("&") && !k.starts_with("&?"))
-                || k.starts_with("__mutsu_method_value::")
-                || k.starts_with("__mutsu_sigilless_alias::!")
-                || k.starts_with("__mutsu_predictive_seq_iter::");
-            keep.then(|| (*k, v.clone()))
-        })
-        .collect();
-    drop(current);
-    // Precise dirty signal (Slice 6.3): a merged write only obliges the caller to
-    // re-pull its local slots if it actually *changes* a value the caller can see.
-    // A nested method call flattens the scoped overlay, which copies every parent
-    // lexical/global (`@*ARGS`, `%*ENV`, `?LINE`, type names, ...) into the callee
-    // overlay; those copies are kept by the merge but are value-identical to the
-    // caller's, so they must not flip env_dirty. `cheaply_unchanged` proves
-    // equality in O(1) (Arc-ptr identity for containers/Str, scalar compare for
-    // immutables); anything it cannot prove unchanged counts as dirty
-    // (conservative -> at worst a redundant pull, never a stale read).
-    // Collect the keys whose merged value can name a caller compiled-local slot
-    // and actually changed. `wrote` (the precise env_dirty signal) is just
-    // "this list is non-empty"; the list itself drives the Slice F call-site
-    // write-through so the caller's slot stays coherent without the reverse pull.
-    let mut changed_caller_locals: Vec<Symbol> = Vec::new();
-    for (k, v) in &writes {
-        // Only a key that can name a caller compiled-local slot obliges a pull:
-        // `sync_locals_from_env` iterates exactly `code.locals`. Compile-time
-        // location vars (`?LINE`/`?FILE`/`?CLASS`...), pod (`=...`), dynamic /
-        // global names (`$*...`, `*PERL`, ...) and `__mutsu_` plumbing are never
-        // local slots, so a change to them never makes a caller slot stale. This
-        // matters because `?LINE` legitimately differs between the caller line
-        // and the method-body line, which would otherwise flip env_dirty on every
-        // multi-line nested method call.
-        if !k.with_str(could_name_caller_local) {
-            continue;
-        }
-        let changed = match saved.get_sym(*k) {
-            Some(old) => !cheaply_unchanged(old, v),
-            None => true,
-        };
-        if changed {
-            changed_caller_locals.push(*k);
-        }
-    }
-    let wrote = !changed_caller_locals.is_empty();
-    for (k, v) in writes {
-        saved.insert_sym(k, v);
-    }
-    (saved, wrote, changed_caller_locals, capture_writes)
 }
 
 /// The names a frame's record owns (`self`, `?CLASS`, `?ROLE`): no env key
