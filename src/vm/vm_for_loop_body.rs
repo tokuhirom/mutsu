@@ -316,43 +316,44 @@ impl Interpreter {
         // arrays/hashes are unaffected. Detect the immutable-QuantHash source at
         // runtime (the compiler cannot know mutability) and force the params
         // read-only with writeback suppressed.
-        let source_immutable_quant = container_binding.as_ref().is_some_and(|name| {
-            matches!(
-                self.for_source_binding_value(name)
-                    .as_ref()
-                    .map(Value::view),
-                Some(ValueView::Mix(_, false))
-                    | Some(ValueView::Set(_, false))
-                    | Some(ValueView::Bag(_, false))
-            )
-        });
+        // The tagged source's value, read once: no body has run yet, so the
+        // binding cannot change before the checks below (and the topic's
+        // deep-readonly test further down) have all read it. Each read is a
+        // by-name env walk.
+        let source_binding_value = container_binding
+            .as_ref()
+            .and_then(|name| self.for_source_binding_value(name));
+        let source_binding_view = source_binding_value.as_ref().map(Value::view);
+        let source_immutable_quant = matches!(
+            source_binding_view,
+            Some(ValueView::Mix(_, false))
+                | Some(ValueView::Set(_, false))
+                | Some(ValueView::Bag(_, false))
+        );
         if source_immutable_quant {
             rw_writeback = false;
         }
         // An immutable `Map` yields bare values too: its elements are not
         // containers, so an `is rw` multi-parameter bind must fail (like an
         // immutable QuantHash's), not alias.
-        let source_immutable_map = container_binding.as_ref().is_some_and(|name| {
-            self.for_source_binding_value(name).is_some_and(|v| {
-                matches!(v.view(), ValueView::Hash(d) if d.declared_type.as_deref() == Some("Map"))
-            })
-        });
+        let source_immutable_map = matches!(
+            &source_binding_view,
+            Some(ValueView::Hash(d)) if d.declared_type.as_deref() == Some("Map")
+        );
         // A *mutable* QuantHash (MixHash/BagHash/SetHash) source iterated via
         // `.values`/`.kv`/`.pairs` aliases its weights: `$_ = X for $b.values`,
         // `for $b.kv -> \k,\v { v = X }` and `.value = X for $b.pairs` all mutate
         // the QuantHash. Detect it so the topic stays writable (not readonly) and
         // the writeback paths can update the weight by key order, coercing the
         // assigned value (X::Str::Numeric on a bad string; weight 0 removes the key).
-        let source_mutable_quant = container_binding.as_ref().is_some_and(|name| {
-            matches!(
-                self.for_source_binding_value(name)
-                    .as_ref()
-                    .map(Value::view),
-                Some(ValueView::Mix(_, true))
-                    | Some(ValueView::Set(_, true))
-                    | Some(ValueView::Bag(_, true))
-            )
-        });
+        let source_mutable_quant = matches!(
+            source_binding_view,
+            Some(ValueView::Mix(_, true))
+                | Some(ValueView::Set(_, true))
+                | Some(ValueView::Bag(_, true))
+        );
+        drop(source_binding_view);
+        drop(source_binding_value);
         let container_reversed = self.topic_state.container_ref_reversed;
         self.topic_state.container_ref_reversed = false;
         // ADR-0045 slice 6: a multi-parameter rw loop binds through the
@@ -632,23 +633,7 @@ impl Interpreter {
         let saved_topic_readonly = binds_implicit_topic.then(|| self.readonly_kind("_"));
         // An IMMUTABLE QuantHash source is readonly all the way down: nothing
         // reachable through the topic may be written.
-        let topic_deep_readonly = !spec.is_rw
-            && binds_implicit_topic
-            && match &container_binding {
-                None => false,
-                Some(name) => {
-                    if let Some(val) = self.for_source_binding_value(name) {
-                        matches!(
-                            val.view(),
-                            ValueView::Mix(_, false)
-                                | ValueView::Set(_, false)
-                                | ValueView::Bag(_, false)
-                        )
-                    } else {
-                        false
-                    }
-                }
-            };
+        let topic_deep_readonly = !spec.is_rw && binds_implicit_topic && source_immutable_quant;
         // A provably-bare source is only SHALLOWLY readonly: the topic has no
         // container of its own, so `$_ = ...` is refused, but the item OBJECT
         // may still be mutable. `for %h { .value = 5 }` and `for %h.pairs {
