@@ -206,6 +206,7 @@ mod regex_view;
 mod render;
 mod resolve;
 pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_in};
+mod loop_step;
 mod role;
 mod role_header;
 mod role_implicit;
@@ -249,6 +250,7 @@ mod use_origins;
 mod use_stmt;
 mod user_postfix;
 mod user_prefix;
+mod zip_chain;
 pub(crate) use user_prefix::user_prefix_overrides_core;
 mod var_decl_constructor;
 mod var_does;
@@ -451,6 +453,8 @@ pub enum RakuAstClass {
     // A dynamic variable `$*x`: its whole spelling, twigil included.
     VarDynamic,
     VarDoc,
+    /// `$~MAIN`: a slang variable (rakudo keeps only the name, whatever the sigil).
+    VarSlang,
     VarDeclarationSimple,
     InitializerAssign,
     InitializerCallAssign,
@@ -855,6 +859,7 @@ impl RakuAstClass {
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
             VarDoc => "RakuAST::Var::Doc",
+            VarSlang => "RakuAST::Var::Slang",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
             InitializerAssign => "RakuAST::Initializer::Assign",
             InitializerCallAssign => "RakuAST::Initializer::CallAssign",
@@ -1164,6 +1169,16 @@ impl RakuAstClass {
     pub fn is_simple_variable(self) -> bool {
         matches!(self, RakuAstClass::VarLexical | RakuAstClass::VarDynamic)
     }
+
+    /// Whether a `:$x` colonpair's value can be this class: any variable the
+    /// grammar's `<variable>` reads (`:$=pod`, `:$^f`, `:$<fee>`, `:$~MAIN`,
+    /// `:$?PACKAGE`, ...), as rakudo's `ColonPair::Variable` keeps it.
+    // Cost: O(1).
+    pub fn is_colonpair_variable(self) -> bool {
+        let name = self.printed_name();
+        name.starts_with("RakuAST::Var::")
+            || name.starts_with("RakuAST::VarDeclaration::Placeholder::")
+    }
 }
 
 /// Whether a RakuAST type object lists another in its MRO (`.^isa`; roles
@@ -1407,6 +1422,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
     RakuAstClass::VarDoc,
+    RakuAstClass::VarSlang,
     RakuAstClass::VarDeclarationSimple,
     RakuAstClass::InitializerAssign,
     RakuAstClass::InitializerCallAssign,

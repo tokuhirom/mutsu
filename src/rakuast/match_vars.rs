@@ -4,13 +4,13 @@
 //!
 //! ```text
 //! $<a>     Var::NamedCapture(QuotedString(processors => <words val>, segments => ("a",)), sigil => "$")
-//! @<a>     the same with sigil => "@"
+//! @<a>     the same with sigil => "@" (and %<a> with "%")
 //! $0       Var::PositionalCapture(0)
 //! ```
 //!
-//! The parser keeps `$<a>` as [`Expr::CaptureVar`] and spells `@<a>` as the
-//! `.list` call on it, so only the scalar form is rendered here (`@<a>` reads
-//! back as `$<a>.list`). It keeps `$0` as the variable `0` — except inside a
+//! The parser keeps `$<a>` as [`Expr::CaptureVar`] and spells `@<a>` / `%<a>`
+//! as the `.list` / `.hash` call on it, wrapped in `Spelling::CaptureSigil`
+//! so the written sigil reads back. It keeps `$0` as the variable `0` — except inside a
 //! string, where its interpolation reads `$/[0]` — so both read back as
 //! `Var::PositionalCapture`, and a `$/[0]` written out in a string does too
 //! (rakudo renders that one as an index of `$/`).
@@ -34,6 +34,21 @@ pub(super) fn view_node(name: &str) -> Result<RakuAstNode, RuntimeError> {
             leaf_field(Some("sigil"), Value::str("$".to_string())),
         ],
     })
+}
+
+/// `@<name>` / `%<name>`: the parser's `.list` / `.hash` of `$<name>`, as
+/// `Var::NamedCapture` with the written sigil.
+// Cost: O(|name|).
+pub(super) fn view_sigiled(expr: &Expr, sigil: char) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::MethodCall { target, .. } = expr else {
+        return Err(super::view::unsupported("sigiled named capture"));
+    };
+    let Expr::CaptureVar(name) = target.as_ref() else {
+        return Err(super::view::unsupported("sigiled named capture"));
+    };
+    let mut node = view_node(name)?;
+    node.fields[1] = leaf_field(Some("sigil"), Value::str(sigil.to_string()));
+    Ok(node)
 }
 
 /// The word a `$<name>` index quotes: a single `StrLiteral` segment.
@@ -69,17 +84,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
     if let Some(pairs) = lower_colonpairs(names, node)? {
         return adverbed(Expr::Literal(Value::str(name)), false, pairs);
     }
-    let capture = Expr::CaptureVar(name);
     match leaf_str(node, "sigil")?.as_str() {
-        "$" => Ok(capture),
-        "@" => Ok(Expr::MethodCall {
-            target: Box::new(capture),
-            name: crate::symbol::Symbol::intern("list"),
-            args: Vec::new(),
-            modifier: None,
-            quoted: false,
-            sugar: false,
-        }),
+        "$" => Ok(Expr::CaptureVar(name)),
+        "@" => Ok(Expr::named_capture_call(&name, '@')),
+        "%" => Ok(Expr::named_capture_call(&name, '%')),
         _ => Err(unsupported(node)),
     }
 }

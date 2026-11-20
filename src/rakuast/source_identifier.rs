@@ -77,6 +77,17 @@ pub(super) fn written_variable(sigil: &str, name: &str) -> RakuAstNode {
             fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
         };
     }
+    // `$~MAIN` / `@~MAIN`: a slang variable, whose `name` is what follows the
+    // `~` (rakudo keeps no sigil and renders it as `$~MAIN`).
+    if let Some(slang) = name.strip_prefix('~')
+        && !slang.is_empty()
+    {
+        return RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::VarSlang,
+            fields: vec![leaf_field(Some("name"), Value::str(slang.to_string()))],
+        };
+    }
     // `$=pod` / `$=finish`: a Pod variable, whose `name` is what follows `$=`.
     if sigil == "$"
         && let Some(pod) = name.strip_prefix('=')

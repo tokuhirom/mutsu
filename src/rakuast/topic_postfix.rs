@@ -5,7 +5,8 @@
 //! `Spelling::TopicPostfix`. RakuAST keeps a `Term::TopicCall` whose call is
 //! the `Postfix` itself (`Term::TopicCall.new(Postfix.new(operator => "++"))`),
 //! where `$_++` is an `ApplyPostfix` over `Var::Lexical("$_")`. [`lower`] maps
-//! the topic call back to the postfix application on `$_`.
+//! the topic call back to the postfix application on `$_`. `.(args)` is marked
+//! the same way and is `Term::TopicCall(Call::Term(args))`.
 
 use super::view::{postfix_node, view_expr};
 use super::{RakuAstClass, RakuAstNode};
@@ -27,6 +28,25 @@ pub(super) fn view_node(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, R
                 origin: Default::default(),
                 class: RakuAstClass::TermTopicCall,
                 fields: vec![super::view::node_field(None, postfix_node(op))],
+            })
+        }
+        // `.(args)`: the call of the topic itself, `Term::TopicCall(Call::Term)`.
+        Expr::CallOn { target, args } if matches!(target.as_ref(), Expr::Var(t) if t == "_") => {
+            let mut call_term = RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::CallTerm,
+                fields: Vec::new(),
+            };
+            if !args.is_empty() {
+                call_term.fields.push(super::view::node_field(
+                    Some("args"),
+                    super::view::arg_list(names, args)?,
+                ));
+            }
+            Ok(RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::TermTopicCall,
+                fields: vec![super::view::node_field(None, call_term)],
             })
         }
         // `.&foo(args)` / `.&{ ... }(args)`: the call of a routine or block with

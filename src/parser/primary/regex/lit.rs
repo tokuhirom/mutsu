@@ -1274,10 +1274,13 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
         let (r, _) = parse_char(r, ')')?;
         return Ok((
             r,
-            Expr::CallOn {
-                target: Box::new(Expr::Var("_".to_string())),
-                args,
-            },
+            Expr::spelled(
+                Expr::CallOn {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    args,
+                },
+                || crate::ast::spelled::Spelling::TopicPostfix,
+            ),
         ));
     }
     // `.<>` / `.«»` — the zen slice on the topic. There are no keys to parse, so
