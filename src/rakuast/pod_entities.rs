@@ -52,7 +52,7 @@ pub(super) fn pair(item: &str) -> (String, String) {
         c.to_string()
     } else if let Some(c) = table().get(item) {
         c.to_string()
-    } else if let Some(c) = crate::builtins::unicode_name::char_by_name(item) {
+    } else if let Some(c) = crate::token_kind::lookup_unicode_char_by_name(item) {
         // `E<LATIN CAPITAL LETTER A>`: a Unicode character name, matched
         // loosely as rakudo does (`E<latin capital letter a>`).
         c.to_string()
