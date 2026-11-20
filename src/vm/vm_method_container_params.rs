@@ -451,26 +451,33 @@ impl Interpreter {
     /// Runs while the CALLER's frame is current, before the method frame is
     /// pushed, so a promotion indexes the caller's locals.
     // Cost: O(p + a), p = parameters, a = arguments, plus one cell promotion
-    // per promoted argument.
+    // per promoted argument; allocation-free otherwise.
     pub(crate) fn promote_method_container_args(
         &mut self,
         method_def: &crate::runtime::MethodDef,
         args: &mut [Value],
     ) {
-        let positional: Vec<usize> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| !a.unwrap_varref().is_string_pair_value())
-            .map(|(i, _)| i)
-            .collect();
-        let mut next = positional.into_iter();
+        // A forward cursor over the positional arguments: a rewrite below
+        // keeps an argument positional (a cell) or named (a rebuilt Pair), so
+        // scanning ahead after it classifies the rest as before.
+        let mut cursor = 0usize;
         let arg_count = args.len();
         for pd in method_def.param_defs.iter() {
             if pd.is_invocant {
                 continue;
             }
             let consumes = !pd.named && !pd.slurpy && !pd.double_slurpy;
-            let idx = if consumes { next.next() } else { None };
+            let idx = if consumes {
+                while cursor < arg_count && args[cursor].unwrap_varref().is_string_pair_value() {
+                    cursor += 1;
+                }
+                (cursor < arg_count).then(|| {
+                    cursor += 1;
+                    cursor - 1
+                })
+            } else {
+                None
+            };
             if !pd.binds_caller_container() {
                 continue;
             }
