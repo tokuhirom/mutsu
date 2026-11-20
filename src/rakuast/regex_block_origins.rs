@@ -67,7 +67,7 @@ fn code_block(names: &NameScope, block: &mut RakuAstNode, text: &str, at: usize)
 /// counted; `None` when a comment or a backslash comes first, or a quote does
 /// not end.
 // Cost: O(n), n = length of the block's text.
-fn closing_brace(text: &str) -> Option<usize> {
+pub(super) fn closing_brace(text: &str) -> Option<usize> {
     let mut depth = 0usize;
     let mut chars = text.char_indices().peekable();
     let mut prev = None;

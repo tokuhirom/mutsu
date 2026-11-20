@@ -203,30 +203,18 @@ fn match_variable_at(
 }
 
 /// The range of a `{ ... }` block written at `cursor`, its `Blockoid`'s and
-/// `StatementList`'s, and its statements' (from their expressions). A block
-/// whose text holds a quote or a backslash, which could hide a brace, is
-/// left alone.
+/// `StatementList`'s, and its statements' (from their expressions). Quoted
+/// strings inside the block are skipped whole (`regex_block_origins`); a
+/// block whose text holds a comment, a backslash or a `「」` quote, which
+/// could hide a brace, is left alone.
 // Cost: O(n + s), n = length of the block, s = its statements.
 fn block_at(block: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(usize, usize)> {
     let close = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
         if !text.starts_with('{') {
             return None;
         }
-        let mut depth = 0usize;
-        for (at, c) in text.char_indices() {
-            match c {
-                '"' | '\'' | '\\' | '「' | '」' => return None,
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(cursor + at);
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
+        let close = super::regex_block_origins::closing_brace(text)?;
+        (!text[..close].contains(['「', '」'])).then_some(cursor + close)
     })?;
     let inside = super::list_origins::bracketed(cursor, close + 1, ('{', '}'))?;
     let whole = SrcSpan::new(cursor, close + 1);
