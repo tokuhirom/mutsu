@@ -16,7 +16,13 @@ impl Compiler {
         // Collect the bound array variable name for skipping the
         // trailing Var statement that would force the LazyList via SinkPop.
         let mut bound_array_var: Option<String> = None;
-        for s in stmts {
+        // The predeclarations of `my ($a, $b) = RHS` that observe nothing
+        // (`destructure_lane.rs`).
+        let elide = Self::destructure_elidable_predecls(stmts);
+        for (i, s) in stmts.iter().enumerate() {
+            if elide[i] {
+                continue;
+            }
             if let Stmt::VarDecl { name, marks, .. } = s
                 && marks.bound
                 && name.starts_with('@')
