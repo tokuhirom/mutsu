@@ -10,6 +10,7 @@ pub(crate) mod builtin_functions;
 mod builtin_types;
 mod builtins;
 pub(crate) mod chain_compare;
+pub(crate) mod closure_entry_params;
 pub(crate) mod codepoint;
 pub(crate) mod compile_time_loader;
 mod compiled_lazy;
