@@ -3,6 +3,10 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Statement::Orwith",
+        &["RakuAST::Statement::Orwith", "RakuAST::Statement::Elsif"],
+    ),
+    (
         "RakuAST::Statement::Require",
         &[
             "RakuAST::Statement::Require",
@@ -93,6 +97,7 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::StatementModifier::If",
         &[
             "RakuAST::StatementModifier::If",
+            "RakuAST::StatementModifier::IfUnless",
             "RakuAST::StatementModifier::Condition",
             "RakuAST::StatementModifier",
             "RakuAST::Node",
@@ -102,6 +107,7 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::StatementModifier::Unless",
         &[
             "RakuAST::StatementModifier::Unless",
+            "RakuAST::StatementModifier::IfUnless",
             "RakuAST::StatementModifier::Condition",
             "RakuAST::StatementModifier",
             "RakuAST::Node",
@@ -158,18 +164,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::StatementPrefix::Do",
         &[
             "RakuAST::StatementPrefix::Do",
-            "RakuAST::StatementPrefix",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::StatementPrefix::Eager",
-        &[
-            "RakuAST::StatementPrefix::Eager",
-            "RakuAST::StatementPrefix::CallMethod",
             "RakuAST::StatementPrefix",
             "RakuAST::Term",
             "RakuAST::Termish",
