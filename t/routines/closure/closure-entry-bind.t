@@ -5,7 +5,7 @@ use Test;
 # the general binder when every argument reaches the one binder arm it
 # reproduces. Each case is called in a loop through a `&`-variable.
 
-plan 15;
+plan 17;
 
 class C { has $.x = 3 }
 my $o = C.new;
@@ -60,3 +60,11 @@ my sub two($a, $b) { "$a-$b" }
 my &two2 = &two;
 dies-ok { two2(1) }, 'too few arguments still die';
 is-deeply (^3).map({ two2($_, $o.x) }).List, ('0-3', '1-3', '2-3'), 'two plain parameters';
+
+my @cv = 1, 2, 3;
+my &cw = sub (\t) { t = (6, 6) };
+cw(@cv[1, 2]) for ^2;
+is @cv.raku, '[1, 6, 6]', 'a slice to a sigilless parameter is written through';
+my @cr = 1, 2, 3;
+my &crw = sub ($t is raw) { $t = (5, 5) };
+dies-ok { crw(@cr[0, 1]) }, 'an is raw $ parameter given a slice cannot be assigned a list';

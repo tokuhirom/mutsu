@@ -79,6 +79,11 @@ impl Interpreter {
                     // An Array/Hash from a variable is shared through a cell
                     // with an exit writeback (the general binder's
                     // `scalar_container_share`).
+                    // `is raw` also binds a slice of element containers as
+                    // a writable alias.
+                    if raw && matches!(value.view(), ValueView::Array(..)) {
+                        return false;
+                    }
                     if from_variable
                         && (raw
                             || matches!(value.view(), ValueView::Array(..) | ValueView::Hash(_))
@@ -90,8 +95,11 @@ impl Interpreter {
                 EntryParamKind::Sigilless { .. } => {
                     // A variable is aliased; a Callable also gets an
                     // `&`-alias the meta-key arm does not reproduce; a type
-                    // object with a source is the "source type object" arm.
+                    // object with a source is the "source type object" arm;
+                    // a list of element containers (a slice, `@a[0, 2]`) is
+                    // bound as a writable alias of those elements.
                     if from_variable
+                        || matches!(value.view(), ValueView::Array(..))
                         || matches!(
                             value.view(),
                             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
