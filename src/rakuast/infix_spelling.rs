@@ -33,6 +33,10 @@ pub(super) fn unicode_aliases(op: &str) -> &'static [&'static str] {
         "(<)" => &["⊂"],
         "(>)" => &["⊃"],
         "⚛-=" => &["⚛−="],
+        // Not Unicode, but the same kind of alias: the loose `xor` is the
+        // parser's `^^` placed at a looser precedence, and rakudo keeps
+        // `Infix("xor")`.
+        "^^" => &["xor"],
         _ => &[],
     }
 }
@@ -71,6 +75,7 @@ pub(super) fn lowered_name(name: &str) -> &str {
         "≼" => "(<=)",
         "≽" => "(>=)",
         "⚛−=" => "⚛-=",
+        "xor" => "^^",
         other => other,
     }
 }

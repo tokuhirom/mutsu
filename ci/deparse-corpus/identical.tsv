@@ -300,6 +300,7 @@ roast/S04-declarations/constant-6.d.t	25
 roast/S04-declarations/constant-6.d.t	26
 roast/S04-declarations/constant-6.d.t	27
 roast/S04-declarations/constant-6.d.t	28
+roast/S04-declarations/constant-6.d.t	29
 roast/S04-declarations/constant-6.d.t	30
 roast/S04-declarations/constant-6.d.t	31
 roast/S04-exceptions/control_across_runloop.t	0
@@ -1724,6 +1725,7 @@ roast/S32-hash/adverbs.t	10
 roast/S32-hash/adverbs.t	11
 roast/S32-hash/adverbs.t	12
 roast/S32-hash/adverbs.t	13
+roast/S32-hash/adverbs.t	14
 roast/S32-hash/adverbs.t	15
 roast/S32-io/io-spec-cygwin.t	0
 roast/S32-io/io-spec-cygwin.t	1
@@ -2331,6 +2333,12 @@ roast/integration/advent2011-day05.t	5
 roast/integration/advent2011-day05.t	6
 roast/integration/advent2012-day03.t	0
 roast/integration/advent2012-day03.t	1
+roast/integration/advent2012-day03.t	3
+roast/integration/advent2012-day03.t	4
+roast/integration/advent2012-day03.t	5
+roast/integration/advent2012-day03.t	6
+roast/integration/advent2012-day03.t	7
+roast/integration/advent2012-day03.t	8
 roast/integration/advent2013-day15.t	0
 roast/integration/advent2013-day15.t	1
 roast/integration/advent2013-day15.t	2
