@@ -153,6 +153,11 @@ fn plan_scalar_kind_ok(arg: &Value) -> bool {
             | ValueView::Nil
             | ValueView::Package(_)
             | ValueView::Instance { .. }
+            // A Capture argument is keyed as the class `Capture`
+            // (`multi_arg_type_keys_impl`); the fast binder type-checks it
+            // per call like any instance, and no gate reading looks inside
+            // it (AttrX::Mooish's `store-with-cb(..., \( :builder ))`).
+            | ValueView::Capture { .. }
     )
 }
 
