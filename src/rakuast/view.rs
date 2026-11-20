@@ -5969,7 +5969,14 @@ pub(super) fn regex_arg_list(
                 {
                     colonpair_variable_expr(names, argument)?
                 } else if args.colonpair_values.get(index).copied().unwrap_or(false) {
-                    colonpair_value_expr(names, argument)?
+                    match argument {
+                        // `:k{...}`: the block or hash composer is the value.
+                        Expr::Binary {
+                            form: crate::ast::BinaryForm::ColonPairBracketed,
+                            ..
+                        } => colonpair_value_node(names, argument, false)?,
+                        _ => colonpair_value_expr(names, argument)?,
+                    }
                 } else if args
                     .literal_hash_indices
                     .get(index)
