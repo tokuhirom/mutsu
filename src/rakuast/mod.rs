@@ -237,6 +237,7 @@ mod temporize;
 mod term_name;
 mod thunk;
 mod topic_subscript;
+mod trait_order;
 mod type_args;
 mod type_build;
 mod type_call;

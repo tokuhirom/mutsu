@@ -2229,7 +2229,9 @@ pub(crate) enum PackageKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum EnumVariantForm {
     Words,
-    EmptyWords(Box<str>),
+    /// A `< >` body whose text is not its words joined by single spaces
+    /// (`< >`, `< Red Green >`): the text between the brackets as written.
+    WrittenWords(Box<str>),
     QuoteWords,
     /// A `<< >>` / `« »` body with its text as written (spacing, colonpair atoms).
     WrittenQuoteWords(Box<str>),
