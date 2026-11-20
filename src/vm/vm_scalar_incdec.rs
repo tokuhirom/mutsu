@@ -61,10 +61,13 @@ impl Interpreter {
         slot: Option<u32>,
         k: IncDec,
     ) -> Result<(), RuntimeError> {
-        if let Some(slot) = slot
-            && self.exec_scalar_incdec_slot_fast(code, name_idx, slot as usize, k)?
-        {
-            return Ok(());
+        if let Some(slot) = slot {
+            if self.exec_native_int_step(code, slot as usize, k) {
+                return Ok(());
+            }
+            if self.exec_scalar_incdec_slot_fast(code, name_idx, slot as usize, k)? {
+                return Ok(());
+            }
         }
         let attr_name = Self::const_str(code, name_idx).to_string();
         self.sync_attr_local_from_cell_by_name(code, &attr_name);
@@ -73,6 +76,38 @@ impl Interpreter {
             self.mirror_attr_local_to_cell_by_name(code, &attr_name);
         }
         r
+    }
+
+    /// `++`/`--` of a `my int` local whose every static question the compiler
+    /// settled ([`CompiledCode::native_int_step_slot`], ADR-18357 stage 1):
+    /// step the slot word and push the result. Declines (`false`, nothing
+    /// consumed) when the slot does not hold an `Int`, when the step leaves
+    /// the `i64` range (the generic op wraps it), or when a process-wide store
+    /// spoiler is raised; the generic body then runs as before.
+    // Cost: O(1).
+    #[inline]
+    fn exec_native_int_step(&mut self, code: &CompiledCode, slot: usize, k: IncDec) -> bool {
+        if !code.native_int_step_slot(slot) {
+            return false;
+        }
+        let Some(ValueView::Int(old)) = self.locals.get(slot).map(Value::view) else {
+            return false;
+        };
+        let Some(new) = (if k.increment {
+            old.checked_add(1)
+        } else {
+            old.checked_sub(1)
+        }) else {
+            return false;
+        };
+        if !self.set_local_scalar_fast_metadata_clear_except_type(code, slot) {
+            return false;
+        }
+        let new = Value::int(new);
+        self.stack
+            .push(if k.prefix { new.clone() } else { Value::int(old) });
+        self.locals[slot] = new;
+        true
     }
 
     /// `++`/`--` of a plain, untyped, slot-held `Int` scalar: step the slot in
