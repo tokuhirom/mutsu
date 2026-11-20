@@ -271,6 +271,8 @@ impl Walk<'_> {
                 self.code(names, node, "block")?;
                 self.eat(">")?
             }
+            // `{ ... }`: a code block run as the match goes.
+            RakuAstClass::RegexBlock => self.code_at(names, node, 0)?,
             _ => return None,
         }
         // `^` must not have been the first half of `^^`, a literal the start
@@ -438,24 +440,20 @@ impl Walk<'_> {
         Some(())
     }
 
-    /// The code block held by `node`'s field `field`, at the cursor
+    /// The code block held by the `index`-th field of `node`, at the cursor
     /// (`regex_block_origins`).
     // Cost: O(n), n = length of the block's text, plus the parse of its code.
-    fn code(&mut self, names: &NameScope, node: &mut RakuAstNode, field: &str) -> Option<()> {
-        let field = node.fields.iter_mut().find(|f| f.name == Some(field))?;
-        let RakuAstFieldValue::Node(held) = &mut field.value else {
-            return None;
-        };
-        let ValueView::RakuAst(block) = held.view() else {
-            return None;
-        };
-        let mut block = RakuAstNode::clone(block);
+    fn code_at(&mut self, names: &NameScope, node: &mut RakuAstNode, index: usize) -> Option<()> {
         let text = &self.text[self.at..];
-        let len =
-            super::regex_block_origins::code_block(names, &mut block, text, self.base + self.at);
-        *held = Value::rakuast(Box::new(block));
-        self.at += len?;
+        let at = self.base + self.at;
+        self.at += super::regex_block_origins::held_code_block(names, node, index, text, at)?;
         Some(())
+    }
+
+    // Cost: O(n), n = length of the block's text, plus the parse of its code.
+    fn code(&mut self, names: &NameScope, node: &mut RakuAstNode, field: &str) -> Option<()> {
+        let index = node.fields.iter().position(|f| f.name == Some(field))?;
+        self.code_at(names, node, index)
     }
 
     /// How a `** min..max` quantifier at the cursor is written, when it is
