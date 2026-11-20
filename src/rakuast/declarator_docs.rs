@@ -103,7 +103,10 @@ pub(super) fn lines(node: &RakuAstNode, name: &str) -> Vec<String> {
 // Cost: O(f + l).
 fn joined(node: &RakuAstNode, label: &str, key: &str) -> Option<String> {
     let lines = lines_of(node, label, key);
-    let texts: Vec<String> = lines.iter().map(|l| crate::decl_doc::normalize_doc_text(l)).collect();
+    let texts: Vec<String> = lines
+        .iter()
+        .map(|l| crate::decl_doc::normalize_doc_text(l))
+        .collect();
     (!lines.is_empty()).then(|| texts.join(" "))
 }
 

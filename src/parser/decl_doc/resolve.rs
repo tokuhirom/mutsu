@@ -47,7 +47,11 @@ fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
     // The joined text is what `.WHY` answers; the lines are the comments as
     // written, which RakuAST keeps.
     let join = |comments: &[&Comment]| {
-        comments.iter().map(|c| c.text.as_str()).collect::<Vec<_>>().join(" ")
+        comments
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     let raws = |comments: &[&Comment]| comments.iter().map(|c| c.raw.clone()).collect();
     for (owner, comments) in leading {

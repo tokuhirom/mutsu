@@ -33,7 +33,11 @@ pub(crate) struct DeclDoc {
 /// `#={  a\n  b   c }` is `"a b   c"`).
 // Cost: O(n), n = length of `raw`.
 pub(crate) fn normalize_doc_text(raw: &str) -> String {
-    raw.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+    raw.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl DeclDoc {

@@ -88,13 +88,25 @@ pub(super) fn slip_node(names: &NameScope, slip: &Expr) -> Result<RakuAstNode, R
 /// `@a».CALL-ME(args)` as `MetaPostfix::Hyper(Call::Term(args))`.
 // Cost: O(n), n = size of the target and arguments.
 pub(super) fn call_term_node(names: &NameScope, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let Expr::HyperMethodCall { target, args, modifier: None, .. } = call else {
+    let Expr::HyperMethodCall {
+        target,
+        args,
+        modifier: None,
+        ..
+    } = call
+    else {
         return view_expr(names, call);
     };
-    let mut call_term =
-        RakuAstNode { origin: Default::default(), class: RakuAstClass::CallTerm, fields: Vec::new() };
+    let mut call_term = RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::CallTerm,
+        fields: Vec::new(),
+    };
     if !args.is_empty() {
-        call_term.fields.push(node_field(Some("args"), super::view::arg_list(names, args)?));
+        call_term.fields.push(node_field(
+            Some("args"),
+            super::view::arg_list(names, args)?,
+        ));
     }
     let hyper = RakuAstNode {
         origin: Default::default(),

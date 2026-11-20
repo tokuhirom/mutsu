@@ -206,6 +206,8 @@ mod regex_view;
 mod render;
 mod resolve;
 pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_in};
+mod colon_pairs;
+mod constant_decl;
 mod loop_step;
 mod role;
 mod role_header;
@@ -236,7 +238,6 @@ mod temporize;
 mod term_name;
 mod thunk;
 mod topic_subscript;
-mod colon_pairs;
 mod trait_order;
 mod type_args;
 mod type_build;
@@ -2585,7 +2586,8 @@ fn construct_class(
                 .collect(),
         }))));
     }
-    if (class_name == "RakuAST::ArgList" || class_name == "RakuAST::ColonPairs") && method == "new" {
+    if (class_name == "RakuAST::ArgList" || class_name == "RakuAST::ColonPairs") && method == "new"
+    {
         for arg in args {
             require_any_rakuast(arg, "RakuAST::ArgList.new", "arguments")?;
         }
