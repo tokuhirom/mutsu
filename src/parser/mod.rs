@@ -232,6 +232,10 @@ pub(crate) fn source_declares_export_hook(source: &str) -> bool {
     stmt::simple::source_declares_export_hook(source)
 }
 
+pub(crate) fn imported_type_constant_names() -> Vec<String> {
+    stmt::simple::imported_type_constant_names()
+}
+
 pub(crate) fn imported_value_term_names() -> Vec<String> {
     stmt::simple::imported_value_term_names()
 }

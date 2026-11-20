@@ -61,6 +61,10 @@ impl<'s> DeclaredNames<'s> {
                 .into_iter()
                 .map(|name| (name, DeclaredKind::Term)),
         );
+        // A constant a `use` brought in that holds a type object is a type.
+        for name in crate::parser::imported_type_constant_names() {
+            found.insert(name, DeclaredKind::Type);
+        }
         collect_declared_names(names, stmts, &mut found);
         Self {
             names,
@@ -177,6 +181,21 @@ pub(super) fn package_resolves(names: &NameScope, stem: &str) -> bool {
     name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
         || setting_type(stem)
         || declared_kind(names, stem) == Some(DeclaredKind::Type)
+}
+
+/// Whether `expr` is a bareword, or one the parser wrapped as an imported term
+/// (`CArray` after `use NativeCall`, a `Spelled` marker around the word).
+// Cost: O(1).
+pub(super) fn is_word_term(expr: &Expr) -> bool {
+    match expr {
+        Expr::Spelled(spelled) => {
+            matches!(
+                spelled.spelling,
+                crate::ast::spelled::Spelling::ImportedTerm
+            ) && spelled.expr.as_bare_word().is_some()
+        }
+        _ => expr.as_bare_word().is_some(),
+    }
 }
 
 /// Record a declared type name, together with the stub packages a qualified
