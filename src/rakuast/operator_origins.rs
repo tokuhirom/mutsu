@@ -44,10 +44,14 @@ fn prefix(node: &mut RakuAstNode) {
         else {
             return;
         };
-        let marker = super::unit_source::with_text(SrcSpan::new(from, from + op.len() + 3), |text| {
-            let rest = text.strip_prefix(op.as_str())?;
-            ["<<", "\u{ab}"].into_iter().find(|m| rest.starts_with(m)).map(str::len)
-        });
+        let marker =
+            super::unit_source::with_text(SrcSpan::new(from, from + op.len() + 3), |text| {
+                let rest = text.strip_prefix(op.as_str())?;
+                ["<<", "\u{ab}"]
+                    .into_iter()
+                    .find(|m| rest.starts_with(m))
+                    .map(str::len)
+            });
         if let Some(marker) = marker {
             with_child(node, "prefix", |hyper| {
                 super::origin::set_span(hyper, SrcSpan::new(from, from + op.len() + marker));
