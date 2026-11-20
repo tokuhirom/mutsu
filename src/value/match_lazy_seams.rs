@@ -75,7 +75,10 @@ impl Value {
                     Some(entries) => entries
                         .iter()
                         .any(|(_, _, sc)| sc.as_ref().is_some_and(|sc| group_may_dispatch(sc))),
-                    None => slot.subcap.as_ref().is_some_and(|sc| group_may_dispatch(sc)),
+                    None => slot
+                        .subcap
+                        .as_ref()
+                        .is_some_and(|sc| group_may_dispatch(sc)),
                 }
         })
     }
