@@ -255,8 +255,8 @@ impl Interpreter {
 
     /// The `SetLocal` store of a `$` scalar's `:=` declaration
     /// (`my $x := EXPR`) whose slot is its variable's only home and whose
-    /// value has no container of its own: an `Int`, `Str`, object or code
-    /// value.
+    /// value has no container of its own (an `Int`, `Str`, object or code
+    /// value) or is a Proxy.
     ///
     /// Such a bind makes the name readonly (rakudo: "Cannot assign to an
     /// immutable value"), and that is all it does. The general store reaches the same verdict through its
@@ -302,15 +302,24 @@ impl Interpreter {
         // A type object is left to the general store too: its assignment
         // error names the type by reading the binding back through the env
         // (`type_object_assign_error`), so that bind keeps its env mirror.
-        if v.is_nil()
+        //
+        // A Proxy is bound as itself: the name becomes the Proxy, writable
+        // through its STORE, with no readonly mark and no binding cell, and
+        // the general store's one Proxy step is
+        // `update_proxy_closure_envs` (below).
+        let is_proxy = matches!(v.view(), ValueView::Proxy { .. });
+        let kind = if is_proxy {
+            None
+        } else if v.is_nil()
             || v.is_lazy_thunk_value()
             || !Self::binding_cell_keeps_value_semantics(v)
             || Self::bind_source_is_type_object(v)
             || !Self::bind_source_has_no_container(v)
         {
             return false;
-        }
-        let kind = crate::ast::ReadonlyKind::Immutable;
+        } else {
+            Some(crate::ast::ReadonlyKind::Immutable)
+        };
         if !self.locals[idx].is_plain_scalar_store_slot() {
             return false;
         }
@@ -333,6 +342,24 @@ impl Interpreter {
         {
             self.clear_constant_marker(name);
         }
+        // A cell or Proxy an earlier binding of the name left in the visible
+        // env must not outlive this fresh binding: a later `$x = v` lazy-syncs
+        // a Proxy from env and would run ITS STORE (#9244). The general
+        // declaration store replaces it the same way; a name that was never
+        // an env key cannot have one.
+        if let Some(sym) = sym
+            && crate::symbol::maybe_env_key(sym)
+            && matches!(
+                self.env().get_sym(sym).map(Value::view),
+                Some(ValueView::ContainerRef(_) | ValueView::Proxy { .. })
+            )
+        {
+            if self.lexicals.our_scalar_cell_names.contains(name) {
+                self.env_mut().remove_sym(sym);
+            } else {
+                self.env_mut().insert_sym(sym, Value::NIL);
+            }
+        }
         // A bind to a value that is not a container clears a stale
         // decontainerize marker of the name (`update_bound_decont_marker`),
         // probed first so an absent key costs no env copy.
@@ -345,6 +372,10 @@ impl Interpreter {
             }
         }
         // The bind's own verdict, as the general store applies it.
+        let Some(kind) = kind else {
+            self.locals[idx] = Self::update_proxy_closure_envs(v, name);
+            return true;
+        };
         match sym {
             Some(sym) => self.mark_readonly_sym_with(sym, kind),
             None => self.mark_readonly_with(name, kind),
