@@ -1888,63 +1888,20 @@ impl Compiler {
             "||" | "or" => {
                 // [||] a, b, c, d  =>  a || b || c || d
                 // If any element is truthy, return it and don't evaluate the rest.
-                // Pattern (for n > 1):
-                //   compile a; dup; JumpIfTrue found; pop; pop
-                //   compile b; dup; JumpIfTrue found; pop; pop
+                // `JumpIfTrue` peeks, so a truthy element stays on the stack as
+                // the result:
+                //   compile a; JumpIfTrue done; pop
+                //   compile b; JumpIfTrue done; pop
                 //   ...
-                //   compile last; Jump done
-                //   found: pop
+                //   compile last
                 //   done:
-                let mut jump_founds = Vec::new();
-                let last_idx = items.len() - 1;
-                for (i, item) in items.iter().enumerate() {
-                    self.compile_expr(item);
-                    if i < last_idx {
-                        self.code.emit(OpCode::Dup);
-                        let jf = self.code.emit(OpCode::JumpIfTrue(0));
-                        jump_founds.push(jf);
-                        self.code.emit(OpCode::Pop);
-                        self.code.emit(OpCode::Pop);
-                    }
-                }
-                // Last element: jump over "found: pop"
-                let jump_done = self.code.emit(OpCode::Jump(0));
-                // found: pop (remove dup copy, original stays as result)
-                let found_pos = self.code.current_pos();
-                self.code.emit(OpCode::Pop);
-                // done:
-                let done_pos = self.code.current_pos();
-                // Patch all JumpIfTrue to "found"
-                for jf in jump_founds {
-                    self.code.patch_jump_to(jf, found_pos);
-                }
-                // Patch jump_done to "done"
-                self.code.patch_jump_to(jump_done, done_pos);
+                self.compile_peeking_short_circuit(items, OpCode::JumpIfTrue(0));
             }
             "//" => {
                 // [//] a, b, c, d  =>  a // b // c // d
-                // Return first defined value.
-                // Same pattern as || but using JumpIfNotNil (peek-based).
-                let mut jump_founds = Vec::new();
-                let last_idx = items.len() - 1;
-                for (i, item) in items.iter().enumerate() {
-                    self.compile_expr(item);
-                    if i < last_idx {
-                        self.code.emit(OpCode::Dup);
-                        let jf = self.code.emit(OpCode::JumpIfNotNil(0));
-                        jump_founds.push(jf);
-                        self.code.emit(OpCode::Pop);
-                        self.code.emit(OpCode::Pop);
-                    }
-                }
-                let jump_done = self.code.emit(OpCode::Jump(0));
-                let found_pos = self.code.current_pos();
-                self.code.emit(OpCode::Pop);
-                let done_pos = self.code.current_pos();
-                for jf in jump_founds {
-                    self.code.patch_jump_to(jf, found_pos);
-                }
-                self.code.patch_jump_to(jump_done, done_pos);
+                // Return first defined value: the `||` shape with the
+                // peeking `JumpIfNotNil`.
+                self.compile_peeking_short_circuit(items, OpCode::JumpIfNotNil(0));
             }
             "andthen" => {
                 // [andthen] a, b, c  =>  a andthen b andthen c
