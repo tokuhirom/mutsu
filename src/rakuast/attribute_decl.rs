@@ -8,10 +8,10 @@ use super::view::{
     Initializer, node_field, statement_expression, unsupported as unsupported_source,
     var_declaration, view_expr,
 };
-use super::{RakuAstClass, RakuAstNode, attribute};
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute};
 use crate::ast::Stmt;
 use crate::scope::NameScope;
-use crate::value::{RuntimeError, ValueView};
+use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) fn view_node(
     names: &NameScope,
@@ -280,4 +280,41 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         default_is_bind,
         trait_order: traits.order,
     })
+}
+
+/// The value node of `field`, an attribute declaration's `initializer`, when
+/// the attribute's `Trait::WillBuild` holds the `same` written default: the
+/// trait shares it (and its origin) rather than converting the default again.
+/// Rakudo's trait holds a literal default itself (both are visited and
+/// placed); any other default it holds as a thunk of its own, so that one is
+/// converted apart.
+// Cost: O(1).
+pub(super) fn initializer_value(same: bool, field: Option<&RakuAstField>) -> Option<Value> {
+    let field = field.filter(|f| same && f.name == Some("initializer"))?;
+    let RakuAstFieldValue::Node(initializer) = &field.value else {
+        return None;
+    };
+    let ValueView::RakuAst(initializer) = initializer.view() else {
+        return None;
+    };
+    let RakuAstFieldValue::Node(value) = &initializer.fields.first()?.value else {
+        return None;
+    };
+    let ValueView::RakuAst(node) = value.view() else {
+        return None;
+    };
+    let literal = match node.class {
+        RakuAstClass::IntLiteral
+        | RakuAstClass::NumLiteral
+        | RakuAstClass::RatLiteral
+        | RakuAstClass::ComplexLiteral => true,
+        RakuAstClass::QuotedString => node.fields.iter().all(|f| match &f.value {
+            RakuAstFieldValue::List(items) => items.iter().all(|item| {
+                matches!(item.view(), ValueView::RakuAst(seg) if seg.class == RakuAstClass::StrLiteral)
+            }),
+            _ => true,
+        }),
+        _ => false,
+    };
+    literal.then(|| value.clone())
 }

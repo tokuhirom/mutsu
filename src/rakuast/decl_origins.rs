@@ -81,6 +81,12 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
         if applied {
             word += closing_bracket(&text[at + word..])? + 1;
         }
+        // A coercion type (`Str(Int)`, `Str()`) runs to its closing paren.
+        let coerced = word > 0 && !applied && text[at + word..].starts_with('(');
+        if coerced {
+            word += closing_paren(&text[at + word..])? + 1;
+        }
+        let applied = applied || coerced;
         let written = &text[at..at + word];
         // A smiley (`Str:D`) is part of the type, not of its name.
         let name_len = [":D", ":U", ":_"]
@@ -205,6 +211,10 @@ fn type_origin(ty: &mut RakuAstNode, (from, to, name_to): (usize, usize, usize))
         }
         RakuAstClass::TypeParameterized => {
             super::type_origins::parameterized(ty, SrcSpan::new(from, to))
+        }
+        RakuAstClass::TypeCoercion => {
+            super::origin::set_span(ty, SrcSpan::new(from, to));
+            super::type_origins::coercion(ty, SrcSpan::new(from, to))
         }
         RakuAstClass::TypeDefinedness if name_to < to => {
             let Some(inner) = super::infix_origins::child_at(ty, 0) else {

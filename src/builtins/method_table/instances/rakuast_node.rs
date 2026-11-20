@@ -1027,6 +1027,7 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                         | RakuAstClass::TypeParameterized
                         | RakuAstClass::TypeDefinedness
                         | RakuAstClass::TypeAnyDefinedness
+                        | RakuAstClass::TypeCoercion
                 ))
             })?;
             let target = node_value("target")?;

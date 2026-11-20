@@ -1975,19 +1975,10 @@ pub(super) fn var_declaration(
             name_from_identifier(desigil),
         ));
     }
-    if let Some(wb) = will_build {
-        // An attribute default (`has $.x = 5`) is a `Trait::WillBuild` (and also
-        // an `initializer`, emitted below).
-        let trait_node = RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitWillBuild,
-            fields: vec![node_field(None, view_expr(names, wb)?)],
-        };
-        fields.push(RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
-        });
-    }
+    // An attribute default (`has $.x = 5`) is a `Trait::WillBuild` (and also
+    // an `initializer`, emitted below). The initializer is converted first, so
+    // that the written terms' ranges go to it, the node rakudo places.
+    let traits_at = fields.len();
     if let Some(init) = init {
         let initializer = match init {
             Initializer::Assign(e) => RakuAstNode {
@@ -2026,6 +2017,29 @@ pub(super) fn var_declaration(
             },
         };
         fields.push(node_field(Some("initializer"), initializer));
+    }
+    if let Some(wb) = will_build {
+        // The same written default: the trait holds the initializer's node.
+        let same = matches!(init, Some(Initializer::Assign(e)) if std::ptr::eq(e, wb));
+        let value = match super::attribute_decl::initializer_value(same, fields.last()) {
+            Some(value) => RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(value),
+            },
+            None => node_field(None, view_expr(names, wb)?),
+        };
+        let trait_node = RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TraitWillBuild,
+            fields: vec![value],
+        };
+        fields.insert(
+            traits_at,
+            RakuAstField {
+                name: Some("traits"),
+                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
+            },
+        );
     }
     Ok(RakuAstNode {
         origin: Default::default(),

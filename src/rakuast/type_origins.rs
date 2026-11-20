@@ -176,3 +176,39 @@ pub(super) fn radix_parentheses(node: &mut RakuAstNode) {
         *held = Value::rakuast(Box::new(inner));
     }
 }
+
+/// Give the parts of `node`, a `Type::Coercion` written at `span`
+/// (`Str(Int)`, `Str()`), the ranges Rakudo gives them: the base type spans
+/// the whole coercion and its `Name` the name before the `(`; the constraint
+/// spans the text between the parentheses.
+// Cost: O(n), n = length of the written coercion.
+pub(super) fn coercion(node: &mut RakuAstNode, span: SrcSpan) {
+    let from = span.from as usize;
+    let Some((name_end, inner)) = super::unit_source::with_text(span, |text| {
+        let open = text.find('(')?;
+        let body = text[open + 1..].strip_suffix(')')?;
+        let name = text[..open].trim_end();
+        let lead = body.len() - body.trim_start().len();
+        let inner = (!body.trim().is_empty())
+            .then(|| (open + 1 + lead, open + 1 + lead + body.trim().len()));
+        (!name.is_empty() && !body.contains(['(', ')'])).then_some((name.len(), inner))
+    }) else {
+        return;
+    };
+    with_child(node, "base-type", |base| {
+        if base.class != RakuAstClass::TypeSimple {
+            return;
+        }
+        base.origin = Default::default();
+        super::origin::set_span(base, span);
+        with_first(base, |name| {
+            name.origin = Default::default();
+            super::origin::set_span(name, SrcSpan::new(from, from + name_end));
+        });
+    });
+    if let Some((a, b)) = inner {
+        with_child(node, "constraint", |constraint| {
+            super::routine_origins::type_origin(constraint, SrcSpan::new(from + a, from + b))
+        });
+    }
+}
