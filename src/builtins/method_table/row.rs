@@ -15,6 +15,10 @@ pub(crate) type NamedFn = fn(&Value, &[Value], Named<'_>) -> Option<Result<Value
 pub(crate) type InterpFn =
     fn(&mut Interpreter, &Value, &[Value], Named<'_>) -> Option<Result<Value, RuntimeError>>;
 
+/// The pure fast path of a [`Handler::InterpPureFirst`] row: the answer for
+/// the argument forms it binds without an interpreter, `None` for the rest.
+pub(crate) type PureFirstFn = fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>;
+
 /// A [`Handler::Mut`] implementation: the receiver's place, the positional
 /// arguments, then the named ones the row declared. `None` declines, and the
 /// call takes the cascades.
@@ -49,6 +53,16 @@ pub(crate) enum Handler {
     /// Its effects make the debug cross-check unable to re-run it, so it is
     /// answered once, by the row.
     Interp(InterpFn),
+    /// An [`Self::Interp`] row whose commonest argument forms need no
+    /// interpreter: `str.substr(Int, Int)`, `str.index(Str)`, against a
+    /// `Range`, a `Regex` needle or an adverb that do. The pure function is
+    /// tried first, on the positional arguments of a call with no named
+    /// argument; when it declines, the interpreter function answers. Every
+    /// entry that reads a row's need for an interpreter
+    /// ([`Handler::needs_interp`]) treats it as an `Interp` row; the VM's
+    /// call-site lane runs its pure half on the arguments where they sit,
+    /// without the copies an interpreter call takes.
+    InterpPureFirst(PureFirstFn, InterpFn),
     /// A handler that writes through its receiver (`push`, `splice`,
     /// `subst-mutate`, `BagHash.add`): it gets the receiver's
     /// [`ReceiverPlace`] and needs the interpreter. A `Mut` row is registered
@@ -63,7 +77,18 @@ impl Handler {
     /// Whether the handler can be run without an interpreter.
     // Cost: O(1).
     pub(crate) const fn is_pure(self) -> bool {
-        !matches!(self, Handler::Interp(_) | Handler::Mut(_))
+        !matches!(
+            self,
+            Handler::Interp(_) | Handler::InterpPureFirst(..) | Handler::Mut(_)
+        )
+    }
+
+    /// Whether the handler may need an interpreter to answer: an
+    /// [`Self::Interp`] row, or an [`Self::InterpPureFirst`] one whose pure
+    /// half can decline.
+    // Cost: O(1).
+    pub(crate) const fn needs_interp(self) -> bool {
+        matches!(self, Handler::Interp(_) | Handler::InterpPureFirst(..))
     }
 
     /// Whether the handler writes through its receiver, so that only
