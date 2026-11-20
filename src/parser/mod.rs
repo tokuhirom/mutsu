@@ -120,6 +120,7 @@ pub(crate) mod no_execute;
 mod outer_redecl;
 pub(crate) mod p6_frame_state;
 pub(crate) use stmt::decl::typed_default_expr;
+pub(crate) use stmt::decl::{ANON_SUBSET_PREFIX, mint_anon_subset_name};
 mod parse_result;
 mod primary;
 mod quote_shadow;

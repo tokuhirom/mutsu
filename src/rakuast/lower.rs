@@ -1963,7 +1963,11 @@ fn lower_subset(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeEr
     let (node, is_my, is_export, export_tags) =
         super::package_header::strip_scope_and_export(names, node)?;
     let node = &node;
-    let name = call_name_str(node)?;
+    // `subset :: where ...` names itself as the parser does.
+    let name = match name_parts::name_shape(named_child(node, "name")?) {
+        Some(NameShape::Stash(stash)) if stash == "::" => crate::parser::mint_anon_subset_name(),
+        _ => call_name_str(node)?,
+    };
     let predicate = match node.fields.iter().find(|f| f.name == Some("where")) {
         Some(f) => Some(lower_expr(names, child_node(&f.value)?)?),
         None => None,
@@ -5203,6 +5207,14 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 },
             })
         }
+        // `:a:!b:42c`: the list of the pairs.
+        RakuAstClass::ColonPairs => Ok(Expr::ArrayLiteral(
+            node.fields
+                .iter()
+                .filter(|f| f.name.is_none())
+                .map(|f| lower_expr(names, child_node(&f.value)?))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
         RakuAstClass::ColonPairVariable
         | RakuAstClass::ColonPairValue
         | RakuAstClass::ColonPairNumber => {
@@ -5732,6 +5744,16 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     }
                     if inner.class == RakuAstClass::PostfixPower {
                         return super::postfix_power::lower_hyper_power(inner, operand);
+                    }
+                    // `@a».(args)`: each element called.
+                    if inner.class == RakuAstClass::CallTerm {
+                        return Ok(Expr::HyperMethodCall {
+                            target: Box::new(operand),
+                            name: crate::symbol::Symbol::intern("CALL-ME"),
+                            args: arg_exprs(names, inner)?,
+                            modifier: None,
+                            quoted: false,
+                        });
                     }
                     if super::dynamic_method::is_dynamic(inner) {
                         return super::dynamic_method::lower_hyper(names, operand, inner);

@@ -2579,6 +2579,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::CaptureSigil(s) => super::match_vars::view_sigiled(&spelled.expr, *s),
             Spelling::ZipChain => super::zip_chain::view_node(names, &spelled.expr),
             Spelling::HyperSlip => super::hyper_prefix::slip_node(names, &spelled.expr),
+            Spelling::HyperCallTerm => super::hyper_prefix::call_term_node(names, &spelled.expr),
+            Spelling::ColonPairs => super::colon_pairs::view_node(names, &spelled.expr),
             Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
             Spelling::RadixNumber => super::radix_number::view_node(names, &spelled.expr),
             Spelling::ColonPairValue(_)

@@ -2691,13 +2691,16 @@ fn postfix_expr_loop_from<'a>(
                 let (r, args) = parse_call_arg_list(r)?;
                 let (r, _) = ws(r)?;
                 let (r, _) = parse_char(r, ')')?;
-                expr = Expr::HyperMethodCall {
-                    target: Box::new(expr),
-                    name: Symbol::intern("CALL-ME"),
-                    args,
-                    modifier,
-                    quoted: false,
-                };
+                expr = Expr::spelled(
+                    Expr::HyperMethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern("CALL-ME"),
+                        args,
+                        modifier,
+                        quoted: false,
+                    },
+                    || crate::ast::spelled::Spelling::HyperCallTerm,
+                );
                 rest = r;
                 continue;
             }

@@ -150,6 +150,12 @@ pub(crate) enum Spelling {
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,
+    /// `my $c = :a:!b:42c`: colonpairs written one after another as a term,
+    /// which the parser runs as the list of them; RakuAST keeps `ColonPairs`.
+    ColonPairs,
+    /// `@a».(args)`: the hyper call of each element, which the parser runs as
+    /// `@a».CALL-ME(args)`; RakuAST keeps `MetaPostfix::Hyper(Call::Term)`.
+    HyperCallTerm,
     /// `|<< EXPR` / `|» EXPR`: the hyper slip, which the parser runs as the
     /// plain `|EXPR`; RakuAST keeps `MetaPrefix::Hyper(Prefix("|"))`.
     HyperSlip,
