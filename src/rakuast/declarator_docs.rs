@@ -25,11 +25,14 @@ use crate::value::{Value, ValueView};
 
 const LEADING: &str = "declarator-docs-leading";
 const TRAILING: &str = "declarator-docs-trailing";
+/// Where the comments are written: the origin of the `Doc::Declarator` that
+/// `WHY` builds from them.
+const ORIGIN: &str = "declarator-docs-origin";
 
 /// Whether `field` is one of the hidden documentation fields.
 // Cost: O(1).
 pub(super) fn is_field(field: &RakuAstField) -> bool {
-    matches!(field.name, Some(LEADING | TRAILING))
+    matches!(field.name, Some(LEADING | TRAILING | ORIGIN))
 }
 
 /// Record `doc` on `node`: one field per text, a list of the comments' lines
@@ -37,6 +40,14 @@ pub(super) fn is_field(field: &RakuAstField) -> bool {
 // Cost: O(l), l = lines of the doc.
 pub(super) fn attach(node: &mut RakuAstNode, doc: Option<&DeclDoc>) {
     let Some(doc) = doc else { return };
+    if let Some(origin) = doc.span.and_then(|(from, to)| {
+        super::unit_source::span_origin_value(crate::ast::SrcSpan::new(from as usize, to as usize))
+    }) {
+        node.fields.push(RakuAstField {
+            name: Some(ORIGIN),
+            value: RakuAstFieldValue::Node(origin),
+        });
+    }
     for (name, text, lines) in [
         (LEADING, &doc.leading, &doc.leading_lines),
         (TRAILING, &doc.trailing, &doc.trailing_lines),
@@ -75,7 +86,16 @@ pub(crate) fn replace(node: &mut RakuAstNode, leading: Vec<String>, trailing: Ve
 // Cost: O(f), f = fields of the node.
 pub(crate) fn clear(node: &mut RakuAstNode) {
     node.fields
-        .retain(|f| !matches!(f.name, Some(LEADING | TRAILING | "WHY")));
+        .retain(|f| !matches!(f.name, Some(LEADING | TRAILING | ORIGIN | "WHY")));
+}
+
+/// The origin of the comments `node` was documented by, if they were parsed.
+// Cost: O(f), f = fields of the node.
+pub(super) fn origin(node: &RakuAstNode) -> Option<Value> {
+    node.fields.iter().find_map(|f| match (&f.name, &f.value) {
+        (Some(ORIGIN), RakuAstFieldValue::Node(v)) => Some(v.clone()),
+        _ => None,
+    })
 }
 
 /// The comments of one hidden field, one entry per line.
@@ -128,6 +148,7 @@ pub(super) fn doc(node: &RakuAstNode) -> Option<DeclDoc> {
         trailing: joined(node, "trailing", TRAILING),
         leading_lines: lines_of(node, "leading", LEADING),
         trailing_lines: lines_of(node, "trailing", TRAILING),
+        span: None,
     };
     (!doc.is_empty()).then_some(doc)
 }

@@ -26,6 +26,11 @@ pub(crate) struct DeclDoc {
     /// The `#=` comments one by one.
     #[serde(default)]
     pub(crate) trailing_lines: Vec<String>,
+    /// Where the comments are written: from the first one's `#` to the end
+    /// of the last one's text (rakudo's `Doc::Declarator` origin), as source
+    /// byte offsets.
+    #[serde(default)]
+    pub(crate) span: Option<(u32, u32)>,
 }
 
 /// The text `.WHY` answers for a declarator comment written as `raw`: each

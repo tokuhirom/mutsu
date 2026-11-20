@@ -54,6 +54,9 @@ struct Comment {
     /// further comments). `usize::MAX` until the `ws` call that skipped it
     /// reaches that token.
     next_token: usize,
+    /// The source offset just past the comment's text (its line break left
+    /// out).
+    end: usize,
 }
 
 /// What a declaration is, as far as naming its documentation needs.
@@ -217,6 +220,8 @@ pub(in crate::parser) fn note_comment(input: &str, after: &str, block: bool) -> 
     let Some(at) = source_offset(input) else {
         return false;
     };
+    let written = &input[..input.len() - after.len()];
+    let end = at + written.trim_end().len();
     with_table(|t| {
         if let std::collections::btree_map::Entry::Vacant(slot) = t.comments.entry(at) {
             slot.insert(Comment {
@@ -224,6 +229,7 @@ pub(in crate::parser) fn note_comment(input: &str, after: &str, block: bool) -> 
                 text,
                 raw,
                 next_token: usize::MAX,
+                end,
             });
             if !trailing {
                 t.pending_leading.push(at);
