@@ -315,8 +315,31 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
             param.spans.type_,
         );
         list_origins(&mut node, "traits", &param.spans.traits);
+        if let Some(inner) = &param.sub_signature {
+            sub_signature(&mut node, inner);
+        }
         *value = Value::rakuast(Box::new(node));
     }
+}
+
+/// `($a, $b)`: the `sub-signature` of a destructuring parameter runs from its
+/// first parameter to its last, inside the brackets.
+// Cost: O(p), p = parameters of the sub-signature, nested ones included.
+fn sub_signature(node: &mut RakuAstNode, params: &[ParamDef]) {
+    let (Some(first), Some(last)) = (params.first(), params.last()) else {
+        return;
+    };
+    if !first.spans.param.is_some() || !last.spans.param.is_some() {
+        return;
+    }
+    let whole = crate::ast::SrcSpan::new(
+        first.spans.param.from as usize,
+        last.spans.param.to as usize,
+    );
+    with_child(node, "sub-signature", |signature| {
+        parameters(signature, params);
+        super::origin::set_span(signature, whole);
+    });
 }
 
 /// Give the `signature` of the pointy block `block` of a `for` loop
