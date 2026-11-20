@@ -298,6 +298,8 @@ mod vm_jit_helpers;
 #[cfg(feature = "jit")]
 mod vm_jit_layout;
 #[cfg(feature = "jit")]
+mod vm_jit_native_int_step;
+#[cfg(feature = "jit")]
 mod vm_jit_support;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b;
