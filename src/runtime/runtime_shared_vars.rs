@@ -434,7 +434,7 @@ impl Interpreter {
         // another thread reaches it through its cell.
         if self.threads.shared_vars_active
             && !self.threads.suppress_shared_publish
-            && !crate::runtime::shared_store::is_user_lexical_key(key)
+            && !crate::runtime::shared_store::is_user_lexical_key_with(key, sym)
         {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS

@@ -43,10 +43,8 @@ impl Interpreter {
     // the top package, d = EVAL nesting of the anchor units (at most 64),
     // q = the qualified gate.
     pub(crate) fn unmerged_package_var_key(&self, name: Symbol) -> Option<Symbol> {
-        let split = split_qualified_var(name)?;
         // `$GLOBAL::V::x` names the same unit-GLOBAL variable as `$V::x`.
-        let pkg =
-            crate::qualified::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg));
+        let pkg = crate::qualified::qualified_var_package(name)?;
         let top = package_ancestors(pkg).last()?;
         // A module's `my package` is lexical to the module (#11156). The
         // two the import protocol itself reads from the module (`EXPORT`,
@@ -61,6 +59,7 @@ impl Interpreter {
             if self.unit_is_running(unit) {
                 return None;
             }
+            let split = split_qualified_var(name)?;
             return Some(Self::unmerged_store_key(pkg, split.sigil, split.bare));
         }
         let modules = self
@@ -71,6 +70,7 @@ impl Interpreter {
         if self.any_module_merged_here(modules) {
             return None;
         }
+        let split = split_qualified_var(name)?;
         let unsigiled = qualified(pkg, Symbol::intern(split.bare));
         if self.qualified_name_visible_here(unsigiled.as_str()) {
             return None;

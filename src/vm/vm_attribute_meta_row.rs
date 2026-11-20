@@ -58,7 +58,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 class_name == attribute
                     || (self.class_mro(class_name.as_str()).contains(&attribute)
-                        && !self.has_user_method_sym(class_name.as_str(), method_sym))
+                        && !self.has_user_method_of(class_name, method_sym))
             }
             ValueView::Mixin(inner, mixins) => {
                 matches!(inner.view(), ValueView::Instance { class_name, .. } if class_name == attribute)

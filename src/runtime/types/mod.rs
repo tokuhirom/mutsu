@@ -642,13 +642,17 @@ impl Interpreter {
         if readonly {
             return true;
         }
-        crate::env::sigilless_readonly_keys_possible()
-            && matches!(
-                self.env()
-                    .get_sym(crate::runtime::utils::sigilless_readonly_key(name))
-                    .map(Value::view),
-                Some(ValueView::Bool(true))
-            )
+        if !crate::env::sigilless_readonly_keys_possible() {
+            return false;
+        }
+        let key = match name_sym {
+            Some(sym) => crate::meta_ns::MetaNs::SigillessReadonly.key(sym),
+            None => crate::runtime::utils::sigilless_readonly_key(name),
+        };
+        matches!(
+            self.env().get_sym(key).map(Value::view),
+            Some(ValueView::Bool(true))
+        )
     }
 
     /// Reject an in-place increment/decrement of a read-only variable (a
