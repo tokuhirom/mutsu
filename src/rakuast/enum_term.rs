@@ -43,7 +43,7 @@ pub(super) fn enum_term_node(
 ) -> Result<RakuAstNode, RuntimeError> {
     match form {
         EnumVariantForm::Words => word_term(names, variants, "words"),
-        EnumVariantForm::EmptyWords(raw) => Ok(RakuAstNode {
+        EnumVariantForm::WrittenWords(raw) => Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::QuotedString,
             fields: vec![
@@ -362,7 +362,7 @@ fn lower_word_term(
         _ => return Err(unsupported(term)),
     };
     let mut variants = Vec::new();
-    let mut empty_text = None;
+    let mut written = None;
     for segment in list_field(term, "segments")? {
         let ValueView::RakuAst(segment) = segment.view() else {
             return Err(unsupported(term));
@@ -373,8 +373,8 @@ fn lower_word_term(
                 let ValueView::Str(text) = text.view() else {
                     return Err(unsupported(term));
                 };
-                if variants.is_empty() && text.split_whitespace().next().is_none() {
-                    empty_text = Some(text.to_string());
+                if variants.is_empty() {
+                    written = Some(text.to_string());
                 }
                 variants.extend(text.split_whitespace().map(|name| (name.to_string(), None)));
             }
@@ -384,10 +384,11 @@ fn lower_word_term(
             _ => return Err(unsupported(term)),
         }
     }
-    if variants.is_empty()
-        && let (EnumVariantForm::Words, Some(text)) = (&form, empty_text)
-    {
-        return Ok((variants, EnumVariantForm::EmptyWords(text.into())));
+    if let (EnumVariantForm::Words, Some(text)) = (&form, written) {
+        let mut words = variants.iter().map(|(name, _): &(String, _)| name.as_str());
+        if !text.split(' ').eq(&mut words) {
+            return Ok((variants, EnumVariantForm::WrittenWords(text.into())));
+        }
     }
     Ok((variants, form))
 }
