@@ -21,7 +21,7 @@ is RakuAST::Name.^method_table.keys.sort.join(','),
     'named constructor appears in the method table';
 is RakuAST::StatementList.^method_table.keys.sort.join(','), 'add-statement,code-statements,insert-statement,new,statements,unshift-statement',
     'mutable model class exposes construction, mutation, and its accessor';
-is RakuAST::Assignment.^method_table.keys.sort.join(','), 'new',
+is RakuAST::Assignment.^method_table.keys.sort.join(','), 'is-pure,new',
     'Assignment inherits its operator accessor from Infix';
 
 my $node = RakuAST::IntLiteral.new(42);

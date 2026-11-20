@@ -65,6 +65,7 @@ mod loop_bind;
 mod named_docs;
 pub(crate) mod nested_methods;
 pub(crate) mod operator_props;
+pub(crate) mod operator_purity;
 pub(crate) mod origin_range;
 mod package_trait_origins;
 mod parsed_view;
