@@ -7,7 +7,7 @@ use Test;
 #   .map(-> ($k, $v) {...})  destructures each list element
 #   .map(-> $a, $b {...})    chunks the list two-at-a-time
 
-plan 9;
+plan 10;
 
 # .map with a destructuring block: each element is a 2-list, unpacked.
 {
@@ -51,10 +51,12 @@ plan 9;
     is $b((10, 20)), '10/20', 'pointy destructuring block called with one list arg';
 }
 
-# A single-element paren stays a lone parameter (no destructuring change).
+# A single-element paren still destructures (#18397): it unpacks a one-element
+# list, and an Int argument has no Capture to unpack.
 {
     my $b = -> ($x) { $x * 2 };
-    is $b(21), 42, '-> ($x) is a single ordinary parameter';
+    is $b((21,)), 42, '-> ($x) unpacks a one-element list';
+    throws-like { $b(21) }, X::Cannot::Capture, '-> ($x) cannot unpack an Int';
 }
 
 # Nested data: list of 3-tuples.

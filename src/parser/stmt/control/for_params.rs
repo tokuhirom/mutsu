@@ -47,6 +47,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
         // `parse_for_pointy_param` keeps a type constraint only when a sigil
         // follows it, so the anonymous one reached no branch at all and the
         // whole `for` header failed to parse.
+        let pattern_start = r;
         let (r, unpack_type) = match super::super::sub_param::parse_type_constraint_expr(r) {
             Some((after_tc, tc)) => {
                 let (after_ws, _) = ws(after_tc)?;
@@ -67,6 +68,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, sub_params) = super::super::parse_param_list_pub(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
+            let pattern_end = r;
             // See the `[` branch below: a comma after the pattern means several
             // destructuring parameters, one per chunk element.
             let (after_comma, _) = ws(r)?;
@@ -77,6 +79,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let unpack_name = FOR_UNPACK.to_string();
             let unpack_def = ParamDef {
                 name: unpack_name.clone(),
+                spans: destructure_spans(pattern_start, pattern_end, unpack_type.as_deref()),
                 type_constraint: unpack_type,
                 block_param: true,
                 ..ParamDef::destructure(sub_params, false)
@@ -122,6 +125,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 }
             }
             let (r, _) = parse_char(r, ']')?;
+            let pattern_end = r;
             // More than one destructuring parameter (`-> [$a, $b], [$c, $d]`)
             // needs the general multi-parameter path: each pattern binds one
             // element of the chunk and unpacks it. The single-pattern shape below
@@ -134,6 +138,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let unpack_name = FOR_UNPACK_ARRAY.to_string();
             let unpack_def = ParamDef {
                 name: unpack_name.clone(),
+                spans: destructure_spans(pattern_start, pattern_end, unpack_type.as_deref()),
                 type_constraint: unpack_type,
                 block_param: true,
                 ..ParamDef::destructure(sub_params, true)
@@ -150,6 +155,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 ),
             ));
         }
+        let first_start = r;
         let (r, mut first_def) = parse_for_pointy_param(r)?;
         let first = first_def.name.clone();
         let (r, _) = ws(r)?;
@@ -159,6 +165,8 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, sub_params) = super::super::parse_param_list_pub(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
+            // `-> Pair $p (:$key)`: the parameter runs to the closer.
+            first_def.spans.param = crate::parser::primary::source_span(first_start, r);
             first_def.sub_signature = Some(sub_params);
             (r, ())
         } else if r.starts_with('[') {
@@ -167,6 +175,8 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, sub_params) = super::super::parse_param_list_pub(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
+            // `-> Pair $p (:$key)`: the parameter runs to the closer.
+            first_def.spans.param = crate::parser::primary::source_span(first_start, r);
             first_def.sub_signature = Some(sub_params);
             (r, ())
         } else {
@@ -371,11 +381,28 @@ fn parse_destructuring_or_plain_param(input: &str) -> PResult<'_, ParamDef> {
         r,
         ParamDef {
             name,
+            spans: destructure_spans(input, r, type_constraint.as_deref()),
             type_constraint,
             block_param: true,
             ..ParamDef::destructure(sub_params, open == '[')
         },
     ))
+}
+
+/// Where a destructuring pattern (`($a, $b)`, `Pair (:key($k))`), read from
+/// `input` up to `rest`, was written: all of it, and its type.
+// Cost: O(t), t = length of the type.
+fn destructure_spans(input: &str, rest: &str, ty: Option<&str>) -> crate::ast::parsed::ParamSpans {
+    let span = crate::parser::primary::source_span;
+    crate::ast::parsed::ParamSpans {
+        param: span(input, rest),
+        type_: ty
+            .filter(|ty| input.starts_with(ty))
+            .map_or(crate::ast::SrcSpan::NONE, |ty| {
+                span(input, &input[ty.len()..])
+            }),
+        ..Default::default()
+    }
 }
 
 fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
