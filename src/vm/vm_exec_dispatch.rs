@@ -4261,6 +4261,16 @@ impl Interpreter {
                 self.exec_str_ne_op()?;
                 *ip += 1;
             }
+            // Cost: O(p), p = common prefix; O(1) when the lengths differ, as
+            // `StrEq` (see exec_str_eq_local_const_op).
+            OpCode::StrEqLocalConst {
+                slot,
+                const_idx,
+                negate,
+            } => {
+                self.exec_str_eq_local_const_op(code, *slot, *const_idx, *negate)?;
+                *ip += 1;
+            }
             // Cost: O(p), p = common prefix (see str_cmp_values).
             OpCode::StrLt => {
                 self.exec_str_cmp_op(StrCmp::Lt)?;
@@ -5687,9 +5697,9 @@ impl Interpreter {
                 value_source_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                let pre = self.attr_env_snapshot(code, *target_name_idx);
+                let pre = self.attr_container_op_prologue(code, *target_name_idx, *target_slot);
                 self.exec_array_push_op(code, *target_name_idx, *target_slot, *value_source_idx)?;
-                self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
+                self.attr_container_op_epilogue(code, *target_name_idx, pre);
                 *ip += 1;
             }
             // Cost: O(a) plus the method body, a = arguments (`push_method_dispatch_frame`'s
@@ -6347,7 +6357,7 @@ impl Interpreter {
                 target_slot,
                 viv_hash,
             } => {
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                let pre = self.attr_elem_op_prologue(code, *name_idx, *target_slot);
                 self.exec_index_elem_autoviv_op(
                     code,
                     *name_idx,
@@ -6355,7 +6365,7 @@ impl Interpreter {
                     *target_slot,
                     *viv_hash,
                 )?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                self.attr_elem_op_epilogue(code, *name_idx, pre);
                 *ip += 1;
             }
             // Cost: O(m), m = key bytes (name built by `format!`), plus an O(1) avg stash store.

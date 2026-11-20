@@ -24,6 +24,13 @@ pub(super) struct Written {
     /// A named parameter `:$x`: written with the colon, which the parameter's
     /// range includes and its target's does not.
     named: bool,
+    /// The `?` / `!` an `optional` field may have been written as.
+    marker: Option<char>,
+    /// The byte range of the default (`$x = 42`), which the parameter's range
+    /// runs to.
+    default: Option<(usize, usize)>,
+    /// A sub-signature `($a, $b)` written in place of a variable.
+    sub: Option<Vec<Written>>,
 }
 
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
@@ -76,6 +83,8 @@ pub(super) struct Spans {
     pub(super) param: SrcSpan,
     var: SrcSpan,
     ty: SrcSpan,
+    /// A sub-signature's range (inside its parentheses) and parameters.
+    sub: Option<(SrcSpan, Vec<Spans>)>,
 }
 
 /// The parameters of `signature`, as written, when every one is a plain
@@ -104,18 +113,34 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 matches!(
                     f.name,
                     Some(
-                        "default"
-                            | "where"
+                        "where"
                             | "type-captures"
                             | "invocant"
                             | "array-shape"
                             | "slurpy"
-                            | "sub-signature"
                             | "traits"
                     )
                 )
             }) {
                 return None;
+            }
+            // `($a, $b)`: a sub-signature in place of the variable.
+            if let Some(sub) = child(param, "sub-signature") {
+                if child(param, "target").is_some()
+                    || child(param, "default").is_some()
+                    || param.fields.iter().any(|f| f.name == Some("names"))
+                {
+                    return None;
+                }
+                return Some(Written {
+                    ty: parameter_type(param)?,
+                    var: String::new(),
+                    term: false,
+                    named: false,
+                    marker: None,
+                    default: None,
+                    sub: Some(parameters(sub)?),
+                });
             }
             let target = child(param, "target")?;
             // `:$x`: one name, the variable's own.
@@ -137,6 +162,21 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     true
                 }
             };
+            // `$x?` / `:$x!`: an `optional` the default would not give.
+            let marker = match param.fields.iter().find(|f| f.name == Some("optional")) {
+                None => None,
+                Some(field) => {
+                    let RakuAstFieldValue::Node(value) = &field.value else {
+                        return None;
+                    };
+                    Some(if value.truthy() { '?' } else { '!' })
+                }
+            };
+            // `$x = 42`: the default must carry its range.
+            let default = match child(param, "default") {
+                None => None,
+                Some(value) => Some(super::infix_origins::byte_range(value)?),
+            };
             if target.class == RakuAstClass::ParameterTargetTerm {
                 let name = leaf_text(child_at(target, 0)?)?;
                 return Some(Written {
@@ -144,6 +184,9 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     var: name,
                     term: true,
                     named,
+                    marker,
+                    default,
+                    sub: None,
                 });
             }
             if target.class != RakuAstClass::ParameterTargetVar {
@@ -154,6 +197,9 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 var: leaf_text(target)?,
                 term: false,
                 named,
+                marker,
+                default,
+                sub: None,
             })
         })
         .collect()
@@ -246,13 +292,59 @@ pub(super) fn scan(
             inner[at..].strip_prefix(':')?;
             at += 1;
         }
+        if let Some(sub) = &written.sub {
+            // `( ... )`: the parameters inside, then the closing paren.
+            let open = inner[at..].strip_prefix('(')?;
+            let lead = open.len() - open.trim_start().len();
+            let inner_at = at + 1 + lead;
+            let (spans, used) = scan(&inner[inner_at..], sub, base + inner_at)?;
+            let close_at = inner_at + used;
+            inner[close_at..].strip_prefix(')')?;
+            let range = SrcSpan::new(
+                spans
+                    .first()
+                    .map_or(base + inner_at, |s| s.param.from as usize),
+                spans
+                    .last()
+                    .map_or(base + inner_at, |s| s.param.to as usize),
+            );
+            at = close_at + 1;
+            out.push(Spans {
+                param: SrcSpan::new(base + start, base + at),
+                var: SrcSpan::NONE,
+                ty,
+                sub: Some((range, spans)),
+            });
+            at += inner[at..].len() - inner[at..].trim_start().len();
+            if i + 1 < parameters.len() {
+                inner[at..].strip_prefix(',')?;
+                at += 1;
+            }
+            continue;
+        }
         inner[at..].strip_prefix(written.var.as_str())?;
         let var = SrcSpan::new(base + at, base + at + written.var.len());
         at += written.var.len();
+        // A pointy block's positional parameter is `optional => False` with
+        // nothing written: the marker is read when it is there.
+        if let Some(marker) = written.marker
+            && inner[at..].starts_with(marker)
+        {
+            at += 1;
+        }
+        if let Some((from, to)) = written.default {
+            let rest = inner[at..].trim_start().strip_prefix('=')?;
+            let value_at = inner.len() - rest.trim_start().len();
+            if base + value_at != from || to < base + value_at {
+                return None;
+            }
+            at = to - base;
+        }
         out.push(Spans {
             param: SrcSpan::new(base + start, base + at),
             var,
             ty,
+            sub: None,
         });
         at += inner[at..].len() - inner[at..].trim_start().len();
         if i + 1 < parameters.len() {
@@ -282,6 +374,12 @@ pub(super) fn place(signature: &mut RakuAstNode, spans: &[Spans]) {
         };
         let mut node = RakuAstNode::clone(node);
         super::routine_origins::parameter(&mut node, span.param, span.var, span.ty);
+        if let Some((range, spans)) = &span.sub {
+            super::infix_origins::with_child(&mut node, "sub-signature", |signature| {
+                super::origin::set_span(signature, *range);
+                place(signature, spans);
+            });
+        }
         *value = Value::rakuast(Box::new(node));
     }
 }

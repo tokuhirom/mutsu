@@ -1076,6 +1076,7 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod amp_scope;
+mod attr_aggregate_slot;
 mod mu_bind_decl;
 mod unit_hidden_names;
 use unit_hidden_names::routine_may_name;
@@ -1138,6 +1139,7 @@ mod helpers_dynamic;
 mod helpers_method_body;
 mod short_circuit;
 mod stash_entry_var;
+mod str_eq_local_const;
 mod with_defined;
 mod with_topic_alias;
 pub(crate) use crate::op_names as helpers_ops;

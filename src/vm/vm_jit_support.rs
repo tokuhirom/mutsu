@@ -114,6 +114,10 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::TypeCheck(..)
             | OpCode::TypeCheckBind(..)
             | OpCode::TypeCheckParam(..)
+            // A fused local-against-literal `eq`/`ne` (ADR-18357): reads its
+            // slot and pushes a Bool, straight-line like the `GetLocal;
+            // LoadConst; StrEq` it replaces.
+            | OpCode::StrEqLocalConst { .. }
             // Increment / decrement
             | OpCode::PostIncrement(..)
             | OpCode::PostDecrement(..)

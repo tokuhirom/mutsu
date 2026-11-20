@@ -50,26 +50,28 @@ impl Interpreter {
         if arity == 0 && matches!(&name, Ok(method) if method == "VAR") {
             self.publish_reflected_binding(code, target_name_idx, target_slot);
         }
-        self.call_method_mut_site_around(code, ip, arity, target_name_idx, |vm| match name {
-            Err(callable) => {
-                vm.accessor_ref_pending = false;
-                vm.exec_dynamic_callable_method(
+        self.call_method_mut_site_around(code, ip, arity, target_name_idx, target_slot, |vm| {
+            match name {
+                Err(callable) => {
+                    vm.accessor_ref_pending = false;
+                    vm.exec_dynamic_callable_method(
+                        code,
+                        callable,
+                        arity as usize,
+                        modifier_idx,
+                        arg_sources_idx,
+                    )
+                }
+                Ok(method) => vm.exec_call_method_mut_named_op(
                     code,
-                    callable,
-                    arity as usize,
+                    MethodName::dynamic(&method),
+                    arity,
+                    target_name_idx,
+                    target_slot,
                     modifier_idx,
                     arg_sources_idx,
-                )
+                ),
             }
-            Ok(method) => vm.exec_call_method_mut_named_op(
-                code,
-                MethodName::dynamic(&method),
-                arity,
-                target_name_idx,
-                target_slot,
-                modifier_idx,
-                arg_sources_idx,
-            ),
         })
     }
 }

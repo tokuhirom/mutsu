@@ -55,23 +55,21 @@ impl Interpreter {
             arity,
             modifier_idx: None,
             quoted: false,
-            arg_sources_idx,
+            ..
         } = code.ops[ip]
         else {
             return None;
         };
-        if matches!(
-            Self::const_str(code, name_idx),
-            "perl" | "throw" | "of" | "package_at_key" | "ASSIGN-KEY"
-        ) || self.retype_receiver_needed(code, name_idx)
-        {
+        // The names this lane leaves to the full path are part of the site's
+        // static verdict (`vm_method_site_static`).
+        if !Self::method_site_static_ok(code, ip) || self.retype_receiver_needed(code, name_idx) {
             return None;
         }
         let base = self.stack.len().checked_sub(arity as usize + 1)?;
         if !inline_receiver_admitted(&self.stack[base]) {
             return None;
         }
-        self.site_lane_answer(code, ip, name_idx, arity, None, arg_sources_idx)
+        self.site_lane_answer(code, ip, name_idx, arity, None)
     }
 
     /// Whether the full path would retype the call's answer to a native
