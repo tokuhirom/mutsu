@@ -2661,13 +2661,15 @@ impl Interpreter {
                                 let existing = if source_name.starts_with("__mutsu_bind_index_ref_")
                                 {
                                     None
-                                } else if let Some(arc) =
-                                    Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
-                                        .and_then(|idx| match self.locals.get(idx).map(Value::view) {
-                                            Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
-                                            _ => None,
-                                        })
-                                {
+                                } else if let Some(arc) = Self::bind_source_local_slot(
+                                    code,
+                                    bind_source_slot,
+                                    &resolved_source,
+                                )
+                                .and_then(|idx| match self.locals.get(idx).map(Value::view) {
+                                    Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
+                                    _ => None,
+                                }) {
                                     // The source is a slot of this frame already holding
                                     // a shared cell: an `is rw` parameter a light call
                                     // aliased to its argument's container (ADR-0109), whose

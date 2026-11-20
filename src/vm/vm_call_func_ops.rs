@@ -1321,8 +1321,7 @@ impl Interpreter {
                         // routinely is.
                         let body_fns = cf.compiled_fns.clone();
                         let compiled_fns = body_fns.as_deref().unwrap_or(compiled_fns);
-                        let result = if !named_share
-                            && Self::is_light_call_eligible(&cf, name_str)
+                        let result = if !named_share && Self::is_light_call_eligible(&cf, name_str)
                         {
                             self.call_compiled_function_light(
                                 &cf,
