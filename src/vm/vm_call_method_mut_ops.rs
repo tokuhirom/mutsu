@@ -566,7 +566,6 @@ impl Interpreter {
         // ordinary object (`try_plain_method_early_lane`).
         if modifier_idx.is_none()
             && !Self::quoting_matters(quoted, name.raw)
-            && !self.accessor_ref_pending
             && let Some(result) = self.try_plain_method_early_lane(
                 code,
                 Self::const_str(code, target_name_idx),

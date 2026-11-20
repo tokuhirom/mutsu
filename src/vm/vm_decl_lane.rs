@@ -46,17 +46,50 @@ impl Interpreter {
         bind_declaration: bool,
         local_slot: Option<u32>,
     ) -> Option<usize> {
+        self.env_free_slot(code, name, dynamic, bind_declaration, false, local_slot)
+    }
+
+    /// [`Self::env_free_decl_slot`] for a `$` scalar's `:=` declaration
+    /// (`my $x := EXPR`), whose store [`Self::exec_set_local_bind_decl_fast`]
+    /// serves.
+    // Cost: O(1), as `env_free_decl_slot`.
+    #[inline]
+    fn env_free_bind_decl_slot(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        idx: usize,
+    ) -> Option<usize> {
+        self.env_free_slot(code, name, false, true, true, Some(idx as u32))
+    }
+
+    // Cost: O(1), as `env_free_decl_slot`.
+    #[inline]
+    fn env_free_slot(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        dynamic: bool,
+        bind_declaration: bool,
+        scalar_bind_ok: bool,
+        local_slot: Option<u32>,
+    ) -> Option<usize> {
         let idx = local_slot? as usize;
         // A sigilless term bound to a subscript's or a call's result is a
         // bind declaration; its slot is as much its only home as a readonly
-        // term's (ADR-17376, "bound terms").
+        // term's (ADR-17376, "bound terms"). So is a `$` scalar's own `:=`
+        // declaration (`scalar_bind_ok`), whose store decides its binding
+        // from the value alone.
         let lean_bound = code.lean_bound_term_slot(idx);
-        if dynamic || (bind_declaration && !lean_bound) || idx >= self.locals.len() {
+        if dynamic
+            || (bind_declaration && !lean_bound && !scalar_bind_ok)
+            || idx >= self.locals.len()
+        {
             return None;
         }
         // A `$` scalar with a plain name (no `@`/`%`/`&`, no attribute twigil),
         // or a sigilless term whose slot is its only home (ADR-17376).
-        let lean_term = code.lean_readonly_term_slot(idx) || lean_bound;
+        let lean_term = !scalar_bind_ok && (code.lean_readonly_term_slot(idx) || lean_bound);
         if !lean_term {
             code.simple_scalar_local_desc(idx)?;
         }
@@ -217,6 +250,115 @@ impl Interpreter {
             self.clear_constant_marker(name);
         }
         self.locals[idx] = v;
+        true
+    }
+
+    /// The `SetLocal` store of a `$` scalar's `:=` declaration
+    /// (`my $x := EXPR`) whose slot is its variable's only home and whose
+    /// value has no container of its own: an `Int`, `Str`, object or code
+    /// value.
+    ///
+    /// Such a bind makes the name readonly (rakudo: "Cannot assign to an
+    /// immutable value"), and that is all it does. The general store reaches the same verdict through its
+    /// cascade -- the Proxy/Seq/decont/alias/array-share arms, the env
+    /// mirrors, a by-name probe for other bindings of the name -- every one
+    /// of which is inert for this shape on an env-free slot. What it leaves
+    /// behind is reproduced here exactly: the name's readonly mark in the
+    /// registry and the value seated in a binding cell that carries the kind
+    /// (`readonly_value_binding`, ADR-11142), plus the declaration's own
+    /// clearing steps (`exec_set_local_decl_fast`'s).
+    ///
+    /// Declines (`false`, nothing consumed) for anything else: a variable
+    /// source (`my $x := $y`, which arrives as a `VarRef`), a container,
+    /// Proxy or aggregate to alias, a list-like value, `Nil`, a type object,
+    /// a typed declaration, or any pending store flavour beyond the
+    /// declaration's.
+    // Cost: O(1).
+    pub(super) fn exec_set_local_bind_decl_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
+        let idx = idx as usize;
+        if !self.mark_ctx.only_scalar_bind_declaration_marks() || self.array_share_source_pending()
+        {
+            return false;
+        }
+        let Some(name) = code.locals.get(idx) else {
+            return false;
+        };
+        let Some(desc) = code.simple_scalar_local_desc(idx) else {
+            return false;
+        };
+        if code.declared_constraint(idx) != crate::binding_desc::DeclaredConstraint::Untyped
+            || self.env_free_bind_decl_slot(code, name, idx).is_none()
+            || !self.set_local_scalar_metadata_lanes_clear(code, idx, desc)
+        {
+            return false;
+        }
+        let Some(v) = self.stack.last() else {
+            return false;
+        };
+        // The value shapes the general store binds as the value itself and
+        // seats in a readonly binding cell: no container to alias, nothing
+        // list-like a cell would itemize, and not `Nil` or a lazy thunk,
+        // which take their own arms.
+        // A type object is left to the general store too: its assignment
+        // error names the type by reading the binding back through the env
+        // (`type_object_assign_error`), so that bind keeps its env mirror.
+        if v.is_nil()
+            || v.is_lazy_thunk_value()
+            || !Self::binding_cell_keeps_value_semantics(v)
+            || Self::bind_source_is_type_object(v)
+            || !Self::bind_source_has_no_container(v)
+        {
+            return false;
+        }
+        let kind = crate::ast::ReadonlyKind::Immutable;
+        // An object that decomposes on array assignment (`does Iterable`)
+        // binds as a non-container: the general store records the decont
+        // marker that makes `@a = $bound` iterate it.
+        if matches!(v.view(), ValueView::Instance { .. }) {
+            let v = v.clone();
+            if self.instance_decomposes_on_array_assign(&v) {
+                return false;
+            }
+        }
+        if !self.locals[idx].is_plain_scalar_store_slot() {
+            return false;
+        }
+        // -- committed: from here the store cannot fall back --
+        let v = self.stack.pop().unwrap_or(Value::NIL);
+        self.mark_ctx.consume_for_store();
+        // The declaration steps the general store runs for every `my`.
+        self.clear_var_default(name);
+        let sym = code.locals_sym.get(idx).copied();
+        if !self.no_readonly_vars()
+            && let Some(sym) = sym
+        {
+            self.unmark_readonly_sym(sym);
+        }
+        if !self.lexicals.constant_var_names_seen.is_empty()
+            && self
+                .lexicals
+                .constant_var_names_seen
+                .contains(name.as_str())
+        {
+            self.clear_constant_marker(name);
+        }
+        // A bind to a value that is not a container clears a stale
+        // decontainerize marker of the name (`update_bound_decont_marker`),
+        // probed first so an absent key costs no env copy.
+        if self.bound_decont_active().get()
+            && let Some(sym) = sym
+        {
+            let key = crate::meta_ns::MetaNs::BoundDecont.key(sym);
+            if self.env().contains_key_sym(key) {
+                self.env_mut().remove_sym(key);
+            }
+        }
+        // The bind's own verdict, as the general store applies it.
+        match sym {
+            Some(sym) => self.mark_readonly_sym_with(sym, kind),
+            None => self.mark_readonly_with(name, kind),
+        }
+        self.locals[idx] = Self::readonly_value_binding(v, kind);
         true
     }
 

@@ -78,6 +78,49 @@ pub(crate) fn record_chain_walk(env: &super::Env, key: Symbol) {
     }
     CHAIN_WALKS.fetch_add(1, Ordering::Relaxed);
     CHAIN_HOPS.fetch_add(hops, Ordering::Relaxed);
+    if let Ok(mut map) = chain_walks_by_name().lock() {
+        let e = map.entry(key).or_insert((0, 0));
+        e.0 += 1;
+        e.1 += hops;
+    }
+}
+
+/// Per-name `(walks, hops)` behind [`record_chain_walk`]: which names a
+/// workload resolves by walking the chain, the question every ADR-12529 slice
+/// starts from. Debug builds only, like the walk counter itself.
+#[cfg(debug_assertions)]
+fn chain_walks_by_name() -> &'static std::sync::Mutex<std::collections::HashMap<Symbol, (u64, u64)>>
+{
+    static MAP: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<Symbol, (u64, u64)>>,
+    > = std::sync::OnceLock::new();
+    MAP.get_or_init(Default::default)
+}
+
+/// The most-walked names as `name=walks/hops`, most walks first (empty in a
+/// release build, which does not count walks).
+// Cost: O(n log n), n = distinct walked names; only when MUTSU_VM_STATS dumps.
+pub(crate) fn chain_walks_top(limit: usize) -> Vec<String> {
+    #[cfg(debug_assertions)]
+    {
+        let Ok(map) = chain_walks_by_name().lock() else {
+            return Vec::new();
+        };
+        let mut rows: Vec<(String, u64, u64)> = map
+            .iter()
+            .map(|(k, (w, h))| (k.as_str().to_string(), *w, *h))
+            .collect();
+        rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        rows.into_iter()
+            .take(limit)
+            .map(|(n, w, h)| format!("{n}={w}/{h}"))
+            .collect()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = limit;
+        Vec::new()
+    }
 }
 
 /// Record one closure capture built by `Env::layered_capture`: the entries it

@@ -166,6 +166,18 @@ impl MarkContextState {
         pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
     }
 
+    /// [`Self::only_declaration_marks`] for a `$` scalar's `:=` declaration
+    /// (`my $x := EXPR`): the declaration and its scalar-bind mark, with no
+    /// plain bind, rebind, `constant`, shaped, raw-param or array-share
+    /// flavour.
+    // Cost: O(1).
+    pub(crate) fn only_scalar_bind_declaration_marks(&self) -> bool {
+        const REQUIRED: u16 = bit::VARDECL | bit::SCALAR_BIND;
+        const ALLOWED: u16 = REQUIRED | bit::DECL_TYPECHECKED;
+        let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
+        pending & REQUIRED == REQUIRED && pending & !ALLOWED == 0
+    }
+
     /// Snapshot the flag word and clear everything a store consumes, in one
     /// load and one store. See [`MarkFlags`].
     #[inline]
@@ -388,6 +400,17 @@ impl crate::runtime::Interpreter {
     #[inline]
     pub(crate) fn array_share_source(&self) -> &Cell<Option<String>> {
         &self.mark_ctx.share_source
+    }
+
+    /// Whether an array-share source is pending for the next store, left in
+    /// place for that store to take.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn array_share_source_pending(&self) -> bool {
+        let source = self.mark_ctx.share_source.take();
+        let pending = source.is_some();
+        self.mark_ctx.share_source.set(source);
+        pending
     }
 }
 

@@ -1157,6 +1157,14 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] name-resolution: scoped_overlays={scoped_overlays} chain_walks={chain_walks} chain_hops={chain_hops} captures={captures} capture_own_entries={capture_own_entries} capture_layers={capture_layers}"
     );
+    let walked = crate::env::stats::chain_walks_top(40);
+    if !walked.is_empty() {
+        eprintln!(
+            "[mutsu vm-stats] chain walks by name, walks/hops (top {}): {}",
+            walked.len(),
+            walked.join(" ")
+        );
+    }
     let default_evals = PARAM_DEFAULT_EVALS.load(Ordering::Relaxed);
     let default_consts = PARAM_DEFAULT_CONSTS.load(Ordering::Relaxed);
     let default_prologue = PARAM_DEFAULT_PROLOGUE.load(Ordering::Relaxed);

@@ -755,6 +755,9 @@ impl Compiler {
                 name,
                 type_constraint,
                 is_our: false,
+                is_state,
+                is_dynamic,
+                bind,
                 custom_traits,
                 marks,
                 constant,
@@ -772,6 +775,20 @@ impl Compiler {
                 let Some(tc) = pragma_tc.as_ref().or(type_constraint.as_ref()) else {
                     continue;
                 };
+                // `my Mu $x := ...` declares no constraint at all (see
+                // `mu_constraint_is_unobservable_bind`), so there is none to
+                // register ahead of it either.
+                if pragma_tc.is_none()
+                    && self.mu_constraint_is_unobservable_bind(
+                        tc,
+                        name,
+                        *bind,
+                        marks,
+                        *is_state || *is_dynamic || constant.is_some(),
+                    )
+                {
+                    continue;
+                }
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                 self.emit_hoisted_set_var_type(name, name_idx, tc_idx, false);
