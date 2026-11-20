@@ -15408,6 +15408,12 @@ impl CompiledFunction {
                         .get(*name_idx as usize)
                         .map(crate::value::Value::view)
                     {
+                        // A `my package` is registered under its mangled storage
+                        // name (`SubP\0<decl-id>`, ADR-0047) and binds the bare
+                        // name to it, which is the key the merge sees.
+                        if let Some((bare, _)) = name.split_once('\u{0}') {
+                            declared.insert(bare.to_string());
+                        }
                         declared.insert(name.to_string());
                     }
                 }
