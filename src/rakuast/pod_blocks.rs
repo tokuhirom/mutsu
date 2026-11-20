@@ -1072,13 +1072,17 @@ pub(super) fn insert(names: &NameScope, list: &mut RakuAstNode, source: &str, st
             .iter()
             .any(|s| (s.from as usize) <= at && at < s.to as usize)
     };
+    // A heredoc's body follows its statement; Pod lines in it are its text.
+    let mut heredocs = Vec::new();
+    super::pod_nested::heredoc_bodies(list, &mut heredocs);
+    let in_heredoc = |at: usize| heredocs.iter().any(|&(from, to)| from <= at && at < to);
     let mut found: Vec<(usize, RakuAstNode)> = Vec::new();
     let mut nested: Vec<(usize, usize, RakuAstNode)> = Vec::new();
     let mut last_to = 0usize;
     let mut i = 0;
     while i < lines.text.len() {
         let at = lines.start[i] + lines.indent(i);
-        if lines.directive(i).is_none() {
+        if lines.directive(i).is_none() || in_heredoc(at) {
             i += 1;
             continue;
         }
