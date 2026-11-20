@@ -3502,7 +3502,21 @@ impl Compiler {
                     topic_readonly = false;
                     tagged_source = false;
                 } else {
-                    self.compile_expr(topic);
+                    // A `with`'s once-evaluated temp is read back exactly as its
+                    // raw store left it: an rw call's deferred element token
+                    // (`without slot(4) { $_ = 5 }`) must reach the topic
+                    // unresolved, so the body's write lands in the element.
+                    match topic {
+                        Expr::Var(name) if crate::with_desugar::is_tmp_name(name) => {
+                            match self.local_map.get(name).copied() {
+                                Some(slot) => {
+                                    self.code.emit(OpCode::GetLocalRaw(slot));
+                                }
+                                None => self.compile_expr(topic),
+                            }
+                        }
+                        _ => self.compile_expr(topic),
+                    }
                     // `given my $x = EXPR` (a scalar declaration used as the topic)
                     // aliases the freshly-declared `$x` rw, exactly like `given $x`,
                     // so `$_ = ...` / `s///` inside the block write back to `$x`.

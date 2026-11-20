@@ -1042,6 +1042,14 @@ pub(crate) enum OpCode {
     /// Like GetLocal but does NOT resolve HashEntryRef values.
     /// Used by `=:=` to compare raw container references.
     GetLocalRaw(u32),
+    /// Store the popped value into a compiler temporary's local slot as is.
+    /// Stack: `[value] -> []`.
+    ///
+    /// A raw replace: the slot belongs to a compiler temporary that nothing
+    /// reaches by name (the once-evaluated condition of a `with`), so none of
+    /// [`Self::SetLocal`]'s user-variable semantics apply -- no Scalar
+    /// itemization, no Proxy FETCH, no readonly/type checks, no env mirror.
+    SetLocalRaw(u32),
     /// The subscript-chain read of a local: the full `GetLocal` resolution
     /// (binding aliases, shared/atomic storage, env container adoption, lazy
     /// thunks, `ContainerRef` deref) EXCEPT that a deferred `HashEntryRef` bind
@@ -8674,6 +8682,7 @@ impl CompiledCode {
                 OpCode::GetLocal(slot)
                 | OpCode::GetLocalRaw(slot)
                 | OpCode::SetLocal(slot)
+                | OpCode::SetLocalRaw(slot)
                 | OpCode::AssignExprLocal(slot)
                 // Reads AND writes its slot, so it counts as an access on both
                 // halves of every scan that asks about one.
@@ -11934,6 +11943,7 @@ impl CompiledCode {
             }
             let store_slot = match op {
                 OpCode::SetLocal(slot)
+                | OpCode::SetLocalRaw(slot)
                 | OpCode::AssignExprLocal(slot)
                 | OpCode::ConcatAssignLocal(slot, _) => Some(*slot),
                 OpCode::SetLocalDecl { slot, .. } => Some(*slot),

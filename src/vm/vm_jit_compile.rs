@@ -104,6 +104,7 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             OpCode::LoadConst(_)
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
+            | OpCode::SetLocalRaw(_)
             | OpCode::ConcatAssignLocal(..)
             | OpCode::MarkArrayShareSource(_)
             | OpCode::CheckReadOnly(_)
@@ -579,6 +580,16 @@ fn build(
                     &mut b,
                     sigs.s_code_u32,
                     helpers::set_local as *const () as usize,
+                    &[interp, codep, idxv],
+                )?;
+                check_status(&mut b, status);
+            }
+            OpCode::SetLocalRaw(idx) => {
+                let idxv = b.ins().iconst(types::I32, *idx as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_code_u32,
+                    helpers::set_local_raw as *const () as usize,
                     &[interp, codep, idxv],
                 )?;
                 check_status(&mut b, status);
