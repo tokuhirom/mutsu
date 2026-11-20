@@ -1,7 +1,7 @@
 use super::term_literals::{
     can_name_type_smiley, is_fat_arrow_key, is_identifier_name, starts_with_type_smiley,
 };
-use crate::ast::{Expr, spelled::Spelling};
+use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 
@@ -72,10 +72,7 @@ pub(crate) fn imported_value_term(input: &str) -> PResult<'_, Expr> {
         // sub's call, not a call on the imported `phi` term.
         && !(rest.starts_with('(') && crate::parser::stmt::simple::is_user_declared_sub(name))
     {
-        return Ok((
-            rest,
-            Expr::spelled(Expr::BareWord(name.to_string()), || Spelling::ImportedTerm),
-        ));
+        return Ok((rest, crate::ast::parsed::imported_term(name.to_string())));
     }
     Err(PError::expected("declared term symbol"))
 }

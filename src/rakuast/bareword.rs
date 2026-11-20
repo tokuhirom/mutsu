@@ -203,17 +203,15 @@ fn loaded_module_name(module: &str) -> Option<&str> {
     (!pragma).then_some(name)
 }
 
-/// Whether `expr` is a bareword, or one the parser wrapped as an imported term
-/// (`CArray` after `use NativeCall`, a `Spelled` marker around the word).
+/// Whether `expr` is a bareword, or one the parser resolved as an imported term
+/// (`CArray` after `use NativeCall`, a `ParsedExpr::ImportedTerm`).
 // Cost: O(1).
 pub(super) fn is_word_term(expr: &Expr) -> bool {
     match expr {
-        Expr::Spelled(spelled) => {
-            matches!(
-                spelled.spelling,
-                crate::ast::spelled::Spelling::ImportedTerm
-            ) && spelled.expr.as_bare_word().is_some()
-        }
+        Expr::Ast(node) => matches!(
+            node.as_ref(),
+            crate::ast::parsed::ParsedExpr::ImportedTerm(_)
+        ),
         _ => expr.as_bare_word().is_some(),
     }
 }
@@ -752,8 +750,8 @@ pub(super) fn type_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
     Some(Expr::BareWord(name.to_string()))
 }
 
-/// A plain-identifier word the parser spelled as an imported term
-/// (`Spelling::ImportedTerm`): the conversion keeps the parse's decision as a
+/// A plain-identifier word the parser resolved as an imported term
+/// (`ParsedExpr::ImportedTerm`): the conversion keeps the parse's decision as a
 /// source bareword (`term_name::imported`), which lowers to the word itself, and
 /// a type the classifier resolves (`uint16`) lowers to the word as well. `None`
 /// for any other classification or a decorated name (the conversion decides).

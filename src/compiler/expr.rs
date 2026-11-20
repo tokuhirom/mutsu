@@ -127,8 +127,8 @@ impl Compiler {
             Expr::LiteralSrc(v, _) => {
                 self.compile_expr(&Expr::Literal(v.clone()));
             }
-            // The parser strips every `Spelled` wrapper before a tree reaches the
-            // compiler (ADR-12199, `ast::spelled::strip_spelling`); this arm only
+            // No executing parse builds a `Spelled` wrapper (ADR-15760 §2.4), and the
+            // unfinalized entries strip theirs (`ast::spelled::strip_parse_marks`); this arm only
             // keeps a leaked one from changing what a program does.
             Expr::Spelled(spelled) => {
                 debug_assert!(false, "Expr::Spelled reached the compiler");

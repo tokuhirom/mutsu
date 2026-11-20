@@ -2488,12 +2488,6 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     ],
                 })
             }
-            Spelling::ImportedTerm => {
-                let Expr::BareWord(name) = &spelled.expr else {
-                    return Err(unsupported("imported term spelling without a value lookup"));
-                };
-                Ok(super::term_name::imported(names, name))
-            }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::Imaginary(text) => super::imaginary_literal::spelled(text),
             Spelling::ParenthesizedDeclaratorAdverb => {

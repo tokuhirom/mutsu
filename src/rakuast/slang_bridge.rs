@@ -483,6 +483,8 @@ pub(crate) fn lower_expression(node: &Value) -> Result<Expr, RuntimeError> {
         }
     }
     let names = NameScope::default();
+    // What the node lowers to is executed and keeps no spellings.
+    let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
     let lowered =
         crate::parser::with_rakuast_lexical_scope(|| super::lower::lower_expr(&names, inner))?;

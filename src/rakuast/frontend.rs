@@ -1,8 +1,8 @@
 //! The RakuAST frontend (ADR-10723 Stages 0 and 3).
 //!
 //! Every compilation unit (the main program, every `EVAL` string, every `use`d
-//! module and `require`d file) is parsed with its spellings kept and finalized
-//! in place before it is compiled ([`super::finalize`]): the typed nodes of the
+//! module and `require`d file) is parsed without spellings (ADR-15760 §2.4) and
+//! finalized in place before it is compiled ([`super::finalize`]): the typed nodes of the
 //! migrated families are lowered where they stand. There is no opt-out.
 //!
 //! The coverage of the `view` and `lower` arms that the `MUTSU_RAKUAST=convert`
@@ -28,11 +28,10 @@ pub(crate) fn cache_tag() -> &'static str {
 }
 
 /// Finish a parsed compilation unit for the compiler (ADR-15760 §2.5): its
-/// typed nodes are lowered where they stand, the spellings come off, and the
+/// typed nodes are lowered where they stand, and the
 /// passes that run on a whole unit (type qualification, the frame-state ops)
-/// are applied. Every unit is parsed with its spellings kept (ADR-12199): the
-/// finalization reads them, and hands the compiler the same tree it would have
-/// had without them.
+/// are applied. An executing parse builds no spellings (ADR-15760 §2.4); only a
+/// `.AST` parse does.
 // Cost: O(n), n = size of the unit.
 pub(crate) fn finish_unit(stmts: Vec<Stmt>) -> Result<Vec<Stmt>, RuntimeError> {
     finish_unit_in(&NameScope::default(), stmts).map_err(refusal)
@@ -64,7 +63,7 @@ pub(crate) fn finish_unit_in(
     // finalized (ADR-15762 slice 3).
     super::slang_bridge::apply_action_overrides(&mut stmts)?;
     let mut lowered = super::finalize::finalize_unit(names, stmts)?;
-    // The spelled parse keeps bare type names for the conversion; the
+    // The parse keeps bare type names for the conversion; the
     // lowered tree gets the qualification an ordinary parse does.
     crate::parser::qualify_type_names(&mut lowered);
     crate::parser::p6_frame_state::lower_program(&mut lowered);
