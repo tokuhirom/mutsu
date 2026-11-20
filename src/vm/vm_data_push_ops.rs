@@ -81,7 +81,7 @@ impl Interpreter {
             .stack
             .last()
             .and_then(|source| {
-                let target = self.push_target(decl, target_name)?.into_deref();
+                let target = self.push_target(decl, target_name)?.clone().into_deref();
                 let source = source.clone().into_deref();
                 Some(Self::same_container_arc(&source, &target))
             })
@@ -98,9 +98,9 @@ impl Interpreter {
                         | ValueView::CustomTypeInstance(..)
                 )
             })
-            .cloned()
             .or_else(|| self.push_target(decl, target_name))
-            .or_else(|| slot_target.cloned())
+            .or(slot_target)
+            .cloned()
             .unwrap_or(Value::NIL);
         // ADR-0040's store boundary, Proxy half: the pushed element is a
         // `Scalar` container, so a `Proxy` is FETCHed on the way in exactly as
@@ -121,10 +121,7 @@ impl Interpreter {
         // A lazy `@`-array (infinite source) cannot be pushed to: there is no
         // end to append after. raku throws `X::Cannot::Lazy`
         // ("Cannot push to a lazy list onto a Array"). (L2)
-        if let Some(ValueView::LazyList(ll)) = self
-            .push_target(decl, target_name)
-            .as_ref()
-            .map(Value::view)
+        if let Some(ValueView::LazyList(ll)) = self.push_target(decl, target_name).map(Value::view)
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
         {
@@ -142,10 +139,8 @@ impl Interpreter {
         // supposedly-immutable List in place without ever reaching that check.
         // Checked before the (also kind-blind) `shared_vars_active` branch so
         // both single-threaded and threaded programs reject it alike.
-        if let Some(ValueView::Array(_, kind)) = self
-            .push_target(decl, target_name)
-            .as_ref()
-            .map(Value::view)
+        if let Some(ValueView::Array(_, kind)) =
+            self.push_target(decl, target_name).map(Value::view)
             && !kind.is_real_array()
         {
             let _ = self.stack.pop();
@@ -256,14 +251,15 @@ impl Interpreter {
         // dimension metadata check in Interpreter. See ledger §1.
         // Check for shaped arrays — must fall back to interpreter
         // (push is illegal on fixed-dimension arrays)
-        if let Some(ValueView::Array(_, kind)) = self
-            .push_target(decl, target_name)
-            .as_ref()
-            .map(Value::view)
+        if let Some(ValueView::Array(_, kind)) =
+            self.push_target(decl, target_name).map(Value::view)
             && kind == crate::value::ArrayKind::Shaped
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
-            let target = self.push_target(decl, target_name).unwrap_or(Value::NIL);
+            let target = self
+                .push_target(decl, target_name)
+                .cloned()
+                .unwrap_or(Value::NIL);
             let result = loan_env!(self, call_method_with_values(target, "push", vec![val]))?;
             self.stack.push(result);
             return Ok(());
@@ -336,7 +332,10 @@ impl Interpreter {
         if let ValueView::Slip(items) = val.view()
             && items.is_empty()
         {
-            let result = self.push_target(decl, target_name).unwrap_or(Value::NIL);
+            let result = self
+                .push_target(decl, target_name)
+                .cloned()
+                .unwrap_or(Value::NIL);
             self.stack.push(result);
             return Ok(());
         }
@@ -364,6 +363,7 @@ impl Interpreter {
         // the custom container behind an env mirror.
         let current_target = self
             .push_target(decl, target_name)
+            .cloned()
             .unwrap_or_else(|| dispatch_target.clone());
         let effective_target = if matches!(dispatch_target.view(), ValueView::Array(..))
             && !matches!(current_target.view(), ValueView::Array(..))
@@ -431,7 +431,7 @@ impl Interpreter {
         // no COW, no local-slot zeroing dance — so every by-value holder of
         // the same array (a `(0, @a)` capture, an element) sees the push.
         // ADR-0040 slice 1: itemize per element, after Slip expansion.
-        let target = self.push_target(decl, target_name);
+        let target = self.push_target(decl, target_name).cloned();
         let pushed = target.as_ref().and_then(|v| {
             v.with_array_inplace(|data, _| {
                 let val = val_slot.take().expect("push value present");
@@ -488,7 +488,10 @@ impl Interpreter {
         target_name: &str,
         val: &Value,
     ) -> Result<(), RuntimeError> {
-        let target = self.push_target(decl, target_name).unwrap_or(Value::NIL);
+        let target = self
+            .push_target(decl, target_name)
+            .cloned()
+            .unwrap_or(Value::NIL);
         let Some(type_name) = self.element_constraint_for_decl(decl, target_name, &target) else {
             return Ok(());
         };

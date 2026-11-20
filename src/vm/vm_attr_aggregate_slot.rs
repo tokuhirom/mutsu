@@ -143,12 +143,10 @@ impl Interpreter {
         &self,
         decl: crate::vm::vm_slot_type_constraint::StoreDecl<'_>,
         target_name: &str,
-    ) -> Option<Value> {
+    ) -> Option<&Value> {
         match decl {
-            Some((code, idx)) if code.is_private_aggregate_attr_slot(idx) => {
-                Some(self.locals[idx].clone())
-            }
-            _ => self.env().get(target_name).cloned(),
+            Some((code, idx)) if code.is_private_aggregate_attr_slot(idx) => self.locals.get(idx),
+            _ => self.env().get(target_name),
         }
     }
 

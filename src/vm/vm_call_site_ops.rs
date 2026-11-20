@@ -387,9 +387,12 @@ impl Interpreter {
         // can tell whether this method actually rebound it (see there).
         // Compared with `same_binding` -- O(1), and it never walks container
         // contents the way `PartialEq` would.
-        let receiver_before: Option<Option<Value>> = (!Self::const_str(code, target_name_idx)
-            .is_empty())
-        .then(|| self.env().get_sym(code.const_sym(target_name_idx)).cloned());
+        // An aggregate attribute receiver has no env binding to compare: its
+        // rebind is the slot's, which the epilogue stores (ADR-18356 D2).
+        let receiver_before: Option<Option<Value>> =
+            (!matches!(pre, super::vm_attr_aggregate_slot::AttrOpPre::Slot { .. })
+                && !Self::const_str(code, target_name_idx).is_empty())
+            .then(|| self.env().get_sym(code.const_sym(target_name_idx)).cloned());
         crate::alloc_scope_end!(_sc_cmm_pre);
         crate::alloc_scope_named!(_sc_cmm_disp, "op:CallMethodMut:dispatch");
         f(self).inspect_err(|e| self.record_call_resume_point(code, ip, e))?;
