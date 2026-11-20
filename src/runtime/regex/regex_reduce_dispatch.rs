@@ -30,8 +30,9 @@ impl Interpreter {
     pub(in crate::runtime) fn dispatch_reduced_subrule(
         &mut self,
         cap: &Arc<CapNode>,
-        rule_name: &str,
+        rule: crate::symbol::Symbol,
     ) {
+        let rule_name = rule.as_str();
         if !super::regex_helpers::reduce_dispatch_armed() || cap.reduced.get() {
             return;
         }
@@ -47,7 +48,7 @@ impl Interpreter {
         // A node with no action method of its own stays for the walk, which
         // still has to descend into any child that was not reduced here.
         let class = Self::actions_class_sym(&actions);
-        let action_target = self.node_action_method(class, rule_name, cap.sym);
+        let action_target = self.node_action_method(class, rule, cap.sym);
         if action_target.0.is_none() {
             self.regex_state.current_grammar_actions = Some(actions);
             return;

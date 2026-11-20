@@ -155,9 +155,10 @@ impl Interpreter {
     pub(crate) fn node_action_method(
         &mut self,
         actions_class: Option<Symbol>,
-        rule_name: &str,
+        rule: Symbol,
         sym: Option<Symbol>,
     ) -> NodeActionTarget {
+        let rule_name = rule.as_str();
         let sym_method = sym.map(|sym| {
             let class_name = actions_class.map(|cn| cn.resolve());
             self.variant_action_method_name(class_name.as_deref(), rule_name, &sym.resolve())
@@ -172,11 +173,8 @@ impl Interpreter {
                 return (Some(Some(name)), sym_method);
             }
         }
-        if !rule_name.is_empty() {
-            let name = Symbol::intern(rule_name);
-            if self.actions_answer_method_of(class, name) {
-                return (Some(Some(name)), sym_method);
-            }
+        if !rule_name.is_empty() && self.actions_answer_method_of(class, rule) {
+            return (Some(Some(rule)), sym_method);
         }
         (None, sym_method)
     }
@@ -205,7 +203,7 @@ impl Interpreter {
                     Some(target) => target,
                     None => {
                         let actions_class = Self::actions_class_sym(actions);
-                        self.node_action_method(actions_class, rule_name, sym)
+                        self.node_action_method(actions_class, Symbol::intern(rule_name), sym)
                     }
                 };
                 if match_obj.match_lazy_walk_is_done() {
@@ -229,7 +227,7 @@ impl Interpreter {
             Some(target) => target,
             None => {
                 let actions_class = Self::actions_class_sym(actions);
-                self.node_action_method(actions_class, rule_name, node.sym)
+                self.node_action_method(actions_class, Symbol::intern(rule_name), node.sym)
             }
         };
         let has_own_action = own_action.is_some();

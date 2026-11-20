@@ -165,7 +165,7 @@ impl Interpreter {
             let subcap = Arc::new(subcap.into_cap_node());
             // This subrule has just REDUCED: run its grammar action now, as
             // Rakudo does (ADR-7576).
-            self.dispatch_reduced_subrule(&subcap, subcap.action_name.map_or(capture_name, |a| a.as_str()));
+            self.dispatch_reduced_subrule(&subcap, subcap.action_name.unwrap_or(capture_sym));
             // Both slots reference the SAME node, the way Rakudo stores the
             // same cursor under both names (`$<x> === $<num>` is `True`).
             // Cloning the node here instead — as this did until the
@@ -221,7 +221,7 @@ impl Interpreter {
             // Keep the silent subrule's inline blocks on its own (marker) node
             // for the reduce-time walk to run once — see the non-silent branch.
             let subcap = Arc::new(subcap.into_cap_node());
-            self.dispatch_reduced_subrule(&subcap, spec.action_sym.as_str());
+            self.dispatch_reduced_subrule(&subcap, spec.action_sym);
             sink.file_node(spec.silent_marker_sym, subcap);
         } else {
             // Childless silent subrule with no action to run (`<.ws>`,
