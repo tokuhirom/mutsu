@@ -39,7 +39,7 @@ fn call(
     // is a leaf read too: it reads the live receiver under the stripe instead
     // of a whole-node snapshot (ADR-0068 §22).
     let sample_leaf = crate::value::container_read::is_element_sample_read(row.name)
-        && !matches!(row.handler, Handler::Interp(_));
+        && !row.handler.needs_interp();
     let leaf_read = sample_leaf || crate::value::container_read::is_leaf_structure_read(row.name);
     let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live() && leaf_read
     {
@@ -64,6 +64,18 @@ fn call(
         Handler::Narrow(f) => f(target, positional).map(|r| (r, rerunnable)),
         Handler::Named(f) => f(target, positional, named).map(|r| (r, rerunnable)),
         Handler::Interp(f) => f(interp?, target, positional, named).map(|r| (r, false)),
+        Handler::InterpPureFirst(pure, f) => {
+            let interp = interp?;
+            match named
+                .pairs()
+                .is_empty()
+                .then(|| pure(target, positional))
+                .flatten()
+            {
+                Some(r) => Some((r, rerunnable)),
+                None => f(interp, target, positional, named).map(|r| (r, false)),
+            }
+        }
         // A row that writes through its receiver needs a place, which only
         // `invoke_mut` has: no shape lookup, lane or pure entry runs it.
         Handler::Mut(_) => None,
@@ -660,8 +672,7 @@ fn walk_mro(
         super::owner_rows_at(Symbol::intern(owner), method, arity).find_map(|id| {
             let row = row(id);
             if late_only
-                && !(matches!(row.handler, Handler::Interp(_))
-                    && row.flags.contains(RowFlags::OWNER_ONLY))
+                && !(row.handler.needs_interp() && row.flags.contains(RowFlags::OWNER_ONLY))
             {
                 return None;
             }
@@ -669,7 +680,7 @@ fn walk_mro(
             // `Seq` of pairs for `trans`, a list of needles for `index`); only a
             // `Junction`, which must autothread, is refused, unless the row's
             // parameters are `Mu` (`JUNCTION_ARGS`).
-            let admitted = if matches!(row.handler, Handler::Interp(_)) {
+            let admitted = if row.handler.needs_interp() {
                 row.flags.contains(RowFlags::JUNCTION_ARGS)
                     || !positional
                         .iter()
@@ -887,7 +898,7 @@ pub(crate) fn answer_shapeless(
             || shapeless_name_bits(method) & name_bits::COERCE != 0
             // An interpreter row has no answer without one (a count-taking
             // `pick`/`roll`, §9.165).
-            || matches!(row(id).handler, Handler::Interp(_))
+            || row(id).handler.needs_interp()
     });
     call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result)
 }

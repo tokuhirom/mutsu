@@ -250,6 +250,25 @@ impl Interpreter {
             && !method_table::row(row)
                 .flags
                 .contains(method_table::RowFlags::EFFECTS);
+        // A row with a pure fast path answers its common forms on a `Str`
+        // receiver with the arguments where they sit: no interpreter, no
+        // copies, and (in debug builds) the same cross-check as a pure row.
+        // Only a `Str`: `dispatch::call` may read a shared container receiver
+        // through a snapshot, which this bypasses.
+        if let method_table::Handler::InterpPureFirst(pure_first, _) =
+            method_table::row(row).handler
+            && self.stack[base].is_str_value()
+        {
+            let (target, args) = self.stack[base..].split_first()?;
+            if let Some(result) = pure_first(target, args) {
+                return Some(SiteLaneAnswer {
+                    result,
+                    row,
+                    arity,
+                    pure: true,
+                });
+            }
+        }
         let result = if pure {
             let (target, args) = self.stack[base..].split_first()?;
             method_table::invoke(row, target, args)?

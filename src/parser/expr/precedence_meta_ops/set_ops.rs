@@ -17,6 +17,7 @@ pub(crate) fn starts_with_set_infix_op(input: &str) -> bool {
     parse_set_op(input).is_some()
 }
 
+// Cost: O(k), k = number of set operator spellings; O(1) on an ASCII byte other than `(`.
 fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
     if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
         match canonical.as_str() {
@@ -24,6 +25,16 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
             "(cont)" => return Some((TokenKind::SetCont, len)),
             _ => {}
         }
+    }
+    // Every spelling below starts with `(` or a non-ASCII glyph: any other
+    // ASCII byte starts none of them. Asked after nearly every term, at three
+    // precedence levels.
+    if input
+        .as_bytes()
+        .first()
+        .is_none_or(|&b| b.is_ascii() && b != b'(')
+    {
+        return None;
     }
     if input.starts_with("(==)") {
         Some((TokenKind::Ident("(==)".to_string()), 4))

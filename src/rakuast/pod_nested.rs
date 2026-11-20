@@ -96,14 +96,15 @@ fn place_in_value(
     }
 }
 
-/// Whether `at` lies inside a parenthesised or bracketed list of `node` and in no
-/// quoted text: rakudo reads a Pod block written there and puts it after the
-/// statement (`my @a = (1,` / `=begin pod` ... `2);`), where in a string or a
-/// heredoc the same lines are text. A position outside any such list stays
-/// text to this reader (exact or absent).
+/// Whether `at` lies in no quoted text of `node`: rakudo reads a Pod block
+/// written anywhere else in a statement (in a list, after an operator, after
+/// `=`) as whitespace and puts it after the statement (`my $x = 1 +` /
+/// `=begin pod` ... `2;`), where in a string or a regex the same lines are
+/// text. A string without a range anywhere in the statement keeps the block
+/// out (exact or absent).
 // Cost: O(n), n = nodes of the statement.
-fn inside_list(node: &RakuAstNode, at: usize) -> bool {
-    fn walk(node: &RakuAstNode, at: usize, list: &mut bool) -> bool {
+fn outside_quotes(node: &RakuAstNode, at: usize) -> bool {
+    fn walk(node: &RakuAstNode, at: usize) -> bool {
         if let Some((from, to)) = byte_range(node)
             && !(from <= at && at < to)
         {
@@ -114,15 +115,12 @@ fn inside_list(node: &RakuAstNode, at: usize) -> bool {
             | RakuAstClass::Heredoc
             | RakuAstClass::QuotedRegex
             | RakuAstClass::QuotedRegexRx => return false,
-            RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
-                *list = true;
-            }
             _ => {}
         }
         for field in &node.fields {
             let ok = match &field.value {
-                RakuAstFieldValue::Node(v) => child_ok(v, at, list),
-                RakuAstFieldValue::List(items) => items.iter().all(|v| child_ok(v, at, list)),
+                RakuAstFieldValue::Node(v) => child_ok(v, at),
+                RakuAstFieldValue::List(items) => items.iter().all(|v| child_ok(v, at)),
                 _ => true,
             };
             if !ok {
@@ -131,14 +129,37 @@ fn inside_list(node: &RakuAstNode, at: usize) -> bool {
         }
         true
     }
-    fn child_ok(value: &Value, at: usize, list: &mut bool) -> bool {
+    fn child_ok(value: &Value, at: usize) -> bool {
         match value.view() {
-            ValueView::RakuAst(child) => walk(child, at, list),
+            ValueView::RakuAst(child) => walk(child, at),
             _ => true,
         }
     }
-    let mut list = false;
-    walk(node, at, &mut list) && list
+    walk(node, at)
+}
+
+/// The ranges of the heredoc bodies in `node`'s subtree (the text of each
+/// `Heredoc`'s segments, which follows its statement): Pod lines there are
+/// the heredoc's text.
+// Cost: O(n), n = nodes of the subtree.
+pub(super) fn heredoc_bodies(node: &RakuAstNode, out: &mut Vec<(usize, usize)>) {
+    let mut each = |value: &Value| {
+        if let ValueView::RakuAst(child) = value.view() {
+            if node.class == RakuAstClass::Heredoc
+                && let Some(range) = byte_range(child)
+            {
+                out.push(range);
+            }
+            heredoc_bodies(child, out);
+        }
+    };
+    for field in &node.fields {
+        match &field.value {
+            RakuAstFieldValue::Node(v) => each(v),
+            RakuAstFieldValue::List(items) => items.iter().for_each(&mut each),
+            _ => {}
+        }
+    }
 }
 
 /// Insert `block` among the statements of `list` by offset, widening the
@@ -167,7 +188,7 @@ fn insert_in_list(
         let Some((from, to)) = byte_range(child) else {
             return;
         };
-        if (from < at && at < to && !inside_list(child, at)) || (at < from && from < end) {
+        if (from < at && at < to && !outside_quotes(child, at)) || (at < from && from < end) {
             return;
         }
         ranges.push(Some((from, to)));

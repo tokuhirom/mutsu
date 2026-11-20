@@ -78,18 +78,32 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
         remaining_len: err.remaining_len.or(Some(rest.len())),
         exception: None,
     })?;
-    // Consume (and discard) any trailing word-logical tail: it is unreachable
-    // because `return` transfers control before it would be evaluated.
-    let rest = {
+    // A trailing word-logical applies to the `return` call itself:
+    // `(return 1) and 2`. Its right side never runs (control has left), but
+    // the tree keeps it, as rakudo's does: the statement is the infix over a
+    // `return` call in expression position.
+    {
         let (r, _) = ws(rest)?;
         if crate::parser::expr::starts_with_loose_word_logical(r) {
-            let (r, _dead) =
-                crate::parser::expr::word_logical_tail_pub(r, Expr::Literal(Value::NIL))?;
-            r
-        } else {
-            rest
+            // `return 1, 2 and 3` passes the list's items as arguments.
+            let args = match expr {
+                Expr::ArrayLiteral(items) => items,
+                other => vec![other],
+            };
+            let call = Expr::Call {
+                name: crate::symbol::Symbol::intern("return"),
+                args,
+                listop: true,
+            };
+            // The call is the infix's placed left operand (`return 1`).
+            crate::parser::term_origins::note(
+                &call,
+                crate::parser::primary::source_span(input, rest),
+            );
+            let (r, whole) = crate::parser::expr::word_logical_tail_pub(r, call)?;
+            return parse_statement_modifier(r, Stmt::Expr(whole));
         }
-    };
+    }
     // `return $x:` is the listop invocant colon: `$x.return`, which returns `$x`
     // from the enclosing routine. Dispatch the method rather than dropping the
     // colon, so this spelling follows the same rule as every other listop

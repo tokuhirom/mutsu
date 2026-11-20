@@ -483,6 +483,12 @@ pub(in crate::parser) fn take_wrapper_back_call() -> bool {
 /// hook applies here (no slang, or no candidate matched).
 // Cost: O(1) with no hook registered; otherwise the slang's own run.
 fn run_category<'a>(category: &[&str], input: &'a str) -> Option<Result<(&'a str, Value), PError>> {
+    // With no hook registered (no slang in force) there is no candidate to
+    // run: answer before hashing the position for the memo, which every
+    // statement and term position of an ordinary unit would otherwise pay.
+    if HOOKS.with(|h| h.borrow().rules.is_empty()) {
+        return None;
+    }
     // The category list is one of a few constant slices: its address names it.
     // The head of the text joins the key, so a freed temporary text another one
     // reuses the address of cannot answer for it.
