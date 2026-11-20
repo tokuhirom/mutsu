@@ -169,10 +169,21 @@ fn place_lone_dotty(list: &mut RakuAstNode, inside: SrcSpan) {
 /// end to the application's, and its `SemiList` is the text inside it.
 // Cost: O(n + s), n = length of the subscript's source, s = its statements.
 pub(super) fn postcircumfix(node: &mut RakuAstNode) {
-    let Some((_, to)) = byte_range(node) else {
+    let Some((start, to)) = byte_range(node) else {
         return;
     };
-    let Some((_, operand_end)) = child(node, "operand").and_then(byte_range) else {
+    let operand = child(node, "operand");
+    let operand_end = match operand {
+        // The curried `*` of `*{...}` has no origin of its own (rakudo gives
+        // none); the subscript starts right after it.
+        Some(arg) if arg.class == RakuAstClass::WhateverCodeArgument => {
+            super::unit_source::with_text(SrcSpan::new(start, to), |text| {
+                text.starts_with('*').then_some(start + 1)
+            })
+        }
+        operand => operand.and_then(byte_range).map(|(_, end)| end),
+    };
+    let Some(operand_end) = operand_end else {
         return;
     };
     // Parentheses around the operand (`(@a)[0]`) are not a node of their

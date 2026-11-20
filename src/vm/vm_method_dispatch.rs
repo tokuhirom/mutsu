@@ -185,6 +185,8 @@ impl Interpreter {
             if method_def.has_container_params() {
                 self.promote_method_container_args(method_def, &mut args);
             }
+            // An explicit `*%h`'s leftover arguments (`vm_method_named_slurpy`).
+            self.promote_method_named_slurpy_args(method_def, &mut args);
             // The fast binder below checks the parameter types itself;
             // hand it this call's #10986 trust.
             self.pending_skip_constraint_recheck = skip_constraint_recheck;
@@ -1742,6 +1744,9 @@ impl Interpreter {
         // below, whose constraint is registered once the callee's env exists.
         // Each carries the caller's variable name for `.VAR.name`, if any.
         let mut light_aggregate_binds: Vec<(usize, Option<String>)> = Vec::new();
+        // Index into `param_values` of an explicit `*%h`, whose (absent)
+        // constraint is registered once the callee's env exists.
+        let mut named_slurpy_bind: Option<usize> = None;
         // (name, is-readonly) for a sigilless raw invocant, applied once the
         // param values are installed below.
         let mut raw_invocant_readonly: Option<(&str, bool)> = None;
@@ -1783,6 +1788,17 @@ impl Interpreter {
                 }) {
                     raw_invocant_readonly = Some((param_name.as_str(), !bound_to_container));
                 }
+                continue;
+            }
+            // An explicit `*%h`: the leftover named arguments, as the caller
+            // promoted them (`vm_method_named_slurpy`).
+            if pd.is_some_and(Self::method_named_slurpy_light) {
+                named_slurpy_bind = Some(param_values.len());
+                param_values.push((
+                    binding_name,
+                    binding_sym,
+                    Self::implicit_method_named_slurpy(&method_def.param_defs, &args),
+                ));
                 continue;
             }
             if let Some(pd) = pd.filter(|pd| pd.named) {
@@ -2204,6 +2220,11 @@ impl Interpreter {
             let mut val = val.clone();
             self.bind_light_aggregate_constraint(name, sym, &val);
             val.name_attribute_container(source.as_deref());
+        }
+        if let Some(i) = named_slurpy_bind {
+            let (name, sym, ref val) = param_values[i];
+            let val = val.clone();
+            self.bind_light_aggregate_constraint(name, sym, &val);
         }
         // The call-site arg-source names describe THIS call's binding only. The
         // light bind peeks them (`light_aggregate_binds`) instead of taking

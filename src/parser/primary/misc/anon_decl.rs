@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, SrcSpan, Stmt};
 use crate::parser::helpers::{ws, ws1};
 use crate::parser::parse_result::{PError, PResult};
 use crate::parser::primary::var::parse_ident_with_hyphens;
@@ -70,8 +70,11 @@ pub(crate) fn anon_class_expr_scoped(input: &str, is_lexical: bool) -> PResult<'
     // Accept `class { ... }`, `class :: ...` (anonymous with optional traits),
     // or `class Name ...` (named class in expression context)
     let mut colons = false;
+    let mut name_span = SrcSpan::NONE;
     let (rest, name, clauses) = if let Some(r) = rest.strip_prefix("::") {
         colons = true;
+        // Rakudo's `Name` of `class :: { }` is the `::` itself.
+        name_span = crate::parser::primary::source_span(rest, r);
         // Skip `::` (anonymous name placeholder)
         let (r, _) = ws(r)?;
         // Parse `is Parent` / `does Role` clauses
@@ -86,6 +89,7 @@ pub(crate) fn anon_class_expr_scoped(input: &str, is_lexical: bool) -> PResult<'
         // the first `::` would leave `::Foo is Exception` unparsed. Raku class
         // names may also begin with non-ASCII identifier characters.
         let (r, class_name) = parse_qualified_ident_with_hyphens(rest)?;
+        name_span = crate::parser::primary::source_span(rest, r);
         let (r, _) = ws(r)?;
         // Parse optional `is Parent` / `does Role` clauses
         let (r, clauses) = parse_anon_class_clauses(r)?;
@@ -98,7 +102,9 @@ pub(crate) fn anon_class_expr_scoped(input: &str, is_lexical: bool) -> PResult<'
         return Err(PError::expected("'{' for anonymous class body"));
     }
 
-    let (rest, mut body) = parse_block_body_no_self(rest)?;
+    let brace = rest;
+    let (rest, mut body) = crate::parser::stmt::package_body_block(rest)?;
+    let spans = crate::parser::stmt::sub::package_spans(name_span, brace, rest, &body);
     crate::rakuast::nested_methods::hoist(&mut body);
     let AnonClassClauses {
         mut parents,
@@ -135,7 +141,7 @@ pub(crate) fn anon_class_expr_scoped(input: &str, is_lexical: bool) -> PResult<'
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
-            spans: Default::default(),
+            spans,
             name: Symbol::intern(&name),
             name_expr: None,
             parents,
@@ -281,7 +287,9 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous grammar"));
     }
-    let (rest, mut body) = parse_block_body_no_self(rest)?;
+    let brace = rest;
+    let (rest, mut body) = crate::parser::stmt::package_body_block(rest)?;
+    let spans = crate::parser::stmt::sub::package_spans(SrcSpan::NONE, brace, rest, &body);
     crate::rakuast::nested_methods::hoist(&mut body);
     // Same `also is Base` extraction the statement path does: this is the route a
     // named `grammar G { also is Base }.parse(...)` takes.
@@ -304,7 +312,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::ClassDecl {
-            spans: Default::default(),
+            spans,
             name: Symbol::intern(&name),
             name_expr: None,
             parents,
@@ -370,11 +378,13 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous role"));
     }
-    let (rest, body) = parse_block_body_no_self(rest)?;
+    let brace = rest;
+    let (rest, body) = crate::parser::stmt::package_body_block(rest)?;
+    let spans = crate::parser::stmt::sub::package_spans(SrcSpan::NONE, brace, rest, &body);
     Ok((
         rest,
         Expr::DoStmt(Box::new(Stmt::RoleDecl {
-            spans: Default::default(),
+            spans,
             name: Symbol::intern(&name),
             type_params,
             type_param_defs,
