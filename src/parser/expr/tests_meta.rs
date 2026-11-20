@@ -99,8 +99,9 @@ fn parse_slip_prefix_with_quote_word_list() {
 fn parse_hyper_prefix_slip_left_on_angle_list() {
     let (rest, expr) = expression("|<< <a x y z>").unwrap();
     assert_eq!(rest, "");
+    // The hyper slip is the plain slip, marked for RakuAST.
     assert!(matches!(
-        expr,
+        expr.peel_spelled(),
         Expr::Unary {
             op: TokenKind::Pipe,
             ..
@@ -112,8 +113,9 @@ fn parse_hyper_prefix_slip_left_on_angle_list() {
 fn parse_hyper_prefix_slip_right_on_angle_list() {
     let (rest, expr) = expression("|>> <a x y z>").unwrap();
     assert_eq!(rest, "");
+    // The hyper slip is the plain slip, marked for RakuAST.
     assert!(matches!(
-        expr,
+        expr.peel_spelled(),
         Expr::Unary {
             op: TokenKind::Pipe,
             ..

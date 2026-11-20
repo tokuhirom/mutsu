@@ -663,10 +663,14 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
         } else {
             (rest, Vec::new())
         };
+        // The `self` is marked, so RakuAST keeps `Var::Attribute::Public("&.name")`.
+        let target = Expr::spelled(Expr::BareWord("self".to_string()), || {
+            crate::ast::spelled::Spelling::AttributeCall('&')
+        });
         return Ok((
             rest,
             Expr::MethodCall {
-                target: Box::new(Expr::BareWord("self".to_string())),
+                target: Box::new(target),
                 name: crate::symbol::Symbol::intern(&name),
                 args,
                 modifier: None,

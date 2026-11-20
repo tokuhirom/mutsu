@@ -93,10 +93,17 @@ pub(super) fn caller_declares_operator(names: &NameScope, routine: &str) -> bool
 /// any other constant a term. Only the initializers whose value is visibly a
 /// type object are recognised: a type name, or the MOP `new_type` constructor.
 fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
+    let init = init.peel_spelled();
     let type_valued = match init {
         // A type the unit declares too (`constant E = Outer::Inner`); while
         // the unit's own scan runs, `package_alias` settles those instead.
-        Expr::BareWord(n) => setting_type(n) || declared_kind(names, n) == Some(DeclaredKind::Type),
+        _ if let Some(word) = written_word(init) => type_word(names, word),
+        // `constant A = Array[Int]`: a type application is a type too.
+        Expr::Index {
+            target,
+            is_positional: true,
+            ..
+        } => written_word(target.peel_spelled()).is_some_and(|n| type_word(names, n)),
         Expr::MethodCall { name, target, .. } => {
             name.resolve() == "new_type"
                 && matches!(target.as_ref(), Expr::BareWord(n)
@@ -109,6 +116,31 @@ fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
     } else {
         DeclaredKind::Term
     }
+}
+
+/// The word `expr` is written as: a bareword, or one the parser resolved as an
+/// imported term (`CArray` after `use NativeCall`, `ParsedExpr::ImportedTerm`).
+// Cost: O(1).
+fn written_word(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::BareWord(n) => Some(n),
+        Expr::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::ImportedTerm(n) => Some(n),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether the word names a type a constant's initializer can hold: a setting
+/// type, one the unit declared, or a type constant a `use` imported.
+// Cost: O(k + c), k = length of `name`, c = imported type constants.
+fn type_word(names: &NameScope, name: &str) -> bool {
+    setting_type(name)
+        || declared_kind(names, name) == Some(DeclaredKind::Type)
+        || crate::parser::imported_type_constant_names()
+            .iter()
+            .any(|n| n == name)
 }
 
 /// RAII guard for one block's own declarations ([`NameScope::push_block`]).

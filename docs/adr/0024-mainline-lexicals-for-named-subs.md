@@ -489,3 +489,36 @@ reserved `unit_lexicals` key, frame-active predicate, writeback suppression,
 closure-capture injection) — they are corrections to how faithfully the
 *existing* VM machinery (shadow slots, the light-call fast paths, the
 env-direct read/write shortcuts) had to be taught about the new store.
+
+## Amendment (2026-11-20, #17659): point 3's call-path exclusion is retired
+
+Point 3 above excluded every `mainline_lexical_subs` member from the light,
+positional-light, fast, multi-light, plan-light and proto-winner-light call
+paths because those paths ran "frameless" and `mainline_lexical_frame_active()`
+keys off the last `routine_stack` frame. ADR-0037 Slice 1 later made every one
+of them push a `RoutineFrame` with the routine's name and its body's code
+address (`push_routine_with_visibility`), which is exactly what
+`active_unit_lexical_entry` matches against, so the predicate fires on those
+paths too and the exclusion only cost speed: a top-level sub that reads one
+unit-level `my` cost 28.1k instructions per call against 7.7k for the same sub
+without the free variable (callgrind slope, profiling build). The exclusion
+(`light_call_blocked_by_mainline_capture`) is removed (ADR-18244 stage B, the
+first O1 slice).
+
+Two steps the general path performed and the light paths did not were exposed
+by the removal and are now done on the light paths themselves, not avoided by
+a narrower exclusion:
+
+- A `:=` bind whose source is an `is rw` parameter (`sub r($a is rw) { $outer
+  := $a }`) joins the cell the parameter's slot already holds. The light path
+  aliases an `is rw` argument by putting the caller's cell in the slot
+  (ADR-0109) and mirrors no cell into env, so the by-name source lookup minted
+  a disconnected copy. The general binder relayed the source by name instead.
+- A routine's `my package` binds its bare name (the storage name is mangled,
+  `Name\0<id>`), and the fast and positional-light return merges copy every
+  non-local overlay key back to the caller. `compute_declared_locals` now
+  counts the bare name as callee-local, as it already did the storage name.
+
+Pinned by `t/routines/sub-capturing-mainline-lexical-light-call.t`,
+`t/routines/signature/rw-param-rebind-captured-lexical-light-call.t` and
+`t/modules/my-package-routine-fast-call.t`.
