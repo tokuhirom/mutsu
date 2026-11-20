@@ -417,3 +417,13 @@ deferred `X::Obsolete`, an interpolating `s///` replacement and a classified bar
 (types and operators are registered by the parser when it builds the node, and by the run time when the unit runs).
 Pinned by `src/rakuast/finalize_purity_tests.rs`: finalizing the same units again (in the same and in a fresh
 `NameScope`) gives the same tree, and finalizing units while another unit's facts are installed leaves them intact.
+
+**Condition 2, finding (slice 2b, 2026-11-20).** Slice 2b declares a unit's names statement by statement, but keeps the
+unit's **routines** installed up front, because rakudo hoists them; so `say 1; sub say {...}` and every other
+routine that shadows a setting name later in the unit resolve exactly as before 2b. Census: 104 files of `t/` and
+`roast/` declare a routine named like a setting term or keyword (`say`, `print`, `note`, `True`, `False`, `Empty`,
+`Nil`, `pi`, `e`, `tau`, `i`, `now`, `time`, `rand`, `done`, `last`, `next`); the whole of `t/` and the whitelisted
+roast pass under 2b (`scripts/dev gate --full`, 2026-11-20). No real-world harm found; the case stays open only in the
+sense that it is not modelled differently from rakudo's hoisting. The one merge rule 2b needed: a routine a later
+statement declares adds a name only when nothing declared it yet, so an imported constant `phi` stays the term where
+a nested `sub phi` is declared (`t/routines/nested-sub-shadows-imported-constant-term.t`).

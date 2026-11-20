@@ -136,6 +136,33 @@ impl NameScope {
         std::mem::replace(&mut *self.declared.borrow_mut(), declared)
     }
 
+    /// Add `more` to the unit's own declared names (a statement reached in
+    /// source order).
+    // Cost: O(m), m = names in `more`.
+    /// The names merge as one scan of the whole unit would record them: a type
+    /// replaces what was there, a term replaces only a routine, and a routine
+    /// adds a name nothing declared yet (an imported constant `phi` stays the
+    /// term where a nested `sub phi` is declared).
+    pub(crate) fn extend_declared(&self, more: HashMap<String, DeclaredKind>) {
+        let mut declared = self.declared.borrow_mut();
+        for (name, kind) in more {
+            match kind {
+                DeclaredKind::Type => {
+                    declared.insert(name, kind);
+                }
+                DeclaredKind::Term => {
+                    let entry = declared.entry(name).or_insert(kind);
+                    if *entry == DeclaredKind::Routine {
+                        *entry = DeclaredKind::Term;
+                    }
+                }
+                DeclaredKind::Routine => {
+                    declared.entry(name).or_insert(kind);
+                }
+            }
+        }
+    }
+
     /// Open a block that declares `own`; [`Self::pop_block`] closes it.
     // Cost: O(1).
     pub(crate) fn push_block(&self, own: HashMap<String, DeclaredKind>) {
@@ -212,6 +239,17 @@ impl NameScope {
     // Cost: O(1).
     pub(crate) fn unit(&self) -> std::cell::Ref<'_, UnitFacts> {
         self.unit.borrow()
+    }
+
+    /// Add the shadowed names, terms and packages of `more` to the installed
+    /// unit facts (a statement reached in source order); its routines are not
+    /// added, since a unit's routines are installed up front (they are hoisted).
+    // Cost: O(m), m = names in `more`.
+    pub(crate) fn extend_unit_in_order(&self, more: UnitFacts) {
+        let mut unit = self.unit.borrow_mut();
+        unit.shadowed.extend(more.shadowed);
+        unit.terms.extend(more.terms);
+        unit.packages.extend(more.packages);
     }
 
     /// Record `name` in the innermost open list of `which`.

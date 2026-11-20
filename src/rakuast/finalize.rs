@@ -62,9 +62,13 @@ pub(super) fn finalize_unit(
     let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
     let _underscore_scope = super::underscore_bindings::Scope::reset();
     let _block_scope = super::underscore_bindings::Scope::block(&stmts);
-    let _declared = super::bareword::DeclaredNames::collect(names, &stmts);
+    // The unit's names are declared in source order (ADR-15760 §7.2 (c)): each
+    // top-level statement declares its own as it is reached
+    // (`Finalize::visit_top_listed`); only its routines, which are hoisted, are
+    // known up front.
+    let _declared = super::bareword::DeclaredNames::start(names);
     let _method_scope = super::underscore_bindings::MethodScope::enter(false);
-    let _unit = super::shadowed_terms::scan_stmts(names, &stmts);
+    let _unit = super::shadowed_terms::scan_routines(names, &stmts);
     let _operators = super::infix_func::enter_scope(names);
     let _keywords = super::shadowed_terms::enter_scope(names);
     let mut finalize = Finalize {
@@ -74,7 +78,7 @@ pub(super) fn finalize_unit(
         top: true,
         later_terms: Vec::new(),
         seen_terms: Vec::new(),
-        declared_types: unit_type_names(&stmts),
+        declared_types: std::collections::HashSet::new(),
     };
     crate::parser::with_rakuast_lexical_scope(|| {
         finalize.visit_stmts_mut(&mut stmts);
@@ -254,13 +258,14 @@ impl VisitMut for Finalize<'_> {
         self.seen_terms.push(std::collections::HashSet::new());
         // The names a body declares classify the barewords written in it, as
         // they do when it is converted.
-        let _scope = super::bareword::BlockScope::enter(self.names, body);
+        // The unit's own list declares its names in source order instead.
+        let _scope = super::bareword::BlockScope::enter(self.names, if top { &[] } else { body });
         // A routine or `&name` declared in the body is in scope for the
         // statements after it, as it is for the parser; a body that declares
         // none needs no scope of its own (the unit's own list is finalized in
         // the scope `finalize_unit` opened).
         if top {
-            self.visit_listed_all(body, true);
+            self.visit_top_listed(body);
         } else if body.iter().any(declares_routine) {
             crate::parser::with_rakuast_lexical_scope(|| self.visit_listed_all(body, true));
         } else {
@@ -586,6 +591,21 @@ impl Finalize<'_> {
             if register {
                 crate::parser::register_rakuast_user_sub_binding(stmt);
             }
+        }
+    }
+
+    /// The unit's own statements in order, each declaring its names for itself
+    /// and the statements after it before it is finalized (ADR-15760 §7.2 (c)):
+    /// a statement before a declaration sees the setting's meaning of the name,
+    /// as in rakudo, even inside a routine body.
+    fn visit_top_listed(&mut self, body: &mut [Stmt]) {
+        for stmt in body.iter_mut() {
+            super::bareword::declare_statement(self.names, stmt);
+            super::shadowed_terms::declare_statement(self.names, stmt);
+            self.declared_types
+                .extend(unit_type_names(std::slice::from_ref(stmt)));
+            self.visit_listed(stmt);
+            crate::parser::register_rakuast_user_sub_binding(stmt);
         }
     }
 

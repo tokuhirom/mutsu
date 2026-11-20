@@ -78,7 +78,36 @@ pub(super) fn scan<'a>(names: &'a NameScope, root: &RakuAstNode) -> UnitGuard<'a
 /// [`scan`] for an executing unit, which is the parser's own statements: the
 /// same four facts, read from the statements themselves.
 // Cost: O(n), n = nodes in the unit.
+#[cfg(test)]
 pub(super) fn scan_stmts<'a>(names: &'a NameScope, stmts: &[Stmt]) -> UnitGuard<'a> {
+    UnitGuard::enter(names, facts_of(stmts))
+}
+
+/// The facts of `scan_stmts` for a unit finalized in source order (ADR-15760 §7.2 (c)):
+/// only its routines are installed up front (a routine is hoisted); each
+/// top-level statement adds the rest as it is reached ([`declare_statement`]).
+// Cost: O(n), n = nodes in the unit.
+pub(super) fn scan_routines<'a>(names: &'a NameScope, stmts: &[Stmt]) -> UnitGuard<'a> {
+    let routines = facts_of(stmts).routines;
+    UnitGuard::enter(
+        names,
+        UnitFacts {
+            routines,
+            ..UnitFacts::default()
+        },
+    )
+}
+
+/// Add what the top-level statement `stmt` declares, other than routines, to
+/// the installed unit facts.
+// Cost: O(n), n = size of `stmt`.
+pub(super) fn declare_statement(names: &NameScope, stmt: &Stmt) {
+    names.extend_unit_in_order(facts_of(std::slice::from_ref(stmt)));
+}
+
+/// The facts the statements `stmts` declare.
+// Cost: O(n), n = nodes of `stmts`.
+fn facts_of(stmts: &[Stmt]) -> UnitFacts {
     let mut facts = Facts::default();
     crate::ast_visit::walk_stmts(&mut facts, stmts);
     let Facts {
@@ -89,15 +118,12 @@ pub(super) fn scan_stmts<'a>(names: &'a NameScope, stmts: &[Stmt]) -> UnitGuard<
     } = facts;
     let mut all_shadowed = terms.clone();
     all_shadowed.extend(shadowed);
-    UnitGuard::enter(
-        names,
-        UnitFacts {
-            shadowed: all_shadowed,
-            terms,
-            packages,
-            routines,
-        },
-    )
+    UnitFacts {
+        shadowed: all_shadowed,
+        terms,
+        packages,
+        routines,
+    }
 }
 
 /// What the parser's statements declare that lowering resolves names against:
