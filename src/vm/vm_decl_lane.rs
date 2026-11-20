@@ -311,6 +311,15 @@ impl Interpreter {
             return false;
         }
         let kind = crate::ast::ReadonlyKind::Immutable;
+        // An object that decomposes on array assignment (`does Iterable`)
+        // binds as a non-container: the general store records the decont
+        // marker that makes `@a = $bound` iterate it.
+        if matches!(v.view(), ValueView::Instance { .. }) {
+            let v = v.clone();
+            if self.instance_decomposes_on_array_assign(&v) {
+                return false;
+            }
+        }
         if !self.locals[idx].is_plain_scalar_store_slot() {
             return false;
         }
