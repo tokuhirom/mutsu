@@ -89,8 +89,7 @@ pub(super) fn read(raw: &[&str]) -> Option<Table> {
             return None;
         } else if is_rule(l)? {
             Line::Separator(l)
-        } else if l.ends_with(' ')
-            || l.contains(['-', '=', '_'])
+        } else if l.contains(['-', '=', '_'])
             || (l.contains('+') && !(piped && plus_dividers_only(l)))
         {
             // Rule characters inside a row change how rakudo reads the table.
@@ -391,15 +390,23 @@ fn pipe_row(row: &str) -> Option<Row> {
         segments.pop();
     }
     let mut cells = Vec::with_capacity(segments.len());
-    for (seg, after_divider) in segments {
+    let count = segments.len();
+    for (n, (seg, after_divider)) in segments.into_iter().enumerate() {
         // The blank next to a divider is the divider's; a row indented past
-        // the table's margin keeps its leading blanks.
+        // the table's margin keeps its leading blanks, and the last cell of a
+        // row that does not end in a divider keeps its trailing ones
+        // (`a | b ` is `"b "`; `a | b | ` ends in an empty cell).
         let cell = if after_divider {
             seg.strip_prefix(' ').unwrap_or(seg)
         } else {
             seg
         };
-        let cell = cell.strip_suffix(' ').unwrap_or(cell);
+        let divider_follows = n + 1 < count || dividers.last() == Some(&(bytes.len() - 1));
+        let cell = if divider_follows {
+            cell.strip_suffix(' ').unwrap_or(cell)
+        } else {
+            cell
+        };
         cells.push(cell.to_string());
     }
     // A lone divider (`| a`) is read as part of a cell by rakudo; one that
