@@ -181,6 +181,24 @@ fn colonpair_value(node: &mut RakuAstNode) {
         }
         return;
     }
+    // `:key{...}`: the block or hash composer is the value, from its `{`.
+    if matches!(
+        value.class,
+        RakuAstClass::Block | RakuAstClass::CircumfixHashComposer
+    ) && value.origin.0.is_none()
+    {
+        let written = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+            let rest = text.strip_prefix(':')?.strip_prefix(key.as_str())?;
+            (rest.starts_with('{') && rest.ends_with('}')).then_some(())
+        });
+        if written.is_some() && open < to {
+            with_child(node, "value", |value| {
+                super::origin::set_span(value, SrcSpan::new(open, to));
+                super::expr_block_origins::derive(value);
+            });
+        }
+        return;
+    }
     if value.class != RakuAstClass::CircumfixParentheses || value.origin.0.is_some() {
         return;
     }

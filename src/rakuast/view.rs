@@ -5969,7 +5969,14 @@ pub(super) fn regex_arg_list(
                 {
                     colonpair_variable_expr(names, argument)?
                 } else if args.colonpair_values.get(index).copied().unwrap_or(false) {
-                    colonpair_value_expr(names, argument)?
+                    match argument {
+                        // `:k{...}`: the block or hash composer is the value.
+                        Expr::Binary {
+                            form: crate::ast::BinaryForm::ColonPairBracketed,
+                            ..
+                        } => colonpair_value_node(names, argument, false)?,
+                        _ => colonpair_value_expr(names, argument)?,
+                    }
                 } else if args
                     .literal_hash_indices
                     .get(index)
@@ -6171,15 +6178,9 @@ fn colonpair_value_node(
         },
         _ => view_expr(names, right)?,
     };
-    let is_direct_block = parenthesize
-        && matches!(
-            right.as_ref(),
-            Expr::AnonSub { is_block: true, .. }
-                | Expr::Block(_)
-                | Expr::Hash(_, crate::ast::HashSpelling::Composer)
-        )
-        || crate::ast::placeholders::is_implicit_placeholder_block(right);
-    if is_direct_block || !parenthesize {
+    // `:a{...}` is `ColonPairBracketed`: its block or hash composer is the
+    // value itself, while `:a({...})` keeps its parentheses.
+    if !parenthesize {
         return Ok(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::ColonPairValue,
