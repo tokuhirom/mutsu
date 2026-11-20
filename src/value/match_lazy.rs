@@ -309,41 +309,49 @@ pub(crate) struct ActionWalkNode {
 enum WalkCaptures {
     /// A capture node, read on demand.
     Lazy(Arc<CapNode>, MatchTarget),
-    /// The `.hash` and `.list` of an eager Match, already in hand.
-    Eager(Vec<(Symbol, Value)>, Vec<Value>),
+    /// The `named` and `list` attributes of an eager Match.
+    Eager(Option<Value>, Option<Value>),
     #[default]
     None,
 }
 
 impl ActionWalkNode {
-    /// The walk's view of an eager Match: its `.hash` entries, `.list`
-    /// items and hidden subrule matches.
+    /// The walk's view of an eager Match: its `.hash` and `.list` (as the
+    /// attribute map holds them) and its hidden subrule matches.
+    // Cost: O(k), k = the node's capture entries; a capture name is interned
+    // only for a child still to dispatch.
     pub(crate) fn eager(
-        named: Option<Vec<(Symbol, Value)>>,
-        positional: Vec<Value>,
+        named: Option<Value>,
+        positional: Option<Value>,
         silent: Vec<Value>,
     ) -> Self {
-        let has_named_hash = named.is_some();
-        let named = named.unwrap_or_default();
         let mut named_children = Vec::new();
-        for (name, value) in &named {
-            // `is_match_instance` first: viewing a lazy child Match would
-            // materialize it only to learn that it is not an Array.
-            if !value.is_match_instance()
-                && let ValueView::Array(items, _) = value.view()
-            {
-                named_children.extend(items.iter().map(|item| (*name, item.clone())));
-            } else {
-                named_children.push((*name, value.clone()));
+        if let Some(ValueView::Hash(map)) = named.as_ref().map(Value::view) {
+            for (name, value) in map.iter() {
+                // `is_match_instance` first: viewing a lazy child Match would
+                // materialize it only to learn that it is not an Array.
+                let items: Vec<Value> = if !value.is_match_instance()
+                    && let ValueView::Array(items, _) = value.view()
+                {
+                    items.iter().cloned().collect()
+                } else {
+                    vec![value.clone()]
+                };
+                for item in items {
+                    if !item.match_node_reduced() {
+                        named_children.push((Symbol::intern(name), item));
+                    }
+                }
             }
         }
-        named_children.retain(|(_, child)| !child.match_node_reduced());
         let mut positional_children = Vec::new();
-        for item in &positional {
-            if item.is_match_instance() {
-                positional_children.push(item.clone());
-            } else if let ValueView::Array(items, _) = item.view() {
-                positional_children.extend(items.iter().cloned());
+        if let Some(ValueView::Array(items, _)) = positional.as_ref().map(Value::view) {
+            for item in items.iter() {
+                if item.is_match_instance() {
+                    positional_children.push(item.clone());
+                } else if let ValueView::Array(inner, _) = item.view() {
+                    positional_children.extend(inner.iter().cloned());
+                }
             }
         }
         positional_children.retain(|child| !child.match_node_reduced());
@@ -351,7 +359,7 @@ impl ActionWalkNode {
             named_children,
             silent,
             positional_children,
-            has_named_hash,
+            has_named_hash: matches!(named.as_ref().map(Value::view), Some(ValueView::Hash(_))),
             captures: WalkCaptures::Eager(named, positional),
             ..Self::default()
         }
@@ -375,7 +383,13 @@ impl ActionWalkNode {
                 .filter(|(key, _)| !key.starts_with(SILENT_ACTION_MARKER_PREFIX))
                 .map(|(key, slot)| (*key, Value::named_slot_value(slot, target)))
                 .collect(),
-            WalkCaptures::Eager(named, _) => named.clone(),
+            WalkCaptures::Eager(named, _) => match named.as_ref().map(Value::view) {
+                Some(ValueView::Hash(map)) => map
+                    .iter()
+                    .map(|(k, v)| (Symbol::intern(k), v.clone()))
+                    .collect(),
+                _ => Vec::new(),
+            },
             WalkCaptures::None => Vec::new(),
         }
     }
@@ -390,7 +404,10 @@ impl ActionWalkNode {
                 .iter()
                 .map(|slot| Value::pos_slot_value(slot, target))
                 .collect(),
-            WalkCaptures::Eager(_, positional) => positional.clone(),
+            WalkCaptures::Eager(_, positional) => match positional.as_ref().map(Value::view) {
+                Some(ValueView::Array(items, _)) => items.iter().cloned().collect(),
+                _ => Vec::new(),
+            },
             WalkCaptures::None => Vec::new(),
         }
     }
