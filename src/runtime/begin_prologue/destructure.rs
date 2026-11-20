@@ -20,24 +20,24 @@
 use crate::ast::{AssignOp, Stmt};
 
 /// Split the destructuring declaration `stmt`: push its static half onto
-/// `prologue` and return the run-time half. Any other statement, and a
-/// destructuring declaration with a target the split cannot express as an
-/// assignment (a bind, a trait, a `state` or `our` target), is handed back
-/// unchanged.
+/// `prologue` and return the run-time half. `None`, with `prologue` untouched,
+/// for any other statement and for a destructuring declaration with a target
+/// the split cannot express as an assignment (a bind, a trait, a `state` or
+/// `our` target).
 // Cost: O(s), s = statements of the expansion.
-pub(super) fn split(stmt: Stmt, prologue: &mut Vec<Stmt>) -> Result<Stmt, Stmt> {
-    let Stmt::SyntheticBlock(inner) = &stmt else {
-        return Err(stmt);
+pub(super) fn split(stmt: &Stmt, prologue: &mut Vec<Stmt>) -> Option<Stmt> {
+    let Stmt::SyntheticBlock(inner) = stmt else {
+        return None;
     };
     if !crate::ast::signature_decl::is_destructure_block(inner) {
-        return Err(stmt);
+        return None;
     }
     let predecl_count = inner.iter().take_while(|s| is_target_decl(s)).count();
     let mut statics = Vec::with_capacity(predecl_count);
     for member in &inner[..predecl_count] {
         match crate::runtime::phasers::split_var_decl(member) {
             Some((static_decl, None)) if plain_target(member) => statics.push(static_decl),
-            _ => return Err(stmt),
+            _ => return None,
         }
     }
     let targets: Vec<&str> = inner[..predecl_count]
@@ -52,7 +52,7 @@ pub(super) fn split(stmt: Stmt, prologue: &mut Vec<Stmt>) -> Result<Stmt, Stmt> 
         match member {
             Stmt::VarDecl { name, expr, .. } if targets.contains(&name.as_str()) => {
                 if !plain_target(member) {
-                    return Err(stmt);
+                    return None;
                 }
                 runtime.push(Stmt::Assign {
                     name: name.clone(),
@@ -65,7 +65,7 @@ pub(super) fn split(stmt: Stmt, prologue: &mut Vec<Stmt>) -> Result<Stmt, Stmt> 
         }
     }
     prologue.extend(statics);
-    Ok(Stmt::SyntheticBlock(runtime))
+    Some(Stmt::SyntheticBlock(runtime))
 }
 
 /// A target declaration of the expansion: any declaration but the staging

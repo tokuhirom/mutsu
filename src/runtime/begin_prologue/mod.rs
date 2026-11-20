@@ -447,13 +447,10 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
     }
     // A destructuring declaration `my ($a, $b) = RHS`: its predeclarations
     // are its static half, the rest assigns at its position.
-    let stmt = match destructure::split(stmt, prologue) {
-        Ok(runtime) => {
-            rest.push(runtime);
-            return;
-        }
-        Err(stmt) => stmt,
-    };
+    if let Some(runtime) = destructure::split(&stmt, prologue) {
+        rest.push(runtime);
+        return;
+    }
     rest.push(stmt);
 }
 
