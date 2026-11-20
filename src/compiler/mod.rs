@@ -1137,6 +1137,7 @@ mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
 mod short_circuit;
+mod str_eq_local_const;
 mod stash_entry_var;
 mod with_defined;
 mod with_topic_alias;

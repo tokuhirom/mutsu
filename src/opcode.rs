@@ -2013,6 +2013,19 @@ pub(crate) enum OpCode {
     /// the collapsed result, so it always pushes a plain `Bool`. See
     /// [`Self::StrEq`] for the shared coercion.
     StrNe,
+    /// `$local eq 'literal'` (or `ne` when `negate`), fused: compare a local
+    /// slot's plain `Str` with a `Str` constant in place, without cloning
+    /// either onto the stack (ADR-18357 D1). Stack: `[] → [Bool]`.
+    ///
+    /// Emitted only for a plain lexical and a literal operand outside every
+    /// lexical-import scope. When the slot is not a plain `Str` read, or a
+    /// user candidate of the operator is in scope, it runs exactly what
+    /// `GetLocal(slot); LoadConst(const_idx); StrEq` would (ADR-18357 D3).
+    StrEqLocalConst {
+        slot: u32,
+        const_idx: u32,
+        negate: bool,
+    },
     /// Infix `lt` (string less than, by codepoint). Stack: `[left, right] → [Bool]` (right on top). See
     /// [`Self::StrEq`] for the shared coercion and Junction threading.
     StrLt,
@@ -8685,6 +8698,7 @@ impl CompiledCode {
             let slot = match op {
                 OpCode::GetLocal(slot)
                 | OpCode::GetLocalRaw(slot)
+                | OpCode::StrEqLocalConst { slot, .. }
                 | OpCode::SetLocal(slot)
                 | OpCode::SetLocalRaw(slot)
                 | OpCode::AssignExprLocal(slot)

@@ -221,6 +221,7 @@ mod vm_multi_light_call;
 mod vm_operator_values;
 mod vm_pseudo_method_lane;
 mod vm_role_default_pun;
+mod vm_str_eq_local_const;
 mod vm_string_concat_user;
 mod vm_take_method_lane;
 mod vm_trailing_sub_decl;
