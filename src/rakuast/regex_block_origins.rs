@@ -46,7 +46,7 @@ pub(super) fn code_block(
 /// The offset of the `}` that closes the `{` `text` starts with; `None` when
 /// a quote or comment comes first (a brace inside it would be miscounted).
 // Cost: O(n), n = length of the block's text.
-fn closing_brace(text: &str) -> Option<usize> {
+pub(super) fn closing_brace(text: &str) -> Option<usize> {
     let mut depth = 0usize;
     for (at, c) in text.char_indices() {
         match c {
