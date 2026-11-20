@@ -432,7 +432,11 @@ impl Interpreter {
     /// parameter `pd`: the Pair carrying its argument is rebuilt around the
     /// promoted value.
     // Cost: O(a), a = arguments, plus one cell promotion.
-    fn promote_method_named_container_arg(&mut self, pd: &crate::ast::ParamDef, args: &mut [Value]) {
+    fn promote_method_named_container_arg(
+        &mut self,
+        pd: &crate::ast::ParamDef,
+        args: &mut [Value],
+    ) {
         let Some((idx, value)) = Self::named_container_arg(pd, args) else {
             return;
         };

@@ -28,8 +28,8 @@
 
 use super::*;
 use crate::ast::{Expr, ParamDef};
-use crate::vm::vm_method_frame_plan::LocalInit;
 use crate::ast_visit::{NameKind, Visit, walk_expr};
+use crate::vm::vm_method_frame_plan::LocalInit;
 
 /// One omitted parameter whose default the prologue evaluates.
 pub(crate) struct DeferredDefault {
@@ -51,8 +51,7 @@ pub(crate) fn default_prologue_shape_ok(pd: &ParamDef) -> bool {
             .get()
             .is_some_and(|code| code.default_chunk.is_some())
             || crate::opcode::CompiledFunction::constant_default_value(default).is_some()
-    })
-        && !pd.is_invocant
+    }) && !pd.is_invocant
         && !pd.sigilless
         && !pd.slurpy
         && !pd.double_slurpy
@@ -143,9 +142,7 @@ impl<'ast> Visit<'ast> for DefaultNameScan<'_> {
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
         match kind {
-            NameKind::Call | NameKind::UserRoutineCall
-                if matches!(name, "EVAL" | "EVALFILE") =>
-            {
+            NameKind::Call | NameKind::UserRoutineCall if matches!(name, "EVAL" | "EVALFILE") => {
                 self.unsafe_name = true;
             }
             NameKind::Var
