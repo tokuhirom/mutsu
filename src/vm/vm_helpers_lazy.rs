@@ -566,6 +566,11 @@ impl Interpreter {
     /// value, including every other lazy flavour, whose streaming semantics
     /// must not be forced at an argument boundary.
     pub(crate) fn reify_closure_seq_endpoint(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        // Tag-probed before `view()`, as `reify_map_grep_seq` is: it runs on
+        // every argument of a by-name method call.
+        if !value.is_lazy_list_value() {
+            return Ok(());
+        }
         if let ValueView::LazyList(ll) = value.view()
             && ll.has_finite_closure_endpoint()
         {
@@ -619,10 +624,15 @@ impl Interpreter {
         self.reify_map_grep_seq_args(args)
     }
 
+    // Cost: O(a), a = arguments; tag probes only, unless an argument (or a
+    // named argument's value) is a Seq or a LazyList.
     pub(crate) fn reify_map_grep_seq_args(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
         for arg in args {
             self.reify_map_grep_seq(arg)?;
             self.reify_closure_seq_endpoint(arg)?;
+            if !arg.is_any_pair_value() {
+                continue;
+            }
             match arg.view() {
                 ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
                     let v = v.deref_container();
