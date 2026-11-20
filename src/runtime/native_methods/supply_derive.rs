@@ -140,7 +140,7 @@ impl Interpreter {
         Self::make_on_demand_derived_supply_named(source, "lines", Value::truth(chomp))
     }
 
-    fn make_on_demand_derived_supply_named(source: Value, mode: &str, callable: Value) -> Value {
+    pub(super) fn make_on_demand_derived_supply_named(source: Value, mode: &str, callable: Value) -> Value {
         let mut producer_attrs = HashMap::new();
         producer_attrs.insert("source".to_string(), source.clone());
         producer_attrs.insert("mode".to_string(), Value::str(mode.to_string()));
@@ -291,6 +291,17 @@ impl Interpreter {
                     reduce_put(id, next);
                     return Ok(Value::NIL);
                 }
+                if let Some(id) = super::supply_derive_dedup::dedup_id(attributes) {
+                    // `unique` / `squish`: pass the value on unless it
+                    // repeats a key (see `supply_derive_dedup`).
+                    let squish = attributes
+                        .get("mode")
+                        .is_some_and(|m| m.to_string_value() == "squish");
+                    if self.dedup_admit(id, squish, &callable, &arg)? {
+                        self.call_method_with_values(emitter, "emit", vec![arg])?;
+                    }
+                    return Ok(Value::NIL);
+                }
                 if let Some(id) = head_id(attributes) {
                     // `head`: pass the value on while the counter lasts, and
                     // finish the derived supply with the last one.
@@ -330,6 +341,9 @@ impl Interpreter {
                         self.call_method_with_values(emitter.clone(), "emit", vec![line])?;
                     }
                 }
+                if let Some(id) = super::supply_derive_dedup::dedup_id(attributes) {
+                    super::supply_derive_dedup::dedup_finish(id);
+                }
                 if let Some(id) = reduce_id(attributes) {
                     // An empty source reduces to Nil, like Rakudo.
                     let result = reduce_finish(id).unwrap_or(Value::NIL);
@@ -352,6 +366,9 @@ impl Interpreter {
                 }
                 if let Some(id) = reduce_id(attributes) {
                     reduce_finish(id);
+                }
+                if let Some(id) = super::supply_derive_dedup::dedup_id(attributes) {
+                    super::supply_derive_dedup::dedup_finish(id);
                 }
                 if let Some(id) = head_id(attributes)
                     && !head_finish(id)
@@ -447,6 +464,15 @@ impl Interpreter {
             .is_some_and(|m| m.to_string_value() == "reduce")
         {
             fwd_attrs.insert("reduce_id".to_string(), Value::int(reduce_register() as i64));
+        }
+        if attributes
+            .get("mode")
+            .is_some_and(|m| matches!(m.to_string_value().as_str(), "unique" | "squish"))
+        {
+            fwd_attrs.insert(
+                "dedup_id".to_string(),
+                Value::int(super::supply_derive_dedup::dedup_register() as i64),
+            );
         }
         let forwarder = Value::make_instance(Symbol::intern(CLASS), fwd_attrs);
         let tap_args = vec![

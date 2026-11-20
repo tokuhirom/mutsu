@@ -67,6 +67,7 @@ impl Interpreter {
                     as_fn,
                     with_fn,
                     tap_index,
+                    squish,
                 } => {
                     let key = if let Some(f) = as_fn {
                         self.call_supply_callback(f, vec![value.clone()])?
@@ -75,8 +76,13 @@ impl Interpreter {
                     };
                     let is_dup =
                         self.supplier_unique_check_seen(supplier_id, tap_index, &key, &with_fn)?;
-                    if !is_dup {
+                    // `squish` compares each value with the one right before
+                    // it, so every key is recorded; `unique` records only
+                    // the first of each.
+                    if !is_dup || squish {
                         supplier_unique_mark_seen(supplier_id, tap_index, key);
+                    }
+                    if !is_dup {
                         self.handle_supply_forward(downstream_supplier_id, value)?;
                     }
                 }

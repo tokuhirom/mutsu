@@ -33,6 +33,7 @@ mod stream_decoder;
 pub(crate) mod supply_channel;
 mod supply_collector;
 mod supply_derive;
+mod supply_derive_dedup;
 mod supply_quit_forwarder;
 mod system;
 pub(crate) mod thread_lock_count;

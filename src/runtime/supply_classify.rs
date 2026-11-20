@@ -6,12 +6,16 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    /// Supply.unique implementation — filters duplicate values.
-    /// Supports `:as`, `:with`, and `:expires` named parameters.
+    /// `Supply.unique` / `Supply.squish` — filters duplicate values (any
+    /// earlier one for `unique`, the one right before for `squish`).
+    /// Supports `:as` and `:with`, and `:expires` for `unique`.
+    // Cost: O(1) to build over a live or on-demand source; per value later,
+    // O(s) comparisons, s = keys seen (`unique`) or 1 (`squish`).
     pub(super) fn supply_unique(
         &mut self,
         attributes: &AttrMap,
         args: &[Value],
+        squish: bool,
     ) -> Result<Value, RuntimeError> {
         let as_fn = Self::named_value(args, "as");
         let with_fn = Self::named_value(args, "with");
@@ -39,6 +43,7 @@ impl Interpreter {
                 as_fn,
                 with_fn,
                 expires_seconds,
+                squish,
             );
 
             let mut new_attrs = HashMap::new();
@@ -53,6 +58,32 @@ impl Interpreter {
                 new_attrs.insert("scheduler".to_string(), scheduler.clone());
             }
             return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+        }
+
+        // An on-demand or channel-backed source is tapped per tap of the
+        // derived supply, as rakudo's `supply { whenever self { ... } }`:
+        // running it to completion here would never end while one of its
+        // `whenever`s follows a live supply (Red's `ResultSeq.Supply`).
+        if attributes.contains_key("on_demand_callback")
+            || Self::is_channel_backed_source(attributes)
+            || attributes.contains_key("head_limit")
+        {
+            let attrs_map: crate::value::ValueMap = attributes.into();
+            let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+            return Ok(Self::make_on_demand_dedup_supply(
+                source, squish, as_fn, with_fn,
+            ));
+        }
+
+        if squish {
+            let source_values = self.supply_get_values(attributes)?;
+            let squished = self.dispatch_squish(Value::array(source_values), args)?;
+            let items = match squished.view() {
+                ValueView::Array(items, ..) => items.to_vec(),
+                ValueView::Seq(items) => items.to_vec(),
+                _ => vec![squished.clone()],
+            };
+            return Ok(self.make_supply_from_values(items, attributes));
         }
 
         // For non-supplier or non-expires case, filter values directly
