@@ -93,16 +93,17 @@ pub(super) fn caller_declares_operator(names: &NameScope, routine: &str) -> bool
 /// any other constant a term. Only the initializers whose value is visibly a
 /// type object are recognised: a type name, or the MOP `new_type` constructor.
 fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
-    let type_valued = match init.peel_spelled() {
+    let init = init.peel_spelled();
+    let type_valued = match init {
         // A type the unit declares too (`constant E = Outer::Inner`); while
         // the unit's own scan runs, `package_alias` settles those instead.
-        Expr::BareWord(n) => type_word(names, n),
+        _ if let Some(word) = written_word(init) => type_word(names, word),
         // `constant A = Array[Int]`: a type application is a type too.
         Expr::Index {
             target,
             is_positional: true,
             ..
-        } => matches!(target.peel_spelled(), Expr::BareWord(n) if type_word(names, n)),
+        } => written_word(target.peel_spelled()).is_some_and(|n| type_word(names, n)),
         Expr::MethodCall { name, target, .. } => {
             name.resolve() == "new_type"
                 && matches!(target.as_ref(), Expr::BareWord(n)
@@ -114,6 +115,20 @@ fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
         DeclaredKind::Type
     } else {
         DeclaredKind::Term
+    }
+}
+
+/// The word `expr` is written as: a bareword, or one the parser resolved as an
+/// imported term (`CArray` after `use NativeCall`, `ParsedExpr::ImportedTerm`).
+// Cost: O(1).
+fn written_word(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::BareWord(n) => Some(n),
+        Expr::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::ImportedTerm(n) => Some(n),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
