@@ -108,8 +108,14 @@ fn method_signature(method: &RakuAstNode) -> Value {
         },
         _ => None,
     });
+    // An empty `()` keeps the origin the parse recorded for it.
     let mut signature = written.unwrap_or_else(|| RakuAstNode {
-        origin: Default::default(),
+        origin: match super::empty_fields::empty_node(method, "signature", RakuAstClass::Signature)
+            .view()
+        {
+            ValueView::RakuAst(empty) => empty.origin.clone(),
+            _ => Default::default(),
+        },
         class: RakuAstClass::Signature,
         fields: Vec::new(),
     });

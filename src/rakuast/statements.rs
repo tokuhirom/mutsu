@@ -73,7 +73,7 @@ pub(super) fn statement_list_inner(
             }));
         if let Some(unit) = unit {
             if let Some(mut node) = view_stmt(names, &unit)? {
-                super::routine_origins::package_origins(&mut node, &unit);
+                super::routine_origins::package_origins(names, &mut node, &unit);
                 if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                     node.fields.push(field);
                 }
@@ -96,7 +96,7 @@ pub(super) fn statement_list_inner(
             continue;
         }
         if let Some(mut node) = view_stmt(names, stmt)? {
-            super::routine_origins::package_origins(&mut node, stmt);
+            super::routine_origins::package_origins(names, &mut node, stmt);
             if let Some(field) = trace.take().as_ref().and_then(origin::trace_field) {
                 node.fields.push(field);
             }

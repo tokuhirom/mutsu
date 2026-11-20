@@ -30,7 +30,8 @@ is @c[6], "14-37", 'class: the statement list';
 my @t = shape("unit class A::B is Int;\nmethod m \{ 1 };\n\n");
 is @t[1], "0-39", 'trait and terminator: the statement';
 is @t[3], "11-15", 'a qualified name';
-is @t[4], "24-39", 'the block includes the terminator';
+# Rakudo 2026.11 starts the block at the trait.
+is @t[4], "16-39", 'the block runs from the trait and includes the terminator';
 
 my @r = shape("unit role R;\nmethod m \{ 1 }\n");
 is @r[1], "0-27", 'role: the statement';
