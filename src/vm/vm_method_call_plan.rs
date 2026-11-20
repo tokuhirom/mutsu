@@ -316,7 +316,7 @@ impl Interpreter {
             .expect("a planned method is compiled");
         let empty_fns = CompiledFns::default();
         let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
-        let method_result = if plan.lean && self.lean_args_ok(&args) {
+        let method_result = if plan.lean && self.lean_args_ok(def, &args) {
             self.call_compiled_method_lean(
                 class_sym.as_str(),
                 owner,

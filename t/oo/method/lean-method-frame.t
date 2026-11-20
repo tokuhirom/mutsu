@@ -6,7 +6,7 @@ use Test;
 # case below is called in a loop so the plan is installed and replayed, and
 # checks one thing the general binder does that the lean frame must keep.
 
-plan 22;
+plan 27;
 
 class C {
     has $.a = 1;
@@ -29,6 +29,9 @@ class C {
     method rec($n) { $n <= 0 ?? 0 !! $n + self.rec($n - 1) }
     method topic($x) { $_ }
     method dyn() { $*LEAN-DYN }
+    method typed(Int $x) { $x * 2 }
+    method defined(Str:D $s) { $s.chars }
+    method anything(Mu $m) { $m.^name }
 }
 
 my $o = C.new;
@@ -113,3 +116,16 @@ my $e = E.new;
 is-deeply @r, [0, 10, 20], 'an override in a subclass';
 @r = (^3).map: { $e.m0 };
 is-deeply @r, [42, 42, 42], 'an inherited method';
+
+# Typed parameters: the check runs per call; a refusal reports the general
+# binder's error.
+@r = (^5).map: { $o.typed($_) };
+is-deeply @r, [0, 2, 4, 6, 8], 'a typed parameter';
+my $typed-err = 0;
+for ^5 { try { $o.typed($_ == 4 ?? 'four' !! $_); CATCH { default { $typed-err++ } } } }
+is $typed-err, 1, 'a typed parameter refuses another type';
+@r = (^3).map: { $o.defined('ab' x $_) };
+is-deeply @r, [0, 2, 4], 'a :D parameter';
+throws-like { $o.defined(Str) }, X::Parameter::InvalidConcreteness, 'a :D parameter refuses a type object';
+@r = (Mu, 1, 'a').map: { $o.anything($_) };
+is-deeply @r, ['Mu', 'Int', 'Str'], 'a Mu parameter takes anything';

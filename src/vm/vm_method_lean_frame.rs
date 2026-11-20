@@ -64,7 +64,30 @@ pub(super) fn lean_frame_eligible(
         && !interp.is_role(owner_name)
         && !interp.method_has_role_bindings(def, owner_name, receiver.as_str())
         && interp.attr_default_classes(owner_name, receiver.as_str()) == (false, false)
-        && def.param_defs.iter().all(lean_param_ok)
+        && def.param_defs.iter().all(|pd| {
+            lean_param_ok(pd)
+                && pd.type_constraint.as_deref().is_none_or(|tc| {
+                    // A builtin type that nothing in scope renames.
+                    matches!(
+                        interp.resolved_param_constraint_cow(pd, tc),
+                        std::borrow::Cow::Borrowed(_)
+                    )
+                })
+        })
+}
+
+/// A builtin value type a lean positional parameter may be constrained to,
+/// checked per call with `type_matches_value` exactly as the general binder
+/// checks it. Native types (coercing binds) and `Positional` (bind
+/// failover) keep the general binder.
+// Cost: O(k), k = length of `tc`.
+fn lean_type_ok(tc: &str) -> bool {
+    let (base, smiley) = crate::runtime::types::strip_type_smiley(tc);
+    matches!(smiley, None | Some(":D") | Some(":U"))
+        && matches!(
+            base,
+            "Int" | "Str" | "Num" | "Bool" | "Rat" | "Real" | "Numeric" | "Cool" | "Any" | "Mu"
+        )
 }
 
 /// A parameter the lean binder binds: the plain invocant, the implicit
@@ -94,7 +117,8 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
         && !pd.does_target
         && !pd.block_param
         && pd.default.is_none()
-        && pd.type_constraint.is_none()
+        && pd.type_constraint.as_deref().is_none_or(lean_type_ok)
+        && !pd.is_type_only()
         && pd.type_capture.is_none()
         && pd.literal_value.is_none()
         && pd.sub_signature.is_none()
@@ -107,11 +131,34 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
 }
 
 impl Interpreter {
-    /// Whether every argument passes the implicit `Any` of the untyped
-    /// parameter it binds (the only per-call check a lean frame makes).
+    /// Whether every argument passes the type check of the positional
+    /// parameter it binds -- an untyped one's implicit `Any`, a typed one's
+    /// builtin type -- and is no `Proxy` (which a typed parameter fetches).
+    /// The only per-call check a lean frame makes; a refusal sends the call
+    /// to the general binder, which raises the error.
     // Cost: O(a), a = arguments.
-    pub(super) fn lean_args_ok(&mut self, args: &[Value]) -> bool {
-        args.iter().all(|a| self.light_arg_is_any(a))
+    pub(super) fn lean_args_ok(
+        &mut self,
+        def: &crate::runtime::MethodDef,
+        args: &[Value],
+    ) -> bool {
+        let mut params = def
+            .param_defs
+            .iter()
+            .filter(|pd| !pd.is_invocant && !pd.slurpy);
+        args.iter().all(|a| {
+            let Some(pd) = params.next() else {
+                return false;
+            };
+            if a.is_proxy_value() {
+                return false;
+            }
+            match pd.type_constraint.as_deref() {
+                None => self.light_arg_is_any(a),
+                Some("Mu") => true,
+                Some(tc) => self.type_matches_value(tc, a),
+            }
+        })
     }
 
     /// Run a planned call of `method_def` in the lean frame (see the module

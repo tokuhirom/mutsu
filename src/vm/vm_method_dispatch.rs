@@ -2002,11 +2002,11 @@ impl Interpreter {
                 Some(names) => names,
                 None => {
                     has_role_bindings = false;
-                    std::sync::Arc::from([])
+                    no_role_binding_names()
                 }
             }
         } else {
-            std::sync::Arc::from([])
+            no_role_binding_names()
         };
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class_sym(owner_sym, Some(owner_is_role));
@@ -3047,6 +3047,14 @@ impl Interpreter {
             (adjusted, reconciled)
         })
     }
+}
+
+/// The empty role-binding name list, shared: an `Arc<[String]>` of length
+/// zero still allocates its counts, once per call before this.
+// Cost: O(1).
+fn no_role_binding_names() -> std::sync::Arc<[String]> {
+    static EMPTY: std::sync::OnceLock<std::sync::Arc<[String]>> = std::sync::OnceLock::new();
+    std::sync::Arc::clone(EMPTY.get_or_init(|| std::sync::Arc::from([])))
 }
 
 /// True if `name` could be the name of a caller compiled-local slot (and so a
