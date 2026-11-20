@@ -12,6 +12,7 @@
 //! line of an offset by binary search (ADR-10723 §4; `rakuast::unit_source`).
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
+use super::rakuast_fileline::{fileline, original_file};
 use crate::rakuast::{RakuAstFieldValue, RakuAstNode};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
@@ -198,67 +199,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         prepost_of_pos
     ),
 ];
-
-/// `Node.fileline`: `"<file>:<line>"` where the node's origin begins. The unit
-/// itself starts on line 1; a node built by hand has no origin and answers
-/// `Nil`, as in rakudo.
-// Cost: O(f), f = fields of the node.
-fn fileline(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let base = match target.view() {
-        ValueView::RakuAst(_) => target.clone(),
-        ValueView::Instance { attributes, .. } => attributes.rakuast_base()?,
-        _ => return None,
-    };
-    let ValueView::RakuAst(node) = base.view() else {
-        return None;
-    };
-    let line = if node.class == crate::rakuast::RakuAstClass::CompUnit {
-        Some(1)
-    } else {
-        crate::rakuast::origin_line_of(node)
-    };
-    let Some(line) = line else {
-        return Some(Ok(Value::NIL));
-    };
-    // The unit the node was parsed in (`EVAL_0` for a `Str.AST`), else the
-    // unit running now.
-    let file = origin_file(node)
-        .or_else(|| crate::unit_source_file::current().map(|file| file.resolve().to_string()))
-        .unwrap_or_default();
-    Some(Ok(Value::str(format!("{file}:{line}"))))
-}
-
-/// The `original-file` of the source a node's origin points into.
-// Cost: O(1).
-fn origin_file(node: &crate::rakuast::RakuAstNode) -> Option<String> {
-    let origin = crate::rakuast::origin_value_of(node)?;
-    let ValueView::Instance { attributes, .. } = origin.view() else {
-        return None;
-    };
-    let source = attributes.as_map().get("source")?.clone();
-    source_original_file(&source)
-}
-
-/// `Origin::Source.original-file` of `source`, when it records one.
-// Cost: O(1).
-fn source_original_file(source: &Value) -> Option<String> {
-    let ValueView::Instance { attributes, .. } = source.view() else {
-        return None;
-    };
-    attributes
-        .as_map()
-        .get(crate::rakuast::unit_source::ORIGINAL_FILE_ATTR)
-        .and_then(|v| v.as_str().map(str::to_string))
-}
-
-/// `Origin::Source.original-file`: the unit the source was parsed as
-/// (`EVAL_0` for a `Str.AST`), `Nil` when it was not recorded.
-// Cost: O(1).
-fn original_file(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    Some(Ok(
-        source_original_file(target).map_or(Value::NIL, Value::str)
-    ))
-}
 
 /// `Origin.from` / `Origin.to`: the character range the node occupies.
 // Cost: O(1).
