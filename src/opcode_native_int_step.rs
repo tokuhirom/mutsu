@@ -36,7 +36,11 @@ use crate::opcode::CompiledCode;
 // Cost: O(1) after the first call.
 pub(crate) fn narrow_ops_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("MUTSU_NARROW_OPS").ok().is_none_or(|v| v != "0"))
+    *ENABLED.get_or_init(|| {
+        std::env::var("MUTSU_NARROW_OPS")
+            .ok()
+            .is_none_or(|v| v != "0")
+    })
 }
 
 impl CompiledCode {

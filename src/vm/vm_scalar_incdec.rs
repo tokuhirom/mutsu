@@ -86,7 +86,12 @@ impl Interpreter {
     /// spoiler is raised; the generic body then runs as before.
     // Cost: O(1).
     #[inline]
-    pub(super) fn exec_native_int_step(&mut self, code: &CompiledCode, slot: usize, k: IncDec) -> bool {
+    pub(super) fn exec_native_int_step(
+        &mut self,
+        code: &CompiledCode,
+        slot: usize,
+        k: IncDec,
+    ) -> bool {
         if !code.native_int_step_slot(slot) {
             return false;
         }
@@ -104,8 +109,11 @@ impl Interpreter {
             return false;
         }
         let new = Value::int(new);
-        self.stack
-            .push(if k.prefix { new.clone() } else { Value::int(old) });
+        self.stack.push(if k.prefix {
+            new.clone()
+        } else {
+            Value::int(old)
+        });
         self.locals[slot] = new;
         true
     }
