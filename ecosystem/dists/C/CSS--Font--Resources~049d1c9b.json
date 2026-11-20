@@ -36,66 +36,69 @@
   "dist": "CSS::Font::Resources",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "not ok 1 -",
+        "nok": 1,
+        "ok": 0,
         "plan": 7,
-        "secs": 2.21,
+        "secs": 3.88,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/load.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.39,
+        "secs": 5.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method 'ends-with' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 6,
+        "ok": 0,
         "plan": 6,
-        "secs": 2.06,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/match.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.07,
+        "secs": 3.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "sources without fallback",
+        "nok": 6,
+        "ok": 1,
         "plan": 7,
-        "secs": 1.85,
+        "secs": 3.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/sources.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.34,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +110,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.25,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +120,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.06,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +139,7 @@
     "date": "2026-11-20",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4983197b",
+    "mutsu_commit": "d0b8b1c2",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -147,13 +150,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_FONT_RESOURCES/be6fd4d3d2e949e6a9e9482e04ac9f95a13c0211.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 23,
     "baseline_files": 4,
-    "mutsu_assertions": 23,
-    "parity_files": 4,
-    "regressed_files": 0
+    "mutsu_assertions": 4,
+    "parity_files": 1,
+    "regressed_files": 3
   },
   "version": "0.0.11"
 }

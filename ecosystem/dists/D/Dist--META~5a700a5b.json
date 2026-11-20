@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.28,
+        "secs": 3.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -35,7 +35,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 12.22,
+        "secs": 12.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.09,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,29 +57,30 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.57,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 21,
+        "first_failure": "Correct number of same",
+        "nok": 1,
+        "ok": 20,
         "plan": 21,
-        "secs": 0.13,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.78,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +95,7 @@
     "date": "2026-11-20",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4983197b",
+    "mutsu_commit": "d0b8b1c2",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -105,13 +106,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/IS/DIST_META/17548051a301a3bba681a6fa4c2d02e1eb02a52e.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 25,
     "baseline_files": 3,
-    "mutsu_assertions": 25,
-    "parity_files": 3,
-    "regressed_files": 0
+    "mutsu_assertions": 24,
+    "parity_files": 2,
+    "regressed_files": 1
   },
   "version": "0.0.4"
 }

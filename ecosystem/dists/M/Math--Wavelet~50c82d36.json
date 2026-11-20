@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1144,
         "plan": 1144,
-        "secs": 4.67,
+        "secs": 3.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1144,
         "plan": 1144,
-        "secs": 4.38,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 534,
         "plan": 534,
-        "secs": 1.82,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 534,
         "plan": 534,
-        "secs": 1.65,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 136,
         "plan": 136,
-        "secs": 1.06,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,22 +68,23 @@
         "nok": 0,
         "ok": 136,
         "plan": 136,
-        "secs": 1.71,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "idwt2: every band must have the same shape",
         "nok": 0,
-        "ok": 74,
+        "ok": 5,
         "plan": 74,
-        "secs": 2.03,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-dwt2.t",
       "raku": {
@@ -102,7 +103,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 0.41,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +113,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 1.13,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +125,7 @@
         "nok": 0,
         "ok": 228,
         "plan": 228,
-        "secs": 4.17,
+        "secs": 2.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +135,7 @@
         "nok": 0,
         "ok": 228,
         "plan": 228,
-        "secs": 2.29,
+        "secs": 2.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,7 +147,7 @@
         "nok": 0,
         "ok": 569,
         "plan": 569,
-        "secs": 64.54,
+        "secs": 37.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +157,7 @@
         "nok": 0,
         "ok": 569,
         "plan": 569,
-        "secs": 16.71,
+        "secs": 16.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -179,7 +180,7 @@
     "date": "2026-11-20",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4983197b",
+    "mutsu_commit": "d0b8b1c2",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -190,13 +191,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_WAVELET/2db753cb75a55e7849e06fb7b1aefaf8b478c633.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 2726,
     "baseline_files": 7,
-    "mutsu_assertions": 2726,
-    "parity_files": 7,
-    "regressed_files": 0
+    "mutsu_assertions": 2657,
+    "parity_files": 6,
+    "regressed_files": 1
   },
   "version": "0.0.3"
 }
