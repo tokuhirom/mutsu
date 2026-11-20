@@ -370,6 +370,17 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
     // Also reject if followed by `(` to prevent treating e() as a constant
     let try_kw = |kw: &'static str, val: Value| -> PResult<'_, Expr> {
+        // An L10N slang vocabulary spells these term keywords in its own
+        // language (`term-now` → `現在`, `enum-True` → `正`), and they are
+        // recognized here rather than as barewords, so the vocabulary has to be
+        // consulted at this tag match too.
+        let rest = match crate::parser::stmt::simple::l10n_match_keyword(kw, input) {
+            Some(Some(rest)) => rest,
+            Some(None) => return Err(PError::expected("term replaced by the active slang")),
+            None => parse_tag(input, kw)?.0,
+        };
+        // The shadowing checks below look the name up in the parser's scopes;
+        // only a term that is spelled here needs them.
         // A user-declared type of the same name shadows the built-in term
         // constant (e.g. `class Empty {}` makes `Empty` refer to the class,
         // not the empty Slip); let it fall through to identifier parsing.
@@ -387,15 +398,6 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         {
             return Err(PError::expected("user-declared enum value shadows keyword"));
         }
-        // An L10N slang vocabulary spells these term keywords in its own
-        // language (`term-now` → `現在`, `enum-True` → `正`), and they are
-        // recognized here rather than as barewords, so the vocabulary has to be
-        // consulted at this tag match too.
-        let rest = match crate::parser::stmt::simple::l10n_match_keyword(kw, input) {
-            Some(Some(rest)) => rest,
-            Some(None) => return Err(PError::expected("term replaced by the active slang")),
-            None => parse_tag(input, kw)?.0,
-        };
         // Check word boundary (superscript digits are NOT word chars)
         if let Some(c) = rest.chars().next()
             && (c.is_alphanumeric() || c == '_'
