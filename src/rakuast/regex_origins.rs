@@ -476,21 +476,30 @@ impl Walk<'_> {
             .then(|| format!("**{}{bounds}", &rest[..gap]))
     }
 
-    /// A literal: its text, or a single escaped punctuation character
-    /// (`\.` for `.`).
+    /// A literal: its text, each non-word character written as itself or
+    /// backslash-escaped (`\.` for `.`, `a\@b` for `a@b`).
     // Cost: O(s), s = length of the literal.
     fn literal(&mut self, text: &str) -> Option<()> {
         if self.eat(text).is_some() {
             return Some(());
         }
-        let mut chars = text.chars();
-        let (Some(c), None) = (chars.next(), chars.next()) else {
-            return None;
-        };
-        if c.is_alphanumeric() || c.is_whitespace() {
-            return None;
+        // Each character is written as itself or, when it is not a word
+        // character or a blank, backslash-escaped (`a\@b` is `a@b`).
+        let mut at = self.at;
+        for c in text.chars() {
+            let rest = &self.text[at..];
+            if rest.starts_with(c) {
+                at += c.len_utf8();
+            } else if !(c.is_alphanumeric() || c == '_' || c.is_whitespace())
+                && rest.strip_prefix('\\').is_some_and(|r| r.starts_with(c))
+            {
+                at += 1 + c.len_utf8();
+            } else {
+                return None;
+            }
         }
-        self.eat(&format!("\\{c}"))
+        self.at = at;
+        Some(())
     }
 
     /// `<name>` / `<.name>`: the `Name` is the identifier inside.
