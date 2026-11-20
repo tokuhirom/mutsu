@@ -980,24 +980,14 @@ impl Interpreter {
             ValueView::ContainerRef(_) | ValueView::Proxy { .. }
         ) && sigil == '$'
             && let Some(self_val) = self.attr_access_self(code)
-            && let Some((attributes, key)) = self.with_self_attr(
+            && self.seat_attr_binding(
                 &self_val,
                 Some((code, idx)),
                 bare,
                 is_private,
-                sigil,
-                |attributes, _, key| (attributes.clone(), key),
+                self.locals[idx].clone(),
             )
         {
-            let cell = self.locals[idx].clone();
-            // A CStruct that owns a native body keeps what the field is bound
-            // to in C memory too (ADR-11209): `$!name := $n` in a method.
-            self.cstruct_store_through(&attributes, key, &cell);
-            attributes.with_attr_mut(key, |slot| {
-                if !slot.same_binding(&cell) {
-                    *slot = cell;
-                }
-            });
             return;
         }
         if Self::is_non_mirrorable_attr_value(&self.locals[idx]) {
@@ -1014,6 +1004,66 @@ impl Interpreter {
             None => self.locals[idx].clone(),
         };
         self.write_attr_cell_by_key(self_val, Some((code, idx)), bare, is_private, sigil, val);
+    }
+
+    /// Seat `cell` (a `ContainerRef` or a `Proxy`) as the scalar attribute
+    /// `bare` of `self_val`: the attribute becomes that container, not a copy
+    /// of what it holds. `false` when `self_val` has no such attribute.
+    // Cost: O(m) as `with_self_attr`, plus one map write.
+    fn seat_attr_binding(
+        &self,
+        self_val: &Value,
+        site: Option<(&CompiledCode, usize)>,
+        bare: crate::symbol::Symbol,
+        is_private: bool,
+        cell: Value,
+    ) -> bool {
+        let Some((attributes, key)) = self.with_self_attr(
+            self_val,
+            site,
+            bare,
+            is_private,
+            '$',
+            |attributes, _, key| (attributes.clone(), key),
+        ) else {
+            return false;
+        };
+        // A CStruct that owns a native body keeps what the field is bound
+        // to in C memory too (ADR-11209): `$!name := $n` in a method.
+        self.cstruct_store_through(&attributes, key, &cell);
+        attributes.with_attr_mut(key, |slot| {
+            if !slot.same_binding(&cell) {
+                *slot = cell;
+            }
+        });
+        true
+    }
+
+    /// A `:=` through the sigilless alias of a twigil-less `has $x`
+    /// (`$x := $var`, compiled as a by-name store): seat the bound container
+    /// in `self`'s attribute at bind time, exactly as `$!x := $var` does, so
+    /// the instance holds the binding past the method's exit. `twigil` is the
+    /// alias's attribute spelling (`!x`). A bound plain value goes through the
+    /// ordinary write.
+    // Cost: O(m) as `with_self_attr`, plus one map write.
+    pub(super) fn bind_self_attr_through_alias(&self, twigil: &str, bound: Value) {
+        if matches!(
+            bound.view(),
+            ValueView::ContainerRef(_) | ValueView::Proxy { .. }
+        ) && let Some((bare, is_private)) = Self::attr_twigil_base(twigil)
+            && crate::value::attr_twigil_sigil(twigil).unwrap_or('$') == '$'
+            && let Some(self_val) = self.get_env_self()
+            && self.seat_attr_binding(
+                &self_val,
+                None,
+                crate::symbol::Symbol::intern(bare),
+                is_private,
+                bound.clone(),
+            )
+        {
+            return;
+        }
+        self.write_self_attr_cell(twigil, bound);
     }
 
     /// Mirror the finalized value of the variable named `name` into `self`'s

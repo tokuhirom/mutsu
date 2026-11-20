@@ -620,9 +620,9 @@ impl Interpreter {
             // Phase 3 Stage 2c (iii-b): the attribute value env copies (`!attr`,
             // `.attr`, `@!attr`, …) that materialize used to insert here are no
             // longer needed — every read of `$!x`/`$.x`/`@!a`/`%!h`/sigilless `$x`
-            // goes cell-direct (Stage 2a/2b/2c (ii)), and the exit reconcile reads
-            // the cell (Stage 2c (iii-a)). Only the sigilless alias table above is
-            // still required.
+            // goes cell-direct (Stage 2a/2b/2c (ii)), and every bind seats the
+            // cell (ADR-18356). Only the sigilless alias table above is still
+            // required.
         }
 
         // Register `is default(...)` values for attribute variables so that
@@ -759,8 +759,7 @@ impl Interpreter {
         // `method m(@!a)`) binds straight to the attribute. The binding above
         // writes only env/locals; mirror it into `self`'s shared cell now so the
         // method body's cell-direct reads of `$!x` see the parameter value (not
-        // the stale entry value) and the mutation is visible to every alias. This
-        // removes the attributive-param case from the exit-time reconcile.
+        // the stale entry value) and the mutation is visible to every alias.
         self.mirror_attributive_params_to_cell(cc, &method_def.param_defs);
         // Install the declaring/composing type's state scope for initialization,
         // loads and writeback. Inherited methods retain that owner; a separate
@@ -952,17 +951,10 @@ impl Interpreter {
         }
         self.lexicals.state_scope_id.set(saved_state_scope);
 
-        // `Some` only when a `:=`-bound attribute was recovered beyond the raw
-        // cell contents (`reconcile_attrs`); the common exit stays `None` = the
-        // live cell is authoritative and no whole-map snapshot is materialized.
-        let reconciled_attrs: Option<AttrMap>;
+        // The instance's attribute cell is the only store of its attributes:
+        // every write and every `:=` bind reaches it when it runs (ADR-18356),
+        // so the exit has nothing to reconcile.
         if can_skip_merge {
-            // Phase 3 Stage 2: all attributes (scalar/array/hash) are reconciled
-            // against the live cell + local/env writes before the env is torn
-            // down. The cell-direct reads + per-op mirrors make the cell the
-            // single source; the legacy attribute writeback is gone.
-            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
-
             let method_var_bindings = self.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
             for (k, v) in method_var_bindings {
@@ -988,9 +980,6 @@ impl Interpreter {
                 }
             }
 
-            // Phase 3 Stage 2: reconcile all attributes against the live cell +
-            // local/env writes before the env is merged away.
-            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
@@ -1146,11 +1135,9 @@ impl Interpreter {
                 // (Cro::HTTP::Router) makes `source_name` == "%!plugin-config",
                 // RouteSet's OWN attribute-twigil key, not a lexical belonging
                 // to `copy-adding`'s caller. Writing it into the caller's env
-                // verbatim plants a pseudo-key `reconcile_attrs`' candidate scan
-                // (in an UNRELATED later method call sharing that env, e.g. an
-                // `Instance` of a different class with the same bare attribute
-                // name) can mistake for a `:=` binding and adopt as its own
-                // attribute override. The shared `ContainerRef` cell this
+                // verbatim plants a pseudo-key under an attribute's twigil
+                // spelling in a caller's env, which an unrelated later method
+                // call sharing that env would read as its own attribute. The shared `ContainerRef` cell this
                 // writeback exists for already keeps content mutations visible
                 // without this insert (see `named_scalar_container_share_eligible`
                 // in `bind_function_args_values`); skip it for attribute-shaped
@@ -1238,263 +1225,8 @@ impl Interpreter {
             }
         }
 
-        // Adjust return value if it's the same instance (update attributes).
-        // Only commit the reconcile snapshot when it was adjusted beyond the
-        // cell contents (`:=` recovery): an unadjusted snapshot is already what
-        // the cell holds, and writing it back would race with concurrent
-        // cell-CAS / cell-direct writes from other threads (lost updates).
-        final_result.map(|v| {
-            let adjusted = match (base.view(), v.view()) {
-                (
-                    ValueView::Instance {
-                        class_name,
-                        attributes: base_attrs,
-                        id: base_id,
-                    },
-                    ValueView::Instance { id: ret_id, .. },
-                ) if base_id == ret_id => {
-                    if let Some(ref m) = reconciled_attrs {
-                        Value::write_back_sharing(&base_attrs, class_name, m.clone(), base_id)
-                    } else {
-                        Value::instance_sharing_cell(&base_attrs, class_name, base_id)
-                    }
-                }
-                _ => v,
-            };
-            (adjusted, reconciled_attrs)
-        })
-    }
-
-    /// Phase 3 Stage 2c (iii): the shared attribute cell is the source of truth
-    /// for ordinary attribute writes, so the post-method attribute map is its
-    /// current contents.
-    ///
-    /// Every plain in-method attribute change now lands in the cell at write time:
-    /// cell-direct scalar writes (`$!x = v`, Stage 2a), per-op mirrored array/hash
-    /// mutations (`@!a.push`, `%!h<k>=`, Stage 2b), attributive params
-    /// (`method m($!s)`, Stage 2c (i)), and sigilless aliases (`has $x`, Stage 2c
-    /// (ii)); cross-frame and nested-frame mutations are visible through the same
-    /// shared cell. The former entry-snapshot-vs-env value reconcile is gone.
-    ///
-    /// The one exception is a `:=`-bound attribute (`$!x := $outer`), which aliases
-    /// an external `ContainerRef` held in env/locals rather than the cell. The
-    /// cell-direct write path does not carry that binding, so recover it from
-    /// env/locals here and let it win, keeping the alias alive past method exit.
-    ///
-    /// Returns `Some(map)` when the post-method attribute map was adjusted
-    /// beyond the raw cell snapshot (a `:=` ContainerRef was recovered) — the
-    /// returned map is the cell snapshot with the recovered bindings applied.
-    /// Returns `None` otherwise: the cell's current contents are authoritative
-    /// and committing a snapshot back would be a no-op at best, and a
-    /// lost-update race at worst: a concurrent cell-CAS / cell-direct write
-    /// from another thread between snapshot and commit would be clobbered by
-    /// the stale whole-map write. Callers skip the commit then, and the rare
-    /// consumer that needs the post-method map (proxy_fetch) re-snapshots the
-    /// live cell on demand instead — so the common exit pays no `to_map()`
-    /// (full attr-map clone) at all.
-    pub(super) fn reconcile_attrs(
-        &self,
-        base: &Value,
-        owner_class: &str,
-        code: &CompiledCode,
-        param_defs: &[crate::ast::ParamDef],
-    ) -> Option<AttrMap> {
-        if std::env::var_os("MUTSU_CENSUS_NO_RECONCILE").is_some() {
-            return None;
-        }
-        // A `:=` attr override can only be observed as a ContainerRef value in
-        // THIS frame's locals or env overlay (the bind op writes it there).
-        // Deliberately overlay-only: a caller-frame ContainerRef (e.g. a boxed
-        // loop capture that happens to share an attribute's bare name) is NOT a
-        // binding made by this method and must not be adopted as one.
-        //
-        // The scan runs from the ContainerRef side: collect the frame's
-        // ContainerRef-valued names first (usually none, occasionally a
-        // handful), then match each attribute key against them by bare name.
-        // Going the other way — building the seven twigil spellings of every
-        // attribute and probing env/locals for each — cost seven `format!`s
-        // and seven lookups per attribute on every method exit that had any
-        // ContainerRef in scope, so a method call on a class with many
-        // attributes (Text::CSV has ~45) paid for all of them (#9494).
-        // Each ContainerRef name, read as each attribute spelling it could be:
-        // (bare attribute name, candidate rank, value). The rank is the
-        // candidate order the per-attribute scan used to probe — bare, `!x`,
-        // `.x`, `@!x`, `@.x`, `%!x`, `%.x` — and the lowest-ranked match wins.
-        const TWIGILS: [&str; 6] = ["!", ".", "@!", "@.", "%!", "%."];
-        let mut frame_refs = self.frame_container_refs(code);
-        // A name yields a reading the scan below can keep only through a
-        // twigil spelling (ranks 1-6) or as a bare name the frame does not
-        // declare itself (rank 0, `reconcile_bare_reading_owned`); the
-        // `retain` below drops every other reading whatever the attribute
-        // keys are. Applying that same test here, before the attribute cell
-        // is looked up, lets the exit of a method whose `:=` binds are all to
-        // its own `my` locals or parameters (AttrX::Mooish's
-        // `my $attr-var := self.get_value($instance)`) stop at once.
-        frame_refs.retain(|(name, _)| {
-            TWIGILS.iter().any(|t| name.starts_with(t))
-                || Self::reconcile_bare_reading_owned(code, param_defs, name)
-        });
-        if frame_refs.is_empty() {
-            return None;
-        }
-        // Looked up only now: the common exit has no ContainerRef in scope
-        // and needs no cell at all (#8880).
-        let cell = self.method_attr_cell(base, owner_class)?;
-        let mut readings: Vec<(&str, usize, &Value)> = Vec::new();
-        for (name, v) in &frame_refs {
-            readings.push((name, 0, v));
-            for (i, twigil) in TWIGILS.iter().enumerate() {
-                if let Some(bare) = name.strip_prefix(twigil) {
-                    readings.push((bare, i + 1, v));
-                }
-            }
-        }
-        let mut overrides: Vec<(crate::symbol::Symbol, Value)> = Vec::new();
-        // One scratch key for the two spelled-key probes below, instead of a
-        // `format!` per attribute key per reading on every method exit that
-        // has an attribute cell in scope (`method args { $!l, $!r }`).
-        let mut probe = String::new();
-        {
-            let cell_map = cell.as_map();
-            // Drop, before the scan over every attribute key, the readings
-            // the scan below rejects whatever the key is: a bare name the
-            // frame declared as a parameter or a `my` (or does not own as a
-            // slot), and a scalar `!x`/`.x` reading of an attribute with no
-            // sigilless-alias metadata. A method whose `:=` binds are all to
-            // its own `my` locals (AttrX::Mooish's `my $attr-var := ...`)
-            // then skips the scan entirely (#17335).
-            readings.retain(|&(rbare, rank, _)| match rank {
-                0 => Self::reconcile_bare_reading_owned(code, param_defs, rbare),
-                1 | 2 => {
-                    probe.clear();
-                    probe.push_str(ATTR_ALIAS_META_PREFIX);
-                    probe.push_str(rbare);
-                    cell_map.contains_key(probe.as_str())
-                }
-                _ => true,
-            });
-            if readings.is_empty() {
-                return None;
-            }
-            for k in cell_map.keys() {
-                let ks = k.as_str();
-                if ks.starts_with(ATTR_ALIAS_META_PREFIX) {
-                    continue;
-                }
-                let bare = ks.rsplit('\0').next().unwrap_or(ks);
-                // A sigil-qualified key (`%items`, stored for a private
-                // declaration that collides with a public `@.items`) belongs
-                // to that sigil alone; the bare key then belongs to the other
-                // declaration, so a `%!items` binding must not replace it.
-                let (bare, key_sigil) = match bare.as_bytes() {
-                    [c @ (b'@' | b'%'), ..] if bare.len() > 1 => (&bare[1..], Some(*c)),
-                    _ => (bare, None),
-                };
-                let mut best: Option<(usize, &Value)> = None;
-                for &(rbare, rank, v) in &readings {
-                    if rbare != bare || best.is_some_and(|(b, _)| b <= rank) {
-                        continue;
-                    }
-                    let reading_sigil = match rank {
-                        3 | 4 => Some(b'@'),
-                        5 | 6 => Some(b'%'),
-                        _ => None,
-                    };
-                    match (key_sigil, reading_sigil) {
-                        (Some(k), r) if r != Some(k) => continue,
-                        (None, Some(r))
-                            if {
-                                probe.clear();
-                                probe.push(r as char);
-                                probe.push_str(bare);
-                                cell_map.contains_key(probe.as_str())
-                            } =>
-                        {
-                            continue;
-                        }
-                        _ => {}
-                    }
-                    // The BARE candidate is the dangerous one: unlike `!x`/`@.x`,
-                    // it is a name an ordinary lexical or parameter can also
-                    // have, and an `is rw`/`is raw` scalar parameter binds
-                    // through a shared `ContainerRef` cell — exactly the shape
-                    // this scan reads as a `:=` attribute binding. Two ways it
-                    // went wrong, both of which *replaced the attribute* for the
-                    // rest of the object's life:
-                    //
-                    //   * the frame's own parameter (`method !f(P $pol is rw)` in
-                    //     a class with `has P $.pol`);
-                    //   * a CALLER's variable of that name, reachable because the
-                    //     callee env is the flattened caller env — the very
-                    //     hazard the overlay-only rule above documents but cannot
-                    //     catch, since the flattened copy is in the overlay.
-                    //
-                    // Cro::HTTP::Client hits both: `!assemble-request(…
-                    // Cro::Policy::Timeout $timeout-policy is rw)` against its
-                    // own `has $.timeout-policy`. The first request left the
-                    // attribute holding the parameter's cell and the second died
-                    // with "Type check failed in assignment to $timeout-policy".
-                    //
-                    // A third: the frame's own `my` lexical of that name, boxed
-                    // into a cell by passing it to an rw parameter — `method go()
-                    // { my T $pol; self!f($pol) }` in a class with `has T $.pol`,
-                    // which is how `Cro::HTTP::Client.request`'s `my
-                    // Cro::Policy::Timeout $timeout-policy` reached the attribute.
-                    //
-                    // So the bare form is honoured only for a name this frame
-                    // itself owns as a slot (how a sigilless `has $x` is seeded)
-                    // that the frame did NOT declare as a parameter or a `my`. The
-                    // twigil forms keep the env fallback: no lexical can be called
-                    // `!x`. The signature is consulted through `param_defs`, not
-                    // the flat `params` name list: a named parameter written in
-                    // the alias form (`:d(:$directed)`) declares the lexical
-                    // `$directed` inside its sub-signature while the flat list
-                    // carries only the external key `d`. Reading the flat list
-                    // made every such parameter look like a name the frame does
-                    // NOT own, so an `is copy` alias parameter that had been
-                    // boxed into a `ContainerRef` (by ending up in a list, say
-                    // `given ($directed, $!directed)`) was adopted as a `:=`
-                    // binding for the same-named attribute and written into the
-                    // receiver's cell on exit — `Graph.directed-graph()`
-                    // corrupting the graph it was cloning from (#9007).
-                    // A scalar `!x` / `.x` slot holding a cell is NOT evidence of a
-                    // `:=` bind: the frame boxes the seeded slot whenever the
-                    // attribute is the target of a mutating call
-                    // (`$!current.pull-one`) or an `is rw` argument, and that
-                    // cell is a copy disconnected from the instance. A real
-                    // `$!x := $y` seats its cell in the instance when it runs
-                    // (`mirror_attr_local_to_cell`), so adopting the slot here
-                    // could only undo a rebind a nested call made meanwhile
-                    // (#14663). Aggregates (`@!x`, `%!x`) share their container
-                    // with the instance, and the bare sigilless form below has
-                    // no mirror, so those (and a sigilless `has $x`, whose `!x` slot is its
-                    // alias) keep this recovery.
-                    if matches!(rank, 1 | 2) && {
-                        probe.clear();
-                        probe.push_str(ATTR_ALIAS_META_PREFIX);
-                        probe.push_str(bare);
-                        !cell_map.contains_key(probe.as_str())
-                    } {
-                        continue;
-                    }
-                    if rank == 0 && !Self::reconcile_bare_reading_owned(code, param_defs, bare) {
-                        continue;
-                    }
-                    best = Some((rank, v));
-                }
-                if let Some((_, v)) = best {
-                    overrides.push((*k, v.clone()));
-                }
-            }
-        }
-        if overrides.is_empty() {
-            return None;
-        }
-        let mut attributes = cell.to_map();
-        for (k, v) in overrides {
-            attributes.insert(k, v);
-        }
-        Some(attributes)
+        // A result that is the invocant itself shares its live cell.
+        final_result.map(|v| (Self::method_frame_result_sharing(&base, v), None))
     }
 
     /// Whether `owner_class` and `receiver_class` each declare any attribute
@@ -1539,68 +1271,11 @@ impl Interpreter {
         })
     }
 
-    /// Every name whose current value in this frame is a ContainerRef, read the
-    /// way a `:=` attribute bind writes it: from the method's local slot if the
-    /// name has one (the first slot of that name wins, holding a ContainerRef
-    /// or not), else from this frame's env overlay. Deliberately overlay-only
-    /// (not the full env chain): a `:=` bind executed by THIS method writes into
-    /// its own locals/overlay, so legitimate recoveries still see it; a caller
-    /// frame's materialized value of the same name (reachable only through the
-    /// parent chain) is invisible, matching `reconcile_attrs`' stated contract.
-    // Cost: O(l + o + r * l), l = the frame's local slots, o = its env overlay
-    // entries (its logged writes, once flattened), r = those slots/entries
-    // holding a ContainerRef (almost always 0).
-    fn frame_container_refs<'a>(&self, code: &'a CompiledCode) -> Vec<(&'a str, Value)> {
-        let mut refs = Vec::new();
-        // Walk the frame window directly (one bounds check for the whole walk
-        // instead of one per slot); a slot past the window has no value.
-        let window: &[Value] = &self.locals;
-        for (slot, (name, v)) in code.locals.iter().zip(window).enumerate() {
-            if v.is_container_ref() && !code.locals[..slot].contains(name) {
-                refs.push((name.as_str(), v.clone()));
-            }
-        }
-        // After a flatten "the overlay" is the whole visible scope; only the
-        // names this frame wrote (its frame-write log) are its own entries --
-        // the rest are inherited copies, which the overlay-only rule above
-        // already excludes. See `merge_method_env`.
-        let env = self.env();
-        // One visitor over either overlay shape: a boxed iterator here cost a
-        // heap allocation on every method exit, for an overlay that almost
-        // never holds a ContainerRef.
-        let mut visit = |sym: &Symbol, v: &Value| {
-            if !v.is_container_ref() {
-                return;
-            }
-            let name = sym.as_str();
-            if code.locals.iter().any(|n| n == name) {
-                return;
-            }
-            refs.push((name, v.clone()));
-        };
-        match env.frame_writes() {
-            Some(log) => {
-                for k in log.iter() {
-                    if let Some(v) = env.overlay_get_sym(*k) {
-                        visit(k, v);
-                    }
-                }
-            }
-            None => {
-                for (k, v) in env.overlay_iter() {
-                    visit(k, v);
-                }
-            }
-        }
-        refs
-    }
-
     /// Phase 3 Stage 2c (i): mirror attributive parameters (`$!x`/`@!a`/`%!h`)
     /// into `self`'s shared attribute cell right after argument binding. The
     /// parameter binding writes the value to env/locals keyed by the attribute
     /// twigil name (`!x`, `@!a`, …); this pushes it through to the cell so that
-    /// cell-direct body reads and cross-frame aliases observe it, taking the
-    /// attributive-param case out of the exit-time `reconcile_attrs`.
+    /// cell-direct body reads and cross-frame aliases observe it.
     ///
     /// Shared with a plain `sub`'s call path (`call_compiled_function_named_inner`):
     /// a `sub` nested directly in a method body may bind an attributive
@@ -1731,8 +1406,8 @@ impl Interpreter {
     /// from source data (the invocant's attribute cell, args, special
     /// variables). Attribute reads go through `base`'s live cell (no per-call
     /// `to_map()` snapshot — the whole-map clone dominated method-heavy
-    /// profiles); the returned map is `Some` only when the `:=` reconcile
-    /// adjusted it beyond the cell contents.
+    /// profiles); the returned map is always `None`: the cell is the only
+    /// attribute store (ADR-18356).
     #[allow(clippy::too_many_arguments)]
     /// Whether the fast path writes the bound parameter `param_name` into the
     /// frame env: not a plain scalar parameter the body reads through its slot
@@ -2939,10 +2614,6 @@ impl Interpreter {
             self.sync_env_from_locals(cc);
             self.clone_env()
         });
-        // Phase 3 Stage 2: reconcile all attributes against the live cell +
-        // local/env writes before the env is torn down.
-        let reconciled = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
-
         let method_var_bindings = self.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;
         for (k, v) in method_var_bindings {
@@ -3076,12 +2747,8 @@ impl Interpreter {
             }
         }
 
-        // Only commit the reconcile snapshot when `:=` recovery adjusted it
-        // beyond the cell contents (see `call_compiled_method` exit).
-        final_result.map(|v| {
-            let adjusted = Self::method_frame_result_sharing(&base, v, &reconciled);
-            (adjusted, reconciled)
-        })
+        // A result that is the invocant itself shares its live cell.
+        final_result.map(|v| (Self::method_frame_result_sharing(&base, v), None))
     }
 }
 

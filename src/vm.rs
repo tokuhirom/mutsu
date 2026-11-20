@@ -383,7 +383,6 @@ mod vm_pseudo_stash_ops;
 mod vm_quanthash_autoviv;
 mod vm_rakudo_internals;
 mod vm_rebound_container_capture;
-mod vm_reconcile_bare_reading;
 mod vm_role_binding_observers;
 mod vm_role_capture_propagate;
 mod vm_shaped_receiver;
