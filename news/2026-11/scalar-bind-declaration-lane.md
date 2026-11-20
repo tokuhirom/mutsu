@@ -29,7 +29,14 @@ Per construct, in a method body (callgrind slope, profiling build):
 
 | construct | before | after |
 | --- | ---: | --- |
-| `my $v := self.foo` | 31.3k | MEASURE |
-| `my Mu $v := self.foo` | 38.7k | MEASURE |
+| `my $v := self.foo` | 31.3k | 27.1k |
+| `my Mu $v := self.foo` | 38.7k | 27.2k |
 | `my Mu $b := SomeType` | 29.8k | 22.3k |
 | `my $v = self.foo` (reference) | 23.6k | 23.6k |
+
+On AttrX::Mooish's `t/090-concurrent.custom` probe, the callgrind slope
+(R=120→360, W=1) goes from 5,363,500 to 5,275,042 instructions per round
+(−1.65%). Most of that file's 37 binds per round bind a container or a Proxy
+(`my $attr-var := self.get_value($instance)`), or bind a variable that a
+closure captures, so they still take the general store. Those binds are the
+next step. The Web `html-to-text` slope is unchanged.
