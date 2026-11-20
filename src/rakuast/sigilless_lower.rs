@@ -59,7 +59,7 @@ pub(super) fn build_sigilless_bind_stmt(
     type_constraint: Option<String>,
     is_state: bool,
     is_our: bool,
-    is_value_term: fn(&str) -> bool,
+    is_value_term: &dyn Fn(&str) -> bool,
 ) -> Stmt {
     // `my \foo = my $x = 3` / `my \foo = my $ = -3`: the RHS declaration
     // evaluates to its new Scalar container, and `foo` binds THAT (raku: `foo

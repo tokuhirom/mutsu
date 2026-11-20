@@ -131,7 +131,7 @@ pub(super) fn lower_block_statement(
     names: &NameScope,
     node: &RakuAstNode,
 ) -> Result<Stmt, RuntimeError> {
-    super::super::conditional_lower::lower_parsed(read_block_statement(names, node)?)
+    super::super::conditional_lower::lower_parsed(names, read_block_statement(names, node)?)
 }
 
 // Cost: O(n), n = size of the statement.

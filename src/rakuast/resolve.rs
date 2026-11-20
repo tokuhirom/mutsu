@@ -48,6 +48,9 @@ use crate::value::{Value, ValueView};
 /// the declaration node `Value` by the name it declares (`$x`, `@a`).
 struct Scopes<'a> {
     scopes: Vec<HashMap<String, Value>>,
+    /// Whether the unit declares a routine of this name anywhere (routines are
+    /// hoisted): a call of it is the unit's, not the setting's.
+    declared_routine: &'a dyn Fn(&str) -> bool,
     /// Whether the interpreter knows a routine of this name (an import).
     imported: &'a dyn Fn(&str) -> bool,
     /// Whether the interpreter knows a type of this name (an import).
@@ -102,7 +105,11 @@ pub(super) fn annotate(
     imported: &dyn Fn(&str) -> bool,
     imported_type: &dyn Fn(&str) -> bool,
 ) {
-    annotate_with(node, imported, imported_type, &|_| false);
+    // The routines this unit declares, not those of the last unit lowered.
+    let names = crate::scope::NameScope::default();
+    let _unit = super::shadowed_terms::scan(&names, node);
+    let declared = |name: &str| super::declared_routines::is_declared(&names, name);
+    annotate_with(node, imported, imported_type, &|_| false, &declared);
 }
 
 /// [`annotate`] for the node a slang production built from the core rule the
@@ -110,7 +117,7 @@ pub(super) fn annotate(
 /// (`shadowed`) are not the setting's.
 // Cost: as [`annotate`].
 pub(super) fn annotate_production(node: &mut RakuAstNode, shadowed: &dyn Fn(&str) -> bool) {
-    annotate_with(node, shadowed, &|_| false, shadowed);
+    annotate_with(node, shadowed, &|_| false, shadowed, shadowed);
 }
 
 // Cost: as [`annotate`].
@@ -119,9 +126,11 @@ fn annotate_with(
     imported: &dyn Fn(&str) -> bool,
     imported_type: &dyn Fn(&str) -> bool,
     shadowed: &dyn Fn(&str) -> bool,
+    declared_routine: &dyn Fn(&str) -> bool,
 ) {
     let mut scopes = Scopes {
         scopes: vec![HashMap::new()],
+        declared_routine,
         imported,
         imported_type,
         shadowed,
@@ -1107,7 +1116,7 @@ fn resolve(node: &RakuAstNode, scopes: &Scopes) -> Option<Value> {
             if let Some(declared) = scopes.find(&format!("&{name}")) {
                 return Some(declared.clone());
             }
-            if super::declared_routines::is_declared(&name) {
+            if (scopes.declared_routine)(&name) {
                 return None;
             }
             // A routine the code around a slang production declares (`sub any`

@@ -36,7 +36,7 @@ fn lower_name(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeErro
     match name_parts::name_shape(node).ok_or_else(|| unsupported(node))? {
         NameShape::Identifier(name) => Ok(match super::label_context::lookup(&name) {
             Some(value) if !name_parts::has_leading_empty(node) => Expr::Literal(value),
-            _ => term_identifier_expr(&name),
+            _ => term_identifier_expr(names, &name),
         }),
         NameShape::Stash(stash) => Ok(Expr::PseudoStash(stash)),
         NameShape::Indirect {

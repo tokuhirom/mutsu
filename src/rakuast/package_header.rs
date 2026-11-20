@@ -241,11 +241,14 @@ pub(super) fn lower_with_header(
     {
         header.export_tags.take();
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::PackageHeader {
-        decl: Box::new(stmt),
-        name,
-        header,
-    })
+    super::conditional_lower::lower_parsed(
+        names,
+        crate::ast::parsed::ParsedStmt::PackageHeader {
+            decl: Box::new(stmt),
+            name,
+            header,
+        },
+    )
 }
 
 /// The `is export` trait node of an enum or subset that is exported, from its

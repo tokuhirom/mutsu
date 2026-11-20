@@ -172,9 +172,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         };
         attributes.push(super::attribute_decl::lower(names, member)?);
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeGroup(
-        attributes,
-    ))
+    super::conditional_lower::lower_parsed(
+        names,
+        crate::ast::parsed::ParsedStmt::AttributeGroup(attributes),
+    )
 }
 
 /// Lower an attribute declaration and its hidden colon-argument declarations.
@@ -197,9 +198,10 @@ pub(super) fn lower_colon(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
         };
         attributes.push(super::attribute_decl::lower(names, member)?);
     }
-    super::conditional_lower::lower_parsed(crate::ast::parsed::ParsedStmt::AttributeColonArglist(
-        attributes,
-    ))
+    super::conditional_lower::lower_parsed(
+        names,
+        crate::ast::parsed::ParsedStmt::AttributeColonArglist(attributes),
+    )
 }
 
 // Cost: O(1).

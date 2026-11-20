@@ -21,7 +21,10 @@ use crate::value::RuntimeError;
 /// Lower a construct of a migrated statement family to the statement the
 /// compiler runs.
 // Cost: O(n), n = size of the construct (each block body is moved once).
-pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
+pub(crate) fn lower_parsed(
+    names: &crate::scope::NameScope,
+    node: ParsedStmt,
+) -> Result<Stmt, RuntimeError> {
     match node {
         ParsedStmt::Lowered { stmt, .. } => Ok(*stmt),
         ParsedStmt::Conditional(c) => lower(c),
@@ -136,7 +139,9 @@ pub(crate) fn lower_parsed(node: ParsedStmt) -> Result<Stmt, RuntimeError> {
                 .ok_or_else(|| RuntimeError::new("signature bind without a signature literal"))
         }
         ParsedStmt::MethodAssignDecl(form) => Ok(crate::ast::method_assign_decl::expand(*form)),
-        ParsedStmt::SigillessDecl(d) => lower_sigilless(*d, super::shadowed_terms::is_value_term),
+        ParsedStmt::SigillessDecl(d) => lower_sigilless(*d, &|name| {
+            super::shadowed_terms::is_value_term(names, name)
+        }),
         ParsedStmt::BindDecl(decl) => Ok(crate::ast::bind_decl::expand(*decl)),
         ParsedStmt::Modified(m) => super::modifier_lower::lower(m),
         ParsedStmt::WhileLoop(w) => {
@@ -379,7 +384,7 @@ fn lower_loop(l: crate::ast::parsed::LoopStmt) -> Result<Stmt, RuntimeError> {
 // Cost: O(n), n = size of the initializer.
 pub(crate) fn lower_sigilless(
     d: crate::ast::parsed::SigillessSource,
-    is_value_term: fn(&str) -> bool,
+    is_value_term: &dyn Fn(&str) -> bool,
 ) -> Result<Stmt, RuntimeError> {
     use crate::ast::parsed::SigillessForm;
     Ok(match d.form {
