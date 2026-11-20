@@ -203,17 +203,15 @@ fn loaded_module_name(module: &str) -> Option<&str> {
     (!pragma).then_some(name)
 }
 
-/// Whether `expr` is a bareword, or one the parser wrapped as an imported term
-/// (`CArray` after `use NativeCall`, a `Spelled` marker around the word).
+/// Whether `expr` is a bareword, or one the parser resolved as an imported term
+/// (`CArray` after `use NativeCall`, a `ParsedExpr::ImportedTerm`).
 // Cost: O(1).
 pub(super) fn is_word_term(expr: &Expr) -> bool {
     match expr {
-        Expr::Spelled(spelled) => {
-            matches!(
-                spelled.spelling,
-                crate::ast::spelled::Spelling::ImportedTerm
-            ) && spelled.expr.as_bare_word().is_some()
-        }
+        Expr::Ast(node) => matches!(
+            node.as_ref(),
+            crate::ast::parsed::ParsedExpr::ImportedTerm(_)
+        ),
         _ => expr.as_bare_word().is_some(),
     }
 }
