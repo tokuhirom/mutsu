@@ -307,8 +307,9 @@ pub(crate) struct ActionWalkNode {
 /// Where [`ActionWalkNode`] renders the node's capture values from.
 #[derive(Default)]
 enum WalkCaptures {
-    /// A capture node, read on demand.
-    Lazy(Arc<CapNode>, MatchTarget),
+    /// The capture node of the lazy Match the node was read from, rendered
+    /// on demand from that Match.
+    Lazy,
     /// The `named` and `list` attributes of an eager Match.
     Eager(Option<Value>, Option<Value>),
     #[default]
@@ -372,17 +373,22 @@ impl ActionWalkNode {
             && self.silent.is_empty()
     }
 
-    /// The node's named captures, as `.hash` presents each slot.
+    /// The node's named captures, as `.hash` presents each slot. `match_obj`
+    /// is the Match the node was read from.
     // Cost: O(k), k = the node's named capture slots.
-    pub(crate) fn named_values(&self) -> Vec<(Symbol, Value)> {
+    pub(crate) fn named_values(&self, match_obj: &Value) -> Vec<(Symbol, Value)> {
         match &self.captures {
-            WalkCaptures::Lazy(cap, target) => cap
-                .kids()
-                .named
-                .iter()
-                .filter(|(key, _)| !key.starts_with(SILENT_ACTION_MARKER_PREFIX))
-                .map(|(key, slot)| (*key, Value::named_slot_value(slot, target)))
-                .collect(),
+            WalkCaptures::Lazy => match match_obj.0.as_match_node() {
+                Some(node) => node
+                    .cap
+                    .kids()
+                    .named
+                    .iter()
+                    .filter(|(key, _)| !key.starts_with(SILENT_ACTION_MARKER_PREFIX))
+                    .map(|(key, slot)| (*key, Value::named_slot_value(slot, &node.target)))
+                    .collect(),
+                None => Vec::new(),
+            },
             WalkCaptures::Eager(named, _) => match named.as_ref().map(Value::view) {
                 Some(ValueView::Hash(map)) => map
                     .iter()
@@ -395,15 +401,20 @@ impl ActionWalkNode {
     }
 
     /// The node's positional captures, as `.list` presents each slot.
+    /// `match_obj` is the Match the node was read from.
     // Cost: O(k), k = the node's positional capture slots.
-    pub(crate) fn positional_values(&self) -> Vec<Value> {
+    pub(crate) fn positional_values(&self, match_obj: &Value) -> Vec<Value> {
         match &self.captures {
-            WalkCaptures::Lazy(cap, target) => cap
-                .kids()
-                .positional
-                .iter()
-                .map(|slot| Value::pos_slot_value(slot, target))
-                .collect(),
+            WalkCaptures::Lazy => match match_obj.0.as_match_node() {
+                Some(node) => node
+                    .cap
+                    .kids()
+                    .positional
+                    .iter()
+                    .map(|slot| Value::pos_slot_value(slot, &node.target))
+                    .collect(),
+                None => Vec::new(),
+            },
             WalkCaptures::Eager(_, positional) => match positional.as_ref().map(Value::view) {
                 Some(ValueView::Array(items, _)) => items.iter().cloned().collect(),
                 _ => Vec::new(),
@@ -605,7 +616,7 @@ impl Value {
         let mut walk = ActionWalkNode {
             sym: node.cap.sym,
             has_named_hash: true,
-            captures: WalkCaptures::Lazy(Arc::clone(&node.cap), node.target.clone()),
+            captures: WalkCaptures::Lazy,
             ..ActionWalkNode::default()
         };
         if node.cap.children.is_none() {

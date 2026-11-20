@@ -103,8 +103,9 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
     ) -> Result<(), RuntimeError> {
-        let saved_match = self.env.get_sym(wk::match_var()).cloned();
-        let saved_topic = self.env.get_sym(wk::topic()).cloned();
+        // `$/` and `$_` are put back by the action call itself; `make`
+        // writes the `made` slot, which is engine state of the match in
+        // progress.
         let saved_made = self.env.get_sym(wk::made()).cloned();
         let saved_in_block = self.regex_state.in_regex_code_block;
         self.regex_state.in_regex_code_block = true;
@@ -116,27 +117,18 @@ impl Interpreter {
         let result = self.invoke_grammar_actions(match_obj, actions, rule_name);
         let written = self.end_carrier(carrier);
         self.regex_state.in_regex_code_block = saved_in_block;
-        // Put back what the action's env ceremony replaced. An action that
-        // binds its own `$/` ran without one, so usually nothing changed.
-        for (key, saved) in [
-            (wk::match_var(), saved_match),
-            (wk::topic(), saved_topic),
-            (wk::made(), saved_made),
-        ] {
-            let unchanged = match (&saved, self.env.get_sym(key)) {
-                (Some(saved), Some(now)) => saved.same_binding(now),
-                (None, None) => true,
-                _ => false,
-            };
-            if unchanged {
-                continue;
-            }
-            match saved {
+        let unchanged = match (&saved_made, self.env.get_sym(wk::made())) {
+            (Some(saved), Some(now)) => saved.same_binding(now),
+            (None, None) => true,
+            _ => false,
+        };
+        if !unchanged {
+            match saved_made {
                 Some(value) => {
-                    self.env.insert_sym(key, value);
+                    self.env.insert_sym(wk::made(), value);
                 }
                 None => {
-                    self.env.remove_sym(key);
+                    self.env.remove_sym(wk::made());
                 }
             }
         }

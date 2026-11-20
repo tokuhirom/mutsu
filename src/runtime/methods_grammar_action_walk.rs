@@ -400,7 +400,8 @@ impl Interpreter {
     }
 
     /// Call the node's own action method with `$/`, `$_` and the node's
-    /// `$<name>`/`$0..` installed, and the enclosing ones put back after.
+    /// `$<name>`/`$0..` installed, and the enclosing ones put back after:
+    /// an action does not rebind its caller's `$/` or `$_`.
     /// An action that binds its own `$/` cannot observe any of that, so it is
     /// called directly.
     fn call_node_action(
@@ -419,16 +420,17 @@ impl Interpreter {
         {
             return self.call_action_method_resolved(actions, method, owner, &def, match_obj);
         }
+        let saved_match = self.env.get_sym(wk::match_var()).cloned();
         self.env.insert_sym(wk::match_var(), match_obj.clone());
         // Hide the parent's named and positional captures from this action,
         // and install the node's own so `$<a>` and `$0` work inside it.
         let saved_named_captures = self.take_action_named_captures();
-        for (k, v) in node.named_values() {
+        for (k, v) in node.named_values(match_obj) {
             self.env
                 .insert_sym(super::methods_grammar_action_env::angle_key_sym(k), v);
         }
         let saved_positional = self.take_action_positional_captures();
-        for (i, v) in node.positional_values().into_iter().enumerate() {
+        for (i, v) in node.positional_values(match_obj).into_iter().enumerate() {
             self.env
                 .insert_sym(super::methods_grammar_action_env::positional_key_sym(i), v);
         }
@@ -445,6 +447,14 @@ impl Interpreter {
             }
             None => {
                 self.env.remove_sym(wk::topic());
+            }
+        }
+        match saved_match {
+            Some(old_match) => {
+                self.env.insert_sym(wk::match_var(), old_match);
+            }
+            None => {
+                self.env.remove_sym(wk::match_var());
             }
         }
         self.restore_action_named_captures(saved_named_captures);
