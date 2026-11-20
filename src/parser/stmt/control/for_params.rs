@@ -155,6 +155,7 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
                 ),
             ));
         }
+        let first_start = r;
         let (r, mut first_def) = parse_for_pointy_param(r)?;
         let first = first_def.name.clone();
         let (r, _) = ws(r)?;
@@ -164,6 +165,8 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, sub_params) = super::super::parse_param_list_pub(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ')')?;
+            // `-> Pair $p (:$key)`: the parameter runs to the closer.
+            first_def.spans.param = crate::parser::primary::source_span(first_start, r);
             first_def.sub_signature = Some(sub_params);
             (r, ())
         } else if r.starts_with('[') {
@@ -172,6 +175,8 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             let (r, sub_params) = super::super::parse_param_list_pub(r)?;
             let (r, _) = ws(r)?;
             let (r, _) = parse_char(r, ']')?;
+            // `-> Pair $p (:$key)`: the parameter runs to the closer.
+            first_def.spans.param = crate::parser::primary::source_span(first_start, r);
             first_def.sub_signature = Some(sub_params);
             (r, ())
         } else {
