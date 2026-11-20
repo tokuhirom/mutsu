@@ -116,6 +116,17 @@ impl Interpreter {
     /// body ([`Interpreter::str_cmp_values`]).
     // Cost: as `str_cmp_values`.
     pub(super) fn exec_str_cmp_op(&mut self, kind: StrCmp) -> Result<(), RuntimeError> {
+        // Two plain `Str` operands and no user candidate of the operator in
+        // scope (ADR-18357 stage 2): compare them in place, through the same
+        // `str_prim` routines as the general path, without moving them off
+        // the stack or asking the coercion, junction and Blob questions that
+        // cannot apply to a plain `Str`.
+        if let Some(holds) = self.plain_str_cmp_on_stack(kind) {
+            let len = self.stack.len();
+            self.stack.truncate(len - 2);
+            self.stack.push(Value::truth(holds));
+            return Ok(());
+        }
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.str_cmp_values(kind, left, right)?;

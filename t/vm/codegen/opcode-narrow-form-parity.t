@@ -40,6 +40,15 @@ my $program = q:to/END/;
         my int $p = 3;
         say $p++ + $p++, ' ', $p;
     }
+    {
+        my @w = 'a', 'b', '', 'é', "e\x[301]", 'Z', 'ab', 42, <42>, 1.5;
+        for @w X @w -> ($l, $r) {
+            print ($l eq $r), ($l ne $r), ($l lt $r), ($l gt $r), ($l le $r), ($l ge $r), ' ';
+        }
+        say '';
+        sub is-space(Str $ch) { $ch eq ' ' || $ch eq "\n" || $ch eq "\t" }
+        say "a b\nc\td".comb.grep(&is-space).elems;
+    }
     END
 
 sub run-with(Str $setting) {
