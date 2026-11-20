@@ -2098,6 +2098,10 @@ impl Interpreter {
         // `is raw` parameters bound to a value: immutable once the frame's
         // readonly marks are applied below.
         let mut raw_readonly_params: Vec<Symbol> = Vec::new();
+        // Omitted parameters whose non-constant default the default prologue
+        // evaluates in the finished frame (`vm_method_default_prologue`).
+        let mut deferred_defaults: Vec<super::vm_method_default_prologue::DeferredDefault> =
+            Vec::new();
         let mut arg_idx = 0;
         let param_syms = method_def.param_syms();
         let param_storage = method_def.param_storage_names();
@@ -2176,6 +2180,15 @@ impl Interpreter {
                         .and_then(|plan| plan.fill.clone())
                     {
                         Some(default) => default,
+                        None if pd.default.is_some() && method_def.default_prologue(idx) => {
+                            deferred_defaults.push(
+                                super::vm_method_default_prologue::DeferredDefault {
+                                    param_idx: idx,
+                                    sym: binding_sym,
+                                },
+                            );
+                            Self::missing_optional_param_value(pd)
+                        }
                         None => Self::missing_optional_param_value(pd),
                     },
                 };
@@ -2430,6 +2443,20 @@ impl Interpreter {
                     binding_sym,
                     Self::itemize_fast_method_arg(Some(pd), val),
                 ));
+            } else if let Some(pd) =
+                pd.filter(|pd| pd.default.is_some() && method_def.default_prologue(idx))
+            {
+                // Any other default runs in the finished frame, before the
+                // body; the slot holds the parameter's shadow until then.
+                deferred_defaults.push(super::vm_method_default_prologue::DeferredDefault {
+                    param_idx: idx,
+                    sym: binding_sym,
+                });
+                param_values.push((
+                    binding_name,
+                    binding_sym,
+                    Self::missing_optional_param_value(pd),
+                ));
             } else if let Some(pd) = pd.filter(|pd| pd.optional_marker) {
                 // An omitted optional's implicit default still has to satisfy
                 // a subset constraint (`method m(S $s?)`), as in the slow binder.
@@ -2486,7 +2513,9 @@ impl Interpreter {
                 &param_values,
                 method_def,
                 cc,
-                cc.static_name_lookup || cc.needs_reflective_capture,
+                cc.static_name_lookup
+                    || cc.needs_reflective_capture
+                    || !deferred_defaults.is_empty(),
             );
         } else {
             let env = self.env_mut();
@@ -2502,7 +2531,9 @@ impl Interpreter {
                 &param_values,
                 method_def,
                 cc,
-                cc.static_name_lookup || cc.needs_reflective_capture,
+                cc.static_name_lookup
+                    || cc.needs_reflective_capture
+                    || !deferred_defaults.is_empty(),
             );
         }
         // A light-bound plain `@x`/`%x` carries its constraint in the callee's
@@ -2829,21 +2860,35 @@ impl Interpreter {
         // the slow path above.
         let saved_lexical_fatal_mode =
             std::mem::replace(&mut self.module.lexical_fatal_mode, cc.method_fatal_pragma);
+        // The deferred defaults bind in the method frame, ahead of the body
+        // (a default that dies fails the call the way a body error does).
+        let prologue = if deferred_defaults.is_empty() {
+            Ok(())
+        } else {
+            self.run_method_default_prologue(method_def, owner_sym, cc, &deferred_defaults)
+        };
         let super::vm_method_body_run::MethodBodyOutcome {
             result,
             explicit_return,
             fail_bypass,
-        } = self.run_compiled_method_body(
-            cc,
-            compiled_fns,
-            super::vm_method_body_run::MethodBodyFrame {
-                owner_sym,
-                method_sym,
-                method_callable_id,
-                saved_stack_depth,
-                let_mark,
+        } = match prologue {
+            Ok(()) => self.run_compiled_method_body(
+                cc,
+                compiled_fns,
+                super::vm_method_body_run::MethodBodyFrame {
+                    owner_sym,
+                    method_sym,
+                    method_callable_id,
+                    saved_stack_depth,
+                    let_mark,
+                },
+            ),
+            Err(error) => super::vm_method_body_run::MethodBodyOutcome {
+                result: Err(error),
+                explicit_return: None,
+                fail_bypass: false,
             },
-        );
+        };
 
         // The return path reads values across frames.
         if marked_frame {

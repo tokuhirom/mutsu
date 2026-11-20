@@ -1449,7 +1449,7 @@ impl Interpreter {
         }
     }
 
-    fn checked_default_param_value(
+    pub(crate) fn checked_default_param_value(
         &mut self,
         pd: &ParamDef,
         value: Value,

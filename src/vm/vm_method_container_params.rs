@@ -275,7 +275,7 @@ impl Interpreter {
             .iter()
             .enumerate()
             .filter(|(_, a)| !a.unwrap_varref().is_string_pair_value());
-        for pd in method_def.param_defs.iter() {
+        for (idx, pd) in method_def.param_defs.iter().enumerate() {
             if pd.is_invocant {
                 if pd.binds_caller_container() || pd.is_does_target() {
                     return false;
@@ -285,6 +285,15 @@ impl Interpreter {
             let consumes = !pd.named && !pd.slurpy && !pd.double_slurpy;
             let arg = if consumes { positional.next() } else { None };
             if !(pd.binds_caller_container() || pd.is_does_target()) {
+                continue;
+            }
+            // An omitted named `is raw` parameter binds its default, which
+            // the default prologue evaluates (`vm_method_default_prologue`):
+            // there is no caller container to alias.
+            if pd.named
+                && method_def.default_prologue(idx)
+                && !Self::named_param_supplied(pd, args)
+            {
                 continue;
             }
             if !Self::method_container_param_ok(pd) {

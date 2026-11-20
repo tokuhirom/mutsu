@@ -23,6 +23,8 @@ pub(crate) struct MethodDefSyms {
     param_def_names: OnceLock<Box<[Symbol]>>,
     source_file: OnceLock<Option<Symbol>>,
     named_fast: OnceLock<Box<[Option<NamedFast>]>>,
+    /// Memo of [`super::MethodDef::default_prologue`].
+    default_prologue: OnceLock<Box<[bool]>>,
     /// Memo of [`super::MethodDef::has_container_params`].
     container_params: OnceLock<bool>,
     /// `role_param_bindings`' names interned, with the very bindings list
@@ -121,6 +123,22 @@ impl super::MethodDef {
             .get_or_init(|| self.param_defs.iter().map(NamedFast::of_param).collect())
             .get(i)
             .and_then(Option::as_ref)
+    }
+
+    /// Whether the method fast binder may defer an omitted `param_defs[i]`'s
+    /// default to its default prologue (`vm_method_default_prologue`).
+    // Cost: O(1) after the first call; O(p * (d + p)) once, p = parameters,
+    // d = size of a default expression.
+    #[inline]
+    pub(crate) fn default_prologue(&self, i: usize) -> bool {
+        self.syms
+            .default_prologue
+            .get_or_init(|| {
+                crate::vm::vm_method_default_prologue::default_prologue_safety(&self.param_defs)
+            })
+            .get(i)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Whether a non-invocant parameter binds the caller's container
