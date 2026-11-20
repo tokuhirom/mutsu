@@ -121,8 +121,10 @@ pub(super) fn place(
     let base = at + lead;
     let (_, args) = crate::regex_tree::parse_subrule_target(&format!("x({text})"))?;
     let args = args?;
-    let (mut stmts, _) = crate::parser::parse_fragment_unfinalized(text).ok()?;
-    crate::ast_visit::walk_stmts_mut(&mut Shift(base), &mut stmts);
+    // Parsed as the call the regex tree parsed (`x(ARGS)`), so that a term
+    // keeps the shape it has there (a colonpair argument is a named one).
+    let (mut stmts, _) = crate::parser::parse_fragment_unfinalized(&format!("x({text})")).ok()?;
+    crate::ast_visit::walk_stmts_mut(&mut Shift(base - 2), &mut stmts);
     let _origins = super::expr_origins::strip(&mut stmts);
     let range = SrcSpan::new(base, base + text.len());
     let _statement = super::expr_origins::InStatement::enter(Some(range));
@@ -132,4 +134,16 @@ pub(super) fn place(
     debug_assert_eq!(list.class, RakuAstClass::ArgList);
     field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(list)));
     Some(())
+}
+
+/// `node`, the conversion of the call argument `expr` by a helper of its own
+/// (a colonpair), placed as `view::view_expr` places any other argument: by
+/// the range of the term it was parsed from, then its parts.
+// Cost: O(n), n = size of the argument.
+pub(super) fn placed(names: &NameScope, expr: &Expr, mut node: RakuAstNode) -> RakuAstNode {
+    if let Some(span) = super::expr_origins::of(expr) {
+        super::origin::set_span(&mut node, span);
+    }
+    super::infix_origins::derive(names, &mut node);
+    node
 }

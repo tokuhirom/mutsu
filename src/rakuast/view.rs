@@ -5957,35 +5957,44 @@ pub(super) fn regex_arg_list(
             .iter()
             .enumerate()
             .map(|(index, argument)| {
-                let node = if args.colonpair_falses.get(index).copied().unwrap_or(false) {
-                    colonpair_false_expr(argument)?
+                let pair = if args.colonpair_falses.get(index).copied().unwrap_or(false) {
+                    Some(colonpair_false_expr(argument)?)
                 } else if args.colonpair_trues.get(index).copied().unwrap_or(false) {
-                    colonpair_true_expr(argument)?
+                    Some(colonpair_true_expr(argument)?)
                 } else if args
                     .colonpair_variables
                     .get(index)
                     .copied()
                     .unwrap_or(false)
                 {
-                    colonpair_variable_expr(names, argument)?
+                    Some(colonpair_variable_expr(names, argument)?)
                 } else if args.colonpair_values.get(index).copied().unwrap_or(false) {
-                    match argument {
+                    Some(match argument {
                         // `:k{...}`: the block or hash composer is the value.
                         Expr::Binary {
                             form: crate::ast::BinaryForm::ColonPairBracketed,
                             ..
                         } => colonpair_value_node(names, argument, false)?,
                         _ => colonpair_value_expr(names, argument)?,
-                    }
+                    })
                 } else if args
                     .literal_hash_indices
                     .get(index)
                     .copied()
                     .unwrap_or(false)
                 {
-                    super::postfix_grouping::literal_hash_index(names, argument)?
+                    return Ok(node_field(
+                        None,
+                        super::postfix_grouping::literal_hash_index(names, argument)?,
+                    ));
                 } else {
-                    view_expr(names, argument)?
+                    None
+                };
+                let node = match pair {
+                    // A colonpair converted by its own helper is placed here as
+                    // `view_expr` places any other argument.
+                    Some(pair) => super::regex_call_origins::placed(names, argument, pair),
+                    None => view_expr(names, argument)?,
                 };
                 Ok(node_field(None, node))
             })
