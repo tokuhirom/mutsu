@@ -94,7 +94,24 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
             super::unit_source::with_text(span, |text| text.starts_with('*').then_some(()))
                 .map(|()| span.from + 1)
         }
-        Some(operand) => origin_end(operand).and_then(super::unit_source::byte_of),
+        Some(operand) => origin_end(operand)
+            .and_then(super::unit_source::byte_of)
+            .map(|end| {
+                let close = angle_close(operand, end);
+                // Rakudo starts the application at the number inside the
+                // brackets, as it does the number itself.
+                if close != end
+                    && super::infix_origins::byte_range(operand)
+                        .is_some_and(|(from, _)| from == span.from as usize + 1)
+                {
+                    node.origin.0 = None;
+                    super::origin::set_span(
+                        node,
+                        crate::ast::SrcSpan::new(span.from as usize + 1, span.to as usize),
+                    );
+                }
+                close
+            }),
         None => None,
     };
     let Some(mut operand_end) = operand_end else {
@@ -396,4 +413,18 @@ pub(super) fn parenthesized(
             (trivia_len(&tail[end..])? == tail.len() - end).then_some((first, to))
         }
     })
+}
+
+/// The end of `operand` as written: an angle-quoted number (`<1+2i>`) ends
+/// after its `>`, though its range is the text inside the brackets.
+// Cost: O(1).
+fn angle_close(operand: &RakuAstNode, end: u32) -> u32 {
+    let angled = matches!(
+        operand.class,
+        super::RakuAstClass::RatLiteral | super::RakuAstClass::ComplexLiteral
+    ) && super::unit_source::with_text(crate::ast::SrcSpan::new(end as usize, end as usize + 1), |t| {
+        (t == ">").then_some(())
+    })
+    .is_some();
+    end + u32::from(angled)
 }

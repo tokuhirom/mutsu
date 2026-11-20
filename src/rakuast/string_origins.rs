@@ -83,8 +83,16 @@ pub(super) fn interpolated(names: &crate::scope::NameScope, node: &mut RakuAstNo
 /// quotes with other adverbs are not handled.
 // Cost: O(n), n = length of `text`.
 fn body(text: &str) -> Option<(usize, usize)> {
+    // `«a $x b»` / `<<a $x b>>`: an interpolating word quote, kept raw.
+    for (open, close) in [("«", "»"), ("<<", ">>")] {
+        if let Some(inner) = text.strip_prefix(open) {
+            return inner
+                .ends_with(close)
+                .then(|| (open.len(), text.len() - close.len()));
+        }
+    }
     let (prefix, rest) = text.split_at(text.find(|c: char| !c.is_alphanumeric())?);
-    if !matches!(prefix, "" | "qq") {
+    if !matches!(prefix, "" | "qq" | "qqw") {
         return None;
     }
     let open = rest.chars().next()?;
