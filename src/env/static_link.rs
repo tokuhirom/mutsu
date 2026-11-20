@@ -123,33 +123,34 @@ pub(super) fn same_variable(a: &Value, b: &Value) -> bool {
 /// A block-level module merge (`MetaNs::ModuleMerge`) is the block's lexical
 /// import of the module's packages: a caller's `{ use M; ... }` does not
 /// grant `M::Foo` to the code it calls (#13801).
-// Cost: O(1) for a plain user lexical, an attribute or a memoized record key
-// (memoized flags and subject); O(|key|) otherwise.
+// Cost: O(1) (memoized symbol flags).
 pub(super) fn lexically_scoped(key: Symbol) -> bool {
-    key.is_plain_user_lexical()
-        || key.is_attr_twigil_env_key()
-        || key
-            .shadow_meta_subject()
-            .is_some_and(Symbol::is_plain_user_lexical)
-        || key.with_str(|s| {
-            s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
-                && s.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-        })
-        || key.with_str(|s| s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix()))
+    key.is_lexically_scoped()
+}
+
+/// [`lexically_scoped`] on the name's string, which decides it: the symbol
+/// flag word memoizes the answer ([`crate::symbol::flags::LEXICALLY_SCOPED`]).
+// Cost: O(|name|).
+pub(crate) fn lexically_scoped_name(s: &str) -> bool {
+    let upper_ident = |name: &str| {
+        name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    };
+    crate::env::is_plain_user_lexical(s)
+        || crate::env::is_attr_twigil_env_key(s)
+        || s.strip_prefix(crate::symbol::TYPE_META_PREFIX)
+            .or_else(|| s.strip_prefix(crate::symbol::HASH_KEY_META_PREFIX))
+            .is_some_and(crate::env::is_plain_user_lexical)
+        || upper_ident(s)
+        || s.starts_with(crate::meta_ns::MetaNs::ModuleMerge.prefix())
         // A sigil-less term (`my constant SECRET`, `my \Thing`) is a lexical
         // like any other; the lowercase spelling is a plain user lexical
         // already, the uppercase-initial one is not.
-        || key.with_str(|s| {
-            s.strip_prefix(crate::term_names::TERM_PREFIX).is_some_and(|name| {
-                name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
-                    && name
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-            })
-        })
+        || s.strip_prefix(crate::term_names::TERM_PREFIX).is_some_and(upper_ident)
         // An enum key read by its bare spelling (`my enum Col <Red>`).
-        || key.with_str(|s| s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX))
+        || s.starts_with(crate::meta_ns::ENUM_BARE_PREFIX)
 }
 
 /// Whether a frame running a loaded module's routine

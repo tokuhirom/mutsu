@@ -297,7 +297,6 @@ impl Interpreter {
             return result;
         }
         if let ValueView::Instance { class_name, .. } = target.view() {
-            let class = class_name.as_str();
             // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D),
             // mut path: `$fh.method` on a variable receiver routes here, so the
             // same state-only `IO::Handle` methods must be intercepted before the
@@ -319,7 +318,9 @@ impl Interpreter {
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
             // class (via its MRO) provides its own method of this name.
-            if self.is_native_method(class, method) && !self.has_user_method(class, method) {
+            if self.is_native_method_sym(class_name, method_sym)
+                && !self.has_user_method_of(class_name, method_sym)
+            {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self.vm_call_method_mut_with_values(target_name, target, method, args);

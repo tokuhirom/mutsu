@@ -120,8 +120,8 @@ impl Interpreter {
         // An augmented slurpy-only `multi` on a built-in ancestor ranks after
         // the built-in method, so it takes no call (#12751, #13509).
         ((self.grammar_has_user_method_memo(class, method)
-            || self.resolve_user_method_or_accessor_sym(cn, method).is_some())
-            && !self.user_candidates_all_outranked_by_builtin(cn, name))
+            || self.resolve_user_method_or_accessor_of(class, method).is_some())
+            && !self.user_candidates_all_outranked_by_builtin_sym(class, method))
             || self.class_scoped_accessor_shadows(cn, name, args)
             // A `Cool`-only name (`.uc`, `.flip`, ...) is not resolvable on a
             // plain `Any`-derived instance, so `handles *` / `FALLBACK` gets

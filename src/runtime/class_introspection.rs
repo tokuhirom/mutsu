@@ -246,6 +246,23 @@ impl Interpreter {
         false
     }
 
+    /// [`Self::is_native_method`] for a caller that holds both names as
+    /// symbols: the memo is keyed by symbol, so neither name is looked up.
+    // Cost: O(1) amortized, as `is_native_method`.
+    pub(crate) fn is_native_method_sym(
+        &mut self,
+        class: crate::symbol::Symbol,
+        method: crate::symbol::Symbol,
+    ) -> bool {
+        let (class_name, method_name) = (class.as_str(), method.as_str());
+        if Self::hardcoded_native_method(class_name, method_name)
+            || class_name == "Distribution::Resource"
+        {
+            return self.is_native_method(class_name, method_name);
+        }
+        self.is_native_method_memo(class, method)
+    }
+
     pub(crate) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         self.has_user_method_sym(class_name, crate::symbol::Symbol::intern(method_name))
     }
@@ -439,6 +456,17 @@ impl Interpreter {
     // Cost: O(1) amortized (memoized per `(class, method)` for one registry
     // write generation, see `user_method_probe_memo.rs`); a miss is O(d),
     // d = MRO depth.
+    /// [`Self::resolve_user_method_or_accessor_sym`] for a class already held
+    /// as a symbol.
+    // Cost: as `resolve_user_method_or_accessor_sym`.
+    pub(crate) fn resolve_user_method_or_accessor_of(
+        &mut self,
+        class: crate::symbol::Symbol,
+        name_sym: crate::symbol::Symbol,
+    ) -> Option<UserMethodOrAccessor> {
+        self.resolve_user_method_or_accessor_memo(class, name_sym)
+    }
+
     pub(crate) fn resolve_user_method_or_accessor_sym(
         &mut self,
         class_name: &str,

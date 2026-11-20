@@ -49,13 +49,25 @@ fn is_internal_key(key: &str) -> bool {
 /// write is a bug (#17837).
 // Cost: O(|key|).
 pub(crate) fn is_user_lexical_key(key: &str) -> bool {
+    is_user_lexical_key_with(key, None)
+}
+
+/// [`is_user_lexical_key`] for a caller that also holds `key`'s symbol: a
+/// sigil-less key's qualification is then a memoized flag, not a lookup of
+/// its text.
+// Cost: O(|key|).
+pub(crate) fn is_user_lexical_key_with(key: &str, sym: Option<crate::symbol::Symbol>) -> bool {
     let bare = key.strip_prefix(['@', '%', '&', '$']).unwrap_or(key);
     let mut chars = bare.chars();
     let Some(first) = chars.next() else {
         return false;
     };
+    let qualified = match sym {
+        Some(sym) if bare.len() == key.len() => crate::qualified::is_qualified(sym),
+        _ => crate::qualified::is_qualified_str(bare),
+    };
     (first.is_alphabetic() || (first == '_' && bare.len() > 1 && !bare.starts_with("__")))
-        && !crate::qualified::is_qualified_str(bare)
+        && !qualified
         && !bare.contains(['*', '!', '?', '.', '^', '='])
 }
 

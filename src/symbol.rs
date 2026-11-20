@@ -330,6 +330,12 @@ pub(crate) mod flags {
     /// chain's base tier holds, or nothing: no tier can shadow, hide or supply
     /// it. See [`crate::symbol::ever_tier_key`].
     pub(crate) const EVER_TIER_KEY: u32 = 1 << 16;
+    /// A name a frame's static link applies to
+    /// ([`crate::env::static_link::lexically_scoped_name`]): a plain user
+    /// lexical, an attribute, a type-shaped identifier, a sigil-less term, a
+    /// record of a plain lexical, ... A function of the string alone, asked on
+    /// every by-name lookup that misses a linked frame.
+    pub(crate) const LEXICALLY_SCOPED: u32 = 1 << 17;
 }
 
 /// The `__mutsu_type::` prefix `flags::SHADOW_META` marks. Kept next to the flag
@@ -496,6 +502,9 @@ fn compute_flags(s: &str) -> u32 {
             .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
     {
         f |= flags::UPPER_IDENT_KEY;
+    }
+    if crate::env::lexically_scoped_name(s) {
+        f |= flags::LEXICALLY_SCOPED;
     }
     f
 }
@@ -1373,6 +1382,13 @@ impl Symbol {
     #[inline]
     pub(crate) fn is_plain_user_lexical(self) -> bool {
         self.flags() & flags::PLAIN_USER_LEXICAL != 0
+    }
+
+    /// Memoized [`crate::env::lexically_scoped_name`] for this symbol's string.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_lexically_scoped(self) -> bool {
+        self.flags() & flags::LEXICALLY_SCOPED != 0
     }
 
     /// Memoized [`crate::env::is_attr_twigil_env_key`] for this symbol's string.
