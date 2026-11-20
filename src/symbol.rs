@@ -1931,7 +1931,11 @@ mod tests {
         ];
         for (name, expected) in cases {
             assert_eq!(crate::env::lexically_scoped_name(name), expected, "{name}");
-            assert_eq!(Symbol::intern(name).is_lexically_scoped(), expected, "{name}");
+            assert_eq!(
+                Symbol::intern(name).is_lexically_scoped(),
+                expected,
+                "{name}"
+            );
         }
     }
 
