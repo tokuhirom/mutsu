@@ -534,7 +534,7 @@ pub(crate) struct SamewithContext {
     /// (`push_method_samewith_context`); `None` otherwise — e.g. a plain sub
     /// samewith context, or a captured `gather`-body re-push, never carried
     /// args here even before this consolidation.
-    pub(crate) args: Option<Vec<Value>>,
+    pub(crate) args: Option<std::sync::Arc<[Value]>>,
 }
 
 #[derive(Debug, Clone)]
