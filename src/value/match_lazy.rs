@@ -432,7 +432,7 @@ impl ActionWalkNode {
 /// Whether a positional group's capture node can still dispatch an action:
 /// it has captures of its own to descend into, or it was filed under an
 /// aliased rule name, and its action has not run yet.
-fn group_may_dispatch(sc: &CapNode) -> bool {
+pub(super) fn group_may_dispatch(sc: &CapNode) -> bool {
     (sc.children.is_some() || sc.action_name.is_some() || sc.sym.is_some()) && !sc.reduced.get()
 }
 
@@ -613,26 +613,6 @@ impl Value {
     /// eager or already-materialized Match; the walk reads its attribute map
     /// instead.
     // Cost: O(k), k = this node's capture slots.
-    /// The named captures of an unforced lazy Match, as its `.hash` presents
-    /// each slot, read from the capture node without materializing the
-    /// Match. `None` for an eager or already-forced Match.
-    // Cost: O(k), k = the node's named capture slots.
-    pub(crate) fn match_lazy_named_values(&self) -> Option<Vec<(Symbol, Value)>> {
-        let node = self.0.as_match_node()?;
-        if node.forced().is_some() {
-            return None;
-        }
-        Some(
-            node.cap
-                .kids()
-                .named
-                .iter()
-                .filter(|(key, _)| !key.starts_with(SILENT_ACTION_MARKER_PREFIX))
-                .map(|(key, slot)| (*key, Value::named_slot_value(slot, &node.target)))
-                .collect(),
-        )
-    }
-
     pub(crate) fn match_action_walk_node(&self) -> Option<ActionWalkNode> {
         let node = self.0.as_match_node()?;
         if node.forced().is_some() {

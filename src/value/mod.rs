@@ -655,6 +655,7 @@ pub use user_key_map::ValueMap;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
 pub(crate) mod match_helpers;
 mod match_lazy;
+mod match_lazy_seams;
 pub(crate) mod match_view;
 pub(crate) mod which_id;
 pub(crate) use match_lazy::{ActionWalkNode, MatchNode};
