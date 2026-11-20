@@ -10,20 +10,39 @@
 //! ranges.
 
 use super::infix_origins::with_child_at;
-use super::{RakuAstClass, RakuAstNode};
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
 use crate::scope::NameScope;
+use crate::value::{Value, ValueView};
+
+/// Place the `Block` held by the `index`-th field of `node`, written at the
+/// start of `text` (byte `at` of the unit); the length of its text.
+// Cost: O(n), n = length of the block's text, plus the parse of its code.
+pub(super) fn held_code_block(
+    names: &NameScope,
+    node: &mut RakuAstNode,
+    index: usize,
+    text: &str,
+    at: usize,
+) -> Option<usize> {
+    let field = node.fields.get_mut(index)?;
+    let RakuAstFieldValue::Node(held) = &mut field.value else {
+        return None;
+    };
+    let ValueView::RakuAst(block) = held.view() else {
+        return None;
+    };
+    let mut block = RakuAstNode::clone(block);
+    let len = code_block(names, &mut block, text, at);
+    *held = Value::rakuast(Box::new(block));
+    len
+}
 
 /// Place `block`, a `Block` written at the start of `text`, which sits at
 /// byte `at` of the unit. The length of its text (through its `}`), or
 /// `None` when `text` does not start with a block whose end can be found.
 // Cost: O(n), n = length of the block's text, plus the parse of its code.
-pub(super) fn code_block(
-    names: &NameScope,
-    block: &mut RakuAstNode,
-    text: &str,
-    at: usize,
-) -> Option<usize> {
+fn code_block(names: &NameScope, block: &mut RakuAstNode, text: &str, at: usize) -> Option<usize> {
     if block.class != RakuAstClass::Block || !text.starts_with('{') {
         return None;
     }
@@ -43,12 +62,16 @@ pub(super) fn code_block(
     Some(close + 1)
 }
 
-/// The offset of the `}` that closes the `{` `text` starts with; `None` when
-/// a quote or comment comes first (a brace inside it would be miscounted).
+/// The offset of the `}` that closes the `{` `text` starts with. A quoted
+/// string (`"a"`, `'b'`) is skipped whole, so a brace inside it is not
+/// counted; `None` when a comment or a backslash comes first, or a quote does
+/// not end.
 // Cost: O(n), n = length of the block's text.
 fn closing_brace(text: &str) -> Option<usize> {
     let mut depth = 0usize;
-    for (at, c) in text.char_indices() {
+    let mut chars = text.char_indices().peekable();
+    let mut prev = None;
+    while let Some((at, c)) = chars.next() {
         match c {
             '{' => depth += 1,
             '}' => {
@@ -57,9 +80,39 @@ fn closing_brace(text: &str) -> Option<usize> {
                     return Some(at);
                 }
             }
-            '"' | '\'' | '#' | '\\' => return None,
+            // `don't-x`: an apostrophe between letters is part of a name.
+            '\'' if prev.is_some_and(char::is_alphanumeric)
+                && chars.peek().is_some_and(|&(_, n)| n.is_alphabetic()) => {}
+            '"' | '\'' => {
+                // Through the closing quote; an escape skips the next char.
+                loop {
+                    match chars.next()?.1 {
+                        '\\' => {
+                            chars.next()?;
+                        }
+                        q if q == c => break,
+                        _ => {}
+                    }
+                }
+            }
+            '#' | '\\' => return None,
             _ => {}
         }
+        prev = Some(c);
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::closing_brace;
+
+    #[test]
+    fn skips_quoted_strings() {
+        assert_eq!(closing_brace(r#"{ "a}" }"#), Some(7));
+        assert_eq!(closing_brace("{ 'b\\'}' }"), Some(9));
+        assert_eq!(closing_brace("{ f(don't-x) }"), Some(13));
+        assert_eq!(closing_brace(r#"{ "open }"#), None);
+        assert_eq!(closing_brace("{ # } \n }"), None);
+    }
 }
