@@ -198,6 +198,7 @@ mod prefix_call;
 mod proto;
 pub(crate) use proto::{routine_multiness, routine_param_defs};
 mod node_origin_debug;
+mod quoted_method_origins;
 mod quoted_string;
 mod react;
 mod regex_char_class;
