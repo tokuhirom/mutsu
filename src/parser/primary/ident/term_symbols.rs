@@ -72,10 +72,7 @@ pub(crate) fn imported_value_term(input: &str) -> PResult<'_, Expr> {
         // sub's call, not a call on the imported `phi` term.
         && !(rest.starts_with('(') && crate::parser::stmt::simple::is_user_declared_sub(name))
     {
-        return Ok((
-            rest,
-            crate::ast::parsed::imported_term(name.to_string()),
-        ));
+        return Ok((rest, crate::ast::parsed::imported_term(name.to_string())));
     }
     Err(PError::expected("declared term symbol"))
 }

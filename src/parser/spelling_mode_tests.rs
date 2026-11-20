@@ -32,7 +32,9 @@ fn an_executing_parse_builds_no_spellings() {
     assert_eq!(spellings(&stmts), 0, "{stmts:?}");
     // No `Statement::Empty` placeholder either: the stray `;` is no statement.
     assert!(
-        !stmts.iter().any(|s| matches!(s, Stmt::Expr(Expr::Literal(v)) if v.is_nil())),
+        !stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::Expr(Expr::Literal(v)) if v.is_nil())),
         "{stmts:?}"
     );
 }

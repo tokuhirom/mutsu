@@ -407,7 +407,12 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
     // shape (an import makes a bareword a `ParsedExpr::ImportedTerm`).
     let target_raw = match target_raw {
         Expr::Spelled(spelled) if matches!(spelled.expr, Expr::BareWord(_)) => spelled.expr,
-        Expr::Ast(node) if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::ImportedTerm(_)) => {
+        Expr::Ast(node)
+            if matches!(
+                node.as_ref(),
+                crate::ast::parsed::ParsedExpr::ImportedTerm(_)
+            ) =>
+        {
             match *node {
                 crate::ast::parsed::ParsedExpr::ImportedTerm(name) => Expr::BareWord(name),
                 _ => unreachable!("checked above"),
