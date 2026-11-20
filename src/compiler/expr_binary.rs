@@ -474,15 +474,12 @@ impl Compiler {
                 return;
             }
             TokenKind::OrOr | TokenKind::OrWord => {
+                // `JumpIfTrue` peeks: a true left operand stays on the stack as
+                // the result, a false one is popped before the right operand.
                 self.compile_expr(left);
-                self.code.emit(OpCode::Dup);
-                let jump_cleanup = self.code.emit(OpCode::JumpIfTrue(0));
-                self.code.emit(OpCode::Pop);
+                let jump_end = self.code.emit(OpCode::JumpIfTrue(0));
                 self.code.emit(OpCode::Pop);
                 self.compile_expr(right);
-                let jump_end = self.code.emit(OpCode::Jump(0));
-                self.code.patch_jump(jump_cleanup);
-                self.code.emit(OpCode::Pop);
                 self.code.patch_jump(jump_end);
                 return;
             }
@@ -491,15 +488,11 @@ impl Compiler {
                 return;
             }
             TokenKind::SlashSlash => {
+                // `JumpIfNotNil` peeks, as `JumpIfTrue` does for `||`.
                 self.compile_expr(left);
-                self.code.emit(OpCode::Dup);
-                let jump_cleanup = self.code.emit(OpCode::JumpIfNotNil(0));
-                self.code.emit(OpCode::Pop);
+                let jump_end = self.code.emit(OpCode::JumpIfNotNil(0));
                 self.code.emit(OpCode::Pop);
                 self.compile_expr(right);
-                let jump_end = self.code.emit(OpCode::Jump(0));
-                self.code.patch_jump(jump_cleanup);
-                self.code.emit(OpCode::Pop);
                 self.code.patch_jump(jump_end);
                 return;
             }

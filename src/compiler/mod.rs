@@ -1135,6 +1135,7 @@ mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
+mod short_circuit;
 mod stash_entry_var;
 mod with_defined;
 mod with_topic_alias;
