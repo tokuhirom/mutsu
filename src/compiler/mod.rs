@@ -1495,6 +1495,11 @@ pub(crate) struct Compiler {
     /// must still target the class package's static store, while an
     /// undeclared routine assignment remains readonly.
     pub(crate) class_body_static_code_vars: HashSet<String>,
+    /// While a class declaration's methods compile (`add_class_decl_plan`):
+    /// the outer names they write, and those they rebind, which the class
+    /// body's own declaration of the name gives a shared cell
+    /// (`compile_class_body_plan`).
+    pub(crate) type_body_method_writes: Option<(Vec<Symbol>, Vec<Symbol>)>,
     /// The `my` lexicals a class or package body declares at its top level,
     /// in `VarDecl` naming (`x`, `@a`). A class-body statement compiles in a
     /// chunk of its own, and the run-time part of a body the BEGIN prologue
@@ -2283,6 +2288,7 @@ impl Compiler {
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
+            type_body_method_writes: None,
             package_body_lexicals: HashSet::new(),
             package_runtime_our_names: None,
             eval_unit_lax: false,

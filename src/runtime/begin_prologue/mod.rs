@@ -33,6 +33,7 @@
 //! BEGINs nested inside a top-level statement, and value-form BEGINs, are
 //! lifted into the prologue by [`nested`] ahead of that statement.
 
+mod destructure;
 mod expr_type_decls;
 mod nested;
 pub(crate) use nested::begin_body_core_names;
@@ -442,6 +443,12 @@ fn partition_stmt(stmt: Stmt, prologue: &mut Vec<Stmt>, rest: &mut Vec<Stmt>) {
         for member in inner {
             partition_stmt(member, prologue, rest);
         }
+        return;
+    }
+    // A destructuring declaration `my ($a, $b) = RHS`: its predeclarations
+    // are its static half, the rest assigns at its position.
+    if let Some(runtime) = destructure::split(&stmt, prologue) {
+        rest.push(runtime);
         return;
     }
     rest.push(stmt);

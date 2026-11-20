@@ -270,6 +270,21 @@ impl Compiler {
             self.bubble_container_ref_capture_syms(&boxed);
         }
 
+        // The class body's own declaration of a name the method writes or
+        // rebinds takes a cell too (`compile_class_body_plan`).
+        if let Some((writes, rebinds)) = &mut self.type_body_method_writes {
+            for sym in &cc.free_var_writes {
+                if !writes.contains(sym) {
+                    writes.push(*sym);
+                }
+            }
+            for sym in &cc.free_var_rebinds {
+                if !rebinds.contains(sym) {
+                    rebinds.push(*sym);
+                }
+            }
+        }
+
         // A method that REBINDS an outer lexical (`method set { $list := ... }`)
         // needs the declaring frame to box it in a binding cell at its
         // declaration, so the rebind reaches sibling methods and the frame.
