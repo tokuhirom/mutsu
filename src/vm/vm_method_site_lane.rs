@@ -113,13 +113,7 @@ impl Interpreter {
         else {
             return None;
         };
-        self.site_lane_answer(
-            code,
-            ip,
-            name_idx,
-            arity,
-            Some(target_name_idx),
-        )
+        self.site_lane_answer(code, ip, name_idx, arity, Some(target_name_idx))
     }
 
     /// The lane's answer for a call of constant `name_idx` with `arity`

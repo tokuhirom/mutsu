@@ -27,7 +27,8 @@ use crate::builtins::method_table;
 pub(super) const MAX_LANE_ARITY: usize = 2;
 
 /// Names an inline-receiver `CallMethod` always leaves to the full path.
-const INLINE_RECEIVER_FULL_PATH: [&str; 5] = ["perl", "throw", "of", "package_at_key", "ASSIGN-KEY"];
+const INLINE_RECEIVER_FULL_PATH: [&str; 5] =
+    ["perl", "throw", "of", "package_at_key", "ASSIGN-KEY"];
 
 impl Interpreter {
     /// Whether the static half of the lane admits the method call at
