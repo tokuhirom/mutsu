@@ -106,6 +106,16 @@ pub(super) const CHAINS: &[OwnerChain] = &[
             "RakuAST::Node",
         ],
     ),
+    (
+        "RakuAST::ColonPairs",
+        &[
+            "RakuAST::ColonPairs",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
     ("RakuAST::CompUnit", &["RakuAST::CompUnit", "RakuAST::Node"]),
     (
         "RakuAST::ComplexLiteral",
@@ -182,9 +192,5 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     (
         "RakuAST::Doc::Declarator",
         &["RakuAST::Doc::Declarator", "RakuAST::Doc", "RakuAST::Node"],
-    ),
-    (
-        "RakuAST::Doc::LegacyRow",
-        &["RakuAST::Doc::LegacyRow", "RakuAST::Node"],
     ),
 ];

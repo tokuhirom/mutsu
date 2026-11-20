@@ -223,7 +223,12 @@ fn absorb_colonpair_adverbs<'a>(input: &str, rest: &'a str, first: Expr) -> PRes
     if pairs.len() == 1 {
         return Ok((rest, pairs.pop().expect("one pair")));
     }
-    Ok((r, Expr::ArrayLiteral(pairs)))
+    Ok((
+        r,
+        Expr::spelled(Expr::ArrayLiteral(pairs), || {
+            crate::ast::spelled::Spelling::ColonPairs
+        }),
+    ))
 }
 
 /// Like [`expression`] but does NOT consume a trailing simple/compound

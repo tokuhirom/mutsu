@@ -3,6 +3,16 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::MetaInfix::Cross",
+        &[
+            "RakuAST::MetaInfix::Cross",
+            "RakuAST::MetaInfix::CrossZip",
+            "RakuAST::MetaInfix",
+            "RakuAST::Infixish",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::MetaInfix::Hyper",
         &[
             "RakuAST::MetaInfix::Hyper",
@@ -33,6 +43,7 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::MetaInfix::Zip",
         &[
             "RakuAST::MetaInfix::Zip",
+            "RakuAST::MetaInfix::CrossZip",
             "RakuAST::MetaInfix",
             "RakuAST::Infixish",
             "RakuAST::Node",
@@ -89,7 +100,11 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     ("RakuAST::Name", &["RakuAST::Name", "RakuAST::Node"]),
     (
         "RakuAST::Name::Part::Empty",
-        &["RakuAST::Name::Part::Empty", "RakuAST::Name::Part"],
+        &[
+            "RakuAST::Name::Part::Empty",
+            "RakuAST::Name::Part::EmptyEdge",
+            "RakuAST::Name::Part",
+        ],
     ),
     (
         "RakuAST::Name::Part::EmptyEdge",
@@ -132,17 +147,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::NumLiteral",
             "RakuAST::Literal",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::OnlyStar",
-        &[
-            "RakuAST::OnlyStar",
-            "RakuAST::Blockoid",
             "RakuAST::Term",
             "RakuAST::Termish",
             "RakuAST::Expression",
