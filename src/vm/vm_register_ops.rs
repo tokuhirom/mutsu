@@ -899,6 +899,18 @@ impl Interpreter {
                                 || (name.starts_with(['@', '%', '&', '$'])
                                     && crate::env::is_user_variable_key(name))
                         }))
+                    // A scalar whose name starts uppercase (`my $C`) shares
+                    // its sigil-less env key with a type of that spelling, so
+                    // the name alone cannot tell them apart; the declaring
+                    // frame's own slot can. Without its cell in the capture,
+                    // a method of a same-named `class C` resolved `$C` by name
+                    // and met the type object its registration binds there.
+                    || capture_slots.iter().any(|(slot_sym, _)| {
+                        slot_sym == sym
+                            && sym.with_str(|name| {
+                                name.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+                            })
+                    })
             });
             if !env.is_empty() {
                 captures

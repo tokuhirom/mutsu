@@ -349,6 +349,7 @@ impl Compiler {
             .then(|| name.rsplit("::").next().unwrap_or(name).to_string())
         });
         let method_outer_lexical_slots = self.local_slots_by_name();
+        let saved_method_writes = self.type_body_method_writes.replace(Default::default());
         // Class-body methods auto-detect a bare `@_` read the way
         // `class_body_method_decl` does (`apply_auto_positional_slurpy:
         // true`); `is_hidden` gates the implicit `*%_` the same way too.
@@ -361,7 +362,11 @@ impl Compiler {
             true,
             is_hoisted_shell,
         );
-        let body_plan = self.compile_class_body_plan(body, package_name.as_deref(), *is_hidden);
+        let method_writes =
+            std::mem::replace(&mut self.type_body_method_writes, saved_method_writes)
+                .unwrap_or_default();
+        let body_plan =
+            self.compile_class_body_plan(body, package_name.as_deref(), *is_hidden, &method_writes);
         self.code.add_class_decl_plan(
             stmt,
             name_expr.is_none() && self.decl_name_is_prequalified(),
@@ -416,6 +421,7 @@ impl Compiler {
         body: &[Stmt],
         package_name: Option<&str>,
         is_hidden: bool,
+        method_writes: &(Vec<Symbol>, Vec<Symbol>),
     ) -> Vec<crate::opcode::ClassBodyOp> {
         let mut ops = crate::opcode::class_body_plan(body);
         let Some(package_name) = package_name else {
@@ -554,13 +560,37 @@ impl Compiler {
                 | crate::opcode::ClassBodyOp::ProtoMethod { chunk, raw } => (chunk, raw),
                 _ => continue,
             };
-            *chunk = Some(self.compile_decl_stmts_chunk_in_package(
-                std::slice::from_ref(raw),
+            let mut chunk_compiler = self.package_chunk_compiler(
                 package_name,
                 &class_body_static_code_vars,
                 &class_body_type_aliases,
                 &body_lexicals,
                 Some((package_name, is_hidden)),
+            );
+            // A body `my` a method writes or rebinds is declared in a shared
+            // cell, as a named sub's outer write is: a method called while the
+            // body still runs then writes the body's variable through it, not
+            // a copy in its own frame.
+            let (writes, rebinds) = method_writes;
+            let declared: Vec<Symbol> = crate::ast::scope_members(std::slice::from_ref(raw))
+                .filter_map(|stmt| match stmt {
+                    Stmt::VarDecl { name, .. } => Some(Symbol::intern(name)),
+                    _ => None,
+                })
+                .filter(|sym| writes.contains(sym) || rebinds.contains(sym))
+                .collect();
+            for sym in declared.iter().filter(|sym| rebinds.contains(sym)) {
+                chunk_compiler.code.note_rebound_name(&sym.resolve());
+            }
+            if !declared.is_empty() {
+                chunk_compiler
+                    .code
+                    .named_sub_captures
+                    .push((declared, Vec::new()));
+            }
+            *chunk = Some(Self::compile_decl_chunk(
+                chunk_compiler,
+                std::slice::from_ref(raw),
             ));
         }
         ops
