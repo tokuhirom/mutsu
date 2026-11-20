@@ -22,6 +22,7 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
     with_child(node, "signature", |signature| {
         super::origin::set_span(signature, spans.signature);
         parameters(signature, params);
+        with_child(signature, "returns", |ty| type_origin(ty, spans.returns));
     });
     with_child(node, "body", |blockoid| {
         super::origin::set_span(blockoid, spans.block.blockoid);
@@ -361,6 +362,10 @@ pub(super) fn type_origin(ty: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         return;
     }
     super::origin::set_span(ty, span);
+    if ty.class == RakuAstClass::TypeParameterized {
+        super::type_origins::parameterized(ty, span);
+        return;
+    }
     // `Int:D`: the inner `Type::Simple` spans all of it, its `Name` only the
     // name before the smiley.
     let smiled = matches!(

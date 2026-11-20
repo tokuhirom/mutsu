@@ -248,6 +248,7 @@ mod type_call;
 mod type_capture_indirect;
 mod type_ctor;
 mod type_lower;
+mod type_origins;
 mod underscore_bindings;
 pub(crate) mod unit_source;
 mod unit_span;

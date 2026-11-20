@@ -142,8 +142,9 @@ fn method_decl_body_with_my(
     let (rest, (params, param_defs, param_return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        signature_start = Some(r);
+        let sig_from = r;
         let (r, (pd, rt)) = super::super::sub::parse_param_list_with_return(r)?;
+        signature_start = Some((sig_from, r));
         super::super::sub::validate_signature_params(&pd)?;
         // In BUILD/TWEAK submethods, reject $.x (public accessor twigil) parameters
         // as X::Syntax::VirtualCall — the object is not fully constructed yet.

@@ -6,9 +6,9 @@
 //! placed from the declaration's own range: the type is the word after the
 //! scope keyword, the traits the `is NAME` clauses after the variable, each
 //! read back from the source and checked against the node it places. A
-//! declaration whose text does not read that way (a type with parameters, a
-//! trait argument holding a quote) keeps those parts without a range: exact
-//! or absent.
+//! declaration whose text does not read that way (a trait argument holding a
+//! quote) keeps those parts without a range: exact or absent. A type
+//! application (`Array[Int]`) is placed by `type_origins`.
 
 use super::infix_origins::{byte_range, child, with_child};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
@@ -73,13 +73,19 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
     at += trivia_len(&text[at..])?;
     let mut type_at = None;
     if !text[at..].starts_with(variable) {
-        let word = text[at..]
+        let mut word = text[at..]
             .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':')))
             .unwrap_or(text.len() - at);
+        // A type application (`Array[Int]`) runs to its closing bracket.
+        let applied = word > 0 && text[at + word..].starts_with('[');
+        if applied {
+            word += closing_bracket(&text[at + word..])? + 1;
+        }
         let written = &text[at..at + word];
         // A smiley (`Str:D`) is part of the type, not of its name.
         let name_len = [":D", ":U", ":_"]
             .iter()
+            .filter(|_| !applied)
             .find_map(|smiley| written.strip_suffix(smiley))
             .filter(|stem| !stem.ends_with(':'))
             .map_or(written.len(), str::len);
@@ -156,6 +162,27 @@ fn closing_paren(text: &str) -> Option<usize> {
     None
 }
 
+/// The offset of the `]` that closes the `[` `text` starts with; `None` when
+/// a quote or a bracket of another kind comes first.
+// Cost: O(n), n = length of the application.
+fn closing_bracket(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            '"' | '\'' | '\\' | '#' | '(' | ')' | '{' | '}' | '<' | '>' | '\n' => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Place a declaration's type node: a `Type::Simple` over its `Name`, or a
 /// `Type::Definedness` (`Str:D`), whose inner `Type::Simple` Rakudo places
 /// over the whole written type and its `Name` over the name alone.
@@ -175,6 +202,9 @@ fn type_origin(ty: &mut RakuAstNode, (from, to, name_to): (usize, usize, usize))
             with_first(ty, |name| {
                 super::origin::set_span(name, SrcSpan::new(from, to))
             });
+        }
+        RakuAstClass::TypeParameterized => {
+            super::type_origins::parameterized(ty, SrcSpan::new(from, to))
         }
         RakuAstClass::TypeDefinedness if name_to < to => {
             let Some(inner) = super::infix_origins::child_at(ty, 0) else {
