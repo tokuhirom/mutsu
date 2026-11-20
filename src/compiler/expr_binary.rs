@@ -853,6 +853,9 @@ impl Compiler {
                     return;
                 }
             }
+            if self.try_emit_str_eq_local_const(&opcode, left, right) {
+                return;
+            }
             let native_unsigned = self.native_int_binary_mode(left, right, &opcode);
             self.compile_expr(left);
             // `but`/`does` with a role initializer (`X but R(v)`, `99 does

@@ -1297,6 +1297,20 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
     // An element that sits in an item container (an Array element a `grep`
     // already visited) is destructured by its content, not by the container.
     let value = &value.deref_container();
+    // A value whose `.Capture` throws cannot be unpacked: `-> ($x) {}(21)`
+    // dies with X::Cannot::Capture, as on rakudo (#18397).
+    if matches!(
+        value.view(),
+        ValueView::Bool(_)
+            | ValueView::Str(_)
+            | ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Whatever
+            | ValueView::HyperWhatever
+    ) {
+        return Err(crate::builtins::methods_0arg::coercion::cannot_capture_value(value));
+    }
     let value = interpreter.coerce_via_user_capture(value);
     let value = &object_as_public_capture(interpreter, sub_params, value);
     let positional =

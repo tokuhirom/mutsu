@@ -13,16 +13,14 @@ use std::collections::HashMap;
 /// one argument it is handed, where `-> :$k` declares a named parameter the
 /// caller must pass.
 ///
-/// A lone positional (`-> ($a)`) is left as a plain parameter, mirroring the
-/// `len == 1` capture sub-signature special case in this module. rakudo treats
-/// that one as a destructure too (`-> ($a)` against a non-list dies with
-/// "Cannot unpack or Capture"), but changing it is a cross-cutting decision
-/// about every `.map(-> ($x) {...})` in the tree, not a per-caller one.
+/// A lone positional (`-> ($a)`) is a destructure as well: rakudo binds the
+/// one argument and unpacks it (`-> ($x) { }` called with `21` dies "Cannot
+/// unpack or Capture").
 pub(crate) fn fold_parenthesised_pointy_params(sub_params: Vec<ParamDef>) -> Vec<ParamDef> {
-    if sub_params.len() > 1 || sub_params.first().is_some_and(|p| p.named) {
-        vec![ParamDef::destructure(sub_params, false)]
-    } else {
+    if sub_params.is_empty() {
         sub_params
+    } else {
+        vec![ParamDef::destructure(sub_params, false)]
     }
 }
 

@@ -269,8 +269,13 @@ impl Compiler {
                 }
                 let sigiled = format!("@{}", name);
                 // ADR-0039 slice 2: a plain lexical container read resolves
-                // through its slot, exactly as a scalar read does.
-                if let Some(slot) = self.container_read_slot(&sigiled) {
+                // through its slot, exactly as a scalar read does. A private
+                // aggregate attribute reads its cell through its slot
+                // (ADR-18356 D2).
+                if let Some(slot) = self
+                    .container_read_slot(&sigiled)
+                    .or_else(|| self.private_aggregate_attr_slot(&sigiled))
+                {
                     self.code.emit(OpCode::GetLocal(slot));
                     return;
                 }
@@ -325,7 +330,10 @@ impl Compiler {
                 }
                 let sigiled = format!("%{}", name);
                 // ADR-0039 slice 2 — see the `ArrayVar` twin above.
-                if let Some(slot) = self.container_read_slot(&sigiled) {
+                if let Some(slot) = self
+                    .container_read_slot(&sigiled)
+                    .or_else(|| self.private_aggregate_attr_slot(&sigiled))
+                {
                     self.code.emit(OpCode::GetLocal(slot));
                     return;
                 }
