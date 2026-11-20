@@ -202,5 +202,4 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::QuotedRegex", "match-immediately"),
     row!("RakuAST::QuotedString", "has-variables"),
     row!("RakuAST::QuotedString", "processors"),
-    row!("RakuAST::QuotedString", "segments"),
 ];

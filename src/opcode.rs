@@ -1,6 +1,7 @@
 mod attribute_decl;
 mod class_body_free_vars;
 #[cfg(test)]
+#[path = "opcode/nested_decl_names_tests.rs"]
 mod nested_decl_names_tests;
 mod proto_decl;
 mod reflective_names;

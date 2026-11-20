@@ -5,17 +5,18 @@ use super::*;
 
 #[test]
 fn nested_decl_names_are_sorted() {
-    let (stmts, _) = crate::parser::parse_program(
+    let parsed = crate::parser::parse_program(
         "class A { for 1..2 { my $zeta; my $alpha; my $mid; my $beta; my $omega } }",
     )
-    .expect("parses");
-    let body = stmts
-        .iter()
-        .find_map(|s| match s {
-            Stmt::ClassDecl { body, .. } => Some(body),
-            _ => None,
-        })
-        .expect("a class declaration");
+    .ok();
+    assert!(parsed.is_some(), "the class parses");
+    let stmts = parsed.map(|(stmts, _)| stmts).unwrap_or_default();
+    let body = stmts.iter().find_map(|s| match s {
+        Stmt::ClassDecl { body, .. } => Some(body),
+        _ => None,
+    });
+    assert!(body.is_some(), "a class declaration");
+    let body = body.map(Vec::as_slice).unwrap_or_default();
     let names: Vec<String> = class_nested_decl_names(body)
         .iter()
         .map(|sym| sym.resolve().to_string())

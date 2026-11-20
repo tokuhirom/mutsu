@@ -206,79 +206,85 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // BIND-POS/ASSIGN-POS (a wrong `is_positional` sent a `%h<k> := v` to the
         // non-existent BIND-POS, dropping to the generic path that replaced the
         // whole tied container).
-        let (r_after, index_expr, is_positional) = if let Some(inner) = r.strip_prefix('<') {
-            // `<...>` is word-quoting (a literal string key), NOT an expression.
-            // Parsing the inside as an expression mis-reads `%h<b> := 5` — `b>`
-            // is taken as a `b > ...` comparison, so the chained bind never
-            // parses. Split the content into angle words instead, exactly as the
-            // postfix `<key>` subscript parser does. `<=`, `<<`, `<=>`, and any
-            // non-word content fall through to Err (a real comparison / not an
-            // lvalue), letting the caller re-parse as an expression.
-            let Some(end) = inner.find('>') else {
-                return Err(PError::expected("assignment expression"));
-            };
-            let keys = crate::parser::helpers::split_angle_words(&inner[..end]);
-            if keys.is_empty()
-                || !keys.iter().all(|k| {
-                    !k.is_empty()
-                        && k.chars()
-                            .all(crate::parser::expr::is_conservative_angle_key_char)
-                })
-            {
-                return Err(PError::expected("assignment expression"));
-            }
-            let index_expr = if keys.len() == 1 {
-                Expr::Literal(Value::str(keys[0].to_string()))
+        let (r_after, index_expr, is_positional, spelling) =
+            if let Some(inner) = r.strip_prefix('<') {
+                // `<...>` is word-quoting (a literal string key), NOT an expression.
+                // Parsing the inside as an expression mis-reads `%h<b> := 5` — `b>`
+                // is taken as a `b > ...` comparison, so the chained bind never
+                // parses. Split the content into angle words instead, exactly as the
+                // postfix `<key>` subscript parser does. `<=`, `<<`, `<=>`, and any
+                // non-word content fall through to Err (a real comparison / not an
+                // lvalue), letting the caller re-parse as an expression.
+                let Some(end) = inner.find('>') else {
+                    return Err(PError::expected("assignment expression"));
+                };
+                let keys = crate::parser::helpers::split_angle_words(&inner[..end]);
+                if keys.is_empty()
+                    || !keys.iter().all(|k| {
+                        !k.is_empty()
+                            && k.chars()
+                                .all(crate::parser::expr::is_conservative_angle_key_char)
+                    })
+                {
+                    return Err(PError::expected("assignment expression"));
+                }
+                let index_expr = if keys.len() == 1 {
+                    Expr::Literal(Value::str(keys[0].to_string()))
+                } else {
+                    Expr::ArrayLiteral(
+                        keys.into_iter()
+                            .map(|k| Expr::Literal(Value::str(k.to_string())))
+                            .collect(),
+                    )
+                };
+                let (r_after, _) = ws(&inner[end + 1..])?;
+                (r_after, index_expr, false, crate::ast::IndexSpelling::Angle)
             } else {
-                Expr::ArrayLiteral(
-                    keys.into_iter()
-                        .map(|k| Expr::Literal(Value::str(k.to_string())))
-                        .collect(),
+                let closing = if r.as_bytes()[0] == b'[' { ']' } else { '}' };
+                let is_positional = closing == ']';
+                let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
+                // A subscript body opening with `||` is the DIMENSION SPLAT
+                // (`%h{||@dims}`, `@a[||@dims]`): the list supplies the semicolon
+                // dimensions, and the postfix parser lowers it to a `MultiDimIndex`.
+                // It is not an index expression that happens to begin with a stacked
+                // Slip contextualizer, so decline it here and let that path have the
+                // subscript -- parsing it as an expression silently degrades the
+                // splat to a one-dimensional slice. (Until `||` became a term at all
+                // this branch failed on its own and the routing was accidental.)
+                if r_idx.starts_with("||") && !r_idx.starts_with("|||") {
+                    return Err(PError::expected("assignment expression"));
+                }
+                let (r_idx, _) = ws(r_idx)?;
+                // Parse comma-separated index expressions inside brackets
+                let (r_idx, first_expr) = expression(r_idx)?;
+                let (mut r_idx, _) = ws(r_idx)?;
+                let index_expr = if r_idx.starts_with(',') {
+                    let mut items = vec![first_expr];
+                    while r_idx.starts_with(',') {
+                        let (r2, _) = parse_char(r_idx, ',')?;
+                        let (r2, _) = ws(r2)?;
+                        if r2.starts_with(closing) {
+                            r_idx = r2;
+                            break;
+                        }
+                        let (r2, next) = expression(r2)?;
+                        items.push(next);
+                        let (r2, _) = ws(r2)?;
+                        r_idx = r2;
+                    }
+                    Expr::ArrayLiteral(items)
+                } else {
+                    first_expr
+                };
+                let (r_idx, _) = parse_char(r_idx, closing)?;
+                let (r_after, _) = ws(r_idx)?;
+                (
+                    r_after,
+                    index_expr,
+                    is_positional,
+                    crate::ast::IndexSpelling::default(),
                 )
             };
-            let (r_after, _) = ws(&inner[end + 1..])?;
-            (r_after, index_expr, false)
-        } else {
-            let closing = if r.as_bytes()[0] == b'[' { ']' } else { '}' };
-            let is_positional = closing == ']';
-            let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
-            // A subscript body opening with `||` is the DIMENSION SPLAT
-            // (`%h{||@dims}`, `@a[||@dims]`): the list supplies the semicolon
-            // dimensions, and the postfix parser lowers it to a `MultiDimIndex`.
-            // It is not an index expression that happens to begin with a stacked
-            // Slip contextualizer, so decline it here and let that path have the
-            // subscript -- parsing it as an expression silently degrades the
-            // splat to a one-dimensional slice. (Until `||` became a term at all
-            // this branch failed on its own and the routing was accidental.)
-            if r_idx.starts_with("||") && !r_idx.starts_with("|||") {
-                return Err(PError::expected("assignment expression"));
-            }
-            let (r_idx, _) = ws(r_idx)?;
-            // Parse comma-separated index expressions inside brackets
-            let (r_idx, first_expr) = expression(r_idx)?;
-            let (mut r_idx, _) = ws(r_idx)?;
-            let index_expr = if r_idx.starts_with(',') {
-                let mut items = vec![first_expr];
-                while r_idx.starts_with(',') {
-                    let (r2, _) = parse_char(r_idx, ',')?;
-                    let (r2, _) = ws(r2)?;
-                    if r2.starts_with(closing) {
-                        r_idx = r2;
-                        break;
-                    }
-                    let (r2, next) = expression(r2)?;
-                    items.push(next);
-                    let (r2, _) = ws(r2)?;
-                    r_idx = r2;
-                }
-                Expr::ArrayLiteral(items)
-            } else {
-                first_expr
-            };
-            let (r_idx, _) = parse_char(r_idx, closing)?;
-            let (r_after, _) = ws(r_idx)?;
-            (r_after, index_expr, is_positional)
-        };
         // Check for binding assignment (:= or ::=)
         if let Some(stripped) = r_after
             .strip_prefix("::=")
@@ -310,7 +316,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     Box::new(target),
                     Box::new(index_expr),
                     is_positional,
-                    Default::default(),
+                    spelling,
                     rhs,
                 ),
             ));
@@ -358,7 +364,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     target: Box::new(target),
                     index: Box::new(index_expr),
                     is_positional,
-                    spelling: Default::default(),
+                    spelling,
                 },
                 rhs,
             );
