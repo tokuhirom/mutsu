@@ -706,6 +706,10 @@ fn unit_type_names(stmts: &[Stmt]) -> std::collections::HashSet<String> {
 }
 
 #[cfg(test)]
+#[path = "finalize_purity_tests.rs"]
+mod purity_tests;
+
+#[cfg(test)]
 mod tests {
     use crate::ast::Stmt;
 
