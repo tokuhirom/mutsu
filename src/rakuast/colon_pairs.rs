@@ -11,6 +11,17 @@ use crate::ast::Expr;
 use crate::scope::NameScope;
 use crate::value::RuntimeError;
 
+/// `expr` as the whole expression of a statement: a run of colonpairs there
+/// is a comma list (`:a:!b;` is `ApplyListInfix(",")` in rakudo 2026.11), not
+/// `ColonPairs`.
+// Cost: O(1).
+pub(super) fn statement_form(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Spelled(s) if matches!(s.spelling, crate::ast::spelled::Spelling::ColonPairs) => &s.expr,
+        _ => expr,
+    }
+}
+
 /// The `ColonPairs` of a marked run of colonpairs.
 // Cost: O(n), n = size of the pairs.
 pub(super) fn view_node(names: &NameScope, run: &Expr) -> Result<RakuAstNode, RuntimeError> {

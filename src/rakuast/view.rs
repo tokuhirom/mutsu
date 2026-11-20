@@ -131,7 +131,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             view_stmt(names, inner)
         }
         Stmt::Expr(e) => {
-            let node = view_expr(names, e)?;
+            let node = view_expr(names, super::colon_pairs::statement_form(e))?;
             if matches!(
                 node.class,
                 RakuAstClass::StatementRequire
