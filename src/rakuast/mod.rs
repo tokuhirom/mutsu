@@ -207,6 +207,7 @@ mod regex_decl_constructor;
 mod regex_declaration;
 mod regex_enumeration;
 mod regex_extension;
+mod regex_modifier_origins;
 mod regex_quantifier;
 mod regex_sym;
 mod regex_variable_alias;

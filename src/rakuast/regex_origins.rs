@@ -271,6 +271,14 @@ impl Walk<'_> {
                 self.code(names, node, "block")?;
                 self.eat(">")?
             }
+            // `:i`, `:!ignorecase`, `:s`, ...: the colon, the negation the
+            // node records, and the short or long name.
+            RakuAstClass::RegexInternalModifierIgnoreCase
+            | RakuAstClass::RegexInternalModifierIgnoreMark
+            | RakuAstClass::RegexInternalModifierSigspace
+            | RakuAstClass::RegexInternalModifierRatchet => {
+                self.at += super::regex_modifier_origins::written_len(node, &self.text[self.at..])?
+            }
             // `{ ... }`: a code block run as the match goes.
             RakuAstClass::RegexBlock => self.code_at(names, node, 0)?,
             _ => return None,
