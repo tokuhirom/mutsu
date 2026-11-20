@@ -1692,6 +1692,7 @@ pub(crate) mod test_lower {
 }
 
 #[cfg(test)]
+#[path = "spelling_mode_tests.rs"]
 mod spelling_mode_tests;
 
 #[cfg(test)]
