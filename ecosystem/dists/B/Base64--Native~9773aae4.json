@@ -25,7 +25,7 @@
         "nok": 3,
         "ok": 1,
         "plan": 4,
-        "secs": 0.8,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -35,11 +35,11 @@
       "cmp": "no_baseline",
       "path": "t/base64.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-hfg94fon/dist/Base64-Native-0.0.11/resources/libraries/base64.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-hfg9",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-r78noqog/dist/Base64-Native-0.0.11/resources/libraries/base64.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-r78n",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.61,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 3,
-        "secs": 0.65,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -65,10 +65,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-19",
+    "date": "2026-11-20",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "15bfcb58",
+    "mutsu_commit": "4983197b",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
