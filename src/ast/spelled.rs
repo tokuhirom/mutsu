@@ -150,6 +150,12 @@ pub(crate) enum Spelling {
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,
+    /// `|<< EXPR` / `|» EXPR`: the hyper slip, which the parser runs as the
+    /// plain `|EXPR`; RakuAST keeps `MetaPrefix::Hyper(Prefix("|"))`.
+    HyperSlip,
+    /// `constant X := EXPR`: an initializer written with `:=`, which a
+    /// constant runs the same as `=`; RakuAST keeps `Initializer::Bind`.
+    ConstantBind,
     /// `A Z B Z C`, `A Z+ B Z+ C`: a chain of three or more zip operands, which
     /// the parser runs as one `zip(A, B, C, :with(&infix:<+>))` call. RakuAST
     /// keeps the list infix over every operand.

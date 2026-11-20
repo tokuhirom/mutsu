@@ -28,6 +28,7 @@ pub(super) fn parse_enum_trait_clauses<'a>(
     is_export: &mut bool,
     export_tags: &mut Vec<String>,
     roles: &mut Vec<String>,
+    order: &mut crate::ast::parsed::TraitOrder,
 ) -> Result<&'a str, PError> {
     let mut rest = input;
     loop {
@@ -36,6 +37,8 @@ pub(super) fn parse_enum_trait_clauses<'a>(
             let (r, trait_name) = ident(r)?;
             if trait_name == "export" {
                 *is_export = true;
+                // The rendered clauses before it: the roles read so far.
+                order.export = u8::try_from(roles.len()).unwrap_or(u8::MAX);
                 let (r, tags) = if has_export_tag_argument(r) {
                     parse_export_trait_tags(r)?
                 } else {

@@ -589,6 +589,20 @@ pub(crate) struct TypeDeclSpans {
     /// `is export` on a subset; none when not written.
     #[serde(default)]
     pub(crate) export: TraitSpans,
+    /// Where `of` and `is export` stand among the declaration's rendered
+    /// trait clauses, counted in written order from 0; the other clauses (an
+    /// enum's `does`, a subset's own `is` traits) take the remaining places in
+    /// their order.
+    #[serde(default)]
+    pub(crate) order: TraitOrder,
+}
+
+/// The written places of the `of` and `is export` clauses; see
+/// [`TypeDeclSpans::order`].
+#[derive(Debug, Clone, Copy, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TraitOrder {
+    pub(crate) of: u8,
+    pub(crate) export: u8,
 }
 
 /// Where a parameter was written: all of it (type, traits and default

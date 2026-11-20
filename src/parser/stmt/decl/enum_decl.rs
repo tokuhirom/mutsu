@@ -148,14 +148,10 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         let body_start = r;
         let mut variants = Vec::new();
         let mut r = r;
-        let mut empty_body = None;
         loop {
             let (r2, _) =
                 take_while_opt(r, |c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r');
             if let Some(r2) = r2.strip_prefix('>') {
-                if variants.is_empty() {
-                    empty_body = Some(body_start[..body_start.len() - r2.len() - 1].into());
-                }
                 r = r2;
                 break;
             }
@@ -165,7 +161,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             variants.push((word.to_string(), None));
             r = r2;
         }
-        let form = empty_body.map_or(EnumVariantForm::Words, EnumVariantForm::EmptyWords);
+        let form = words_form(&body_start[..body_start.len() - r.len() - 1], &variants);
         (r, variants, form)
     } else if input.starts_with('(') {
         let (r, body) = parse_paren_enum_body(input)?;
@@ -344,6 +340,16 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
 /// Decompose a parsed `(...)` enum body into static variants, or `None` when at
 /// least one element is not a static name/pair (the caller then keeps the body
 /// as a computed expression).
+/// The form of a `< >` body written as `text`: the text itself when it is not
+/// the words joined by single spaces (`< >`, `< Red Green >`), which the
+/// variants do not keep.
+// Cost: O(n), n = length of the body.
+fn words_form(text: &str, variants: &[(String, Option<Expr>)]) -> EnumVariantForm {
+    let mut words = variants.iter().map(|(name, _)| name.as_str());
+    let plain = text.split(' ').eq(&mut words) && !text.is_empty();
+    if plain { EnumVariantForm::Words } else { EnumVariantForm::WrittenWords(text.into()) }
+}
+
 /// The form of a `<< >>` / `« »` body that began at `start` and ended where
 /// `after` begins: the text as written when it holds only words, since the
 /// variants keep neither the spacing nor which words were colonpair atoms
@@ -401,10 +407,10 @@ pub(super) fn parse_enum_decl_body_with_type(
 ) -> PResult<'_, Stmt> {
     let (rest, name_str) = qualified_ident(input)?;
     let name = Symbol::intern(&name_str);
-    let spans = Some(Box::new(crate::ast::parsed::TypeDeclSpans {
+    let mut spans = Box::new(crate::ast::parsed::TypeDeclSpans {
         name: crate::parser::primary::source_span(input, rest),
         ..Default::default()
-    }));
+    });
     // An enum's *name* is a type, exactly like a class or role name. Register
     // it as one so a bareword `Day` (or the `Day::Mon` value spelling, whose
     // head must resolve to the enum type) is recognized as declared — the
@@ -419,7 +425,14 @@ pub(super) fn parse_enum_decl_body_with_type(
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut roles: Vec<String> = Vec::new();
-    let rest = parse_enum_trait_clauses(rest, &mut is_export, &mut export_tags, &mut roles)?;
+    let rest = parse_enum_trait_clauses(
+        rest,
+        &mut is_export,
+        &mut export_tags,
+        &mut roles,
+        &mut spans.order,
+    )?;
+    let spans = Some(spans);
 
     // Enum variants in << >>, « », <> or ()
     let (rest, variants, variant_form) = if rest.starts_with("<<") || rest.starts_with('\u{ab}') {
@@ -430,14 +443,10 @@ pub(super) fn parse_enum_decl_body_with_type(
         let body_start = r;
         let mut variants = Vec::new();
         let mut r = r;
-        let mut empty_body = None;
         loop {
             let (r2, _) =
                 take_while_opt(r, |c: char| c == ' ' || c == '\t' || c == '\n' || c == '\r');
             if let Some(r2) = r2.strip_prefix('>') {
-                if variants.is_empty() {
-                    empty_body = Some(body_start[..body_start.len() - r2.len() - 1].into());
-                }
                 r = r2;
                 break;
             }
@@ -447,7 +456,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             variants.push((word.to_string(), None));
             r = r2;
         }
-        let form = empty_body.map_or(EnumVariantForm::Words, EnumVariantForm::EmptyWords);
+        let form = words_form(&body_start[..body_start.len() - r.len() - 1], &variants);
         (r, variants, form)
     } else if rest.starts_with('(') {
         // The body is an ordinary parenthesized term (see `parse_paren_enum_body`).

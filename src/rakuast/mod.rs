@@ -245,6 +245,7 @@ mod underscore_bindings;
 pub(crate) mod unit_source;
 mod unit_span;
 mod loop_step;
+mod trait_order;
 mod unspell;
 mod zip_chain;
 mod use_origins;

@@ -1014,12 +1014,13 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             is_my,
             base_type,
             roles,
+            spans,
             ..
         } => {
             if variants.is_empty()
                 && !matches!(
                     variant_form,
-                    crate::ast::EnumVariantForm::EmptyWords(_)
+                    crate::ast::EnumVariantForm::WrittenWords(_)
                         | crate::ast::EnumVariantForm::PairList
                         | crate::ast::EnumVariantForm::WrittenPairs(_)
                         | crate::ast::EnumVariantForm::WrittenQuoteWords(_)
@@ -1039,18 +1040,11 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             if let Some(base) = base_type {
                 fields.push(node_field(Some("of"), build_type_node(names, base)?));
             }
-            let mut traits = Vec::new();
-            for role in roles {
-                traits.push(Value::rakuast(Box::new(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::TraitDoes,
-                    fields: vec![node_field(None, build_type_node(names, role)?)],
-                })));
-            }
-            traits.extend(super::package_header::export_trait_value(
+            let export = super::package_header::export_trait_value(
                 *is_export || !export_tags.is_empty(),
                 export_tags,
-            ));
+            );
+            let traits = super::trait_order::enum_traits(names, roles, export, spans.as_deref())?;
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -1118,6 +1112,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             export_tags,
             custom_traits,
             is_my,
+            spans,
             ..
         } => {
             let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
@@ -1131,22 +1126,13 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             if let Some(pred) = predicate {
                 fields.push(node_field(Some("where"), view_expr(names, pred)?));
             }
-            // `is export` comes before the `of` base type in the traits.
-            let mut traits: Vec<Value> = super::package_header::export_trait_value(
+            let export = super::package_header::export_trait_value(
                 *is_export || !export_tags.is_empty(),
                 export_tags,
-            )
-            .into_iter()
-            .collect();
-            // `is foo` / `is foo(ARG)`; after `is export`, before the base.
-            traits.extend(super::decl_traits::view_node(names, custom_traits)?);
-            if *base_is_explicit {
-                traits.push(Value::rakuast(Box::new(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::TraitOf,
-                    fields: vec![node_field(None, build_type_node(names, base)?)],
-                })));
-            }
+            );
+            let of = base_is_explicit.then_some(base.as_str());
+            let traits =
+                super::trait_order::subset_traits(names, export, custom_traits, of, spans.as_deref())?;
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -2587,9 +2573,11 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::PseudoPackage(w) => Ok(super::compiler_var::view_pseudo_package(w)),
             Spelling::CaptureSigil(s) => super::match_vars::view_sigiled(&spelled.expr, *s),
             Spelling::ZipChain => super::zip_chain::view_node(names, &spelled.expr),
+            Spelling::HyperSlip => super::hyper_prefix::slip_node(names, &spelled.expr),
             Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
             Spelling::RadixNumber => super::radix_number::view_node(names, &spelled.expr),
             Spelling::ColonPairValue(_)
+            | Spelling::ConstantBind
             | Spelling::AttributeCall(_)
             | Spelling::ImplicitError
             | Spelling::HashPairKey { .. } => view_expr(names, &spelled.expr),
@@ -4528,14 +4516,16 @@ fn constant_declaration(
             value: RakuAstFieldValue::List(vec![export]),
         });
     }
-    fields.push(node_field(
-        Some("initializer"),
-        RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::InitializerAssign,
-            fields: vec![node_field(None, view_expr(names, expr)?)],
-        },
-    ));
+    // `constant X := EXPR` keeps its `Initializer::Bind`.
+    let (class, expr) = match expr {
+        Expr::Spelled(s) if matches!(s.spelling, Spelling::ConstantBind) => {
+            (RakuAstClass::InitializerBind, &s.expr)
+        }
+        _ => (RakuAstClass::InitializerAssign, expr),
+    };
+    let initializer = node_field(None, view_expr(names, expr)?);
+    let initializer = RakuAstNode { origin: Default::default(), class, fields: vec![initializer] };
+    fields.push(node_field(Some("initializer"), initializer));
     Ok(Some(statement_expression(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::VarDeclarationConstant,

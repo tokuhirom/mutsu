@@ -1391,7 +1391,8 @@ fn lower_constant(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runtime
         },
     };
     let init = named_child(node, "initializer")?;
-    if init.class != RakuAstClass::InitializerAssign {
+    // A constant runs `:=` the same as `=`.
+    if !matches!(init.class, RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind) {
         return Err(unsupported(node));
     }
     let expr = lower_expr(names, named_child_or_positional(init)?)?;
@@ -5725,6 +5726,9 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     }
                     if inner.class == RakuAstClass::Postfix {
                         return super::hyper_subscript::lower_postfix_operator(operand, inner);
+                    }
+                    if inner.class == RakuAstClass::PostfixPower {
+                        return super::postfix_power::lower_hyper_power(inner, operand);
                     }
                     if super::dynamic_method::is_dynamic(inner) {
                         return super::dynamic_method::lower_hyper(names, operand, inner);

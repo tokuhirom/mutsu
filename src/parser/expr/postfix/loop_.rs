@@ -647,11 +647,14 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let (rest, expr) = prefix_expr(rest)?;
         return Ok((
             rest,
-            Expr::Unary {
-                op: TokenKind::Pipe,
-                expr: Box::new(expr),
-                word: false,
-            },
+            Expr::spelled(
+                Expr::Unary {
+                    op: TokenKind::Pipe,
+                    expr: Box::new(expr),
+                    word: false,
+                },
+                || crate::ast::spelled::Spelling::HyperSlip,
+            ),
         ));
     }
     // |expr — slip/flatten prefix.
@@ -2486,13 +2489,16 @@ fn postfix_expr_loop_from<'a>(
             // Check for hyper + superscript exponent: »²
             if let Some((exp, len)) = parse_superscript_exp(after_hyper) {
                 rest = &after_hyper[len..];
-                expr = Expr::HyperOp {
-                    op: "**".to_string(),
-                    left: Box::new(expr),
-                    right: Box::new(Expr::Literal(Value::int(exp))),
-                    dwim_left: false,
-                    dwim_right: true,
-                };
+                expr = Expr::spelled(
+                    Expr::HyperOp {
+                        op: "**".to_string(),
+                        left: Box::new(expr),
+                        right: Box::new(Expr::Literal(Value::int(exp))),
+                        dwim_left: false,
+                        dwim_right: true,
+                    },
+                    || crate::ast::spelled::Spelling::SuperscriptPower,
+                );
                 continue;
             }
             // Hyper indexing: expr»[idx] / expr».[idx] (or >> forms) => expr».AT-POS(idx)

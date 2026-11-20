@@ -45,9 +45,9 @@ pub(super) fn view_node(
             modifier,
             quoted: false,
             ..
-        } if is_marked_self(target) => match modifier {
-            // `$.meth(args)` / `$.meth: args`.
-            None => Some(public(names, '$', *name, args)),
+        } if marked_self(target).is_some() => match modifier {
+            // `$.meth(args)` / `$.meth: args` / `&.meth` / `&.meth(args)`.
+            None => Some(public(names, marked_self(target)?, *name, args)),
             // `$.^name`: the meta-method call in item context.
             Some('^') => Some(item_meta_call(names, *name, args)),
             _ => None,
@@ -56,13 +56,20 @@ pub(super) fn view_node(
     }
 }
 
-/// Whether `target` is the `self` of a `$.meth(...)` call.
+/// The sigil when `target` is the `self` of a `$.meth(...)` or `&.meth` call.
 // Cost: O(1).
-fn is_marked_self(target: &Expr) -> bool {
-    matches!(target, Expr::Spelled(spelled) if matches!(spelled.spelling, Spelling::AttributeCall('$')))
+fn marked_self(target: &Expr) -> Option<char> {
+    match target {
+        Expr::Spelled(spelled) => match spelled.spelling {
+            Spelling::AttributeCall(sigil @ ('$' | '&')) => Some(sigil),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
-/// `Var::Attribute::Public(name => "<sigil>.<name>", args => ArgList(...))`.
+/// `Var::Attribute::Public(name => "<sigil>.<name>", args => ArgList(...))`;
+/// an argument-less `&.name` has no `args`.
 // Cost: O(n), n = size of the arguments.
 fn public(
     names: &NameScope,
@@ -70,13 +77,14 @@ fn public(
     name: Symbol,
     args: &[Expr],
 ) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = vec![leaf_field(Some("name"), Value::str(format!("{sigil}.{name}")))];
+    if sigil != '&' || !args.is_empty() {
+        fields.push(node_field(Some("args"), arg_list(names, args)?));
+    }
     Ok(RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::VarAttributePublic,
-        fields: vec![
-            leaf_field(Some("name"), Value::str(format!("{sigil}.{name}"))),
-            node_field(Some("args"), arg_list(names, args)?),
-        ],
+        fields,
     })
 }
 
@@ -124,19 +132,26 @@ pub(super) fn lower(
     let arg_node = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
         (Some("args"), RakuAstFieldValue::Node(v)) => Some(v.clone()),
         _ => None,
-    })?;
+    });
     let full = node.fields.iter().find_map(|f| match (&f.name, &f.value) {
         (Some("name"), RakuAstFieldValue::Node(v)) => Some(v.to_string_value()),
         _ => None,
     })?;
     let (sigil, rest) = full.split_at(full.chars().next().map_or(0, char::len_utf8));
     let method = rest.strip_prefix('.')?;
-    let crate::value::ValueView::RakuAst(arg_node) = arg_node.view() else {
-        return Some(Err(super::view::unsupported("attribute call arguments")));
-    };
-    let args = match args(arg_node) {
-        Ok(args) => args,
-        Err(err) => return Some(Err(err)),
+    // `&.name` reads the accessor whether or not it has arguments.
+    let args = match arg_node {
+        Some(arg_node) => {
+            let crate::value::ValueView::RakuAst(arg_node) = arg_node.view() else {
+                return Some(Err(super::view::unsupported("attribute call arguments")));
+            };
+            match args(arg_node) {
+                Ok(args) => args,
+                Err(err) => return Some(Err(err)),
+            }
+        }
+        None if sigil == "&" => Vec::new(),
+        None => return None,
     };
     let call = Expr::MethodCall {
         target: Box::new(Expr::BareWord("self".to_string())),
@@ -147,7 +162,7 @@ pub(super) fn lower(
         sugar: false,
     };
     let context = match sigil {
-        "$" => return Some(Ok(call)),
+        "$" | "&" => return Some(Ok(call)),
         "@" => "list",
         "%" => "hash",
         _ => return Some(Err(super::view::unsupported("attribute call sigil"))),
