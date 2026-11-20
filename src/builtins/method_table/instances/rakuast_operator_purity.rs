@@ -27,6 +27,20 @@ fn short_circuit(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError>
     Ok(answer(target, operator_purity::short_circuit))
 }
 
+// `Assignment.item`: the `:item` flag of an assignment node (`False` for a list
+// assignment). A row of its own, so it wins over `Mu.item` (itemize).
+// Cost: O(f), f = fields of the assignment node.
+fn assignment_item(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    let item = native_node(target).is_some_and(|base| match base.view() {
+        ValueView::RakuAst(node) => node
+            .fields
+            .iter()
+            .any(|f| matches!(f.value, crate::rakuast::RakuAstFieldValue::Adverb("item"))),
+        _ => false,
+    });
+    Ok(Value::truth(item))
+}
+
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:ident) => {
         MethodRow {
@@ -48,6 +62,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("RakuAST::MetaInfix", "is-pure", is_pure),
     row!("RakuAST::MetaInfix::Assign", "is-pure", is_pure),
     row!("RakuAST::Assignment", "is-pure", is_pure),
+    row!("RakuAST::Assignment", "item", assignment_item),
     row!("RakuAST::Prefixish", "is-pure", is_pure),
     row!("RakuAST::Prefix", "is-pure", is_pure),
 ];
