@@ -253,11 +253,7 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (TypeEnum, "clean-clone") => Some(Value::rakuast(Box::new(node.clone()))),
         (CallMetaMethod | CallQuotedMethod, "args") => {
             Some(field(node, "args").unwrap_or_else(|| {
-                Value::rakuast(Box::new(RakuAstNode {
-                    class: ArgList,
-                    fields: Vec::new(),
-                    origin: Default::default(),
-                }))
+                super::empty_fields::empty_node(node, "args", ArgList)
             }))
         }
         (StubFail, "name") => Some(Value::str_from("...")),

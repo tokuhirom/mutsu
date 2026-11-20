@@ -270,6 +270,13 @@ fn place_call(
         return;
     };
     let class = call.class;
+    if class == RakuAstClass::CallQuotedMethod && !dotty {
+        let mut call = RakuAstNode::clone(call);
+        if super::quoted_method_origins::place(&mut call, from, span) {
+            *held = Value::rakuast(Box::new(call));
+        }
+        return;
+    }
     if !matches!(
         class,
         RakuAstClass::CallMethod

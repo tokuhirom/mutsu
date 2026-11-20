@@ -177,7 +177,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         | CallMethod
         | CallPrivateMethod
         | CallNameAsMethod
-        | CallMetaMethod => &[
+        | CallMetaMethod
+        | CallQuotedMethod => &[
             ("name", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],

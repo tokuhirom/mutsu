@@ -56,6 +56,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::ApplyPostfix => {
             super::list_origins::postcircumfix(node);
             super::operator_origins::derive(node);
+            super::quoted_method_origins::segments(names, node);
         }
         RakuAstClass::QuotedString => super::string_origins::interpolated(names, node),
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
