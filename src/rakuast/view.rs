@@ -5976,7 +5976,7 @@ pub(super) fn regex_arg_list(
                     .copied()
                     .unwrap_or(false)
                 {
-                    literal_hash_index_expr(names, argument)?
+                    super::postfix_grouping::literal_hash_index(names, argument)?
                 } else {
                     view_expr(names, argument)?
                 };
@@ -6214,27 +6214,6 @@ fn colonpair_value_node(
             node_field(Some("value"), parenthesized),
         ],
     })
-}
-
-fn literal_hash_index_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let Expr::Index {
-        target,
-        index,
-        is_positional: false,
-        ..
-    } = expr
-    else {
-        return Err(unsupported("literal hash index provenance"));
-    };
-    super::postfix_grouping::view_node(
-        names,
-        target,
-        RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::PostcircumfixLiteralHashIndex,
-            fields: vec![node_field(Some("index"), view_expr(names, index)?)],
-        },
-    )
 }
 
 /// Whether a call argument is one of mutsu's own injected named arguments

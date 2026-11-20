@@ -2,6 +2,10 @@
 //! (`/ a b+ /`, `rx/.../`, `m:i/.../`) and of a `token` / `rule` / `regex`
 //! declaration.
 //!
+//! A declaration's name and signature are placed by `regex_decl_origins`,
+//! a code block inside the body (`<?{ ... }>`, `** {$n}`) by
+//! `regex_block_origins`.
+//!
 //! The regex source tree (ADR-0088) keeps no positions, so the converted
 //! nodes are laid over the regex's text in source order: each atom must be
 //! spelled at the cursor (a literal its text, `\d` its class, `^` its
@@ -43,44 +47,9 @@ pub(super) fn quoted(names: &NameScope, node: &mut RakuAstNode) {
     super::infix_origins::with_child(node, "body", |regex| walk_body(names, regex, body));
 }
 
-/// Place the body of a `token` / `rule` / `regex` declaration written at its
-/// range: the text between the braces after its name.
-// Cost: O(n), n = length of the declaration's source.
-pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
-    let Some((from, to)) = byte_range(node) else {
-        return;
-    };
-    let Some(name) = super::infix_origins::child(node, "name").and_then(leaf_text) else {
-        return;
-    };
-    let body = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
-        let word = ["token", "rule", "regex"]
-            .into_iter()
-            .find_map(|k| text.find(k).map(|at| at + k.len()))?;
-        let rest = &text[word..];
-        let name_at = from + word + (rest.len() - rest.trim_start().len());
-        let after_name = rest.trim_start().strip_prefix(name.as_str())?;
-        if after_name.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-') {
-            return None;
-        }
-        let brace = after_name.trim_start();
-        if !brace.starts_with('{') || !text.ends_with('}') {
-            return None;
-        }
-        Some((
-            SrcSpan::new(name_at, name_at + name.len()),
-            SrcSpan::new(to - brace.len() + 1, to - 1),
-        ))
-    });
-    if let Some((name_at, body)) = body {
-        super::infix_origins::with_child(node, "name", |n| super::origin::set_span(n, name_at));
-        super::infix_origins::with_child(node, "body", |regex| walk_body(names, regex, body));
-    }
-}
-
 /// Lay `regex` over the body text at `body`.
 // Cost: O(n), n = length of the body.
-fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpan) {
+pub(super) fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpan) {
     let Some(text) = super::unit_source::with_text(body, |t| Some(t.to_string())) else {
         return;
     };
@@ -261,6 +230,15 @@ impl Walk<'_> {
             RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs => {
                 self.named_assertion(names, node)?
             }
+            RakuAstClass::RegexAssertionPredicateBlock => {
+                let negated = node.fields.iter().any(|f| {
+                    f.name == Some("negated")
+                        && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
+                });
+                self.eat(if negated { "<!" } else { "<?" })?;
+                self.code(names, node, "block")?;
+                self.eat(">")?
+            }
             _ => return None,
         }
         // `^` must not have been the first half of `^^`, a literal the start
@@ -352,6 +330,33 @@ impl Walk<'_> {
             self.child(names, node, "atom")?;
         }
         let quantifier = super::infix_origins::child(node, "quantifier")?;
+        if quantifier.class == RakuAstClass::RegexQuantifierBlockRange {
+            // `** {$n}`: the quantifier runs from its `**` to the block's `}`.
+            let quantifier_at = self.at;
+            self.eat("**")?;
+            self.blank();
+            let field = node
+                .fields
+                .iter_mut()
+                .find(|f| f.name == Some("quantifier"))?;
+            let RakuAstFieldValue::Node(held) = &mut field.value else {
+                return None;
+            };
+            let ValueView::RakuAst(quantifier) = held.view() else {
+                return None;
+            };
+            let mut quantifier = RakuAstNode::clone(quantifier);
+            let placed = self.code(names, &mut quantifier, "block");
+            if placed.is_some() {
+                super::origin::set_span(
+                    &mut quantifier,
+                    SrcSpan::new(self.base + quantifier_at, self.base + self.at),
+                );
+            }
+            *held = Value::rakuast(Box::new(quantifier));
+            placed?;
+            return self.separator(names, node);
+        }
         let lowered = super::regex_quantifier::lower_quantifier(names, quantifier)?;
         let range;
         let spelling = match lowered.kind {
@@ -382,6 +387,12 @@ impl Walk<'_> {
         super::infix_origins::with_child(node, "quantifier", |q| {
             super::origin::set_span(q, quantifier_span)
         });
+        self.separator(names, node)
+    }
+
+    /// The `% separator` of the quantified atom `node`, if it has one.
+    // Cost: O(n), n = length of the separator's text.
+    fn separator(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
         if super::infix_origins::child(node, "separator").is_some() {
             self.blank();
             let trailing = super::regex_quantifier::trailing_separator(node);
@@ -392,6 +403,26 @@ impl Walk<'_> {
             self.blank();
             self.child(names, node, "separator")?;
         }
+        Some(())
+    }
+
+    /// The code block held by `node`'s field `field`, at the cursor
+    /// (`regex_block_origins`).
+    // Cost: O(n), n = length of the block's text, plus the parse of its code.
+    fn code(&mut self, names: &NameScope, node: &mut RakuAstNode, field: &str) -> Option<()> {
+        let field = node.fields.iter_mut().find(|f| f.name == Some(field))?;
+        let RakuAstFieldValue::Node(held) = &mut field.value else {
+            return None;
+        };
+        let ValueView::RakuAst(block) = held.view() else {
+            return None;
+        };
+        let mut block = RakuAstNode::clone(block);
+        let text = &self.text[self.at..];
+        let len =
+            super::regex_block_origins::code_block(names, &mut block, text, self.base + self.at);
+        *held = Value::rakuast(Box::new(block));
+        self.at += len?;
         Some(())
     }
 
@@ -453,7 +484,14 @@ impl Walk<'_> {
         self.eat(if capturing { "<" } else { "<." })?;
         let name_at = self.at;
         self.eat(&name)?;
-        if call {
+        if call && self.eat(":").is_some() {
+            // `<name: ARGS>`: the arguments run to the assertion's `>`.
+            let text: &str = self.text;
+            let len = super::regex_call_origins::colon_args_len(&text[self.at..])?;
+            let inner = &text[self.at..self.at + len];
+            super::regex_call_origins::place(names, node, inner, self.base + self.at)?;
+            self.at += len;
+        } else if call {
             // `<name(ARGS)>`
             self.eat("(")?;
             let text: &str = self.text;
@@ -512,10 +550,34 @@ impl Walk<'_> {
         }
         if bracketed {
             self.eat(">")?;
+        } else {
+            self.alias_tail();
         }
         let span = SrcSpan::new(self.base + at, self.base + end);
         super::infix_origins::with_child(node, "var", |v| super::origin::set_span(v, span));
         Some(())
+    }
+
+    /// `$foo = [<two>]`: the atom an interpolated variable is aliased to is
+    /// not in the tree, and Rakudo's `Interpolation` runs over it and the
+    /// whitespace after it. Consumes that text when it is at the cursor.
+    // Cost: O(n), n = length of the aliased atom.
+    fn alias_tail(&mut self) {
+        let rest = &self.text[self.at..];
+        let gap = rest.len() - rest.trim_start().len();
+        let Some(after) = rest[gap..].strip_prefix('=') else {
+            return;
+        };
+        if after.starts_with('=') {
+            return;
+        }
+        let lead = after.len() - after.trim_start().len();
+        let Some(atom) = aliased_atom_len(&after[lead..]) else {
+            return;
+        };
+        let tail = &after[lead + atom..];
+        let blank = tail.len() - tail.trim_start().len();
+        self.at += gap + 1 + lead + atom + blank;
     }
 
     /// `$<name>=atom` / `@<name>=atom`.
@@ -641,8 +703,9 @@ impl Walk<'_> {
         self.eat("]")
     }
 
-    /// `'...'` / `"..."` without escapes: the `Quote`, its `QuotedString` and
-    /// the `StrLiteral` inside.
+    /// `'...'` (with its `\\` / `\'` escapes) / `"..."` without escapes or
+    /// interpolation: the `Quote`, its `QuotedString` and the `StrLiteral`
+    /// inside.
     // Cost: O(n), n = length of the quote.
     fn quote(&mut self, node: &mut RakuAstNode) -> Option<()> {
         let delimiter = self.text[self.at..]
@@ -651,11 +714,14 @@ impl Walk<'_> {
             .filter(|c| matches!(c, '\'' | '"'))?;
         let start = self.at;
         let inner = &self.text[start + 1..];
-        let len = inner.find(delimiter)?;
-        let written = &inner[..len];
-        if written.contains('\\')
-            || (delimiter == '"' && written.contains(['$', '@', '%', '&', '{']))
-        {
+        let (len, value) = if delimiter == '\'' {
+            single_quoted(inner)?
+        } else {
+            let len = inner.find(delimiter)?;
+            (len, inner[..len].to_string())
+        };
+        let written = value.as_str();
+        if delimiter == '"' && written.contains(['\\', '$', '@', '%', '&', '{']) {
             return None;
         }
         let quoted = super::infix_origins::child_at(node, 0)?;
@@ -680,4 +746,59 @@ impl Walk<'_> {
         });
         Some(())
     }
+}
+
+/// The length of a single-quoted string's text after its opening `'` (up to
+/// the closing one, excluded) and its value: `\\` and `\'` are escapes,
+/// any other backslash stays as written.
+// Cost: O(n), n = length of the string.
+fn single_quoted(inner: &str) -> Option<(usize, String)> {
+    let mut value = String::new();
+    let mut chars = inner.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '\'' => return Some((at, value)),
+            '\\' => match chars.next()? {
+                (_, escaped @ ('\\' | '\'')) => value.push(escaped),
+                (_, other) => {
+                    value.push('\\');
+                    value.push(other);
+                }
+            },
+            c => value.push(c),
+        }
+    }
+    None
+}
+
+/// The length of the atom `text` starts with when it is a group (`[...]`,
+/// `(...)`), an assertion (`<...>`) or a quote (`'...'`), the atoms measured
+/// as the target of an aliased interpolation.
+// Cost: O(n), n = length of the atom.
+fn aliased_atom_len(text: &str) -> Option<usize> {
+    let open = text.chars().next()?;
+    if open == '\'' {
+        return single_quoted(&text[1..]).map(|(len, _)| len + 2);
+    }
+    let close = match open {
+        '[' => ']',
+        '(' => ')',
+        '<' => '>',
+        _ => return None,
+    };
+    let mut depth = 0usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '\'' | '"' | '\\' | '#' => return None,
+            c if c == open => depth += 1,
+            c if c == close => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at + c.len_utf8());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
