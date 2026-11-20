@@ -34,6 +34,30 @@ fn prefix(node: &mut RakuAstNode) {
     let Some((from, _)) = byte_range(node) else {
         return;
     };
+    // `-<< @x` / `|« @x`: a `MetaPrefix::Hyper` over the operator and its
+    // `<<`, holding the `Prefix`.
+    if let Some(hyper) = child(node, "prefix").filter(|p| p.class == RakuAstClass::MetaPrefixHyper)
+    {
+        let Some(op) = child_at(hyper, 0)
+            .filter(|p| p.class == RakuAstClass::Prefix)
+            .and_then(leaf_text)
+        else {
+            return;
+        };
+        let marker = super::unit_source::with_text(SrcSpan::new(from, from + op.len() + 3), |text| {
+            let rest = text.strip_prefix(op.as_str())?;
+            ["<<", "\u{ab}"].into_iter().find(|m| rest.starts_with(m)).map(str::len)
+        });
+        if let Some(marker) = marker {
+            with_child(node, "prefix", |hyper| {
+                super::origin::set_span(hyper, SrcSpan::new(from, from + op.len() + marker));
+                with_child_at(hyper, 0, |p| {
+                    super::origin::set_span(p, SrcSpan::new(from, from + op.len()))
+                });
+            });
+        }
+        return;
+    }
     let Some(op) = child(node, "prefix")
         .filter(|p| p.class == RakuAstClass::Prefix)
         .and_then(leaf_text)
