@@ -413,8 +413,50 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether the action method the node dispatches to reads its captures
+    /// only through a `$/` it binds itself: a compiled user method with a
+    /// positional `$/` parameter, unwrapped. Its body and every closure in it
+    /// then resolve `$/`, `$<name>` and `$0` to that parameter, and a method
+    /// has its own `$_`, so nothing in it can observe the env ceremony of
+    /// [`Self::call_node_action`] (#18207).
+    // Cost: O(p), p = the method's parameters, plus one memoized method
+    // resolution.
+    fn action_binds_own_match_var(
+        &mut self,
+        actions: &Value,
+        match_obj: &Value,
+        rule_name: &str,
+        sym_method_name: Option<&str>,
+    ) -> bool {
+        let Some(class) = Self::actions_class_sym(actions) else {
+            return false;
+        };
+        if self.has_any_wrap_chains() {
+            return false;
+        }
+        let method = match sym_method_name {
+            Some(sym) if self.actions_answer_method_of(class, Symbol::intern(sym)) => sym,
+            _ => rule_name,
+        };
+        let method_sym = Symbol::intern(method);
+        let args = std::slice::from_ref(match_obj);
+        match self.resolve_method_cached(class.as_str(), method, class, method_sym, args, actions) {
+            Ok(Some((_, def))) => {
+                !def.is_multi
+                    && def.compiled_code.is_some()
+                    && def
+                        .param_defs
+                        .iter()
+                        .any(|param| !param.named && param.name == "/")
+            }
+            _ => false,
+        }
+    }
+
     /// Call the node's own action method with `$/`, `$_` and the node's
     /// `$<name>`/`$0..` installed, and the enclosing ones put back after.
+    /// An action that binds its own `$/` cannot observe any of that, so it is
+    /// called directly.
     fn call_node_action(
         &mut self,
         match_obj: &Value,
@@ -423,9 +465,14 @@ impl Interpreter {
         rule_name: &str,
         sym_method_name: Option<&str>,
     ) -> Result<Value, RuntimeError> {
-        self.env.insert_sym(wk::match_var(), match_obj.clone());
         self.env.remove_sym(wk::made());
         self.regex_state.action_made = None;
+        if self.action_binds_own_match_var(actions, match_obj, rule_name, sym_method_name) {
+            let (_, method_result) =
+                self.call_grammar_action_method(actions, rule_name, sym_method_name, match_obj);
+            return method_result;
+        }
+        self.env.insert_sym(wk::match_var(), match_obj.clone());
         // Hide the parent's named and positional captures from this action,
         // and install the node's own so `$<a>` and `$0` work inside it.
         let saved_named_captures = self.take_action_named_captures();
