@@ -98,6 +98,17 @@ fn plan_arg_kind_ok(arg: &Value) -> bool {
     // the same position holding the same kind of value. Only a plain cell
     // holding a scalar-like value: an itemized or native-typed cell carries
     // a reading of its own.
+    // A positional `Proxy` (AttrX::Mooish's `AttrProxy` handed to
+    // `build-attr` / `store-with-cb`, #18321): the lane key holds a marker in
+    // its position, never what it FETCHes. The gate's reading of it is fixed
+    // by the parameter it binds -- a `Mu` container parameter keeps the Proxy
+    // (`MethodContainerBind::Proxy`, re-classified on every replay of a plan
+    // with container parameters), any other parameter FETCHes it on each call
+    // in the binder -- and the lean frame refuses it per call
+    // (`lean_args_ok`).
+    if arg.is_proxy_value() {
+        return true;
+    }
     if arg.is_container_ref() {
         return !arg.container_ref_is_itemized()
             && arg.native_container_type().is_none()

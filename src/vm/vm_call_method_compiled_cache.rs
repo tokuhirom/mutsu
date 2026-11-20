@@ -78,6 +78,9 @@ mod key_syms {
         native_int => "int";
         native_num => "num";
         native_str => "str";
+        // A NUL cannot occur in a Raku type name, so the marker never reads
+        // as the key of an argument.
+        proxy_arg => "\u{0}proxy-arg";
     }
 }
 
@@ -93,6 +96,12 @@ enum NamedArgs {
     /// literal mask (that mask indexes the call's own positionals), and no
     /// nested named argument.
     KeyedValue,
+    /// [`NamedArgs::Key`] for the plain-method lane, which also keys a
+    /// positional `Proxy` -- by a marker, never by what its FETCH answers
+    /// (#18321). Only the lane may: no probe of the stretch it skips reads a
+    /// Proxy argument's value (`vm_call_method_plain_lane`), while a multi
+    /// candidate set dispatches on that value.
+    LaneKey,
 }
 
 impl Interpreter {
@@ -177,7 +186,7 @@ impl Interpreter {
         args: &[Value],
         keys: &mut Vec<crate::symbol::Symbol>,
     ) -> bool {
-        self.multi_arg_type_keys_impl(args, keys, NamedArgs::Key)
+        self.multi_arg_type_keys_impl(args, keys, NamedArgs::LaneKey)
     }
 
     /// [`Self::multi_arg_type_keys`] for a METHOD candidate set, which keys a
@@ -286,6 +295,13 @@ impl Interpreter {
                     .map(crate::symbol::Symbol::intern),
                 _ => None,
             };
+            // The plain-method lane keys a positional Proxy as such: its
+            // FETCH answer may change between calls, and nothing the lane
+            // skips reads it (see `NamedArgs::LaneKey`).
+            if named == NamedArgs::LaneKey && matches!(a.view(), ValueView::Proxy { .. }) {
+                keys.push(key_syms::proxy_arg());
+                continue;
+            }
             let key = match a.view() {
                 _ if let Some(native) = native_array_key => native,
                 ValueView::Instance { class_name, .. } => class_name,
@@ -340,7 +356,9 @@ impl Interpreter {
                 // the candidate set value-dependent, which
                 // `method_candidate_shape` already refuses wholesale. A value
                 // that is itself a pair is not keyed.
-                ValueView::Pair(name, value) if named == NamedArgs::Key => {
+                ValueView::Pair(name, value)
+                    if matches!(named, NamedArgs::Key | NamedArgs::LaneKey) =>
+                {
                     if matches!(value.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
                         return false;
                     }
