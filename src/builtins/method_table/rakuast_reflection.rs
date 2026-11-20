@@ -4,7 +4,9 @@
 /// than to the Rakudo snapshot. ADR-10723 section 6.92 records hash captures.
 // Cost: O(1), one fixed owner/name pair.
 pub(crate) fn model_extension(owner: &str, name: &str) -> bool {
-    (owner == "RakuAST::Regex::NamedCapture" && name == "hash") || role_provided(owner, name)
+    (owner == "RakuAST::Regex::NamedCapture" && name == "hash")
+        || role_provided(owner, name)
+        || purity_provided(owner, name)
 }
 
 /// `properties` / `reducer-name` of the owners that get them from the
@@ -21,6 +23,20 @@ fn role_provided(owner: &str, name: &str) -> bool {
                 | "RakuAST::Postcircumfix::HashIndex"
                 | "RakuAST::Postcircumfix::LiteralHashIndex"
         )
+}
+
+/// `is-pure` / `short-circuit` on the owners the 2026.11 rakudo declares them
+/// on but the 2026.09 snapshot does not list (`Infixish`, `MetaInfix`,
+/// `Assignment`, `Prefixish`), so the metaoperators inherit them as in rakudo.
+// Cost: O(1), fixed owner/name pairs.
+fn purity_provided(owner: &str, name: &str) -> bool {
+    matches!(
+        (owner, name),
+        ("RakuAST::Infixish", "is-pure" | "short-circuit")
+            | ("RakuAST::MetaInfix", "is-pure")
+            | ("RakuAST::Assignment", "is-pure")
+            | ("RakuAST::Prefixish", "is-pure")
+    )
 }
 
 // Cost: O(c + log p + f log f), c = model classes, p = row owners, f = local methods.

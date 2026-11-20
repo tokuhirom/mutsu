@@ -432,6 +432,18 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
 /// Monotonic counter naming each anonymous inline subset uniquely.
 static ANON_SUBSET_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The prefix of the name the parser mints for `subset ::`.
+pub(crate) const ANON_SUBSET_PREFIX: &str = "__mutsu_anon_subset_";
+
+/// A fresh name for an anonymous `subset ::` (also used when lowering one).
+// Cost: O(1).
+pub(crate) fn mint_anon_subset_name() -> String {
+    format!(
+        "{ANON_SUBSET_PREFIX}{}",
+        crate::anon_names::next_id(crate::anon_names::AnonKind::Subset, &ANON_SUBSET_COUNTER)
+    )
+}
+
 /// Parse an inline `subset` used as a TERM (an expression yielding the subset's
 /// type object), e.g. `$x ~~ (subset :: where Int|Str)` or a named
 /// `subset Foo where Int|Str`. `input` starts right after the `subset` keyword.
@@ -448,11 +460,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = if let Some(r) = rest.strip_prefix("::")
         && r.starts_with(char::is_whitespace)
     {
-        let n = format!(
-            "__mutsu_anon_subset_{}",
-            crate::anon_names::next_id(crate::anon_names::AnonKind::Subset, &ANON_SUBSET_COUNTER,)
-        );
-        (r, n)
+        (r, mint_anon_subset_name())
     } else {
         qualified_ident(rest)?
     };

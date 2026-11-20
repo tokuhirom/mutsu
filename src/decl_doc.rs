@@ -28,6 +28,18 @@ pub(crate) struct DeclDoc {
     pub(crate) trailing_lines: Vec<String>,
 }
 
+/// The text `.WHY` answers for a declarator comment written as `raw`: each
+/// line trimmed, the non-empty ones joined by a space (rakudo:
+/// `#={  a\n  b   c }` is `"a b   c"`).
+// Cost: O(n), n = length of `raw`.
+pub(crate) fn normalize_doc_text(raw: &str) -> String {
+    raw.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 impl DeclDoc {
     pub(crate) fn is_empty(&self) -> bool {
         self.leading.is_none() && self.trailing.is_none()

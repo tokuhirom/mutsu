@@ -1,7 +1,7 @@
 # ADR-15760: NameScope — one scope type, source-order classification, and a typed node lowered where the parser builds it
 
 - **Status**: Accepted (maintainer decision, 2026-10-31) after revision; Amendment 1 Accepted (maintainer decision, 2026-11-01), §6;
-  Amendment 2 Proposed (2026-11-20), §7
+  Amendment 2 Accepted (maintainer decision, 2026-11-20, with the conditions in §7.5), §7
 - **Date**: 2026-10-31
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15760](https://github.com/tokuhirom/mutsu/issues/15760) (RakuAST C2). Roadmap:
@@ -110,6 +110,11 @@ prerequisite slice (§4, slice P) moves those helpers down, or makes `rakuast` a
 | `EVAL($ast)` / hand-built tree | `lower`, which walks in statement order and extends a seeded `NameScope` through the same `NameScope::declare_*` methods the parser calls | during the walk |
 
 ### 2.3 Source order, and the commit point
+
+> **Superseded in part.** The *mechanism* below (a deferred routine call for an unresolved bareword) was replaced by
+> Amendment 1 (§6.3: the end-of-unit undeclared-routine scan already exists), and the per-statement *commit point*
+> by Amendment 2 (§7.2 (b): the close of a statement list). The rule itself — source order, only routines
+> late-bound — stands. Read §6 and §7 before implementing from this section.
 
 **Classification is in source order, with no whole-unit pre-scan.** A type, constant or sigilless term is known from
 its declaration on. Only **routine names are late-bound**: a bareword the scope does not resolve lowers to a
@@ -289,7 +294,7 @@ the carried path (source 2) never produces an unresolved bareword to defer. Slic
 
 Answers (maintainer, 2026-11-01): 1 yes, 2 yes, 3 yes, as recommended. Amendment 1 is Accepted.
 
-## 7. Amendment 2 (Proposed, 2026-11-20): what is left of slice 2, the converted allow-list, and the commit point
+## 7. Amendment 2 (Accepted, 2026-11-20): what is left of slice 2, the converted allow-list, and the commit point
 
 ### 7.1 Where the campaign stands (`main` after #18268 and the no-spellings PR)
 
@@ -381,3 +386,15 @@ the passes that truly run on a whole unit (`whatever_curry::mark`, the scope dia
 3. Slice 2b changes behaviour only for programs that refer to a routine-shadowed keyword before the `sub`, or that
    rely on whole-unit type knowledge rakudo does not have; it runs the full roast. Acceptable as a separate
    behavioural PR?
+
+### 7.5 Answers (maintainer, 2026-11-20)
+
+Relayed by the planning session to the lane:rakuast C2 session. Q1 yes, Q2 yes, Q3 yes provided slice 2b is an
+independent PR run against the full roast. Two conditions on the implementation, each recorded here when met:
+
+1. **Purity of the list finalization.** §7.2 (b) rests on finalization being a pure function of the list and the
+   scope. Slice 2a verifies that re-finalizing a block a later alternative re-parsed is safe, and that no construct
+   on the §7.2 (a) allow-list carries a registration side effect (a type, operator or routine registered while it is
+   converted), and records the finding in this section.
+2. **The keyword-shadow case stays open.** `say 1; sub say {...}` (§7.2 (c)) is checked in slice 2b's census for
+   real-world harm and the result recorded here.

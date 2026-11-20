@@ -267,7 +267,9 @@ pub(super) fn parsed_expr_node(
 fn inline_subset_node(names: &NameScope, declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     let statement = super::view::view_stmt(names, declaration)?
         .ok_or_else(|| super::view::unsupported("inline subset declaration"))?;
-    statement
+    let anonymous = matches!(declaration, Stmt::SubsetDecl { name, .. }
+        if name.resolve().starts_with(crate::parser::ANON_SUBSET_PREFIX));
+    let mut node = statement
         .fields
         .iter()
         .find(|field| field.name == Some("expression"))
@@ -278,7 +280,12 @@ fn inline_subset_node(names: &NameScope, declaration: &Stmt) -> Result<RakuAstNo
             },
             _ => None,
         })
-        .ok_or_else(|| super::view::unsupported("inline subset declaration"))
+        .ok_or_else(|| super::view::unsupported("inline subset declaration"))?;
+    // `subset ::`: the anonymous name, `Name(EmptyEdge, EmptyEdge)`.
+    if anonymous && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("name")) {
+        *field = super::view::node_field(Some("name"), super::name_parts::anonymous_name());
+    }
+    Ok(node)
 }
 
 /// `TARGET = SOURCE` as an `ApplyInfix` over a plain `Assignment`.

@@ -47,6 +47,9 @@ use crate::decl_doc::{DocComment, DocSlot};
 struct Comment {
     trailing: bool,
     text: String,
+    /// The text as written, which RakuAST keeps: a bracketed comment's
+    /// contents verbatim, a line comment's text after one space.
+    raw: String,
     /// For a `#|`: the source offset of the token after it (and after any
     /// further comments). `usize::MAX` until the `ws` call that skipped it
     /// reaches that token.
@@ -179,25 +182,25 @@ pub(crate) fn set_unit_docs(docs: Vec<DocComment>) {
 /// `#|`/`#=` must be followed by horizontal whitespace (the line form) or an
 /// opening bracket (the `block` form, which `ws` recognized and whose extent
 /// `after` gives), as in Rakudo, so `#====` and `#|x` are plain comments.
-fn comment_text(input: &str, after: &str, block: bool) -> Option<(bool, String)> {
+fn comment_text(input: &str, after: &str, block: bool) -> Option<(bool, String, String)> {
     let trailing = input.starts_with("#=");
     if !trailing && !input.starts_with("#|") {
         return None;
     }
     let body = &input[2..input.len() - after.len()];
-    let text = if block {
+    let raw = if block {
         // Strip the opening and closing bracket runs.
         let open = body.chars().next()?;
         let run = body.chars().take_while(|&c| c == open).count();
         let inner = body.get(run * open.len_utf8()..)?;
-        let inner = inner.get(..inner.len().checked_sub(run * open.len_utf8())?)?;
-        inner.split_whitespace().collect::<Vec<_>>().join(" ")
+        inner.get(..inner.len().checked_sub(run * open.len_utf8())?)?
     } else if body.starts_with([' ', '\t']) {
-        body.trim().to_string()
+        body.trim_end_matches(['\n', '\r']).get(1..)?
     } else {
         return None;
     };
-    (!text.is_empty()).then_some((trailing, text))
+    let text = crate::decl_doc::normalize_doc_text(raw);
+    (!text.is_empty()).then(|| (trailing, text, raw.to_string()))
 }
 
 /// Record a declarator comment `ws` skipped: `input` starts at the `#`,
@@ -208,7 +211,7 @@ pub(in crate::parser) fn note_comment(input: &str, after: &str, block: bool) -> 
     if !active() {
         return false;
     }
-    let Some((trailing, text)) = comment_text(input, after, block) else {
+    let Some((trailing, text, raw)) = comment_text(input, after, block) else {
         return false;
     };
     let Some(at) = source_offset(input) else {
@@ -219,6 +222,7 @@ pub(in crate::parser) fn note_comment(input: &str, after: &str, block: bool) -> 
             slot.insert(Comment {
                 trailing,
                 text,
+                raw,
                 next_token: usize::MAX,
             });
             if !trailing {
