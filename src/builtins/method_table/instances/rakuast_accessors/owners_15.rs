@@ -36,6 +36,17 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
+        "RakuAST::Var::Slang",
+        &[
+            "RakuAST::Var::Slang",
+            "RakuAST::Var",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::VarDeclaration::Anonymous",
         &[
             "RakuAST::VarDeclaration::Anonymous",

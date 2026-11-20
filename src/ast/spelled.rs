@@ -154,6 +154,14 @@ pub(crate) enum Spelling {
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,
+    /// `A Z B Z C`, `A Z+ B Z+ C`: a chain of three or more zip operands, which
+    /// the parser runs as one `zip(A, B, C, :with(&infix:<+>))` call. RakuAST
+    /// keeps the list infix over every operand.
+    ZipChain,
+    /// `@<a>` / `%<a>`: a named capture read through the written sigil, which
+    /// the parser runs as `$<a>.list` / `$<a>.hash`; RakuAST keeps the
+    /// `Var::NamedCapture` with that `sigil`.
+    CaptureSigil(char),
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),
 }
@@ -196,6 +204,36 @@ impl Expr {
             expr,
             spelling: spelling(),
         }))
+    }
+}
+
+impl Expr {
+    /// `@<name>` (`sigil` `@`) or `%<name>` (`%`): the `.list` / `.hash` of
+    /// `$<name>` the parser runs, remembering the written sigil.
+    // Cost: O(|name|).
+    pub(crate) fn named_capture_sigiled(name: &str, sigil: char) -> Expr {
+        Self::spelled(Self::named_capture_call(name, sigil), || {
+            Spelling::CaptureSigil(sigil)
+        })
+    }
+
+    /// The call [`Expr::named_capture_sigiled`] wraps: `$<name>.list` for
+    /// `@`, `$<name>.hash` otherwise.
+    // Cost: O(|name|).
+    pub(crate) fn named_capture_call(name: &str, sigil: char) -> Expr {
+        let (method, sugar) = if sigil == '@' {
+            ("list", true)
+        } else {
+            ("hash", false)
+        };
+        Expr::MethodCall {
+            target: Box::new(Expr::CaptureVar(name.to_string())),
+            name: crate::symbol::Symbol::intern(method),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+            sugar,
+        }
     }
 }
 

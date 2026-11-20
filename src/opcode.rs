@@ -1,5 +1,8 @@
 mod attribute_decl;
 mod class_body_free_vars;
+#[cfg(test)]
+#[path = "opcode/nested_decl_names_tests.rs"]
+mod nested_decl_names_tests;
 mod proto_decl;
 mod reflective_names;
 use reflective_names::{names_package_member_prefix, pseudo_stash_names_enclosing_scope};
@@ -5845,7 +5848,12 @@ fn class_nested_decl_names(body: &[Stmt]) -> Vec<Symbol> {
             v.0.remove(name.as_str());
         }
     }
-    v.0.iter().map(|n| Symbol::intern(n)).collect()
+    // Sorted: `HashSet` iteration order differs per process, and this plan is
+    // compared byte-for-byte between a cached and a fresh compile
+    // (`MUTSU_PRECOMP_VERIFY`).
+    let mut names: Vec<&String> = v.0.iter().collect();
+    names.sort_unstable();
+    names.into_iter().map(|n| Symbol::intern(n)).collect()
 }
 
 /// The declaring frame's lexicals a type's methods may capture, once the names

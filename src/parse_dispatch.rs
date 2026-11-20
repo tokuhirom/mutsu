@@ -52,7 +52,7 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
 /// execute under it. Callers that load a *nested* unit (`load_module`) restore
 /// their own version once the unit's mainline has finished.
 ///
-/// The parsed unit runs as its RakuAST round trip (ADR-10723 Stage 3; see
+/// The parsed unit runs as `rakuast::frontend::finish_unit` finalizes it (ADR-15760; see
 /// `rakuast::frontend`).
 ///
 /// `#[inline(never)]` keeps this a symbol: `scripts/frontend-cost.sh` toggles callgrind
@@ -62,7 +62,7 @@ pub(crate) fn parse_compilation_unit_of(
     input: &str,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let (stmts, finish) = parser::parse_program_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
+    Ok((crate::rakuast::frontend::finish_unit(stmts)?, finish))
 }
 
 /// Parse a quote-construct body under `qq` (double-quote) interpolation rules,

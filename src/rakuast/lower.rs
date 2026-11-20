@@ -3179,6 +3179,8 @@ fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
             ValueView::Str(s) => Ok(format!("$={}", s.as_str())),
             _ => Err(unsupported(node)),
         },
+        // `Var::Slang.new(name => "MAIN")` is `$~MAIN`.
+        RakuAstClass::VarSlang => Ok(format!("$~{}", leaf_str(node, "name")?)),
         // `$.x` -> the whole spelling is the `name`; the `$.x(1)` form (an
         // `args` field) is a method call, which the parser keeps elsewhere.
         RakuAstClass::VarAttributePublic if !node.fields.iter().any(|f| f.name == Some("args")) => {
@@ -4962,6 +4964,13 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             if call.class == RakuAstClass::Postfix {
                 return super::topic_postfix::lower(call);
             }
+            // `.(args)`: a call of the topic.
+            if call.class == RakuAstClass::CallTerm {
+                return Ok(Expr::CallOn {
+                    target: Box::new(Expr::Var("_".to_string())),
+                    args: arg_exprs(names, call)?,
+                });
+            }
             if super::topic_subscript::is_subscript(call) {
                 return super::topic_subscript::lower(names, call);
             }
@@ -5352,6 +5361,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         | RakuAstClass::VarPackage
         | RakuAstClass::VarDynamic
         | RakuAstClass::VarDoc
+        | RakuAstClass::VarSlang
         | RakuAstClass::VarAttribute
         | RakuAstClass::VarAttributePublic => {
             let name = variable_spelling(node)?;

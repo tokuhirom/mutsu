@@ -36,6 +36,7 @@ roast/S02-lexical-conventions/bom.t	1
 roast/S02-lexical-conventions/bom.t	2
 roast/S02-literals/adverbs.t	0
 roast/S02-literals/adverbs.t	1
+roast/S02-literals/adverbs.t	2
 roast/S02-literals/adverbs.t	3
 roast/S02-literals/adverbs.t	4
 roast/S02-literals/adverbs.t	5
@@ -233,6 +234,7 @@ roast/S03-operators/set_intersection.t	6
 roast/S03-operators/set_intersection.t	7
 roast/S03-operators/set_intersection.t	8
 roast/S03-operators/set_intersection.t	9
+roast/S03-operators/set_intersection.t	10
 roast/S03-operators/set_intersection.t	11
 roast/S03-operators/ternary.t	0
 roast/S03-operators/ternary.t	1
@@ -300,6 +302,7 @@ roast/S04-declarations/constant-6.d.t	25
 roast/S04-declarations/constant-6.d.t	26
 roast/S04-declarations/constant-6.d.t	27
 roast/S04-declarations/constant-6.d.t	28
+roast/S04-declarations/constant-6.d.t	29
 roast/S04-declarations/constant-6.d.t	30
 roast/S04-declarations/constant-6.d.t	31
 roast/S04-exceptions/control_across_runloop.t	0
@@ -392,9 +395,13 @@ roast/S05-mass/properties-block.t	2
 roast/S05-mass/properties-block.t	3
 roast/S05-mass/properties-block.t	4
 roast/S05-mass/properties-block.t	5
+roast/S05-mass/properties-block.t	6
+roast/S05-mass/properties-block.t	7
+roast/S05-mass/properties-block.t	8
 roast/S05-mass/properties-block.t	9
 roast/S05-mass/properties-block.t	10
 roast/S05-mass/properties-block.t	11
+roast/S05-mass/properties-block.t	12
 roast/S05-mass/properties-block.t	13
 roast/S05-mass/properties-block.t	14
 roast/S05-mass/properties-block.t	15
@@ -821,6 +828,7 @@ roast/S05-mass/properties-block.t	435
 roast/S05-mass/properties-block.t	436
 roast/S05-mass/properties-block.t	437
 roast/S05-mass/properties-block.t	438
+roast/S05-mass/properties-block.t	439
 roast/S05-mass/properties-block.t	440
 roast/S05-mass/properties-block.t	441
 roast/S05-mass/properties-block.t	442
@@ -1254,6 +1262,7 @@ roast/S11-repository/curli-install.t	17
 roast/S11-repository/curli-install.t	18
 roast/S11-repository/curli-install.t	19
 roast/S11-repository/curli-install.t	20
+roast/S11-repository/curli-install.t	21
 roast/S11-repository/curli-install.t	22
 roast/S11-repository/curli-install.t	23
 roast/S11-repository/curli-install.t	24
@@ -1724,6 +1733,7 @@ roast/S32-hash/adverbs.t	10
 roast/S32-hash/adverbs.t	11
 roast/S32-hash/adverbs.t	12
 roast/S32-hash/adverbs.t	13
+roast/S32-hash/adverbs.t	14
 roast/S32-hash/adverbs.t	15
 roast/S32-io/io-spec-cygwin.t	0
 roast/S32-io/io-spec-cygwin.t	1
@@ -2331,6 +2341,12 @@ roast/integration/advent2011-day05.t	5
 roast/integration/advent2011-day05.t	6
 roast/integration/advent2012-day03.t	0
 roast/integration/advent2012-day03.t	1
+roast/integration/advent2012-day03.t	3
+roast/integration/advent2012-day03.t	4
+roast/integration/advent2012-day03.t	5
+roast/integration/advent2012-day03.t	6
+roast/integration/advent2012-day03.t	7
+roast/integration/advent2012-day03.t	8
 roast/integration/advent2013-day15.t	0
 roast/integration/advent2013-day15.t	1
 roast/integration/advent2013-day15.t	2

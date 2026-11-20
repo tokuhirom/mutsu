@@ -115,11 +115,12 @@ pub(crate) use module_exports::{register_loaded_unit_facts, register_module_expo
 /// `constant` may be a type alias the parser cannot see through (#11706).
 pub(crate) use pragma_preseed::is_imported_value_term;
 pub(in crate::parser) use pragma_preseed::{
-    cached_type_names, current_attributes_pragma, imported_value_term_names,
-    is_user_declared_enum_type, note_import_export_hook, push_package_path,
-    register_imported_enum_type, register_imported_enum_value, register_imported_type,
-    register_imported_value_term, register_user_enum_type, register_user_enum_value,
-    register_user_type, register_user_type_verbatim, reset_package_path, set_attributes_pragma,
+    cached_type_names, current_attributes_pragma, imported_type_constant_names,
+    imported_value_term_names, is_user_declared_enum_type, note_import_export_hook,
+    push_package_path, register_imported_enum_type, register_imported_enum_value,
+    register_imported_type, register_imported_type_constant, register_imported_value_term,
+    register_user_enum_type, register_user_enum_value, register_user_type,
+    register_user_type_verbatim, reset_package_path, set_attributes_pragma,
     set_eval_operator_assoc_preseed, set_eval_operator_preseed, set_eval_user_sub_preseed,
     set_eval_user_type_preseed, set_eval_user_value_term_preseed,
 };
@@ -237,6 +238,8 @@ pub(in crate::parser) struct LexicalScope {
     /// steers real parse decisions (`match_user_declared_term_symbol`), and this
     /// set only feeds a diagnostic.
     imported_value_terms: HashSet<String>,
+    /// The subset of `imported_value_terms` that holds a type object.
+    imported_type_constants: HashSet<String>,
     /// Set once this compunit has `use`d a module whose exports are computed by
     /// a run-time `sub EXPORT` hook. Such a hook can install ANY name into the
     /// importer's scope -- including the CORE term keywords `True`/`False`/

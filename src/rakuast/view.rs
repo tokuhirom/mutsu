@@ -2285,7 +2285,7 @@ pub(super) fn subscript_dims_node(
         && assignee.is_none()
         && colonpairs.is_empty()
         && let [dim] = dims
-        && target.as_bare_word().is_some()
+        && bareword::is_word_term(target)
         && let base = view_expr(names, target)?
         && base.class == RakuAstClass::TypeSimple
     {
@@ -2569,19 +2569,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 };
                 left_exclusive_sequence_node(names, written, target)
             }
-            Spelling::LoopStepComma => {
-                let Expr::DoBlock { body, .. } = &spelled.expr else {
-                    return Err(unsupported("loop step comma without its execution block"));
-                };
-                let mut expressions = Vec::with_capacity(body.len());
-                for statement in body {
-                    let Stmt::Expr(expression) = statement else {
-                        return Err(unsupported("non-expression loop step item"));
-                    };
-                    expressions.push(expression.clone());
-                }
-                comma_list_node(names, &expressions)
-            }
+            Spelling::LoopStepComma => super::loop_step::view_node(names, &spelled.expr),
             Spelling::BareStatement => {
                 super::bare_prefix::bare_statement_node(names, &spelled.expr)
             }
@@ -2596,6 +2584,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::SuperscriptPower => super::postfix_power::view_power(names, &spelled.expr),
             Spelling::ZenBrackets(b) => super::zen_slice::view(names, &spelled.expr, *b),
             Spelling::PseudoPackage(w) => Ok(super::compiler_var::view_pseudo_package(w)),
+            Spelling::CaptureSigil(s) => super::match_vars::view_sigiled(&spelled.expr, *s),
+            Spelling::ZipChain => super::zip_chain::view_node(names, &spelled.expr),
             Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
             Spelling::RadixNumber => super::radix_number::view_node(names, &spelled.expr),
             Spelling::ColonPairValue(_)
@@ -6223,7 +6213,7 @@ fn colonpair_variable_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode
         return Err(unsupported("colonpair variable key"));
     };
     let value = view_expr(names, right)?;
-    if !value.class.is_simple_variable() {
+    if !value.class.is_colonpair_variable() {
         return Err(unsupported("colonpair variable value"));
     }
     Ok(RakuAstNode {

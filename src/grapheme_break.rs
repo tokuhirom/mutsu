@@ -127,6 +127,20 @@ fn class_of(c: char) -> u8 {
     }
 }
 
+/// Whether `c` is `Grapheme_Cluster_Break=Prepend` (U+0600 ARABIC NUMBER
+/// SIGN, ...): it joins the codepoint after it into one cluster.
+// Cost: O(log t), t = ranges in the table.
+pub(crate) fn is_prepend(c: char) -> bool {
+    class_of(c) & GCB_MASK == PREPEND
+}
+
+/// Whether `c` attaches to the codepoint before it (`Extend`, `ZWJ`,
+/// `SpacingMark`), so a cluster cannot start with it after a base.
+// Cost: O(log t), t = ranges in the table.
+pub(crate) fn extends_previous(c: char) -> bool {
+    matches!(class_of(c) & GCB_MASK, EXTEND | ZWJ | SPACING)
+}
+
 /// The cluster-assembly state carried across the codepoints of one cluster.
 struct State {
     prev: u8,
