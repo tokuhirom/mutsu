@@ -83,7 +83,9 @@ impl Interpreter {
         self.caches.ctor_lane_candidate = None;
         self.caches.plain_method_lane_candidate = None;
         self.set_pending_call_arg_sources_shared(decoded.map(|(names, _)| names));
-        if let Err(e) = self.reify_map_grep_seq_method_args(&target, method_sym, &args) {
+        if args.iter().any(Self::ctor_arg_may_hold_lazy)
+            && let Err(e) = self.reify_map_grep_seq_method_args(&target, method_sym, &args)
+        {
             return Some(Err(e));
         }
         match self.try_ctor_lane(class_sym, &args) {
@@ -96,5 +98,19 @@ impl Interpreter {
                 None
             }
         }
+    }
+
+    /// Whether a named argument could carry something the deferred-`Seq`
+    /// reification touches (`reify_map_grep_seq_args`): a `Seq`, a lazy list
+    /// or a container that might hold one. Every other value, the common
+    /// case, makes that pass a no-op. A pure tag probe.
+    // Cost: O(1).
+    fn ctor_arg_may_hold_lazy(arg: &Value) -> bool {
+        let ValueView::Pair(_, value) = arg.view() else {
+            return true;
+        };
+        value.is_seq_value()
+            || value.is_container_ref()
+            || value.is_lazy_list_value()
     }
 }
