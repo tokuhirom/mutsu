@@ -79,6 +79,25 @@ fn bare_block(node: &mut RakuAstNode) {
     blockoid(node, from, to);
 }
 
+/// `try EXPR` / `do EXPR`: the prefix holds the expression as a
+/// `Statement::Expression`, which covers exactly that expression.
+// Cost: O(f), f = fields of the nodes on the path.
+fn statement_operand(node: &mut RakuAstNode) {
+    with_child_at(node, 0, |statement| {
+        if statement.class != RakuAstClass::StatementExpression || statement.origin.0.is_some() {
+            return;
+        }
+        let operand = statement.fields.first().and_then(|f| match &f.value {
+            super::RakuAstFieldValue::Node(v) => match v.view() {
+                crate::value::ValueView::RakuAst(inner) => inner.origin.0.clone(),
+                _ => None,
+            },
+            _ => None,
+        });
+        statement.origin.0 = operand;
+    });
+}
+
 /// `do { ... }` and the other prefixes: the block is the braces after the
 /// keyword, to the end of the term.
 // Cost: O(n + s), n = length of the term's source, s = its statements.
@@ -87,6 +106,7 @@ fn prefix_block(node: &mut RakuAstNode) {
         return;
     };
     let Some(at) = brace_after_word(from, to) else {
+        statement_operand(node);
         return;
     };
     let whole = SrcSpan::new(at, to);
