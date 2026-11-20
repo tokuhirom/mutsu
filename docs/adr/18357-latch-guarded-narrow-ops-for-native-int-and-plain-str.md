@@ -131,6 +131,14 @@ the proof holds. The first families are:
 A narrow op folds its operand loads into itself (it reads its slots directly), so it also
 removes the `GetLocal`/`LoadConst` dispatches it replaces.
 
+A narrow form that replaces **one** op one-for-one does not need a new opcode. The step forms
+are an example: `PostIncrement(name, Some(slot))` has nothing to fold. The compiler's proof is
+then a per-chunk bit per slot, derived lazily from the chunk's final binding descriptors like
+`local_read_plain`, and the existing op's arm tests that bit first. This is the same decision as
+a narrow opcode, with the same run-time guard (D2) and fall-through (D3). In addition, every
+analysis that scans ops by name keeps seeing an op it already understands. A new opcode is for a
+narrow form that fuses several ops.
+
 ### D2. Run-time guard: operand tags plus latch words
 
 Each time it runs, a narrow op checks two things:
