@@ -2,4 +2,4 @@
 # These counts may go down (or stay flat), never up. Regenerate with:
 #   scripts/check-panic-surface.py --update
 panic_surface=1803
-allow_surface=185
+allow_surface=184

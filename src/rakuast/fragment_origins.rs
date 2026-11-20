@@ -18,7 +18,7 @@ use crate::value::{Value, ValueView};
 /// were read from `text` starting at byte `at` of the unit, their ranges.
 // Cost: O(n), n = length of `text`, plus the parse of it.
 pub(super) fn statements(names: &NameScope, list: &mut RakuAstNode, text: &str, at: usize) {
-    let Ok((mut stmts, _)) = crate::parser::parse_fragment_spelled(text) else {
+    let Ok((mut stmts, _)) = crate::parser::parse_fragment_unfinalized(text) else {
         return;
     };
     crate::ast_visit::walk_stmts_mut(&mut super::regex_call_origins::Shift(at), &mut stmts);
@@ -36,7 +36,7 @@ pub(super) fn statements(names: &NameScope, list: &mut RakuAstNode, text: &str, 
 /// its ranges.
 // Cost: O(n), n = length of `text`, plus the parse of it.
 pub(super) fn expression(names: &NameScope, target: &mut RakuAstNode, text: &str, at: usize) {
-    let Ok((mut stmts, _)) = crate::parser::parse_fragment_spelled(text) else {
+    let Ok((mut stmts, _)) = crate::parser::parse_fragment_unfinalized(text) else {
         return;
     };
     crate::ast_visit::walk_stmts_mut(&mut super::regex_call_origins::Shift(at), &mut stmts);

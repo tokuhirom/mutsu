@@ -93,10 +93,16 @@ pub(super) fn caller_declares_operator(names: &NameScope, routine: &str) -> bool
 /// any other constant a term. Only the initializers whose value is visibly a
 /// type object are recognised: a type name, or the MOP `new_type` constructor.
 fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
-    let type_valued = match init {
+    let type_valued = match init.peel_spelled() {
         // A type the unit declares too (`constant E = Outer::Inner`); while
         // the unit's own scan runs, `package_alias` settles those instead.
-        Expr::BareWord(n) => setting_type(n) || declared_kind(names, n) == Some(DeclaredKind::Type),
+        Expr::BareWord(n) => type_word(names, n),
+        // `constant A = Array[Int]`: a type application is a type too.
+        Expr::Index {
+            target,
+            is_positional: true,
+            ..
+        } => matches!(target.peel_spelled(), Expr::BareWord(n) if type_word(names, n)),
         Expr::MethodCall { name, target, .. } => {
             name.resolve() == "new_type"
                 && matches!(target.as_ref(), Expr::BareWord(n)
@@ -109,6 +115,17 @@ fn constant_kind(names: &NameScope, init: &Expr) -> DeclaredKind {
     } else {
         DeclaredKind::Term
     }
+}
+
+/// Whether the word names a type a constant's initializer can hold: a setting
+/// type, one the unit declared, or a type constant a `use` imported.
+// Cost: O(k + c), k = length of `name`, c = imported type constants.
+fn type_word(names: &NameScope, name: &str) -> bool {
+    setting_type(name)
+        || declared_kind(names, name) == Some(DeclaredKind::Type)
+        || crate::parser::imported_type_constant_names()
+            .iter()
+            .any(|n| n == name)
 }
 
 /// RAII guard for one block's own declarations ([`NameScope::push_block`]).
@@ -203,17 +220,15 @@ fn loaded_module_name(module: &str) -> Option<&str> {
     (!pragma).then_some(name)
 }
 
-/// Whether `expr` is a bareword, or one the parser wrapped as an imported term
-/// (`CArray` after `use NativeCall`, a `Spelled` marker around the word).
+/// Whether `expr` is a bareword, or one the parser resolved as an imported term
+/// (`CArray` after `use NativeCall`, a `ParsedExpr::ImportedTerm`).
 // Cost: O(1).
 pub(super) fn is_word_term(expr: &Expr) -> bool {
     match expr {
-        Expr::Spelled(spelled) => {
-            matches!(
-                spelled.spelling,
-                crate::ast::spelled::Spelling::ImportedTerm
-            ) && spelled.expr.as_bare_word().is_some()
-        }
+        Expr::Ast(node) => matches!(
+            node.as_ref(),
+            crate::ast::parsed::ParsedExpr::ImportedTerm(_)
+        ),
         _ => expr.as_bare_word().is_some(),
     }
 }
@@ -752,8 +767,8 @@ pub(super) fn type_word_expr(names: &NameScope, name: &str) -> Option<Expr> {
     Some(Expr::BareWord(name.to_string()))
 }
 
-/// A plain-identifier word the parser spelled as an imported term
-/// (`Spelling::ImportedTerm`): the conversion keeps the parse's decision as a
+/// A plain-identifier word the parser resolved as an imported term
+/// (`ParsedExpr::ImportedTerm`): the conversion keeps the parse's decision as a
 /// source bareword (`term_name::imported`), which lowers to the word itself, and
 /// a type the classifier resolves (`uint16`) lowers to the word as well. `None`
 /// for any other classification or a decorated name (the conversion decides).

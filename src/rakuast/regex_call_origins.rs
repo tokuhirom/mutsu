@@ -80,7 +80,7 @@ pub(super) fn place(
     let base = at + lead;
     let (_, args) = crate::regex_tree::parse_subrule_target(&format!("x({text})"))?;
     let args = args?;
-    let (mut stmts, _) = crate::parser::parse_fragment_spelled(text).ok()?;
+    let (mut stmts, _) = crate::parser::parse_fragment_unfinalized(text).ok()?;
     crate::ast_visit::walk_stmts_mut(&mut Shift(base), &mut stmts);
     let _origins = super::expr_origins::strip(&mut stmts);
     let range = SrcSpan::new(base, base + text.len());

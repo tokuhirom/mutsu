@@ -26,6 +26,8 @@ fn unmarked_generated_identifiers_still_refuse() {
 
 #[test]
 fn source_call_provenance_does_not_escape_into_arguments() {
+    // Spellings are built only where a parse is read as RakuAST.
+    let _keep = crate::ast::spelled::KeepSpellings::enter(true);
     let names = &crate::scope::NameScope::default();
     let expr = Expr::source_identifier(
         call("__written_test", vec![call("__generated_test", Vec::new())]),
@@ -37,6 +39,8 @@ fn source_call_provenance_does_not_escape_into_arguments() {
 
 #[test]
 fn source_names_do_not_activate_generated_helper_conversion() {
+    // Spellings are built only where a parse is read as RakuAST.
+    let _keep = crate::ast::spelled::KeepSpellings::enter(true);
     let names = &crate::scope::NameScope::default();
     let expr = Expr::source_identifier(call("__object_hash", Vec::new()), "__object_hash()");
     assert_eq!(

@@ -2479,12 +2479,6 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     ],
                 })
             }
-            Spelling::ImportedTerm => {
-                let Expr::BareWord(name) = &spelled.expr else {
-                    return Err(unsupported("imported term spelling without a value lookup"));
-                };
-                Ok(super::term_name::imported(names, name))
-            }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::Imaginary(text) => super::imaginary_literal::spelled(text),
             Spelling::ParenthesizedDeclaratorAdverb => {
@@ -2494,11 +2488,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 view_expr(names, &spelled.expr)
             }
             Spelling::Heredoc { stop, body } => heredoc_node(names, &spelled.expr, stop, *body),
-            Spelling::EmptyStatement => Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::StatementEmpty,
-                fields: Vec::new(),
-            }),
+            Spelling::EmptyStatement => Ok(super::spelled_nodes::statement_empty()),
+            Spelling::HyperMetaMethod => {
+                super::spelled_nodes::hyper_meta_method(names, &spelled.expr)
+            }
             Spelling::CaptureAdverbs => super::match_vars::view_with_adverbs(names, &spelled.expr),
             Spelling::UserPrefixOperator => {
                 super::user_prefix::view_spelled_core(names, &spelled.expr)
