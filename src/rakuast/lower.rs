@@ -5010,28 +5010,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         // itself (a leading backslash), which is how the view reads it
         // back out into the `triangle` field.
         RakuAstClass::TermRadixNumber => super::radix_number::lower(names, node),
-        RakuAstClass::TermReduce => {
-            let infix = named_child(node, "infix")?;
-            if infix.class != RakuAstClass::Infix {
-                return Err(unsupported(node));
-            }
-            let infix_value = positional_leaf(infix)?;
-            let op = match infix_value.view() {
-                ValueView::Str(s) => s.to_string(),
-                _ => return Err(unsupported(node)),
-            };
-            let triangle = bool_field(node, "triangle")?;
-            let args = named_child(node, "args")?;
-            // A reduction takes exactly one argument expression (a list, an
-            // array variable, ...); the view never builds more.
-            let [only] = args.fields.as_slice() else {
-                return Err(unsupported(node));
-            };
-            Ok(Expr::Reduction {
-                op: if triangle { format!("\\{op}") } else { op },
-                expr: Box::new(lower_expr(names, child_node(&only.value)?)?),
-            })
-        }
+        RakuAstClass::TermReduce => super::reduce_term::lower(names, node),
         // The `*` whatever term — the *value* leaf (`1..*`, `@a[*]`).
         RakuAstClass::TermWhatever => Ok(Expr::Whatever),
         // `∅`: the parser's literal empty Set.
