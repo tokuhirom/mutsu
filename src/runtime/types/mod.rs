@@ -815,10 +815,9 @@ impl Interpreter {
             // that attribute's twigil form as `source_name` -- the CALLEE's
             // (well, the calling method's) own attribute key, not a lexical
             // belonging to the caller. Writing it into the caller's env plants
-            // a pseudo-key that an unrelated later method call's
-            // `reconcile_attrs` candidate scan can mistake for a `:=` binding
-            // and adopt as its own attribute override, silently overwriting a
-            // different instance's same-named attribute. The shared
+            // a pseudo-key under an attribute's twigil spelling, which an
+            // unrelated later method call sharing that env would read as its
+            // own attribute. The shared
             // `ContainerRef` cell this writeback exists for already keeps
             // content mutations visible without the insert. This is the sub-call
             // twin of the guard `vm_method_dispatch.rs`'s `rw_writeback` loop

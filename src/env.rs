@@ -2580,7 +2580,7 @@ impl Env {
 
     /// Overlay-only lookup: like `get`, but never walks the parent chain or
     /// base tier. Used where a caller-frame value of the same name must not
-    /// be mistaken for a write this frame made itself (see `reconcile_attrs`).
+    /// be mistaken for a write this frame made itself.
     pub(crate) fn overlay_get(&self, key: &str) -> Option<&Value> {
         self.inner.get(&Symbol::intern(key))
     }
