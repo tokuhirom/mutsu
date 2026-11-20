@@ -1686,6 +1686,9 @@ pub(crate) mod test_lower {
 }
 
 #[cfg(test)]
+mod spelling_mode_tests;
+
+#[cfg(test)]
 mod tests {
     use super::parse_program;
     use crate::ast::{Expr, Stmt};

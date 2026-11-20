@@ -342,6 +342,14 @@ impl VisitMut for Finalize<'_> {
                 *expr = term;
                 return;
             }
+            // An imported term: see `bareword::imported_term_expr`.
+            if let Expr::Ast(node) = &*expr
+                && let ParsedExpr::ImportedTerm(word) = node.as_ref()
+                && let Some(term) = super::bareword::imported_term_expr(names, word)
+            {
+                *expr = term;
+                return;
+            }
             // A parameterized type over a lowercase alias (`gpointer[T]`): see
             // `bareword::parameterized_type_word_expr`.
             if let Expr::BareWord(word) = &*expr

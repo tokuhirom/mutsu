@@ -147,6 +147,8 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
             | ParsedExpr::HyperAssign(_)
             | ParsedExpr::Lowered { .. }
             | ParsedExpr::InlineSubset(_) => true,
+            // Classified by the finalization (`bareword::imported_term_expr`).
+            ParsedExpr::ImportedTerm(_) => false,
         },
         // The lowering plants the priming scopes of a `*` itself (a second pass
         // over a tree the parser already marked wraps it again), and a `||`

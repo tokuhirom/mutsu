@@ -413,7 +413,7 @@ impl VisitMut for Walk {
 
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         // A term another parse already gave an origin to (a nested `.AST`
-        // unit) keeps it. Other spellings (`ImportedTerm`, `Words`, ...) are
+        // unit) keeps it. Other spellings (`Words`, `LabelTerm`, ...) are
         // terms the parser read and noted like any other.
         if let Expr::Spelled(spelled) = expr
             && matches!(spelled.spelling, Spelling::Origin(_))

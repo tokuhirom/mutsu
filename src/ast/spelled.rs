@@ -59,8 +59,6 @@ pub(crate) enum Spelling {
     LabelledBlock,
     /// A source label reference whose executable term is a Label value.
     LabelTerm(Box<str>),
-    /// A value lookup parsed in a unit with a runtime export hook.
-    ImportedTerm,
     /// Semicolon-separated array composer sections before execution lowering.
     ArraySections(Vec<Vec<Expr>>),
     /// Semicolon-separated sections of a parenthesized list, `(1; 2)`: rakudo's
