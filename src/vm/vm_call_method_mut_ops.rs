@@ -562,6 +562,18 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // ADR-0121 D3: the ctor lane's early form for `Class.new(named...)`
+        // (`vm_ctor_early_lane`).
+        if let Some(result) = self.try_ctor_early_lane(
+            code,
+            name.sym,
+            arity as usize,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            return result;
+        }
         // #8880: the plain-method lane's early form for a call on an
         // ordinary object (`try_plain_method_early_lane`).
         if modifier_idx.is_none()

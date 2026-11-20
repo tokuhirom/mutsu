@@ -92,15 +92,10 @@ impl Interpreter {
         class_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if self.caches.ctor_lane.is_empty() {
+        if !self.ctor_lane_hit(class_sym) {
             return None;
         }
-        self.refresh_method_caches_for_generation();
         let installed = self.caches.ctor_lane.get(&class_sym)?;
-        let current = self.caches.native_ctor_plan_cache.get(&class_sym)?;
-        if !std::sync::Arc::ptr_eq(installed, current) {
-            return None;
-        }
         // The one non-probe effect of the skipped stretch the constructor can
         // observe: an attribute default expression may read the caller's
         // lexicals, so a transient scoped overlay env is collapsed first, as
@@ -117,6 +112,23 @@ impl Interpreter {
         self.dispatch.method_dispatch_pure = !runs_submethods;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "ctor-lane");
         Some(result)
+    }
+
+    /// Whether the lane holds `class_sym` for the current registry generation
+    /// and class shape: the plan it installed is still the class's plan.
+    // Cost: O(1), two hash probes.
+    pub(super) fn ctor_lane_hit(&mut self, class_sym: crate::symbol::Symbol) -> bool {
+        if self.caches.ctor_lane.is_empty() {
+            return false;
+        }
+        self.refresh_method_caches_for_generation();
+        match (
+            self.caches.ctor_lane.get(&class_sym),
+            self.caches.native_ctor_plan_cache.get(&class_sym),
+        ) {
+            (Some(installed), Some(current)) => std::sync::Arc::ptr_eq(installed, current),
+            _ => false,
+        }
     }
 
     /// Record that the whole chain was inert for `class_sym`, if it is the
