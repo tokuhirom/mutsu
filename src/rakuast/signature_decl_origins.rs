@@ -301,8 +301,12 @@ pub(super) fn scan(
             let close_at = inner_at + used;
             inner[close_at..].strip_prefix(')')?;
             let range = SrcSpan::new(
-                spans.first().map_or(base + inner_at, |s| s.param.from as usize),
-                spans.last().map_or(base + inner_at, |s| s.param.to as usize),
+                spans
+                    .first()
+                    .map_or(base + inner_at, |s| s.param.from as usize),
+                spans
+                    .last()
+                    .map_or(base + inner_at, |s| s.param.to as usize),
             );
             at = close_at + 1;
             out.push(Spans {
