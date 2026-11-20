@@ -1251,6 +1251,7 @@ impl Interpreter {
             // Pure attribute read: does not mutate the invocant (see comment
             // above), so it does not dirty the caller's locals (Slice 6.3).
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
+            let val = val?;
             if !want_ref
                 && modifier.is_none()
                 && !Self::quoting_matters(quoted, method_sym.as_str())
