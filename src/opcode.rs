@@ -8193,6 +8193,10 @@ pub(crate) struct CompiledCode {
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
     /// inline read (ADR-0004 J4d).
     pub(crate) local_read_plain: std::sync::OnceLock<Box<[bool]>>,
+    /// Lazily-built "a `++`/`--` may step this slot as a bare native `int`"
+    /// bit per local slot (see [`CompiledCode::native_int_step_slot`],
+    /// ADR-18357).
+    pub(crate) native_int_step_slots: std::sync::OnceLock<Box<[bool]>>,
     /// Raw slots that a *statement- or expression-level* `:=` REBINDS after
     /// their declaration (`$a := 2`, `if $a := f() {}`), recorded by
     /// [`Self::note_rebound_slot`]. It holds no declaration binds and no
@@ -8911,6 +8915,7 @@ impl CompiledCode {
             lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
+            native_int_step_slots: std::sync::OnceLock::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),
             outer_captures: Vec::new(),

@@ -778,6 +778,9 @@ impl Interpreter {
             self.module
                 .export_amp_override_names
                 .insert(crate::symbol::Symbol::intern(op));
+            if op.starts_with("postcircumfix") {
+                self.module.export_amp_overrides_subscript = true;
+            }
             if let Some(file) = self.executing_source_file_for_module_load() {
                 self.module.unit_imported_callables.insert(
                     (

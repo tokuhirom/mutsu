@@ -41,6 +41,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
                 super::routine_origins::type_origin(node, SrcSpan::new(from, to));
             }
         }
+        // `[op] args`: the operator between the brackets, the arguments after.
+        RakuAstClass::TermReduce => super::reduce_origins::derive(node),
         // `:16($n)`: the parentheses after the radix.
         RakuAstClass::TermRadixNumber => super::type_origins::radix_parentheses(node),
         RakuAstClass::TypeParameterized => {

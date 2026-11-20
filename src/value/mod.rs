@@ -2709,6 +2709,16 @@ impl Value {
         self.0.bits()
     }
 
+    /// Whether this value is a word with no pointer payload: a small `Int`, a
+    /// `Num`, `Nil`, `Whatever`, `HyperWhatever`, a `Bool` or a type object.
+    /// Such a value has no `sink` of its own, is never a `Failure`, `Proxy`,
+    /// `Seq` or `Proc`, and so sinks to nothing. A pure tag probe.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_payload_free_word(&self) -> bool {
+        nanbox::word_is_refcount_free(self.0.bits())
+    }
+
     /// O(1) *binding* identity: the same immediate value, or the same heap
     /// allocation. Unlike `PartialEq` it never walks container contents, so it is
     /// usable on hot paths that only need to know whether a name was **rebound**

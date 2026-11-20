@@ -131,7 +131,7 @@ impl Interpreter {
     /// Whether a user `postcircumfix` routine could answer an ordinary
     /// element read that the read fast path (`index_fast_path_element`) would
     /// otherwise serve: an operator scope is open, a `sub EXPORT` hook handed
-    /// out an operator family, or the function table holds a routine of that
+    /// out a `postcircumfix` operator, or the function table holds a routine of that
     /// name. Conservative (an open scope or any exported family declines the
     /// fast path, and the general path makes the precise check) and cheaper
     /// than [`Self::user_subscript_candidate_possible`]: no env probe.
@@ -140,7 +140,7 @@ impl Interpreter {
     #[inline]
     pub(super) fn user_subscript_routine_may_answer(&self, is_positional: bool) -> bool {
         !self.dispatch.lexical_operator_scopes.is_empty()
-            || !self.module.export_amp_override_names.is_empty()
+            || self.module.export_amp_overrides_subscript
             || self.function_table_has_user_subscript(
                 crate::lexical_builtin_op::postcircumfix_of_subscript(is_positional),
                 is_positional,

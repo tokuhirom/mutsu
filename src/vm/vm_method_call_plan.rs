@@ -404,6 +404,19 @@ impl Interpreter {
             // While the caller's frame is still current, as the tail does.
             self.promote_method_container_args(def, &mut args);
         }
+        // An explicit `*%h`'s leftover arguments, checked per call like the
+        // container parameters above; promoted below, once the deferral
+        // frame has recorded the arguments as they arrived.
+        if !self.method_named_slurpy_args_light(def, &args) {
+            return self.run_plain_method_lane(
+                code,
+                target_name,
+                target,
+                method_sym.as_str(),
+                method_sym,
+                args,
+            );
+        }
         self.dispatch.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
         let method = method_sym.as_str();
@@ -427,6 +440,8 @@ impl Interpreter {
                 return Err(e);
             }
         };
+        // While the caller's frame is still current (`vm_method_named_slurpy`).
+        self.promote_method_named_slurpy_args(def, &mut args);
         // `arm_multi_method_winner_trust` for a non-multi winner, and
         // `call_compiled_method_in_unit`'s entry, which clears the rw
         // writeback list this call's site drains.

@@ -5259,9 +5259,13 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     crate::ast::BinaryForm::ColonPairNumber
                 } else if matches!(
                     value_node.class,
-                    RakuAstClass::CircumfixArrayComposer | RakuAstClass::QuotedString
+                    RakuAstClass::CircumfixArrayComposer
+                        | RakuAstClass::QuotedString
+                        | RakuAstClass::Block
+                        | RakuAstClass::CircumfixHashComposer
                 ) {
-                    // `:a[1, 2]` / `:a<x y>`: no parentheses around the value.
+                    // `:a[1, 2]` / `:a<x y>` / `:a{...}`: no parentheses around
+                    // the value.
                     crate::ast::BinaryForm::ColonPairBracketed
                 } else {
                     crate::ast::BinaryForm::ColonPairValue

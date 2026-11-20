@@ -255,6 +255,12 @@ impl Interpreter {
                 if pd.slurpy && pd.name == "%_" {
                     return false;
                 }
+                // An explicit plain `*%h` is filled by the fast binder; its
+                // arguments are vetted per call below
+                // (`vm_method_named_slurpy`).
+                if Self::method_named_slurpy_light(pd) {
+                    return false;
+                }
                 // Named params are vetted by `named_params_fast_ok` above.
                 if pd.named {
                     return false;
@@ -336,6 +342,7 @@ impl Interpreter {
                 && !needs_default_eval
                 && !has_arg_mismatch
                 && !Self::method_binds_seq_into_array_param(method_def, args)
+                && self.method_named_slurpy_args_light(method_def, args)
                 // A `Proxy` without a subclass cell has no attribute store to
                 // read; a subclass instance's lives in the same kind of cell
                 // an ordinary instance carries (`self_instance_attrs`).

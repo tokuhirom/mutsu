@@ -170,6 +170,26 @@ impl Interpreter {
         // a `multi method` spans MRO levels. The expansion is structural (unfiltered); apply the
         // same per-call argument match as `resolve_all_methods_with_owner` used to
         // apply internally, with the actual invocant available to `where` clauses.
+        // The flat deferral expansion bounds every candidate list built below
+        // (`matched_deferral_candidates` only filters it), so an expansion of
+        // at most one entry -- the winner itself -- can only end in the empty
+        // boundary of the `<= 1` fast path further down. The structural count
+        // above can be larger than the expansion: a role method composed into
+        // a mixin (`Attribute+{AttrX::Mooish::Attribute}`) is counted at both
+        // levels, while the expansion lists it once. With the winner already
+        // resolved there is nothing else this build could observe or raise,
+        // so the boundary is returned before the per-call match and clones.
+        if !native_base_override
+            && winner.is_some()
+            && self.deferral_expansion_shared(receiver_class, method_name).len() <= 1
+        {
+            return Ok(Self::empty_method_dispatch_frame(
+                receiver_class,
+                invocant,
+                args,
+                dispatch_token,
+            ));
+        }
         let winner = match winner {
             Some(winner) => Some(winner),
             None => self

@@ -299,6 +299,8 @@ mod vm_jit_helpers;
 #[cfg(feature = "jit")]
 mod vm_jit_layout;
 #[cfg(feature = "jit")]
+mod vm_jit_native_int_step;
+#[cfg(feature = "jit")]
 mod vm_jit_support;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b;
@@ -339,6 +341,7 @@ pub(crate) mod vm_method_fast_gate;
 mod vm_method_finalize;
 pub(crate) mod vm_method_frame_plan;
 pub(crate) mod vm_method_lean_frame;
+mod vm_method_named_slurpy;
 mod vm_method_return_spec;
 mod vm_method_role_bindings;
 mod vm_method_straight;
@@ -404,6 +407,7 @@ pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;
 mod vm_assign_expr_lane;
 mod vm_attribute_meta_lane;
 mod vm_attribute_meta_row;
+mod vm_bind_decl_lane;
 mod vm_code_var_infix_lane;
 mod vm_decl_lane;
 mod vm_hash_key_user_str;
