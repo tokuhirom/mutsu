@@ -116,11 +116,21 @@ impl Interpreter {
         let result = self.invoke_grammar_actions(match_obj, actions, rule_name);
         let written = self.end_carrier(carrier);
         self.regex_state.in_regex_code_block = saved_in_block;
+        // Put back what the action's env ceremony replaced. An action that
+        // binds its own `$/` ran without one, so usually nothing changed.
         for (key, saved) in [
             (wk::match_var(), saved_match),
             (wk::topic(), saved_topic),
             (wk::made(), saved_made),
         ] {
+            let unchanged = match (&saved, self.env.get_sym(key)) {
+                (Some(saved), Some(now)) => saved.same_binding(now),
+                (None, None) => true,
+                _ => false,
+            };
+            if unchanged {
+                continue;
+            }
             match saved {
                 Some(value) => {
                     self.env.insert_sym(key, value);

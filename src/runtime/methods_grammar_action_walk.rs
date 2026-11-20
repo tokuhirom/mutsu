@@ -175,29 +175,38 @@ impl Interpreter {
         Some(walk)
     }
 
-    /// Whether the actions object answers a method for the node: its
-    /// `:sym<...>` variant's (returned as the second element) or the rule's
-    /// own.
+    /// Which action method the node dispatches to: its `:sym<...>`
+    /// variant's when the actions class answers it, else the rule's own.
+    /// `None` when the class answers neither. With an actions object that is
+    /// not a class to ask, the call is always tried (`Some(None)`).
+    /// The variant's method name is returned too, for the error mapping.
     fn node_action_method(
         &mut self,
         actions_class: Option<Symbol>,
         rule_name: &str,
         sym: Option<Symbol>,
-    ) -> (bool, Option<String>) {
-        let class_name = actions_class.map(|cn| cn.resolve());
+    ) -> (Option<Option<Symbol>>, Option<String>) {
         let sym_method = sym.map(|sym| {
+            let class_name = actions_class.map(|cn| cn.resolve());
             self.variant_action_method_name(class_name.as_deref(), rule_name, &sym.resolve())
         });
         let Some(class) = actions_class else {
             // Not a class we can ask: always try the call.
-            return (true, sym_method);
+            return (Some(None), sym_method);
         };
-        let sym_hit = sym_method
-            .as_deref()
-            .is_some_and(|name| self.actions_answer_method_of(class, Symbol::intern(name)));
-        let rule_hit =
-            !rule_name.is_empty() && self.actions_answer_method_of(class, Symbol::intern(rule_name));
-        (sym_hit || rule_hit, sym_method)
+        if let Some(name) = sym_method.as_deref() {
+            let name = Symbol::intern(name);
+            if self.actions_answer_method_of(class, name) {
+                return (Some(Some(name)), sym_method);
+            }
+        }
+        if !rule_name.is_empty() {
+            let name = Symbol::intern(rule_name);
+            if self.actions_answer_method_of(class, name) {
+                return (Some(Some(name)), sym_method);
+            }
+        }
+        (None, sym_method)
     }
 
     fn invoke_grammar_actions_unmarked(
@@ -218,8 +227,9 @@ impl Interpreter {
             },
         };
         let actions_class = Self::actions_class_sym(actions);
-        let (has_own_action, sym_method_name) =
+        let (own_action, sym_method_name) =
             self.node_action_method(actions_class, rule_name, node.sym);
+        let has_own_action = own_action.is_some();
         // A childless leaf whose rule has no action method — the overwhelming
         // majority of nodes in a leaf-heavy parse (one per matched character in
         // a quoted-scalar run): nothing below can have any effect for it.
@@ -258,6 +268,7 @@ impl Interpreter {
             actions,
             rule_name,
             sym_method_name.as_deref(),
+            own_action.flatten(),
         );
         self.restore_action_reduce_vars(&saved_reduce_vars);
         match method_result {
@@ -361,29 +372,23 @@ impl Interpreter {
     /// positional `$/` parameter, unwrapped. Its body and every closure in it
     /// then resolve `$/`, `$<name>` and `$0` to that parameter, and a method
     /// has its own `$_`, so nothing in it can observe the env ceremony of
-    /// [`Self::call_node_action`] (#18207). Returns the method's name and its
-    /// resolution, so the call does not resolve it again.
+    /// [`Self::call_node_action`] (#18207). Returns the method's resolution,
+    /// so the call does not resolve it again.
     // Cost: O(p), p = the method's parameters, plus one memoized method
     // resolution.
     fn action_binding_own_match_var(
         &mut self,
         actions: &Value,
         match_obj: &Value,
-        rule_name: &str,
-        sym_method_name: Option<&str>,
-    ) -> Option<(Symbol, Symbol, std::sync::Arc<crate::runtime::MethodDef>)> {
+        method: Symbol,
+    ) -> Option<(Symbol, std::sync::Arc<crate::runtime::MethodDef>)> {
         let class = Self::actions_class_sym(actions)?;
         if self.has_any_wrap_chains() {
             return None;
         }
-        let method = match sym_method_name {
-            Some(sym) if self.actions_answer_method_of(class, Symbol::intern(sym)) => sym,
-            _ => rule_name,
-        };
-        let method_sym = Symbol::intern(method);
         let args = std::slice::from_ref(match_obj);
         let (owner, def) = self
-            .resolve_method_cached(class.as_str(), method, class, method_sym, args, actions)
+            .resolve_method_cached(class.as_str(), method.as_str(), class, method, args, actions)
             .ok()??;
         let binds = !def.is_multi
             && def.compiled_code.is_some()
@@ -391,7 +396,7 @@ impl Interpreter {
                 .param_defs
                 .iter()
                 .any(|param| !param.named && param.name == "/");
-        binds.then_some((method_sym, owner, def))
+        binds.then_some((owner, def))
     }
 
     /// Call the node's own action method with `$/`, `$_` and the node's
@@ -405,11 +410,12 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
         sym_method_name: Option<&str>,
+        dispatched: Option<Symbol>,
     ) -> Result<Value, RuntimeError> {
         self.env.remove_sym(wk::made());
         self.regex_state.action_made = None;
-        if let Some((method, owner, def)) =
-            self.action_binding_own_match_var(actions, match_obj, rule_name, sym_method_name)
+        if let Some(method) = dispatched
+            && let Some((owner, def)) = self.action_binding_own_match_var(actions, match_obj, method)
         {
             return self.call_action_method_resolved(actions, method, owner, &def, match_obj);
         }
