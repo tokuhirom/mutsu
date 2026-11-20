@@ -352,6 +352,39 @@ fn parts_in(kind: &str, text: String, first: bool) -> Option<Vec<Part>> {
     Some(vec![part_in(kind, text)?])
 }
 
+/// Rakudo's `Doc::Block.leading-whitespace`: that of the block's first
+/// paragraph (its first atom, its first cell), empty when there is none.
+// Cost: O(d), d = depth of the first paragraph.
+fn leading_whitespace(block: &Block) -> &str {
+    let text = match block.parts.first() {
+        Some(Part::Text(text)) => text.as_str(),
+        Some(Part::Para(atoms)) => match atoms.first() {
+            Some(Atom::Text(text)) => text.as_str(),
+            _ => "",
+        },
+        Some(Part::Block(inner)) => return leading_whitespace(inner),
+        Some(Part::Row(row)) => match row.cells.first() {
+            Some(super::pod_table::Cell::Text(text)) => text.as_str(),
+            Some(super::pod_table::Cell::Markup(text, _)) => text.as_str(),
+            None => "",
+        },
+        None => "",
+    };
+    &text[..text.len() - text.trim_start().len()]
+}
+
+/// Whether an indented paragraph of a block of type `kind` is an implicit
+/// code block (rakudo's `from-paragraphs`: `cell`, `defn`, `item`, `nested`,
+/// `pod`, `rakudoc`, `section`); in every other block it is text, kept as
+/// written.
+// Cost: O(1).
+fn implicit_code(kind: &str) -> bool {
+    matches!(
+        split_level(kind).0.as_str(),
+        "cell" | "defn" | "item" | "nested" | "pod" | "rakudoc" | "section"
+    )
+}
+
 /// Whether an indented later line of a paragraph of a delimited block of type
 /// `kind` loses its blanks (`pod`, `item`, `nested`) or keeps them (the
 /// types and custom lowercase names measured); `None` for a type not
@@ -360,6 +393,8 @@ fn parts_in(kind: &str, text: String, first: bool) -> Option<Vec<Part>> {
 fn continuation_trimmed(kind: &str) -> Option<bool> {
     match kind {
         "pod" | "item" | "nested" => Some(true),
+        // A custom type (`=begin Foo`) keeps its lines as written.
+        _ if kind.starts_with(|c: char| c.is_ascii_uppercase()) => Some(false),
         _ if kind.starts_with(|c: char| c.is_ascii_lowercase())
             && !matches!(
                 kind,
@@ -460,7 +495,12 @@ fn block_flat(lines: &Lines, i: usize) -> Option<(Block, usize)> {
             if name == "for" {
                 // A later line indented further keeps or loses its blanks as
                 // in a delimited block (`=for head1` keeps, `=for item` not).
-                if i + 1 < lines.text.len() && lines.indent(i + 1) > 0 {
+                // An indented first line is the text as written, except where
+                // it is an implicit code block (not read here).
+                if i + 1 < lines.text.len()
+                    && lines.indent(i + 1) > 0
+                    && (implicit_code(&base) || continuation_trimmed(&base) != Some(false))
+                {
                     return None;
                 }
                 let (text, next) =
@@ -859,6 +899,10 @@ fn code(lines: &Lines, i: usize) -> Option<(Block, usize)> {
 // Cost: O(b), b = lines of the block.
 fn content(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)> {
     let mut parts = Vec::new();
+    // Rakudo's `!interpret-implicit-code-blocks` takes the leading whitespace
+    // of a nested block (that of its first paragraph) as the current one: a
+    // paragraph indented exactly by it is text, its lines trimmed, not code.
+    let mut text_margin: Option<String> = None;
     loop {
         while i < lines.text.len() && lines.blank(i) {
             i += 1;
@@ -872,15 +916,26 @@ fn content(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize)
             }
             Some(_) => {
                 let (nested, next) = block(lines, i)?;
+                text_margin = Some(leading_whitespace(&nested).to_string());
                 parts.push(Part::Block(nested));
                 i = next;
             }
-            None if lines.indent(i) > 0 => {
+            None if lines.indent(i) > 0
+                && implicit_code(kind)
+                && text_margin.as_deref() == Some(&lines.text[i][..lines.indent(i)]) =>
+            {
+                let (text, next) = paragraph(lines, i, None, true, Some(true))?;
+                parts.push(part_in(kind, text)?);
+                i = next;
+            }
+            None if lines.indent(i) > 0 && implicit_code(kind) => {
+                text_margin = None;
                 let (code, next) = code(lines, i)?;
                 parts.push(Part::Block(code));
                 i = next;
             }
             None => {
+                text_margin = None;
                 let (text, next) = paragraph(lines, i, None, true, continuation_trimmed(kind))?;
                 let first = parts.is_empty();
                 parts.extend(parts_in(kind, text, first)?);
@@ -903,7 +958,11 @@ fn verbatim(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize
         if i >= lines.text.len() {
             return None;
         }
-        if let Some(("end", rest)) = lines.directive(i) {
+        // An indented directive is text of the verbatim block (a nested
+        // `    =end code` included).
+        if lines.indent(i) == 0
+            && let Some(("end", rest)) = lines.directive(i)
+        {
             if rest.trim() != kind {
                 return None;
             }
