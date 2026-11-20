@@ -121,10 +121,13 @@ pub(super) fn place(
     let base = at + lead;
     let (_, args) = crate::regex_tree::parse_subrule_target(&format!("x({text})"))?;
     let args = args?;
-    // Parsed as the call the regex tree parsed (`x(ARGS)`), so that a term
-    // keeps the shape it has there (a colonpair argument is a named one).
-    let (mut stmts, _) = crate::parser::parse_fragment_unfinalized(&format!("x({text})")).ok()?;
-    crate::ast_visit::walk_stmts_mut(&mut Shift(base - 2), &mut stmts);
+    // Parsed as the arguments of a call, as the regex tree parses them, so
+    // that a term keeps the shape it has there (a colonpair argument is a
+    // named one). A known routine (`say`) keeps the call from being deferred
+    // as a bareword, whose arguments would be read again unnoted.
+    let shift = base.checked_sub("say(".len())?;
+    let (mut stmts, _) = crate::parser::parse_fragment_unfinalized(&format!("say({text})")).ok()?;
+    crate::ast_visit::walk_stmts_mut(&mut Shift(shift), &mut stmts);
     let _origins = super::expr_origins::strip(&mut stmts);
     let range = SrcSpan::new(base, base + text.len());
     let _statement = super::expr_origins::InStatement::enter(Some(range));
