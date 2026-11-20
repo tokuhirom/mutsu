@@ -967,7 +967,13 @@ impl Interpreter {
             }
             "return" => {
                 let mut err = RuntimeError::new("return");
-                err.return_value = Some(args.first().cloned().unwrap_or(Value::NIL));
+                // `0 or return 1, 2`: the listop's arguments are the returned
+                // list, as for the statement form.
+                err.return_value = Some(match args.len() {
+                    0 => Value::NIL,
+                    1 => args[0].clone(),
+                    _ => Value::array(args.to_vec()),
+                });
                 Err(err)
             }
             "reverse" => self.builtin_reverse(&args),
