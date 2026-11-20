@@ -1913,6 +1913,29 @@ mod tests {
     }
 
     #[test]
+    fn lexically_scoped_flag_matches_the_string_rule() {
+        // The flag memoizes `lexically_scoped_name`; both must agree on every
+        // kind of name the static link is asked about (#18274).
+        let cases = [
+            ("plain_lex_probe", true),
+            ("@plain_arr_probe", true),
+            ("!attr_probe", true),
+            ("TypeNameProbe", true),
+            ("Kebab-Type-Probe", true),
+            ("__mutsu_type::typed_lex_probe", true),
+            ("__mutsu_type::*dyn_probe", false),
+            ("*dyn_probe", false),
+            ("_", false),
+            ("Qualified::Probe", false),
+            ("?LINE", false),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(crate::env::lexically_scoped_name(name), expected, "{name}");
+            assert_eq!(Symbol::intern(name).is_lexically_scoped(), expected, "{name}");
+        }
+    }
+
+    #[test]
     fn shadow_meta_subject_round_trips_and_is_stable() {
         // The capture filter decides a `__mutsu_type::<name>` key by running
         // its predicate on `<name>`, so the unwrapping has to be exact -- and
