@@ -71,6 +71,23 @@ impl<'s> DeclaredNames<'s> {
             previous: names.replace_declared(found),
         }
     }
+
+    /// [`Self::collect`] for a unit finalized in source order (ADR-15760 §7.2
+    /// (c)): only what the unit imports is declared up front; each top-level
+    /// statement adds its own names as it is reached ([`declare_statement`]).
+    // Cost: O(i), i = names the unit imports.
+    pub(super) fn start(names: &'s NameScope) -> Self {
+        Self::collect(names, &[])
+    }
+}
+
+/// Declare the names the top-level statement `stmt` (and what it holds) declares,
+/// for the statements from it on (ADR-15760 §7.2 (c)).
+// Cost: O(n), n = size of `stmt`.
+pub(super) fn declare_statement(names: &NameScope, stmt: &Stmt) {
+    let mut found = HashMap::new();
+    collect_declared_names(names, std::slice::from_ref(stmt), &mut found);
+    names.extend_declared(found);
 }
 
 impl Drop for DeclaredNames<'_> {
