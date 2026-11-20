@@ -120,7 +120,7 @@ mod tests {
     fn quoted_names() {
         assert_eq!(quoted_len(r#""uc"()"#), Some(4));
         assert_eq!(quoted_len("'lc'"), Some(4));
-        assert_eq!(quoted_len(r#""{'u' ~ "c"}"()"#), Some(14));
+        assert_eq!(quoted_len(r#""{'u' ~ "c"}"()"#), Some(13));
         assert_eq!(quoted_len(r#""a\"b""#), Some(6));
         assert_eq!(quoted_len(r#""open"#), None);
         assert_eq!(quoted_len("uc"), None);
