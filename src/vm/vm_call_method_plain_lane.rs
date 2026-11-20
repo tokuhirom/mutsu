@@ -45,9 +45,10 @@
 //!   named-argument intercepts) decide on -- never enters the lane. Every
 //!   other probe in the skipped stretch reads at most the argument *count*
 //!   for a user-class receiver, which the key fixes (#10111);
-//! * **no `.^`/`.!`/`."…"` modifier**, **not quoted** and **no accessor-ref
-//!   marker** are required by the gate on both the install and the replay, so
-//!   no probe's call-shaped early-out can differ between them;
+//! * **no `.^`/`."…"` modifier** and **not quoted** are required by the gate
+//!   on both the install and the replay, and **the accessor-ref marker** (a
+//!   call asked for a container) is part of the key, so no probe's
+//!   call-shaped early-out can differ between them;
 //! * **the native-method cascade** (`try_native_method`), the one probe in the
 //!   stretch whose decline depends on argument *values*, is consulted only
 //!   when the class has no user method of the name. A call with arguments
@@ -92,7 +93,6 @@ impl Interpreter {
         // calling-context permission check.
         if !matches!(modifier, None | Some("!"))
             || Self::quoting_matters(quoted, method_sym.as_str())
-            || want_ref
         {
             return None;
         }
@@ -104,6 +104,15 @@ impl Interpreter {
             arg_keys.clear();
             self.caches.plain_method_lane_scratch = arg_keys;
             return None;
+        }
+        // A call asked for a container (the right side of `:=`, an `is raw`
+        // routine's last statement) keys apart from a plain one: the probes
+        // that read the request (the accessor reads, the wrapped-accessor
+        // terminal) are then pinned by the key like everything else. The
+        // dispatch tail never sees the request (it is consumed here), so a
+        // user method's plan is the same either way (#18267).
+        if want_ref {
+            arg_keys.push(super::vm_method_call_plan::want_ref_marker());
         }
         Some((class_name, method_sym, arg_keys))
     }

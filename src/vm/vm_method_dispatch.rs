@@ -2411,6 +2411,25 @@ impl Interpreter {
                     Self::itemize_fast_method_arg(pd, val),
                 ));
                 arg_idx += 1;
+            } else if let Some(pd) = pd.filter(|pd| pd.default.is_some())
+                && let Some(val) = crate::opcode::CompiledFunction::const_fill_for_param(pd)
+            {
+                // An omitted parameter whose default is a shareable constant
+                // (`$params = \()`, `$n = 1`) binds that constant, already
+                // checked against the parameter's constraint; the gate admits
+                // no other default (`needs_default_eval`). An `is copy`
+                // parameter gets its own container, as a supplied argument
+                // does above.
+                let val = if pd.traits.iter().any(|t| t == "copy") {
+                    val.detach_shared_container()
+                } else {
+                    val
+                };
+                param_values.push((
+                    binding_name,
+                    binding_sym,
+                    Self::itemize_fast_method_arg(Some(pd), val),
+                ));
             } else if let Some(pd) = pd.filter(|pd| pd.optional_marker) {
                 // An omitted optional's implicit default still has to satisfy
                 // a subset constraint (`method m(S $s?)`), as in the slow binder.

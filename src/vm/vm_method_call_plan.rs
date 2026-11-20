@@ -106,6 +106,15 @@ fn plan_arg_kind_ok(arg: &Value) -> bool {
     plan_scalar_kind_ok(arg)
 }
 
+/// The marker a lane key carries when the call asked for a container
+/// (`want_ref`, see `plain_method_lane_key`).
+// Cost: O(1) after the first call.
+pub(super) fn want_ref_marker() -> Symbol {
+    static MARKER: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+    // A NUL cannot occur in a Raku type name (see `container_arg_marker`).
+    *MARKER.get_or_init(|| Symbol::intern("\u{0}want-ref"))
+}
+
 /// The marker a lane key carries for a shared-cell argument, one symbol per
 /// argument position (see [`Interpreter::plain_lane_arg_keys_into`]).
 // Cost: O(1) after the first call per position.
@@ -237,6 +246,10 @@ impl Interpreter {
         let mut arg_keys = Vec::with_capacity(args.len());
         if !args.is_empty() && !self.plain_lane_arg_keys_into(args, &mut arg_keys) {
             return;
+        }
+        // The container-request marker is the gate's, not the arguments'.
+        if key.2.last() == Some(&want_ref_marker()) {
+            arg_keys.push(want_ref_marker());
         }
         if arg_keys != key.2 {
             return;
