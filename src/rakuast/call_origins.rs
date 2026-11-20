@@ -422,9 +422,10 @@ fn angle_close(operand: &RakuAstNode, end: u32) -> u32 {
     let angled = matches!(
         operand.class,
         super::RakuAstClass::RatLiteral | super::RakuAstClass::ComplexLiteral
-    ) && super::unit_source::with_text(crate::ast::SrcSpan::new(end as usize, end as usize + 1), |t| {
-        (t == ">").then_some(())
-    })
+    ) && super::unit_source::with_text(
+        crate::ast::SrcSpan::new(end as usize, end as usize + 1),
+        |t| (t == ">").then_some(()),
+    )
     .is_some();
     end + u32::from(angled)
 }
