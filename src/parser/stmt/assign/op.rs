@@ -1,7 +1,15 @@
 use super::*;
 use crate::rakuast::compound::op::COMPOUND_ASSIGN_OPS;
 
+// Cost: O(k), k = number of compound operators; O(1) when no `=` is near.
 pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
+    // Every spelling below ends with `=` and is at most `notandthen=` long
+    // (the Unicode aliases are three bytes): an input with no `=` in its first
+    // bytes starts none of them. This is asked after nearly every term.
+    const LONGEST: usize = "notandthen=".len();
+    if !input.as_bytes().iter().take(LONGEST).any(|&b| b == b'=') {
+        return None;
+    }
     // Unicode arithmetic-operator aliases whose compound-assignment forms mirror
     // the ASCII ops: `×=` (U+00D7) == `*=`, `÷=` (U+00F7) == `/=`. Raku accepts
     // these; the multiplicative parser leaves `×`/`÷` before `=` alone so the

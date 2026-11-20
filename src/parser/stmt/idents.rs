@@ -14,9 +14,17 @@ use super::*;
 /// `L10N::XX` vocabulary the localized spelling stands in for `kw` (and, for a
 /// keyword the vocabulary *replaces* rather than aliases, the ASCII spelling
 /// stops matching). See `stmt::simple::l10n`.
+// Cost: O(k), k = length of `kw`.
 pub(crate) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
     if let Some(decision) = crate::parser::stmt::simple::l10n_match_keyword(kw, input) {
         return decision;
+    }
+    // The first byte rules most keywords out without a string comparison:
+    // this is asked for every statement keyword at every statement start.
+    if let Some(&first) = kw.as_bytes().first()
+        && input.as_bytes().first() != Some(&first)
+    {
+        return None;
     }
     if input.starts_with(kw) && !is_ident_char(input.as_bytes().get(kw.len()).copied()) {
         Some(&input[kw.len()..])
