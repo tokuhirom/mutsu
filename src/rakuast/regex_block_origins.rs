@@ -42,12 +42,7 @@ pub(super) fn held_code_block(
 /// byte `at` of the unit. The length of its text (through its `}`), or
 /// `None` when `text` does not start with a block whose end can be found.
 // Cost: O(n), n = length of the block's text, plus the parse of its code.
-fn code_block(
-    names: &NameScope,
-    block: &mut RakuAstNode,
-    text: &str,
-    at: usize,
-) -> Option<usize> {
+fn code_block(names: &NameScope, block: &mut RakuAstNode, text: &str, at: usize) -> Option<usize> {
     if block.class != RakuAstClass::Block || !text.starts_with('{') {
         return None;
     }
