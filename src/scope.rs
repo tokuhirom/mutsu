@@ -139,8 +139,28 @@ impl NameScope {
     /// Add `more` to the unit's own declared names (a statement reached in
     /// source order).
     // Cost: O(m), m = names in `more`.
+    /// The names merge as one scan of the whole unit would record them: a type
+    /// replaces what was there, a term replaces only a routine, and a routine
+    /// adds a name nothing declared yet (an imported constant `phi` stays the
+    /// term where a nested `sub phi` is declared).
     pub(crate) fn extend_declared(&self, more: HashMap<String, DeclaredKind>) {
-        self.declared.borrow_mut().extend(more);
+        let mut declared = self.declared.borrow_mut();
+        for (name, kind) in more {
+            match kind {
+                DeclaredKind::Type => {
+                    declared.insert(name, kind);
+                }
+                DeclaredKind::Term => {
+                    let entry = declared.entry(name).or_insert(kind);
+                    if *entry == DeclaredKind::Routine {
+                        *entry = DeclaredKind::Term;
+                    }
+                }
+                DeclaredKind::Routine => {
+                    declared.entry(name).or_insert(kind);
+                }
+            }
+        }
     }
 
     /// Open a block that declares `own`; [`Self::pop_block`] closes it.
