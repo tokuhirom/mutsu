@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn skips_quoted_strings() {
         assert_eq!(closing_brace(r#"{ "a}" }"#), Some(7));
-        assert_eq!(closing_brace("{ 'b\\'}' }"), Some(10));
+        assert_eq!(closing_brace("{ 'b\\'}' }"), Some(9));
         assert_eq!(closing_brace("{ f(don't-x) }"), Some(13));
         assert_eq!(closing_brace(r#"{ "open }"#), None);
         assert_eq!(closing_brace("{ # } \n }"), None);
