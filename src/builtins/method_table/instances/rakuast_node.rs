@@ -822,6 +822,10 @@ fn children_without_docs(node: &RakuAstNode) -> Vec<Value> {
     if let Some(filled) = crate::rakuast::empty_fields::materialized(node) {
         return children_without_docs(&filled);
     }
+    // A package's traits are visited from its body.
+    if let Some(package) = crate::rakuast::package_children::reshaped(node) {
+        return field_children(&package);
+    }
     if let Some(shaped) = rakudo_shaped_children(node) {
         return shaped;
     }

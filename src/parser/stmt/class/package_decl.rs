@@ -362,7 +362,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     super::class_decl::note_is(
                         &mut written,
                         &trait_name,
-                        (!tags.is_empty())
+                        // Only a written tag list is an argument.
+                        r2.starts_with('(')
                             .then_some(crate::ast::routine_trait::TraitArgument::ExportTags(tags)),
                     );
                     let r2 = skip_balanced_parens(r2);
