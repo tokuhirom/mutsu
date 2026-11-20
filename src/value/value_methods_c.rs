@@ -69,7 +69,8 @@ impl Value {
         Value::lazy_match(std::sync::Arc::new(cap), target)
     }
 
-    /// The finished `.parse`/`.subparse` result: the start rule's Match, still
+    /// The finished `.parse`/`.subparse` result: the start rule's Match over
+    /// `cap` (built by [`Self::match_cap_node_full`]), still
     /// lazy, carrying the parse-level state on its own capture node (the
     /// action-made `.ast`, the `:actions` object, the winning `:sym<...>`
     /// variant of a proto start rule, the capture alias map and a `)>`-narrowed
@@ -81,19 +82,12 @@ impl Value {
     /// 11k instructions on every grammar parse (#18207). A forced read of the
     /// result sees the same attributes, since the materialization renders
     /// them from the node.
-    // Cost: O(n + p + v), n/p/v = the named, positional and regex-variable slots copied.
-    #[allow(clippy::too_many_arguments)]
+    // Cost: O(1).
     pub(crate) fn make_parse_result_match(
-        from: i64,
-        to: i64,
-        positional: &[crate::value::regex_caps::PosSlot],
-        named: &crate::value::regex_caps::NamedCaptureMap,
-        regex_vars: &crate::value::regex_caps::RegexVarMap,
-        cursor: Option<Value>,
+        mut cap: crate::value::regex_caps::CapNode,
         target: crate::value::regex_caps::MatchTarget,
         extras: ParseResultExtras,
     ) -> Self {
-        let mut cap = Self::match_cap_node_full(from, to, positional, named, regex_vars, cursor);
         if let Some(made) = extras.made {
             cap.made.set(made);
         }
@@ -112,7 +106,7 @@ impl Value {
 
     /// The top-level capture node [`Self::make_match_object_full_with_regex_vars`] presents.
     // Cost: O(n + p + v), n/p/v = the named, positional and regex-variable slots copied.
-    fn match_cap_node_full(
+    pub(crate) fn match_cap_node_full(
         from: i64,
         to: i64,
         positional: &[crate::value::regex_caps::PosSlot],

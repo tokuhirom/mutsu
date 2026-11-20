@@ -1345,16 +1345,15 @@ impl Interpreter {
                 pos: captures.narrowed_pos(),
             };
             let cursor = captures.take_cursor();
-            let match_obj = Value::make_parse_result_match(
+            let cap = Value::match_cap_node_full(
                 captures.from as i64,
                 captures.to as i64,
                 &captures.positional,
                 &captures.named,
                 captures.regex_vars(),
                 cursor,
-                gtarget,
-                extras,
             );
+            let match_obj = Value::make_parse_result_match(cap, gtarget, extras);
             // Reset stale numeric/named capture vars from any previous match.
             self.reset_capture_env_vars();
             // Set named capture env vars from the match's own capture node,
