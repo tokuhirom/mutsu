@@ -180,7 +180,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // `code-statements` (undocumented in rakudo; `static::CLI`'s analysis
     // reads it, #15608) answers the same statements as `statements` for every
     // statement kind measured under `raku` (expressions, declarations, `use`,
-    // phasers, loops, `CATCH`, empty statements).
+    // phasers, loops, `CATCH`, empty statements), less the Pod blocks.
     if (method == "statements"
         && matches!(
             node.class,
@@ -195,11 +195,17 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         || (method == "colonpairs" && node.class == RakuAstClass::ColonPairs)
         || (method == "atoms" && node.class == RakuAstClass::DocParagraph)
     {
+        // A Pod block is a statement, not a code statement.
+        let code_only = method == "code-statements";
         let items = node
             .fields
             .iter()
             .filter(|f| !origin::is_origin(f) && !is_unvisited_field(node, f))
             .map(|f| field_to_value(&f.value))
+            .filter(|v| {
+                !(code_only
+                    && matches!(v.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::DocBlock))
+            })
             .collect();
         return Some(Value::array(items));
     }

@@ -60,6 +60,7 @@ mod rakuast_declaration_edits;
 mod rakuast_diagnostics;
 mod rakuast_doc_edit;
 mod rakuast_doc_row;
+pub(crate) mod rakuast_fileline;
 mod rakuast_finish;
 mod rakuast_literal_queries;
 mod rakuast_locate;
