@@ -15,14 +15,15 @@ pub(crate) fn model_extension(owner: &str, name: &str) -> bool {
 /// them; mutsu serves them from per-class rows.
 // Cost: O(1), fixed owner/name pairs.
 fn role_provided(owner: &str, name: &str) -> bool {
-    matches!(name, "properties" | "reducer-name")
-        && matches!(
-            owner,
-            "RakuAST::Postfix"
-                | "RakuAST::Postcircumfix::ArrayIndex"
-                | "RakuAST::Postcircumfix::HashIndex"
-                | "RakuAST::Postcircumfix::LiteralHashIndex"
-        )
+    (owner == "RakuAST::Assignment" && name == "reducer-name")
+        || matches!(name, "properties" | "reducer-name")
+            && matches!(
+                owner,
+                "RakuAST::Postfix"
+                    | "RakuAST::Postcircumfix::ArrayIndex"
+                    | "RakuAST::Postcircumfix::HashIndex"
+                    | "RakuAST::Postcircumfix::LiteralHashIndex"
+            )
 }
 
 /// `is-pure` / `short-circuit` on the owners the 2026.11 rakudo declares them
@@ -34,7 +35,7 @@ fn purity_provided(owner: &str, name: &str) -> bool {
         (owner, name),
         ("RakuAST::Infixish", "is-pure" | "short-circuit")
             | ("RakuAST::MetaInfix", "is-pure")
-            | ("RakuAST::Assignment", "is-pure")
+            | ("RakuAST::Assignment", "is-pure" | "properties" | "item")
             | ("RakuAST::Prefixish", "is-pure")
     )
 }

@@ -43,6 +43,13 @@ pub(super) fn view_sigiled(expr: &Expr, sigil: char) -> Result<RakuAstNode, Runt
     let Expr::MethodCall { target, .. } = expr else {
         return Err(super::view::unsupported("sigiled named capture"));
     };
+    // `@0` / `%0`: the numbered capture, which keeps the written sigil.
+    if let Expr::Var(digits) = target.as_ref()
+        && let Some(mut node) = view_positional(digits)
+    {
+        node.origin.3 = Some(sigil.to_string().into());
+        return Ok(node);
+    }
     let Expr::CaptureVar(name) = target.as_ref() else {
         return Err(super::view::unsupported("sigiled named capture"));
     };
@@ -156,6 +163,22 @@ pub(super) fn lower_positional(
     };
     if let Some(pairs) = lower_colonpairs(names, node)? {
         return adverbed(Expr::Literal(Value::int(n)), true, pairs);
+    }
+    // A parsed `@0` / `%0` is the capture contextualized, as the parser runs it.
+    let method = match node.origin.3.as_deref() {
+        Some("@") => Some(("list", true)),
+        Some("%") => Some(("hash", true)),
+        _ => None,
+    };
+    if let Some((method, sugar)) = method {
+        return Ok(Expr::MethodCall {
+            target: Box::new(Expr::Var(n.to_string())),
+            name: crate::symbol::Symbol::intern(method),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+            sugar,
+        });
     }
     Ok(Expr::Var(n.to_string()))
 }

@@ -12,6 +12,7 @@
 //! [`file_named_candidate`]: Interpreter::file_named_candidate
 
 use super::super::*;
+use crate::symbol::wk;
 use crate::value::regex_caps::{CapNode, MatchTarget};
 use std::sync::Arc;
 
@@ -45,14 +46,16 @@ impl Interpreter {
         };
         // A node with no action method of its own stays for the walk, which
         // still has to descend into any child that was not reduced here.
-        if !self.reduction_has_action(&actions, rule_name, cap.sym) {
+        let class = Self::actions_class_sym(&actions);
+        let action_target = self.node_action_method(class, rule_name, cap.sym);
+        if action_target.0.is_none() {
             self.regex_state.current_grammar_actions = Some(actions);
             return;
         }
         let target = super::regex_helpers::current_match_target()
             .unwrap_or_else(|| MatchTarget::new(""));
         let match_obj = Value::lazy_match(Arc::clone(cap), target);
-        let outcome = self.run_reduction_action(match_obj, &mut actions, rule_name);
+        let outcome = self.run_reduction_action(match_obj, &mut actions, rule_name, action_target);
         self.regex_state.current_grammar_actions = Some(actions);
         cap.reduced.set();
         // A `return` out of the action itself is the action's own result. One
@@ -71,26 +74,6 @@ impl Interpreter {
         }
     }
 
-    /// Whether the actions object answers a method for the rule (or for its
-    /// `:sym<>` variant).
-    fn reduction_has_action(
-        &mut self,
-        actions: &Value,
-        rule_name: &str,
-        sym: Option<Symbol>,
-    ) -> bool {
-        let Some(class_name) = Self::actions_class_name_of(actions) else {
-            return true;
-        };
-        if let Some(sym) = sym {
-            let variant = self.variant_action_method_name(Some(&class_name), rule_name, &sym.resolve());
-            if self.actions_answer_method(&class_name, &variant) {
-                return true;
-            }
-        }
-        self.actions_answer_method(&class_name, rule_name)
-    }
-
     /// The action call of [`Self::dispatch_reduced_subrule`], with the
     /// engine's own bindings (`$/`, `$_`, the capture variables) put back and
     /// every caller lexical the action rebound reported to the outer VM, as
@@ -100,36 +83,44 @@ impl Interpreter {
         match_obj: Value,
         actions: &mut Value,
         rule_name: &str,
+        action_target: super::super::methods_grammar_action_walk::NodeActionTarget,
     ) -> Result<(), RuntimeError> {
-        let snapshot: HashMap<Symbol, Value> =
-            self.env.iter().map(|(k, v)| (*k, v.clone())).collect();
-        let saved_match = self.env.get("/").cloned();
-        let saved_topic = self.env.get("_").cloned();
-        let saved_made = self.env.get("made").cloned();
+        // `$/` and `$_` are put back by the action call itself; `make`
+        // writes the `made` slot, which is engine state of the match in
+        // progress.
+        let saved_made = self.env.get_sym(wk::made()).cloned();
         let saved_in_block = self.regex_state.in_regex_code_block;
         self.regex_state.in_regex_code_block = true;
-        let result = self.invoke_grammar_actions(match_obj, actions, rule_name);
+        // The caller lexicals the action rebinds are the by-name writes its
+        // code makes, which every by-name writer logs into the carrier set
+        // (`note_caller_env_write`): no snapshot of the whole env is needed to
+        // find them afterwards.
+        let carrier = self.begin_carrier();
+        let result =
+            self.invoke_grammar_actions_for(match_obj, actions, rule_name, Some(action_target));
+        let written = self.end_carrier(carrier);
         self.regex_state.in_regex_code_block = saved_in_block;
-        for (key, saved) in [("/", saved_match), ("_", saved_topic), ("made", saved_made)] {
-            match saved {
+        let unchanged = match (&saved_made, self.env.get_sym(wk::made())) {
+            (Some(saved), Some(now)) => saved.same_binding(now),
+            (None, None) => true,
+            _ => false,
+        };
+        if !unchanged {
+            match saved_made {
                 Some(value) => {
-                    self.env.insert(key.to_string(), value);
+                    self.env.insert_sym(wk::made(), value);
                 }
                 None => {
-                    self.env.remove(key);
+                    self.env.remove_sym(wk::made());
                 }
             }
         }
-        for (k, v) in &self.env {
-            if snapshot.get(k).is_none_or(|old| !old.same_binding(v)) {
-                let name = k.resolve();
-                if matches!(name.as_str(), "/" | "_" | "made") {
-                    continue;
-                }
-                if let Some(set) = self.carrier_writes.as_mut() {
-                    set.insert(name.clone());
-                }
-                self.pending_local_updates.push((name, v.clone()));
+        for name in written {
+            if matches!(name.as_str(), "/" | "_" | "made") {
+                continue;
+            }
+            if let Some(value) = self.env.get(&name).cloned() {
+                self.pending_local_updates.push((name, value));
             }
         }
         result.map(|_| ())

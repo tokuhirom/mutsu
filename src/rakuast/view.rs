@@ -2573,7 +2573,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             | Spelling::ZipChain
             | Spelling::HyperSlip
             | Spelling::HyperCallTerm
-            | Spelling::ColonPairs => super::colon_pairs::view_written(names, spelled),
+            | Spelling::ColonPairs
+            | Spelling::IndirectTail(_) => super::colon_pairs::view_written(names, spelled),
             Spelling::TopicPostfix => super::topic_postfix::view_node(names, &spelled.expr),
             Spelling::RadixNumber => super::radix_number::view_node(names, &spelled.expr),
             Spelling::ColonPairValue(_)
@@ -3724,29 +3725,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // source delimiter was `{...}` or `<...>`.  The former is the bounded
         // HashIndex slice; LiteralHashIndex remains a provenance boundary.
         // Reduction metaop `[+] @a` / triangle `[\+] @a` -> Term::Reduce.
-        Expr::Reduction { op, expr } => {
-            let (triangle, infix_op) = match op.strip_prefix('\\') {
-                Some(stripped) => (true, stripped),
-                None => (false, op.as_str()),
-            };
-            let arglist = RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::ArgList,
-                fields: vec![node_field(None, view_expr(names, expr)?)],
-            };
-            Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::TermReduce,
-                fields: vec![
-                    RakuAstField {
-                        name: Some("triangle"),
-                        value: RakuAstFieldValue::Node(Value::truth(triangle)),
-                    },
-                    node_field(Some("infix"), plain_infix(infix_op)),
-                    node_field(Some("args"), arglist),
-                ],
-            })
-        }
+        Expr::Reduction { op, expr } => super::reduce_term::view(names, op, expr),
         // `.<k>` / `.[i]` / `.{k}`: `Term::TopicCall` over the bare subscript.
         Expr::Index {
             target,
@@ -6024,7 +6003,8 @@ pub(super) fn colonpair_spelling(
         BinaryForm::ColonPairFalse => colonpair_false_expr(expr),
         BinaryForm::ColonPairVariable => colonpair_variable_expr(names, expr),
         BinaryForm::ColonPairValue => colonpair_value_expr(names, expr),
-        BinaryForm::ColonPairBracketed => colonpair_bracketed_expr(names, expr),
+        // `:a<x y>` / `:a[1, 2]`: over the bracketed value, no parentheses.
+        BinaryForm::ColonPairBracketed => colonpair_value_node(names, expr, false),
         BinaryForm::ColonPairNumber => colonpair_number_expr(names, expr),
         BinaryForm::Infix | BinaryForm::QuotedKey | BinaryForm::CaretPrefix => return None,
         BinaryForm::DoesDeclInit => return None,
@@ -6160,13 +6140,6 @@ pub(super) fn colonpair_value_expr(
     expr: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     colonpair_value_node(names, expr, true)
-}
-
-/// `:a<x y>` / `:a[1, 2]`: the colonpair over the bracketed value itself, a
-/// word-quote or an array composer, with no parentheses around it.
-// Cost: O(n), n = size of the pair.
-fn colonpair_bracketed_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    colonpair_value_node(names, expr, false)
 }
 
 // Cost: O(n), n = size of the pair.

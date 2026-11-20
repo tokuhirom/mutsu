@@ -60,6 +60,13 @@ pub(crate) struct MethodCallPlan {
     /// The method needs none of the general binder's optional machinery
     /// and runs in the lean frame (`vm_method_lean_frame`).
     pub(crate) lean: bool,
+    /// A parameter may alias the caller's container (sigilless, `is raw`,
+    /// `is rw`): whether this call binds it on the fast binder depends on
+    /// where each argument came from, so a replay re-checks the argument
+    /// sources (`method_container_args_light`) and promotes the caller's
+    /// variables to shared cells (`promote_method_container_args`), exactly
+    /// as the dispatch tail would.
+    pub(crate) container_params: bool,
 }
 
 /// An argument whose fast-path gate reading is fixed by its type key.
@@ -204,14 +211,13 @@ impl Interpreter {
             || crate::builtins::method_table::native_array_result::retypes(method)
             || def.is_multi
             || def.deprecated_message.is_some()
-            // A parameter that may alias the caller's container (sigilless,
-            // `is rw`, `is raw`, a `does` target) binds by where the argument
-            // came from -- a variable or a value -- which the call site's
-            // argument sources tell and the type key does not.
-            || def
-                .param_defs
-                .iter()
-                .any(|pd| pd.binds_caller_container() || pd.is_does_target())
+            // A `does` target binds through the argument's container by a
+            // path the fast binder does not take. A parameter that may alias
+            // the caller's container (sigilless, `is rw`, `is raw`) binds by
+            // where the argument came from, which the call site's argument
+            // sources tell and the type key does not: such a plan re-checks
+            // the sources on every replay (`container_params`).
+            || def.param_defs.iter().any(|pd| pd.is_does_target())
             || !args.iter().all(plan_arg_kind_ok)
         {
             return None;
@@ -245,6 +251,7 @@ impl Interpreter {
             def: std::sync::Arc::clone(def),
             can_skip_merge: gate.can_skip_merge,
             lean,
+            container_params: def.has_container_params(),
         }))
     }
 
@@ -281,12 +288,35 @@ impl Interpreter {
                 args,
             );
         }
+        // The per-call half of the gate for a container parameter: an
+        // argument this replay cannot bind on the fast binder (a source the
+        // promotion cannot serve) takes the dispatch tail, as the first call
+        // with that shape did.
+        let def = &*plan.def;
+        let cc = def
+            .compiled_code
+            .as_ref()
+            .expect("a planned method is compiled");
+        let mut args = args;
+        if plan.container_params {
+            if !self.method_container_args_light(def, cc, &args) {
+                return self.run_plain_method_lane(
+                    code,
+                    target_name,
+                    target,
+                    method_sym.as_str(),
+                    method_sym,
+                    args,
+                );
+            }
+            // While the caller's frame is still current, as the tail does.
+            self.promote_method_container_args(def, &mut args);
+        }
         self.dispatch.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
         let method = method_sym.as_str();
         let armed =
             self.arm_raw_invocant_arrival(code, target_name, &target, method, method_sym, &args);
-        let def = &*plan.def;
         let owner = plan.owner;
         let pushed_dispatch = loan_env!(
             self,
@@ -310,10 +340,6 @@ impl Interpreter {
         // writeback list this call's site drains.
         self.pending_skip_constraint_recheck = false;
         self.pending_rw_writeback_sources.clear();
-        let cc = def
-            .compiled_code
-            .as_ref()
-            .expect("a planned method is compiled");
         let empty_fns = CompiledFns::default();
         let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let method_result = if plan.lean && self.lean_args_ok(def, &args) {
