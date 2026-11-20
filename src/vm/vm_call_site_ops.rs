@@ -301,8 +301,13 @@ impl Interpreter {
                     .then(|| self.stack.len().saturating_sub(*arity as usize + 1));
                 // A native array's `sort`/`reverse`/... answers a native array.
                 let retype_receiver = self.retype_receiver(code, *name_idx, *arity);
-                let result =
-                    self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
+                let result = self.call_method_mut_site_around(
+                    code,
+                    ip,
+                    *arity,
+                    *target_name_idx,
+                    *target_slot,
+                    |vm| {
                         vm.exec_call_method_mut_op(
                             code,
                             *name_idx,
@@ -313,7 +318,8 @@ impl Interpreter {
                             *quoted,
                             *arg_sources_idx,
                         )
-                    });
+                    },
+                );
                 if result.is_ok() {
                     self.retype_answer(code, *name_idx, retype_receiver);
                 }
@@ -369,13 +375,14 @@ impl Interpreter {
         ip: usize,
         arity: u32,
         target_name_idx: u32,
+        target_slot: Option<u32>,
         f: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         self.sync_source_line(code, ip);
         crate::alloc_scope_named!(_sc_cmm_pre, "op:CallMethodMut:pre");
         // `use fatal`: see `exec_call_method_site`.
         self.explode_if_fatal_failure_in_call_args("", arity as usize)?;
-        let pre = self.attr_env_snapshot(code, target_name_idx);
+        let pre = self.attr_container_op_prologue(code, target_name_idx, target_slot);
         // The receiver's env binding before the call, so the writeback below
         // can tell whether this method actually rebound it (see there).
         // Compared with `same_binding` -- O(1), and it never walks container
@@ -434,7 +441,7 @@ impl Interpreter {
         }
         self.apply_pending_rw_writeback(code);
         self.drain_pending_local_updates_after_call(code);
-        self.mirror_attr_env_to_cell(code, target_name_idx, pre);
+        self.attr_container_op_epilogue(code, target_name_idx, pre);
         crate::alloc_scope_end!(_sc_cmm_post);
         Ok(())
     }

@@ -27,7 +27,9 @@ impl Interpreter {
     /// The slot a named element store targets, when it is one the running
     /// code declares: the compiler-baked `target_slot` (resolved at emit time
     /// from `local_map`), valid only when no sigilless alias redirected the
-    /// store to another variable.
+    /// store to another variable. A private aggregate attribute's slot is
+    /// held too: it holds the instance's own container, refreshed from the
+    /// cell before the store (ADR-18356 D2, `vm_attr_aggregate_slot`).
     // Cost: O(1).
     pub(super) fn store_decl<'a>(
         &self,
@@ -36,7 +38,10 @@ impl Interpreter {
         aliased: bool,
     ) -> StoreDecl<'a> {
         let idx = target_slot? as usize;
-        (!aliased && idx < self.locals.len() && code.declares_slot(idx)).then_some((code, idx))
+        (!aliased
+            && idx < self.locals.len()
+            && (code.declares_slot(idx) || code.is_private_aggregate_attr_slot(idx)))
+        .then_some((code, idx))
     }
 
     /// [`Self::store_decl`] for a store that addresses `code`'s slot `idx`
