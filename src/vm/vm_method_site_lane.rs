@@ -108,7 +108,6 @@ impl Interpreter {
             target_name_idx,
             modifier_idx: None,
             quoted: false,
-            arg_sources_idx,
             ..
         } = code.ops[ip]
         else {
@@ -120,7 +119,6 @@ impl Interpreter {
             name_idx,
             arity,
             Some(target_name_idx),
-            arg_sources_idx,
         )
     }
 
@@ -136,32 +134,17 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         target_name_idx: Option<u32>,
-        arg_sources_idx: Option<u32>,
     ) -> Option<SiteLaneAnswer> {
         let arity = arity as usize;
-        if arity > MAX_LANE_ARITY {
+        // Everything a property of the call site alone decides: the name,
+        // the arity, the receiver variable and the argument sources.
+        if !Self::method_site_static_ok(code, ip) {
             return None;
         }
         if self.accessor_ref_pending
             || !self.pending_rw_writeback_sources.is_empty()
             || !self.pending_local_updates.is_empty()
             || crate::runtime::find_method_intercept::any_user_find_method()
-        {
-            return None;
-        }
-        // Most calls name a method no row has. A bit test answers those
-        // without taking the memo's lock, which an `Int` receiver (it has a
-        // shape) would otherwise pay on every such call.
-        if !method_table::names_a_row(code.const_sym(name_idx), arity) {
-            return None;
-        }
-        // A callback that binds `$_` rw writes back into the named array
-        // (`@a.map({ $_++ })`): the rw-writeback dispatch must see the call,
-        // not the `Any` interpreter rows (ADR-11276 §9.60).
-        // An inline receiver is not told apart here: the lane leaves all
-        // three to the full path for it.
-        if matches!(Self::const_str(code, name_idx), "map" | "grep" | "first")
-            && target_name_idx.is_none_or(|t| Self::const_str(code, t).starts_with('@'))
         {
             return None;
         }
@@ -204,15 +187,7 @@ impl Interpreter {
         let row = match code.method_sites.cached(sites, idx, generation) {
             // The memo is keyed by the method name, which sites calling it
             // with another arity share, so the arity is part of the payload.
-            Some(payload) if payload_matches(payload, receiver, arity) => {
-                let row = payload_row(payload)?;
-                if target_name_idx
-                    .is_some_and(|t| Self::is_array_hash_attr_twigil(Self::const_str(code, t)))
-                {
-                    return None;
-                }
-                row
-            }
+            Some(payload) if payload_matches(payload, receiver, arity) => payload_row(payload)?,
             _ => {
                 let resolved =
                     self.resolve_method_site_lane(code, name_idx, target_name_idx, receiver, arity);
@@ -230,10 +205,7 @@ impl Interpreter {
         };
         // After the row is known: a call that misses (a remembered miss
         // above) never pays for the argument checks.
-        if arity > 0
-            && (!method_table::admits(row, &self.stack[base + 1..])
-                || arg_sources_idx.is_some_and(|idx| !site_args_are_positional(code, idx)))
-        {
+        if arity > 0 && !method_table::admits(row, &self.stack[base + 1..]) {
             return None;
         }
         // A native renderer stands in for the per-element `.Str`/`.gist`/`.raku`
@@ -281,7 +253,7 @@ impl Interpreter {
             // fixed buffer (at most `MAX_LANE_ARITY` of them) rather than a
             // heap vector per call.
             let target = self.stack[base].clone();
-            let mut buf = [Value::NIL; MAX_LANE_ARITY];
+            let mut buf = [Value::NIL; super::vm_method_site_static::MAX_LANE_ARITY];
             for (slot, arg) in buf.iter_mut().zip(&self.stack[base + 1..]) {
                 *slot = arg.clone();
             }
@@ -464,30 +436,6 @@ impl Interpreter {
         let _ = code;
         full
     }
-}
-
-/// The most arguments a row takes, and so a lane call carries (the
-/// interpreter-row branch of `try_method_site_lane` copies them into a buffer
-/// this long).
-const MAX_LANE_ARITY: usize = 2;
-
-/// Whether a call site's argument-source descriptor (see
-/// `Compiler::add_arg_sources_constant`) names only positional arguments: no
-/// named argument (`FALSE`, or an array led by it) and no `|` spread
-/// (`TRUE`). A named argument reaches the stack as a `Pair`, which
-/// `plain_args` refuses anyway; the spread is refused because it changes the
-/// argument count at run time.
-// Cost: O(a), a = arguments of the site.
-fn site_args_are_positional(code: &CompiledCode, idx: u32) -> bool {
-    let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
-        return false;
-    };
-    items.iter().all(|item| {
-        matches!(
-            item.view(),
-            ValueView::Nil | ValueView::Str(_) | ValueView::Pair(..)
-        )
-    })
 }
 
 /// What the memo-miss half of the lane decided.

@@ -8177,6 +8177,11 @@ pub(crate) struct CompiledCode {
     /// from, for one registry write generation (see
     /// `Interpreter::try_method_site_lane`).
     pub(crate) method_sites: crate::value::MethodSiteCaches,
+    /// Lazily-built per-op verdict of the method-site lane's static checks
+    /// (`vm_method_site_static`): `true` at a `CallMethod`/`CallMethodMut`
+    /// whose name, arity, argument sources and receiver variable leave the
+    /// lane free to answer it. Indexed by op position.
+    pub(crate) method_site_static: std::sync::OnceLock<Box<[bool]>>,
     /// #18028: one memo per string constant, remembering that a `CallFunc`
     /// naming that constant reached the built-in routine's native arm, for
     /// one registry write generation (see `Interpreter::try_native_call_site`).
@@ -8911,6 +8916,7 @@ impl CompiledCode {
             attr_sites: Default::default(),
             bareword_sites: Default::default(),
             method_sites: Default::default(),
+            method_site_static: std::sync::OnceLock::new(),
             native_call_sites: Default::default(),
             lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
