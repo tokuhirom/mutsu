@@ -21,7 +21,7 @@
 //! method's env overlay (until O1 retires it, ADR-17335), the readonly
 //! scope, the parameters, the method-class and routine frames, the body
 //! ([`Interpreter::run_compiled_method_body`], shared with the general
-//! binder) and the attribute reconcile on exit.
+//! binder).
 //!
 //! The one per-call input the plan cannot fix is an argument's value: an
 //! untyped parameter is implicitly `Any`, and a `Mu`-only argument must fail
@@ -414,7 +414,6 @@ impl Interpreter {
             self.sync_env_from_locals(cc);
             self.clone_env()
         });
-        let reconciled = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
 
         let method_var_bindings = self.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;
@@ -452,9 +451,6 @@ impl Interpreter {
         } else {
             self.finalize_method_result_fast(cc, final_result, None, None, None)
         };
-        final_result.map(|v| {
-            let adjusted = Self::method_frame_result_sharing(&base, v, &reconciled);
-            (adjusted, reconciled)
-        })
+        final_result.map(|v| (Self::method_frame_result_sharing(&base, v), None))
     }
 }

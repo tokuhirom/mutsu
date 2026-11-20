@@ -80,7 +80,12 @@ pub(super) fn block(lines: &Lines, i: usize) -> Option<(Block, usize)> {
         start: (i..=last).map(|j| lines.start[j] + indent).collect(),
     };
     let (mut block, next) = super::block_flat(&view, 0)?;
-    if block.parts.iter().any(|p| matches!(p, Part::Block(_))) {
+    // A nested block other than an implicit code block is not read here.
+    if block
+        .parts
+        .iter()
+        .any(|p| matches!(p, Part::Block(b) if b.kind != "implicit-code"))
+    {
         return None;
     }
     block.margin = Some(margin.to_string());

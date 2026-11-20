@@ -2559,9 +2559,17 @@ impl Interpreter {
                 if is_rebind
                     && bind_source.is_none()
                     && crate::env::closure_meta_keys_possible()
-                    && self.env().get_sym(alias_key).is_some_and(|v| !v.is_nil())
+                    && let Some(alias) = self.env().get_sym(alias_key).filter(|v| !v.is_nil())
                 {
-                    self.env_mut().insert_sym(alias_key, Value::NIL);
+                    // The alias of a twigil-less `has $x` stays: the name IS the
+                    // attribute, and binding it to a value binds the attribute
+                    // (#18356), which the alias walk below seats.
+                    let attr_alias = self.threads.sigilless_attrs_active
+                        && matches!(alias.view(), ValueView::Str(target)
+                            if Self::attr_twigil_base(target.as_str()).is_some());
+                    if !attr_alias {
+                        self.env_mut().insert_sym(alias_key, Value::NIL);
+                    }
                 }
                 if let Some(source_name) = bind_source.as_ref() {
                     let mut resolved_source = source_name.clone();
@@ -2756,19 +2764,18 @@ impl Interpreter {
                                 .insert(resolved_source.clone(), container.clone());
                         }
                         // If the target is an attribute alias (`has $x` makes `x`
-                        // an alias for `!x`), also store the ContainerRef under
-                        // the private attribute key so writeback picks it up when
-                        // the method returns. Check via the reverse alias:
+                        // an alias for `!x`), the attribute is bound too: seat
+                        // the container in `self` now, as `$!x := $var` does
+                        // (#18356). Check via the reverse alias:
                         // `__mutsu_sigilless_alias::!x` → `"x"`.
-                        {
-                            let reverse_key =
-                                crate::runtime::sigilless_alias_key(&format!("!{name}"));
+                        if self.threads.sigilless_attrs_active {
+                            let priv_key = format!("!{name}");
+                            let reverse_key = crate::runtime::sigilless_alias_key(&priv_key);
                             if let Some(reverse_val) = self.env().get_sym(reverse_key).cloned()
                                 && let ValueView::Str(target) = reverse_val.view()
                                 && target.as_str() == name
                             {
-                                let priv_key = format!("!{}", name);
-                                self.env_mut().insert(priv_key, container.clone());
+                                self.bind_self_attr_through_alias(&priv_key, container.clone());
                             }
                         }
                         // When rebinding to a new source, the old alias target
@@ -3416,7 +3423,17 @@ impl Interpreter {
                     // Sigilless attribute write: mirror an attr-twigil alias (`!x`)
                     // into self's shared cell so a same-method cell-direct read of
                     // the sigilless attr sees the new value (Phase 3 Stage 2c (ii)).
-                    self.write_self_attr_cell(&current_alias, val.clone());
+                    // A bind seats the bound container itself (#18356).
+                    if is_bind_ctx || is_rebind {
+                        let bound = self
+                            .env()
+                            .get_sym(name_sym)
+                            .cloned()
+                            .unwrap_or_else(|| val.clone());
+                        self.bind_self_attr_through_alias(&current_alias, bound);
+                    } else {
+                        self.write_self_attr_cell(&current_alias, val.clone());
+                    }
                     let next_key = crate::runtime::sigilless_alias_key(&current_alias);
                     alias_name = self.env().get_sym(next_key).and_then(|v| {
                         if let ValueView::Str(name) = v.view() {

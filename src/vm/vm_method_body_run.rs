@@ -147,15 +147,9 @@ impl Interpreter {
     }
 
     /// The value a finished method frame hands back for `base`: a result
-    /// that is the invocant itself carries the frame's reconciled attributes
-    /// (when `:=` recovery adjusted them beyond the cell) or shares the
-    /// invocant's live cell.
-    // Cost: O(1), plus a write-back of the reconciled map when there is one.
-    pub(super) fn method_frame_result_sharing(
-        base: &Value,
-        v: Value,
-        reconciled: &Option<crate::value::AttrMap>,
-    ) -> Value {
+    /// that is the invocant itself shares the invocant's live cell.
+    // Cost: O(1).
+    pub(super) fn method_frame_result_sharing(base: &Value, v: Value) -> Value {
         match (base.view(), v.view()) {
             (
                 ValueView::Instance {
@@ -165,11 +159,7 @@ impl Interpreter {
                 },
                 ValueView::Instance { id: ret_id, .. },
             ) if base_id == ret_id => {
-                if let Some(m) = reconciled {
-                    Value::write_back_sharing(&base_attrs, class_name, m.clone(), base_id)
-                } else {
-                    Value::instance_sharing_cell(&base_attrs, class_name, base_id)
-                }
+                Value::instance_sharing_cell(&base_attrs, class_name, base_id)
             }
             _ => v,
         }
