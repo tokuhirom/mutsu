@@ -32,6 +32,11 @@ pub(crate) enum InputKey {
     LanguageVersionStartsWith(String),
     /// `nqp_ops_sys::uname_const_value(name)`, folded into a constant.
     UnameConst(String),
+    /// Whether no user infix operator is registered anywhere in the process
+    /// (`vm_jit::USER_INFIX_DECLS == 0`): constant folding is off once one is
+    /// (`Compiler::const_fold_enabled`), so the folded and the unfolded
+    /// compile of the same module differ.
+    NoUserInfixDecls,
     /// The variables, constants and types a `use` of `module` with `tags`
     /// binds in its block, by the parse-time scan of `module`
     /// (`Compiler::block_imported_vars_fingerprint`).
@@ -184,6 +189,9 @@ fn ask(key: &InputKey) -> InputValue {
         InputKey::UnameConst(name) => {
             InputValue::Int(crate::runtime::nqp_ops_sys::uname_const_value(name))
         }
+        InputKey::NoUserInfixDecls => InputValue::Bool(
+            crate::vm::vm_jit::USER_INFIX_DECLS.load(std::sync::atomic::Ordering::Relaxed) == 0,
+        ),
         InputKey::BlockImportedVars { module, tags } => InputValue::Text(
             super::Compiler::block_imported_vars_fingerprint(module, tags),
         ),
@@ -233,6 +241,14 @@ pub(crate) fn is_imported_value_term(name: &str) -> bool {
 pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
     matches!(
         ask_and_record(InputKey::LanguageVersionStartsWith(prefix.to_string())),
+        InputValue::Bool(true)
+    )
+}
+
+/// Recorded "no user infix operator is registered in this process".
+pub(crate) fn no_user_infix_decls() -> bool {
+    matches!(
+        ask_and_record(InputKey::NoUserInfixDecls),
         InputValue::Bool(true)
     )
 }
