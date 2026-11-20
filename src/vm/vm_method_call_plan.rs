@@ -34,10 +34,18 @@
 //!   `is rw`, `is raw`, a `does` target, which bind by whether the argument
 //!   came from a variable); no `Array`/`Hash`/`List`/`Seq` argument or named
 //!   argument value (whose container sharing also depends on the argument
-//!   sources); no container. A named argument with a scalar value is keyed by
-//!   its name and its value's type. The receiver must be an
-//!   ordinary instance, whose only per-instance gate input, sigilless-alias
-//!   metadata on the attribute cell, is re-checked on every replay.
+//!   sources); no container but a plain shared cell holding a scalar-like
+//!   value, whose position the lane key marks
+//!   ([`Interpreter::plain_lane_arg_keys_into`]) so a plan decided for a cell
+//!   never answers for a plain value. A named argument with a scalar value is
+//!   keyed by its name and its value's type. The receiver must be an
+//!   ordinary instance (a user class's, or a runtime mixin type's the lane
+//!   admits: `plain_method_lane_mixin_eligible`), whose only per-instance
+//!   gate input, sigilless-alias metadata on the attribute cell, is
+//!   re-checked on every replay.
+//! * **Both gates replay it**: the early lane, and the late gate a call the
+//!   early lane refuses reaches (a `VarRef` argument, a `|` spread), whose
+//!   arguments are exactly the tail's.
 //!
 //! The whole plan table is keyed on the registry *write* generation, which
 //! every registry write moves (`registry_mut`), so no plan outlives a
@@ -83,7 +91,32 @@ fn plan_arg_kind_ok(arg: &Value) -> bool {
     {
         return !key.starts_with("__mutsu_") && plan_scalar_kind_ok(value);
     }
+    // A shared cell (a caller variable an `is raw` / sigilless parameter
+    // promoted, relayed onward: AttrX::Mooish's `Mu $instance is raw`). The
+    // lane key marks its position (`plain_lane_arg_keys_into`) and keys its
+    // contents, so a plan decided for a cell is replayed only for a cell in
+    // the same position holding the same kind of value. Only a plain cell
+    // holding a scalar-like value: an itemized or native-typed cell carries
+    // a reading of its own.
+    if arg.is_container_ref() {
+        return !arg.container_ref_is_itemized()
+            && arg.native_container_type().is_none()
+            && plan_scalar_kind_ok(&arg.deref_container());
+    }
     plan_scalar_kind_ok(arg)
+}
+
+/// The marker a lane key carries for a shared-cell argument, one symbol per
+/// argument position (see [`Interpreter::plain_lane_arg_keys_into`]).
+// Cost: O(1) after the first call per position.
+fn container_arg_marker(position: usize) -> Option<Symbol> {
+    const POSITIONS: usize = 8;
+    static MARKERS: [std::sync::OnceLock<Symbol>; POSITIONS] =
+        [const { std::sync::OnceLock::new() }; POSITIONS];
+    let cell = MARKERS.get(position)?;
+    // A NUL cannot occur in a Raku type name, so the marker never reads as
+    // the key of an argument.
+    Some(*cell.get_or_init(|| Symbol::intern(&format!("\u{0}container-arg\u{0}{position}"))))
 }
 
 /// A positional value whose gate reading is fixed by its type key.
@@ -104,6 +137,36 @@ fn plan_scalar_kind_ok(arg: &Value) -> bool {
 }
 
 impl Interpreter {
+    /// The plain-method lane's argument key: the arguments' type keys
+    /// ([`Self::multi_arg_type_keys_into_with_named`], which keys a shared
+    /// cell by its contents), then one marker per argument that is a shared
+    /// cell. `false` when an argument has no key, or a cell sits past the
+    /// eighth position.
+    ///
+    /// The marker is what lets a [`MethodCallPlan`] be decided for a call
+    /// that relays a cell: without it a cell and a plain value of the same
+    /// type share a key, so the plan one of them installed would replay for
+    /// the other, whose fast-path gate reading may differ.
+    // Cost: O(a), a = arguments.
+    pub(super) fn plain_lane_arg_keys_into(
+        &mut self,
+        args: &[Value],
+        keys: &mut Vec<Symbol>,
+    ) -> bool {
+        if !self.multi_arg_type_keys_into_with_named(args, keys) {
+            return false;
+        }
+        for (position, arg) in args.iter().enumerate() {
+            if arg.is_container_ref() {
+                let Some(marker) = container_arg_marker(position) else {
+                    return false;
+                };
+                keys.push(marker);
+            }
+        }
+        true
+    }
+
     /// The plan table entry for `key`: `Some(Some(plan))` to replay,
     /// `Some(None)` when this key was found unplannable under the current
     /// registry, `None` when nothing has been decided yet.
@@ -172,7 +235,7 @@ impl Interpreter {
             return;
         };
         let mut arg_keys = Vec::with_capacity(args.len());
-        if !args.is_empty() && !self.multi_arg_type_keys_into_with_named(args, &mut arg_keys) {
+        if !args.is_empty() && !self.plain_lane_arg_keys_into(args, &mut arg_keys) {
             return;
         }
         if arg_keys != key.2 {
