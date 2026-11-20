@@ -644,10 +644,10 @@ pub(in crate::parser) fn in_fragment_parse() -> bool {
 /// the enclosing unit's real warnings, so they are saved and restored here.
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let (stmts, finish) = parse_fragment_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
+    Ok((crate::rakuast::frontend::finish_unit(stmts)?, finish))
 }
 
-/// [`parse_fragment`] without the round trip: the spelled tree only the RakuAST
+/// [`parse_fragment`] without the finalization: the spelled tree only the RakuAST
 /// conversion may consume (see [`parse_program_spelled`]).
 pub(crate) fn parse_fragment_spelled(
     input: &str,
@@ -1298,10 +1298,10 @@ fn heredoc_delimiters(line: &str) -> Vec<String> {
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let (stmts, finish) = parse_program_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
+    Ok((crate::rakuast::frontend::finish_unit(stmts)?, finish))
 }
 
-/// [`parse_program`] without the round trip: the terms that remember how they
+/// [`parse_program`] without the finalization: the terms that remember how they
 /// were spelled (`<a b  c>`) come back wrapped in `Expr::Spelled` (ADR-12199).
 /// Nothing but the RakuAST conversion may consume this tree: the compiler never
 /// sees a wrapper.
@@ -1580,14 +1580,14 @@ pub(crate) fn parse_program_partial_with_operators(
 /// edited is broken most of the time, and everything downstream of the first
 /// failure is still worth analysing (ADR-0065 S3).
 ///
-/// The statements that parsed run through the RakuAST round trip like any
-/// unit's; a unit that does not round-trip yields no statements and its
+/// The statements that parsed are finalized like any
+/// unit's; a unit that does not finalize yields no statements and its
 /// refusal among the errors.
 pub(crate) fn parse_program_recovering(
     input: &str,
 ) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
     let (stmts, finish_content, mut errors) = parse_program_recovering_spelled(input);
-    match crate::rakuast::frontend::round_trip_unit(stmts) {
+    match crate::rakuast::frontend::finish_unit(stmts) {
         Ok(lowered) => (lowered, finish_content, errors),
         Err(refusal) => {
             errors.push(refusal);
@@ -1647,9 +1647,9 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
     (stmts, finish_content)
 }
 
-/// [`parse_program_partial`] without the round trip, for a scan made in the
+/// [`parse_program_partial`] without the finalization, for a scan made in the
 /// middle of another unit's parse (a `use`d module's declarations): the
-/// round trip would run the lowering inside that parse, and the scan reads the
+/// finalization would run the lowering inside that parse, and the scan reads the
 /// declarations off the parser's own tree.
 pub(crate) fn parse_program_partial_spelled(input: &str) -> (Vec<Stmt>, Option<String>) {
     let (stmts, finish_content, _errors) = parse_program_recovering_spelled(input);
@@ -1665,7 +1665,7 @@ pub(crate) mod test_lower {
 
     // Cost: O(n), n = size of the statements.
     pub(crate) fn stmts(stmts: Vec<Stmt>) -> Vec<Stmt> {
-        crate::rakuast::frontend::round_trip_unit(stmts).expect("the statements round-trip")
+        crate::rakuast::frontend::finish_unit(stmts).expect("the statements finalize")
     }
 
     // Cost: O(n), n = size of the statement.

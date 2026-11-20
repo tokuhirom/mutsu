@@ -740,7 +740,7 @@ mod tests {
 
     fn finalized(names: &crate::scope::NameScope, source: &str) -> String {
         let (spelled, _) = crate::parse_dispatch::parse_source_spelled(source).unwrap();
-        shape(crate::rakuast::frontend::round_trip(names, &spelled).unwrap())
+        shape(crate::rakuast::frontend::finish_unit_in(names, spelled).unwrap())
     }
 
     fn ordinary(source: &str) -> String {
@@ -810,6 +810,6 @@ mod tests {
         let names = &crate::scope::NameScope::default();
         let (spelled, _) =
             crate::parse_dispatch::parse_source_spelled("say 'a' ~~ /a <?{ 1 }>/;").unwrap();
-        let _ = crate::rakuast::frontend::round_trip(names, &spelled).expect("it lowers");
+        let _ = crate::rakuast::frontend::finish_unit_in(names, spelled).expect("it lowers");
     }
 }
