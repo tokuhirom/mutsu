@@ -1139,6 +1139,7 @@ mod helpers_dynamic;
 mod helpers_method_body;
 mod short_circuit;
 mod stash_entry_var;
+mod str_eq_local_const;
 mod with_defined;
 mod with_topic_alias;
 pub(crate) use crate::op_names as helpers_ops;

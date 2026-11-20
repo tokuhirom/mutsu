@@ -4261,6 +4261,16 @@ impl Interpreter {
                 self.exec_str_ne_op()?;
                 *ip += 1;
             }
+            // Cost: O(p), p = common prefix; O(1) when the lengths differ, as
+            // `StrEq` (see exec_str_eq_local_const_op).
+            OpCode::StrEqLocalConst {
+                slot,
+                const_idx,
+                negate,
+            } => {
+                self.exec_str_eq_local_const_op(code, *slot, *const_idx, *negate)?;
+                *ip += 1;
+            }
             // Cost: O(p), p = common prefix (see str_cmp_values).
             OpCode::StrLt => {
                 self.exec_str_cmp_op(StrCmp::Lt)?;
