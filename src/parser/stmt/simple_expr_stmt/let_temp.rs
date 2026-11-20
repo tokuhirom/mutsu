@@ -278,6 +278,9 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
 }
 
 /// The type a `temp Type.method …` names: a bare name, or one an import spelled.
+/// A unit that imported through a `sub EXPORT` hook parses every bareword as
+/// an imported term (`ParsedExpr::ImportedTerm`), so `temp Bla.^table = …`
+/// after `use Red` names its type that way (#18377).
 fn type_object_invocant_name(invocant: &Expr) -> Option<&str> {
     let invocant = match invocant {
         Expr::Spelled(spelled) => &spelled.expr,
@@ -285,6 +288,10 @@ fn type_object_invocant_name(invocant: &Expr) -> Option<&str> {
     };
     match invocant {
         Expr::BareWord(name) => Some(name),
+        Expr::Ast(node) => match node.as_ref() {
+            crate::ast::parsed::ParsedExpr::ImportedTerm(name) => Some(name),
+            _ => None,
+        },
         _ => None,
     }
 }
