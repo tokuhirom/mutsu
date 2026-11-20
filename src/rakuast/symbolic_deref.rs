@@ -69,11 +69,20 @@ pub(super) fn view_indirect_tail(
     let mut base = expr.as_ref();
     let mut segments = Vec::with_capacity(usize::from(tail));
     for _ in 0..tail {
-        let Expr::Binary { left, op: crate::token_kind::TokenKind::Tilde, right, .. } = base else {
+        let Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::Tilde,
+            right,
+            ..
+        } = base
+        else {
             return view_node(names, sigil, expr);
         };
         let Some(segment) = (match right.as_ref() {
-            Expr::Literal(v) => v.as_str().and_then(|s| s.strip_prefix("::")).map(str::to_string),
+            Expr::Literal(v) => v
+                .as_str()
+                .and_then(|s| s.strip_prefix("::"))
+                .map(str::to_string),
             _ => None,
         }) else {
             return view_node(names, sigil, expr);
@@ -191,7 +200,11 @@ pub(super) fn lower_indirect_code(
 /// (`::(EXPR)::a::b`), with no trailing `::`.
 fn indirect_with_tail(name: &RakuAstNode) -> Option<(&RakuAstNode, Vec<String>)> {
     match name_parts::name_shape(name)? {
-        NameShape::Indirect { expr, tail, trailing: false } => Some((expr, tail)),
+        NameShape::Indirect {
+            expr,
+            tail,
+            trailing: false,
+        } => Some((expr, tail)),
         _ => None,
     }
 }
@@ -228,7 +241,10 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
             right: Box::new(Expr::Literal(Value::str(format!("::{segment}")))),
             form: Default::default(),
         });
-        Expr::SymbolicDeref { sigil, expr: Box::new(expr) }
+        Expr::SymbolicDeref {
+            sigil,
+            expr: Box::new(expr),
+        }
     }))
 }
 
