@@ -18,7 +18,7 @@ mod unit_use_hoist;
 pub(crate) mod word_logical_split;
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
-use super::parse_result::{MISSING_BLOCK, PError, PResult, parse_char, update_best_error};
+use super::parse_result::{BestError, MISSING_BLOCK, PError, PResult, parse_char};
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
 
@@ -295,7 +295,7 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         return result;
     }
     let input_len = input.len();
-    let mut best_error: Option<(usize, PError)> = None;
+    let mut best_error = BestError::default();
     let mut early_success: Option<(&str, Stmt)> = None;
 
     // Try each statement parser in order
@@ -311,7 +311,7 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
                     STMT_MEMO.store(input, &result);
                     return result;
                 }
-                update_best_error(&mut best_error, err, input_len);
+                best_error.offer(err, input_len);
             }
         }
     }
@@ -326,9 +326,9 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
                 if err.is_fatal() {
                     Err(err)
                 } else {
-                    update_best_error(&mut best_error, err, input_len);
+                    best_error.offer(err, input_len);
                     Err(best_error
-                        .map(|(_, err)| err)
+                        .into_error()
                         .unwrap_or_else(|| PError::expected_at("statement", input)))
                 }
             }

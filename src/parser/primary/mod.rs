@@ -26,7 +26,7 @@ pub(crate) mod var;
 pub(in crate::parser) use source_regions::{register_leaked_region_with_jump, source_tail};
 
 use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
-use super::parse_result::{PError, PResult, update_best_error};
+use super::parse_result::{BestError, PError, PResult};
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::RefCell;
 
@@ -861,7 +861,7 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
     }
     let result = (|| {
         let input_len = input.len();
-        let mut best_error: Option<(usize, PError)> = None;
+        let mut best_error = BestError::default();
         // A term can never begin with `=>` (the fat-comma infix) — no
         // alternative below could ever consume it. Seed the best-error
         // candidate with rakudo's `X::Syntax::InfixInTermPosition` up front so
@@ -881,11 +881,7 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
         // not a generic "Confused".
         for op in ["=>", ","] {
             if input.starts_with(op) {
-                update_best_error(
-                    &mut best_error,
-                    PError::infix_in_term_position(op, input),
-                    input_len,
-                );
+                best_error.offer(PError::infix_in_term_position(op, input), input_len);
             }
         }
         // A slang's own `term` / `value` / `number` productions compete ahead of
@@ -921,7 +917,7 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
                         if err.is_fatal() {
                             return Err(err);
                         }
-                        update_best_error(&mut best_error, err, input_len);
+                        best_error.offer(err, input_len);
                     }
                 }
             };
@@ -994,9 +990,9 @@ fn primary_term<'a>(input: &'a str, fresh: &mut bool) -> PResult<'a, Expr> {
                 if err.is_fatal() {
                     return Err(err);
                 }
-                update_best_error(&mut best_error, err, input_len);
+                best_error.offer(err, input_len);
                 Err(best_error
-                    .map(|(_, err)| err)
+                    .into_error()
                     .unwrap_or_else(|| PError::expected_at("primary expression", input)))
             }
         }

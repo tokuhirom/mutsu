@@ -14,7 +14,21 @@ pub(super) fn ws_bol(input: &str) -> PResult<'_, ()> {
     ws_inner_with_bol(input, true)
 }
 
+// Cost: O(n), n = length of the whitespace, comments and Pod consumed.
 fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
+    // Most calls stand on a token (every precedence level asks for the blanks
+    // after its operand): an ASCII byte that starts no whitespace, comment or
+    // unspace, mid-line, consumes nothing, exactly as the loop below would.
+    if !bol
+        && let Some(&first) = input.as_bytes().first()
+        && first.is_ascii()
+        && !first.is_ascii_whitespace()
+        && first != b'#'
+        && first != b'\\'
+        && first != 0x0b
+    {
+        return Ok((input, ()));
+    }
     let mut rest = input;
     // Pod directives (`=word ...`) are only valid at the start of a line.
     // Default to false so that `ws()` called right after a token in the
