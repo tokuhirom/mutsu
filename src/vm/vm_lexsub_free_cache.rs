@@ -55,7 +55,20 @@ use super::*;
 /// `LexicalState::lexsub_free_cache`: (frame invocation id, the frame's index
 /// in the routine stack, name, binding cell). The index makes "is this
 /// frame still live" one comparison.
-pub(crate) type LexSubFreeCache = Vec<(u64, u32, Symbol, Value)>;
+pub(crate) type LexSubFreeCache = Vec<(u64, u32, Symbol, LexSubFreeSlot)>;
+
+/// What a [`LexSubFreeCache`] entry knows about its name in its frame.
+#[derive(Clone)]
+pub(crate) enum LexSubFreeSlot {
+    /// Read once: the next read resolves and fills it.
+    Pending,
+    /// The chain's answer is not a binding fixed for the call (a module
+    /// file-scope store, a capture the frame's code object holds): every
+    /// read takes the chain, without trying to fill again.
+    Never,
+    /// The binding: a shared cell, read through, or a plain read-only value.
+    Bound(Value),
+}
 
 /// Entries kept per frame; a sub with more free variables reads the rest the
 /// long way.
@@ -94,15 +107,17 @@ impl Interpreter {
         // Entries are in call order (a callee's invocation id is larger than
         // its caller's): this frame's are at the top, above them only a
         // returned callee's leftovers.
-        let (_, _, _, cell) = self
+        let (_, _, _, LexSubFreeSlot::Bound(cell)) = self
             .lexicals
             .lexsub_free_cache
             .iter()
             .rev()
             .take_while(|(owner, _, _, _)| *owner >= id)
-            .find(|(owner, _, sym, _)| *owner == id && *sym == name_sym)?;
-        // The first read's placeholder (see `lexsub_free_cache_fill`).
-        if cell.is_nil() || !self.lexsub_free_cache_guards_hold(name) {
+            .find(|(owner, _, sym, _)| *owner == id && *sym == name_sym)?
+        else {
+            return None;
+        };
+        if !self.lexsub_free_cache_guards_hold(name) {
             return None;
         }
         let val = cell.deref_clone();
@@ -141,9 +156,22 @@ impl Interpreter {
         if frame.is_block {
             return;
         }
+        // Only a frame whose free variables have a call-fixed binding: a
+        // routine-nested sub with aliases, or a mainline / bare-block sub that
+        // captured into an ADR-0024 bucket. Cost: two hash probes.
+        let lexsub = self.lexicals.lexsub_free_aliases.contains_key(&frame.name);
+        if !lexsub
+            && (frame.package != crate::symbol::wk::global_package()
+                || !self
+                    .lexicals
+                    .mainline_lexical_subs
+                    .contains_key(frame.name.as_str()))
+        {
+            return;
+        }
         let id = frame.invocation_id;
-        // The first read of a name in a call only marks it (a `Nil`
-        // placeholder, which `lexsub_free_cache_read` never serves): the
+        // The first read of a name in a call only marks it (`Pending`, which
+        // `lexsub_free_cache_read` never serves): the
         // lookup below costs about what one more chain walk does, so a name a
         // call reads once is not worth it. The second read fills the entry.
         let depth = self.routine_stack().len() - 1;
@@ -169,50 +197,62 @@ impl Interpreter {
         let slot = match top {
             None => {
                 if cache.len() < LEXSUB_FREE_CACHE_CAP {
-                    cache.push((id, depth as u32, name_sym, Value::NIL));
+                    cache.push((id, depth as u32, name_sym, LexSubFreeSlot::Pending));
                 }
                 return;
             }
-            Some(i) if cache[i].3.is_nil() => i,
+            Some(i) if matches!(cache[i].3, LexSubFreeSlot::Pending) => i,
             Some(_) => return,
         };
-        if !self.lexsub_free_cache_guards_hold(name)
-            || self.env().frame_capture_holds_name(name, Some(name_sym))
-        {
+        // A guard that fails now may hold on the next read: stay pending.
+        if !self.lexsub_free_cache_guards_hold(name) {
             return;
+        }
+        let bound = self.lexsub_free_binding(code, name, name_sym, val, lexsub);
+        if let Some(entry) = self.lexicals.lexsub_free_cache.get_mut(slot) {
+            entry.3 = match bound {
+                Some(cell) => LexSubFreeSlot::Bound(cell),
+                None => LexSubFreeSlot::Never,
+            };
+        }
+    }
+
+    /// The binding the full chain just answered `val` from, when it is one
+    /// fixed for the running call (see the module docs); `None` otherwise.
+    // Cost: the alias lookup, O(a + d), a = the sub's aliases, d = env chain
+    // depth, or the bucket lookup, O(o), o = same-named routines that captured.
+    fn lexsub_free_binding(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        name_sym: Symbol,
+        val: &Value,
+        lexsub: bool,
+    ) -> Option<Value> {
+        if self.env().frame_capture_holds_name(name, Some(name_sym)) {
+            return None;
         }
         // The binding the chain answered from: a routine-nested sub's alias
         // (mutsu#9111), or the cell a mainline / bare-block sub captured into
         // its ADR-0024 bucket. Either is fixed for the call; a module's
         // file-scope store is not (a `:=` there replaces the cell).
-        let cell = if self.lexsub_alias_frame_active() {
-            let Some(cell) = self.lexsub_alias_slot_sym(name, Some(name_sym)) else {
-                return;
-            };
-            cell.clone()
+        let cell = if lexsub {
+            self.lexsub_alias_slot_sym(name, Some(name_sym))?.clone()
         } else {
-            let Some(cell) = self
+            let cell = self
                 .active_unit_lexical_entry()
-                .and_then(|(_, cells)| cells.get(name).cloned())
-            else {
-                return;
-            };
+                .and_then(|(_, cells)| cells.get(name).cloned())?;
             // A never-written capture is held as its plain value; that is the
             // binding itself, as for a routine-nested sub's read-only alias,
             // unless this body writes the name (which a cell would carry).
             if !cell.is_container_ref() && code.free_var_writes.contains(&name_sym) {
-                return;
+                return None;
             }
             cell
         };
         // A shared cell (a variable the declaring frame boxed) is read through
         // on every hit; a plain value (a read-only parameter the alias holds
         // as is) is the binding itself.
-        if !cell.deref_clone().same_binding(val) {
-            return;
-        }
-        if let Some(entry) = self.lexicals.lexsub_free_cache.get_mut(slot) {
-            entry.3 = cell;
-        }
+        cell.deref_clone().same_binding(val).then_some(cell)
     }
 }
