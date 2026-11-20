@@ -394,12 +394,12 @@ pub(super) fn program(input: &str) -> PResult<'_, Vec<Stmt>> {
     stmtlist::stmt_list_with_mode(input, true, true)
 }
 
-/// [`program`] as the unit runs: through the RakuAST round trip, which is the
+/// [`program`] as the unit runs: finalized by `rakuast::frontend::finish_unit`, the
 /// tree the compiler sees. For the tests that assert the executable shape.
 #[cfg(test)]
 pub(super) fn lowered_program(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (rest, stmts) = program(input)?;
-    let stmts = crate::rakuast::frontend::round_trip_unit(stmts).map_err(PError::from_typed)?;
+    let stmts = crate::rakuast::frontend::finish_unit(stmts).map_err(PError::from_typed)?;
     Ok((rest, stmts))
 }
 

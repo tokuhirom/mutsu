@@ -2285,7 +2285,7 @@ pub(super) fn subscript_dims_node(
         && assignee.is_none()
         && colonpairs.is_empty()
         && let [dim] = dims
-        && target.as_bare_word().is_some()
+        && bareword::is_word_term(target)
         && let base = view_expr(names, target)?
         && base.class == RakuAstClass::TypeSimple
     {
