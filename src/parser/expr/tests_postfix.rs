@@ -13,6 +13,8 @@ fn parse_pair_lvalue_colonparen_form() {
 
 #[test]
 fn parse_custom_postfix_operator_call() {
+    // Spellings are built only where a parse is read as RakuAST.
+    let _keep = crate::ast::spelled::KeepSpellings::enter(true);
     let (rest, expr) = expression("$base!").unwrap();
     assert_eq!(rest, "");
     // The operator form is spelled so RakuAST keeps the `ApplyPostfix`.
@@ -35,6 +37,8 @@ fn parse_custom_postfix_operator_call() {
 
 #[test]
 fn parse_unicode_custom_postfix_operator_call() {
+    // Spellings are built only where a parse is read as RakuAST.
+    let _keep = crate::ast::spelled::KeepSpellings::enter(true);
     let (rest, expr) = expression("3§").unwrap();
     assert_eq!(rest, "");
     // The operator form is spelled so RakuAST keeps the `ApplyPostfix`.

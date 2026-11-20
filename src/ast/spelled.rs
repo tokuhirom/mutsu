@@ -329,6 +329,8 @@ mod tests {
 
     #[test]
     fn source_identifiers_only_wrap_when_written() {
+        // Spellings are built only where a parse is read as RakuAST.
+        let _keep = crate::ast::spelled::KeepSpellings::enter(true);
         let written = Expr::source_identifier(Expr::Var("__x".into()), "$__x");
         assert!(matches!(written, Expr::Spelled(_)));
         let anonymous = Expr::source_identifier(Expr::Var("__ANON_STATE_1__".into()), "$");
@@ -346,6 +348,8 @@ mod tests {
 
     #[test]
     fn a_spelled_term_wraps_and_peels_back() {
+        // Spellings are built only where a parse is read as RakuAST.
+        let _keep = crate::ast::spelled::KeepSpellings::enter(true);
         let expr = Expr::spelled(words(), || Spelling::Words("a  b".into()));
         assert!(matches!(expr, Expr::Spelled(_)));
         assert!(matches!(expr.peel_parens(), Expr::ArrayLiteral(items) if items.len() == 2));
