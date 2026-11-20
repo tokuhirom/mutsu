@@ -8,6 +8,26 @@ use crate::value::InstanceAttrs;
 /// The attribute `key` of an `Attribute` metaobject, as a string; empty when
 /// it is not set.
 // Cost: O(1), one hash probe.
+/// [`meta_str`] without copying the string: the stored value (a refcount
+/// bump), read through [`meta_str_of`]. `get_value` / `set_value` run on every
+/// attribute access a MOP-driven module makes (AttrX::Mooish), so their two
+/// name reads per call were two `String` allocations.
+// Cost: O(1), one hash probe.
+fn meta_value(meta: &InstanceAttrs, key: &str) -> Value {
+    meta.as_map().get(key).cloned().unwrap_or(Value::NIL)
+}
+
+/// The text of a [`meta_value`]: borrowed for a `Str`, as `meta_str` would
+/// render anything else.
+// Cost: O(1) for a `Str`; O(n) to render another value.
+fn meta_str_of(value: &Value) -> std::borrow::Cow<'_, str> {
+    match value.as_str() {
+        Some(s) => std::borrow::Cow::Borrowed(s),
+        None if value.is_nil() => std::borrow::Cow::Borrowed(""),
+        None => std::borrow::Cow::Owned(value.to_string_value()),
+    }
+}
+
 fn meta_str(meta: &InstanceAttrs, key: &str) -> String {
     meta.as_map()
         .get(key)
@@ -113,11 +133,13 @@ impl Interpreter {
         // The object may arrive wrapped in a Scalar container
         // (a `$`-bound alias of the instance); read through it.
         let obj = obj.clone().deref_container();
-        let attr_name = meta_str(meta, "__mutsu_attr_name");
+        let attr_name_value = meta_value(meta, "__mutsu_attr_name");
+        let attr_name = meta_str_of(&attr_name_value);
         // An attribute a mixed-in role declares lives in the
         // mixin's own role cell, not in the wrapped object.
         if let ValueView::Mixin(_, mixins) = obj.view() {
-            let owner = meta_str(meta, "__mutsu_attr_owner");
+            let owner_value = meta_value(meta, "__mutsu_attr_owner");
+            let owner = meta_str_of(&owner_value);
             let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
             if let Some(v) = mixins.role_attribute(&owner, bare) {
                 return Ok(v.deref_container());
@@ -183,7 +205,8 @@ impl Interpreter {
         obj: &Value,
         new_val: &Value,
     ) -> Result<Value, RuntimeError> {
-        let attr_name = meta_str(meta, "__mutsu_attr_name");
+        let attr_name_value = meta_value(meta, "__mutsu_attr_name");
+        let attr_name = meta_str_of(&attr_name_value);
         // Write through a Scalar container wrapper: the shared
         // attribute cell of the underlying instance is what the
         // object's methods read (a silent no-op here loses e.g.
@@ -192,7 +215,8 @@ impl Interpreter {
         // An attribute a mixed-in role declares lives in the
         // mixin's own role cell, not in the wrapped object.
         if let ValueView::Mixin(_, mixins) = obj.view() {
-            let owner = meta_str(meta, "__mutsu_attr_owner");
+            let owner_value = meta_value(meta, "__mutsu_attr_owner");
+            let owner = meta_str_of(&owner_value);
             let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
             if mixins.role_attribute(&owner, bare).is_some()
                 && mixins.set_role_attribute(&owner, bare, new_val.clone())
@@ -214,7 +238,7 @@ impl Interpreter {
             // given a container-less value holds exactly that value, so a later
             // `$!a = ...` dies "Cannot assign to an immutable value" (as after
             // `$!a := 5`); ValueClass's TWEAK freezes attributes this way.
-            let bound = if meta_str(meta, "sigil") == "$" {
+            let bound = if meta_str_of(&meta_value(meta, "sigil")) == "$" {
                 Self::readonly_value_binding(new_val.clone(), crate::ast::ReadonlyKind::Immutable)
             } else {
                 new_val.clone()

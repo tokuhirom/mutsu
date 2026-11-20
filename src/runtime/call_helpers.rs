@@ -66,6 +66,16 @@ impl Interpreter {
     /// Non-consuming peek at the pending call arg-source names, used by the
     /// method dispatch gate to decide whether a container argument shares the
     /// caller's container with a plain scalar `$` param (Slice 2d).
+    /// A handle on the pending call's argument-source table: a reader that
+    /// keeps calling `&mut self` methods while it reads a name borrows the
+    /// name from the handle instead of copying it out.
+    // Cost: O(1), one refcount bump.
+    pub(crate) fn pending_call_arg_sources_handle(
+        &self,
+    ) -> Option<std::sync::Arc<Vec<Option<String>>>> {
+        self.pending_call_arg_sources.clone()
+    }
+
     pub(crate) fn pending_call_arg_sources(&self) -> Option<&Vec<Option<String>>> {
         self.pending_call_arg_sources.as_deref()
     }
