@@ -269,7 +269,7 @@ impl Interpreter {
         }
         let is_metarole = |v: &Value| {
             matches!(v.view(), ValueView::Package(name)
-                if crate::runtime::types::metamodel_how_roles::metarole_bare_name(&name.resolve()).is_some())
+                if crate::runtime::types::metamodel_how_roles::metarole_bare_name(name.as_str()).is_some())
         };
         let hit = match target.view() {
             ValueView::Junction { values, .. } => values.iter().any(is_metarole),
@@ -298,7 +298,7 @@ impl Interpreter {
                 .iter()
                 .any(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             && let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && !target.is_failure_handled()
         {
             return Some(Self::print_routine_no_match_error(method, target, args));
@@ -394,14 +394,14 @@ impl Interpreter {
         else {
             return None;
         };
-        let cn = class_name.resolve();
+        let cn = class_name.as_str();
         // A wrapped accessor must use the full dispatch path so its wrapper's
         // `callsame` can reach the accessor terminal. The pure read below has
         // no dispatch frame and would otherwise bypass the wrapper entirely.
-        if let Some(owner) = self.attribute_accessor_owner(&cn, method)
+        if let Some(owner) = self.attribute_accessor_owner(cn, method)
             && self
                 .registry()
-                .method_wrap_chain(owner.resolve().as_str(), method, 0)
+                .method_wrap_chain(owner.as_str(), method, 0)
                 .is_some()
         {
             return None;
@@ -419,7 +419,7 @@ impl Interpreter {
         // names that also name a builtin ever noticed — `MVMArrayB.elems`
         // answered `1` and `.any` built a Junction, which is how
         // `NativeHelpers::Blob` came away with a junction instead of a body.
-        if let Some(registered) = self.cstruct_class_name(&cn)
+        if let Some(registered) = self.cstruct_class_name(cn)
             && matches!(
                 self.resolve_user_method_or_accessor_sym(&registered, method_sym),
                 Some(crate::runtime::UserMethodOrAccessor::Accessor)
@@ -489,7 +489,7 @@ impl Interpreter {
         // reports as a public accessor, so reading it by the bare name falls
         // through to the interpreter (which denies the access).
         if !matches!(
-            self.resolve_user_method_or_accessor_sym(&cn, method_sym),
+            self.resolve_user_method_or_accessor_sym(cn, method_sym),
             Some(crate::runtime::UserMethodOrAccessor::Accessor)
         ) {
             return None;
@@ -500,7 +500,7 @@ impl Interpreter {
         // with the wrapped-accessor terminal (`rw_accessor_container`); when it
         // declines (a read-only or aggregate accessor) the plain read below
         // answers, as raku's decontainerized value does.
-        if want_ref && let Some(cell_val) = self.rw_accessor_container(target, &cn, method) {
+        if want_ref && let Some(cell_val) = self.rw_accessor_container(target, cn, method) {
             return Some(Ok(cell_val));
         }
         // Public accessor confirmed. Read its backing value, stored under the
@@ -529,7 +529,7 @@ impl Interpreter {
                 // hands the Proxy itself back, as before.
                 let out = if out.is_proxy_value()
                     && !self
-                        .collect_class_attributes(&cn)
+                        .collect_class_attributes(cn)
                         .into_iter()
                         .any(|attr| attr.is_public && attr.name == method && attr.is_rw)
                 {
@@ -545,7 +545,7 @@ impl Interpreter {
                 // plain scalar read skips the MRO attribute collection, which
                 // clones every attribute definition (#10229).
                 let attr = if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_)) {
-                    self.find_public_class_attribute(&cn, method)
+                    self.find_public_class_attribute(cn, method)
                 } else {
                     None
                 };
@@ -563,7 +563,7 @@ impl Interpreter {
                 } else {
                     Self::accessor_read_value('$', out)
                 };
-                if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
+                if let Some(msg) = self.class_attribute_deprecated(cn, method) {
                     loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
                 // Aggregate accessors are normally kept on the interpreter
@@ -581,10 +581,10 @@ impl Interpreter {
                     // fresh array and `.push`/`.append` on the result never
                     // reached the attribute (#11902).
                     && !self.has_container_type_metadata(&out)
-                    && let Some(tc) = self.get_attr_type_constraint(&cn, method)
+                    && let Some(tc) = self.get_attr_type_constraint(cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
-                    let tc = self.attribute_reported_constraint(&cn, method, &tc);
+                    let tc = self.attribute_reported_constraint(cn, method, &tc);
                     let (value_type, key_type) =
                         crate::runtime::types::split_object_hash_constraint(&tc);
                     let sigil = if matches!(out.view(), ValueView::Hash(_)) {
@@ -640,11 +640,11 @@ impl Interpreter {
         else {
             return Ok(None);
         };
-        let cn = class_name.resolve();
+        let cn = class_name.as_str();
         if !target.instance_is_exception_by_name()
             || attributes.as_map().contains_key("message")
-            || !self.has_user_method(&cn, "message")
-            || self.has_user_method(&cn, method)
+            || !self.has_user_method(cn, "message")
+            || self.has_user_method(cn, method)
         {
             return Ok(None);
         }
@@ -871,10 +871,10 @@ impl Interpreter {
         if !attributes.contains_key(crate::symbol::wk::array_storage()) {
             return false;
         }
-        let cn = class_name.resolve();
-        !self.has_user_method(&cn, method)
+        let cn = class_name.as_str();
+        !self.has_user_method(cn, method)
             && self
-                .mro_readonly(&cn)
+                .mro_readonly(cn)
                 .iter()
                 .any(|n| Self::is_positional_base(n))
     }
@@ -911,7 +911,7 @@ impl Interpreter {
         let ValueView::Instance { class_name, .. } = target.view() else {
             return None;
         };
-        if !self.has_user_method(&class_name.resolve(), "iterator") {
+        if !self.has_user_method(class_name.as_str(), "iterator") {
             return None;
         }
         Some(
@@ -1198,7 +1198,7 @@ impl Interpreter {
                 let current = cell.deref_container();
                 match current.view() {
                     ValueView::Nil => true,
-                    ValueView::Package(p) => !self.has_user_method(&p.resolve(), method),
+                    ValueView::Package(p) => !self.has_user_method(p.as_str(), method),
                     _ => false,
                 }
             }
@@ -1391,7 +1391,7 @@ impl Interpreter {
         // `@x[0].push('foo')` still dies), and the result is written back to the slot.
         if let ValueView::Package(type_name) = target.view()
             && matches!(method, "push" | "append" | "unshift" | "prepend")
-            && let Some(result) = self.autoviv_typed_array_push(&type_name.resolve(), &args)?
+            && let Some(result) = self.autoviv_typed_array_push(type_name.as_str(), &args)?
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
@@ -1557,7 +1557,7 @@ impl Interpreter {
 
         // Deprecation.report — return the accumulated deprecation report
         if method == "report"
-            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Deprecation")
+            && matches!(target.view(), ValueView::Package(name) if name.as_str() == "Deprecation")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
@@ -1579,11 +1579,11 @@ impl Interpreter {
         // .../multi-no-match.t).
         if method == "protect" {
             let is_lock_type_object = matches!(target.view(), ValueView::Package(name)
-                if matches!(name.resolve().as_str(),
+                if matches!(name.as_str(),
                     "Lock" | "Lock::Async" | "Lock::Soft"));
             let is_lock_instance_bad_arg = matches!(target.view(),
                 ValueView::Instance { class_name, .. }
-                if matches!(class_name.resolve().as_str(),
+                if matches!(class_name.as_str(),
                     "Lock" | "Lock::Async" | "Lock::Soft"))
                 && (args.len() != 1
                     || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
@@ -1607,7 +1607,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
+            && (class_name.as_str() == "Lock::Async" || class_name.as_str() == "Lock")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
@@ -1649,7 +1649,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name.resolve() == "Lock::Async"
+            && class_name.as_str() == "Lock::Async"
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
@@ -1892,14 +1892,14 @@ impl Interpreter {
         // where we have access to locals (which the interpreter doesn't have).
         if method == "WHO"
             && args.is_empty()
-            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
+            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(name.as_str()))
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
                 "who-pseudo-package",
             );
             if let ValueView::Package(pkg_name) = target.view() {
-                let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
+                let stash = self.build_pseudo_stash(code, pkg_name.as_str());
                 self.stack.push(stash);
             }
             return Ok(());
@@ -1920,7 +1920,7 @@ impl Interpreter {
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && !target.is_failure_handled()
             && !matches!(
                 method,
@@ -1995,12 +1995,12 @@ impl Interpreter {
                     ..
                 } = target.view()
                 {
-                    let cn = class_name.resolve();
-                    if !self.has_user_method(&cn, method)
+                    let cn = class_name.as_str();
+                    if !self.has_user_method(cn, method)
                         && !Self::is_type_identity_method(method)
                         && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
-                            .mro_readonly(&cn)
+                            .mro_readonly(cn)
                             .iter()
                             .any(|n| Self::is_positional_base(n))
                     {

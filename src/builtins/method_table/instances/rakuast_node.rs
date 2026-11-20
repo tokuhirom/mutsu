@@ -12,6 +12,7 @@
 //! line of an offset by binary search (ADR-10723 §4; `rakuast::unit_source`).
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
+use super::rakuast_fileline::{fileline, original_file};
 use crate::rakuast::{RakuAstFieldValue, RakuAstNode};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
@@ -77,6 +78,18 @@ pub(super) static ROWS: &[MethodRow] = &[
         .rakuast_add_child("add-statement", a[0].clone())),
     node_row!("RakuAST::StatementList", "unshift-statement", |t, a| t
         .rakuast_add_child("unshift-statement", a[0].clone())),
+    node_row!("RakuAST::StatementList", "add-doc-block", |t, a| t
+        .rakuast_add_child("add-doc-block", a[0].clone())),
+    // `insert-doc-block($i, $block)`: rakudo splices the block in among the
+    // statements as `insert-statement` does, without counting code ones.
+    MethodRow {
+        owner: "RakuAST::StatementList",
+        name: "insert-doc-block",
+        arity: 2,
+        handler: Handler::Narrow(|t, a| t.rakuast_insert_statement(&a[0], &a[1])),
+        flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+        named: &[],
+    },
     MethodRow {
         owner: "RakuAST::StatementList",
         name: "insert-statement",
@@ -177,6 +190,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
     origin_row!("RakuAST::Origin::Source", "original-line", 1, original_line),
+    origin_row!("RakuAST::Origin::Source", "original-file", 0, original_file),
     origin_row!("RakuAST::Origin::Source", "orig", 0, source_orig),
     origin_row!(
         "RakuAST::Origin::Source",
@@ -185,33 +199,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         prepost_of_pos
     ),
 ];
-
-/// `Node.fileline`: `"<file>:<line>"` where the node's origin begins. The unit
-/// itself starts on line 1; a node built by hand has no origin and answers
-/// `Nil`, as in rakudo.
-// Cost: O(f), f = fields of the node.
-fn fileline(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let base = match target.view() {
-        ValueView::RakuAst(_) => target.clone(),
-        ValueView::Instance { attributes, .. } => attributes.rakuast_base()?,
-        _ => return None,
-    };
-    let ValueView::RakuAst(node) = base.view() else {
-        return None;
-    };
-    let line = if node.class == crate::rakuast::RakuAstClass::CompUnit {
-        Some(1)
-    } else {
-        crate::rakuast::origin_line_of(node)
-    };
-    let Some(line) = line else {
-        return Some(Ok(Value::NIL));
-    };
-    let file = crate::unit_source_file::current()
-        .map(|file| file.resolve().to_string())
-        .unwrap_or_default();
-    Some(Ok(Value::str(format!("{file}:{line}"))))
-}
 
 /// `Origin.from` / `Origin.to`: the character range the node occupies.
 // Cost: O(1).

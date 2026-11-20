@@ -424,26 +424,52 @@ pub(super) fn merge_expected_messages(
     result
 }
 
-pub(super) fn update_best_error(
-    best: &mut Option<(usize, PError)>,
-    candidate: PError,
-    input_len: usize,
-) {
-    let candidate_score = error_score(&candidate, input_len);
-    match best {
-        None => *best = Some((candidate_score, candidate)),
-        Some((best_score, best_err)) => {
-            if candidate_score > *best_score {
-                *best = Some((candidate_score, candidate));
-            } else if candidate_score == *best_score {
-                // Merge message lists directly — no split/join overhead
-                for msg in candidate.messages {
-                    if !best_err.messages.iter().any(|p| p == &msg) {
-                        best_err.messages.push(msg);
-                    }
-                }
+/// The best error of an ordered choice: the alternative that consumed the
+/// most input wins, and the alternatives that tie with it add their expected
+/// descriptions, each once, in the order they were tried.
+///
+/// The descriptions of a tie are only merged when the error is reported
+/// ([`BestError::into_error`]). An ordered choice that ends up matching (the
+/// common case) drops the collected errors unread, so merging them as they
+/// arrive, a scan of the list per failed alternative, was paid on the success
+/// path of every term and statement.
+#[derive(Default)]
+pub(super) struct BestError {
+    /// The score of the winning error and the error itself.
+    best: Option<(usize, PError)>,
+    /// The descriptions of the later alternatives that tie with `best`, in
+    /// order, not yet deduplicated.
+    tied: Vec<std::borrow::Cow<'static, str>>,
+}
+
+impl BestError {
+    /// Offer the error of a failed alternative over an input of `input_len` bytes.
+    // Cost: O(m), m = the candidate's descriptions.
+    pub(super) fn offer(&mut self, candidate: PError, input_len: usize) {
+        let candidate_score = error_score(&candidate, input_len);
+        match &self.best {
+            Some((best_score, _)) if candidate_score < *best_score => {}
+            Some((best_score, _)) if candidate_score == *best_score => {
+                self.tied.extend(candidate.messages);
+            }
+            _ => {
+                self.best = Some((candidate_score, candidate));
+                self.tied.clear();
             }
         }
+    }
+
+    /// The best error, with the descriptions of the alternatives that tie with
+    /// it merged in; `None` when no alternative failed.
+    // Cost: O(t * m), t = tied descriptions, m = descriptions of the result.
+    pub(super) fn into_error(self) -> Option<PError> {
+        let (_, mut best) = self.best?;
+        for msg in self.tied {
+            if !best.messages.iter().any(|p| p == &msg) {
+                best.messages.push(msg);
+            }
+        }
+        Some(best)
     }
 }
 

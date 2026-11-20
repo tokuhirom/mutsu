@@ -374,6 +374,9 @@ impl Value {
         let (class, owner, front) = match method {
             "add-statement" => (RakuAstClass::StatementList, "RakuAST::StatementList", false),
             "unshift-statement" => (RakuAstClass::StatementList, "RakuAST::StatementList", true),
+            // A Pod block put after the statements (`$=pod` and `.DEPARSE`
+            // see it; it is not a code statement).
+            "add-doc-block" => (RakuAstClass::StatementList, "RakuAST::StatementList", false),
             "push" => (RakuAstClass::ArgList, "RakuAST::ArgList", false),
             "unshift" => (RakuAstClass::ArgList, "RakuAST::ArgList", true),
             _ => return None,

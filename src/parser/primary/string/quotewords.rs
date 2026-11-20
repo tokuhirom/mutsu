@@ -218,6 +218,21 @@ pub(crate) fn quotewords_spelled_parts(
             run_start = pos;
             continue;
         }
+        // A colonpair word (`<< a :b<c> d >>`) is an atom of its own, as in
+        // rakudo's tree (`QuoteWordsAtom(ColonPair::Value)`).
+        if rest.starts_with(':')
+            && content[..pos]
+                .chars()
+                .next_back()
+                .is_none_or(char::is_whitespace)
+            && let Some((len, pair)) = colonpair_atom(rest)
+        {
+            flush(&mut parts, run_start, pos)?;
+            parts.push(QuoteWordsPart::Atom(pair));
+            pos += len;
+            run_start = pos;
+            continue;
+        }
         if let Some((next, quoted)) = parse_quotewords_quoted_atom(rest).ok()? {
             flush(&mut parts, run_start, pos)?;
             parts.push(QuoteWordsPart::Atom(quoted));
@@ -240,6 +255,17 @@ pub(crate) fn quotewords_spelled_parts(
     }
     flush(&mut parts, run_start, content.len())?;
     Some(parts)
+}
+
+/// The length and pair of a colonpair word at the start of `text`
+/// (`:b<c>`, `:!b`, `:c("x y")`), when it ends at a blank or the end of the
+/// text.
+// Cost: O(n), n = length of the colonpair.
+fn colonpair_atom(text: &str) -> Option<(usize, Expr)> {
+    let (next, pair) = crate::parser::primary::colonpair_expr(text).ok()?;
+    let len = text[..text.len() - next.len()].trim_end().len();
+    let after = &text[len..];
+    (len > 1 && (after.is_empty() || after.starts_with(char::is_whitespace))).then_some((len, pair))
 }
 
 /// Remove comments between quote-words while keeping quoted atoms verbatim.

@@ -177,7 +177,7 @@ impl Interpreter {
                 .map(|(owner, def)| super::method_dispatch_lazy::MethodDispatchWinner {
                     owner,
                     fingerprint: self.method_def_fingerprint(&def),
-                    rw_params: super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs),
+                    rw_params: def.rw_scalar_positionals(),
                 }),
         };
         let chosen_fp = winner.as_ref().map(|winner| winner.fingerprint);
@@ -234,7 +234,7 @@ impl Interpreter {
         }
         {
             let rw_params = winner
-                .map(|winner| winner.rw_params)
+                .map(|winner| winner.rw_params.to_vec())
                 .unwrap_or_default();
             // ADR-0019 E9b-1: every entry is a plain Candidate — this builder
             // never wraps a method's own chain into the frame (that is E9b-2).

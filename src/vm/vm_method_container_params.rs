@@ -44,6 +44,9 @@ pub(crate) enum MethodContainerBind {
     Proxy,
     /// A caller lexical whose slot already holds a shared cell.
     RelayHeld(u32),
+    /// A variable a closure captured (no slot of the running frame) whose
+    /// shared cell the env holds under the argument's source name.
+    RelayCaptured,
     /// A caller lexical still held as a plain value: promote its slot.
     Promote(u32),
 }
@@ -165,22 +168,26 @@ impl Interpreter {
         arg: &Value,
         arg_count: usize,
     ) -> Option<MethodContainerBind> {
-        let source = self
-            .pending_call_arg_sources()
-            .filter(|sources| sources.len() == arg_count)
-            .map(|sources| sources.get(arg_idx).cloned().flatten());
+        // Borrowed from a handle on the table (one refcount bump), not
+        // copied out per call.
+        let sources = self
+            .pending_call_arg_sources_handle()
+            .filter(|sources| sources.len() == arg_count);
+        let source: Option<Option<&str>> = sources
+            .as_deref()
+            .map(|sources| sources.get(arg_idx).and_then(|name| name.as_deref()));
         // A named argument's source is recorded as `key=source`
         // (`:$type` → `type=type`); `arg` is then the Pair's value.
         let source = if pd.named {
             match source {
-                Some(Some(encoded)) => Some(Some(encoded.split_once('=')?.1.to_string())),
+                Some(Some(encoded)) => Some(Some(encoded.split_once('=')?.1)),
                 other => other,
             }
         } else {
             source
         };
         let bind = match source {
-            Some(Some(name)) => self.method_container_source_bind(&name, arg)?,
+            Some(Some(name)) => self.method_container_source_bind(name, arg)?,
             // The call site says the argument is no variable -- or it recorded
             // no source table at all, which the compiler omits exactly when no
             // argument names one (`add_arg_sources_constant`), so `$o.m(1)`
@@ -260,7 +267,16 @@ impl Interpreter {
         {
             return None;
         }
-        let slot = *self.pending_call_arg_source_slots.get(&sym?)?;
+        let Some(slot) = sym.and_then(|sym| self.pending_call_arg_source_slots.get(&sym).copied())
+        else {
+            // A source that is no slot of the running frame -- a variable a
+            // closure captured from the routine around it (AttrX::Mooish's
+            // FETCH closure relaying the enclosing method's `$instance`) --
+            // whose argument arrived as that variable's shared cell: the
+            // general binder finds the same cell by name and aliases it, so
+            // relaying the cell binds exactly what it binds (#18267).
+            return self.captured_source_bind(sym?, arg);
+        };
         let code = self.running_code()?;
         if code.locals.get(slot as usize).map(String::as_str) != Some(name) {
             return None;
@@ -286,11 +302,55 @@ impl Interpreter {
             ValueView::ContainerRef(_) => {
                 Self::method_container_cell_ok(arg).then_some(MethodContainerBind::Relay)
             }
-            ValueView::HashEntryRef { .. } | ValueView::VarRef { .. } => None,
+            // A variable the running closure captured arrives wrapped with its
+            // name; a shared cell inside is that variable's container.
+            ValueView::VarRef { .. } => Self::captured_cell_relay(arg),
+            ValueView::HashEntryRef { .. } => None,
             ValueView::Proxy { .. } => Some(MethodContainerBind::Proxy),
             ValueView::Array(..) if crate::runtime::types::is_multidim_slice_cells(arg) => None,
             _ => Some(MethodContainerBind::Readonly),
         }
+    }
+
+    /// The bind of an argument naming a variable that is no slot of the
+    /// running frame -- one a closure captured from the routine around it
+    /// (AttrX::Mooish's FETCH closure relaying the enclosing method's
+    /// `$instance`): when the argument arrived as that variable's shared cell
+    /// (bare, or in a `VarRef` carrying its name), the general binder finds the
+    /// same cell by name and aliases it, so relaying the cell binds exactly
+    /// what it binds (#18267). Anything else keeps the general binder.
+    // Cost: O(1), as `method_container_cell_ok`.
+    fn captured_cell_relay(arg: &Value) -> Option<MethodContainerBind> {
+        let cell = arg.as_varref().map_or(arg, |(_, inner, _)| inner);
+        (matches!(cell.view(), ValueView::ContainerRef(_)) && Self::method_container_cell_ok(cell))
+            .then_some(MethodContainerBind::Relay)
+    }
+
+    /// The bind of an argument the call site wrote as the variable `sym`,
+    /// which is no slot of the running frame: a variable a closure captured
+    /// from the routine around it. The closure's read handed over the
+    /// variable's value; the general binder looks the name up and aliases the
+    /// shared cell it finds there, so when the env holds one under the name
+    /// this relays that cell ([`MethodContainerBind::RelayCaptured`]).
+    /// Anything else -- no cell, or one the argument is not the contents of
+    /// -- keeps the general binder.
+    // Cost: O(d) env probe, d = scope depth.
+    fn captured_source_bind(&self, sym: Symbol, arg: &Value) -> Option<MethodContainerBind> {
+        if let Some(bind) = Self::captured_cell_relay(arg) {
+            return Some(bind);
+        }
+        let cell = self.env().get_sym(sym)?;
+        if !matches!(cell.view(), ValueView::ContainerRef(_))
+            || !Self::method_container_cell_ok(cell)
+        {
+            return None;
+        }
+        // The argument must be what the cell holds now: a value computed from
+        // the variable (or another variable of the name) is no alias of it.
+        let held = cell.deref_container();
+        let passed = crate::runtime::types::unwrap_varref_value(arg.clone());
+        crate::vm::vm_method_dispatch::cheaply_unchanged(&held, &passed)
+            .then_some(MethodContainerBind::RelayCaptured)
     }
 
     /// A cell that is not a read-only binding (`my $x := 5` holds one, and
@@ -395,26 +455,33 @@ impl Interpreter {
     /// Runs while the CALLER's frame is current, before the method frame is
     /// pushed, so a promotion indexes the caller's locals.
     // Cost: O(p + a), p = parameters, a = arguments, plus one cell promotion
-    // per promoted argument.
+    // per promoted argument; allocation-free otherwise.
     pub(crate) fn promote_method_container_args(
         &mut self,
         method_def: &crate::runtime::MethodDef,
         args: &mut [Value],
     ) {
-        let positional: Vec<usize> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, a)| !a.unwrap_varref().is_string_pair_value())
-            .map(|(i, _)| i)
-            .collect();
-        let mut next = positional.into_iter();
+        // A forward cursor over the positional arguments: a rewrite below
+        // keeps an argument positional (a cell) or named (a rebuilt Pair), so
+        // scanning ahead after it classifies the rest as before.
+        let mut cursor = 0usize;
         let arg_count = args.len();
         for pd in method_def.param_defs.iter() {
             if pd.is_invocant {
                 continue;
             }
             let consumes = !pd.named && !pd.slurpy && !pd.double_slurpy;
-            let idx = if consumes { next.next() } else { None };
+            let idx = if consumes {
+                while cursor < arg_count && args[cursor].unwrap_varref().is_string_pair_value() {
+                    cursor += 1;
+                }
+                (cursor < arg_count).then(|| {
+                    cursor += 1;
+                    cursor - 1
+                })
+            } else {
+                None
+            };
             if !pd.binds_caller_container() {
                 continue;
             }
@@ -460,13 +527,30 @@ impl Interpreter {
     ) -> Value {
         match self.method_container_arg_bind(pd, idx, &arg, arg_count) {
             Some(MethodContainerBind::RelayHeld(slot)) => self.locals[slot as usize].clone(),
-            Some(MethodContainerBind::Promote(slot)) => {
-                let name = self
-                    .pending_call_arg_sources()
-                    .and_then(|sources| sources.get(idx).cloned())
-                    .flatten()
+            Some(MethodContainerBind::RelayCaptured) => {
+                let sources = self.pending_call_arg_sources_handle();
+                let source = sources
+                    .as_deref()
+                    .and_then(|sources| sources.get(idx))
+                    .and_then(|name| name.as_deref())
                     .map(|name| match name.split_once('=') {
-                        Some((_, source)) if pd.named => source.to_string(),
+                        Some((_, source)) if pd.named => source,
+                        _ => name,
+                    });
+                source
+                    .and_then(Symbol::lookup)
+                    .and_then(|sym| self.env().get_sym(sym).cloned())
+                    .filter(|cell| cell.is_container_ref())
+                    .unwrap_or(arg)
+            }
+            Some(MethodContainerBind::Promote(slot)) => {
+                let sources = self.pending_call_arg_sources_handle();
+                let name = sources
+                    .as_deref()
+                    .and_then(|sources| sources.get(idx))
+                    .and_then(|name| name.as_deref())
+                    .map(|name| match name.split_once('=') {
+                        Some((_, source)) if pd.named => source,
                         _ => name,
                     });
                 let Some(name) = name else {
@@ -481,8 +565,8 @@ impl Interpreter {
                 // frame; the promotion below does not return into it.
                 let code = unsafe { &*(code_addr as *const CompiledCode) };
                 let inner = crate::runtime::types::unwrap_varref_value(arg);
-                let cell = self.capture_rw_arg_cell(code, &name, inner, Some(slot));
-                self.register_container_cell_constraint_for_name(&cell, &name);
+                let cell = self.capture_rw_arg_cell(code, name, inner, Some(slot));
+                self.register_container_cell_constraint_for_name(&cell, name);
                 cell
             }
             Some(MethodContainerBind::Readonly) => crate::runtime::types::unwrap_varref_value(arg),

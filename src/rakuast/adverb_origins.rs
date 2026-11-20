@@ -17,6 +17,8 @@ pub(super) struct Adverb {
     at: SrcSpan,
     negated: bool,
     name: String,
+    /// The parentheses of a `:name(VALUE)` adverb.
+    value: Option<SrcSpan>,
 }
 
 /// Split the subscript text written at `from..to` into the part ending with
@@ -33,8 +35,18 @@ pub(super) fn split(from: usize, to: usize, close: &str) -> Option<(usize, Vec<A
                 end = head.len();
                 break;
             }
-            let colon = head.rfind(':')?;
-            let word = &head[colon + 1..];
+            // `:name(VALUE)`: the parentheses close the adverb.
+            let open = if head.ends_with(')') {
+                Some(opening_paren(head)?)
+            } else {
+                None
+            };
+            let word_end = open.unwrap_or(head.len());
+            let colon = head[..word_end].rfind(':')?;
+            let word = &head[colon + 1..word_end];
+            if open.is_some() && word.starts_with('!') {
+                return None;
+            }
             let (negated, name) = match word.strip_prefix('!') {
                 Some(name) => (true, name),
                 None => (false, word),
@@ -48,6 +60,7 @@ pub(super) fn split(from: usize, to: usize, close: &str) -> Option<(usize, Vec<A
                 at: SrcSpan::new(from + colon, from + head.len()),
                 negated,
                 name: name.to_string(),
+                value: open.map(|open| SrcSpan::new(from + open, from + head.len())),
             });
             end = colon;
         }
@@ -81,7 +94,9 @@ pub(super) fn place(subscript: &mut RakuAstNode, adverbs: &[Adverb]) {
         .zip(adverbs)
         .all(|(item, adverb)| match item.view() {
             ValueView::RakuAst(pair) => {
-                let class = if adverb.negated {
+                let class = if adverb.value.is_some() {
+                    RakuAstClass::ColonPairValue
+                } else if adverb.negated {
                     RakuAstClass::ColonPairFalse
                 } else {
                     RakuAstClass::ColonPairTrue
@@ -98,7 +113,36 @@ pub(super) fn place(subscript: &mut RakuAstNode, adverbs: &[Adverb]) {
         if let ValueView::RakuAst(pair) = item.view() {
             let mut pair = RakuAstNode::clone(pair);
             super::origin::set_span(&mut pair, adverb.at);
+            if let Some(parens) = adverb.value {
+                super::infix_origins::with_child(&mut pair, "value", |value| {
+                    if value.class == RakuAstClass::CircumfixParentheses {
+                        super::origin::set_span(value, parens);
+                        super::list_origins::circumfix(value);
+                    }
+                });
+            }
             *item = Value::rakuast(Box::new(pair));
         }
     }
+}
+
+/// The offset of the `(` that the `)` ending `head` closes; `None` when a
+/// quote or another bracket kind is in the way.
+// Cost: O(n), n = length of the parenthesized text.
+fn opening_paren(head: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, c) in head.char_indices().rev() {
+        match c {
+            ')' => depth += 1,
+            '(' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            '"' | '\'' | '[' | ']' | '{' | '}' | '<' | '>' | '#' | '\\' => return None,
+            _ => {}
+        }
+    }
+    None
 }

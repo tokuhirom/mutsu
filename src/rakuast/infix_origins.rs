@@ -33,6 +33,16 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
         RakuAstClass::VarNamedCapture => super::match_vars::named_capture_origins(node),
+        // `HyperWhatever:D` as a term: the inner `Type::Simple` spans all of
+        // it, its `Name` the name before the smiley.
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness => {
+            if let Some((from, to)) = byte_range(node) {
+                node.origin.0 = None;
+                super::routine_origins::type_origin(node, SrcSpan::new(from, to));
+            }
+        }
+        // `:16($n)`: the parentheses after the radix.
+        RakuAstClass::TermRadixNumber => super::type_origins::radix_parentheses(node),
         RakuAstClass::TypeParameterized => {
             if let Some((from, to)) = byte_range(node) {
                 super::type_origins::parameterized(node, SrcSpan::new(from, to));
