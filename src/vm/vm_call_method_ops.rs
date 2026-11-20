@@ -269,7 +269,7 @@ impl Interpreter {
         }
         let is_metarole = |v: &Value| {
             matches!(v.view(), ValueView::Package(name)
-                if crate::runtime::types::metamodel_how_roles::metarole_bare_name(&name.resolve()).is_some())
+                if crate::runtime::types::metamodel_how_roles::metarole_bare_name(name.as_str()).is_some())
         };
         let hit = match target.view() {
             ValueView::Junction { values, .. } => values.iter().any(is_metarole),
@@ -298,7 +298,7 @@ impl Interpreter {
                 .iter()
                 .any(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             && let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && !target.is_failure_handled()
         {
             return Some(Self::print_routine_no_match_error(method, target, args));
@@ -394,14 +394,14 @@ impl Interpreter {
         else {
             return None;
         };
-        let cn = class_name.resolve();
+        let cn = class_name.as_str();
         // A wrapped accessor must use the full dispatch path so its wrapper's
         // `callsame` can reach the accessor terminal. The pure read below has
         // no dispatch frame and would otherwise bypass the wrapper entirely.
         if let Some(owner) = self.attribute_accessor_owner(&cn, method)
             && self
                 .registry()
-                .method_wrap_chain(owner.resolve().as_str(), method, 0)
+                .method_wrap_chain(owner.as_str(), method, 0)
                 .is_some()
         {
             return None;
@@ -640,7 +640,7 @@ impl Interpreter {
         else {
             return Ok(None);
         };
-        let cn = class_name.resolve();
+        let cn = class_name.as_str();
         if !target.instance_is_exception_by_name()
             || attributes.as_map().contains_key("message")
             || !self.has_user_method(&cn, "message")
@@ -871,7 +871,7 @@ impl Interpreter {
         if !attributes.contains_key(crate::symbol::wk::array_storage()) {
             return false;
         }
-        let cn = class_name.resolve();
+        let cn = class_name.as_str();
         !self.has_user_method(&cn, method)
             && self
                 .mro_readonly(&cn)
@@ -911,7 +911,7 @@ impl Interpreter {
         let ValueView::Instance { class_name, .. } = target.view() else {
             return None;
         };
-        if !self.has_user_method(&class_name.resolve(), "iterator") {
+        if !self.has_user_method(class_name.as_str(), "iterator") {
             return None;
         }
         Some(
@@ -1198,7 +1198,7 @@ impl Interpreter {
                 let current = cell.deref_container();
                 match current.view() {
                     ValueView::Nil => true,
-                    ValueView::Package(p) => !self.has_user_method(&p.resolve(), method),
+                    ValueView::Package(p) => !self.has_user_method(p.as_str(), method),
                     _ => false,
                 }
             }
@@ -1391,7 +1391,7 @@ impl Interpreter {
         // `@x[0].push('foo')` still dies), and the result is written back to the slot.
         if let ValueView::Package(type_name) = target.view()
             && matches!(method, "push" | "append" | "unshift" | "prepend")
-            && let Some(result) = self.autoviv_typed_array_push(&type_name.resolve(), &args)?
+            && let Some(result) = self.autoviv_typed_array_push(type_name.as_str(), &args)?
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
@@ -1557,7 +1557,7 @@ impl Interpreter {
 
         // Deprecation.report — return the accumulated deprecation report
         if method == "report"
-            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Deprecation")
+            && matches!(target.view(), ValueView::Package(name) if name.as_str() == "Deprecation")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
@@ -1579,11 +1579,11 @@ impl Interpreter {
         // .../multi-no-match.t).
         if method == "protect" {
             let is_lock_type_object = matches!(target.view(), ValueView::Package(name)
-                if matches!(name.resolve().as_str(),
+                if matches!(name.as_str(),
                     "Lock" | "Lock::Async" | "Lock::Soft"));
             let is_lock_instance_bad_arg = matches!(target.view(),
                 ValueView::Instance { class_name, .. }
-                if matches!(class_name.resolve().as_str(),
+                if matches!(class_name.as_str(),
                     "Lock" | "Lock::Async" | "Lock::Soft"))
                 && (args.len() != 1
                     || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
@@ -1607,7 +1607,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
+            && (class_name.as_str() == "Lock::Async" || class_name.as_str() == "Lock")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
@@ -1649,7 +1649,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name.resolve() == "Lock::Async"
+            && class_name.as_str() == "Lock::Async"
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
@@ -1892,14 +1892,14 @@ impl Interpreter {
         // where we have access to locals (which the interpreter doesn't have).
         if method == "WHO"
             && args.is_empty()
-            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
+            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(name.as_str()))
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
                 "who-pseudo-package",
             );
             if let ValueView::Package(pkg_name) = target.view() {
-                let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
+                let stash = self.build_pseudo_stash(code, pkg_name.as_str());
                 self.stack.push(stash);
             }
             return Ok(());
@@ -1920,7 +1920,7 @@ impl Interpreter {
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
         // Failure should throw the stored exception (Raku behavior).
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name.as_str() == "Failure"
             && !target.is_failure_handled()
             && !matches!(
                 method,
@@ -1995,7 +1995,7 @@ impl Interpreter {
                     ..
                 } = target.view()
                 {
-                    let cn = class_name.resolve();
+                    let cn = class_name.as_str();
                     if !self.has_user_method(&cn, method)
                         && !Self::is_type_identity_method(method)
                         && attributes.contains_key(crate::symbol::wk::array_storage())
