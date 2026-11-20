@@ -230,6 +230,38 @@ impl Walk<'_> {
             RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs => {
                 self.named_assertion(names, node)?
             }
+            // `<?before X>` / `<!after X>`: the prefix, then the named
+            // assertion with its regex argument, then `>`.
+            RakuAstClass::RegexAssertionLookahead => {
+                let negated = node.fields.iter().any(|f| {
+                    f.name == Some("negated")
+                        && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
+                });
+                self.eat(if negated { "<!" } else { "<?" })?;
+                self.child(names, node, "assertion")?;
+                self.eat(">")?
+            }
+            // `before X` inside a lookaround: the name, blanks, the argument.
+            RakuAstClass::RegexAssertionNamedRegexArg => {
+                let name = match super::name_parts::name_shape(super::infix_origins::child(
+                    node, "name",
+                )?)? {
+                    super::name_parts::NameShape::Identifier(name) => name,
+                    _ => return None,
+                };
+                let name_at = self.at;
+                self.eat(&name)?;
+                let span = SrcSpan::new(self.base + name_at, self.base + self.at);
+                super::infix_origins::with_child(node, "name", |n| {
+                    super::origin::set_span(n, span)
+                });
+                let before = self.at;
+                self.blank();
+                if self.at == before {
+                    return None;
+                }
+                self.child(names, node, "regex-arg")?
+            }
             RakuAstClass::RegexAssertionPredicateBlock => {
                 let negated = node.fields.iter().any(|f| {
                     f.name == Some("negated")

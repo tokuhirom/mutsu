@@ -142,3 +142,37 @@ fn with_first(node: &mut RakuAstNode, f: impl FnOnce(&mut RakuAstNode)) {
     f(&mut inner);
     *held = Value::rakuast(Box::new(inner));
 }
+
+/// `:16($n)` placed at its range: the `Circumfix::Parentheses` it holds runs
+/// from the `(` after the radix to the term's end, and the list inside is
+/// placed from the expression's own range.
+// Cost: O(n), n = length of the term.
+pub(super) fn radix_parentheses(node: &mut RakuAstNode) {
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let open = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let digits = text.strip_prefix(':')?;
+        let radix = digits.find(|c: char| !c.is_ascii_digit())?;
+        (radix > 0 && digits[radix..].starts_with('(') && text.ends_with(')'))
+            .then_some(from + 1 + radix)
+    });
+    let Some(open) = open else {
+        return;
+    };
+    for field in &mut node.fields {
+        let RakuAstFieldValue::Node(held) = &mut field.value else {
+            continue;
+        };
+        let ValueView::RakuAst(inner) = held.view() else {
+            continue;
+        };
+        if inner.class != RakuAstClass::CircumfixParentheses {
+            continue;
+        }
+        let mut inner = RakuAstNode::clone(inner);
+        super::origin::set_span(&mut inner, SrcSpan::new(open, to));
+        super::list_origins::circumfix(&mut inner);
+        *held = Value::rakuast(Box::new(inner));
+    }
+}
