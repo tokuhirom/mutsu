@@ -50,6 +50,19 @@ impl Interpreter {
             return Ok(v);
         }
         crate::vm::vm_stats::record_param_default(true);
+        self.eval_param_default_scoped(pd, default_expr)
+    }
+
+    /// [`Self::eval_param_default`]'s scoping and evaluation, without its
+    /// constant short cut or its statistics: the method fast binder's default
+    /// prologue (`vm_method_default_prologue`) defers only non-constant
+    /// defaults and counts them itself.
+    // Cost: O(1) env writes beyond running the default (a precompiled chunk).
+    pub(crate) fn eval_param_default_scoped(
+        &mut self,
+        pd: &ParamDef,
+        default_expr: &Expr,
+    ) -> Result<Value, RuntimeError> {
         let saved_topic = self.env.get("_").cloned();
         let saved_dollar_topic = self.env.get("$_").cloned();
         // Shadow the parameter with its undefined type object (or Nil) so a

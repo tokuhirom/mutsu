@@ -30,7 +30,7 @@ mod routine_owned;
 pub(crate) mod static_link;
 use static_link::same_variable;
 pub(crate) use static_link::{
-    OuterScope, with_static_links_honoured, with_static_links_suppressed,
+    OuterScope, lexically_scoped_name, with_static_links_honoured, with_static_links_suppressed,
 };
 pub(crate) mod stats;
 

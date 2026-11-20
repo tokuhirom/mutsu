@@ -330,6 +330,12 @@ pub(crate) mod flags {
     /// chain's base tier holds, or nothing: no tier can shadow, hide or supply
     /// it. See [`crate::symbol::ever_tier_key`].
     pub(crate) const EVER_TIER_KEY: u32 = 1 << 16;
+    /// A name a frame's static link applies to
+    /// ([`crate::env::static_link::lexically_scoped_name`]): a plain user
+    /// lexical, an attribute, a type-shaped identifier, a sigil-less term, a
+    /// record of a plain lexical, ... A function of the string alone, asked on
+    /// every by-name lookup that misses a linked frame.
+    pub(crate) const LEXICALLY_SCOPED: u32 = 1 << 17;
 }
 
 /// The `__mutsu_type::` prefix `flags::SHADOW_META` marks. Kept next to the flag
@@ -496,6 +502,9 @@ fn compute_flags(s: &str) -> u32 {
             .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_'))
     {
         f |= flags::UPPER_IDENT_KEY;
+    }
+    if crate::env::lexically_scoped_name(s) {
+        f |= flags::LEXICALLY_SCOPED;
     }
     f
 }
@@ -1375,6 +1384,13 @@ impl Symbol {
         self.flags() & flags::PLAIN_USER_LEXICAL != 0
     }
 
+    /// Memoized [`crate::env::lexically_scoped_name`] for this symbol's string.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_lexically_scoped(self) -> bool {
+        self.flags() & flags::LEXICALLY_SCOPED != 0
+    }
+
     /// Memoized [`crate::env::is_attr_twigil_env_key`] for this symbol's string.
     #[inline]
     pub(crate) fn is_attr_twigil_env_key(self) -> bool {
@@ -1894,6 +1910,33 @@ mod tests {
             compute_flags("$env_key_latch_survives_flags")
         );
         assert!(maybe_env_key(sym), "asking for flags must not clear it");
+    }
+
+    #[test]
+    fn lexically_scoped_flag_matches_the_string_rule() {
+        // The flag memoizes `lexically_scoped_name`; both must agree on every
+        // kind of name the static link is asked about (#18274).
+        let cases = [
+            ("plain_lex_probe", true),
+            ("@plain_arr_probe", true),
+            ("!attr_probe", true),
+            ("TypeNameProbe", true),
+            ("Kebab-Type-Probe", true),
+            ("__mutsu_type::typed_lex_probe", true),
+            ("__mutsu_type::*dyn_probe", false),
+            ("*dyn_probe", false),
+            ("_", false),
+            ("Qualified::Probe", false),
+            ("?LINE", false),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(crate::env::lexically_scoped_name(name), expected, "{name}");
+            assert_eq!(
+                Symbol::intern(name).is_lexically_scoped(),
+                expected,
+                "{name}"
+            );
+        }
     }
 
     #[test]

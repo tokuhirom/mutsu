@@ -17,7 +17,7 @@ impl Interpreter {
         // the method resolver must see it before the inherited `Mu.clone` row.
         if method_sym.as_str() == "clone"
             && let ValueView::Instance { class_name, .. } = target.view()
-            && self.has_user_method_sym(class_name.as_str(), method_sym)
+            && self.has_user_method_of(class_name, method_sym)
         {
             return true;
         }

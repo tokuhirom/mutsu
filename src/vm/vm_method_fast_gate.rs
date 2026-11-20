@@ -197,6 +197,16 @@ impl Interpreter {
                 if pd.is_invocant || !pd.named {
                     return true;
                 }
+                // An omitted parameter whose default the default prologue
+                // evaluates (`vm_method_default_prologue`).
+                if method_def.default_prologue(idx) && !Self::named_param_supplied(pd, args) {
+                    return true;
+                }
+                // A supplied `:$x is raw` was classified with the container
+                // parameters above (`container_light`).
+                if Self::method_named_container_param_ok(pd) && container_light {
+                    return true;
+                }
                 Self::named_param_fast_eligible(
                     pd,
                     args,
@@ -274,16 +284,18 @@ impl Interpreter {
             // only positional params consume positional args here).
             let needs_default_eval = {
                 let mut pos = 0;
-                method_def.param_defs.iter().any(|pd| {
+                method_def.param_defs.iter().enumerate().any(|(idx, pd)| {
                     if pd.is_invocant || pd.named || pd.slurpy || pd.double_slurpy {
                         return false;
                     }
                     // A shareable constant default is bound by the fast binder
                     // (`CompiledFunction::const_fill_for_param`, the sub light
-                    // path's fill).
+                    // path's fill), any other the default prologue evaluates
+                    // when its shape allows (`vm_method_default_prologue`).
                     let result = pos >= positional_arg_count
                         && pd.default.is_some()
-                        && crate::opcode::CompiledFunction::const_fill_for_param(pd).is_none();
+                        && crate::opcode::CompiledFunction::const_fill_for_param(pd).is_none()
+                        && !method_def.default_prologue(idx);
                     pos += 1;
                     result
                 })
