@@ -32,7 +32,11 @@ pub(super) fn derive(node: &mut RakuAstNode) {
             }
         };
         Some((
-            (from + op_from, from + op_to, text[op_from..op_to].to_string()),
+            (
+                from + op_from,
+                from + op_to,
+                text[op_from..op_to].to_string(),
+            ),
             (from + args.0, from + args.1),
         ))
     }) else {
