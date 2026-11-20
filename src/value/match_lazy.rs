@@ -277,25 +277,130 @@ impl MatchNode {
 
 /// What the grammar-action walk needs of one Match node (see
 /// [`Value::match_action_walk_node`]).
+///
+/// The walk descends only into children that can still dispatch an action:
+/// a child whose action already ran at its reduction (ADR-7576) is not listed,
+/// and neither is a positional group that is a bare leaf, since a `( )` group
+/// is not a rule and has no action of its own. The node's `.hash`/`.list`
+/// values, which only the env ceremony around an action call needs, are
+/// rendered on demand by [`Self::named_values`] and
+/// [`Self::positional_values`].
 #[derive(Default)]
 pub(crate) struct ActionWalkNode {
-    /// The named captures, as `.hash` presents each slot.
-    pub(crate) named: Vec<(Symbol, Value)>,
-    /// The hidden `<.foo>` subrule matches that carry an action.
+    /// The named children still to dispatch, each with its capture name, a
+    /// quantified slot flattened to its entries.
+    pub(crate) named_children: Vec<(Symbol, Value)>,
+    /// The hidden `<.foo>` subrule matches still to dispatch.
     pub(crate) silent: Vec<Value>,
-    /// The positional captures, as `.list` presents each slot.
-    pub(crate) positional: Vec<Value>,
+    /// The positional group Matches still to dispatch, flattened.
+    pub(crate) positional_children: Vec<Value>,
     /// The node's own `:my $*x` values at its reduction.
     pub(crate) reduce_vars: Vec<(String, Value)>,
     /// The winning `:sym<...>` variant, for a proto-regex candidate.
     pub(crate) sym: Option<Symbol>,
+    /// Whether the node has a named-capture hash (every lazy node does; an
+    /// eager Match may not).
+    pub(crate) has_named_hash: bool,
+    captures: WalkCaptures,
+}
+
+/// Where [`ActionWalkNode`] renders the node's capture values from.
+#[derive(Default)]
+enum WalkCaptures {
+    /// A capture node, read on demand.
+    Lazy(Arc<CapNode>, MatchTarget),
+    /// The `.hash` and `.list` of an eager Match, already in hand.
+    Eager(Vec<(Symbol, Value)>, Vec<Value>),
+    #[default]
+    None,
 }
 
 impl ActionWalkNode {
-    /// A node with no child captures of any kind.
-    pub(crate) fn is_leaf(&self) -> bool {
-        self.named.is_empty() && self.positional.is_empty() && self.silent.is_empty()
+    /// The walk's view of an eager Match: its `.hash` entries, `.list`
+    /// items and hidden subrule matches.
+    pub(crate) fn eager(
+        named: Option<Vec<(Symbol, Value)>>,
+        positional: Vec<Value>,
+        silent: Vec<Value>,
+    ) -> Self {
+        let has_named_hash = named.is_some();
+        let named = named.unwrap_or_default();
+        let mut named_children = Vec::new();
+        for (name, value) in &named {
+            // `is_match_instance` first: viewing a lazy child Match would
+            // materialize it only to learn that it is not an Array.
+            if !value.is_match_instance()
+                && let ValueView::Array(items, _) = value.view()
+            {
+                named_children.extend(items.iter().map(|item| (*name, item.clone())));
+            } else {
+                named_children.push((*name, value.clone()));
+            }
+        }
+        named_children.retain(|(_, child)| !child.match_node_reduced());
+        let mut positional_children = Vec::new();
+        for item in &positional {
+            if item.is_match_instance() {
+                positional_children.push(item.clone());
+            } else if let ValueView::Array(items, _) = item.view() {
+                positional_children.extend(items.iter().cloned());
+            }
+        }
+        positional_children.retain(|child| !child.match_node_reduced());
+        Self {
+            named_children,
+            silent,
+            positional_children,
+            has_named_hash,
+            captures: WalkCaptures::Eager(named, positional),
+            ..Self::default()
+        }
     }
+
+    /// Nothing below this node is left to dispatch.
+    pub(crate) fn has_no_children(&self) -> bool {
+        self.named_children.is_empty()
+            && self.positional_children.is_empty()
+            && self.silent.is_empty()
+    }
+
+    /// The node's named captures, as `.hash` presents each slot.
+    // Cost: O(k), k = the node's named capture slots.
+    pub(crate) fn named_values(&self) -> Vec<(Symbol, Value)> {
+        match &self.captures {
+            WalkCaptures::Lazy(cap, target) => cap
+                .kids()
+                .named
+                .iter()
+                .filter(|(key, _)| !key.starts_with(SILENT_ACTION_MARKER_PREFIX))
+                .map(|(key, slot)| (*key, Value::named_slot_value(slot, target)))
+                .collect(),
+            WalkCaptures::Eager(named, _) => named.clone(),
+            WalkCaptures::None => Vec::new(),
+        }
+    }
+
+    /// The node's positional captures, as `.list` presents each slot.
+    // Cost: O(k), k = the node's positional capture slots.
+    pub(crate) fn positional_values(&self) -> Vec<Value> {
+        match &self.captures {
+            WalkCaptures::Lazy(cap, target) => cap
+                .kids()
+                .positional
+                .iter()
+                .map(|slot| Value::pos_slot_value(slot, target))
+                .collect(),
+            WalkCaptures::Eager(_, positional) => positional.clone(),
+            WalkCaptures::None => Vec::new(),
+        }
+    }
+}
+
+/// Whether a positional group's capture node can still dispatch an action:
+/// it has captures of its own to descend into, or it was filed under an
+/// aliased rule name, and its action has not run yet.
+fn group_may_dispatch(sc: &CapNode) -> bool {
+    (sc.children.is_some() || sc.action_name.is_some() || sc.sym.is_some()) && !sc.reduced.get()
 }
 
 /// Leaf Match for a quantified-capture entry with a recorded span.
@@ -480,28 +585,48 @@ impl Value {
         if node.forced().is_some() {
             return None;
         }
-        let kids = node.cap.kids();
         let mut walk = ActionWalkNode {
             sym: node.cap.sym,
+            has_named_hash: true,
+            captures: WalkCaptures::Lazy(Arc::clone(&node.cap), node.target.clone()),
             ..ActionWalkNode::default()
         };
         if node.cap.children.is_none() {
             return Some(walk);
         }
+        let kids = node.cap.kids();
         for (key, slot) in kids.named.iter() {
+            let pending = slot.nodes.iter().filter(|sc| !sc.reduced.get());
             if key.starts_with(SILENT_ACTION_MARKER_PREFIX) {
-                walk.silent
-                    .extend(slot.nodes.iter().map(|sc| node.lazy_child(sc)));
+                walk.silent.extend(pending.map(|sc| node.lazy_child(sc)));
+            } else {
+                walk.named_children
+                    .extend(pending.map(|sc| (*key, node.lazy_child(sc))));
+            }
+        }
+        for slot in &kids.positional {
+            if slot.nil {
                 continue;
             }
-            walk.named
-                .push((*key, Value::named_slot_value(slot, &node.target)));
+            match &slot.quantified {
+                Some(entries) => {
+                    for (_, _, sc) in entries {
+                        if let Some(sc) = sc
+                            && group_may_dispatch(sc)
+                        {
+                            walk.positional_children.push(node.lazy_child(sc));
+                        }
+                    }
+                }
+                None => {
+                    if let Some(sc) = &slot.subcap
+                        && group_may_dispatch(sc)
+                    {
+                        walk.positional_children.push(node.lazy_child(sc));
+                    }
+                }
+            }
         }
-        walk.positional = kids
-            .positional
-            .iter()
-            .map(|slot| Value::pos_slot_value(slot, &node.target))
-            .collect();
         walk.reduce_vars = kids
             .regex_vars
             .iter()

@@ -80,16 +80,17 @@ impl Interpreter {
         rule_name: &str,
         sym: Option<Symbol>,
     ) -> bool {
-        let Some(class_name) = Self::actions_class_name_of(actions) else {
+        let Some(class) = Self::actions_class_sym(actions) else {
             return true;
         };
         if let Some(sym) = sym {
-            let variant = self.variant_action_method_name(Some(&class_name), rule_name, &sym.resolve());
-            if self.actions_answer_method(&class_name, &variant) {
+            let variant =
+                self.variant_action_method_name(Some(class.as_str()), rule_name, &sym.resolve());
+            if self.actions_answer_method_of(class, Symbol::intern(&variant)) {
                 return true;
             }
         }
-        self.actions_answer_method(&class_name, rule_name)
+        self.actions_answer_method_of(class, Symbol::intern(rule_name))
     }
 
     /// The action call of [`Self::dispatch_reduced_subrule`], with the

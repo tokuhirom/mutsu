@@ -6,7 +6,7 @@ use Test;
 # action itself and in closures inside it, the children's `.made`, the `.made`
 # it leaves, and the dispatch order of named, positional and silent children.
 
-plan 14;
+plan 17;
 
 grammar Expr {
     token TOP { <term>+ % <op> }
@@ -129,4 +129,28 @@ grammar Dyn {
     is $m.made, 24, 'the top action\'s make';
     is ~$/, '2*3*4', '$/ after .parse is the parse result';
     is $/.made, 24, 'and carries the made value';
+}
+
+grammar Tok {
+    token TOP { ( <word> | <num> )* % ' ' }
+    token word { <[a..z]>+ }
+    token num { \d+ }
+}
+
+{
+    my @calls;
+    my class T {
+        method word($/) { @calls.push("w:$/"); make uc ~$/ }
+        method num($/) { @calls.push("n:$/"); make +$/ * 2 }
+        method TOP($/) { make $0.map({ ($_<word> // $_<num>).made }).join(',') }
+    }
+    is Tok.parse('ab 12 cd', :actions(T)).made, 'AB,24,CD', 'actions of rules inside a positional group';
+    is @calls.join(' '), 'w:ab n:12 w:cd', 'run once each, in order';
+}
+
+grammar Al { token TOP { $0=<num> '-' $1=<num> }; token num { \d+ } }
+
+{
+    my class U { method num($/) { make +$/ + 1 }; method TOP($/) { make $0.made + $1.made } }
+    is Al.parse('3-4', :actions(U)).made, 9, 'a rule aliased to a positional capture';
 }

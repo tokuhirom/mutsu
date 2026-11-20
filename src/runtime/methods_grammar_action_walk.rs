@@ -32,11 +32,6 @@ impl Interpreter {
     /// The class an actions object dispatches its methods on, if it names one.
     /// A stateless `:actions(Actions)` is often passed as the bare type object,
     /// so a `Package` counts just as much as an `Instance`.
-    pub(crate) fn actions_class_name_of(actions: &Value) -> Option<String> {
-        Self::actions_class_sym(actions).map(|sym| sym.resolve())
-    }
-
-    /// [`Self::actions_class_name_of`] as the interned class symbol.
     // Cost: O(1).
     pub(crate) fn actions_class_sym(actions: &Value) -> Option<Symbol> {
         match actions.view() {
@@ -155,55 +150,40 @@ impl Interpreter {
 
     /// The walk's view of an eager (or already materialized) Match: the same
     /// [`ActionWalkNode`] a lazy node answers, read from its attribute map.
-    /// The second element says whether the map carries a named-capture hash.
     // Cost: O(k), k = the node's capture slots.
-    fn eager_action_walk_node(match_obj: &Value) -> Option<(ActionWalkNode, bool)> {
+    fn eager_action_walk_node(match_obj: &Value) -> Option<ActionWalkNode> {
         let ValueView::Instance { attributes, .. } = match_obj.view() else {
             return None;
         };
         let amap = attributes.as_map();
-        let mut walk = ActionWalkNode::default();
-        let named = amap.get(wk::match_named()).cloned();
-        let has_named_hash = match named.as_ref().map(Value::view) {
-            Some(ValueView::Hash(named)) => {
-                walk.named = named
+        let named = match amap.get(wk::match_named()).map(Value::view) {
+            Some(ValueView::Hash(named)) => Some(
+                named
                     .iter()
                     .map(|(k, v)| (Symbol::intern(k), v.clone()))
-                    .collect();
-                true
-            }
-            _ => false,
+                    .collect(),
+            ),
+            _ => None,
         };
-        if let Some(ValueView::Array(items, _)) =
-            amap.get(wk::match_list()).cloned().as_ref().map(Value::view)
-        {
-            walk.positional = items.iter().cloned().collect();
-        }
-        if let Some(ValueView::Array(items, _)) = amap
-            .get(wk::match_silent_caps())
-            .cloned()
-            .as_ref()
-            .map(Value::view)
-        {
-            walk.silent = items.iter().cloned().collect();
-        }
-        if let Some(ValueView::Hash(vars)) = amap
-            .get(wk::match_reduce_time_vars())
-            .cloned()
-            .as_ref()
-            .map(Value::view)
+        let array_items = |key: Symbol| -> Vec<Value> {
+            match amap.get(key).map(Value::view) {
+                Some(ValueView::Array(items, _)) => items.iter().cloned().collect(),
+                _ => Vec::new(),
+            }
+        };
+        let mut walk = ActionWalkNode::eager(
+            named,
+            array_items(wk::match_list()),
+            array_items(wk::match_silent_caps()),
+        );
+        if let Some(ValueView::Hash(vars)) = amap.get(wk::match_reduce_time_vars()).map(Value::view)
         {
             walk.reduce_vars = vars.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         }
-        if let Some(ValueView::Str(sym)) = amap
-            .get(wk::match_sym_variant())
-            .cloned()
-            .as_ref()
-            .map(Value::view)
-        {
+        if let Some(ValueView::Str(sym)) = amap.get(wk::match_sym_variant()).map(Value::view) {
             walk.sym = Some(Symbol::intern(&sym));
         }
-        Some((walk, has_named_hash))
+        Some(walk)
     }
 
     /// Whether the actions object answers a method for the node: its
@@ -241,8 +221,8 @@ impl Interpreter {
         if match_obj.match_node_reduced() {
             return Ok(match_obj);
         }
-        let (node, has_named_hash) = match match_obj.match_action_walk_node() {
-            Some(node) => (node, true),
+        let node = match match_obj.match_action_walk_node() {
+            Some(node) => node,
             None => match Self::eager_action_walk_node(&match_obj) {
                 Some(found) => found,
                 None => return Ok(match_obj),
@@ -254,7 +234,7 @@ impl Interpreter {
         // A childless leaf whose rule has no action method — the overwhelming
         // majority of nodes in a leaf-heavy parse (one per matched character in
         // a quoted-scalar run): nothing below can have any effect for it.
-        if !has_own_action && node.is_leaf() {
+        if !has_own_action && node.has_no_children() {
             return Ok(match_obj);
         }
 
@@ -271,7 +251,7 @@ impl Interpreter {
                 self.env.insert(env_key, v.clone());
             }
         }
-        if let Err(error) = self.walk_action_children(&node, has_named_hash, actions) {
+        if let Err(error) = self.walk_action_children(&node, actions) {
             self.restore_action_reduce_vars(&saved_reduce_vars);
             return Err(error);
         }
@@ -318,34 +298,26 @@ impl Interpreter {
     fn walk_action_children(
         &mut self,
         node: &ActionWalkNode,
-        has_named_hash: bool,
         actions: &mut Value,
     ) -> Result<(), RuntimeError> {
-        if has_named_hash && !(node.named.is_empty() && node.silent.is_empty()) {
+        if node.has_named_hash && !(node.named_children.is_empty() && node.silent.is_empty()) {
             // A quantified named capture is stored as one Array under its
             // capture name, but grammar actions run at each cursor's reduce
             // point. Sorting the named-capture slots first therefore grouped
             // all `<line>` actions together ahead of an interleaved
             // `<section>` or `<include>` action. Stateful actions (including
             // parsers that maintain scope or interpolation variables) observe
-            // the wrong order. Flatten the individual captures before sorting
-            // so sibling capture types are interleaved by source position.
-            let mut children: Vec<(Option<Symbol>, Value)> = Vec::new();
-            for (child_name, child_match) in &node.named {
-                if let ValueView::Array(items, _) = child_match.view() {
-                    for item in items.iter() {
-                        children.push((Some(*child_name), item.clone()));
-                    }
-                } else {
-                    children.push((Some(*child_name), child_match.clone()));
-                }
-            }
+            // the wrong order. The children are flattened, so sibling capture
+            // types are interleaved by source position.
+            let mut children: Vec<(Option<Symbol>, Value)> = node
+                .named_children
+                .iter()
+                .map(|(name, child)| (Some(*name), child.clone()))
+                .collect();
             // A silent subrule still reduces at its position in the pattern.
             // It has no named slot, but its action must run among the named
             // captures rather than after all of them.
-            for item in &node.silent {
-                children.push((None, item.clone()));
-            }
+            children.extend(node.silent.iter().map(|item| (None, item.clone())));
             // A zero-width hidden subrule and the following capture can share
             // a start position. The earlier reduction has the earlier end;
             // both seam reads leave lazy Match children unmaterialized.
@@ -359,10 +331,6 @@ impl Interpreter {
             // `.made` it writes is the node's, so both slots read it.
             let mut seen: Vec<usize> = Vec::new();
             for (child_name, child_match) in children {
-                // Already dispatched at its reduction: nothing to resolve.
-                if child_match.match_node_reduced() {
-                    continue;
-                }
                 let Some(child_name) = child_name else {
                     let dispatch_name = Self::get_action_name(&child_match).unwrap_or_default();
                     self.invoke_grammar_actions(child_match, actions, &dispatch_name)?;
@@ -380,29 +348,15 @@ impl Interpreter {
         // INSIDE it do — DBDish::Pg's tokenizer is `( <normal> | <placeholder>
         // )*` with per-token actions — and their `.made` lands on the Match
         // objects reachable via `$0[…]`.
-        for item in &node.positional {
-            if item.is_match_instance() {
-                if item.match_node_reduced() {
-                    continue;
-                }
-                let dispatch_name = Self::get_action_name(item).unwrap_or_default();
-                self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?;
-            } else if let ValueView::Array(items, _) = item.view() {
-                // A quantified group `(...)*`: an Array of per-iteration Matches.
-                for it in items.iter() {
-                    if it.match_node_reduced() {
-                        continue;
-                    }
-                    let dispatch_name = Self::get_action_name(it).unwrap_or_default();
-                    self.invoke_grammar_actions(it.clone(), actions, &dispatch_name)?;
-                }
-            }
+        for item in &node.positional_children {
+            let dispatch_name = Self::get_action_name(item).unwrap_or_default();
+            self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?;
         }
 
         // A node without a named-capture hash still needs to dispatch its
         // hidden subrules, in source order. Nodes with that hash handled them
         // above, interleaved with the captured children.
-        if !has_named_hash && !node.silent.is_empty() {
+        if !node.has_named_hash && !node.silent.is_empty() {
             let mut items = node.silent.clone();
             items.sort_by_key(|m| m.match_from().unwrap_or(0));
             for item in items {
@@ -476,16 +430,14 @@ impl Interpreter {
         // Hide the parent's named and positional captures from this action,
         // and install the node's own so `$<a>` and `$0` work inside it.
         let saved_named_captures = self.take_action_named_captures();
-        for (k, v) in &node.named {
+        for (k, v) in node.named_values() {
             self.env
-                .insert_sym(super::methods_grammar_action_env::angle_key_sym(*k), v.clone());
+                .insert_sym(super::methods_grammar_action_env::angle_key_sym(k), v);
         }
         let saved_positional = self.take_action_positional_captures();
-        for (i, v) in node.positional.iter().enumerate() {
-            self.env.insert_sym(
-                super::methods_grammar_action_env::positional_key_sym(i),
-                v.clone(),
-            );
+        for (i, v) in node.positional_values().into_iter().enumerate() {
+            self.env
+                .insert_sym(super::methods_grammar_action_env::positional_key_sym(i), v);
         }
         // Also set $_ to the match (for `.make:` syntax)
         let saved_topic = self.env.get_sym(wk::topic()).cloned();
