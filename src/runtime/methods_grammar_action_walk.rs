@@ -17,6 +17,12 @@ use super::*;
 use crate::symbol::{Symbol, wk};
 use crate::value::ActionWalkNode;
 
+/// Which action method a node dispatches to (see
+/// [`Interpreter::node_action_method`]): `None` when the actions class answers
+/// none, `Some(None)` when the actions object is not a class to ask, and the
+/// `:sym<...>` variant's method name, for the error mapping.
+pub(crate) type NodeActionTarget = (Option<Option<Symbol>>, Option<String>);
+
 /// `FALLBACK`, which an actions class may answer every rule name with.
 fn fallback_sym() -> Symbol {
     static SYM: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
@@ -141,7 +147,20 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
     ) -> Result<Value, RuntimeError> {
-        let result = self.invoke_grammar_actions_unmarked(match_obj.clone(), actions, rule_name);
+        self.invoke_grammar_actions_for(match_obj, actions, rule_name, None)
+    }
+
+    /// [`Self::invoke_grammar_actions`] for a caller that already asked
+    /// [`Self::node_action_method`] which method the node dispatches to.
+    pub(crate) fn invoke_grammar_actions_for(
+        &mut self,
+        match_obj: Value,
+        actions: &mut Value,
+        rule_name: &str,
+        target: Option<NodeActionTarget>,
+    ) -> Result<Value, RuntimeError> {
+        let result =
+            self.invoke_grammar_actions_unmarked(match_obj.clone(), actions, rule_name, target);
         // Whoever dispatched this node (the walk, an assertion's `.made` probe),
         // no later pass runs its action again.
         match_obj.mark_match_node_reduced();
@@ -180,12 +199,12 @@ impl Interpreter {
     /// `None` when the class answers neither. With an actions object that is
     /// not a class to ask, the call is always tried (`Some(None)`).
     /// The variant's method name is returned too, for the error mapping.
-    fn node_action_method(
+    pub(crate) fn node_action_method(
         &mut self,
         actions_class: Option<Symbol>,
         rule_name: &str,
         sym: Option<Symbol>,
-    ) -> (Option<Option<Symbol>>, Option<String>) {
+    ) -> NodeActionTarget {
         let sym_method = sym.map(|sym| {
             let class_name = actions_class.map(|cn| cn.resolve());
             self.variant_action_method_name(class_name.as_deref(), rule_name, &sym.resolve())
@@ -214,6 +233,7 @@ impl Interpreter {
         match_obj: Value,
         actions: &mut Value,
         rule_name: &str,
+        target: Option<NodeActionTarget>,
     ) -> Result<Value, RuntimeError> {
         // Already dispatched at its reduction (ADR-7576): its subtree was too.
         if match_obj.match_node_reduced() {
@@ -226,9 +246,13 @@ impl Interpreter {
                 None => return Ok(match_obj),
             },
         };
-        let actions_class = Self::actions_class_sym(actions);
-        let (own_action, sym_method_name) =
-            self.node_action_method(actions_class, rule_name, node.sym);
+        let (own_action, sym_method_name) = match target {
+            Some(target) => target,
+            None => {
+                let actions_class = Self::actions_class_sym(actions);
+                self.node_action_method(actions_class, rule_name, node.sym)
+            }
+        };
         let has_own_action = own_action.is_some();
         // A childless leaf whose rule has no action method — the overwhelming
         // majority of nodes in a leaf-heavy parse (one per matched character in

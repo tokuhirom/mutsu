@@ -46,14 +46,16 @@ impl Interpreter {
         };
         // A node with no action method of its own stays for the walk, which
         // still has to descend into any child that was not reduced here.
-        if !self.reduction_has_action(&actions, rule_name, cap.sym) {
+        let class = Self::actions_class_sym(&actions);
+        let action_target = self.node_action_method(class, rule_name, cap.sym);
+        if action_target.0.is_none() {
             self.regex_state.current_grammar_actions = Some(actions);
             return;
         }
         let target = super::regex_helpers::current_match_target()
             .unwrap_or_else(|| MatchTarget::new(""));
         let match_obj = Value::lazy_match(Arc::clone(cap), target);
-        let outcome = self.run_reduction_action(match_obj, &mut actions, rule_name);
+        let outcome = self.run_reduction_action(match_obj, &mut actions, rule_name, action_target);
         self.regex_state.current_grammar_actions = Some(actions);
         cap.reduced.set();
         // A `return` out of the action itself is the action's own result. One
@@ -72,27 +74,6 @@ impl Interpreter {
         }
     }
 
-    /// Whether the actions object answers a method for the rule (or for its
-    /// `:sym<>` variant).
-    fn reduction_has_action(
-        &mut self,
-        actions: &Value,
-        rule_name: &str,
-        sym: Option<Symbol>,
-    ) -> bool {
-        let Some(class) = Self::actions_class_sym(actions) else {
-            return true;
-        };
-        if let Some(sym) = sym {
-            let variant =
-                self.variant_action_method_name(Some(class.as_str()), rule_name, &sym.resolve());
-            if self.actions_answer_method_of(class, Symbol::intern(&variant)) {
-                return true;
-            }
-        }
-        self.actions_answer_method_of(class, Symbol::intern(rule_name))
-    }
-
     /// The action call of [`Self::dispatch_reduced_subrule`], with the
     /// engine's own bindings (`$/`, `$_`, the capture variables) put back and
     /// every caller lexical the action rebound reported to the outer VM, as
@@ -102,6 +83,7 @@ impl Interpreter {
         match_obj: Value,
         actions: &mut Value,
         rule_name: &str,
+        action_target: super::super::methods_grammar_action_walk::NodeActionTarget,
     ) -> Result<(), RuntimeError> {
         // `$/` and `$_` are put back by the action call itself; `make`
         // writes the `made` slot, which is engine state of the match in
@@ -114,7 +96,8 @@ impl Interpreter {
         // (`note_caller_env_write`): no snapshot of the whole env is needed to
         // find them afterwards.
         let carrier = self.begin_carrier();
-        let result = self.invoke_grammar_actions(match_obj, actions, rule_name);
+        let result =
+            self.invoke_grammar_actions_for(match_obj, actions, rule_name, Some(action_target));
         let written = self.end_carrier(carrier);
         self.regex_state.in_regex_code_block = saved_in_block;
         let unchanged = match (&saved_made, self.env.get_sym(wk::made())) {
