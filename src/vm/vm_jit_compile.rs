@@ -827,6 +827,20 @@ fn build(
                     // Dedicated payload-free shim (arith / compare).
                     let status = call_helper(&mut b, sigs.s1, f, &[interp])?;
                     check_status(&mut b, status);
+                } else if let Some((slot, _)) =
+                    super::vm_jit_native_int_step::native_int_step_operands(op)
+                    && code.native_int_step_slot(slot as usize)
+                {
+                    // A `++`/`--` of a proven `my int` local (ADR-18357): the
+                    // narrow arm without the interpreter dispatch.
+                    let opidx = b.ins().iconst(types::I32, i as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_call,
+                        super::vm_jit_native_int_step::native_int_step as *const () as usize,
+                        &[interp, codep, opidx, fnsp],
+                    )?;
+                    check_status(&mut b, status);
                 } else if step_supported(op) {
                     // Generic straight-line step: one interpreter dispatch.
                     let opidx = b.ins().iconst(types::I32, i as i64);

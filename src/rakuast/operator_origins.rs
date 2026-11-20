@@ -53,10 +53,28 @@ fn prefix(node: &mut RakuAstNode) {
 /// `$x++`: the `Postfix` is the operator written after the operand.
 // Cost: O(n), n = length of the application's source.
 fn postfix(node: &mut RakuAstNode) {
-    let Some((_, to)) = byte_range(node) else {
+    let Some((from, to)) = byte_range(node) else {
         return;
     };
-    let Some((_, operand_end)) = child(node, "operand").and_then(byte_range) else {
+    let operand = child(node, "operand");
+    let operand_end = match operand.and_then(byte_range) {
+        Some((_, end)) => Some(end),
+        // The curried `*` of `*++` has no origin of its own (rakudo gives
+        // none); the operator follows it.
+        None if operand.is_some_and(|o| {
+            matches!(
+                o.class,
+                RakuAstClass::TermWhatever | RakuAstClass::WhateverCodeArgument
+            )
+        }) =>
+        {
+            super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+                text.starts_with('*').then_some(from + 1)
+            })
+        }
+        None => None,
+    };
+    let Some(operand_end) = operand_end else {
         return;
     };
     let Some(op) = child(node, "postfix")
@@ -177,6 +195,24 @@ fn colonpair_value(node: &mut RakuAstNode) {
             with_child(node, "value", |value| {
                 super::origin::set_span(value, SrcSpan::new(open, to));
                 super::origin::quoted_text(value, SrcSpan::new(open, to));
+            });
+        }
+        return;
+    }
+    // `:key{...}`: the block or hash composer is the value, from its `{`.
+    if matches!(
+        value.class,
+        RakuAstClass::Block | RakuAstClass::CircumfixHashComposer
+    ) && value.origin.0.is_none()
+    {
+        let written = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+            let rest = text.strip_prefix(':')?.strip_prefix(key.as_str())?;
+            (rest.starts_with('{') && rest.ends_with('}')).then_some(())
+        });
+        if written.is_some() && open < to {
+            with_child(node, "value", |value| {
+                super::origin::set_span(value, SrcSpan::new(open, to));
+                super::expr_block_origins::derive(value);
             });
         }
         return;

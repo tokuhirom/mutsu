@@ -222,6 +222,7 @@ pub(super) fn current_line() -> Option<i64> {
 // Cost: O(log n), n = lines of the unit.
 pub(super) fn set_span(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.origin.0.is_none() {
+        let span = angle_number(node, span);
         node.origin.0 = super::unit_source::span_origin_value(span);
     }
 }
@@ -249,6 +250,25 @@ pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpa
     match crate::source_comments::statement_list_end(source, from, end) {
         Some(to) => crate::ast::SrcSpan::new(from, to),
         None => crate::ast::SrcSpan::NONE,
+    }
+}
+
+/// The range of `node` written at `span`: a `<1/2>` / `<1+2i>` literal is the
+/// text between its angle brackets, as in rakudo.
+// Cost: O(1).
+fn angle_number(node: &RakuAstNode, span: crate::ast::SrcSpan) -> crate::ast::SrcSpan {
+    if !matches!(
+        node.class,
+        super::RakuAstClass::RatLiteral | super::RakuAstClass::ComplexLiteral
+    ) {
+        return span;
+    }
+    let angled = super::unit_source::with_text(span, |text| {
+        (text.starts_with('<') && text.ends_with('>') && text.len() > 2).then_some(())
+    });
+    match angled {
+        Some(()) => crate::ast::SrcSpan::new(span.from as usize + 1, span.to as usize - 1),
+        None => span,
     }
 }
 

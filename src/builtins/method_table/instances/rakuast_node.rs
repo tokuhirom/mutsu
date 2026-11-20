@@ -910,6 +910,8 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
         }))
     };
     match node.class {
+        // `use lib "x"`: rakudo's `Pragma` visits none of its parts.
+        RakuAstClass::Pragma => Some(Vec::new()),
         RakuAstClass::ApplyInfix => {
             let infix = node_value("infix")?;
             let (left, right) = (node_value("left")?, node_value("right")?);

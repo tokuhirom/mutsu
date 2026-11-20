@@ -168,6 +168,38 @@ impl Interpreter {
         arg: &Value,
         arg_count: usize,
     ) -> Option<MethodContainerBind> {
+        let bind = self.method_container_arg_classify(pd.named, arg_idx, arg, arg_count)?;
+        // A Proxy binds itself, which only an unconstrained (`Mu`) parameter
+        // does without fetching.
+        if bind == MethodContainerBind::Proxy && pd.type_constraint.as_deref() != Some("Mu") {
+            return None;
+        }
+        if bind != MethodContainerBind::Proxy {
+            let probe = match bind {
+                MethodContainerBind::RelayHeld(slot) => self.locals.get(slot as usize)?.clone(),
+                _ => arg.clone(),
+            };
+            let probe = crate::runtime::types::unwrap_varref_value(probe).deref_container();
+            if !self.method_container_type_ok(pd, &probe) {
+                return None;
+            }
+        }
+        Some(bind)
+    }
+
+    /// The constraint-free half of [`Self::method_container_arg_bind`]: how
+    /// argument `arg_idx` (`arg`, a named argument's value when `named`) would
+    /// bind as a container, or `None` for a shape that needs the general
+    /// binder. Also used for the leftover named arguments an explicit `*%h`
+    /// collects (`vm_method_named_slurpy`).
+    // Cost: O(1) env probes.
+    pub(super) fn method_container_arg_classify(
+        &self,
+        named: bool,
+        arg_idx: usize,
+        arg: &Value,
+        arg_count: usize,
+    ) -> Option<MethodContainerBind> {
         // Borrowed from a handle on the table (one refcount bump), not
         // copied out per call.
         let sources = self
@@ -178,7 +210,7 @@ impl Interpreter {
             .map(|sources| sources.get(arg_idx).and_then(|name| name.as_deref()));
         // A named argument's source is recorded as `key=source`
         // (`:$type` → `type=type`); `arg` is then the Pair's value.
-        let source = if pd.named {
+        let source = if named {
             match source {
                 Some(Some(encoded)) => Some(Some(encoded.split_once('=')?.1)),
                 other => other,
@@ -199,21 +231,6 @@ impl Interpreter {
             // sigilless parameter.
             Some(None) | None => Self::method_container_value_bind(arg)?,
         };
-        // A Proxy binds itself, which only an unconstrained (`Mu`) parameter
-        // does without fetching.
-        if bind == MethodContainerBind::Proxy && pd.type_constraint.as_deref() != Some("Mu") {
-            return None;
-        }
-        if bind != MethodContainerBind::Proxy {
-            let probe = match bind {
-                MethodContainerBind::RelayHeld(slot) => self.locals.get(slot as usize)?.clone(),
-                _ => arg.clone(),
-            };
-            let probe = crate::runtime::types::unwrap_varref_value(probe).deref_container();
-            if !self.method_container_type_ok(pd, &probe) {
-                return None;
-            }
-        }
         Some(bind)
     }
 
@@ -525,7 +542,22 @@ impl Interpreter {
         arg: Value,
         arg_count: usize,
     ) -> Value {
-        match self.method_container_arg_bind(pd, idx, &arg, arg_count) {
+        let bind = self.method_container_arg_bind(pd, idx, &arg, arg_count);
+        self.promote_classified_container_arg(bind, pd.named, idx, arg)
+    }
+
+    /// The value an argument classified as `bind` binds as (see
+    /// [`Self::promoted_container_arg`]); `named` says the call-site source is
+    /// recorded as `key=source`.
+    // Cost: O(1), plus one cell promotion.
+    pub(super) fn promote_classified_container_arg(
+        &mut self,
+        bind: Option<MethodContainerBind>,
+        named: bool,
+        idx: usize,
+        arg: Value,
+    ) -> Value {
+        match bind {
             Some(MethodContainerBind::RelayHeld(slot)) => self.locals[slot as usize].clone(),
             Some(MethodContainerBind::RelayCaptured) => {
                 let sources = self.pending_call_arg_sources_handle();
@@ -534,7 +566,7 @@ impl Interpreter {
                     .and_then(|sources| sources.get(idx))
                     .and_then(|name| name.as_deref())
                     .map(|name| match name.split_once('=') {
-                        Some((_, source)) if pd.named => source,
+                        Some((_, source)) if named => source,
                         _ => name,
                     });
                 source
@@ -550,7 +582,7 @@ impl Interpreter {
                     .and_then(|sources| sources.get(idx))
                     .and_then(|name| name.as_deref())
                     .map(|name| match name.split_once('=') {
-                        Some((_, source)) if pd.named => source,
+                        Some((_, source)) if named => source,
                         _ => name,
                     });
                 let Some(name) = name else {

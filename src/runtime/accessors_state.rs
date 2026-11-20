@@ -1550,7 +1550,7 @@ impl Interpreter {
         invocant: Option<Value>,
     ) {
         self.push_method_samewith_context_named(
-            receiver_class,
+            Symbol::intern(receiver_class),
             std::borrow::Cow::Owned(method_name.to_string()),
             args,
             invocant,
@@ -1561,21 +1561,24 @@ impl Interpreter {
     /// method name as an interned `&'static str`: the context borrows it, so
     /// the common call (no deferral builtin anywhere in the program) allocates
     /// nothing for the name.
+    /// Returns the context's copy of the arguments, when it made one, so a
+    /// deferral entry pushed for the same call can share it instead of
+    /// copying them again.
     // Cost: O(1) when no unit mentions `samewith` or a deferral builtin;
     // otherwise O(a), a = the call's argument count (copied into the context).
     pub(crate) fn push_method_samewith_context_named(
         &mut self,
-        receiver_class: &str,
+        receiver_sym: Symbol,
         name: std::borrow::Cow<'static, str>,
         args: &[Value],
         invocant: Option<Value>,
-    ) {
+    ) -> Option<std::sync::Arc<[Value]>> {
         // Nothing in the program can read the invocant, the arguments or the
         // metamodel entry below (see `opcode::samewith_context_possible`): the
         // only reader left wants the routine name for an error message.
         if !crate::opcode::samewith_context_possible() {
             self.push_samewith_context_named(name, None, None);
-            return;
+            return None;
         }
         // A role mixed into a class's native HOW (`$class.HOW does
         // SomeHOWRole`, Staticish) dispatches with the role as
@@ -1585,15 +1588,17 @@ impl Interpreter {
             matches!(inv.view(), crate::value::ValueView::Mixin(..))
                 && Self::how_target_from_value(inv).is_some()
         });
-        self.push_samewith_context_named(name.clone(), invocant, Some(args.to_vec()));
-        if native_how_mixin || self.is_metamodel_how_class(receiver_class) {
+        let shared: std::sync::Arc<[Value]> = std::sync::Arc::from(args);
+        self.push_samewith_context_named(name.clone(), invocant, Some(shared.clone()));
+        if native_how_mixin || self.is_metamodel_how_class_sym(receiver_sym) {
             self.dispatch.metamodel_dispatch_stack.push((
                 self.dispatch.samewith_context_stack.len(),
-                receiver_class.to_string(),
+                receiver_sym.as_str().to_string(),
                 name.to_string(),
                 args.to_vec(),
             ));
         }
+        Some(shared)
     }
 
     /// ADR-0019 E9b-0: mint the next push-order token for a wrap/method/multi
@@ -2055,7 +2060,7 @@ impl Interpreter {
         self.push_samewith_context_named(
             std::borrow::Cow::Owned(name.to_string()),
             invocant,
-            args,
+            args.map(std::sync::Arc::from),
         );
     }
 
@@ -2067,7 +2072,7 @@ impl Interpreter {
         &mut self,
         name: std::borrow::Cow<'static, str>,
         invocant: Option<Value>,
-        args: Option<Vec<Value>>,
+        args: Option<std::sync::Arc<[Value]>>,
     ) {
         self.dispatch
             .samewith_context_stack

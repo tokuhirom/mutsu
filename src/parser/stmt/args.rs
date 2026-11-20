@@ -583,7 +583,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                         CallArg::Named {
                             name,
                             value: Some(block_or_hash),
-                            form: crate::ast::BinaryForm::ColonPairValue,
+                            form: crate::ast::BinaryForm::ColonPairBracketed,
                         },
                     ));
                 }
