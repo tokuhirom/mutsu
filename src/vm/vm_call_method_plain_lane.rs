@@ -91,7 +91,8 @@ impl Interpreter {
         // and its replay re-runs the private dispatch arm that installed it
         // (`try_private_compiled_mut_dispatch`), including that arm's
         // calling-context permission check.
-        if !matches!(modifier, None | Some("!")) || Self::quoting_matters(quoted, method_sym.as_str())
+        if !matches!(modifier, None | Some("!"))
+            || Self::quoting_matters(quoted, method_sym.as_str())
         {
             return None;
         }
