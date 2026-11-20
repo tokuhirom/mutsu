@@ -50,7 +50,7 @@ impl Interpreter {
         // The parser's tree is lowered for the compiler as the whole unit's
         // is (`parse_compilation_unit_of`); the phaser alone needs nothing of
         // the rest of the unit to lower, since a closed body names none of it.
-        let lowered = crate::rakuast::frontend::round_trip_unit(vec![begin.clone()]);
+        let lowered = crate::rakuast::frontend::finish_unit(vec![begin.clone()]);
         let names = match lowered.as_deref() {
             Ok([Stmt::Phaser { body, bare, .. }]) => {
                 crate::runtime::begin_prologue::begin_body_core_names(body, *bare)

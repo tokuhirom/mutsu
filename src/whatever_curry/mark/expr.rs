@@ -259,6 +259,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
                 }
             }
             crate::ast::parsed::ParsedExpr::WordsAtom(atom) => mark_expr(&mut atom.string),
+            crate::ast::parsed::ParsedExpr::ImportedTerm(_) => {}
             crate::ast::parsed::ParsedExpr::SubscriptAdverbs(s) => {
                 mark_expr(&mut s.subscript);
                 for pair in &mut s.pairs {

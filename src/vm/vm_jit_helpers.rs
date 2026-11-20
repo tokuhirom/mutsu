@@ -452,6 +452,10 @@ pub(super) unsafe extern "C" fn call_method(
     let (interp, code) = unsafe { (&mut *interp, &*code) };
     panic_boundary(|| {
         let r = interp.exec_call_method_site(code, op_idx as usize);
+        // As the interpreter arm does: method call sites HLL-ize the result.
+        if r.is_ok() {
+            interp.hllize_method_return();
+        }
         call_site_status(interp, code, r)
     })
 }
@@ -465,6 +469,9 @@ pub(super) unsafe extern "C" fn call_method_mut(
     let (interp, code) = unsafe { (&mut *interp, &*code) };
     panic_boundary(|| {
         let r = interp.exec_call_method_mut_site(code, op_idx as usize);
+        if r.is_ok() {
+            interp.hllize_method_return();
+        }
         call_site_status(interp, code, r)
     })
 }

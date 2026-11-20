@@ -190,10 +190,10 @@ pub fn gc_register_main_thread() {
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     // Dumping does not execute: no parse-time probe may run a `use`d module.
     let _no_execute = parser::no_execute::NoExecuteGuard::enter();
-    let (stmts, _) = parse_dispatch::parse_source_spelled(input)?;
-    // The dump is the tree the unit would run as: the RakuAST round trip's
-    // result.
-    let stmts = rakuast::frontend::round_trip_unit(stmts)?;
+    let (stmts, _) = parse_dispatch::parse_source_unfinalized(input)?;
+    // The dump is the tree the unit would run as: the finalized unit,
+    // as `rakuast::frontend::finish_unit` hands it to the compiler.
+    let stmts = rakuast::frontend::finish_unit(stmts)?;
     Ok(format!("{:#?}", stmts))
 }
 
@@ -208,8 +208,8 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     use std::fmt::Write;
     // Dumping does not execute: no parse-time probe may run a `use`d module.
     let _no_execute = parser::no_execute::NoExecuteGuard::enter();
-    let (stmts, _) = parse_dispatch::parse_source_spelled(input)?;
-    let stmts = rakuast::frontend::round_trip_unit(stmts)?;
+    let (stmts, _) = parse_dispatch::parse_source_unfinalized(input)?;
+    let stmts = rakuast::frontend::finish_unit(stmts)?;
     let _unit_file = unit_source_file::UnitSourceFileGuard::enter(
         source_file.map(crate::symbol::Symbol::intern),
     );

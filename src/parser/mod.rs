@@ -232,6 +232,10 @@ pub(crate) fn source_declares_export_hook(source: &str) -> bool {
     stmt::simple::source_declares_export_hook(source)
 }
 
+pub(crate) fn imported_type_constant_names() -> Vec<String> {
+    stmt::simple::imported_type_constant_names()
+}
+
 pub(crate) fn imported_value_term_names() -> Vec<String> {
     stmt::simple::imported_value_term_names()
 }
@@ -574,7 +578,7 @@ pub(crate) fn parse_nested_block_fragment(
     });
     // The block's statements keep their RakuAST shape like the rest of the
     // unit's (ADR-10723 Stage 2): the conversion reads them.
-    let result = parse_fragment_spelled(input);
+    let result = parse_fragment_unfinalized(input);
     // `parse_program` consumes the slot; clear it in case it bailed out first.
     INHERITED_SCOPES.with(|slot| slot.borrow_mut().take());
     if unit_offset.is_some() {
@@ -616,7 +620,7 @@ fn apply_inherited_scopes() {
 }
 
 thread_local! {
-    /// How many fragment parses ([`parse_fragment_spelled`]) are in progress on
+    /// How many fragment parses ([`parse_fragment_unfinalized`]) are in progress on
     /// this thread. A fragment is part of an enclosing unit whose prologue
     /// effects it cannot see, so none of its `BEGIN`s runs at parse time
     /// (ADR-17558 slice 5).
@@ -639,13 +643,14 @@ pub(in crate::parser) fn in_fragment_parse() -> bool {
 /// clears the warning buffer up front, an unguarded nested parse also *dropped*
 /// the enclosing unit's real warnings, so they are saved and restored here.
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    let (stmts, finish) = parse_fragment_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
+    let (stmts, finish) = parse_fragment_unfinalized(input)?;
+    Ok((crate::rakuast::frontend::finish_unit(stmts)?, finish))
 }
 
-/// [`parse_fragment`] without the round trip: the spelled tree only the RakuAST
-/// conversion may consume (see [`parse_program_spelled`]).
-pub(crate) fn parse_fragment_spelled(
+/// [`parse_fragment`] without the finalization: the parser's own tree, which
+/// only the finalization or the RakuAST view may consume (see
+/// [`parse_program_unfinalized`]).
+pub(crate) fn parse_fragment_unfinalized(
     input: &str,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // See the matching call in `parse_program`.
@@ -676,7 +681,7 @@ pub(crate) fn parse_fragment_spelled(
     let effects_were_seen = stmt::simple::take_unit_effects_seen();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() + 1));
-    let result = parse_program_spelled(input);
+    let result = parse_program_unfinalized(input);
     FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() - 1));
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
     let (begin_now, prologue_now) = stmt::simple::take_unit_effects_seen();
@@ -1293,15 +1298,16 @@ fn heredoc_delimiters(line: &str) -> Vec<String> {
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    let (stmts, finish) = parse_program_spelled(input)?;
-    Ok((crate::rakuast::frontend::round_trip_unit(stmts)?, finish))
+    let (stmts, finish) = parse_program_unfinalized(input)?;
+    Ok((crate::rakuast::frontend::finish_unit(stmts)?, finish))
 }
 
-/// [`parse_program`] without the round trip: the terms that remember how they
-/// were spelled (`<a b  c>`) come back wrapped in `Expr::Spelled` (ADR-12199).
-/// Nothing but the RakuAST conversion may consume this tree: the compiler never
-/// sees a wrapper.
-pub(crate) fn parse_program_spelled(
+/// [`parse_program`] without the finalization: the parser's own tree, typed
+/// nodes and all, which only the finalization or the RakuAST view may consume.
+/// Inside a `.AST` parse (`term_origins::Wanted`) the terms that remember how
+/// they were spelled (`<a b  c>`) come back wrapped in `Expr::Spelled`
+/// (ADR-12199); an executing parse builds none (ADR-15760 §2.4).
+pub(crate) fn parse_program_unfinalized(
     input: &str,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     let _origins = term_origins::begin(true);
@@ -1515,7 +1521,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     // (EVAL / EVAL :check / throws-like code strings), so the final statement
     // is a return position, not sink context.
     set_eval_value_tail();
-    let result = parse_program_spelled(input);
+    let result = parse_program_unfinalized(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
@@ -1576,14 +1582,14 @@ pub(crate) fn parse_program_partial_with_operators(
 /// edited is broken most of the time, and everything downstream of the first
 /// failure is still worth analysing (ADR-0065 S3).
 ///
-/// The statements that parsed run through the RakuAST round trip like any
-/// unit's; a unit that does not round-trip yields no statements and its
+/// The statements that parsed are finalized like any
+/// unit's; a unit that does not finalize yields no statements and its
 /// refusal among the errors.
 pub(crate) fn parse_program_recovering(
     input: &str,
 ) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
-    let (stmts, finish_content, mut errors) = parse_program_recovering_spelled(input);
-    match crate::rakuast::frontend::round_trip_unit(stmts) {
+    let (stmts, finish_content, mut errors) = parse_program_recovering_unfinalized(input);
+    match crate::rakuast::frontend::finish_unit(stmts) {
         Ok(lowered) => (lowered, finish_content, errors),
         Err(refusal) => {
             errors.push(refusal);
@@ -1592,7 +1598,9 @@ pub(crate) fn parse_program_recovering(
     }
 }
 
-fn parse_program_recovering_spelled(input: &str) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
+fn parse_program_recovering_unfinalized(
+    input: &str,
+) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
     let _origins = term_origins::begin(true);
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
@@ -1643,12 +1651,12 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
     (stmts, finish_content)
 }
 
-/// [`parse_program_partial`] without the round trip, for a scan made in the
+/// [`parse_program_partial`] without the finalization, for a scan made in the
 /// middle of another unit's parse (a `use`d module's declarations): the
-/// round trip would run the lowering inside that parse, and the scan reads the
+/// finalization would run the lowering inside that parse, and the scan reads the
 /// declarations off the parser's own tree.
-pub(crate) fn parse_program_partial_spelled(input: &str) -> (Vec<Stmt>, Option<String>) {
-    let (stmts, finish_content, _errors) = parse_program_recovering_spelled(input);
+pub(crate) fn parse_program_partial_unfinalized(input: &str) -> (Vec<Stmt>, Option<String>) {
+    let (stmts, finish_content, _errors) = parse_program_recovering_unfinalized(input);
     (stmts, finish_content)
 }
 
@@ -1661,7 +1669,7 @@ pub(crate) mod test_lower {
 
     // Cost: O(n), n = size of the statements.
     pub(crate) fn stmts(stmts: Vec<Stmt>) -> Vec<Stmt> {
-        crate::rakuast::frontend::round_trip_unit(stmts).expect("the statements round-trip")
+        crate::rakuast::frontend::finish_unit(stmts).expect("the statements finalize")
     }
 
     // Cost: O(n), n = size of the statement.
@@ -1682,6 +1690,10 @@ pub(crate) mod test_lower {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "spelling_mode_tests.rs"]
+mod spelling_mode_tests;
 
 #[cfg(test)]
 mod tests {

@@ -131,10 +131,9 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
                         .chars()
                         .all(|c| c.is_alphanumeric() || matches!(c, ':' | '-' | '_')))
         }
-        // A `;` that ends no statement is no statement of the lowered
-        // tree (`sub f { 1;; }` still returns 1); only the lowering of the
-        // `Statement::Empty` node knows to drop it.
-        Expr::Spelled(spelled) => !is_empty_statement(spelled),
+        // An executing parse builds no spellings (ADR-15760 §2.5); one that
+        // reaches the finalization anyway is read by the conversion.
+        Expr::Spelled(_) => false,
         Expr::Ast(node) => match node.as_ref() {
             ParsedExpr::CompoundAssign(compound) => compound_carried(compound),
             ParsedExpr::Assign(_)
@@ -148,6 +147,8 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
             | ParsedExpr::HyperAssign(_)
             | ParsedExpr::Lowered { .. }
             | ParsedExpr::InlineSubset(_) => true,
+            // Classified by the finalization (`bareword::imported_term_expr`).
+            ParsedExpr::ImportedTerm(_) => false,
         },
         // The lowering plants the priming scopes of a `*` itself (a second pass
         // over a tree the parser already marked wraps it again), and a `||`
@@ -233,24 +234,6 @@ pub(super) fn expr_carried(expr: &Expr) -> bool {
         | Expr::Once { .. }
         | Expr::PhaserExpr { .. } => true,
         _ => false,
-    }
-}
-
-/// Whether a spelling, or one it wraps, is the `;` of a `Statement::Empty`.
-// Cost: O(d), d = nesting depth of the spellings.
-pub(super) fn is_empty_statement(spelled: &crate::ast::spelled::Spelled) -> bool {
-    let mut spelled = spelled;
-    loop {
-        if matches!(
-            spelled.spelling,
-            crate::ast::spelled::Spelling::EmptyStatement
-        ) {
-            return true;
-        }
-        match &spelled.expr {
-            Expr::Spelled(inner) => spelled = inner,
-            _ => return false,
-        }
     }
 }
 

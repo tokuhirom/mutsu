@@ -202,7 +202,7 @@ pub(super) fn parameterized_type_node_at(
 /// single expression statement. `None` when it is not exactly one expression.
 // Cost: O(n), n = spelling length.
 fn term_argument(names: &NameScope, source: &str) -> Option<RakuAstNode> {
-    let (stmts, _) = crate::parser::parse_program_spelled(source).ok()?;
+    let (stmts, _) = crate::parser::parse_program_unfinalized(source).ok()?;
     let mut exprs = stmts
         .iter()
         .filter(|stmt| !matches!(stmt, crate::ast::Stmt::SetLine(..)));

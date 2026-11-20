@@ -346,8 +346,14 @@ fn stmt_list_inner(
         let separators = r;
         let r = consume_semicolons(r);
         trace::empty_statements(separators, r, open_terminator);
-        // A `.AST` parse keeps each `;` that ends no statement (`Statement::Empty`).
-        for tail in trace::empty_statement_tails(separators, r, open_terminator) {
+        // A `.AST` parse keeps each `;` that ends no statement (`Statement::Empty`);
+        // an executing parse has no statement to build for it.
+        let empty_tails = if crate::ast::spelled::kept() {
+            trace::empty_statement_tails(separators, r, open_terminator)
+        } else {
+            Vec::new()
+        };
+        for tail in empty_tails {
             let at = crate::parser::primary::source_offset(tail);
             let empty = crate::ast::Expr::spelled(
                 crate::ast::Expr::Literal(crate::value::Value::NIL),

@@ -30,6 +30,14 @@ pub(crate) fn hyper_prefix_expr(symbol: impl ToString, operand: Expr) -> Expr {
 /// not a prefix the parser itself hypers.
 // Cost: O(1).
 pub(crate) fn lower_hyper_prefix(symbol: &str, operand: Expr) -> Option<Expr> {
+    // The hyper slip `|<<` slips its operand, as the plain `|` does.
+    if symbol == "|" {
+        return Some(Expr::Unary {
+            op: crate::token_kind::TokenKind::Pipe,
+            expr: Box::new(operand),
+            word: false,
+        });
+    }
     crate::op_names::prefix_op_name_to_token_kind(symbol)?;
     Some(Expr::Call {
         name: Symbol::intern(HYPER_PREFIX),
@@ -65,6 +73,15 @@ pub(super) fn node(
             node_field(Some("operand"), view_expr(names, operand)?),
         ],
     })
+}
+
+/// The `ApplyPrefix` of a marked hyper slip (`|<< EXPR`): the parser's `|EXPR`.
+// Cost: O(n), n = size of the operand.
+pub(super) fn slip_node(names: &NameScope, slip: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match slip {
+        Expr::Unary { expr, .. } => node(names, "|", expr),
+        other => view_expr(names, other),
+    }
 }
 
 /// The call for an `ApplyPrefix` over a `MetaPrefix::Hyper`, or `None` for any

@@ -335,6 +335,7 @@ pub(crate) fn walk_parsed_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, node: &
             }
         }
         ParsedExpr::WordsAtom(atom) => v.visit_expr(&atom.string),
+        ParsedExpr::ImportedTerm(_) => {}
         ParsedExpr::SubscriptAdverbs(s) => {
             v.visit_expr(&s.subscript);
             for pair in &s.pairs {
@@ -383,6 +384,7 @@ pub(crate) fn walk_parsed_expr_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut P
             }
         }
         ParsedExpr::WordsAtom(atom) => v.visit_expr_mut(&mut atom.string),
+        ParsedExpr::ImportedTerm(_) => {}
         ParsedExpr::SubscriptAdverbs(s) => {
             v.visit_expr_mut(&mut s.subscript);
             for pair in &mut s.pairs {

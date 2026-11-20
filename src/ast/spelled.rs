@@ -6,13 +6,47 @@
 //! keeps that text (`QuotedString(processors => <words val>, segments =>
 //! ("a b  c",))`), so the parser wraps the term in [`Expr::Spelled`].
 //!
-//! Every parse does: the parser's tree is only ever consumed by the RakuAST
-//! conversion, and the lowered tree the compiler sees carries no wrapper. The
-//! wrapper holds only what RakuAST needs and the `Expr` does not have; the
-//! value stays in `expr`, so the two cannot disagree. A parse-time consumer
-//! that matches a shape looks through it with [`Expr::peel_parens`].
+//! Only a parse whose tree is read as RakuAST spells (`Str.AST`, a slang
+//! production, the analysis views): [`KeepSpellings`] is set around it. An
+//! executing parse builds the expression alone (ADR-15760 §2.4), so the tree the
+//! finalization lowers and the compiler sees carries no wrapper. The wrapper
+//! holds only what RakuAST needs and the `Expr` does not have; the value stays
+//! in `expr`, so the two cannot disagree. A parse-time consumer that matches a
+//! shape looks through it with [`Expr::peel_parens`].
+
+use std::cell::Cell;
 
 use super::Expr;
+
+thread_local! {
+    /// Whether the code running builds spellings: only a parse whose tree is
+    /// read as RakuAST does. A nested compilation unit (a module loaded while
+    /// a `.AST` parse runs) starts with it off (`parser::unit_state`).
+    pub(crate) static KEEP: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether [`Expr::spelled`] wraps: the parse in progress is read as RakuAST.
+// Cost: O(1).
+pub(crate) fn kept() -> bool {
+    KEEP.with(Cell::get)
+}
+
+/// While alive, spellings are built (`keep`) or not; restores the enclosing
+/// setting on drop.
+pub(crate) struct KeepSpellings(bool);
+
+impl KeepSpellings {
+    // Cost: O(1).
+    pub(crate) fn enter(keep: bool) -> Self {
+        KeepSpellings(KEEP.with(|k| k.replace(keep)))
+    }
+}
+
+impl Drop for KeepSpellings {
+    fn drop(&mut self) {
+        KEEP.with(|k| k.set(self.0));
+    }
+}
 
 /// How a term was written, when that is not recoverable from its value.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -25,8 +59,6 @@ pub(crate) enum Spelling {
     LabelledBlock,
     /// A source label reference whose executable term is a Label value.
     LabelTerm(Box<str>),
-    /// A value lookup parsed in a unit with a runtime export hook.
-    ImportedTerm,
     /// Semicolon-separated array composer sections before execution lowering.
     ArraySections(Vec<Vec<Expr>>),
     /// Semicolon-separated sections of a parenthesized list, `(1; 2)`: rakudo's
@@ -122,6 +154,10 @@ pub(crate) enum Spelling {
     /// parser runs as `$_++`. RakuAST keeps it as a `Term::TopicCall` of the
     /// `Postfix`.
     TopicPostfix,
+    /// `@a».^name` / `@a>>.^name`: a metamethod call is not distributed, so the
+    /// parser keeps the plain call, while RakuAST wraps its postfix in
+    /// `MetaPostfix::Hyper`.
+    HyperMetaMethod,
     /// The `$!` a bare `die` / `fail` throws again: the parser supplies it as
     /// the argument, while RakuAST keeps the call without arguments.
     ImplicitError,
@@ -150,6 +186,20 @@ pub(crate) enum Spelling {
     /// `return Nil`: a written `Nil` argument, which a bare `return` (also a
     /// `Nil` literal in the parser's tree) does not have.
     WrittenNil,
+    /// `|<< EXPR` / `|» EXPR`: the hyper slip, which the parser runs as the
+    /// plain `|EXPR`; RakuAST keeps `MetaPrefix::Hyper(Prefix("|"))`.
+    HyperSlip,
+    /// `constant X := EXPR`: an initializer written with `:=`, which a
+    /// constant runs the same as `=`; RakuAST keeps `Initializer::Bind`.
+    ConstantBind,
+    /// `A Z B Z C`, `A Z+ B Z+ C`: a chain of three or more zip operands, which
+    /// the parser runs as one `zip(A, B, C, :with(&infix:<+>))` call. RakuAST
+    /// keeps the list infix over every operand.
+    ZipChain,
+    /// `@<a>` / `%<a>`: a named capture read through the written sigil, which
+    /// the parser runs as `$<a>.list` / `$<a>.hash`; RakuAST keeps the
+    /// `Var::NamedCapture` with that `sigil`.
+    CaptureSigil(char),
     /// the byte range its RakuAST node's `origin` answers.
     Origin(crate::ast::SrcSpan),
 }
@@ -185,13 +235,47 @@ impl Expr {
         }
     }
 
-    /// `expr`, wrapped to remember its `spelling`.
+    /// `expr`, wrapped to remember its `spelling` when the parse in progress
+    /// keeps spellings ([`kept`]); `expr` alone otherwise.
     // Cost: O(1), plus the cost of `spelling`.
     pub(crate) fn spelled(expr: Expr, spelling: impl FnOnce() -> Spelling) -> Expr {
+        if !kept() {
+            return expr;
+        }
         Expr::Spelled(Box::new(Spelled {
             expr,
             spelling: spelling(),
         }))
+    }
+}
+
+impl Expr {
+    /// `@<name>` (`sigil` `@`) or `%<name>` (`%`): the `.list` / `.hash` of
+    /// `$<name>` the parser runs, remembering the written sigil.
+    // Cost: O(|name|).
+    pub(crate) fn named_capture_sigiled(name: &str, sigil: char) -> Expr {
+        Self::spelled(Self::named_capture_call(name, sigil), || {
+            Spelling::CaptureSigil(sigil)
+        })
+    }
+
+    /// The call [`Expr::named_capture_sigiled`] wraps: `$<name>.list` for
+    /// `@`, `$<name>.hash` otherwise.
+    // Cost: O(|name|).
+    pub(crate) fn named_capture_call(name: &str, sigil: char) -> Expr {
+        let (method, sugar) = if sigil == '@' {
+            ("list", true)
+        } else {
+            ("hash", false)
+        };
+        Expr::MethodCall {
+            target: Box::new(Expr::CaptureVar(name.to_string())),
+            name: crate::symbol::Symbol::intern(method),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+            sugar,
+        }
     }
 }
 
@@ -264,20 +348,35 @@ pub(crate) fn written_control_args(arg: &Expr) -> &[Expr] {
     }
 }
 
-/// Take every spelling off `expr` and everything inside it (ADR-12199).
+/// Take every parse-time mark off `expr` and everything inside it: a spelling
+/// (ADR-12199) and an imported-term node, which becomes the word it stands for
+/// (what `rakuast::bareword::imported_term_expr` lowers a plain one to).
 ///
 /// A tree the compiler builds from source text at compile time (the thunk of
-/// a regex literal's `"..."` atom) comes straight from a parser entry point
-/// that has not been through the lowering's own stripping pass.
+/// a regex literal's `"..."` atom, a signature literal's default) comes straight
+/// from a parser entry point and is not finalized like a compilation unit.
 // Cost: O(n), n = size of the tree.
-pub(crate) fn strip_spelling(expr: &mut Expr) {
+pub(crate) fn strip_parse_marks(expr: &mut Expr) {
     use crate::ast_visit::{VisitMut, walk_expr_mut};
     struct Strip;
     impl VisitMut for Strip {
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
-            while matches!(expr, Expr::Spelled(_)) {
-                if let Expr::Spelled(spelled) = std::mem::replace(expr, Expr::Whatever) {
-                    *expr = spelled.expr;
+            loop {
+                match std::mem::replace(expr, Expr::Whatever) {
+                    Expr::Spelled(spelled) => *expr = spelled.expr,
+                    Expr::Ast(node) => match *node {
+                        super::parsed::ParsedExpr::ImportedTerm(word) => {
+                            *expr = Expr::BareWord(word);
+                        }
+                        other => {
+                            *expr = Expr::Ast(Box::new(other));
+                            break;
+                        }
+                    },
+                    other => {
+                        *expr = other;
+                        break;
+                    }
                 }
             }
             walk_expr_mut(self, expr);
@@ -293,6 +392,8 @@ mod tests {
 
     #[test]
     fn source_identifiers_only_wrap_when_written() {
+        // Spellings are built only where a parse is read as RakuAST.
+        let _keep = crate::ast::spelled::KeepSpellings::enter(true);
         let written = Expr::source_identifier(Expr::Var("__x".into()), "$__x");
         assert!(matches!(written, Expr::Spelled(_)));
         let anonymous = Expr::source_identifier(Expr::Var("__ANON_STATE_1__".into()), "$");
@@ -310,6 +411,8 @@ mod tests {
 
     #[test]
     fn a_spelled_term_wraps_and_peels_back() {
+        // Spellings are built only where a parse is read as RakuAST.
+        let _keep = crate::ast::spelled::KeepSpellings::enter(true);
         let expr = Expr::spelled(words(), || Spelling::Words("a  b".into()));
         assert!(matches!(expr, Expr::Spelled(_)));
         assert!(matches!(expr.peel_parens(), Expr::ArrayLiteral(items) if items.len() == 2));

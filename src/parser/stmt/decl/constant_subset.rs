@@ -186,6 +186,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         ));
     }
     if rest.starts_with('=') || rest.starts_with("::=") || rest.starts_with(":=") {
+        let bound = !rest.starts_with('=');
         let rest = if let Some(stripped) = rest.strip_prefix("::=") {
             stripped
         } else if let Some(stripped) = rest.strip_prefix(":=") {
@@ -216,6 +217,11 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         {
             super::super::simple::register_user_type(&name);
         }
+        let expr = if bound {
+            Expr::spelled(expr, || crate::ast::spelled::Spelling::ConstantBind)
+        } else {
+            expr
+        };
         return Ok((
             rest,
             Stmt::VarDecl {
@@ -315,6 +321,8 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let mut export_tags: Vec<String> = Vec::new();
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut base: Option<String> = None;
+    // The rendered trait clauses read so far (`of`, `is export`, `is foo`).
+    let mut clauses: u8 = 0;
     // `of Base` and `is trait` may appear in either order before `where`:
     // `subset S of T is export where …` and `subset S is export of T where …`
     // both occur in the wild (Business::CreditCard uses the former). Loop over
@@ -335,6 +343,8 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             };
             let (r, _) = ws(r)?;
             base = Some(b);
+            spans.order.of = clauses;
+            clauses = clauses.saturating_add(1);
             rest = r;
             continue;
         }
@@ -345,6 +355,8 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, trait_name) = ident(r)?;
             if trait_name == "export" {
                 is_export = true;
+                spans.order.export = clauses;
+                clauses = clauses.saturating_add(1);
                 let (r2, tags) = parse_export_trait_tags(r)?;
                 let end = &is_start[is_start[..is_start.len() - r2.len()].trim_end().len()..];
                 spans.export = crate::ast::parsed::TraitSpans {
@@ -380,6 +392,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
                     r = after;
                 }
                 custom_traits.push((trait_name, argument));
+                clauses = clauses.saturating_add(1);
                 let (r, _) = ws(r)?;
                 rest = r;
             }

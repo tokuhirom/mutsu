@@ -296,6 +296,7 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("traits", List, Omit),
             ],
         ),
+        "RakuAST::Var::Slang" => (C::VarSlang, &[("name", Node, Required)]),
         "RakuAST::Var::Attribute::Public" => (
             C::VarAttributePublic,
             &[("name", Node, Required), ("args", Node, Omit)],
