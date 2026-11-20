@@ -65,9 +65,10 @@ impl Interpreter {
             method_sym,
         )?;
         let args = &self.stack[target_idx + 1..];
-        if args.iter().any(|a| {
-            matches!(a.view(), ValueView::VarRef { .. }) || a.needs_hllize_for_binding()
-        }) || Self::has_builtin_seq_read(args)
+        if args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::VarRef { .. }) || a.needs_hllize_for_binding())
+            || Self::has_builtin_seq_read(args)
             || !self.ctor_lane_hit(class_sym)
         {
             return None;
