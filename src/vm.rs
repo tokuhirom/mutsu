@@ -332,6 +332,7 @@ pub(crate) mod vm_method_body_run;
 pub(crate) mod vm_method_call_attrs;
 pub(crate) mod vm_method_call_plan;
 pub(crate) mod vm_method_container_params;
+mod vm_method_named_slurpy;
 pub(crate) mod vm_method_default_prologue;
 pub(crate) mod vm_method_dispatch;
 pub(crate) mod vm_method_fast_gate;
