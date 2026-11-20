@@ -68,7 +68,6 @@ pub(crate) fn default_prologue_shape_ok(pd: &ParamDef) -> bool {
         && pd.type_capture.is_none()
         && pd.captured_type_name().is_none()
         && pd.name != "_"
-        && pd.name != "self"
         && pd
             .name
             .as_bytes()
