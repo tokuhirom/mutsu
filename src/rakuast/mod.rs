@@ -202,6 +202,7 @@ mod quoted_method_origins;
 mod quoted_string;
 mod react;
 mod regex_char_class;
+mod regex_modifier_origins;
 mod regex_code;
 mod regex_decl_constructor;
 mod regex_declaration;
