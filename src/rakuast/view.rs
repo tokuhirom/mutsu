@@ -3725,29 +3725,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // source delimiter was `{...}` or `<...>`.  The former is the bounded
         // HashIndex slice; LiteralHashIndex remains a provenance boundary.
         // Reduction metaop `[+] @a` / triangle `[\+] @a` -> Term::Reduce.
-        Expr::Reduction { op, expr } => {
-            let (triangle, infix_op) = match op.strip_prefix('\\') {
-                Some(stripped) => (true, stripped),
-                None => (false, op.as_str()),
-            };
-            let arglist = RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::ArgList,
-                fields: vec![node_field(None, view_expr(names, expr)?)],
-            };
-            Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::TermReduce,
-                fields: vec![
-                    RakuAstField {
-                        name: Some("triangle"),
-                        value: RakuAstFieldValue::Node(Value::truth(triangle)),
-                    },
-                    node_field(Some("infix"), plain_infix(infix_op)),
-                    node_field(Some("args"), arglist),
-                ],
-            })
-        }
+        Expr::Reduction { op, expr } => super::reduce_term::view(names, op, expr),
         // `.<k>` / `.[i]` / `.{k}`: `Term::TopicCall` over the bare subscript.
         Expr::Index {
             target,

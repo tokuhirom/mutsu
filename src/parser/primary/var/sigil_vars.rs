@@ -1195,15 +1195,18 @@ fn numbered_capture_contextualized<'a>(rest: &'a str, method: &str) -> Option<(&
         .unwrap_or(rest.len());
     let trimmed = rest[..digits_end].trim_start_matches('0');
     let name = if trimmed.is_empty() { "0" } else { trimmed };
+    let call = Expr::MethodCall {
+        target: Box::new(Expr::Var(name.to_string())),
+        name: crate::symbol::Symbol::intern(method),
+        args: vec![],
+        modifier: None,
+        quoted: false,
+        sugar: true,
+    };
+    // RakuAST keeps the capture variable with the sigil it was written with.
+    let sigil = if method == "list" { '@' } else { '%' };
     Some((
         &rest[digits_end..],
-        Expr::MethodCall {
-            target: Box::new(Expr::Var(name.to_string())),
-            name: crate::symbol::Symbol::intern(method),
-            args: vec![],
-            modifier: None,
-            quoted: false,
-            sugar: true,
-        },
+        Expr::spelled(call, || crate::ast::spelled::Spelling::CaptureSigil(sigil)),
     ))
 }
