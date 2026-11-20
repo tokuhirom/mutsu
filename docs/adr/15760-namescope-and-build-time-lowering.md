@@ -1,6 +1,7 @@
 # ADR-15760: NameScope — one scope type, source-order classification, and a typed node lowered where the parser builds it
 
-- **Status**: Accepted (maintainer decision, 2026-10-31) after revision; Amendment 1 Accepted (maintainer decision, 2026-11-01), §6
+- **Status**: Accepted (maintainer decision, 2026-10-31) after revision; Amendment 1 Accepted (maintainer decision, 2026-11-01), §6;
+  Amendment 2 Proposed (2026-11-20), §7
 - **Date**: 2026-10-31
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15760](https://github.com/tokuhirom/mutsu/issues/15760) (RakuAST C2). Roadmap:
@@ -287,3 +288,96 @@ the carried path (source 2) never produces an unresolved bareword to defer. Slic
    the language server can call it (ADR-0065); recommended yes.
 
 Answers (maintainer, 2026-11-01): 1 yes, 2 yes, 3 yes, as recommended. Amendment 1 is Accepted.
+
+## 7. Amendment 2 (Proposed, 2026-11-20): what is left of slice 2, the converted allow-list, and the commit point
+
+### 7.1 Where the campaign stands (`main` after #18268 and the no-spellings PR)
+
+Done from §2.5: the `frontend::round_trip*` names are gone (`finish_unit`, `finish_unit_in`, `finish_eval_unit`;
+#18268), and an executing parse builds no `Expr::Spelled` (`unspell` deleted; the one spelling the executing path
+read, `Spelling::ImportedTerm`, is the typed node `ParsedExpr::ImportedTerm`; the `*_spelled` parse entry points are
+`*_unfinalized`). Slice 2 has carried every `ParsedExpr` family and most `Expr` kinds through `finalize_unit`
+(#16257 .. #16710).
+
+What is left is the second walk itself. An executing unit is still parsed whole, then walked by
+`finalize::finalize_unit`, then walked again by `parser::qualify_type_names` (`type_qualify.rs`), then by
+`p6_frame_state::lower_program`. §2.4 says the parser lowers at the statement commit point; two things stand in the
+way, and both are inputs, not lowerings:
+
+1. **Whole-unit pre-scans feed the finalization.** `bareword::DeclaredNames::collect(&stmts)` (every name the unit
+   declares, for the bareword classifier), `finalize::unit_type_names` (every type the unit declares),
+   `shadowed_terms::scan_stmts` (a `sub True` / `sub say` anywhere in the unit) and
+   `underscore_bindings::Scope::block(&stmts)`. At a statement's commit point the statements after it are unknown.
+2. **The qualification pass needs a list's later statements.** `type_qualify::later_core_types` pins a core type name
+   used before a later `my class DateTime` in the same list to `CORE::DateTime`; its `PackageTypes` pre-scan collects
+   the `our` types declared anywhere in the unit.
+
+Two independent censuses of the fallback (worker 12: 181 hits in 47 of 1954 files; worker 13: 122 hits in 51 of
+1970) found no construct family above 8 files: there is no family whose typed-lowering slice empties the fallback.
+
+### 7.2 Decision proposed
+
+**(a) §2.6 is settled as option (b): `convert` + `lower` stays, by name, for the constructs whose RakuAST node is
+the only place their executable shape is computed.** The list is exactly what `rakuast::carried` refuses to carry
+(`stmt_carried` / `expr_carried` returning `false`), and it is closed: a construct leaves it when its own slice lands,
+and nothing joins it without an amendment.
+
+| Construct | Why the conversion computes it |
+| --- | --- |
+| an operator routine (`sub infix:<+>` with `is assoc` / `is equiv` / `is tighter`, a symbolic name, signature alternatives) | the precedence and associativity are read off the node by class |
+| a method with a computed name, a value prototype, `is DEPRECATED`, or declared in a nested block of a package body (and the package holding it) | the conversion of the package places the method and closes it over the block |
+| `temp Type.meth = v` | the temporizer's save / assign / restore expansion |
+| a compound assignment with a scalar `Z`/`X`/hyper meta (`$x Z+= @y`) | the meta-infix node is the only reader |
+| a literal `Signature`, the deferred `X::Obsolete`, a regex literal outside a declaration, a sub value | the value is built (or the compile error raised) by the conversion |
+| an interpolating quote-form `s///` replacement | becomes the per-match thunk in the conversion |
+| a `\|\|` dimension splat, a pointy block with a custom trait, a qualified or operator code variable | spelled forms the lowering rewrites |
+| a bareword the classifier must place (`decode`, a label, a term the unit declares) | the classification itself (§2.3) |
+
+These are lowered by `convert` + `lower` **at the same commit point as everything else** (below), not by a separate
+pass.
+
+**(b) The commit point of the finalization is the close of a statement list.** When the parser completes a statement
+list (a block, a routine or package body, the unit), it finalizes that list: the list's statements are lowered in
+order, each nested list having been finalized when it closed. §2.3's backtracking rule holds unchanged: a list that
+is complete is no longer inside an alternative that can fail (a block re-parsed by a later alternative is finalized
+again from its fresh parse; finalization is a pure function of the list and the scope). The per-statement commit
+point of §2.4 is replaced, because every input the finalization needs per list (`later_terms`, `BlockScope`,
+`declares_routine`, `later_core_types`) is known exactly when the list closes and not before.
+
+**(c) The whole-unit pre-scans become "declared so far", except routines.** At a list's close the finalization sees
+the declarations of the enclosing lists made before it (source order, as rakudo) plus its own list. A **routine**
+declared later in an enclosing list is the one thing it cannot see; it needs nothing: an unclassified lowercase
+bareword lowers to the word itself (what `bareword::call_word_expr` already produces for a declared routine), which
+the run time calls, and the existing end-of-unit scan (`runtime::undeclared_routines`, §6.1 source 3) reports
+`Undeclared routine` when no routine of that name exists. A type used before its declaration is already the
+post-declared-type error of slice 1a; a term is source-order by rule. A unit-wide keyword shadowing (`say 1; sub say
+{...}`) is the one open case: rakudo hoists the `sub`, so the earlier `say` calls it. The lowered `say 1` is the same
+call by name either way; the census of the slice that moves `shadowed_terms` decides whether anything else depends
+on it.
+
+**(d) Type qualification folds into the same list finalization.** The `Qualify` state (open packages, the list's
+`my` classes and block `use` imports, the pinned core names) becomes part of the finalization context, and each
+lowered statement's type positions are qualified as it is finalized. `PackageTypes` becomes the `our` types declared
+so far. `parser::qualify_type_names` remains only for `EVAL($ast)` (a hand-built tree has no parser).
+
+**(e) `finalize_unit` and the frontend's `qualify_type_names` call are then deleted**; `frontend::finish_unit` keeps
+the passes that truly run on a whole unit (`whatever_curry::mark`, the scope diagnostics, `p6_frame_state`).
+
+### 7.3 Slices
+
+- **2a (structural).** The finalization is driven by list close: `stmtlist` hands each completed list to the
+  finalization context, which still holds the whole-unit pre-scans (computed from the unit as parsed so far plus an
+  end-of-unit pass for what is not yet known). No behaviour change; `finalize_unit` becomes the driver of the unit's
+  own list only.
+- **2b (behavioural).** The pre-scans become "declared so far" (§7.2 (c)); measured against raku and the full roast.
+- **2c (structural).** Qualification folded in (§7.2 (d)).
+- **2d.** `finalize_unit` and the executing `qualify_type_names` call deleted; frontend cost measured against
+  Amendment 1 of ADR-15334.
+
+### 7.4 Questions for the maintainer
+
+1. §2.6 settled as the closed allow-list of §7.2 (a) (worker 19's working reading, #15760): accepted?
+2. The commit point is the close of a statement list, not each statement (§7.2 (b)): accepted?
+3. Slice 2b changes behaviour only for programs that refer to a routine-shadowed keyword before the `sub`, or that
+   rely on whole-unit type knowledge rakudo does not have; it runs the full roast. Acceptable as a separate
+   behavioural PR?
