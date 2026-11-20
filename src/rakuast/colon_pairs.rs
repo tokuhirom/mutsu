@@ -28,6 +28,7 @@ pub(super) fn view_written(
         Spelling::HyperSlip => super::hyper_prefix::slip_node(names, expr),
         Spelling::HyperCallTerm => super::hyper_prefix::call_term_node(names, expr),
         Spelling::ColonPairs => view_node(names, expr),
+        Spelling::IndirectTail(n) => super::symbolic_deref::view_indirect_tail(names, expr, n),
         _ => view_expr(names, expr),
     }
 }

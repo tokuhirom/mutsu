@@ -54,6 +54,52 @@ pub(super) fn view_node(
     })
 }
 
+/// A marked `$::(EXPR)::a::b` (`Spelling::IndirectTail(n)`): the parser's
+/// `$::(EXPR ~ "::a" ~ "::b")` with its last `n` segments static, as
+/// `Var::Package(Name(EmptyEdge, Part::Expression(EXPR), Part::Simple(a), ...))`.
+// Cost: O(n), n = nodes of the name expression.
+pub(super) fn view_indirect_tail(
+    names: &NameScope,
+    deref: &Expr,
+    tail: u8,
+) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::SymbolicDeref { sigil, expr } = deref else {
+        return view_expr(names, deref);
+    };
+    let mut base = expr.as_ref();
+    let mut segments = Vec::with_capacity(usize::from(tail));
+    for _ in 0..tail {
+        let Expr::Binary { left, op: crate::token_kind::TokenKind::Tilde, right, .. } = base else {
+            return view_node(names, sigil, expr);
+        };
+        let Some(segment) = (match right.as_ref() {
+            Expr::Literal(v) => v.as_str().and_then(|s| s.strip_prefix("::")).map(str::to_string),
+            _ => None,
+        }) else {
+            return view_node(names, sigil, expr);
+        };
+        segments.push(segment);
+        base = left;
+    }
+    let mut parts = vec![
+        name_parts::leading_empty(),
+        Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::NamePartExpression,
+            fields: vec![node_field(None, view_expr(names, base)?)],
+        })),
+    ];
+    parts.extend(segments.iter().rev().map(|s| name_parts::simple_part(s)));
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::VarPackage,
+        fields: vec![
+            node_field(Some("name"), name_parts::name_from_parts(parts)),
+            leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+        ],
+    })
+}
+
 /// `&::(EXPR)::name` and `&CALLER::(EXPR)::name` as a package code variable.
 // Cost: O(n), n = nodes of the package expression plus the static name.
 pub(super) fn view_indirect_code(
@@ -141,6 +187,15 @@ pub(super) fn lower_indirect_code(
     )
 }
 
+/// The name expression of a `::(EXPR)` name and its static tail
+/// (`::(EXPR)::a::b`), with no trailing `::`.
+fn indirect_with_tail(name: &RakuAstNode) -> Option<(&RakuAstNode, Vec<String>)> {
+    match name_parts::name_shape(name)? {
+        NameShape::Indirect { expr, tail, trailing: false } => Some((expr, tail)),
+        _ => None,
+    }
+}
+
 /// The name expression of a plain `::(EXPR)` name (no static tail).
 fn plain_indirect(name: &RakuAstNode) -> Option<&RakuAstNode> {
     match name_parts::name_shape(name)? {
@@ -160,14 +215,20 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Option<Result<Expr
     if node.class != RakuAstClass::VarPackage {
         return None;
     }
-    let expr = plain_indirect(named_child(node, "name").ok()?)?;
+    let (expr, tail) = indirect_with_tail(named_child(node, "name").ok()?)?;
     let sigil = super::lower::leaf_str(node, "sigil").ok()?;
     if !matches!(sigil.as_str(), "$" | "@" | "%" | "&") {
         return None;
     }
-    Some(lower_expr(names, expr).map(|expr| Expr::SymbolicDeref {
-        sigil,
-        expr: Box::new(expr),
+    // `::(EXPR)::a::b` looks up `EXPR ~ "::a" ~ "::b"`, as the parser runs it.
+    Some(lower_expr(names, expr).map(|expr| {
+        let expr = tail.into_iter().fold(expr, |name, segment| Expr::Binary {
+            left: Box::new(name),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(Expr::Literal(Value::str(format!("::{segment}")))),
+            form: Default::default(),
+        });
+        Expr::SymbolicDeref { sigil, expr: Box::new(expr) }
     }))
 }
 
