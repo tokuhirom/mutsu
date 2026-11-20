@@ -159,7 +159,10 @@ impl Interpreter {
             else {
                 return;
             };
-            if !cell.is_container_ref() {
+            // A never-written capture is held as its plain value; that is the
+            // binding itself, as for a routine-nested sub's read-only alias,
+            // unless this body writes the name (which a cell would carry).
+            if !cell.is_container_ref() && code.free_var_writes.contains(&name_sym) {
                 return;
             }
             cell
