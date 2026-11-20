@@ -8129,6 +8129,11 @@ impl Interpreter {
                 self.exec_get_scalar_container_op(code, *name_idx, *local_idx);
                 *ip += 1;
             }
+            // Cost: O(1), one slot write.
+            OpCode::SetLocalRaw(idx) => {
+                self.exec_set_local_raw_op(*idx);
+                *ip += 1;
+            }
             // Cost: O(1) for a scalar store; O(e) for an `@`/`%` list assignment (the RHS is copied, as in Rakudo).
             OpCode::SetLocal(idx) => {
                 self.exec_set_local_op(code, *idx)?;

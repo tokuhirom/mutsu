@@ -230,6 +230,20 @@ pub(super) unsafe extern "C" fn set_local(
     })
 }
 
+/// `OpCode::SetLocalRaw` — a compiler temporary's raw slot store.
+pub(super) unsafe extern "C" fn set_local_raw(
+    interp: *mut Interpreter,
+    _code: *const CompiledCode,
+    idx: u32,
+) -> u32 {
+    // SAFETY: the JIT passes the live interpreter it was entered from.
+    let interp = unsafe { &mut *interp };
+    panic_boundary(|| {
+        interp.exec_set_local_raw_op(idx);
+        JIT_STATUS_OK
+    })
+}
+
 /// `OpCode::ConcatAssignLocal` — the fused `$local ~= rhs` (#8695). Listed so
 /// a hot loop that happens to contain one keeps its JIT body: without a shim
 /// the opcode would reject the whole range.

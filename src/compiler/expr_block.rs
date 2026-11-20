@@ -208,6 +208,31 @@ impl Compiler {
                 self.code.emit(OpCode::Dup);
                 self.emit_set_named_var(name);
             }
+            // The once-evaluated condition of a `with`/`without`/`orwith`
+            // (`with_desugar`: `(my $__with_tmp_N = X).defined`). The temp is
+            // a compiler temporary nothing reaches by name, so it lives in a
+            // local slot, stored raw: no Scalar itemization (`with (1,2,3) ->
+            // @m` binds the List), no Proxy FETCH (`with lv() { $_ = 'a' }`
+            // reaches its STORE) and none of a user declaration's bookkeeping.
+            // It used to be an env-only variable, which cost a by-name
+            // declaration, store and two by-name reads per `with` (#18208).
+            Stmt::VarDecl {
+                name,
+                expr,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                type_constraint: None,
+                custom_traits,
+                constant: None,
+                bind: None,
+                ..
+            } if custom_traits.is_empty() && crate::with_desugar::is_tmp_name(name) => {
+                let slot = self.declare_local(name);
+                self.compile_expr(expr);
+                self.code.emit(OpCode::SetLocalRaw(slot));
+                self.code.emit(OpCode::GetLocal(slot));
+            }
             Stmt::VarDecl {
                 name,
                 expr,

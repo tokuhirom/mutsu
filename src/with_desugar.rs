@@ -33,6 +33,12 @@ pub(crate) fn next_tmp_name() -> String {
     )
 }
 
+/// Whether `name` is a temp [`next_tmp_name`] made.
+// Cost: O(1).
+pub(crate) fn is_tmp_name(name: &str) -> bool {
+    name.starts_with("__with_tmp_")
+}
+
 /// `(my $tmp = COND).defined`, negated for `without`.
 ///
 /// The `DoStmt(VarDecl)` declares the temp in the current scope and evaluates

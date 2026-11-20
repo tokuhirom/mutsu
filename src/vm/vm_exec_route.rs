@@ -429,6 +429,7 @@ impl Interpreter {
             | OpCode::RegisterVarExport { .. }
             | OpCode::SetCallerVar { .. }
             | OpCode::SetLocal(..)
+            | OpCode::SetLocalRaw(..)
             | OpCode::SetLocalDecl { .. }
             | OpCode::SetVarDynamic { .. }
             | OpCode::ShareLazyArrayInit { .. }
