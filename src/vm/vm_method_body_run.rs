@@ -5,6 +5,20 @@
 
 use super::*;
 
+/// The frame facts a method body run needs.
+pub(super) struct MethodBodyFrame {
+    /// The class that declares the method and the method's name: a bare
+    /// `leave` targets `owner::method`.
+    pub(super) owner_sym: Symbol,
+    pub(super) method_sym: Symbol,
+    /// The frame's callable id, which a `return` / `fail` names.
+    pub(super) method_callable_id: u64,
+    /// The value-stack depth at frame entry.
+    pub(super) saved_stack_depth: usize,
+    /// The `let`/`temp` journal length at body entry.
+    pub(super) let_mark: usize,
+}
+
 /// How a method body run ended.
 pub(super) struct MethodBodyOutcome {
     /// `Ok` when the body completed (fell through, returned, left or turned a
@@ -19,20 +33,22 @@ pub(super) struct MethodBodyOutcome {
 
 impl Interpreter {
     /// Run `cc`'s ops as the body of the method `owner_sym.method_sym`
-    /// (callable id `method_callable_id`), entering it natively when the JIT
+    /// (callable id `frame.method_callable_id`), entering it natively when the JIT
     /// has compiled it. Restores `current_code` to the caller's on exit.
     // Cost: O(1) per op beyond the ops themselves.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn run_compiled_method_body(
         &mut self,
         cc: &CompiledCode,
         compiled_fns: &CompiledFns,
-        owner_sym: Symbol,
-        method_sym: Symbol,
-        method_callable_id: u64,
-        saved_stack_depth: usize,
-        let_mark: usize,
+        frame: MethodBodyFrame,
     ) -> MethodBodyOutcome {
+        let MethodBodyFrame {
+            owner_sym,
+            method_sym,
+            method_callable_id,
+            saved_stack_depth,
+            let_mark,
+        } = frame;
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;

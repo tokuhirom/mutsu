@@ -318,14 +318,16 @@ impl Interpreter {
         let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let method_result = if plan.lean && self.lean_args_ok(def, &args) {
             self.call_compiled_method_lean(
-                class_sym.as_str(),
-                owner,
-                method_sym,
-                def,
-                cc,
+                &super::vm_method_lean_frame::LeanMethodCall {
+                    receiver_class_name: class_sym.as_str(),
+                    owner_sym: owner,
+                    method_sym,
+                    method_def: def,
+                    cc,
+                    compiled_fns: fns_ref,
+                },
                 args,
                 target.clone(),
-                fns_ref,
             )
         } else {
             self.call_compiled_method_fast(

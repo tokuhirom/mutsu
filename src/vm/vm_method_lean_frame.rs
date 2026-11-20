@@ -109,7 +109,7 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
         && !pd
             .name
             .starts_with(['@', '%', '&', '!', '.', '^', ':', '$'])
-        && pd.name != "self"
+        && !pd.declares_self_lexical()
         && !pd.named
         && !pd.slurpy
         && !pd.double_slurpy
@@ -130,6 +130,18 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
         && pd.shape_constraints.is_none()
         && pd.traits.is_empty()
         && pd.trait_args.is_empty()
+}
+
+/// The resolved, planned call a lean frame runs.
+pub(super) struct LeanMethodCall<'a> {
+    /// The receiver's class (a metamethod's `state` is keyed by it).
+    pub(super) receiver_class_name: &'a str,
+    /// The class that declares the method.
+    pub(super) owner_sym: Symbol,
+    pub(super) method_sym: Symbol,
+    pub(super) method_def: &'a crate::runtime::MethodDef,
+    pub(super) cc: &'a CompiledCode,
+    pub(super) compiled_fns: &'a CompiledFns,
 }
 
 impl Interpreter {
@@ -159,63 +171,41 @@ impl Interpreter {
         })
     }
 
-    /// Run a planned call of `method_def` in the lean frame (see the module
-    /// docs). The caller checked [`Self::lean_args_ok`].
+    /// Run a planned call in the lean frame (see the module docs). The
+    /// caller checked [`Self::lean_args_ok`].
     // Cost: O(p + l), p = parameters, l = local slots, plus the body.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn call_compiled_method_lean(
         &mut self,
-        receiver_class_name: &str,
-        owner_sym: Symbol,
-        method_sym: Symbol,
-        method_def: &crate::runtime::MethodDef,
-        cc: &CompiledCode,
+        call: &LeanMethodCall<'_>,
         args: Vec<Value>,
         base: Value,
-        compiled_fns: &CompiledFns,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
-        let unit = self.unit_of_source_sym(cc.source_file);
+        let unit = self.unit_of_source_sym(call.cc.source_file);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
-        let result = self.call_compiled_method_lean_in_unit(
+        let result = self.call_compiled_method_lean_in_unit(call, args, base);
+        self.current_unit = saved_unit;
+        result
+    }
+
+    fn call_compiled_method_lean_in_unit(
+        &mut self,
+        call: &LeanMethodCall<'_>,
+        args: Vec<Value>,
+        base: Value,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        // ADR-0100, as in the general binder.
+        crate::guard_native_stack!(
+            self,
+            self.call_compiled_method_lean_in_unit(call, args, base)
+        );
+        let &LeanMethodCall {
             receiver_class_name,
             owner_sym,
             method_sym,
             method_def,
             cc,
-            args,
-            base,
             compiled_fns,
-        );
-        self.current_unit = saved_unit;
-        result
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn call_compiled_method_lean_in_unit(
-        &mut self,
-        receiver_class_name: &str,
-        owner_sym: Symbol,
-        method_sym: Symbol,
-        method_def: &crate::runtime::MethodDef,
-        cc: &CompiledCode,
-        args: Vec<Value>,
-        base: Value,
-        compiled_fns: &CompiledFns,
-    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
-        // ADR-0100, as in the general binder.
-        crate::guard_native_stack!(
-            self,
-            self.call_compiled_method_lean_in_unit(
-                receiver_class_name,
-                owner_sym,
-                method_sym,
-                method_def,
-                cc,
-                args,
-                base,
-                compiled_fns,
-            )
-        );
+        } = call;
         // A non-multi winner: nothing to skip (see the general binder).
         self.pending_skip_constraint_recheck = false;
         let owner_class: &str = owner_sym.as_str();
@@ -395,11 +385,13 @@ impl Interpreter {
         } = self.run_compiled_method_body(
             cc,
             compiled_fns,
-            owner_sym,
-            method_sym,
-            method_callable_id,
-            saved_stack_depth,
-            let_mark,
+            super::vm_method_body_run::MethodBodyFrame {
+                owner_sym,
+                method_sym,
+                method_callable_id,
+                saved_stack_depth,
+                let_mark,
+            },
         );
         if marked_frame {
             self.env_mut().unmark_outer_is_unit();

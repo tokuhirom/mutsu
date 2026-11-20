@@ -2817,11 +2817,13 @@ impl Interpreter {
         } = self.run_compiled_method_body(
             cc,
             compiled_fns,
-            owner_sym,
-            method_sym,
-            method_callable_id,
-            saved_stack_depth,
-            let_mark,
+            super::vm_method_body_run::MethodBodyFrame {
+                owner_sym,
+                method_sym,
+                method_callable_id,
+                saved_stack_depth,
+                let_mark,
+            },
         );
 
         // The return path reads values across frames.
