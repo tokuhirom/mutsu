@@ -202,7 +202,7 @@ fn later_core_types(body: &[Stmt]) -> Vec<HashSet<String>> {
                 Stmt::SyntheticBlock(inner) => pending.extend(inner.iter()),
                 _ => {
                     if let Some(name) = lexical_type(stmt)
-                        && crate::builtin_types::catalog::builtin_type_info(name).is_some()
+                        && is_core_type(name)
                     {
                         seen_after.insert(name.to_string());
                     }
@@ -211,6 +211,16 @@ fn later_core_types(body: &[Stmt]) -> Vec<HashSet<String>> {
         }
     }
     later
+}
+
+/// Whether the bare `name` is a CORE setting type. The type catalog holds
+/// the classes whose MRO the run time answers from a table, which leaves out
+/// some CORE types (`Supply`, `Thread`, `Signature`, the core roles); the
+/// known-type table covers those.
+// Cost: O(|name|).
+fn is_core_type(name: &str) -> bool {
+    crate::builtin_types::catalog::builtin_type_info(name).is_some()
+        || crate::known_types::is_known_type_constraint(name)
 }
 
 /// The stack of open packages, `None` for a `my`-scoped one.
@@ -271,7 +281,7 @@ impl<'a> Visit<'a> for PackageTypes<'a> {
         self.routine_depth += usize::from(is_routine);
         if let Some(name) = lexical_type(stmt) {
             self.local_names.insert(name.to_string());
-            self.shadows_core |= crate::builtin_types::catalog::builtin_type_info(name).is_some();
+            self.shadows_core |= is_core_type(name);
         }
         if let Stmt::VarDecl { name, .. } = stmt
             && name.starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -416,7 +426,7 @@ impl Qualify<'_> {
                     // A core type (`Attribute`) is found in GLOBAL before the
                     // package's stash, so `use AttrX::Mooish::Attribute` inside
                     // `unit module AttrX::Mooish` leaves `Attribute` the core one.
-                    && crate::builtin_types::catalog::builtin_type_info(name).is_none()
+                    && !is_core_type(name)
                     && !super::stmt::simple::is_user_declared_type(name)
                     && super::stmt::simple::is_user_declared_type(&candidate))
             {
