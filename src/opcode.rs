@@ -8982,6 +8982,14 @@ impl CompiledCode {
         slots.get(idx).copied().flatten()
     }
 
+    /// Whether local slot `idx` is a private aggregate attribute (`@!x`,
+    /// `%!x`), whose slot holds the instance's own container (ADR-18356 D2).
+    // Cost: O(1) (the memoized `local_attr_key` table).
+    #[inline]
+    pub(crate) fn is_private_aggregate_attr_slot(&self, idx: usize) -> bool {
+        matches!(self.local_attr_key(idx), Some((_, true, '@' | '%')))
+    }
+
     /// Whether local slot `idx` is a *statically plain* read: one where every
     /// guard `exec_get_local_op_inner` runs before it reaches the slot is
     /// decided by the slot's NAME alone, and decided against. Rejected shapes:

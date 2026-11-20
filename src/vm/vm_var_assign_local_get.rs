@@ -490,9 +490,12 @@ impl Interpreter {
         // a *different* handler's `@middleware` in 17 of 36 calls, so the
         // before-matched auth middleware never ran and every request 401'd
         // (`Cro::HTTP/router-auth.rakutest`).
+        // An attribute slot (`@!x`, ADR-18356 D2) reads `self`'s cell below:
+        // the shared store holds at most a spawn-time snapshot of it (#8380).
         if !skip_name_keyed_store
             && self.is_thread_clone()
             && (name.starts_with('@') || name.starts_with('%'))
+            && code.local_attr_key(idx).is_none()
             && let Some(shared_val) = self.get_shared_var(name)
         {
             self.stack.push(shared_val);

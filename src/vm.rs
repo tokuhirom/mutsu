@@ -175,6 +175,7 @@ mod vm_call_method_compiled_io;
 mod vm_call_token_args;
 mod vm_native_user_override;
 pub(crate) use vm_call_method_compiled_io::note_io_handle_user_method_declared;
+mod vm_attr_aggregate_slot;
 mod vm_attr_global_site;
 use vm_attr_global_site::GlobalAttrSite;
 mod vm_attr_site;
