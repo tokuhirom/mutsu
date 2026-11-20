@@ -320,40 +320,41 @@ impl Interpreter {
         // binding cannot change before the checks below (and the topic's
         // deep-readonly test further down) have all read it. Each read is a
         // by-name env walk.
-        let source_binding_value = container_binding
-            .as_ref()
-            .and_then(|name| self.for_source_binding_value(name));
-        let source_binding_view = source_binding_value.as_ref().map(Value::view);
-        let source_immutable_quant = matches!(
-            source_binding_view,
-            Some(ValueView::Mix(_, false))
-                | Some(ValueView::Set(_, false))
-                | Some(ValueView::Bag(_, false))
-        );
+        let (source_immutable_quant, source_immutable_map, source_mutable_quant) = {
+            let source_binding_value = container_binding
+                .as_ref()
+                .and_then(|name| self.for_source_binding_value(name));
+            let source_binding_view = source_binding_value.as_ref().map(Value::view);
+            let immutable_quant = matches!(
+                source_binding_view,
+                Some(ValueView::Mix(_, false))
+                    | Some(ValueView::Set(_, false))
+                    | Some(ValueView::Bag(_, false))
+            );
+            // An immutable `Map` yields bare values too: its elements are not
+            // containers, so an `is rw` multi-parameter bind must fail (like an
+            // immutable QuantHash's), not alias.
+            let immutable_map = matches!(
+                &source_binding_view,
+                Some(ValueView::Hash(d)) if d.declared_type.as_deref() == Some("Map")
+            );
+            // A *mutable* QuantHash (MixHash/BagHash/SetHash) source iterated via
+            // `.values`/`.kv`/`.pairs` aliases its weights: `$_ = X for $b.values`,
+            // `for $b.kv -> \k,\v { v = X }` and `.value = X for $b.pairs` all mutate
+            // the QuantHash. Detect it so the topic stays writable (not readonly) and
+            // the writeback paths can update the weight by key order, coercing the
+            // assigned value (X::Str::Numeric on a bad string; weight 0 removes the key).
+            let mutable_quant = matches!(
+                source_binding_view,
+                Some(ValueView::Mix(_, true))
+                    | Some(ValueView::Set(_, true))
+                    | Some(ValueView::Bag(_, true))
+            );
+            (immutable_quant, immutable_map, mutable_quant)
+        };
         if source_immutable_quant {
             rw_writeback = false;
         }
-        // An immutable `Map` yields bare values too: its elements are not
-        // containers, so an `is rw` multi-parameter bind must fail (like an
-        // immutable QuantHash's), not alias.
-        let source_immutable_map = matches!(
-            &source_binding_view,
-            Some(ValueView::Hash(d)) if d.declared_type.as_deref() == Some("Map")
-        );
-        // A *mutable* QuantHash (MixHash/BagHash/SetHash) source iterated via
-        // `.values`/`.kv`/`.pairs` aliases its weights: `$_ = X for $b.values`,
-        // `for $b.kv -> \k,\v { v = X }` and `.value = X for $b.pairs` all mutate
-        // the QuantHash. Detect it so the topic stays writable (not readonly) and
-        // the writeback paths can update the weight by key order, coercing the
-        // assigned value (X::Str::Numeric on a bad string; weight 0 removes the key).
-        let source_mutable_quant = matches!(
-            source_binding_view,
-            Some(ValueView::Mix(_, true))
-                | Some(ValueView::Set(_, true))
-                | Some(ValueView::Bag(_, true))
-        );
-        drop(source_binding_view);
-        drop(source_binding_value);
         let container_reversed = self.topic_state.container_ref_reversed;
         self.topic_state.container_ref_reversed = false;
         // ADR-0045 slice 6: a multi-parameter rw loop binds through the
