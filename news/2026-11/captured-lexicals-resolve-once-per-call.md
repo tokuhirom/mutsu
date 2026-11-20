@@ -18,8 +18,8 @@ cached reads. It now keeps a caller's entries across the calls it makes, and
 drops only the entries of frames that returned. Each entry records its frame's
 routine-stack index, so a returned frame is recognized in one comparison.
 
-On a profiling build (callgrind slope), a read of a unit-level `my` inside a
-top-level sub's loop fell from 5.4k to 2.8k instructions per iteration; a local
-read is 2.5k. A routine-nested `my sub` called in a loop fell 7%. A sub that
-reads its captured variable once per call pays about 1% more, for the
+On a release build (callgrind slope), a read of a unit-level `my` inside a
+top-level sub's loop fell from 5.2k to 2.8k instructions per iteration; a local
+read is 2.4k. A routine-nested `my sub` called in a loop fell 6%. A sub that
+reads its captured variable once per call pays 3-4% more, for the
 placeholder its first read leaves. This is ADR-18244 stage B, slice 2 (#18274).
