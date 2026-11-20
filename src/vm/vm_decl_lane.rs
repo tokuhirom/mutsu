@@ -17,6 +17,17 @@
 use super::*;
 
 impl Interpreter {
+    /// `OpCode::SetLocalRaw`: store the popped value into a compiler
+    /// temporary's slot as is (see the opcode's doc).
+    // Cost: O(1).
+    pub(crate) fn exec_set_local_raw_op(&mut self, idx: u32) {
+        let value = self.stack.pop().unwrap_or(Value::NIL);
+        let idx = idx as usize;
+        if idx < self.locals.len() {
+            self.locals[idx] = value;
+        }
+    }
+
     /// The slot a plain scalar `my` declaration owns outright, or `None` when
     /// the declaration must keep its name-keyed bookkeeping.
     ///
