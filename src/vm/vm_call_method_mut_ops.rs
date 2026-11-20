@@ -736,7 +736,7 @@ impl Interpreter {
         if method == "subbuf-rw"
             && modifier.is_none()
             && let ValueView::Instance { class_name, .. } = target.descalarize().view()
-            && crate::runtime::utils::is_buf_like_class(&class_name.resolve())
+            && crate::runtime::utils::is_buf_like_class(class_name.as_str())
         {
             let proxy = self.make_subbuf_rw_proxy(target.descalarize().clone(), &args)?;
             self.stack.push(proxy);
@@ -804,7 +804,7 @@ impl Interpreter {
                             // $p.value = 5` leaves `$x` at 5.
                             self.capture_var_cell_boxing_type_objects(
                                 code,
-                                &name.resolve(),
+                                name.as_str(),
                                 inner,
                                 slot_hint,
                             )
@@ -1463,14 +1463,14 @@ impl Interpreter {
         // where we have access to locals (which the interpreter doesn't have).
         if method == "WHO"
             && args.is_empty()
-            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
+            && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(name.as_str()))
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "who-pseudo-package",
             );
             if let ValueView::Package(pkg_name) = target.view() {
-                let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
+                let stash = self.build_pseudo_stash(code, pkg_name.as_str());
                 self.stack.push(stash);
             }
             return Ok(());
@@ -1482,11 +1482,11 @@ impl Interpreter {
         // X::Multi::NoMatch (roast .../multi-no-match.t).
         if method == "protect" {
             let is_lock_type_object = matches!(target.view(), ValueView::Package(name)
-                if matches!(name.resolve().as_str(),
+                if matches!(name.as_str(),
                     "Lock" | "Lock::Async" | "Lock::Soft"));
             let is_lock_instance_bad_arg = matches!(target.view(),
                 ValueView::Instance { class_name, .. }
-                if matches!(class_name.resolve().as_str(),
+                if matches!(class_name.as_str(),
                     "Lock" | "Lock::Async" | "Lock::Soft"))
                 && (args.len() != 1
                     || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
@@ -1624,9 +1624,9 @@ impl Interpreter {
             && let ValueView::Instance { class_name, .. } = inner.view()
             && self
                 .registry()
-                .role_associative_base(&class_name.resolve())
+                .role_associative_base(class_name.as_str())
                 .is_some()
-            && self.has_user_method_including_role(&class_name.resolve(), method)
+            && self.has_user_method_including_role(class_name.as_str(), method)
         {
             skip_native = true;
         }
@@ -1853,7 +1853,7 @@ impl Interpreter {
                     id: inst_id,
                 } = target.view()
                 {
-                    let cn = inst_class.resolve();
+                    let cn = inst_class.as_str();
                     let is_array_method = matches!(
                         method,
                         "push"
@@ -1922,10 +1922,10 @@ impl Interpreter {
                             | "one"
                     );
                     if is_array_method
-                        && !self.has_user_method(&cn, method)
+                        && !self.has_user_method(cn, method)
                         && attributes.contains_key(crate::symbol::wk::array_storage())
                         && self
-                            .mro_readonly(&cn)
+                            .mro_readonly(cn)
                             .iter()
                             .any(|n| Self::is_positional_base(n))
                     {
