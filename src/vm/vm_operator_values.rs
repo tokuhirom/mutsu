@@ -175,19 +175,15 @@ impl Interpreter {
         // an object's own `Str`, a Blob, Nil's warning) and no junction can
         // apply, so the comparison runs on them directly, through the same
         // leaf the general path ends in.
-        if matches!(left.view(), ValueView::Str(_)) && matches!(right.view(), ValueView::Str(_)) {
-            let result = match kind {
-                StrCmp::Eq | StrCmp::Ne => str_cmp_leaf::<0>(self, left, right),
-                StrCmp::Lt => str_cmp_leaf::<2>(self, left, right),
-                StrCmp::Gt => str_cmp_leaf::<3>(self, left, right),
-                StrCmp::Le => str_cmp_leaf::<4>(self, left, right),
-                StrCmp::Ge => str_cmp_leaf::<5>(self, left, right),
-            }?;
-            return Ok(if kind == StrCmp::Ne {
-                Value::truth(!result.truthy())
-            } else {
-                result
-            });
+        // The strings are borrowed where they sit (no view guard, no copy)
+        // and compared by the shared primitives the leaf ends in.
+        if let (Some(l), Some(r)) = (left.as_str(), right.as_str()) {
+            let holds = match kind {
+                StrCmp::Eq => crate::builtins::str_prim::str_eq(l, r),
+                StrCmp::Ne => !crate::builtins::str_prim::str_eq(l, r),
+                _ => kind.holds(crate::builtins::str_prim::str_order(l, r)),
+            };
+            return Ok(Value::truth(holds));
         }
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         // `eval_binary_with_junctions` takes a plain `fn`, so the comparison is
