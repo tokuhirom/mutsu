@@ -17,8 +17,7 @@ pub(super) fn written_len(node: &RakuAstNode, text: &str) -> Option<usize> {
         _ => return None,
     };
     let negated = node.fields.iter().any(|f| {
-        f.name == Some("negated")
-            && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
+        f.name == Some("negated") && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
     });
     let rest = text.strip_prefix(':')?;
     let rest = match rest.strip_prefix('!') {
