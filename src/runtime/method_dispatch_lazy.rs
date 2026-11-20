@@ -388,8 +388,14 @@ impl Interpreter {
 }
 /// See [`Interpreter::deferral_build_is_context_free`].
 fn param_match_is_context_free(pd: &ParamDef) -> bool {
-    let reads_call_site =
-        pd.sigilless || pd.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw"));
+    // Only `is rw` asks the call site: a candidate matches when the argument
+    // is a writable variable, which the call's source names and the source's
+    // readonly mark decide (`method_args_match`). An `is raw` or sigilless
+    // parameter accepts any argument, a value as well as a container, so its
+    // verdict is a function of the argument values a pending entry keeps.
+    // AttrX::Mooish's `Mu $instance is raw` methods built their frames eagerly
+    // on every call before (#18267).
+    let reads_call_site = pd.traits.iter().any(|t| t == "rw");
     // A `where` clause is not on this list: rakudo checks a deferral
     // candidate's constraints when the dispatch resumes (`callsame` & co.), in
     // the callee's dynamic scope, not when the call is made — so a late build
