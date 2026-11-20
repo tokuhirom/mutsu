@@ -135,9 +135,11 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
     // multi-element parenthesized signature must become a single destructuring
     // `__subsig__` param (matching `sub f(($a,$b))`), so `.map(-> ($k,$v){...})`
     // destructures each list element instead of chunking the list 2-at-a-time.
-    // A single-element paren (`-> ($a)`) keeps the existing behavior of a lone
-    // param (mirrors the capture sub-sig `len == 1` special case in sub_param.rs).
-    if r.starts_with('(') {
+    // A single-element paren (`-> ($a)`) is a destructure too, as in rakudo
+    // (`-> ($x) { }` called with `21` dies "Cannot unpack or Capture"). A
+    // sub-signature followed by more parameters (`-> ($a, $b), $c`) is read by
+    // the parameter loop below, where `parse_pointy_param` takes the `(`.
+    if r.starts_with('(') && !paren_group_then_comma(r) {
         let (r, _) = parse_char(r, '(')?;
         let (r, _) = ws(r)?;
         let (r, mut sub_params) = crate::parser::stmt::parse_param_list_pub(r)?;
@@ -967,4 +969,25 @@ fn starts_with_statement_keyword(input: &str) -> bool {
             | "require"
             | "do"
     )
+}
+
+/// Whether `text`, starting with `(`, is a parenthesised group followed by a
+/// `,`: a sub-signature that is not the pointy block's only parameter.
+// Cost: O(n), n = length of the group.
+fn paren_group_then_comma(text: &str) -> bool {
+    let mut depth = 0usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return text[at + 1..].trim_start().starts_with(',');
+                }
+            }
+            '{' | '"' | '\'' => return false,
+            _ => {}
+        }
+    }
+    false
 }
