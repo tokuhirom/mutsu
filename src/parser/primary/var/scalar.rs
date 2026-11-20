@@ -102,6 +102,24 @@ pub(in crate::parser) fn parse_symbolic_deref_segments(
     Ok((rest, combined))
 }
 
+/// The `::name` segments that follow a `$::(EXPR)` when every following
+/// segment is a static name (`$::($x)::a::b` has `a`, `b`), else none.
+// Cost: O(n), n = length of the tail.
+fn static_tail(mut rest: &str) -> Vec<Box<str>> {
+    let mut names = Vec::new();
+    while let Some(after) = rest.strip_prefix("::") {
+        if after.starts_with('(') {
+            return Vec::new();
+        }
+        let Ok((r, name)) = parse_ident_with_hyphens(after) else {
+            break;
+        };
+        names.push(name.into());
+        rest = r;
+    }
+    names
+}
+
 /// Parse a variable name from raw string (used in interpolation).
 pub(crate) fn parse_var_name_from_str(input: &str) -> (&str, String) {
     // Handle twigils: $*, $?, $!, $^, $:
@@ -274,12 +292,18 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         let (after_expr, first_expr) = crate::parser::expr::expression(after_colons)?;
         let (after_expr, _) = ws(after_expr)?;
         let (rest, _) = parse_char(after_expr, ')')?;
+        let tail = static_tail(rest);
         let (rest, combined) = parse_symbolic_deref_segments(rest, first_expr)?;
+        let deref = Expr::SymbolicDeref {
+            sigil: "$".to_string(),
+            expr: Box::new(combined),
+        };
         return Ok((
             rest,
-            Expr::SymbolicDeref {
-                sigil: "$".to_string(),
-                expr: Box::new(combined),
+            if tail.is_empty() {
+                deref
+            } else {
+                Expr::spelled(deref, || crate::ast::spelled::Spelling::IndirectTail(tail))
             },
         ));
     }
