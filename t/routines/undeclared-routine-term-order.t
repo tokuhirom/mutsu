@@ -6,7 +6,7 @@ use Test;
 # declaration is `Undeclared routine`, in the same statement list or a nested
 # one; used after it (in the list or below it) it is the term.
 
-plan 20;
+plan 24;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -27,6 +27,14 @@ for 'say x; my \x = 1',
     ok $rc != 0 && $err ~~ /'Undeclared routine'/ && $out eq '', "refused: $code";
 }
 
+for 'say foo; sub term:<foo> { 1 }',
+    'say self-x; sub term:<self-x> { 1 }',
+    '{ say foo; sub term:<foo> { 1 } }' -> $code {
+    my ($rc, $out, $err) = run-code($code);
+    ok $rc != 0 && $err ~~ /'Undeclared routine'/ && $out eq '',
+        "a later callable term does not resolve an earlier bareword: $code";
+}
+
 for 'my \x = 1; say x',
     'my \x = 1; { say x }',
     'my \x = 1; sub f { x }; say f',
@@ -37,6 +45,11 @@ for 'my \x = 1; say x',
     'class C { constant k = 3; method m { k } }; say C.m' -> $code {
     my ($rc, $out, $err) = run-code($code);
     ok $rc == 0 && $out.chars > 0, "accepted: $code";
+}
+
+{
+    my ($rc, $out, $err) = run-code('sub term:<foo> { 1 }; say foo');
+    ok $rc == 0 && $out.trim eq '1', 'a callable term resolves after its declaration';
 }
 
 # A term leaves scope with its block.

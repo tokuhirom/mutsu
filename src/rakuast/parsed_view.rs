@@ -265,11 +265,21 @@ pub(super) fn parsed_expr_node(
 /// as written.
 // Cost: O(n), n = size of the declaration.
 fn inline_subset_node(names: &NameScope, declaration: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    let statement = super::view::view_stmt(names, declaration)?
+    let mut statement = super::view::view_stmt(names, declaration)?
         .ok_or_else(|| super::view::unsupported("inline subset declaration"))?;
     let anonymous = matches!(declaration, Stmt::SubsetDecl { name, .. }
         if name.resolve().starts_with(crate::parser::ANON_SUBSET_PREFIX));
-    let mut node = statement
+    // `subset ::`: the anonymous name, `Name(EmptyEdge, EmptyEdge)`.
+    if anonymous {
+        super::infix_origins::with_child(&mut statement, "expression", |decl| {
+            if let Some(field) = decl.fields.iter_mut().find(|f| f.name == Some("name")) {
+                *field = super::view::node_field(Some("name"), super::name_parts::anonymous_name());
+            }
+        });
+    }
+    // The name and `of TYPE` where the term wrote them.
+    super::routine_origins::package_origins(names, &mut statement, declaration);
+    let node = statement
         .fields
         .iter()
         .find(|field| field.name == Some("expression"))
@@ -281,10 +291,6 @@ fn inline_subset_node(names: &NameScope, declaration: &Stmt) -> Result<RakuAstNo
             _ => None,
         })
         .ok_or_else(|| super::view::unsupported("inline subset declaration"))?;
-    // `subset ::`: the anonymous name, `Name(EmptyEdge, EmptyEdge)`.
-    if anonymous && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("name")) {
-        *field = super::view::node_field(Some("name"), super::name_parts::anonymous_name());
-    }
     Ok(node)
 }
 

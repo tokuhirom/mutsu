@@ -163,17 +163,32 @@ impl Scan {
         if bare.is_empty() {
             return;
         }
+        // The callable itself is a routine, but its bare `term:<x>` spelling
+        // becomes a term only from this declaration onward. A later term
+        // routine must not excuse an earlier bare `x` during the ordered scan.
+        let term = term_name(bare);
+        if let Some(inner) = term {
+            self.all_terms.insert(inner.to_string());
+            if self.term_order && let Some(open) = self.terms.last_mut() {
+                open.insert(inner.to_string());
+            }
+        }
         if let Some(i) = scope {
             let routines = &mut self.frames[i].routines;
             routines.insert(bare.to_string());
-            // `sub term:<x> {...}` declares the bare term `x`.
-            if let Some(inner) = term_name(bare) {
+            // The unordered scan still resolves the term through its lexical
+            // frame; the ordered scan uses the term stack above instead.
+            if !self.term_order && let Some(inner) = term {
                 routines.insert(inner.to_string());
             }
             self.body_routines.extend(routines.iter().cloned());
             return;
         }
-        self.declare(name);
+        if self.term_order && term.is_some() {
+            self.declared.insert(bare.to_string());
+        } else {
+            self.declare(name);
+        }
         self.declared_routines.insert(bare.to_string());
     }
 

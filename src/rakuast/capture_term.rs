@@ -41,3 +41,30 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
         false,
     ))
 }
+
+/// Place the `ArgList` of `node`, a `Term::Capture` with a range written as
+/// `\(ARGS)`: from its first argument to its last, or empty just inside the
+/// `(` (#15780).
+// Cost: O(n), n = length of the capture's source.
+pub(super) fn arg_list_origin(node: &mut RakuAstNode) {
+    let Some((from, to)) = super::infix_origins::byte_range(node) else {
+        return;
+    };
+    let source = super::infix_origins::child_at(node, 0);
+    if source.is_none_or(|s| s.class != RakuAstClass::ArgList) {
+        return;
+    }
+    let parens = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |text| {
+        (text.starts_with("\\(") && text.ends_with(')')).then_some(())
+    });
+    if parens.is_none() || to < from + 3 {
+        return;
+    }
+    let inside = crate::ast::SrcSpan::new(from + 2, to - 1);
+    let Some((start, end)) = super::call_origins::parenthesized(source, inside) else {
+        return;
+    };
+    super::infix_origins::with_child_at(node, 0, |list| {
+        super::origin::set_span(list, crate::ast::SrcSpan::new(start, end))
+    });
+}

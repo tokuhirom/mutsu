@@ -727,10 +727,20 @@ impl Walk<'_> {
             match element.class {
                 RakuAstClass::RegexCharClassEnumerationElementCharacter => {
                     let c = leaf_text(&element)?;
-                    if c.chars().count() != 1 || !c.chars().all(plain) {
+                    // A lone `+`, `-` or `.` is a literal element (`<[+-]>`),
+                    // and a backslash before a non-word character escapes it
+                    // (`<[\-]>`); a range's `..` is its own node.
+                    let mut chars = c.chars();
+                    let (Some(ch), None) = (chars.next(), chars.next()) else {
                         return None;
+                    };
+                    let escaped = !ch.is_alphanumeric() && self.eat(&format!("\\{ch}")).is_some();
+                    if !escaped {
+                        if !(plain(ch) || matches!(ch, '+' | '-' | '.')) {
+                            return None;
+                        }
+                        self.eat(&c)?;
                     }
-                    self.eat(&c)?;
                 }
                 RakuAstClass::RegexCharClassEnumerationElementRange => {
                     let bound = |name: &str| {

@@ -24,10 +24,20 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
         RakuAstClass::VarDeclarationSimple => {
             initializer(node);
+            super::call_origins::call_assign_initializer(node);
             super::decl_origins::derive(names, node);
         }
+        // `\(1, 2)`: the capture's arguments.
+        RakuAstClass::TermCapture => super::capture_term::arg_list_origin(node),
+        // `$.foo(1)` / `$.foo: 5`: the accessor call's arguments.
+        RakuAstClass::VarAttributePublic => super::attribute_call_origins::public_args(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
         RakuAstClass::VarDeclarationConstant => initializer(node),
+        // `my \x = EXPR`: the name after the backslash, and the initializer.
+        RakuAstClass::VarDeclarationTerm => {
+            initializer(node);
+            super::sigilless_origins::name(node);
+        }
         RakuAstClass::VarDeclarationSignature => {
             initializer(node);
             super::signature_decl_origins::declaration(node);
@@ -53,12 +63,14 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             }
         }
         RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
+            super::list_origins::place_lone_declaration(names, node);
             super::list_origins::circumfix(node)
         }
         RakuAstClass::ApplyPostfix => {
             super::list_origins::postcircumfix(node);
             super::operator_origins::derive(node);
             super::quoted_method_origins::segments(names, node);
+            super::attribute_call_origins::meta_item(node);
         }
         RakuAstClass::QuotedString => super::string_origins::interpolated(names, node),
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {

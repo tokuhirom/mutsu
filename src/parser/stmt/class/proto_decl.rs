@@ -84,7 +84,9 @@ fn proto_decl_named(
     is_my: bool,
     is_our: bool,
 ) -> PResult<'_, Stmt> {
+    let name_start = rest;
     let (rest, name) = parse_sub_name(rest)?;
+    let name_span = crate::parser::primary::source_span(name_start, rest);
     if !is_regex_proto && !is_method {
         // A lone `proto sub infix:<op>` (no `multi` candidates in this
         // file) still declares the operator for the rest of the scope.
@@ -92,11 +94,14 @@ fn proto_decl_named(
     }
     let (rest, _) = ws(rest)?;
     let has_signature = rest.starts_with('(');
+    let mut signature_text = None;
     let (rest, (param_defs, return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
+        let params_start = r;
         let (r, (pd, return_type)) = parse_param_list_with_return_pub(r)?;
         let (r, _) = ws(r)?;
+        signature_text = Some((params_start, r));
         let (r, _) = parse_char(r, ')')?;
         (r, (pd, return_type))
     } else {
@@ -118,6 +123,7 @@ fn proto_decl_named(
     let (rest, _) = ws(rest)?;
     // May have body or just semicolon
     let mut body = Vec::new();
+    let brace = rest;
     if rest.starts_with('{') {
         // `{*}` is the proto's dispatcher, not a statement list, to rakudo.
         // The body sees the proto's sigilless / callable parameters as terms,
@@ -173,10 +179,20 @@ fn proto_decl_named(
                 },
             ));
         }
+        let spans = crate::parser::stmt::sub::routine_spans(
+            name_span,
+            signature_text,
+            &param_defs,
+            Vec::new(),
+            brace,
+            rest,
+            &body,
+        );
         crate::ast::routine_trait::attach(&mut body, traits.source_traits);
         return Ok((
             rest,
             Stmt::ProtoDecl {
+                spans,
                 is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
                 is_hoisted_copy: false,
                 name: Symbol::intern(&name),
@@ -214,6 +230,7 @@ fn proto_decl_named(
     Ok((
         rest,
         Stmt::ProtoDecl {
+            spans: None,
             is_hidden_from_backtrace: traits.is_hidden_from_backtrace,
             is_hoisted_copy: false,
             name: Symbol::intern(&name),

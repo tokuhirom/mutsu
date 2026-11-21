@@ -122,6 +122,61 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
     }
 }
 
+/// `(my Int $x = 1)` / `($s = 5)`: parentheses around a lone declaration or
+/// assignment the parser did not place (it read it as a statement). The text
+/// inside the parentheses, trimmed, is exactly that expression when it ends
+/// in no `;`; its parts are derived once it has the range.
+// Cost: O(n), n = length of the parenthesized source.
+pub(super) fn place_lone_declaration(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
+    if node.class != RakuAstClass::CircumfixParentheses {
+        return;
+    }
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(inside) = bracketed(from, to, ('(', ')')) else {
+        return;
+    };
+    let Some(span) = super::unit_source::with_text(inside, |text| {
+        let lead = text.len() - text.trim_start().len();
+        let trimmed = text.trim();
+        (!trimmed.is_empty() && !trimmed.ends_with(';')).then(|| {
+            SrcSpan::new(
+                inside.from as usize + lead,
+                inside.from as usize + lead + trimmed.len(),
+            )
+        })
+    }) else {
+        return;
+    };
+    with_child_at(node, 0, |list| {
+        let [field] = list.fields.as_mut_slice() else {
+            return;
+        };
+        let RakuAstFieldValue::Node(held) = &mut field.value else {
+            return;
+        };
+        let ValueView::RakuAst(statement) = held.view() else {
+            return;
+        };
+        if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
+            return;
+        }
+        let mut statement = RakuAstNode::clone(statement);
+        with_child_at(&mut statement, 0, |decl| {
+            let assignment = decl.class == RakuAstClass::ApplyInfix
+                && child(decl, "infix").is_some_and(|i| i.class == RakuAstClass::Assignment);
+            if (decl.class == RakuAstClass::VarDeclarationSimple || assignment)
+                && decl.origin.0.is_none()
+            {
+                super::origin::set_span(decl, span);
+                super::infix_origins::derive(names, decl);
+            }
+        });
+        *held = Value::rakuast(Box::new(statement));
+    });
+}
+
 /// `($a .= lc)`: a bracketed list of one statement whose expression is a `.=`
 /// application the parser did not place. The text inside the brackets,
 /// trimmed, is exactly that application.

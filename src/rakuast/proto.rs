@@ -21,6 +21,7 @@ use crate::value::{RuntimeError, Value};
 
 /// The fields of a `Stmt::ProtoDecl` the RakuAST node is built from.
 pub(super) struct ProtoDecl<'a> {
+    pub spans: Option<&'a crate::ast::parsed::RoutineSpans>,
     pub name: Symbol,
     pub param_defs: &'a [ParamDef],
     pub return_type: Option<&'a str>,
@@ -86,6 +87,9 @@ pub(super) fn view_node(
             "proto with `is export` and no written-trait record",
         ));
     }
+    // Where the name, signature and block were written (`{*}` is the
+    // `OnlyStar` in the block's place).
+    super::routine_origins::apply(&mut node, proto.spans, proto.param_defs);
     node.fields
         .insert(0, leaf_field(Some("multiness"), Value::str_from("proto")));
     if proto.is_our {
@@ -130,6 +134,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     };
     super::routine_source::retain(names, node, &mut body)?;
     Ok(Stmt::ProtoDecl {
+        spans: None,
         is_hidden_from_backtrace: is_traits.is_hidden_from_backtrace,
         is_hoisted_copy: false,
         name: Symbol::intern(&name),
