@@ -842,16 +842,7 @@ fn field_children(node: &RakuAstNode) -> Vec<Value> {
     } else {
         visited.collect()
     };
-    // A declaration visits its initializer before its `shape` (`my @a[3] = 1,2,3`),
-    // though `.raku` lists the shape first.
-    if node.class == crate::rakuast::RakuAstClass::VarDeclarationSimple
-        && let Some(shape) = fields.iter().position(|f| f.name == Some("shape"))
-        && let Some(init) = fields.iter().position(|f| f.name == Some("initializer"))
-        && shape < init
-    {
-        let shape = fields.remove(shape);
-        fields.insert(init, shape);
-    }
+    crate::rakuast::visit_order::reorder(node, &mut fields);
     for field in fields {
         match &field.value {
             RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {

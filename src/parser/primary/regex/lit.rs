@@ -33,9 +33,7 @@ use super::call_args::{
 };
 use super::rakuast_adverbs::rakuast_regex_adverbs;
 use super::scan::{scan_to_delim, scan_to_delim_replacement, scan_to_delim_subst_pattern};
-use super::subst::{
-    parse_subst_replacement_expr, subst_compound_thunk, try_strip_subst_compound_assign,
-};
+use super::subst::{subst_compound_thunk, try_strip_subst_compound_assign};
 use super::subst_source::subst_expr;
 use super::trans::{TransHead, parse_trans_adverbs, process_trans_escapes};
 
@@ -474,14 +472,28 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     if is_paired {
                         let (after_pat_ws, _) = ws(after_pat)?;
                         if let Some(after_eq) = after_pat_ws.strip_prefix('=')
-                            && let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq)
+                            && !after_eq.starts_with('=')
                         {
+                            // The replacement is a thunk evaluated per match,
+                            // as for `s[pattern] = EXPR`.
+                            let (after_eq_ws, _) = ws(after_eq)?;
+                            let (rest, replacement_expr) = expression_no_word_logical(after_eq_ws)?;
                             let pattern_raw = pattern;
                             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                             validate_regex_pattern_or_perror(&pattern)?;
                             return Ok((
                                 rest,
-                                subst_expr(true, pattern_raw, pattern, replacement, &adverbs, None),
+                                subst_expr(
+                                    true,
+                                    pattern_raw,
+                                    pattern,
+                                    String::new(),
+                                    &adverbs,
+                                    Some(Box::new(SubstThunk {
+                                        expr: replacement_expr,
+                                        infix: None,
+                                    })),
+                                ),
                             ));
                         }
                     }
@@ -611,22 +623,13 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         ));
                     }
                     if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
-                        // Try literal replacement first; fall back to expression
-                        if let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq) {
-                            if !is_paired
-                                && open_ch == '-'
-                                && (has_unescaped_statement_boundary(pattern)
-                                    || has_unescaped_statement_boundary(&replacement))
-                            {
-                                return Err(PError::expected("substitution"));
-                            }
-                            let pattern_raw = pattern;
-                            let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                            validate_regex_pattern_or_perror(&pattern)?;
-                            return Ok((
-                                rest,
-                                subst_expr(true, pattern_raw, pattern, replacement, &adverbs, None),
-                            ));
+                        // The replacement is always the expression, even a lone
+                        // literal: `s{a} = q{$x}` assigns the string `$x` as
+                        // written, uninterpolated, and `.AST` keeps the
+                        // `Assignment` and the expression.
+                        if !is_paired && open_ch == '-' && has_unescaped_statement_boundary(pattern)
+                        {
+                            return Err(PError::expected("substitution"));
                         }
                         let (after_eq_ws, _) = ws(after_eq)?;
                         // Item-assignment precedence: `s{p} = "" and f()` assigns
@@ -743,28 +746,10 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     }
                     let (after_pat_ws, _) = ws(after_pat)?;
                     if let Some(after_eq) = after_pat_ws.strip_prefix('=') {
-                        // Try literal replacement first; fall back to expression
-                        if let Ok((rest, replacement)) = parse_subst_replacement_expr(after_eq) {
-                            if !is_paired
-                                && open_ch == '-'
-                                && (has_unescaped_statement_boundary(pattern)
-                                    || has_unescaped_statement_boundary(&replacement))
-                            {
-                                return Err(PError::expected("substitution"));
-                            }
-                            let pattern_raw = pattern;
-                            let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
-                            return Ok((
-                                rest,
-                                subst_expr(
-                                    false,
-                                    pattern_raw,
-                                    pattern,
-                                    replacement,
-                                    &adverbs,
-                                    None,
-                                ),
-                            ));
+                        // A lone literal is an expression too (see the `s` form).
+                        if !is_paired && open_ch == '-' && has_unescaped_statement_boundary(pattern)
+                        {
+                            return Err(PError::expected("substitution"));
                         }
                         // Expression-based replacement (e.g. S[(o)] = $0.uc).
                         // Item-assignment precedence: stop before `and`/`or`/...

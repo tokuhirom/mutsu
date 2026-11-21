@@ -66,6 +66,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::list_origins::place_lone_declaration(names, node);
             super::list_origins::circumfix(node)
         }
+        // `s:g/a/b/` / `s[a] = b`: the adverbs, pattern, operator, replacement.
+        RakuAstClass::Substitution => super::subst_origins::derive(names, node),
         // `{:2b, :!c, :e(5)}`: the colonpairs among the composer's entries.
         RakuAstClass::CircumfixHashComposer => super::hash_colonpair_origins::derive(names, node),
         RakuAstClass::ApplyPostfix => {

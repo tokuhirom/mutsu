@@ -111,7 +111,7 @@ fn opener(text: &str) -> Option<Opener> {
 
 /// Give a quoted regex's `:name` adverbs the ranges read off its prefix.
 // Cost: O(a), a = adverbs.
-fn place_adverbs(node: &mut RakuAstNode, written: &[(usize, usize)]) {
+pub(super) fn place_adverbs(node: &mut RakuAstNode, written: &[(usize, usize)]) {
     let Some((from, _)) = byte_range(node) else {
         return;
     };
