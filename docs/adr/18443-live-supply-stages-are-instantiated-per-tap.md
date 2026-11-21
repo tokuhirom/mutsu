@@ -1,6 +1,6 @@
 # ADR-18443: A live Supply combinator stage is instantiated per tap, not registered when the method runs
 
-- **Status**: Proposed
+- **Status**: Accepted (maintainer decision, 2026-11-21)
 
 Related: [ADR-0008](0008-push-based-supply-event-delivery.md) (push delivery through
 supplier subscriptions), [ADR-0031](0031-supply-quit-ownership-and-cold-source-tapping.md)
