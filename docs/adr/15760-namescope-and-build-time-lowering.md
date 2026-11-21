@@ -380,6 +380,21 @@ the passes that truly run on a whole unit (`whatever_curry::mark`, the scope dia
 - **2d.** `finalize_unit` and the executing `qualify_type_names` call deleted; frontend cost measured against
   Amendment 1 of ADR-15334.
 
+  *Status, 2026-11-21.* The executing `qualify_type_names` call went with 2c (#18317). Frontend cost was
+  re-measured within Amendment 1 of ADR-15334 (#18344). Two structural steps of 2d are done:
+  - **2d-1** (#18435): the parser's post-parse passes run one top-level statement at a time
+    (`parser::unit_passes`), with the diagnostics settled at the end of the unit in their old order;
+  - **2d-2** (#18453): `finalize_unit` is a loop over `UnitFinalizer` (`begin` / `commit` per top-level statement /
+    `finish`).
+
+  The third step, the parser driving both commits as it commits each statement, is stopped under the maintainer's
+  condition (3). A census over `t/` and the whitelisted roast found no lowering decision that reads a routine
+  declared later, so routines are safe "declared so far". The later capitalised terms, `later_core_types` and the
+  ADR-0115 CORE type fold are not: they are decided inside a statement's finalization from the statements after
+  it, and an end-of-unit correction needs either retained unfinalized copies, re-pinned recorded sites, or
+  source-order rule changes. None of these is in §7.2 (b)-(e), and none has a cost case. The options are on
+  [#15760](https://github.com/tokuhirom/mutsu/issues/15760) for the maintainer.
+
 ### 7.4 Questions for the maintainer
 
 1. §2.6 settled as the closed allow-list of §7.2 (a) (worker 19's working reading, #15760): accepted?
