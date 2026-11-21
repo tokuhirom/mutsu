@@ -31,7 +31,9 @@ pub(super) fn place(node: &mut RakuAstNode, span: SrcSpan) {
                     .is_some()
             });
             if written {
-                with_child_at(node, 0, |p| super::origin::set_span(p, SrcSpan::new(from, to)));
+                with_child_at(node, 0, |p| {
+                    super::origin::set_span(p, SrcSpan::new(from, to))
+                });
             }
             return;
         }
