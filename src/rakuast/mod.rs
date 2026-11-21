@@ -25,6 +25,7 @@ mod assign_writeback;
 mod atomic_op;
 pub(crate) mod attr_bind;
 mod attribute;
+mod attribute_call_origins;
 mod attribute_decl;
 mod attribute_group;
 mod bare_prefix;

@@ -26,6 +26,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             initializer(node);
             super::decl_origins::derive(names, node);
         }
+        // `$.foo(1)` / `$.foo: 5`: the accessor call's arguments.
+        RakuAstClass::VarAttributePublic => super::attribute_call_origins::public_args(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
         RakuAstClass::VarDeclarationConstant => initializer(node),
         // `my \x = EXPR`: the name after the backslash, and the initializer.
@@ -64,6 +66,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::list_origins::postcircumfix(node);
             super::operator_origins::derive(node);
             super::quoted_method_origins::segments(names, node);
+            super::attribute_call_origins::meta_item(node);
         }
         RakuAstClass::QuotedString => super::string_origins::interpolated(names, node),
         RakuAstClass::QuotedRegex | RakuAstClass::QuotedRegexRx => {
