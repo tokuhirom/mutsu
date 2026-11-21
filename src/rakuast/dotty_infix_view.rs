@@ -4,8 +4,8 @@
 use super::view::node_field;
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
-use crate::value::RuntimeError;
 use crate::scope::NameScope;
+use crate::value::RuntimeError;
 
 /// `TERM .meth` (`Spelling::DottyInfixCall`): the method call's postfix
 /// application as rakudo's dotty infix,
@@ -25,7 +25,9 @@ pub(super) fn call(names: &NameScope, call: &Expr) -> Result<RakuAstNode, Runtim
     let (Some(mut left), Some(mut right)) =
         (take(&mut node, "operand"), take(&mut node, "postfix"))
     else {
-        return Err(super::view::unsupported("a dotty infix call of another shape"));
+        return Err(super::view::unsupported(
+            "a dotty infix call of another shape",
+        ));
     };
     // `(1 ~ 2)\n .chars`: Rakudo drops the parentheses around a postfix
     // operand but keeps them around a dotty infix's left side.
