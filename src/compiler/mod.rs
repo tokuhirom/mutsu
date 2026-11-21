@@ -1102,6 +1102,7 @@ mod control_if;
 mod control_repeat;
 mod decl_plan;
 mod decl_reset;
+mod self_reading_container_decl;
 mod destructure_lane;
 mod enter_phaser_exprs;
 mod expr;
