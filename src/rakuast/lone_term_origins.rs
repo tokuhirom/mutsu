@@ -50,7 +50,11 @@ pub(super) fn trailing_variable(list: &mut RakuAstNode, inside: SrcSpan) {
         return;
     };
     let Some(at) = super::unit_source::with_text(inside, |text| {
-        let body = text.trim_end().strip_suffix(';').unwrap_or(text.trim_end()).trim_end();
+        let body = text
+            .trim_end()
+            .strip_suffix(';')
+            .unwrap_or(text.trim_end())
+            .trim_end();
         let head = body.strip_suffix(name.as_str())?;
         (head.is_empty() || head.ends_with([';', '{', ' ', '\t', '\n']))
             .then_some(inside.from as usize + head.len())
