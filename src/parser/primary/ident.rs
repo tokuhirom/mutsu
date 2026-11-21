@@ -1,4 +1,5 @@
 mod anon_regex;
+pub(crate) use anon_regex::fold_line_in_code_blocks;
 pub(in crate::parser) mod anon_sub;
 pub(crate) mod circumfix;
 mod identifier_call;

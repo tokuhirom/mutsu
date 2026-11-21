@@ -19,6 +19,7 @@ pub(crate) use stmt::simple::{PREC_SEQUENCE, lookup_custom_infix_precedence};
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
+pub(crate) use primary::ident::fold_line_in_code_blocks;
 pub(crate) use primary::ident::slipped_control_stmt;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
