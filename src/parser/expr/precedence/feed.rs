@@ -89,3 +89,35 @@ pub(crate) fn lift_feed_in_list(items: Vec<Expr>) -> Vec<Expr> {
     head.append(&mut tail);
     head
 }
+
+/// The source of a leftward feed (`<==`, `<<==`) whose first item, `first`,
+/// was parsed up to `input`: a feed is looser than the comma, so the items
+/// after it (`@p <== 3, 4`) are part of the source, an [`Expr::ArrayLiteral`]
+/// as a declaration feed's (`my @p <== 3, 4`). A `,,` or a list end stops it.
+// Cost: O(n), n = length of the list's text.
+pub(in crate::parser::expr) fn leftward_source_list(input: &str, first: Expr) -> PResult<'_, Expr> {
+    let mut items = vec![first];
+    let mut rest = input;
+    loop {
+        let (r, _) = ws(rest)?;
+        let Some(r) = r.strip_prefix(',').filter(|r| !r.starts_with(',')) else {
+            break;
+        };
+        let (r, _) = ws(r)?;
+        if r.is_empty() || r.starts_with([';', '}', ')', ']']) {
+            rest = r;
+            break;
+        }
+        let (r, item) = sequence_expr(r)?;
+        items.push(item);
+        rest = r;
+    }
+    match items.pop() {
+        Some(only) if items.is_empty() => Ok((input, only)),
+        Some(last) => {
+            items.push(last);
+            Ok((rest, Expr::ArrayLiteral(items)))
+        }
+        None => Ok((input, Expr::ArrayLiteral(items))),
+    }
+}

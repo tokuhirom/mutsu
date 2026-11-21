@@ -16,6 +16,7 @@ use crate::value::{Value, ValueView};
 /// and its `Infix` covers the last operator, as Rakudo's does.
 // Cost: O(n + k), n = length of the list's source, k = operands.
 pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
+    super::feed_origins::declaration_sink(node);
     // `@a ==> f() ==> my @o`: a feed is placed as an infix is.
     let Some(op) = child(node, "infix")
         .filter(|infix| matches!(infix.class, RakuAstClass::Infix | RakuAstClass::Feed))

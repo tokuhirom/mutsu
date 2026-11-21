@@ -8,7 +8,7 @@ use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::value::{RuntimeError, Value, ValueView};
 
 // Cost: O(n), n = size of the block's own body.
-fn declares_placeholder(node: &RakuAstNode) -> bool {
+pub(crate) fn declares_placeholder(node: &RakuAstNode) -> bool {
     node.fields.iter().any(|field| {
         let values: Vec<&Value> = match &field.value {
             RakuAstFieldValue::Node(v) => vec![v],

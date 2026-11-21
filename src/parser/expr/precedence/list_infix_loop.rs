@@ -629,6 +629,13 @@ fn parse_list_infix_loop_impl<'a>(
             .map_err(|err| {
                 enrich_expected_error(err, "expected expression after feed operator", r.len())
             })?;
+            // A feed is looser than the comma: `@p <== grep { $_ } <== 3, 4`
+            // feeds the list `3, 4`, as a declaration feed does.
+            let (r, right) = if matches!(feed_op, FeedOp::ToLeft | FeedOp::AppendLeft) {
+                super::feed::leftward_source_list(r, right)?
+            } else {
+                (r, right)
+            };
             *left = make_feed_node(feed_op, left.clone(), right);
             rest = r;
             continue;
