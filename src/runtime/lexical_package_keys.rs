@@ -111,7 +111,10 @@ impl Interpreter {
         value: &crate::value::Value,
     ) {
         let name_sym = Symbol::intern(name);
-        if crate::qualified::package_parent(name_sym) != Some(self.current_package_sym()) {
+        let parent = self.current_package_sym();
+        if crate::qualified::package_parent(name_sym) != Some(parent)
+            || self.is_role(parent.as_str())
+        {
             return;
         }
         let short = crate::qualified::unqualified_part(name_sym);

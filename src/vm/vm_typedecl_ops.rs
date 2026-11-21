@@ -900,16 +900,18 @@ impl Interpreter {
             }
             // A type declared in a module or package block (`module M { class
             // G { } }`, or `my class G`) is a lexical of that block under its
-            // short name, as
-            // rakudo installs it: there it shadows a same-named outer type
-            // (`class G { }; module M { class G { }; G }` is `M::G`). The
-            // block's own env tier drops the binding when the block ends, so
-            // the outer `G` is untouched (#18481).
+            // short name, as rakudo installs it: there it shadows a same-named
+            // outer type (`class G { }; module M { class G { }; G }` is
+            // `M::G`). The block's own env tier drops the binding when the
+            // block ends, so the outer `G` is untouched (#18481). A role body
+            // runs deferred, with no tier of its own, and lends its types
+            // through `::?ROLE` instead (`resolve_suppressed_type`).
             if qualified_name != resolved_name
                 && !resolved_is_qualified
                 && !parent_is_class
                 && !in_parent_method
                 && qualified_parent == Some(current_package_sym)
+                && !self.is_role(current_package_sym.as_str())
             {
                 self.env_mut().insert(
                     resolved_name.clone(),
@@ -1639,6 +1641,7 @@ impl Interpreter {
             } else if !name_is_qualified
                 && current_package_sym != crate::symbol::wk::global_package()
                 && source_qualified_name != name_str
+                && !self.is_role(&current_package)
             {
                 // A role a module or package block declared (#18481).
                 self.register_package_block_type(
