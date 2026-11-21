@@ -215,9 +215,7 @@ pub(super) fn written_operator(name: &RakuAstNode) -> Option<String> {
 // Cost: O(p + n), as [`place`].
 pub(super) fn call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
     use super::infix_origins::{child, with_child};
-    if node.class != RakuAstClass::CallName
-        || child(node, "args").is_some()
-    {
+    if node.class != RakuAstClass::CallName || child(node, "args").is_some() {
         return false;
     }
     let mut placed = false;
