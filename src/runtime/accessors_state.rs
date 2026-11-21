@@ -476,6 +476,19 @@ impl Interpreter {
     // it never held (one intern and one index probe); otherwise
     // `unmerged_our_var_key`'s / `lexical_package_key`'s.
     pub(crate) fn get_our_var(&self, key: &str) -> Option<Value> {
+        self.get_our_var_keyed(key, None)
+    }
+
+    /// [`Self::get_our_var`] for a caller that already holds the key's
+    /// interned form: the miss path's index probe uses it instead of
+    /// interning the text again.
+    // Cost: as `get_our_var`, without the intern.
+    pub(crate) fn get_our_var_sym(&self, key: Symbol) -> Option<Value> {
+        self.get_our_var_keyed(key.as_str(), Some(key))
+    }
+
+    // Cost: as `get_our_var`; `key_sym` saves the miss path's intern.
+    fn get_our_var_keyed(&self, key: &str, key_sym: Option<Symbol>) -> Option<Value> {
         // The common case first: the key is stored as spelled and is not
         // redirected.
         {
@@ -487,7 +500,7 @@ impl Interpreter {
                 };
             }
         }
-        self.our_var_store_key(key)
+        self.our_var_store_key(key, key_sym)
             .and_then(|real| self.our_table().get(real.as_deref().unwrap_or(key)).cloned())
     }
 
@@ -500,7 +513,7 @@ impl Interpreter {
                 Some(redirected) => self.our_table().contains_key(redirected.as_str()),
             };
         }
-        self.our_var_store_key(key)
+        self.our_var_store_key(key, None)
             .is_some_and(|real| self.our_table().contains_key(real.as_deref().unwrap_or(key)))
     }
 
@@ -508,7 +521,7 @@ impl Interpreter {
     /// for `key` itself, `Some(Some(real))` for a redirect, `None` for a key
     /// that cannot be stored.
     // Cost: see `get_our_var`.
-    fn our_var_store_key(&self, key: &str) -> Option<Option<String>> {
+    fn our_var_store_key(&self, key: &str, key_sym: Option<Symbol>) -> Option<Option<String>> {
         if !self.our_table().contains_key(key) {
             // Every key the store holds put its unqualified part (`<sigil>` +
             // the segment after the last `::`) into the append-only
@@ -520,7 +533,7 @@ impl Interpreter {
             // splitting and env probes (~2.9k instructions per miss; term
             // probes such as `\Real` walk a package chain of them per type
             // check, App::Moneymoor).
-            let key_sym = Symbol::intern(key);
+            let key_sym = key_sym.unwrap_or_else(|| Symbol::intern(key));
             if !self
                 .our_table()
                 .has_unqualified(crate::qualified::unqualified_part(key_sym))

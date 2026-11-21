@@ -474,10 +474,14 @@ impl Interpreter {
         // memoized per symbol: no `format!` and no `"::"` search per read.
         for pkg in crate::qualified::package_ancestors(cur_sym) {
             let candidate = crate::qualified::qualified_var(pkg, name);
-            if let Some(v) = self.get_our_var(candidate.as_str()) {
+            // The candidate is already interned: both probes take it as a
+            // `Symbol`, so a miss -- the common outcome, a bareword type name
+            // such as `Bool` probed under every enclosing package -- does not
+            // re-intern its text in each store it asks.
+            if let Some(v) = self.get_our_var_sym(candidate) {
                 return Some(v);
             }
-            if let Some(v) = self.get_env_with_main_alias(candidate.as_str()) {
+            if let Some(v) = self.get_env_with_main_alias_sym(candidate.as_str(), candidate) {
                 return Some(v);
             }
             if let Some(v) = self
@@ -1764,7 +1768,7 @@ impl Interpreter {
             // env binding of the same name shadows it.
             .or_else(|| {
                 crate::qualified::is_qualified(sym)
-                    .then(|| self.toplevel_package_symbol(name).cloned())
+                    .then(|| self.toplevel_package_symbol_sym(sym).cloned())
                     .flatten()
             })
     }
