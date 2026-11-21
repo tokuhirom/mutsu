@@ -117,12 +117,17 @@ fn param_infos(expr: &Expr) -> Option<Vec<ParamInfo>> {
         && body.is_empty()
     {
         let info = crate::value::signature::param_defs_to_sig_info(param_defs, return_type.clone());
-        let literal = Expr::Literal(crate::value::signature::make_signature_value(info, None));
-        return param_infos(&literal);
+        return signature_param_infos(&crate::value::signature::make_signature_value(info, None));
     }
     let Expr::Literal(literal) = expr else {
         return None;
     };
+    signature_param_infos(literal)
+}
+
+/// [`param_infos`] of a `Signature` value.
+// Cost: O(p), p = signature parameters.
+fn signature_param_infos(literal: &Value) -> Option<Vec<ParamInfo>> {
     let ValueView::Instance {
         class_name,
         attributes,
