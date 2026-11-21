@@ -174,6 +174,7 @@ mod keyed_hash;
 mod label_context;
 mod list_origins;
 mod literal_parameter;
+mod lone_term_origins;
 mod lower;
 mod match_vars;
 mod meta_infix;

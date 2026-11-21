@@ -264,6 +264,29 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         if trait_node.class != RakuAstClass::TraitIs {
             return;
         }
+        // `my @a is Array`: a trait naming a type holds a `type`, placed over
+        // the name.
+        if let Some(ty) = child(trait_node, "type") {
+            let named = child_name(ty).is_some_and(|name| {
+                super::unit_source::with_text(SrcSpan::new(clause.name.0, clause.name.1), |w| {
+                    (w == name).then_some(())
+                })
+                .is_some()
+            });
+            if !named || clause.argument.is_some() {
+                return;
+            }
+            let mut trait_node = RakuAstNode::clone(trait_node);
+            super::origin::set_span(
+                &mut trait_node,
+                SrcSpan::new(clause.whole.0, clause.whole.1),
+            );
+            with_child(&mut trait_node, "type", |ty| {
+                type_origin(ty, (clause.name.0, clause.name.1, clause.name.1))
+            });
+            *value = Value::rakuast(Box::new(trait_node));
+            continue;
+        }
         let name_ok = child(trait_node, "name")
             .and_then(super::infix_origins::leaf_text)
             .is_some_and(|name| {
