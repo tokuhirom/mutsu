@@ -477,8 +477,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             // The replacement is a thunk evaluated per match,
                             // as for `s[pattern] = EXPR`.
                             let (after_eq_ws, _) = ws(after_eq)?;
-                            let (rest, replacement_expr) =
-                                expression_no_word_logical(after_eq_ws)?;
+                            let (rest, replacement_expr) = expression_no_word_logical(after_eq_ws)?;
                             let pattern_raw = pattern;
                             let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
                             validate_regex_pattern_or_perror(&pattern)?;
