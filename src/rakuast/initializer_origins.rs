@@ -51,3 +51,20 @@ pub(super) fn unplaced_expression(names: &NameScope, node: &mut RakuAstNode, op:
         }
     }
 }
+
+/// Whether Rakudo gives `init`, the initializer of the declaration `node`,
+/// an origin: always, except on an attribute (`has`), whose default keeps
+/// one only when it is a literal one ([`super::attribute_decl::literal_default`]).
+// Cost: O(s), s = segments of a quoted default.
+pub(super) fn placed_by_rakudo(node: &RakuAstNode, init: &RakuAstNode) -> bool {
+    let scope = node.fields.iter().find_map(|f| match &f.value {
+        super::RakuAstFieldValue::Node(v) if f.name == Some("scope") => {
+            v.as_str().map(str::to_string)
+        }
+        _ => None,
+    });
+    if scope.as_deref() != Some("has") {
+        return true;
+    }
+    super::infix_origins::child_at(init, 0).is_none_or(super::attribute_decl::literal_default)
+}

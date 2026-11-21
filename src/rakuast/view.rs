@@ -1994,7 +1994,12 @@ pub(super) fn var_declaration(
         let shared = super::attribute_decl::initializer_value(same, fields.last());
         let value = match shared {
             Some(value) => value,
-            None => Value::rakuast(Box::new(view_expr(names, wb)?)),
+            // Rakudo's default thunk holds the written term once.
+            None => {
+                let mut copy = view_expr(names, wb)?;
+                super::origin::clear_tree(&mut copy);
+                Value::rakuast(Box::new(copy))
+            }
         };
         fields.insert(traits_at, super::attribute_decl::will_build_field(value));
     }
