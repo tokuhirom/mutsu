@@ -225,7 +225,9 @@ fn not_allowed(target: &Value, args: &[Value], name: &str) -> Answer {
     if args.len() == 2 {
         return Some(Err(RuntimeError::assignment_ro_value(Value::NIL)));
     }
-    Some(Err(RuntimeError::new(format!("Use of Nil.{name} not allowed"))))
+    Some(Err(RuntimeError::new(format!(
+        "Use of Nil.{name} not allowed"
+    ))))
 }
 
 /// `new(*@)`: `Nil`, whatever the arguments.
