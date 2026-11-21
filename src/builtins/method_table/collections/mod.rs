@@ -39,6 +39,7 @@ pub(crate) mod list_aggregate;
 mod list_bounds;
 pub(crate) mod list_transform;
 pub(crate) mod map;
+mod nil_own;
 mod match1_late;
 mod match3_late;
 mod mu_late;
@@ -111,6 +112,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     accepts_open::ROWS,
     any_subscript::ROWS,
     any_subscript::NIL_ROWS,
+    nil_own::ROWS,
     range::ROWS,
     sampling::BOOL_ROWS,
     sampling::PICK_ROWS,

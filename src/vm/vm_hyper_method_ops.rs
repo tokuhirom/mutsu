@@ -1054,6 +1054,12 @@ impl Interpreter {
                         results.push(sub_result);
                     } else if !skip_native
                         && item.is_nil()
+                        && let Some(own) = self.nil_own_row(&method, &item_args)
+                    {
+                        // `Nil`'s own method (`nil_own.rs`): `(Nil,)».chars`.
+                        results.push(own?);
+                    } else if !skip_native
+                        && item.is_nil()
                         && crate::vm::vm_call_method_ops::nil_absorbs_method(&method)
                     {
                         // Raku's `Nil.FALLBACK` yields Nil for any method Nil does
@@ -1449,6 +1455,12 @@ impl Interpreter {
                 // Leaf: apply the method, mirroring the non-recursive leaf path.
                 // Nil absorbs methods it does not define (Raku's `Nil.FALLBACK`);
                 // see the matching branch in `exec_hyper_method_call_op`.
+                if !skip_native
+                    && item.is_nil()
+                    && let Some(own) = self.nil_own_row(method, args)
+                {
+                    return Ok((own?, item.clone()));
+                }
                 if !skip_native
                     && item.is_nil()
                     && crate::vm::vm_call_method_ops::nil_absorbs_method(method)
