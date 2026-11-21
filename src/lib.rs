@@ -46,6 +46,7 @@ mod op_prec;
 mod op_scan_index;
 mod op_scan_routine_state;
 mod opcode;
+mod opcode_frame_needs;
 mod opcode_native_int_step;
 mod opcode_param_fills;
 mod param_destructure;

@@ -8211,6 +8211,9 @@ pub(crate) struct CompiledCode {
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
     /// inline read (ADR-0004 J4d).
     pub(crate) local_read_plain: std::sync::OnceLock<Box<[bool]>>,
+    /// Lazily-computed frame needs of this body (ADR-18393 D2, see
+    /// [`CompiledCode::frame_needs`]).
+    pub(crate) frame_needs: std::sync::OnceLock<crate::opcode_frame_needs::FrameNeeds>,
     /// Lazily-built "a `++`/`--` may step this slot as a bare native `int`"
     /// bit per local slot (see [`CompiledCode::native_int_step_slot`],
     /// ADR-18357).
@@ -8935,6 +8938,7 @@ impl CompiledCode {
             lex_import_sites: Default::default(),
             type_decl_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
+            frame_needs: std::sync::OnceLock::new(),
             native_int_step_slots: std::sync::OnceLock::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),

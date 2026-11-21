@@ -40,34 +40,10 @@ pub(super) fn slot_frame_body_ok(
     cc: &CompiledCode,
     owner: Symbol,
 ) -> bool {
-    if def.is_rw
-        // `reconcile_captured_readonly_ex` has work only for a code that
-        // writes a free variable or an `is rw` method; the op list below
-        // admits no write at all.
-        || !cc.free_var_writes.is_empty()
-        || !cc.free_var_container_writes.is_empty()
-        || !cc.nested_sub_written_free.is_empty()
-        || cc.static_name_lookup
-        || cc.needs_reflective_capture
-        || cc.reads_topic
-        || cc.writes_topic
-        || cc.uses_routine_state
-        || cc.sets_routine_state
-    {
-        return false;
-    }
-    let ops_ok = cc.ops.iter().all(|op| match op {
-        OpCode::LoadConst(_)
-        | OpCode::LoadNil
-        | OpCode::LoadTrue
-        | OpCode::LoadFalse
-        | OpCode::Add
-        | OpCode::Sub
-        | OpCode::Mul => true,
-        OpCode::GetLocal(idx) => cc.local_read_plain(*idx as usize),
-        _ => false,
-    });
-    ops_ok
+    // `reconcile_captured_readonly_ex` has work only for a code that writes
+    // a free variable (refused by `NAME_VIEW`) or an `is rw` method.
+    !def.is_rw
+        && cc.frame_needs().is_empty()
         && def
             .frame_plan(owner, cc)
             .locals
