@@ -402,17 +402,31 @@ impl Interpreter {
         let mut named: Vec<(String, Value)> = Vec::new();
         let mut i = 0;
         let mut positional_started = false;
+        // `--` ends option parsing outright: what follows is positional even
+        // with `:named-anywhere`, which only lets options follow ordinary
+        // positionals (`red migration apply --test -- raku -e 'exit 0'`,
+        // #18479).
+        let mut options_ended = false;
 
         while i < raw_args.len() {
             let arg = &raw_args[i];
 
-            if positional_started && !opts.named_anywhere {
+            // The first `--` is the terminator wherever it stands, also after
+            // a positional; a later one is an ordinary positional word.
+            if arg == "--" && !options_ended {
+                positional_started = true;
+                options_ended = true;
+                i += 1;
+                continue;
+            }
+            if options_ended || (positional_started && !opts.named_anywhere) {
                 positional.push(Self::cli_value(arg));
                 i += 1;
                 continue;
             }
             if arg == "--" {
                 positional_started = true;
+                options_ended = true;
                 i += 1;
                 continue;
             }
