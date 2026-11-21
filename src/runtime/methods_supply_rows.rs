@@ -148,29 +148,61 @@ impl SupplyOp {
 }
 
 impl Interpreter {
-    /// A live per-tap recipe (ADR-18443) instantiated once and shared: what a
-    /// consumer that only knows a live source by its supplier gets instead of
-    /// the recipe. `share` starts the recipe, so what is left is a plain live
-    /// supplier, and the on-demand marks the eager stages refuse are dropped.
+    /// A live per-tap recipe (ADR-18443) instantiated once and shared, for a
+    /// consumer that only knows a live source by its supplier: the chain is
+    /// rebuilt with the eager stages (a stage tap registered on the source
+    /// now, feeding a derived supplier) every live `map`/`grep`/`do`/`head`
+    /// had before the recipes.
     // TODO: retire with the bridge (ADR-18443 slices 2-3).
-    // Cost: O(a) plus starting the recipe, a = the Supply's attributes.
+    // Cost: O(d), d = stages in the recipe.
     pub(crate) fn live_recipe_shared_instance(
         &mut self,
         attributes: &AttrMap,
     ) -> Result<Value, RuntimeError> {
-        let shared = self.native_supply(attributes, "share", Vec::new())?;
-        Ok(match shared.view() {
-            ValueView::Instance { attributes: shared_attrs, .. } => {
-                let attrs: HashMap<String, Value> = shared_attrs
-                    .as_map()
-                    .iter()
-                    .filter(|(k, _)| !matches!(k.as_str(), "shared_on_demand" | "on_demand_callback"))
-                    .map(|(k, v)| (k.to_string(), v.clone()))
-                    .collect();
-                Value::make_instance(Symbol::intern("Supply"), attrs)
+        use crate::runtime::native_methods::{
+            TransformMode, next_supplier_id, register_supplier_head_tap,
+            register_supplier_transform_tap, supplier_id_from_attrs,
+        };
+        let source = attributes.get("derive_source").cloned().unwrap_or(Value::NIL);
+        let ValueView::Instance { attributes: source_attrs, .. } = source.view() else {
+            return Err(RuntimeError::new("a live Supply recipe without a source"));
+        };
+        let source_attrs = source_attrs.as_map().clone();
+        let base = if source_attrs.contains_key(Self::LIVE_RECIPE_KEY) {
+            self.live_recipe_shared_instance(&source_attrs)?
+        } else {
+            source.clone()
+        };
+        let base_sid = match base.view() {
+            ValueView::Instance { attributes, .. } => supplier_id_from_attrs(&attributes.as_map()),
+            _ => None,
+        }
+        .ok_or_else(|| RuntimeError::new("a live Supply recipe over a non-live source"))?;
+        let callable = attributes.get("derive_callable").cloned().unwrap_or(Value::NIL);
+        let mode = attributes.get("derive_mode").map(Value::to_string_value).unwrap_or_default();
+        let downstream_sid = next_supplier_id();
+        let live = match mode.as_str() {
+            "head" => {
+                let count = callable.as_int().unwrap_or(0).max(0) as usize;
+                register_supplier_head_tap(base_sid, downstream_sid, count);
+                false
             }
-            _ => shared,
-        })
+            other => {
+                let mode = match other {
+                    "map" => TransformMode::Map,
+                    "do" => TransformMode::Do,
+                    _ => TransformMode::Grep,
+                };
+                register_supplier_transform_tap(base_sid, downstream_sid, callable, mode);
+                true
+            }
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("values".to_string(), Value::array(Vec::new()));
+        attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+        attrs.insert("live".to_string(), Value::truth(live));
+        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
     /// `.live` of a live per-tap recipe: walk its stages down to the live

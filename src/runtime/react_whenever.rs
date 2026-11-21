@@ -382,6 +382,23 @@ impl Interpreter {
                 "__mutsu_whenever_id",
                 Value::int(whenever_id as i64),
             );
+            // A `react` subscribes to a live per-tap recipe (ADR-18443)
+            // through its eager instance, from the moment the `whenever`
+            // runs, as before the recipes.
+            // TODO: drive the recipe per subscription (ADR-18443 slices 2-3).
+            let supply_val = match supply_val.view() {
+                ValueView::Instance { attributes, .. }
+                    if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY)
+                        && self
+                            .async_state
+                            .supply_emit_buffer
+                            .last()
+                            .is_some_and(|f| f.is_react) =>
+                {
+                    self.live_recipe_shared_instance(&attributes.as_map())?
+                }
+                _ => supply_val,
+            };
             // In react mode: register the subscription for the event loop
             let sub = Value::array(vec![
                 supply_val.clone(),
