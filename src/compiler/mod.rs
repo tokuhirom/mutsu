@@ -2521,10 +2521,18 @@ impl Compiler {
         if let Some(absolute) = name.strip_prefix("GLOBAL::") {
             return absolute.to_string();
         }
-        if self.current_package == "GLOBAL" || self.current_package.contains("::&") {
+        // Inside a routine `current_package` is the routine's mangled state
+        // scope (`Q::&f/0`); a package declared there is `our`-scoped in the
+        // package the routine was declared in (`Q::R`, #18480).
+        let package = if self.current_package.contains("::&") {
+            self.enclosing_package.as_deref().unwrap_or("GLOBAL")
+        } else {
+            self.current_package.as_str()
+        };
+        if package == "GLOBAL" || package.contains("::&") {
             name.to_string()
         } else {
-            format!("{}::{}", self.current_package, name)
+            format!("{package}::{name}")
         }
     }
 
