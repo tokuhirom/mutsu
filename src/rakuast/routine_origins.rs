@@ -17,7 +17,7 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
     };
     with_child(node, "name", |name| {
         super::origin::set_span(name, spans.name);
-        operator_quote_origin(name, spans.name);
+        super::name_quote_origins::place(name, spans.name);
     });
     // An empty `()` the node leaves out still has a range.
     if spans.signature.is_some() && !node.fields.iter().any(|f| f.name == Some("signature")) {
@@ -36,67 +36,6 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
             });
         }
     });
-}
-
-/// The origins of the word quote an operator routine's name carries
-/// (`term:<forty-two>`, `trait_mod:<is>`): the `QuotedString` is the `<...>` that
-/// ends the name, its `StrLiteral` the text between the angle brackets.
-/// Only the plain `<word>` spelling, whose delimiters are one character each.
-// Cost: O(f), f = fields of the name and its quote.
-fn operator_quote_origin(name: &mut RakuAstNode, span: crate::ast::SrcSpan) {
-    if !span.is_some() {
-        return;
-    }
-    let Some(field) = name
-        .fields
-        .iter_mut()
-        .find(|f| f.name == Some("colonpairs"))
-    else {
-        return;
-    };
-    let RakuAstFieldValue::List(pairs) = &mut field.value else {
-        return;
-    };
-    let [pair] = pairs.as_mut_slice() else {
-        return;
-    };
-    let ValueView::RakuAst(quote) = pair.view() else {
-        return;
-    };
-    if quote.class != RakuAstClass::QuotedString {
-        return;
-    }
-    let mut quote = RakuAstNode::clone(quote);
-    let Some(segments) = quote.fields.iter_mut().find(|f| f.name == Some("segments")) else {
-        return;
-    };
-    let RakuAstFieldValue::List(items) = &mut segments.value else {
-        return;
-    };
-    let [item] = items.as_mut_slice() else {
-        return;
-    };
-    let ValueView::RakuAst(literal) = item.view() else {
-        return;
-    };
-    let mut literal = RakuAstNode::clone(literal);
-    let Some(text) = literal.fields.first().and_then(|f| match &f.value {
-        RakuAstFieldValue::Node(v) => Some(v.to_string_value()),
-        _ => None,
-    }) else {
-        return;
-    };
-    // `<` + text + `>`, the last characters of the name.
-    let to = span.to as usize;
-    let quote_len = text.chars().count() + 2;
-    let from = to.saturating_sub(quote_len);
-    if from <= span.from as usize {
-        return;
-    }
-    super::origin::set_span(&mut literal, crate::ast::SrcSpan::new(from + 1, to - 1));
-    *item = Value::rakuast(Box::new(literal));
-    super::origin::set_span(&mut quote, crate::ast::SrcSpan::new(from, to));
-    *pair = Value::rakuast(Box::new(quote));
 }
 
 /// The `Signature` of an anonymous `sub` / `method` built from `params`

@@ -179,6 +179,7 @@ mod modifier_lower;
 mod multidim_splat;
 mod name_colonpairs;
 pub(crate) mod name_parts;
+mod name_quote_origins;
 mod named_ctor;
 mod named_param;
 mod negated_set;
