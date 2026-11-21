@@ -220,9 +220,8 @@ impl Interpreter {
                 // releases them when the source is done -- as `head` does
                 // (issue #11839).
                 let recipe = Self::stage_is_live_recipe(attributes);
-                if recipe
-                    || crate::runtime::native_methods::supplier_id_from_attrs(attributes).is_some()
-                {
+                let live_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes);
+                if recipe || live_sid.is_some() {
                     // The source's length is unknowable: `tail(*)`/`tail(Inf)`
                     // keep everything (`i64::MAX`, not `usize::MAX`: the count
                     // is clamped as an `i64`). A callable (`*-3`) is asked with
@@ -243,10 +242,8 @@ impl Interpreter {
                             Value::int(count.min(i64::MAX as usize) as i64),
                         ));
                     }
-                    let Some(source_sid) =
-                        crate::runtime::native_methods::supplier_id_from_attrs(attributes)
-                    else {
-                        unreachable!("checked above");
+                    let Some(source_sid) = live_sid else {
+                        return Err(RuntimeError::new("a live tail without a supplier"));
                     };
                     let downstream_sid = next_supplier_id();
                     register_supplier_tail_tap(source_sid, downstream_sid, count);
