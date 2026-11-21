@@ -4365,16 +4365,16 @@ pub(super) fn lower_regex_node(
             })
         }
         RakuAstClass::RegexAssertionPredicateBlock => Ok(RegexNode::CodeAssertion {
-            code: super::regex_code::source_of(node),
+            code: super::regex_code::execution_source_of(node),
             negated: bool_field(node, "negated")?,
             body: lower_block(names, named_child(node, "block")?)?,
         }),
         RakuAstClass::RegexBlock => Ok(RegexNode::CodeBlock {
-            code: super::regex_code::source_of(node),
+            code: super::regex_code::execution_source_of(node),
             body: lower_block(names, named_child_or_positional(node)?)?,
         }),
         RakuAstClass::RegexAssertionInterpolatedBlock => Ok(RegexNode::InterpolatedBlock {
-            code: super::regex_code::source_of(node),
+            code: super::regex_code::execution_source_of(node),
             body: lower_block(names, named_child(node, "block")?)?,
             sequential: bool_field(node, "sequential")?,
         }),

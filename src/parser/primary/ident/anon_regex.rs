@@ -72,7 +72,7 @@ pub(super) fn anon_regex_value(
 /// line it is written on. `first_line` is the line of the body's opening `{`
 /// (`body` starts right after it). Quoted text and escapes are skipped.
 // Cost: O(n), n = body length.
-fn fold_line_in_code_blocks(body: &str, first_line: i64) -> String {
+pub(crate) fn fold_line_in_code_blocks(body: &str, first_line: i64) -> String {
     if !body.contains("$?LINE") {
         return body.to_string();
     }

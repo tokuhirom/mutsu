@@ -62,3 +62,51 @@ pub(super) fn source_of(node: &RakuAstNode) -> String {
         })
         .unwrap_or_default()
 }
+
+/// The source of the code node `node` (see [`source_of`]) as the engine runs
+/// it: the regex engine parses a code block's text again when it matches, so
+/// `$?LINE` in it would read the line within that text. The view keeps the
+/// written `$?LINE` (`Var::Compiler::Line`, #18291), whose value is the line it
+/// was written on; the first one found in the block fixes the block's first
+/// line, and every `$?LINE` in the text is folded to its line, as the parser
+/// folds an anonymous regex body (`fold_line_in_code_blocks`).
+// Cost: O(n + |code|), n = nodes in the block.
+pub(super) fn execution_source_of(node: &RakuAstNode) -> String {
+    let code = source_of(node);
+    let Some(first) = first_compiler_line(node) else {
+        return code;
+    };
+    let Some(at) = code.find("$?LINE") else {
+        return code;
+    };
+    let first_line = first - code[..at].matches('\n').count() as i64;
+    let folded =
+        crate::parser::fold_line_in_code_blocks(&format!("{{{code}}}"), first_line);
+    folded
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))
+        .map_or(code, str::to_string)
+}
+
+/// The line the first `Var::Compiler::Line` under `node` holds, in source
+/// order.
+// Cost: O(n), n = nodes under `node`.
+fn first_compiler_line(node: &RakuAstNode) -> Option<i64> {
+    if node.class == RakuAstClass::VarCompilerLine {
+        return match node.fields.first().map(|f| &f.value) {
+            Some(RakuAstFieldValue::Node(v)) => match v.view() {
+                ValueView::Int(line) => Some(line),
+                _ => None,
+            },
+            _ => None,
+        };
+    }
+    node.fields.iter().find_map(|f| match &f.value {
+        RakuAstFieldValue::Node(v) => super::lower::rakuast_node_of(v).and_then(first_compiler_line),
+        RakuAstFieldValue::List(items) => items
+            .iter()
+            .filter_map(super::lower::rakuast_node_of)
+            .find_map(first_compiler_line),
+        RakuAstFieldValue::Adverb(_) => None,
+    })
+}
