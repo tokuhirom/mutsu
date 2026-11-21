@@ -3691,7 +3691,8 @@ impl Expr {
             Expr::Grouped(inner)
                 if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty())
                     && !inner.is_modified_statement()
-                    && !inner.is_bare_loop_term() =>
+                    && !inner.is_bare_loop_term()
+                    && !inner.is_statement_control() =>
             {
                 inner
             }
@@ -3709,6 +3710,26 @@ impl Expr {
             Expr::DoStmt(stmt) if match stmt.as_ref() {
                 Stmt::While { is_bare_term, .. } | Stmt::Loop { is_bare_term, .. } => *is_bare_term,
                 Stmt::Ast(node) => node.is_bare_loop_term(),
+                _ => false,
+            }
+        )
+    }
+
+    /// Whether this is a conditional or `for` / `given` statement written
+    /// without `do` in expression position. `(for @a { }).join` keeps the
+    /// parentheses: the statement is the content of a semilist.
+    // Cost: O(1).
+    pub(crate) fn is_statement_control(&self) -> bool {
+        matches!(
+            self,
+            Expr::DoStmt(stmt) if match stmt.as_ref() {
+                Stmt::For { .. } | Stmt::If { .. } | Stmt::Given { .. } => true,
+                Stmt::Ast(node) => matches!(
+                    node.as_ref(),
+                    parsed::ParsedStmt::Conditional(_)
+                        | parsed::ParsedStmt::Given { .. }
+                        | parsed::ParsedStmt::For { .. }
+                ),
                 _ => false,
             }
         )
