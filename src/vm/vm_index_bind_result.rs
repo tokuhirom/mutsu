@@ -31,10 +31,29 @@ impl Interpreter {
 
     /// [`Self::bind_expression_value`] for a store whose value sits under
     /// `indices` subscripts on the stack (`%h<a><b> := v`).
-    // Cost: O(s), as `bind_expression_value`.
+    /// Only a single element answers it: a slice bind (`@a[0, 1] := ...`,
+    /// `%h<a b> := ...`, a Range or `*` subscript) answers the bound slice.
+    // Cost: O(s + d), as `bind_expression_value`, d = `indices`.
     pub(crate) fn nested_bind_expression_value(&self, indices: usize) -> Option<Value> {
         let at = self.stack.len().checked_sub(indices + 1)?;
+        if !self.stack[at + 1..].iter().all(Self::is_single_element_subscript) {
+            return None;
+        }
         Self::bind_expression_value(&self.stack[at])
+    }
+
+    /// Whether `idx` names exactly one element: an integer, string or number
+    /// key (or a variable holding one), not a list, Range, Whatever, Junction or code subscript.
+    // Cost: O(1).
+    fn is_single_element_subscript(idx: &Value) -> bool {
+        matches!(
+            idx.deref_container().view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::Str(_)
+        )
     }
 
     /// Replace a finished store's result with the bound value, when there is
