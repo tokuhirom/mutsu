@@ -68,8 +68,7 @@ pub(super) fn name_argument(node: &mut RakuAstNode, name_end: usize, to: usize) 
     let Some(term) = child_at(args, 0) else {
         return;
     };
-    if args.fields.len() != 1 || term.class != RakuAstClass::TermName || term.origin.0.is_some()
-    {
+    if args.fields.len() != 1 || term.class != RakuAstClass::TermName || term.origin.0.is_some() {
         return;
     }
     let Some(super::name_parts::NameShape::Identifier(name)) =

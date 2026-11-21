@@ -97,7 +97,10 @@ pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: cr
             .fields
             .iter()
             .all(|f| matches!(f.name, Some("expression" | "labels")))
-        && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("expression"))
+        && let Some(field) = node
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("expression"))
         && let RakuAstFieldValue::Node(held) = &mut field.value
         && let ValueView::RakuAst(expression) = held.view()
         && expression.origin.0.is_none()
