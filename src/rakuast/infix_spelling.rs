@@ -103,7 +103,9 @@ pub(super) fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usi
         })
     };
     Some(match infix.class {
-        RakuAstClass::Infix | RakuAstClass::Mixin => (super::infix_origins::leaf_text(infix)?, None),
+        RakuAstClass::Infix | RakuAstClass::Mixin => {
+            (super::infix_origins::leaf_text(infix)?, None)
+        }
         RakuAstClass::Assignment => ("=".to_string(), None),
         RakuAstClass::MetaInfixAssign => {
             let op = inner()?;
@@ -118,7 +120,8 @@ pub(super) fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usi
         }
         // `[&plus]`: a routine used as an operator, its variable inside.
         RakuAstClass::FunctionInfix => {
-            let var = super::infix_origins::child_at(infix, 0).and_then(super::infix_origins::leaf_text)?;
+            let var = super::infix_origins::child_at(infix, 0)
+                .and_then(super::infix_origins::leaf_text)?;
             let len = var.len();
             (format!("[{var}]"), Some((1, 1 + len)))
         }
