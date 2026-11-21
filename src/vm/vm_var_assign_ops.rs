@@ -1182,7 +1182,15 @@ impl Interpreter {
             *arc.lock().unwrap() = val.clone();
             return;
         }
-        let mut inner = arc.lock().unwrap();
+        // A `:=`-rebindable `@`/`%` (some routine binds it) holds its container
+        // behind a binding cell: the container to fill in place is the one at
+        // the end of that chain, not the binding (#17585).
+        let value_cell = if plain_store {
+            arc.clone()
+        } else {
+            Self::value_cell_of(arc)
+        };
+        let mut inner = value_cell.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
                 if !plain_store
