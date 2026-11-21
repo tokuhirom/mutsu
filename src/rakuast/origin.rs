@@ -86,12 +86,18 @@ pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: cr
         super::expr_block_origins::whenever(node, span);
     }
     super::expr_block_origins::exception_block(node, span);
+    // `L: say 1`: the statement runs on after its labels.
+    let span = super::label_origins::place(node, span);
+    super::loop_setup_origins::place(names, node, span);
     // A `Statement::Expression` with no statement modifier was written as just
     // its expression, which therefore has the statement's range (a `Sub`, a
     // `Class`, a `VarDeclaration`, a call) unless the parser placed it itself.
     if node.class == super::RakuAstClass::StatementExpression
-        && let [field] = node.fields.as_mut_slice()
-        && field.name == Some("expression")
+        && node
+            .fields
+            .iter()
+            .all(|f| matches!(f.name, Some("expression" | "labels")))
+        && let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("expression"))
         && let RakuAstFieldValue::Node(held) = &mut field.value
         && let ValueView::RakuAst(expression) = held.view()
         && expression.origin.0.is_none()
