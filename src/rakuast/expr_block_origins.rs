@@ -18,7 +18,7 @@ use crate::ast::SrcSpan;
 pub(super) fn derive(node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::Block => bare_block(node),
-        RakuAstClass::Sub => anonymous_sub(node),
+        RakuAstClass::Sub | RakuAstClass::Method | RakuAstClass::Submethod => anonymous_sub(node),
         RakuAstClass::PointyBlock => pointy_block(node),
         class if is_prefix(class) => prefix_block(node),
         _ => {}
@@ -127,10 +127,24 @@ fn anonymous_sub(node: &mut RakuAstNode) {
     if super::infix_origins::child(node, "name").is_some() {
         return;
     }
-    let Some(at) = brace_after_word(from, to) else {
+    let Some(at) = brace_after_word(from, to).or_else(|| brace_after_signature(from, to)) else {
         return;
     };
     blockoid(node, at, to);
+}
+
+/// The offset of the `{` after the parenthesized signature that follows the
+/// first word of `from..to` (`sub ($a) { ... }`), when the term ends with
+/// the `}` closing it.
+// Cost: O(n), n = length of the signature.
+fn brace_after_signature(from: usize, to: usize) -> Option<usize> {
+    super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let word = text.find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))?;
+        let signature = text[word..].trim_start().strip_prefix('(')?;
+        let close = super::subst_origins::closing(signature, '(', ')')?;
+        let rest = signature[close + 1..].trim_start();
+        (rest.starts_with('{') && rest.ends_with('}')).then_some(to - rest.len())
+    })
 }
 
 /// `-> $x, Int $y { ... }`: the `Signature` is the parameters between the
@@ -339,5 +353,27 @@ pub(super) fn phaser_statement(names: &crate::scope::NameScope, node: &mut RakuA
                 super::infix_origins::derive(names, expression);
             }
         });
+    });
+}
+
+/// `CATCH { ... }` / `CONTROL { ... }`, a statement written at `span`: its
+/// `Block` is the braces after the keyword, to the end of the statement.
+// Cost: O(n + s), n = length of the statement's source, s = its statements.
+pub(super) fn exception_block(statement: &mut RakuAstNode, span: SrcSpan) {
+    if !matches!(
+        statement.class,
+        RakuAstClass::StatementCatch | RakuAstClass::StatementControl
+    ) {
+        return;
+    }
+    let (from, to) = (span.from as usize, span.to as usize);
+    let Some(at) = brace_after_word(from, to) else {
+        return;
+    };
+    super::infix_origins::with_child(statement, "body", |block| {
+        if block.class == RakuAstClass::Block && block.origin.0.is_none() {
+            super::origin::set_span(block, SrcSpan::new(at, to));
+            blockoid(block, at, to);
+        }
     });
 }

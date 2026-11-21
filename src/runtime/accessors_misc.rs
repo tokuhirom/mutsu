@@ -409,11 +409,12 @@ impl Interpreter {
         method: String,
         args: Vec<Value>,
         value: Value,
+        is_temp: bool,
     ) {
         self.control.let_saves.push(super::LetSaveEntry {
             name: String::new(),
             value: value.into_temp_snapshot(),
-            is_temp: true,
+            is_temp,
             slot: None,
             elem: None,
             method_attr: Some(Box::new((invocant, method, args))),

@@ -31,11 +31,11 @@ pub(super) fn quoted(names: &NameScope, node: &mut RakuAstNode) {
     else {
         return;
     };
-    let Some(Opener {
+    let Some(super::regex_adverb_origins::Opener {
         adverbs,
         body_at: open,
         close,
-    }) = opener(&text)
+    }) = super::regex_adverb_origins::opener(&text)
     else {
         return;
     };
@@ -43,7 +43,7 @@ pub(super) fn quoted(names: &NameScope, node: &mut RakuAstNode) {
         return;
     }
     let body = SrcSpan::new(from + open, to - close.len_utf8());
-    place_adverbs(node, &adverbs);
+    super::regex_adverb_origins::place_adverbs(node, &adverbs);
     super::infix_origins::with_child(node, "body", |regex| walk_body(names, regex, body));
 }
 
@@ -60,88 +60,6 @@ pub(super) fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpa
     };
     walk.blank();
     walk.place(names, regex);
-}
-
-/// What a quoted regex's text says before its body.
-struct Opener {
-    /// The `:name` adverbs, as offsets into the text.
-    adverbs: Vec<(usize, usize)>,
-    /// Where the body starts.
-    body_at: usize,
-    /// The delimiter that closes the body.
-    close: char,
-}
-
-/// A quoted regex's adverbs (`:i`) and where its body starts and what closes
-/// it, read from its `text`.
-// Cost: O(n), n = length of the prefix.
-fn opener(text: &str) -> Option<Opener> {
-    let mut at = ["rx", "ms", "m"]
-        .into_iter()
-        .find(|p| text.starts_with(p) && !text[p.len()..].starts_with(char::is_alphanumeric))
-        .map_or(0, str::len);
-    let mut adverbs = Vec::new();
-    while text[at..].starts_with(':') {
-        let len = text[at + 1..]
-            .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
-            .unwrap_or(text.len() - at - 1);
-        if len == 0 {
-            return None;
-        }
-        adverbs.push((at, at + 1 + len));
-        at += 1 + len;
-    }
-    at += text[at..].len() - text[at..].trim_start().len();
-    let open = text[at..].chars().next()?;
-    let close = match open {
-        '/' => '/',
-        '{' => '}',
-        '[' => ']',
-        '(' => ')',
-        '<' => '>',
-        '!' | '|' => open,
-        _ => return None,
-    };
-    Some(Opener {
-        adverbs,
-        body_at: at + open.len_utf8(),
-        close,
-    })
-}
-
-/// Give a quoted regex's `:name` adverbs the ranges read off its prefix.
-// Cost: O(a), a = adverbs.
-pub(super) fn place_adverbs(node: &mut RakuAstNode, written: &[(usize, usize)]) {
-    let Some((from, _)) = byte_range(node) else {
-        return;
-    };
-    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("adverbs")) else {
-        return;
-    };
-    let RakuAstFieldValue::List(items) = &mut field.value else {
-        return;
-    };
-    if items.len() != written.len() {
-        return;
-    }
-    for (item, &(a, b)) in items.iter_mut().zip(written) {
-        let ValueView::RakuAst(pair) = item.view() else {
-            return;
-        };
-        let spelled = pair.class == RakuAstClass::ColonPairTrue
-            && leaf_text(pair).is_some_and(|name| {
-                super::unit_source::with_text(SrcSpan::new(from + a + 1, from + b), |t| {
-                    (t == name).then_some(())
-                })
-                .is_some()
-            });
-        if !spelled {
-            return;
-        }
-        let mut pair = RakuAstNode::clone(pair);
-        super::origin::set_span(&mut pair, SrcSpan::new(from + a, from + b));
-        *item = Value::rakuast(Box::new(pair));
-    }
 }
 
 /// The cursor over a regex body.

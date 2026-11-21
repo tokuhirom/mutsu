@@ -1,6 +1,6 @@
 # ADR-18244: Wide Raku code is bounded by the per-op and per-call floor — a staged structural plan
 
-- **Status**: Proposed (2026-11-19)
+- **Status**: Accepted (maintainer decision 2026-11-21; proposed 2026-11-19)
 - **Issue**: [#18244](https://github.com/tokuhirom/mutsu/issues/18244). It carries the structural
   half of [#16897](https://github.com/tokuhirom/mutsu/issues/16897), which keeps its own close
   condition: MCP::Server::Tool::Web `t/12-extract.rakutest` `html-to-text` within 2x raku and

@@ -117,6 +117,7 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
     if let Some(inside) = bracketed(from, to, brackets) {
         with_child_at(node, 0, |list| {
             place_lone_dotty(list, inside);
+            super::lone_term_origins::modified_statement(list, inside);
             statement_list(list, inside);
         });
     }
@@ -310,6 +311,7 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let Some(operand_end) = operand_end else {
         return;
     };
+    super::lone_term_origins::subscript_assignee(node, operand_end);
     // Parentheses around the operand (`(@a)[0]`) are not a node of their
     // own, so the subscript starts after their `)`; the dot of `$x.[0]` is
     // not part of it either.
@@ -427,6 +429,7 @@ pub(super) fn statement_list(list: &mut RakuAstNode, inside: SrcSpan) {
     ) {
         return;
     }
+    super::lone_term_origins::trailing_variable(list, inside);
     statement_ranges(list);
     let statements: Vec<Option<(usize, usize)>> = list
         .fields

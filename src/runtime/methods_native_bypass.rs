@@ -16,8 +16,15 @@ impl Interpreter {
         ) {
             return target.clone();
         }
+        // A role mixed into the metaclass (`$type.HOW does SomeRole`, what
+        // a trait does at declaration time) wraps it in a `Mixin`; whether
+        // the metaclass is user-defined is a property of the inner HOW.
+        let how_inner = match how.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref(),
+            _ => how,
+        };
         if matches!(
-            how.view(),
+            how_inner.view(),
             ValueView::Instance { ref class_name, .. } if !Self::is_metamodel_how(class_name)
         ) {
             return target.clone();

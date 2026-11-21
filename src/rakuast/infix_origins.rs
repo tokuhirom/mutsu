@@ -32,7 +32,9 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         // `$.foo(1)` / `$.foo: 5`: the accessor call's arguments.
         RakuAstClass::VarAttributePublic => super::attribute_call_origins::public_args(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
-        RakuAstClass::VarDeclarationConstant => initializer(node),
+        RakuAstClass::VarDeclarationConstant | RakuAstClass::VarDeclarationAnonymous => {
+            initializer(node)
+        }
         // `my \x = EXPR`: the name after the backslash, and the initializer.
         RakuAstClass::VarDeclarationTerm => {
             initializer(node);
@@ -89,6 +91,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         | RakuAstClass::RegexDeclaration => super::regex_decl_origins::declaration(names, node),
         RakuAstClass::Block
         | RakuAstClass::Sub
+        | RakuAstClass::Method
+        | RakuAstClass::Submethod
         | RakuAstClass::PointyBlock
         | RakuAstClass::StatementPrefixDo
         | RakuAstClass::StatementPrefixTry
@@ -174,15 +178,21 @@ pub(super) fn leaf_text(node: &RakuAstNode) -> Option<String> {
 /// How an infix operator node is written: its text, and the range of its
 /// inner `Infix` within that text (`R-` holds `-` at 1..2).
 // Cost: O(d), d = nesting of metaoperators.
-fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
+pub(super) fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
     let inner = || child_at(infix, 0).and_then(leaf_text_of_infix);
     Some(match infix.class {
-        RakuAstClass::Infix => (leaf_text(infix)?, None),
+        RakuAstClass::Infix | RakuAstClass::Mixin => (leaf_text(infix)?, None),
         RakuAstClass::Assignment => ("=".to_string(), None),
         RakuAstClass::MetaInfixAssign => {
             let op = inner()?;
             let len = op.len();
             (format!("{op}="), Some((0, len)))
+        }
+        // `[&plus]`: a routine used as an operator, its variable inside.
+        RakuAstClass::FunctionInfix => {
+            let var = child_at(infix, 0).and_then(leaf_text)?;
+            let len = var.len();
+            (format!("[{var}]"), Some((1, 1 + len)))
         }
         RakuAstClass::MetaInfixReverse | RakuAstClass::MetaInfixNegate => {
             let op = inner()?;
@@ -224,6 +234,10 @@ fn apply_infix(node: &mut RakuAstNode) {
     leading_variable(node);
     let left = child(node, "left").and_then(byte_range);
     let right = child(node, "right").and_then(byte_range);
+    if child(node, "infix").is_some_and(|i| i.class == RakuAstClass::MetaInfixHyper) {
+        super::hyper_infix_origins::place(node, left, right);
+        return;
+    }
     let Some((text, inner)) = child(node, "infix").and_then(written) else {
         return;
     };
@@ -261,6 +275,16 @@ fn apply_infix(node: &mut RakuAstNode) {
                     .then_some(own_start + trimmed.len() - text.len())
             })
         }
+        // `$x = $y = 1`: a right operand the parser left unplaced; the
+        // operator follows the left one after blanks, and blanks follow it.
+        (Some((_, left_end)), None, Some((_, own_end))) if left_end < own_end => {
+            super::unit_source::with_text(SrcSpan::new(left_end, own_end), |after_left| {
+                let after = after_left.trim_start();
+                let rest = after.strip_prefix(text.as_str())?;
+                rest.starts_with(char::is_whitespace)
+                    .then_some(left_end + (after_left.len() - after.len()))
+            })
+        }
         _ => None,
     };
     let Some(op_at) = op_at else {
@@ -272,6 +296,8 @@ fn apply_infix(node: &mut RakuAstNode) {
         super::origin::set_span(node, SrcSpan::new(from, to));
     }
     super::hash_colonpair_origins::infix_adverbs(node);
+    super::lone_term_origins::left_before_operator(node, op_at);
+    super::lone_term_origins::right_after_operator(node, op_at + text.len());
     let text = spelled.unwrap_or(text);
     with_child(node, "infix", |infix| {
         if text != leaf_text(infix).unwrap_or_default() {
@@ -299,18 +325,30 @@ fn leading_variable(node: &mut RakuAstNode) {
     let Some(left) = child(node, "left") else {
         return;
     };
-    if left.origin.0.is_some()
-        || !matches!(
-            left.class,
-            RakuAstClass::VarLexical
-                | RakuAstClass::VarDynamic
-                | RakuAstClass::VarAttribute
-                | RakuAstClass::VarAttributePublic
-        )
-    {
+    if left.origin.0.is_some() {
         return;
     }
-    let Some(name) = leaf_text(left) else {
+    let name = match left.class {
+        RakuAstClass::VarLexical
+        | RakuAstClass::VarDynamic
+        | RakuAstClass::VarAttribute
+        | RakuAstClass::VarAttributePublic => leaf_text(left),
+        // `% = a => 1`: an anonymous variable is its sigil.
+        RakuAstClass::VarDeclarationAnonymous => left.fields.iter().find_map(|f| match &f.value {
+            RakuAstFieldValue::Node(v) if f.name == Some("sigil") => match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            },
+            _ => None,
+        }),
+        // `foo = 7`: a sigilless term, its `Name` over the same text.
+        RakuAstClass::TermName => match child_at(left, 0).and_then(super::name_parts::name_shape) {
+            Some(super::name_parts::NameShape::Identifier(name)) => Some(name),
+            _ => None,
+        },
+        _ => None,
+    };
+    let Some(name) = name else {
         return;
     };
     let written =
@@ -326,8 +364,10 @@ fn leading_variable(node: &mut RakuAstNode) {
             })
         });
     if written.is_some() {
+        let span = SrcSpan::new(from, from + name.len());
         with_child(node, "left", |left| {
-            super::origin::set_span(left, SrcSpan::new(from, from + name.len()))
+            super::origin::set_span(left, span);
+            super::origin::named_term(left, span);
         });
     }
 }
@@ -379,6 +419,9 @@ fn call_name(node: &mut RakuAstNode) {
         return;
     }
     let name_end = from + name.len();
+    if !parens {
+        super::call_origins::leading_block_argument(node, name_end, to);
+    }
     let args = if parens {
         super::call_origins::parenthesized(child(node, "args"), SrcSpan::new(name_end + 1, to - 1))
     } else if child(node, "args").is_none() {

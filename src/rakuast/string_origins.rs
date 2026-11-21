@@ -328,9 +328,18 @@ fn postfix_at(
 ) -> Option<(usize, usize)> {
     let name = leaf_text(interpolated_variable(segment)?)?;
     let postfix = super::infix_origins::child(segment, "postfix")?.class;
+    // `"@x.[]"`: the dot a subscript may be written after.
+    let mut dot = 0;
     let to = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
-        let rest = text.strip_prefix(name.as_str())?;
-        let at = name.len();
+        let mut rest = text.strip_prefix(name.as_str())?;
+        if postfix != RakuAstClass::CallMethod
+            && let Some(after) = rest.strip_prefix('.')
+            && after.starts_with(['[', '{', '<'])
+        {
+            rest = after;
+            dot = 1;
+        }
+        let at = name.len() + dot;
         let close = match postfix {
             RakuAstClass::PostcircumfixArrayIndex => balanced(rest, '[', ']')?,
             RakuAstClass::PostcircumfixHashIndex => balanced(rest, '{', '}')?,
@@ -366,7 +375,7 @@ fn postfix_at(
             postfix,
             RakuAstClass::PostcircumfixArrayIndex | RakuAstClass::PostcircumfixHashIndex
         ) {
-            let open = cursor + name.len() + 1;
+            let open = cursor + name.len() + dot + 1;
             let inner =
                 super::unit_source::with_text(SrcSpan::new(open, to - 1), |t| Some(t.to_string()));
             if let Some(inner) = inner {
@@ -439,10 +448,11 @@ pub(super) fn heredoc(
     written: SrcSpan,
     stop: &str,
 ) {
+    let indent = stop.chars().take_while(|c| matches!(c, ' ' | '\t')).count();
+    leading_indent_literal(node, indent);
     if !written.is_some() {
         return;
     }
-    let indent = stop.chars().take_while(|c| matches!(c, ' ' | '\t')).count();
     let single_literal = node
         .fields
         .iter_mut()
@@ -470,4 +480,34 @@ pub(super) fn heredoc(
         written.to as usize,
         indent,
     );
+}
+
+/// An indented heredoc whose body starts with an interpolation (`    $x`)
+/// starts, in Rakudo, with the empty `StrLiteral` its stripped indentation
+/// leaves; `node` gets that segment when it has none.
+// Cost: O(s), s = segments.
+fn leading_indent_literal(node: &mut RakuAstNode, indent: usize) {
+    if indent == 0 {
+        return;
+    }
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
+        return;
+    };
+    let RakuAstFieldValue::List(segments) = &mut field.value else {
+        return;
+    };
+    let starts_with_literal = match segments.first().map(Value::view) {
+        Some(ValueView::RakuAst(first)) => first.class == RakuAstClass::StrLiteral,
+        _ => true,
+    };
+    if !starts_with_literal {
+        segments.insert(
+            0,
+            Value::rakuast(Box::new(RakuAstNode {
+                origin: Default::default(),
+                class: RakuAstClass::StrLiteral,
+                fields: vec![super::view::leaf_field(None, Value::str_from(""))],
+            })),
+        );
+    }
 }

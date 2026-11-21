@@ -68,7 +68,9 @@ impl VisitMut for Marker {
                 for a in method_args {
                     mark_value_leaf(a);
                 }
-                mark_value_leaf(value);
+                if let Some(value) = value {
+                    mark_value_leaf(value);
+                }
             }
             Stmt::HasDecl {
                 default,

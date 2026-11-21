@@ -1,6 +1,6 @@
 # ADR-18357: Latch-guarded narrow ops for native-int and plain-Str operations
 
-- **Status**: Proposed (2026-11-20)
+- **Status**: Accepted (maintainer decision 2026-11-21, on the condition that the D3 generic fall-through and the `t/vm/narrow-op-parity.t` parity test ship with slice 1; proposed 2026-11-20)
 - **Issue**: [#18357](https://github.com/tokuhirom/mutsu/issues/18357), a sub-issue of
   [#18244](https://github.com/tokuhirom/mutsu/issues/18244). It serves
   [#16897](https://github.com/tokuhirom/mutsu/issues/16897), MCP::Server::Tool::Web's
