@@ -268,6 +268,7 @@ fn apply_infix(node: &mut RakuAstNode) {
     {
         super::origin::set_span(node, SrcSpan::new(from, to));
     }
+    super::hash_colonpair_origins::infix_adverbs(node);
     let text = spelled.unwrap_or(text);
     with_child(node, "infix", |infix| {
         if text != leaf_text(infix).unwrap_or_default() {
