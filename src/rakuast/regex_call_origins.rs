@@ -54,8 +54,25 @@ pub(super) fn args_len(text: &str) -> Option<usize> {
 pub(super) fn bracketed_len(text: &str, close: char) -> Option<usize> {
     let mut stack: Vec<char> = Vec::new();
     let mut chars = text.char_indices();
+    // The last character that was not a blank, to tell a `/.../` regex
+    // literal in term position from a division.
+    let mut last: Option<char> = None;
     while let Some((at, c)) = chars.next() {
+        let term_position = matches!(last, None | Some('(' | ','));
+        if !c.is_whitespace() {
+            last = Some(c);
+        }
         match c {
+            // `<v(/\d+/)>`: a regex literal argument, to its closing `/`.
+            '/' if term_position => loop {
+                match chars.next()?.1 {
+                    '\\' => {
+                        chars.next()?;
+                    }
+                    '/' => break,
+                    _ => {}
+                }
+            },
             '(' | '[' | '{' => stack.push(c),
             ')' | ']' | '}' => {
                 let Some(open) = stack.pop() else {
