@@ -142,6 +142,11 @@ impl SupplyOp {
                 | SupplyOp::Reduce
                 | SupplyOp::Unique
                 | SupplyOp::Squish
+                | SupplyOp::Batch
+                | SupplyOp::Tail
+                | SupplyOp::Produce
+                | SupplyOp::Elems
+                | SupplyOp::Words
                 | SupplyOp::Share
                 | SupplyOp::Supply
                 | SupplyOp::Live

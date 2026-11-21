@@ -313,6 +313,13 @@ impl Interpreter {
             "__mutsu_derive_emit" => {
                 let emitter = attributes.get("emitter").cloned().unwrap_or(Value::NIL);
                 let callable = attributes.get("callable").cloned().unwrap_or(Value::NIL);
+                if let Some(id) = super::supply_derive_buffer::buffer_id(attributes) {
+                    // `batch` / `tail` / `produce` / `elems` / `words`.
+                    if self.buffer_stage_emit(id, &callable, arg, &emitter)? {
+                        self.release_derive_source(&emitter)?;
+                    }
+                    return Ok(Value::NIL);
+                }
                 if let Some(id) = lines_id(attributes) {
                     let chomp = attributes.get("callable").is_some_and(Value::truthy);
                     for line in lines_take(id, &arg.to_string_value(), chomp, false) {
@@ -398,6 +405,11 @@ impl Interpreter {
                 if let Some(id) = super::supply_derive_dedup::dedup_id(attributes) {
                     super::supply_derive_dedup::dedup_finish(id);
                 }
+                if let Some(id) = super::supply_derive_buffer::buffer_id(attributes) {
+                    for value in super::supply_derive_buffer::buffer_finish(id) {
+                        self.call_method_with_values(emitter.clone(), "emit", vec![value])?;
+                    }
+                }
                 if let Some(id) = reduce_id(attributes) {
                     // An empty source reduces to Nil, like Rakudo.
                     let result = reduce_finish(id).unwrap_or(Value::NIL);
@@ -424,6 +436,9 @@ impl Interpreter {
                 if let Some(id) = super::supply_derive_dedup::dedup_id(attributes) {
                     super::supply_derive_dedup::dedup_finish(id);
                 }
+                if let Some(id) = super::supply_derive_buffer::buffer_id(attributes) {
+                    super::supply_derive_buffer::buffer_retire(id);
+                }
                 if let Some(id) = head_id(attributes)
                     && !head_finish(id)
                 {
@@ -434,6 +449,9 @@ impl Interpreter {
             }
             // Cost: O(1) plus closing the source tap.
             "__mutsu_derive_close" => {
+                if let Some(id) = super::supply_derive_buffer::buffer_id(attributes) {
+                    super::supply_derive_buffer::buffer_retire(id);
+                }
                 if let Some(tap) = attributes.get("source_tap").cloned() {
                     self.call_method_with_values(tap, "close", vec![])?;
                 }
@@ -545,6 +563,13 @@ impl Interpreter {
                 Value::int(super::supply_derive_dedup::dedup_register() as i64),
             );
         }
+        let mode = attributes.get("mode").map(Value::to_string_value).unwrap_or_default();
+        let buffer_id = attributes.get("callable").and_then(|params| {
+            super::supply_derive_buffer::buffer_register(&mode, params)
+        });
+        if let Some(id) = buffer_id {
+            fwd_attrs.insert("buffer_id".to_string(), Value::int(id as i64));
+        }
         let forwarder = Value::make_instance(Symbol::intern(CLASS), fwd_attrs);
         let tap_args = vec![
             native_method_shim(forwarder.clone(), "__mutsu_derive_emit", true),
@@ -565,6 +590,9 @@ impl Interpreter {
         {
             let mut close_attrs = HashMap::new();
             close_attrs.insert("source_tap".to_string(), source_tap);
+            if let Some(id) = buffer_id {
+                close_attrs.insert("buffer_id".to_string(), Value::int(id as i64));
+            }
             let closer = native_method_shim(
                 Value::make_instance(Symbol::intern(CLASS), close_attrs),
                 "__mutsu_derive_close",

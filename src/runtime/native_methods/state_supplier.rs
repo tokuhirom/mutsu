@@ -3,6 +3,9 @@ use crate::value::ValueView;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+use super::supply_derive_buffer::{
+    batch_admit, batch_time_period, elems_tick, take_complete_words_from_buffer,
+};
 use super::state::{
     supplier_emit_push, supplier_has_preserved_backlog, supplier_mark_preserved_consumed,
     take_complete_lines_from_buffer,
@@ -216,20 +219,6 @@ struct BatchState {
     last_period: i64,
 }
 
-/// Absolute wall-clock period index for `batch(:seconds)`: `floor(epoch /
-/// seconds)`, matching rakudo's `time div $seconds` bucketing for integer
-/// seconds.
-fn batch_time_period(seconds: f64) -> i64 {
-    let epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0);
-    if seconds > 0.0 {
-        (epoch / seconds).floor() as i64
-    } else {
-        0
-    }
-}
 
 #[derive(Clone, Default)]
 struct SupplierSubscriptions {
@@ -1405,28 +1394,14 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
             } else if tap.words_mode {
                 let downstream_sid = tap.words_downstream;
                 tap.words_buffer.push_str(&emitted_value.to_string_value());
-                // Extract complete words (followed by whitespace) from the buffer
-                loop {
-                    let trimmed = tap.words_buffer.trim_start();
-                    if trimmed.is_empty() {
-                        tap.words_buffer.clear();
-                        break;
-                    }
-                    if let Some(ws_pos) = trimmed.find(char::is_whitespace) {
-                        let word = trimmed[..ws_pos].to_string();
-                        let consumed = tap.words_buffer.len() - trimmed.len() + ws_pos;
-                        tap.words_buffer = tap.words_buffer[consumed..].to_string();
-                        if let Some(dsid) = downstream_sid {
-                            actions.push(SupplierEmitAction::ForwardEmit {
-                                downstream_supplier_id: dsid,
-                                value: Value::str(word),
-                            });
-                        }
-                    } else {
-                        // No whitespace after word -- may be partial, keep in buffer
-                        let leading_ws = tap.words_buffer.len() - trimmed.len();
-                        tap.words_buffer = tap.words_buffer[leading_ws..].to_string();
-                        break;
+                // Complete words (followed by whitespace) go on; a partial
+                // one stays in the buffer.
+                for word in take_complete_words_from_buffer(&mut tap.words_buffer, false) {
+                    if let Some(dsid) = downstream_sid {
+                        actions.push(SupplierEmitAction::ForwardEmit {
+                            downstream_supplier_id: dsid,
+                            value: Value::str(word),
+                        });
                     }
                 }
             } else if let Some(ref mut uf) = tap.unique_filter {
@@ -1473,21 +1448,15 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     tap_index: idx,
                 });
             } else if let Some(ref mut elems) = tap.elems_trace {
-                elems.emitted_count += 1;
-                let now = crate::thread_compat::Instant::now();
-                let should_emit = if elems.interval_seconds <= 0.0 {
-                    true
-                } else if let Some(last_emit) = elems.last_emit_at {
-                    now.duration_since(last_emit).as_secs_f64() >= elems.interval_seconds
-                } else {
-                    true
-                };
-                if should_emit && elems.emitted_count > elems.last_reported_count {
-                    elems.last_emit_at = Some(now);
-                    elems.last_reported_count = elems.emitted_count;
+                if let Some(count) = elems_tick(
+                    &mut elems.emitted_count,
+                    &mut elems.last_reported_count,
+                    &mut elems.last_emit_at,
+                    elems.interval_seconds,
+                ) {
                     actions.push(SupplierEmitAction::ForwardEmit {
                         downstream_supplier_id: elems.downstream_supplier_id,
-                        value: Value::int(elems.emitted_count),
+                        value: Value::int(count),
                     });
                 }
             } else if let Some(ref mut ts) = tap.tail_state {
@@ -1505,31 +1474,17 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     value: emitted_value.clone(),
                 });
             } else if let Some(ref mut bs) = tap.batch_state {
-                // A value arriving in a new absolute time period flushes the
-                // previous period's pending buffer first (rakudo `time div
-                // $seconds` semantics; see BatchState::last_period).
-                if let Some(seconds) = bs.seconds {
-                    let this_period = batch_time_period(seconds);
-                    if this_period != bs.last_period {
-                        if !bs.buffer.is_empty() {
-                            let batch = std::mem::take(&mut bs.buffer);
-                            actions.push(SupplierEmitAction::BatchEmit {
-                                downstream_supplier_id: bs.downstream_supplier_id,
-                                batch,
-                            });
-                        }
-                        bs.last_period = this_period;
-                    }
-                }
-                bs.buffer.push(emitted_value.clone());
-                // Check if we should flush based on elems count
-                if let Some(elems) = bs.elems
-                    && bs.buffer.len() >= elems
-                {
-                    let batch = std::mem::take(&mut bs.buffer);
-                    let dsid = bs.downstream_supplier_id;
+                // A value in a new absolute time period flushes the previous
+                // period's values first (see BatchState::last_period).
+                for batch in batch_admit(
+                    &mut bs.buffer,
+                    &mut bs.last_period,
+                    bs.elems,
+                    bs.seconds,
+                    emitted_value.clone(),
+                ) {
                     actions.push(SupplierEmitAction::BatchEmit {
-                        downstream_supplier_id: dsid,
+                        downstream_supplier_id: bs.downstream_supplier_id,
                         batch,
                     });
                 }
@@ -2067,11 +2022,9 @@ pub(in crate::runtime) fn flush_supplier_words_taps(supplier_id: u64) -> Vec<(u6
             if tap.words_mode
                 && let Some(dsid) = tap.words_downstream
             {
-                let remaining = tap.words_buffer.trim();
-                if !remaining.is_empty() {
-                    out.push((dsid, Value::str(remaining.to_string())));
+                for word in take_complete_words_from_buffer(&mut tap.words_buffer, true) {
+                    out.push((dsid, Value::str(word)));
                 }
-                tap.words_buffer.clear();
             }
         }
     }
