@@ -1615,46 +1615,6 @@ fn dotty_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
     }
 }
 
-/// `TERM .meth` (`Spelling::DottyInfixCall`): the method call's postfix
-/// application as rakudo's dotty infix,
-/// `ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`.
-// Cost: O(n), n = size of the call.
-fn dotty_infix_call(names: &NameScope, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = view_expr(names, call)?;
-    if node.class != RakuAstClass::ApplyPostfix {
-        return Ok(node);
-    }
-    let take = |node: &mut RakuAstNode, name: &str| {
-        node.fields
-            .iter()
-            .position(|f| f.name == Some(name))
-            .map(|i| node.fields.remove(i))
-    };
-    let (Some(mut left), Some(mut right)) =
-        (take(&mut node, "operand"), take(&mut node, "postfix"))
-    else {
-        return Err(unsupported("a dotty infix call of another shape"));
-    };
-    left.name = Some("left");
-    right.name = Some("right");
-    Ok(RakuAstNode {
-        origin: node.origin,
-        class: RakuAstClass::ApplyDottyInfix,
-        fields: vec![
-            left,
-            node_field(
-                Some("infix"),
-                RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::DottyInfixCall,
-                    fields: Vec::new(),
-                },
-            ),
-            right,
-        ],
-    })
-}
-
 /// A `my`/`our`/`state` declaration with an optional simple type, as a
 /// `VarDeclaration::Simple` statement; `is_binding` renders its right-hand side
 /// as an `Initializer::Bind` (`:=`) rather than an `Initializer::Assign`.
@@ -2575,7 +2535,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::CompositionWhatever(source) => {
                 super::composition_source::view_node(names, source, &spelled.expr)
             }
-            Spelling::DottyInfixCall => dotty_infix_call(names, &spelled.expr),
+            Spelling::DottyInfixCall => super::dotty_infix_view::call(names, &spelled.expr),
             Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
             Spelling::SuperscriptPower => super::postfix_power::view_power(names, &spelled.expr),
             Spelling::ZenBrackets(b) => super::zen_slice::view(names, &spelled.expr, *b),
