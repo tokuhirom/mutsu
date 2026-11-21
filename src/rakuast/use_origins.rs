@@ -61,7 +61,11 @@ pub(super) fn module_name(
         let mut name = RakuAstNode::clone(name);
         super::origin::set_span(&mut name, at);
         *held = Value::rakuast(Box::new(name));
-        arguments(names, statement, SrcSpan::new(at.to as usize, span.to as usize));
+        arguments(
+            names,
+            statement,
+            SrcSpan::new(at.to as usize, span.to as usize),
+        );
     }
 }
 

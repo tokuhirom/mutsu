@@ -229,3 +229,10 @@ pub(super) fn of(expr: &Expr) -> Option<SrcSpan> {
         Some(span)
     })
 }
+
+/// Whether `expr` is a declarator term wrapping an expression
+/// (`my regex ($x) { }`): its range is the whole term, from the declarator.
+// Cost: O(1).
+pub(super) fn is_declarator_term(expr: &Expr) -> bool {
+    matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), crate::ast::Stmt::Expr(_)))
+}
