@@ -362,6 +362,35 @@ pub(super) fn named_term(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         if name.class != super::RakuAstClass::Name || name.origin.0.is_some() {
             return;
         }
+        // `::("Int")`: an indirect name, `Name::Part::EmptyEdge` then the
+        // `Name::Part::Expression` in parentheses, spans the term's text.
+        let parts: Vec<_> = name
+            .fields
+            .iter()
+            .filter(|f| f.name == Some("parts"))
+            .flat_map(|f| match &f.value {
+                RakuAstFieldValue::List(parts) => parts.as_slice(),
+                _ => &[],
+            })
+            .map(|v| match v.view() {
+                ValueView::RakuAst(part) => Some(part.class),
+                _ => None,
+            })
+            .collect();
+        if parts
+            == [
+                Some(super::RakuAstClass::NamePartEmptyEdge),
+                Some(super::RakuAstClass::NamePartExpression),
+            ]
+        {
+            let indirect = super::unit_source::with_text(span, |text| {
+                (text.starts_with("::(") && text.ends_with(')')).then_some(())
+            });
+            if indirect.is_some() {
+                set_span(name, span);
+            }
+            return;
+        }
         let Some(NameShape::Identifier(written)) = name_shape(name) else {
             return;
         };

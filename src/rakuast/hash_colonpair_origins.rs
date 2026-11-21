@@ -65,6 +65,56 @@ pub(super) fn contextualizer(names: &NameScope, node: &mut RakuAstNode) {
     });
 }
 
+/// `1 bar 2 :twice`: the adverbs written after an infix application's right
+/// operand are its `colonpairs`, placed in order, and the application runs to
+/// the end of the last.
+// Cost: O(n), n = length of the adverbs' text.
+pub(super) fn infix_adverbs(node: &mut RakuAstNode) {
+    let Some(right_end) = super::infix_origins::child(node, "right")
+        .and_then(byte_range)
+        .map(|(_, to)| to)
+    else {
+        return;
+    };
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    if to != right_end {
+        return;
+    }
+    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("colonpairs")) else {
+        return;
+    };
+    let RakuAstFieldValue::List(pairs) = &mut field.value else {
+        return;
+    };
+    let mut end = right_end;
+    let mut placed = Vec::with_capacity(pairs.len());
+    for pair in pairs.iter() {
+        let ValueView::RakuAst(pair) = pair.view() else {
+            return;
+        };
+        let Some(span) = super::unit_source::with_text_from(end, |text| {
+            let lead = text.len() - text.trim_start().len();
+            if lead == 0 {
+                return None;
+            }
+            colonpair_len(pair, &text[lead..]).map(|len| SrcSpan::new(end + lead, end + lead + len))
+        }) else {
+            return;
+        };
+        let mut pair = RakuAstNode::clone(pair);
+        super::origin::set_span(&mut pair, span);
+        super::operator_origins::derive(&mut pair);
+        placed.push(Value::rakuast(Box::new(pair)));
+        end = span.to as usize;
+    }
+    *pairs = placed;
+    // The parser placed the application over its operands only.
+    node.origin.0 = None;
+    super::origin::set_span(node, SrcSpan::new(from, end));
+}
+
 /// Place the entries of `contents`, a composer's lone entry or comma list of
 /// entries, written from byte `at` of `text` (which starts at byte `from` of
 /// the unit).
