@@ -50,6 +50,9 @@ fn lower_normalized(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, 
     // gets the same pass, so `my Inner $x` inside `class Outer` names
     // `Outer::Inner` as it does from source.
     crate::parser::qualify_type_names(&mut stmts);
+    // A closure that names a code variable its block declares later sees it,
+    // as after a parse (#18248).
+    crate::parser::forward_code_vars::hoist_nested(&mut stmts);
     // The frame-reading `nqp::p6*` ops are placed on the tree, as after a parse.
     crate::parser::p6_frame_state::lower_program(&mut stmts);
     Ok(stmts)

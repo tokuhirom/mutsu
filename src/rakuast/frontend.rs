@@ -71,6 +71,7 @@ pub(crate) fn finish_unit_in(
         unit.commit(stmt);
     }
     unit.finish(&mut stmts)?;
+    crate::parser::forward_code_vars::hoist_nested(&mut stmts);
     crate::parser::p6_frame_state::lower_program(&mut stmts);
     Ok(stmts)
 }

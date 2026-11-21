@@ -114,6 +114,7 @@ pub(crate) fn register_rakuast_user_sub_binding(stmt: &crate::ast::Stmt) {
         _ => {}
     }
 }
+pub(crate) mod forward_code_vars;
 pub(crate) mod helpers;
 pub(crate) mod infix_stopper;
 pub(in crate::parser) mod memo;
