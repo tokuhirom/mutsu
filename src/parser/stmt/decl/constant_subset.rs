@@ -455,6 +455,7 @@ pub(crate) fn mint_anon_subset_name() -> String {
 /// term is meaningless) so a stray `subset` bareword still falls through.
 pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
     let (rest, _) = ws1(input)?;
+    let name_start = rest;
     // Anonymous `::` name (standalone, followed by whitespace), or an explicit
     // (qualified) name.
     let (rest, name) = if let Some(r) = rest.strip_prefix("::")
@@ -463,6 +464,10 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         (r, mint_anon_subset_name())
     } else {
         qualified_ident(rest)?
+    };
+    let mut spans = crate::ast::parsed::TypeDeclSpans {
+        name: crate::parser::primary::source_span(name_start, rest),
+        ..Default::default()
     };
     let (rest, _) = ws(rest)?;
     // Require `of` and/or `where` so a bare `subset` word is not misread as a term.
@@ -473,8 +478,15 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
     let mut rest = rest;
     let mut base: Option<String> = None;
     if let Some(r) = keyword("of", rest) {
+        let of_start = rest;
         let (r, _) = ws1(r)?;
+        let type_start = r;
         let (r, b) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+        let type_end = &type_start[type_start[..type_start.len() - r.len()].trim_end().len()..];
+        spans.of = crate::ast::parsed::TraitSpans {
+            whole: crate::parser::primary::source_span(of_start, type_end),
+            name: crate::parser::primary::source_span(type_start, type_end),
+        };
         let (r, _) = ws(r)?;
         base = Some(b);
         rest = r;
@@ -489,7 +501,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
         (rest, None)
     };
     let decl = Stmt::SubsetDecl {
-        spans: Default::default(),
+        spans: Some(Box::new(spans)),
         name: Symbol::intern(&name),
         base,
         base_is_explicit,
