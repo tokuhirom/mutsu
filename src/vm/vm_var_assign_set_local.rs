@@ -2887,8 +2887,15 @@ impl Interpreter {
                 // mainline capture store — an intervening frame's own
                 // identically-named local can shadow the source in the plain
                 // `env` lookup right above (see `mainline_lexical_cell`).
+                let source_is_attr_slot =
+                    Self::bind_source_is_attr_slot(code, bind_source_slot, &effective_source);
                 let cell = match val.view() {
                     ValueView::ContainerRef(arc) => arc.clone(),
+                    // The attribute's own container, read through its slot:
+                    // a by-name probe would find a caller's binding.
+                    _ if source_is_attr_slot => {
+                        crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone()))
+                    }
                     _ => match self.env().get(&effective_source).map(Value::view) {
                         Some(ValueView::ContainerRef(arc)) => arc.clone(),
                         _ => self
