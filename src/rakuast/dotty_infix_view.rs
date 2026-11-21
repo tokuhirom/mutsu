@@ -11,7 +11,7 @@ use crate::value::RuntimeError;
 /// application as rakudo's dotty infix,
 /// `ApplyDottyInfix(left, DottyInfix::Call, Call::Method)`.
 // Cost: O(n), n = size of the call.
-pub(super) fn view(names: &NameScope, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn continuation_call(names: &NameScope, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let mut node = super::view::view_expr(names, call)?;
     if node.class != RakuAstClass::ApplyPostfix {
         return Ok(node);

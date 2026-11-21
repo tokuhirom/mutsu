@@ -2535,7 +2535,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::CompositionWhatever(source) => {
                 super::composition_source::view_node(names, source, &spelled.expr)
             }
-            Spelling::DottyInfixCall => super::dotty_infix_view::view(names, &spelled.expr),
+            Spelling::DottyInfixCall => super::dotty_infix_view::continuation_call(names, &spelled.expr),
             Spelling::CompilerVar(w) => super::compiler_var::view_folded(w, &spelled.expr),
             Spelling::SuperscriptPower => super::postfix_power::view_power(names, &spelled.expr),
             Spelling::ZenBrackets(b) => super::zen_slice::view(names, &spelled.expr, *b),
