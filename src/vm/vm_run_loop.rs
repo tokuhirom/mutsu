@@ -766,10 +766,16 @@ impl Interpreter {
     /// regardless of which dispatch path a call takes. Anonymous closures (and
     /// named subs with no registration record) keep the Sub value's identity,
     /// which is minted afresh by each `MakeClosure` and so IS the clone.
+    ///
+    /// A closure clone of a named routine (`&f.clone`, `&f but R`) carries its
+    /// own scope in its routine cell and runs there, not in the routine's
+    /// registration scope (#18165).
     pub(crate) fn sub_state_scope_id(&self, data: &crate::value::SubData) -> u64 {
-        let name = data.name.resolve();
-        if name.is_empty() || (data.compiled_routine.is_none() && data.compiled_code.is_some()) {
-            return data.routine_cell.shared_state_scope().unwrap_or(data.id);
+        if let Some(scope) = data.routine_cell.shared_state_scope() {
+            return scope;
+        }
+        if !crate::value::SubData::is_named_routine(data) {
+            return data.id;
         }
         let key = crate::runtime::Interpreter::callable_id_key_for_syms(data.package, data.name);
         self.registration_callable_id(key)

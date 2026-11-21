@@ -360,6 +360,19 @@ fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
 /// identity, so its own `state` variables and its own `FIRST` flag.
 // Cost: O(1) plus a shallow copy of the code object's fields.
 pub(crate) fn closure_clone(data: &crate::value::SubData) -> Value {
+    let new_data = fresh_copy(data);
+    // A named routine runs in its registration's scope unless its routine
+    // cell names another, so the clone records its own (#18165).
+    if crate::value::SubData::is_named_routine(&new_data) {
+        new_data.routine_cell.share_state_scope(new_data.id);
+    }
+    Value::sub_value(crate::gc::Gc::new(new_data))
+}
+
+/// A copy of `data` with its own identity and routine cell, its state scope
+/// not yet decided.
+// Cost: O(1) plus a shallow copy of the code object's fields.
+fn fresh_copy(data: &crate::value::SubData) -> crate::value::SubData {
     let mut new_data = data.clone();
     new_data.id = crate::value::next_instance_id();
     new_data.routine_cell = new_data.routine_cell.forked();
@@ -370,7 +383,7 @@ pub(crate) fn closure_clone(data: &crate::value::SubData) -> Value {
             new_data.id,
         ));
     }
-    Value::sub_value(crate::gc::Gc::new(new_data))
+    new_data
 }
 
 /// The representation-level copy of a code object (`Mu.clone`, `nqp::clone`):
@@ -379,13 +392,17 @@ pub(crate) fn closure_clone(data: &crate::value::SubData) -> Value {
 /// [`closure_clone`], which starts its own (#15897).
 // Cost: O(1) plus a shallow copy of the code object's fields.
 pub(crate) fn repr_clone(data: &crate::value::SubData) -> Value {
-    let copy = closure_clone(data);
-    if let ValueView::Sub(copy_data) = copy.view() {
-        copy_data
-            .routine_cell
-            .share_state_scope(data.routine_cell.shared_state_scope().unwrap_or(data.id));
+    let copy = fresh_copy(data);
+    // A named routine with no scope of its own runs in its registration's,
+    // which the copy reaches the same way when its cell names none.
+    match data.routine_cell.shared_state_scope() {
+        Some(scope) => copy.routine_cell.share_state_scope(scope),
+        None if !crate::value::SubData::is_named_routine(data) => {
+            copy.routine_cell.share_state_scope(data.id)
+        }
+        None => {}
     }
-    copy
+    Value::sub_value(crate::gc::Gc::new(copy))
 }
 
 /// `Code.static_id`: the identity of the code the object runs, shared by every

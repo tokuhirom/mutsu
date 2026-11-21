@@ -303,3 +303,15 @@ impl RoutineCell {
         fresh
     }
 }
+
+impl super::SubData {
+    /// Whether this code object is a named routine, whose `state` lives in its
+    /// registration's scope rather than in the Sub value's own identity
+    /// (`Interpreter::sub_state_scope_id`): it has a name and is not a
+    /// compiled block standing in for one.
+    // Cost: O(1).
+    pub(crate) fn is_named_routine(&self) -> bool {
+        !self.name.resolve().is_empty()
+            && !(self.compiled_routine.is_none() && self.compiled_code.is_some())
+    }
+}
