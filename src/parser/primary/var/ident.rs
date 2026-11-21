@@ -125,16 +125,20 @@ pub(crate) fn parse_interpolation_qualified_ident_with_hyphens_or_empty(
             break;
         }
         let mut end = first.len_utf8();
-        let rest_bytes = rest.as_bytes();
         for c in rest[end..].chars() {
             if is_raku_identifier_continue(c) {
                 end += c.len_utf8();
-            } else if c == '-' {
-                // Kebab-case: hyphen is part of the identifier only when
-                // followed by an alphabetic character (e.g. `$my-var`).
-                // A trailing hyphen (`$a-`) is NOT part of the name.
-                let next_pos = end + 1; // '-' is ASCII, always 1 byte
-                if next_pos < rest_bytes.len() && rest_bytes[next_pos].is_ascii_alphabetic() {
+            } else if c == '-' || c == '\'' {
+                // Kebab-case and apostrophes: `-` or `'` is part of the
+                // identifier only when an alphabetic character or `_`
+                // follows (`$my-var`, `$don't`, #18326). A trailing one
+                // (`$a-`, `"'$src' is"`) is NOT part of the name.
+                let next_pos = end + 1; // '-' and '\'' are ASCII, always 1 byte
+                if rest[next_pos..]
+                    .chars()
+                    .next()
+                    .is_some_and(|n| n.is_alphabetic() || n == '_')
+                {
                     end += c.len_utf8();
                 } else {
                     break;
