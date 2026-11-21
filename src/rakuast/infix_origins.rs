@@ -417,9 +417,8 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
             let first = child_at(list, 0).and_then(byte_range)?;
             let last = child_at(list, list.fields.len().checked_sub(1)?).and_then(byte_range)?;
             // `say :{ 1 => 2 }`: an object hash's range starts at its `{`.
-            let brace = super::unit_source::with_text_from(first.0, |t| {
-                t.starts_with('{').then_some(())
-            });
+            let brace =
+                super::unit_source::with_text_from(first.0, |t| t.starts_with('{').then_some(()));
             let gap = super::unit_source::with_text(SrcSpan::new(name_end, first.0), |gap| {
                 let gap = brace.and(gap.strip_suffix(':')).unwrap_or(gap);
                 gap.chars().all(char::is_whitespace).then_some(())

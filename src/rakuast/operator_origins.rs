@@ -93,9 +93,8 @@ fn glued_variable_operand(node: &mut RakuAstNode, at: usize) {
     else {
         return;
     };
-    let exact = super::unit_source::with_text(SrcSpan::new(at, to), |text| {
-        (text == name).then_some(())
-    });
+    let exact =
+        super::unit_source::with_text(SrcSpan::new(at, to), |text| (text == name).then_some(()));
     if exact.is_some() {
         with_child(node, "operand", |v| {
             super::origin::set_span(v, SrcSpan::new(at, to))
