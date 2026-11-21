@@ -15,8 +15,12 @@ const DEPARSE_CLASS_HEAD: &str = "class RakuAST::Deparse {";
 /// rakudo's `src/Raku/ast/base.rakumod` method, with the role handling it
 /// does -- a `Str` names a language (`$core.slang`), a role is mixed in, a
 /// class replaces the default deparser.
+///
+/// Declared as `GLOBAL::MUTSU_DEPARSE`, like the class: the prelude may be
+/// evaluated while a module's routine runs (the slang host's first
+/// `DEPARSE`), where a bare `module` name is qualified by that package.
 const DEPARSE_ENTRY: &str = r#"
-module MUTSU_DEPARSE {
+module GLOBAL::MUTSU_DEPARSE {
 our sub run(Mu \node, *@roles) {
     my $core := GLOBAL::RakuAST::Deparse;
     my $class := $core;

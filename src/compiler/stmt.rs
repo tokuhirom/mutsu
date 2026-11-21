@@ -4206,6 +4206,9 @@ impl Compiler {
                     let saved_package = self.current_package.clone();
                     let saved_in_unit = self.in_unit_package;
                     let saved_package_kind = self.current_package_kind;
+                    // `$?PACKAGE` in the block is the block's package, also
+                    // inside a routine whose own enclosing package is set.
+                    let saved_enclosing = self.enclosing_package.take();
                     self.current_package = qualified_name;
                     // Inside a non-unit `module Foo { ... }` block, runtime
                     // PackageScope handles the package context, so we must
@@ -4260,6 +4263,7 @@ impl Compiler {
                         }
                     }
                     self.current_package = saved_package;
+                    self.enclosing_package = saved_enclosing;
                     self.in_unit_package = saved_in_unit;
                     self.current_package_kind = saved_package_kind;
                     self.code.patch_body_end(pkg_idx);
