@@ -95,7 +95,6 @@ impl Interpreter {
                     | "unshift"
                     | "append"
                     | "prepend"
-                    | "elems"
                     | "join"
                     | "grep"
                     | "map"

@@ -112,7 +112,7 @@ pub(crate) use functions::is_join_lazy;
 pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
 pub(crate) use functions::process_rusage;
-pub(crate) use functions::{deitemize_flat_operand, flat_val, thread_junctions_in_items};
+pub(crate) use functions::{deitemize_flat_operand, flat_val, join_items_threading_junctions};
 pub(crate) use method_table::{strip_undeclared_nameds, strip_undeclared_nameds_sym};
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{

@@ -326,6 +326,13 @@ impl Interpreter {
         {
             return None;
         }
+        if let Some(threaded) = self.thread_join_separator(args.first(), |interp, separator| {
+            interp
+                .dispatch_join_method(target.clone(), vec![separator])
+                .unwrap_or_else(|| Ok(Value::str(String::new())))
+        }) {
+            return Some(threaded);
+        }
         let sep = args
             .first()
             .map(|v| v.to_string_value())
@@ -350,7 +357,7 @@ impl Interpreter {
         let mut warned_sparse_hole = false;
         // Resolve every non-Junction element to its final Str value up front
         // (Instance/Mixin through user `.Str`, same as before); a Junction
-        // element is left as-is so `thread_junctions_in_items` below can
+        // element is left as-is so `join_items_threading_junctions` below can
         // thread the whole `join` over its eigenstates
         // (`("a"|"b","c","d").join` => `any(acd, bcd)`) instead of
         // stringifying it in place.
@@ -450,10 +457,7 @@ impl Interpreter {
         {
             return Some(Err(err));
         }
-        if let Some(threaded) = crate::builtins::thread_junctions_in_items(&resolved, &|c| {
-            let parts: Vec<String> = c.iter().map(|v| v.to_str_context()).collect();
-            Value::str(crate::builtins::str_prim::join(&parts, &sep))
-        }) {
+        if let Some(threaded) = crate::builtins::join_items_threading_junctions(&resolved, &sep) {
             return Some(Ok(threaded));
         }
         let parts: Vec<String> = resolved.iter().map(|v| v.to_str_context()).collect();
