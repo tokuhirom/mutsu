@@ -186,8 +186,10 @@ impl Interpreter {
     }
 
     /// Whether the running import is a `use` inside a block of the importing
-    /// compunit (its import scope is open and is a block's, not the BEGIN
-    /// preload's), rather than a unit's own top-level `use`. A trait family
+    /// compunit (its import scope is open and is a block's region, not the
+    /// BEGIN preload's or an `EVAL`'d unit's top level), rather than a unit's
+    /// own top-level `use`. An `EVAL` of a whole program must import as the
+    /// program does (the RakuAST `EVAL(slurp($file).AST)` check). A trait family
     /// binds lexically only there: a top-level import keeps the registry
     /// path, whose per-importer scoping keeps a module's unexported
     /// candidates out (#11310).
@@ -204,7 +206,14 @@ impl Interpreter {
                 .module
                 .import_scope_stack
                 .last()
-                .is_some_and(|scope| scope.scope_classes && scope.unit == importer)
+                .is_some_and(|scope| {
+                    let eval_unit_top = self.module.eval_import_unit == Some(importer)
+                        && scope.region == self.module.eval_unit_region;
+                    scope.scope_classes
+                        && scope.unit == importer
+                        && scope.region.is_some()
+                        && !eval_unit_top
+                })
     }
 
     /// [`Self::bind_family_lexically`] for a trait handler family: binds it
