@@ -191,7 +191,7 @@ impl Interpreter {
         self.try_catch_inline(err)
     }
 
-    pub(super) fn builtin_fail(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_fail_signal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(v) = args.first().cloned() {
             // When fail() receives a Failure:D, extract the inner exception
             // and re-arm it (Raku behavior: fail(Failure:D) re-arms, even a
@@ -658,7 +658,7 @@ impl Interpreter {
     }
 
     // Cost: O(m), m = length of the message.
-    pub(super) fn builtin_stub_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_stub_die_signal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let ex = Self::make_stub_exception(Self::stub_message(args));
         // Raku's `...` uses `fail` semantics: the stub returns a Failure to
         // its direct caller rather than throwing immediately.  At the top
