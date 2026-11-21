@@ -1,6 +1,6 @@
 # ADR-18012: A precompiled module replays its recorded BEGIN-time state instead of re-running BEGIN blocks and traits
 
-- **Status**: Proposed (2026-11-21; drafting approved by the maintainer at triage)
+- **Status**: Accepted (maintainer decision 2026-11-21; proposed 2026-11-21)
 - **Issue**: [#18012](https://github.com/tokuhirom/mutsu/issues/18012) (uniname-words 8.5x,
   MagickWand 11x, Readline 7x rakudo on a warm load). It also serves
   [#18003](https://github.com/tokuhirom/mutsu/issues/18003).
