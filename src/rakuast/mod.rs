@@ -173,6 +173,7 @@ mod inherited_fields;
 mod keyed_hash;
 mod label_context;
 mod list_origins;
+mod lone_term_origins;
 mod literal_parameter;
 mod lower;
 mod match_vars;
