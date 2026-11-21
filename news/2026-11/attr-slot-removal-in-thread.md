@@ -9,5 +9,7 @@ lane, which held the spawn-time snapshot `clone_for_thread` had seeded under
 distribution's controller, a `start` block spawned in `BUILD`, died with
 "Cannot shift from an empty Array" and its drain test hung.
 
-A receiver addressed through an attribute slot now always takes the plain
-receiver path, as the slot read (`GetLocal`) already did (#18438).
+A private attribute name (`@!x`) no longer takes the thread-shared array
+lane: its one home is the instance's attribute cell, which every thread
+reaches through `self`, as the slot read (`GetLocal`) already assumed
+(#18438).

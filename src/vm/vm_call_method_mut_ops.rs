@@ -1340,19 +1340,10 @@ impl Interpreter {
         // here, in front of the flatten, for the plain array receiver, and later
         // for every other shape. A thread-shared name keeps its lane further
         // down, which routes it through the atomic store.
-        // A private aggregate attribute addressed through its slot (ADR-18356
-        // D2) is `self`'s container, which the site's prologue has just
-        // refreshed into `target`. The name-keyed thread-shared lane would
-        // answer a spawn-time snapshot of it instead (the `GetLocal` twin
-        // skips the shared store for an attribute slot too), so it takes the
-        // plain receiver path in every thread.
-        let attr_slot_receiver =
-            target_slot.is_some_and(|slot| code.is_private_aggregate_attr_slot(slot as usize));
         if modifier.is_none()
             && matches!(target.view(), ValueView::Array(..))
             && !args.iter().any(Value::is_junction_value)
-            && (attr_slot_receiver
-                || !(self.threads.shared_vars_active && self.container_lane_applies(target_name)))
+            && !(self.threads.shared_vars_active && self.container_lane_applies(target_name))
         {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code)
@@ -1599,9 +1590,8 @@ impl Interpreter {
         // A binding more than one thread can reach: `Array`'s rows write to its
         // one shared home (`Interpreter::shared_array_lane`, ADR-11276 §9.169).
         // Only that lane is asked here; any other call goes on to the full
-        // dispatch below, as before. An attribute slot receiver never takes
-        // it (`attr_slot_receiver`).
-        if !attr_slot_receiver && self.shared_array_lane_applies(target_name, &target) {
+        // dispatch below, as before.
+        if self.shared_array_lane_applies(target_name, &target) {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code);
             if let Some(result) =
