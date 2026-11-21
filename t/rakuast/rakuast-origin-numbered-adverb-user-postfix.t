@@ -4,9 +4,10 @@ use Test;
 # `.origin` (#15780), measured on rakudo 2026.11: a numbered regex adverb
 # (`:2nd`) is placed over its text; `*!` with a user postfix curries into a
 # placed WhateverCode; an indirect package name with a tail (`$::($u)::y7`)
-# runs from after its sigil to its end.
+# runs from after its sigil to its end; the statements of a one-line
+# anonymous `sub` body are placed from the body's text.
 
-plan 4;
+plan 5;
 sub placed($src) {
     my @l;
     sub w($n) {
@@ -29,3 +30,6 @@ is placed(Q[sub postfix:<!>($n) { [*] 1..$n }; say (*!)(4)]),
 is placed(Q[my $u = "GLOBAL"; our $y7 = 9; say $::($u)::y7]),
     'VarDeclaration::Simple@0-16 Initializer::Assign@6-16 QuotedString@8-16 StrLiteral@9-15 VarDeclaration::Simple@18-29 Initializer::Assign@26-29 IntLiteral@28-29 Call::Name::WithoutParentheses@31-46 Name@31-34 ArgList@35-46 Var::Package@35-46 Name@36-46 Var::Lexical@39-41',
     'an indirect package name with a tail';
+is placed(Q[my &f = sub ($a, $b) { my $c = $a; $c + $b }]),
+    'VarDeclaration::Simple@0-44 Initializer::Assign@6-44 Sub@8-44 Signature@13-19 Parameter@13-15 ParameterTarget::Var@13-15 VarDeclaration::Simple@13-15 Parameter@17-19 ParameterTarget::Var@17-19 VarDeclaration::Simple@17-19 Blockoid@21-44 VarDeclaration::Simple@23-33 Initializer::Assign@29-33 Var::Lexical@31-33 ApplyInfix@35-42 Infix@38-39 ArgList@35-42 Var::Lexical@35-37 Var::Lexical@40-42',
+    'the statements of a one-line anonymous sub body';

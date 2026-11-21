@@ -111,7 +111,11 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         | RakuAstClass::StatementPrefixEager
         | RakuAstClass::StatementPrefixOnce
         | RakuAstClass::StatementPrefixReact
-        | RakuAstClass::StatementPrefixSupply => super::expr_block_origins::derive(node),
+        | RakuAstClass::StatementPrefixSupply => {
+            super::expr_block_origins::derive(node);
+            // `sub ($x) { put $x }`: the statements of a one-line body.
+            super::anon_body_origins::statements(names, node);
+        }
         _ => {
             super::expr_block_origins::phaser_statement(names, node);
             super::operator_origins::derive(node)

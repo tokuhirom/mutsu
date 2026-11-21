@@ -1,4 +1,4 @@
-# RakuAST: origins of numbered adverbs, primed user postfixes, indirect name tails
+# RakuAST: origins of numbered adverbs, user postfixes on a Whatever, indirect name tails, one-line anonymous bodies
 
 Three more `.origin` gaps closed (#15780):
 
@@ -9,3 +9,9 @@ Three more `.origin` gaps closed (#15780):
   placed and evaluates the same;
 - an indirect package name with a tail (`$::($u)::y7`) runs its `Name` from
   after the sigil to the end of the tail.
+
+The statements of a one-line anonymous routine body
+(`sub ($a, $b) { my $c = $a; $c + $b }`) carry no line marks, so a term
+the parser kept no range for left them unplaced. The body's text is now
+parsed again on its own and its ranges copied over
+(`anon_body_origins::statements`).
