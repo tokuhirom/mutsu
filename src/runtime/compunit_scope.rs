@@ -331,6 +331,13 @@ impl Interpreter {
         {
             return true;
         }
+        // A top segment bound to a package the running scope declared itself
+        // (`my package Configuration { }; class Configuration::C { }`) is
+        // this compunit's own package, however many other compunits `use` a
+        // global package of the same spelling (#18409).
+        if self.own_package_binding(Symbol::intern(top)).is_some() {
+            return true;
+        }
         let granted = self.package_granted_from(executing, top);
         // A package a module published bare (`package OuterPkg { }` in a
         // package-less module) is the module's own declaration: visible where

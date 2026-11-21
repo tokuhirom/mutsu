@@ -56,6 +56,50 @@ impl Interpreter {
             .then_some(storage)
     }
 
+    /// The package the running scope itself declared under the bare name
+    /// `head`: a lexical package's storage name (`tmp\0<id>`), or the
+    /// package-qualified name a package declared inside another package
+    /// gets (`my package Configuration { }` in `module M` is
+    /// `M::Configuration`, as on rakudo). `None` when `head` is bound to no
+    /// package here, or only to the global package of that very spelling --
+    /// which a module merely loaded somewhere may have put in the env.
+    // Cost: O(d) expected, d = depth of the running package (one env probe,
+    // then one registry probe per enclosing package).
+    pub(crate) fn own_package_binding(&self, head: Symbol) -> Option<Symbol> {
+        if let Some(storage) = self.lexical_package_storage(head) {
+            return Some(storage);
+        }
+        let env = self.env();
+        let bound = env
+            .get_lexical_type_binding(crate::term_names::lexical_type_key_sym(head), head)
+            .or_else(|| env.get_sym(head));
+        if let Some(bound) = bound
+            && let ValueView::Package(package) = bound.view()
+            && package != head
+            && crate::qualified::unqualified_part(package).with_str(|short| {
+                short.split_once('\u{0}').map_or(short, |(bare, _)| bare) == head.as_str()
+            })
+        {
+            return Some(package);
+        }
+        // A package nested in the running package (or one of its enclosing
+        // ones) is found through the package chain, not an env binding.
+        if let Some(nested) = self.resolve_type_in_current_package(head.as_str())
+            && nested != head.as_str()
+        {
+            return Some(Symbol::intern(&nested));
+        }
+        crate::qualified::package_ancestors(self.current_package_sym())
+            .filter(|pkg| !crate::qualified::is_global_package(*pkg))
+            .map(|pkg| crate::qualified::qualified(pkg, head))
+            .find(|candidate| {
+                candidate.with_str(|text| {
+                    self.module.chain_declared_packages.contains(text)
+                        || self.is_known_package(text)
+                })
+            })
+    }
+
     /// The storage name (`Inner\0<id>`) of the lexical type (`my class` /
     /// `my role`) the running scope binds under the type-only key of `name`
     /// -- also in a closure that captured that binding from the block that
