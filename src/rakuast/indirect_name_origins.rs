@@ -208,3 +208,25 @@ pub(super) fn written_operator(name: &RakuAstNode) -> Option<String> {
     let symbol = super::name_parts::quoted_text(quote)?;
     Some(category + ":<" + &symbol + ">")
 }
+
+/// `GLOBAL::(q[$x])`: a call of an indirect name with no arguments of its
+/// own. Its `Name` spans the call's whole text (`span`), and the empty
+/// `ArgList` it visits sits at the end. Whether the name was placed.
+// Cost: O(p + n), as [`place`].
+pub(super) fn call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
+    use super::infix_origins::{child, with_child};
+    if node.class != RakuAstClass::CallName || child(node, "args").is_some() {
+        return false;
+    }
+    let mut placed = false;
+    with_child(node, "name", |name| {
+        if name.origin.0.is_none() && place(name, span) {
+            placed = name.origin.0.is_some();
+        }
+    });
+    if placed {
+        let end = crate::ast::SrcSpan::new(span.to as usize, span.to as usize);
+        super::empty_fields::set_span(node, "args", end);
+    }
+    placed
+}

@@ -45,10 +45,12 @@ pub(crate) fn is_scalar(name: &str) -> bool {
     is_minted(name, STATE_PREFIX) || is_minted(name, STATE_PER_CALL_PREFIX)
 }
 
-/// Whether `name` (without its sigil) is a minted anonymous array.
+/// Whether `name` (without its sigil) is an anonymous array: the shared
+/// `__ANON_ARRAY__` of a bare `@` assigned to as a statement (`@ = 1, 2;`)
+/// or in a signature, or a minted `__ANON_ARRAY_<id>__`.
 // Cost: O(|name|).
 pub(crate) fn is_array(name: &str) -> bool {
-    is_minted(name, ARRAY_PREFIX)
+    name == "__ANON_ARRAY__" || is_minted(name, ARRAY_PREFIX)
 }
 
 /// Whether `name` (without its sigil) is an anonymous hash: the shared

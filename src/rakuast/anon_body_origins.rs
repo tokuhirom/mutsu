@@ -151,19 +151,22 @@ pub(super) fn statements(names: &crate::scope::NameScope, node: &mut RakuAstNode
     });
 }
 
-/// A `Statement::Expression` with no range and nothing but its expression
-/// takes the expression's range.
-// Cost: O(1).
+/// A `Statement::Expression` with no range takes its expression's range,
+/// through the end of its modifiers when it has any (`say $y if $y`).
+// Cost: O(f), f = fields of `statement`.
 fn bare_statement(statement: &mut RakuAstNode) {
-    if statement.class != RakuAstClass::StatementExpression
-        || statement.origin.0.is_some()
-        || statement.fields.len() != 1
-    {
+    use super::infix_origins::{byte_range, child_at};
+    if statement.class != RakuAstClass::StatementExpression || statement.origin.0.is_some() {
         return;
     }
-    if let Some(expression) = super::infix_origins::child_at(statement, 0)
-        && expression.origin.0.is_some()
-    {
-        statement.origin.0 = expression.origin.0.clone();
+    let Some((from, mut to)) = child_at(statement, 0).and_then(byte_range) else {
+        return;
+    };
+    for i in 1..statement.fields.len() {
+        let Some((_, end)) = child_at(statement, i).and_then(byte_range) else {
+            return;
+        };
+        to = to.max(end);
     }
+    super::origin::set_span(statement, SrcSpan::new(from, to));
 }
