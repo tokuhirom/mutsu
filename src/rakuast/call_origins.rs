@@ -157,6 +157,7 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
 /// its `ArgList`'s, as for a postfix call; the text starts at the dot.
 // Cost: O(n), n = length of the call's source.
 fn topic_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    super::topic_subscript_origins::place(node, span);
     place_call(node, None, span.from as usize, span, false);
 }
 

@@ -142,6 +142,33 @@ fn postfix(node: &mut RakuAstNode) {
                 text.starts_with('*').then_some(from + 1)
             })
         }
+        // `0.0i` / `3e2i`: a numeric literal written right before the
+        // operator, which the parser read as one token.
+        None if operand.is_some_and(|o| {
+            matches!(
+                o.class,
+                RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::NumLiteral
+            )
+        }) =>
+        {
+            let op = child(node, "postfix")
+                .filter(|p| p.class == RakuAstClass::Postfix)
+                .and_then(leaf_text);
+            let end = op.and_then(|op| {
+                super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+                    let number = text.strip_suffix(op.as_str())?;
+                    number
+                        .starts_with(|c: char| c.is_ascii_digit())
+                        .then_some(from + number.len())
+                })
+            });
+            if let Some(end) = end {
+                with_child(node, "operand", |o| {
+                    super::origin::set_span(o, SrcSpan::new(from, end))
+                });
+            }
+            end
+        }
         None => None,
     };
     let Some(operand_end) = operand_end else {

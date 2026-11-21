@@ -139,6 +139,7 @@ mod reduce_origins;
 mod reduce_term;
 mod spelled_nodes;
 mod topic_postfix;
+mod topic_subscript_origins;
 pub(crate) use doc_str::legacy_row_text;
 mod dynamic_method;
 mod enum_term;
