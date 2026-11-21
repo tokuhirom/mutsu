@@ -3992,7 +3992,11 @@ pub(super) fn interp_segment(names: &NameScope, expr: &Expr) -> Result<RakuAstNo
         // RakuAST counterpart, so unwrap it here rather than rendering the
         // wrapper. Measured against rakudo 2026.07.
         Expr::DoStmt(inner) => match inner.as_ref() {
-            Stmt::Block(body) => block_node(names, body),
+            // The block is the statement its terms belong to (`"{$s.a}{$s.b}"`).
+            Stmt::Block(body) => {
+                let _in = super::expr_origins::InStatement::enter(super::expr_origins::of(expr));
+                block_node(names, body)
+            }
             // `"a$(1 + 2)b"`: the item contextualizer around the contents.
             Stmt::Expr(contents) => super::contextualizer::view_segment(names, contents),
             _ => view_expr(names, expr),
