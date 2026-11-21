@@ -277,7 +277,10 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
                 return;
             }
             let mut trait_node = RakuAstNode::clone(trait_node);
-            super::origin::set_span(&mut trait_node, SrcSpan::new(clause.whole.0, clause.whole.1));
+            super::origin::set_span(
+                &mut trait_node,
+                SrcSpan::new(clause.whole.0, clause.whole.1),
+            );
             with_child(&mut trait_node, "type", |ty| {
                 type_origin(ty, (clause.name.0, clause.name.1, clause.name.1))
             });
