@@ -1,5 +1,6 @@
-//! How a regex's internal modifier (`:i`, `:!ignorecase`, `:s`, `:r`) is
-//! written, for the origin walk of a regex body (`regex_origins`; #15780).
+//! How a regex's internal modifier (`:i`, `:!ignorecase`, `:s`, `:r`) and a
+//! double-quoted string in it (`"a\n"`) are written, for the origin walk of a
+//! regex body (`regex_origins`; #15780).
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 
@@ -31,4 +32,52 @@ pub(super) fn written_len(node: &RakuAstNode, text: &str) -> Option<usize> {
         })
     })?;
     Some(text.len() - rest.len() + name.len())
+}
+
+/// The length of a double-quoted string's text after its opening `"` (up to
+/// the closing one, excluded) and its value, when it interpolates nothing:
+/// the single-character escapes (`\n`, `\t`, `\e`, `\"`, ...) are decoded,
+/// and any other escape or a sigil, `&` or `{` that could interpolate gives
+/// `None`.
+// Cost: O(n), n = length of the string.
+pub(super) fn double_quoted(inner: &str) -> Option<(usize, String)> {
+    let mut value = String::new();
+    let mut chars = inner.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '"' => return Some((at, value)),
+            '$' | '@' | '%' | '&' | '{' => return None,
+            '\\' => value.push(match chars.next()?.1 {
+                'n' => '\n',
+                't' => '\t',
+                'r' => '\r',
+                'e' => '\u{1b}',
+                'a' => '\u{7}',
+                'b' => '\u{8}',
+                'f' => '\u{c}',
+                '0' => '\0',
+                escaped @ ('\\' | '"' | '$' | '@' | '%' | '&' | '{' | '}' | ' ') => escaped,
+                _ => return None,
+            }),
+            c => value.push(c),
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::double_quoted;
+
+    #[test]
+    fn double_quoted_escapes() {
+        assert_eq!(double_quoted(r#"a\n" x"#), Some((3, "a\n".to_string())));
+        assert_eq!(
+            double_quoted(r#"\e[0m""#),
+            Some((5, "\u{1b}[0m".to_string()))
+        );
+        assert_eq!(double_quoted(r#"\"q\"""#), Some((5, "\"q\"".to_string())));
+        assert_eq!(double_quoted(r#"$x""#), None);
+        assert_eq!(double_quoted(r#"\x41""#), None);
+    }
 }
