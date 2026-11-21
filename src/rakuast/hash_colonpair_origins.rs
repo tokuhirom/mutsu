@@ -69,7 +69,13 @@ pub(super) fn contextualizer(names: &NameScope, node: &mut RakuAstNode) {
 /// entries, written from byte `at` of `text` (which starts at byte `from` of
 /// the unit).
 // Cost: O(n + p), n = length of the entries' text, p = entries.
-fn place_contents(names: &NameScope, contents: &mut RakuAstNode, text: &str, from: usize, at: usize) {
+fn place_contents(
+    names: &NameScope,
+    contents: &mut RakuAstNode,
+    text: &str,
+    from: usize,
+    at: usize,
+) {
     let mut at = at;
     if contents.class == RakuAstClass::ApplyListInfix {
         let Some(operands) = contents.fields.iter_mut().find_map(|f| match &mut f.value {

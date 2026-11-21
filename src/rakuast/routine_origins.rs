@@ -112,13 +112,17 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
 /// again as a fragment, whose ranges are copied onto the argument.
 // Cost: O(n), n = length of the argument's text, plus the parse of it.
 fn trait_argument(trait_node: &mut RakuAstNode, at: &TraitSpans) {
-    let (Some(name_end), whole_end) = (at.name.is_some().then_some(at.name.to as usize), at.whole.to as usize)
-    else {
+    let (Some(name_end), whole_end) = (
+        at.name.is_some().then_some(at.name.to as usize),
+        at.whole.to as usize,
+    ) else {
         return;
     };
-    let Some(text) = super::unit_source::with_text(crate::ast::SrcSpan::new(name_end, whole_end), |t| {
-        (t.starts_with('(') && t.ends_with(')')).then(|| t.to_string())
-    }) else {
+    let Some(text) =
+        super::unit_source::with_text(crate::ast::SrcSpan::new(name_end, whole_end), |t| {
+            (t.starts_with('(') && t.ends_with(')')).then(|| t.to_string())
+        })
+    else {
         return;
     };
     with_child(trait_node, "argument", |argument| {
