@@ -125,6 +125,22 @@ impl SupplyOp {
 }
 
 impl SupplyOp {
+    /// Whether the op emits only once its source is done, from everything
+    /// it emitted (rakudo's `LAST { emit ... }` combinators).
+    // Cost: O(1).
+    fn collects_all(self) -> bool {
+        matches!(
+            self,
+            SupplyOp::Sort
+                | SupplyOp::Reverse
+                | SupplyOp::Rotate
+                | SupplyOp::Collate
+                | SupplyOp::Grab
+                | SupplyOp::Comb
+                | SupplyOp::Split
+        )
+    }
+
     /// The combination kind of `merge` / `zip` / `zip-latest`.
     // Cost: O(1).
     fn multi_source_kind(self) -> Option<&'static str> {
@@ -210,6 +226,18 @@ impl Interpreter {
             }
             _ => return None,
         };
+        // A combinator that needs every value first (`sort`, `reverse`, ...)
+        // over a live source is a per-tap recipe that collects (ADR-18443).
+        if op.collects_all() && Self::stage_is_live_recipe(&attributes.as_map()) {
+            let mut params = Vec::with_capacity(args.len() + 1);
+            params.push(Value::str(op.name().to_string()));
+            params.extend(args);
+            return Some(Ok(Self::make_on_demand_buffer_supply(
+                target.clone(),
+                "collect",
+                Value::array(params),
+            )));
+        }
         // `$a.merge($b)` / `.zip` / `.zip-latest` over a live source is a
         // per-tap recipe over the invocant and the arguments (ADR-18443).
         if let Some(kind) = op.multi_source_kind() {

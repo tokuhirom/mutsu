@@ -406,6 +406,10 @@ impl Interpreter {
                 }
                 if let Some(id) = super::supply_derive_buffer::buffer_id(attributes) {
                     self.classify_finish(id, None)?;
+                    let callable = attributes.get("callable").cloned().unwrap_or(Value::NIL);
+                    for value in self.collect_finish(id, &callable)? {
+                        self.call_method_with_values(emitter.clone(), "emit", vec![value])?;
+                    }
                     for value in super::supply_derive_buffer::buffer_finish(id) {
                         self.call_method_with_values(emitter.clone(), "emit", vec![value])?;
                     }
