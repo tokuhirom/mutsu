@@ -45,9 +45,9 @@ pub(super) fn place(names: &NameScope, pair: &mut RakuAstNode) {
 fn key_before(value_from: usize, quoted: bool) -> Option<SrcSpan> {
     let mut start = value_from.saturating_sub(WINDOW);
     let text = loop {
-        if let Some(text) = super::unit_source::with_text(SrcSpan::new(start, value_from), |t| {
-            Some(t.to_string())
-        }) {
+        if let Some(text) =
+            super::unit_source::with_text(SrcSpan::new(start, value_from), |t| Some(t.to_string()))
+        {
             break text;
         }
         // Not on a character boundary: step forward to one.
