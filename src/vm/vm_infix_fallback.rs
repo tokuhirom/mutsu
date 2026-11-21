@@ -129,6 +129,9 @@ impl Interpreter {
                 .deitemize_element();
             return self.cmp_value(left, right);
         }
+        if let Some(value) = self.core_comparison_or_concat(name, &call_args)? {
+            return Ok(value);
+        }
         if call_args.len() == 2
             && let Some(result) = self.range_instance_arithmetic(
                 name,
@@ -445,7 +448,7 @@ impl Interpreter {
     /// subscripted one, which an `is rw` candidate would have bound but a core
     /// operator reads through.
     // Cost: O(1).
-    fn unwrap_operand_value(value: Value) -> Value {
+    pub(super) fn unwrap_operand_value(value: Value) -> Value {
         let value = Self::unwrap_var_ref_value(value);
         if value.is_container_ref() {
             value.into_deref()
