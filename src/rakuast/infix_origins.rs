@@ -275,6 +275,16 @@ fn apply_infix(node: &mut RakuAstNode) {
                     .then_some(own_start + trimmed.len() - text.len())
             })
         }
+        // `$x = $y = 1`: a right operand the parser left unplaced; the
+        // operator follows the left one after blanks, and blanks follow it.
+        (Some((_, left_end)), None, Some((_, own_end))) if left_end < own_end => {
+            super::unit_source::with_text(SrcSpan::new(left_end, own_end), |after_left| {
+                let after = after_left.trim_start();
+                let rest = after.strip_prefix(text.as_str())?;
+                rest.starts_with(char::is_whitespace)
+                    .then_some(left_end + (after_left.len() - after.len()))
+            })
+        }
         _ => None,
     };
     let Some(op_at) = op_at else {
@@ -286,7 +296,8 @@ fn apply_infix(node: &mut RakuAstNode) {
         super::origin::set_span(node, SrcSpan::new(from, to));
     }
     super::hash_colonpair_origins::infix_adverbs(node);
-    left_before_operator(node, op_at);
+    super::lone_term_origins::left_before_operator(node, op_at);
+    super::lone_term_origins::right_after_operator(node, op_at + text.len());
     let text = spelled.unwrap_or(text);
     with_child(node, "infix", |infix| {
         if text != leaf_text(infix).unwrap_or_default() {
@@ -480,32 +491,4 @@ pub(super) fn set_leaf_text(node: &mut RakuAstNode, text: &str) {
     {
         field.value = RakuAstFieldValue::Node(Value::str(text.to_string()));
     }
-}
-
-/// `@a[0] := $v`: a postfix left operand the parser left unplaced, in an application
-/// with a range, runs from the application's start to the blanks before the
-/// operator (at byte `op_at`), and its parts are derived from that range.
-// Cost: O(n), n = length of the operand's text.
-fn left_before_operator(node: &mut RakuAstNode, op_at: usize) {
-    let Some((from, _)) = byte_range(node) else {
-        return;
-    };
-    // Only a postfix application (`@a[0]`, `$o.m`), whose text is its own:
-    // a term the parser unwrapped from parentheses would not be.
-    if child(node, "left")
-        .is_none_or(|left| left.origin.0.is_some() || left.class != RakuAstClass::ApplyPostfix)
-        || op_at <= from
-    {
-        return;
-    }
-    let Some(len) = super::unit_source::with_text(SrcSpan::new(from, op_at), |text| {
-        let written = text.trim_end();
-        (!written.is_empty()).then_some(written.len())
-    }) else {
-        return;
-    };
-    with_child(node, "left", |left| {
-        super::origin::set_span(left, SrcSpan::new(from, from + len));
-        derive(&NameScope::default(), left);
-    });
 }

@@ -311,6 +311,7 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let Some(operand_end) = operand_end else {
         return;
     };
+    super::lone_term_origins::subscript_assignee(node, operand_end);
     // Parentheses around the operand (`(@a)[0]`) are not a node of their
     // own, so the subscript starts after their `)`; the dot of `$x.[0]` is
     // not part of it either.
