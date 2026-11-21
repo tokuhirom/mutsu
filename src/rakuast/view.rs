@@ -1151,6 +1151,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             })))
         }
         Stmt::ProtoDecl {
+            spans,
             name,
             param_defs,
             return_type,
@@ -1164,6 +1165,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
         } => Ok(Some(statement_expression(super::proto::view_node(
             names,
             super::proto::ProtoDecl {
+                spans: spans.as_deref(),
                 name: *name,
                 param_defs,
                 return_type: return_type.as_deref(),
