@@ -57,38 +57,107 @@ pub(super) fn finalize_unit(
     names: &NameScope,
     mut stmts: Vec<Stmt>,
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    let _executing = Executing::enter();
-    // The lowering of a converted construct builds no spellings either.
-    let _spellings = crate::ast::spelled::KeepSpellings::enter(false);
-    let _underscore_scope = super::underscore_bindings::Scope::reset();
-    let _block_scope = super::underscore_bindings::Scope::block(&stmts);
-    // The unit's names are declared in source order (ADR-15760 §7.2 (c)): each
-    // top-level statement declares its own as it is reached
-    // (`Finalize::visit_top_listed`); only its routines, which are hoisted, are
-    // known up front.
-    let _declared = super::bareword::DeclaredNames::start(names);
-    let _method_scope = super::underscore_bindings::MethodScope::enter(false);
-    let _unit = super::shadowed_terms::scan_routines(names, &stmts);
-    let _operators = super::infix_func::enter_scope(names);
-    let _keywords = super::shadowed_terms::enter_scope(names);
-    let mut finalize = Finalize {
-        names,
-        failed: None,
-        line: None,
-        top: true,
-        later_terms: Vec::new(),
-        seen_terms: Vec::new(),
-        declared_types: std::collections::HashSet::new(),
-        qualify: crate::parser::UnitQualify::new(&stmts),
-    };
-    crate::parser::with_rakuast_lexical_scope(|| {
-        finalize.visit_stmts_mut(&mut stmts);
-    });
-    if let Some(err) = finalize.failed {
-        return Err(err);
+    let mut unit = UnitFinalizer::begin(names, &stmts);
+    for stmt in stmts.iter_mut() {
+        unit.commit(stmt);
     }
-    super::lower::finish_unit(&mut stmts)?;
+    unit.finish(&mut stmts)?;
     Ok(stmts)
+}
+
+/// The finalization of one compilation unit, fed its top-level statements in
+/// source order (ADR-15760 §7.2 (b), slice 2d): [`UnitFinalizer::commit`]
+/// finalizes one statement, with every list nested in it, and
+/// [`UnitFinalizer::finish`] runs the passes that need the whole lowered unit.
+///
+/// The unit's lookahead inputs (the routines it declares, which are hoisted,
+/// the capitalised terms and core-named types its later statements declare,
+/// and the `@_` / `%_` it declares) are read off the whole unit when it
+/// begins.
+pub(super) struct UnitFinalizer<'s> {
+    finalize: Finalize<'s>,
+    /// The index of the next top-level statement.
+    next: usize,
+    // The scopes the finalization runs in, in the reverse of the order they
+    // are entered: fields are dropped in declaration order, and each restores
+    // what the one entered before it installed.
+    _top_scope: super::bareword::BlockScope<'s>,
+    _keywords: crate::scope::ListScope<'s>,
+    _operators: crate::scope::ListScope<'s>,
+    _unit: super::shadowed_terms::UnitGuard<'s>,
+    _method_scope: super::underscore_bindings::MethodScope,
+    _declared: super::bareword::DeclaredNames<'s>,
+    _block_scope: super::underscore_bindings::Scope,
+    _underscore_scope: super::underscore_bindings::Scope,
+    _spellings: crate::ast::spelled::KeepSpellings,
+    _executing: Executing,
+}
+
+impl<'s> UnitFinalizer<'s> {
+    /// Begin finalizing the unit whose top-level statements are `unit`.
+    // Cost: O(n), n = size of the unit (its lookahead inputs).
+    pub(super) fn begin(names: &'s NameScope, unit: &[Stmt]) -> Self {
+        let executing = Executing::enter();
+        // The lowering of a converted construct builds no spellings either.
+        let spellings = crate::ast::spelled::KeepSpellings::enter(false);
+        let underscore_scope = super::underscore_bindings::Scope::reset();
+        let block_scope = super::underscore_bindings::Scope::block(unit);
+        // The unit's names are declared in source order (ADR-15760 §7.2 (c)):
+        // each top-level statement declares its own as it is committed
+        // (`Finalize::top_statement`); only its routines, which are hoisted,
+        // are known up front.
+        let declared = super::bareword::DeclaredNames::start(names);
+        let method_scope = super::underscore_bindings::MethodScope::enter(false);
+        let unit_guard = super::shadowed_terms::scan_routines(names, unit);
+        let operators = super::infix_func::enter_scope(names);
+        let keywords = super::shadowed_terms::enter_scope(names);
+        // The unit's own list declares its names in source order, not up front
+        // as a nested list does.
+        let top_scope = super::bareword::BlockScope::enter(names, &[]);
+        let finalize = Finalize {
+            names,
+            failed: None,
+            line: None,
+            later_terms: vec![setting_terms_declared_in(unit)],
+            seen_terms: vec![std::collections::HashSet::new()],
+            declared_types: std::collections::HashSet::new(),
+            qualify: crate::parser::UnitQualify::new(unit),
+        };
+        UnitFinalizer {
+            finalize,
+            next: 0,
+            _top_scope: top_scope,
+            _keywords: keywords,
+            _operators: operators,
+            _unit: unit_guard,
+            _method_scope: method_scope,
+            _declared: declared,
+            _block_scope: block_scope,
+            _underscore_scope: underscore_scope,
+            _spellings: spellings,
+            _executing: executing,
+        }
+    }
+
+    /// Finalize the unit's next top-level statement.
+    // Cost: O(s), s = size of the statement.
+    pub(super) fn commit(&mut self, stmt: &mut Stmt) {
+        let index = self.next;
+        self.next += 1;
+        crate::parser::with_rakuast_lexical_scope(|| self.finalize.top_statement(index, stmt));
+    }
+
+    /// The unit's statements are all committed: `stmts` is the finalized
+    /// unit, put through the passes that need it whole.
+    // Cost: O(n), n = size of the unit.
+    pub(super) fn finish(mut self, stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
+        // The unit's own list is closed.
+        drop(self._top_scope);
+        if let Some(err) = self.finalize.failed.take() {
+            return Err(err);
+        }
+        super::lower::finish_unit(stmts)
+    }
 }
 
 /// Whether a statement declares a routine the statements after it can call:
@@ -109,8 +178,6 @@ struct Finalize<'s> {
     failed: Option<RuntimeError>,
     /// The line of the last `SetLine` of the list being finalized.
     line: Option<i64>,
-    /// The next list is the unit's own.
-    top: bool,
     /// Per enclosing list, the terms it declares at a later statement that
     /// are capitalised (`constant X = 3` in a list whose earlier statements say
     /// `X`). Rakudo hoists routines only: until the
@@ -256,21 +323,17 @@ impl Finalize<'_> {
 
 impl VisitMut for Finalize<'_> {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
-        let top = std::mem::take(&mut self.top);
         let line = self.line.take();
         self.later_terms.push(setting_terms_declared_in(body));
         self.seen_terms.push(std::collections::HashSet::new());
         // The names a body declares classify the barewords written in it, as
-        // they do when it is converted.
-        // The unit's own list declares its names in source order instead.
-        let _scope = super::bareword::BlockScope::enter(self.names, if top { &[] } else { body });
+        // they do when it is converted. (The unit's own list is not finalized
+        // here but statement by statement, `UnitFinalizer::commit`.)
+        let _scope = super::bareword::BlockScope::enter(self.names, body);
         // A routine or `&name` declared in the body is in scope for the
         // statements after it, as it is for the parser; a body that declares
-        // none needs no scope of its own (the unit's own list is finalized in
-        // the scope `finalize_unit` opened).
-        if top {
-            self.visit_top_listed(body);
-        } else if body.iter().any(declares_routine) {
+        // none needs no scope of its own.
+        if body.iter().any(declares_routine) {
             crate::parser::with_rakuast_lexical_scope(|| self.visit_listed_all(body, true));
         } else {
             self.visit_listed_all(body, false);
@@ -598,20 +661,19 @@ impl Finalize<'_> {
         }
     }
 
-    /// The unit's own statements in order, each declaring its names for itself
+    /// The unit's `index`-th statement, which declares its names for itself
     /// and the statements after it before it is finalized (ADR-15760 §7.2 (c)):
     /// a statement before a declaration sees the setting's meaning of the name,
     /// as in rakudo, even inside a routine body.
-    fn visit_top_listed(&mut self, body: &mut [Stmt]) {
-        for (index, stmt) in body.iter_mut().enumerate() {
-            super::bareword::declare_statement(self.names, stmt);
-            super::shadowed_terms::declare_statement(self.names, stmt);
-            self.declared_types
-                .extend(unit_type_names(std::slice::from_ref(stmt)));
-            self.visit_listed(stmt);
-            self.qualify.statement(index, stmt);
-            crate::parser::register_rakuast_user_sub_binding(stmt);
-        }
+    // Cost: O(s·d), s = size of the statement, d = package nesting depth.
+    fn top_statement(&mut self, index: usize, stmt: &mut Stmt) {
+        super::bareword::declare_statement(self.names, stmt);
+        super::shadowed_terms::declare_statement(self.names, stmt);
+        self.declared_types
+            .extend(unit_type_names(std::slice::from_ref(stmt)));
+        self.visit_listed(stmt);
+        self.qualify.statement(index, stmt);
+        crate::parser::register_rakuast_user_sub_binding(stmt);
     }
 
     /// One statement of a list: the line a `SetLine` names is the line of the
