@@ -213,6 +213,13 @@ pub(crate) struct TypeState {
     /// owner-package-chain probe in `resolve_suppressed_type`, so a method body
     /// keeps seeing its own class's nested type (see `resolve_suppressed_type`).
     pub(crate) class_scoped_short_names: std::sync::Arc<HashSet<String>>,
+    /// Types and packages declared inside a module or package block, by
+    /// qualified name (`M::G`) -> storage name (`M::G`, or `M::G\0<id>` for a
+    /// `my class`). The block binds the short name lexically, so its routines
+    /// still read `G` as `M::G` after the block ended (#18481). Keyed by the
+    /// qualified name, so a `class Other::G` declared outside `module Other`
+    /// does not shadow an outer `G` there, as on rakudo.
+    pub(crate) package_block_types: std::sync::Arc<HashMap<crate::symbol::Symbol, crate::symbol::Symbol>>,
     /// Keys of enums declared inside a class body whose body has exited with
     /// no outer binding of the same name (`class CC { enum E <bar> }`). A
     /// bareword `bar` that nothing else resolves is undeclared out there
@@ -333,6 +340,7 @@ impl TypeState {
             method_fallbacks: Default::default(),
             suppressed_names: Default::default(),
             class_scoped_short_names: Default::default(),
+            package_block_types: Default::default(),
             class_body_enum_keys: Default::default(),
             poisoned_enum_aliases: Default::default(),
             enum_scope_names: vec![Vec::new()],
@@ -413,6 +421,7 @@ impl TypeState {
             method_fallbacks: self.method_fallbacks.clone(),
             suppressed_names: self.suppressed_names.clone(),
             class_scoped_short_names: self.class_scoped_short_names.clone(),
+            package_block_types: self.package_block_types.clone(),
             class_body_enum_keys: self.class_body_enum_keys.clone(),
             poisoned_enum_aliases: self.poisoned_enum_aliases.clone(),
             enum_scope_names: self.enum_scope_names.clone(),

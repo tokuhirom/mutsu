@@ -742,6 +742,10 @@ impl Interpreter {
         // that declared it ended (`pop_lexical_class_scope`) is out of scope
         // everywhere: probing the running package for it found an `EVAL`'s
         // `my class` again from a later `EVAL` in the same class (#17750).
+        // A type a module or package block declared (#18481).
+        if let Some(storage) = self.resolve_package_block_type(name) {
+            return Some(storage.as_str().to_string());
+        }
         if !self.types.class_scoped_short_names.contains(name) {
             return None;
         }
