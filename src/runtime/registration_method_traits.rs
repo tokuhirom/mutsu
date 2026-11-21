@@ -82,7 +82,7 @@ impl Interpreter {
         if !traits.iter().any(|(t, _)| !is_parser_marker(t)) {
             return Ok(());
         }
-        if !self.has_trait_mod_handler("trait_mod:<is>") {
+        if !self.has_registry_or_lexical_trait_mod("trait_mod:<is>") {
             return Ok(());
         }
         let saved_package_var = self.bind_trait_package(pkg);
@@ -317,7 +317,7 @@ impl Interpreter {
             // An exception the handler itself raises (`die` in a trait that
             // refuses its target) fails the declaration. Only "no candidate
             // matches" stays silent, as before.
-            match self.call_trait_mod("trait_mod:<is>", args) {
+            match self.call_trait_mod_lexical_first("trait_mod:<is>", args) {
                 Err(e) if !e.is_multi_no_match() => return Err(e),
                 _ => {}
             }

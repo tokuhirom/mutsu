@@ -118,6 +118,10 @@ pub(crate) struct LexicalImportCapture {
     /// (`MODULE_UNIT_MARK`): its pad bindings belong to the module's
     /// mainline, not to an open block of the loading scope.
     module_unit: bool,
+    /// The trait handler families (`trait_mod:<is>`) this import bound as a
+    /// dispatcher in a block's set (ADR-8751 stage 2): trait application asks
+    /// such a set's binding of the name (`Interpreter::lexical_trait_dispatcher`).
+    pub(super) trait_families: HashSet<Symbol>,
 }
 
 /// Whether `name` is one of the seven core array listops (ADR-0044 D1).
@@ -164,6 +168,7 @@ impl Interpreter {
             hook_values: HashMap::new(),
             hook_routines: HashMap::new(),
             module_unit,
+            trait_families: HashSet::new(),
         };
         self.module.lexical_import_capture.replace(capture)
     }
@@ -178,6 +183,46 @@ impl Interpreter {
             .is_some_and(|capture| {
                 capture.module_unit && capture.unit == self.executing_unit_sym_for_module_load()
             })
+    }
+
+    /// Whether the running import is a `use` inside a block of the importing
+    /// compunit (its import scope is open and is a block's, not the BEGIN
+    /// preload's), rather than a unit's own top-level `use`. A trait family
+    /// binds lexically only there: a top-level import keeps the registry
+    /// path, whose per-importer scoping keeps a module's unexported
+    /// candidates out (#11310).
+    // Cost: O(1).
+    pub(crate) fn import_runs_in_open_block(&self) -> bool {
+        let importer = self.executing_unit_sym_for_module_load();
+        !self.lexical_import_is_module_unit()
+            && self
+                .module
+                .lexical_import_capture
+                .as_ref()
+                .is_some_and(|capture| capture.unit == importer)
+            && self
+                .module
+                .import_scope_stack
+                .last()
+                .is_some_and(|scope| scope.scope_classes && scope.unit == importer)
+    }
+
+    /// [`Self::bind_family_lexically`] for a trait handler family: binds it
+    /// and records it as one trait application may ask the set for.
+    // Cost: as `bind_family_lexically`.
+    pub(crate) fn bind_trait_family_lexically(
+        &mut self,
+        name: &str,
+        entries: &[(Symbol, std::sync::Arc<crate::ast::FunctionDef>)],
+        proto: Option<&crate::ast::FunctionDef>,
+    ) -> bool {
+        if !self.import_runs_in_open_block() || !self.bind_family_lexically(name, entries, proto) {
+            return false;
+        }
+        if let Some(capture) = self.module.lexical_import_capture.as_mut() {
+            capture.trait_families.insert(Symbol::intern(name));
+        }
+        true
     }
 
     /// Whether the running import binds `name` lexically rather than
@@ -508,9 +553,20 @@ impl Interpreter {
         if binds_operator {
             super::lexical_operator_import_flag::note_operator_import();
         }
-        let binds_trait = set.keys().any(|name| name.with_str(is_trait_mod_family));
+        // Only a family this import bound as a dispatcher answers a trait: a
+        // set can name `trait_mod:<is>` through other bindings (a hook value,
+        // a module routine) that trait application never consulted.
+        let binds_trait = capture
+            .trait_families
+            .iter()
+            .any(|name| matches!(set.get(name), Some(LexicalImport::Code(_))));
         self.module.lexical_imports.write(|tables| {
             tables.binds_trait_family |= binds_trait;
+            if binds_trait {
+                tables.trait_sets.insert(id);
+            } else {
+                tables.trait_sets.remove(&id);
+            }
             if binds_operator {
                 tables.operator_sets.insert(id);
             } else {

@@ -1058,4 +1058,6 @@ pub(crate) struct LexicalImportTables {
     /// (`Interpreter::imported_trait_dispatcher`). Sticky: a program that
     /// never imports one in a block pays one flag read per trait.
     pub(crate) binds_trait_family: bool,
+    /// The ids of the sets that bind a trait family as a dispatcher.
+    pub(crate) trait_sets: HashSet<Symbol>,
 }

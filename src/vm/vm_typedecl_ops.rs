@@ -1054,7 +1054,7 @@ impl Interpreter {
                 // them at compile time, once (#12708); the in-place registration,
                 // repeated on every entry of the enclosing code, must not.
                 let has_trait_mod = !traits_ran_in_shell
-                    && (self.has_trait_mod_handler("trait_mod:<is>")
+                    && (self.has_registry_or_lexical_trait_mod("trait_mod:<is>")
                         || self.has_any_trait_mod_is());
                 if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
                     let type_obj = Value::package(Symbol::intern(&storage_name));
@@ -1132,7 +1132,7 @@ impl Interpreter {
                         // A block-imported candidate (ADR-8751) applies when it
                         // accepts the parent; none accepting is no trait.
                         if let Some(result) =
-                            self.try_imported_trait_mod("trait_mod:<is>", &call_args)
+                            self.try_lexical_trait_mod("trait_mod:<is>", &call_args)
                         {
                             result?;
                         } else if self.typed_is_trait_candidate_matches(&call_args) {
@@ -1727,7 +1727,7 @@ impl Interpreter {
                 .unwrap_or_default();
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined
-            let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
+            let has_trait_mod = self.has_registry_or_lexical_trait_mod("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {

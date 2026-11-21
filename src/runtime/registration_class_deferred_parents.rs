@@ -138,7 +138,7 @@ impl Interpreter {
                 // `trait_mod:<is>` dispatch an unknown header parent takes;
                 // when no `trait_mod:<is>` exists at all there is nothing left
                 // to try, so raise the error the header phase would have.
-                if self.has_trait_mod_handler("trait_mod:<is>") {
+                if self.has_registry_or_lexical_trait_mod("trait_mod:<is>") {
                     out.unclaimed.push(parent.clone());
                     continue;
                 }

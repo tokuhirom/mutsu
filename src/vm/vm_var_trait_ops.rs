@@ -1274,7 +1274,7 @@ impl Interpreter {
         // A block-scoped `use` binds an imported trait family in the block's
         // set (ADR-8751): its candidates go first, the by-name dispatch takes
         // a trait none of them accepts.
-        if let Some(result) = self.try_imported_trait_mod("trait_mod:<is>", &args) {
+        if let Some(result) = self.try_lexical_trait_mod("trait_mod:<is>", &args) {
             return result;
         }
         match self.vm_call_function("trait_mod:<is>", args.clone()) {
