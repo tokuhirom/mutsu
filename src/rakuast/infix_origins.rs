@@ -20,7 +20,10 @@ use crate::value::{Value, ValueView};
 // Cost: O(f + n), f = fields of `node`, n = length of the source text read.
 pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
-        RakuAstClass::ApplyInfix => apply_infix(node),
+        RakuAstClass::ApplyInfix => {
+            apply_infix(node);
+            super::decl_compound_origins::left_call(node);
+        }
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(names, node),
         RakuAstClass::VarDeclarationSimple => {
             initializer(names, node);
@@ -118,7 +121,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         _ => {
             super::expr_block_origins::phaser_statement(names, node);
-            super::operator_origins::derive(node)
+            super::operator_origins::derive(node);
+            super::prefix_operand_origins::place(names, node);
         }
     }
 }

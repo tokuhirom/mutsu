@@ -52,7 +52,8 @@ fn visited(class: RakuAstClass) -> &'static [&'static str] {
         | C::CallPrivateMethod
         | C::CallNameAsMethod
         | C::CallMetaMethod
-        | C::CallQuotedMethod => &["args"],
+        | C::CallQuotedMethod
+        | C::CallTermAsMethod => &["args"],
         C::Sub
         | C::PointyBlock
         | C::TokenDeclaration

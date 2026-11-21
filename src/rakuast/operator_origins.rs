@@ -286,6 +286,19 @@ fn contextualizer(node: &mut RakuAstNode) {
         glued_variable_operand(node, 0, from + 1);
         return;
     }
+    // `$[ 21 ... 25 ]`: an array composer right after the sigil.
+    if inner.class == RakuAstClass::CircumfixArrayComposer && inner.origin.0.is_none() {
+        let bracket = super::unit_source::with_text(SrcSpan::new(from + 1, to), |text| {
+            (text.starts_with('[') && text.ends_with(']')).then_some(())
+        });
+        if bracket.is_some() {
+            with_child_at(node, 0, |composer| {
+                super::origin::set_span(composer, SrcSpan::new(from + 1, to));
+                super::list_origins::circumfix(composer);
+            });
+        }
+        return;
+    }
     if let Some(inside) = super::list_origins::bracketed(from + 1, to, ('(', ')')) {
         with_child_at(node, 0, |list| {
             super::list_origins::statement_list(list, inside)

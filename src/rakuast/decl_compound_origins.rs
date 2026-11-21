@@ -1,7 +1,8 @@
-//! Origins of a declaration an operator assigns to as it declares it
-//! (ADR-10723 Stage 2, #15780): `my $i **= $i`. The parser desugars the
-//! declaration, so the left operand has no range; it is the scope and the
-//! variable written at the start of the application.
+//! Origins of the left operand of an assigning infix (ADR-10723 Stage 2,
+//! #15780): a declaration it assigns to as it declares it (`my $i **= $i`),
+//! which the parser desugars, so it has no range: the scope and the variable
+//! written at the start of the application; and a method call it assigns
+//! to (`$pair.value += 100`), placed as an application of its own.
 
 use super::infix_origins::{byte_range, child, with_child};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
@@ -63,5 +64,25 @@ pub(super) fn leading_declaration(node: &mut RakuAstNode) {
     };
     with_child(node, "left", |left| {
         super::origin::set_span(left, SrcSpan::new(from, from + len))
+    });
+}
+
+/// `$pair.value += 100`: a placed `ApplyPostfix` left operand whose call has
+/// no range yet gets the call's ranges from its own.
+// Cost: O(n), n = length of the operand's text.
+pub(super) fn left_call(node: &mut RakuAstNode) {
+    let Some(left) = child(node, "left") else {
+        return;
+    };
+    if left.class != RakuAstClass::ApplyPostfix
+        || child(left, "postfix").is_none_or(|p| p.origin.0.is_some())
+    {
+        return;
+    }
+    let Some((from, to)) = byte_range(left) else {
+        return;
+    };
+    with_child(node, "left", |left| {
+        super::call_origins::postfix_call(left, SrcSpan::new(from, to))
     });
 }
