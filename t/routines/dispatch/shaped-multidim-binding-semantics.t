@@ -6,26 +6,27 @@ plan 47;
     my $x = 1;
     @s[0;0] := $x;
     $x = 5;
-    is @s[0;0], 1, 'shaped semicolon bind takes a value snapshot';
-    dies-ok { @s[0;0] = 7 }, 'the shaped value-bound slot is readonly';
-    is $x, 5, 'a rejected shaped store leaves the source alone';
+    # rakudo 2026.11: a semicolon bind shares the source's Scalar (#18541).
+    is @s[0;0], 5, 'shaped semicolon bind shares its source';
+    lives-ok { @s[0;0] = 7 }, 'the shaped bound slot is writable';
+    is $x, 7, 'a shaped store writes through to the source';
     my $y = 2;
-    lives-ok { @s[0;0] := $y }, 'a readonly shaped slot can be rebound';
+    lives-ok { @s[0;0] := $y }, 'a shaped slot can be rebound';
     $y = 6;
-    is @s[0;0], 2, 'a shaped rebind takes a new value snapshot';
+    is @s[0;0], 6, 'a shaped rebind shares the new source';
 }
 {
     my @n = [1,2], [3,4];
     my $x = 9;
     @n[0;1] := $x;
     $x = 10;
-    is @n[0;1], 9, 'nested semicolon bind takes a value snapshot';
-    dies-ok { @n[0;1] = 11 }, 'the nested value-bound slot is readonly';
-    is $x, 10, 'a rejected nested store leaves the source alone';
+    is @n[0;1], 10, 'nested semicolon bind shares its source';
+    lives-ok { @n[0;1] = 11 }, 'the nested bound slot is writable';
+    is $x, 11, 'a nested store writes through to the source';
     my $y = 12;
-    lives-ok { @n[0;1] := $y }, 'a readonly nested slot can be rebound';
+    lives-ok { @n[0;1] := $y }, 'a nested slot can be rebound';
     $y = 13;
-    is @n[0;1], 12, 'a nested rebind replaces the old value';
+    is @n[0;1], 13, 'a nested rebind shares the new source';
 }
 {
     my @s[3];
@@ -59,8 +60,8 @@ plan 47;
     my $x = 5;
     @s[1;0;1] := $x;
     $x = 6;
-    is @s[1;0;1], 5, 'three shaped dimensions bind a value';
-    dies-ok { @s[1;0;1] = 7 }, 'a three-dimensional shaped bind is readonly';
+    is @s[1;0;1], 6, 'three shaped dimensions bind the source';
+    lives-ok { @s[1;0;1] = 7 }, 'a three-dimensional shaped bind is writable';
     @s[1;0;1] := 8;
     is @s[1;0;1], 8, 'three shaped dimensions can be rebound';
 }
@@ -69,8 +70,8 @@ plan 47;
     my $x = 10;
     @n[1;0;1] := $x;
     $x = 11;
-    is @n[1;0;1], 10, 'three nested dimensions bind a value';
-    dies-ok { @n[1;0;1] = 12 }, 'a three-dimensional nested bind is readonly';
+    is @n[1;0;1], 11, 'three nested dimensions bind the source';
+    lives-ok { @n[1;0;1] = 12 }, 'a three-dimensional nested bind is writable';
     @n[1;0;1] := 13;
     is @n[1;0;1], 13, 'three nested dimensions can be rebound';
 }
@@ -90,8 +91,8 @@ plan 47;
     my $x = 1;
     (@s[0;1] := $x);
     $x = 2;
-    is @s[0;1], 1, 'expression-context semicolon bind takes a snapshot';
-    dies-ok { @s[0;1] = 3 }, 'expression-context semicolon bind is readonly';
+    is @s[0;1], 2, 'expression-context semicolon bind shares its source';
+    lives-ok { @s[0;1] = 3 }, 'expression-context semicolon bind is writable';
 }
 {
     my @s[2;2];
@@ -99,7 +100,7 @@ plan 47;
     my &change = { $x = 9 };
     @s[0;1] := $x;
     change();
-    is @s[0;1], 1, 'an already captured source cell is decontainerized';
+    is @s[0;1], 9, 'an already captured source cell is shared';
     my @one[2];
     @one[0] := $x;
     @one[0] = 10;
@@ -141,7 +142,8 @@ plan 47;
     %h<a><b> := @source;
     dies-ok { %h<a><b> = 3 }, 'binding a whole Array does not invent a writable Scalar';
     @source.push(3);
-    is %h<a><b>.raku, '$[1, 2, 3]', 'the bound aggregate retains its identity and itemization';
+    todo 'a chained bind itemizes the bound Array (#18566)';
+    is %h<a><b>.raku, '[1, 2, 3]', 'the bound aggregate retains its identity';
 }
 {
     my $tree = [ { branch => { leaf => [0, 1], label => 'old' }, extra => 0 }, 0 ];

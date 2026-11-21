@@ -5677,6 +5677,13 @@ impl Interpreter {
                 bind_cell.as_ref(),
             )?
         {
+            // The source shares the cell seated at the leaf (#18541), as
+            // the unshaped path below rebinds it.
+            if let (Some(src), Some(cell)) = (&bind_source, &bind_cell) {
+                let cell_val = Value::container_ref(cell.clone());
+                self.set_env_with_main_alias(src, cell_val.clone());
+                self.update_local_if_exists(code, src, &cell_val);
+            }
             return Ok(());
         }
 
