@@ -1727,8 +1727,7 @@ impl Interpreter {
                 .unwrap_or_default();
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined
-            let has_trait_mod =
-                self.has_trait_mod_handler("trait_mod:<is>");
+            let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {
