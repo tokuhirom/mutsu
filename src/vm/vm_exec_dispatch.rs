@@ -7211,6 +7211,7 @@ impl Interpreter {
                 if !self.qualified_identity_binding_is_redundant(&name, &storage) {
                     self.env_mut().insert(name.clone(), pkg_val.clone());
                 }
+                self.bind_nested_package_short_name(&name, &pkg_val);
                 {
                     let declared =
                         crate::runtime::cow_table_mut(&mut self.module.chain_declared_packages);
