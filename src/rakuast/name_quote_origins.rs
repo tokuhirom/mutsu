@@ -46,9 +46,10 @@ pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) {
             return;
         };
         let from = quote_from.saturating_sub(key.len() + 1);
-        let written = super::unit_source::with_text(crate::ast::SrcSpan::new(from, quote_from), |t| {
-            (t.strip_prefix(':') == Some(key.as_str())).then_some(())
-        });
+        let written =
+            super::unit_source::with_text(crate::ast::SrcSpan::new(from, quote_from), |t| {
+                (t.strip_prefix(':') == Some(key.as_str())).then_some(())
+            });
         if from <= span.from as usize || written.is_none() {
             return;
         }
@@ -75,7 +76,10 @@ fn word_quote_at_end(quote: &mut RakuAstNode, floor: usize, to: usize) -> Option
     if quote.class != RakuAstClass::QuotedString {
         return None;
     }
-    let segments = quote.fields.iter_mut().find(|f| f.name == Some("segments"))?;
+    let segments = quote
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("segments"))?;
     let RakuAstFieldValue::List(items) = &mut segments.value else {
         return None;
     };
