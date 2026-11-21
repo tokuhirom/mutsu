@@ -110,7 +110,11 @@ pub(super) fn package_variable(node: &mut RakuAstNode) {
 /// quote over the brackets, its text inside them.
 // Cost: O(n), n = length of the name's text.
 pub(super) fn operator_quote(name: &mut RakuAstNode, span: crate::ast::SrcSpan) {
-    let Some(field) = name.fields.iter_mut().find(|f| f.name == Some("colonpairs")) else {
+    let Some(field) = name
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("colonpairs"))
+    else {
         return;
     };
     let RakuAstFieldValue::List(items) = &mut field.value else {
@@ -133,8 +137,14 @@ pub(super) fn operator_quote(name: &mut RakuAstNode, span: crate::ast::SrcSpan) 
         return;
     };
     let mut node = RakuAstNode::clone(node);
-    super::origin::set_span(&mut node, crate::ast::SrcSpan::new(from + open, from + close + 1));
-    super::origin::quoted_text(&mut node, crate::ast::SrcSpan::new(from + open, from + close + 1));
+    super::origin::set_span(
+        &mut node,
+        crate::ast::SrcSpan::new(from + open, from + close + 1),
+    );
+    super::origin::quoted_text(
+        &mut node,
+        crate::ast::SrcSpan::new(from + open, from + close + 1),
+    );
     *quote = crate::value::Value::rakuast(Box::new(node));
 }
 

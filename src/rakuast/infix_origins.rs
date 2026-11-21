@@ -375,9 +375,9 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
-    let Some(name) = child(node, "name").and_then(|n| {
-        super::indirect_name_origins::written_operator(n).or_else(|| leaf_text(n))
-    }) else {
+    let Some(name) = child(node, "name")
+        .and_then(|n| super::indirect_name_origins::written_operator(n).or_else(|| leaf_text(n)))
+    else {
         return;
     };
     let parens = node.class == RakuAstClass::CallName;
