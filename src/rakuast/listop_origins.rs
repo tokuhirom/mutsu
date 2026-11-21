@@ -62,7 +62,12 @@ fn from_arguments(node: &mut RakuAstNode) {
 /// derived; the statement takes its range from it.
 // Cost: O(a + n), as [`from_arguments`], plus the derivation.
 pub(super) fn unmarked_statement(names: &crate::scope::NameScope, statement: &mut RakuAstNode) {
-    if statement.class != RakuAstClass::StatementExpression || statement.origin.0.is_some() {
+    // A statement with a modifier (`say $y if $y`) runs past its call: see
+    // `anon_body_origins::bare_statement`.
+    if statement.class != RakuAstClass::StatementExpression
+        || statement.origin.0.is_some()
+        || statement.fields.len() != 1
+    {
         return;
     }
     let mut placed = None;
