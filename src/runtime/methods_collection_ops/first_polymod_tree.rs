@@ -225,11 +225,11 @@ impl Interpreter {
                 ),
                 None => None,
             };
-            return match grepped.as_ref().map(Value::view) {
-                Some(ValueView::Instance { attributes, .. }) => {
-                    self.native_supply(&attributes.as_map(), stage, Vec::new())
-                }
-                _ => self.native_supply(attributes, stage, Vec::new()),
+            // Through the method dispatch, so a per-tap recipe grep stage
+            // (ADR-18443) meets the stage that knows it.
+            return match grepped {
+                Some(grepped) => self.call_method_with_values(grepped, stage, Vec::new()),
+                None => self.native_supply(attributes, stage, Vec::new()),
             };
         }
         let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
