@@ -761,6 +761,9 @@ fn is_default_literal(expr: &Expr) -> bool {
             crate::value::ValueView::Hash(map) => map.is_empty(),
             _ => true,
         },
+        // Signature declarations predeclare an array target with this AST
+        // shape, rather than the Literal(real_array) of a bare `my @a;`.
+        Expr::ArrayLiteral(items) => items.is_empty(),
         // `my %h;` is parsed with an empty hash composer expression.
         Expr::Hash(pairs, _) => pairs.is_empty(),
         // `Any`, `Int`, ... the type object a typed bare declaration holds.
