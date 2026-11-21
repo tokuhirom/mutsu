@@ -10,7 +10,10 @@ use crate::ast::SrcSpan;
 /// Place the subscript of `node`, a `Term::TopicCall` written at `span`.
 // Cost: O(n + s), n = length of the term's source, s = statements in it.
 pub(super) fn place(node: &mut RakuAstNode, span: SrcSpan) {
-    let Some(class) = child_at(node, 0).filter(|s| s.origin.0.is_none()).map(|s| s.class) else {
+    let Some(class) = child_at(node, 0)
+        .filter(|s| s.origin.0.is_none())
+        .map(|s| s.class)
+    else {
         return;
     };
     let (from, to) = (span.from as usize + 1, span.to as usize);

@@ -265,12 +265,14 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         };
         // `my @a of Int`: a `Trait::Of` over its type.
         if trait_node.class == RakuAstClass::TraitOf {
-            let typed = child_at(trait_node, 0).and_then(child_name).is_some_and(|name| {
-                super::unit_source::with_text(SrcSpan::new(clause.name.0, clause.name.1), |w| {
-                    (w == name).then_some(())
-                })
-                .is_some()
-            });
+            let typed = child_at(trait_node, 0)
+                .and_then(child_name)
+                .is_some_and(|name| {
+                    super::unit_source::with_text(SrcSpan::new(clause.name.0, clause.name.1), |w| {
+                        (w == name).then_some(())
+                    })
+                    .is_some()
+                });
             let of = super::unit_source::with_text(
                 SrcSpan::new(clause.whole.0, clause.whole.0 + 2),
                 |w| (w == "of").then_some(()),
