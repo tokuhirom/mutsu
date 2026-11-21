@@ -64,7 +64,8 @@ fn chained(node: &mut RakuAstNode, span: SrcSpan) {
         RakuAstClass::CallMetaMethod => ".^",
         _ => return,
     };
-    let has_args = super::infix_origins::child(postfix, "args").is_some_and(|a| !a.fields.is_empty());
+    let has_args =
+        super::infix_origins::child(postfix, "args").is_some_and(|a| !a.fields.is_empty());
     if !inner_over_decl || has_args {
         return;
     }

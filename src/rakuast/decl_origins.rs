@@ -59,9 +59,10 @@ pub(super) fn constant_traits(names: &NameScope, node: &mut RakuAstNode) {
     };
     let at = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let mut rest = text;
-        if let Some(scope) = SCOPES.iter().find(|s| {
-            rest.starts_with(**s) && rest[s.len()..].starts_with(char::is_whitespace)
-        }) {
+        if let Some(scope) = SCOPES
+            .iter()
+            .find(|s| rest.starts_with(**s) && rest[s.len()..].starts_with(char::is_whitespace))
+        {
             rest = rest[scope.len()..].trim_start();
         }
         let rest = rest.strip_prefix("constant")?;
