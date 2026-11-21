@@ -299,18 +299,25 @@ fn leading_variable(node: &mut RakuAstNode) {
     let Some(left) = child(node, "left") else {
         return;
     };
-    if left.origin.0.is_some()
-        || !matches!(
-            left.class,
-            RakuAstClass::VarLexical
-                | RakuAstClass::VarDynamic
-                | RakuAstClass::VarAttribute
-                | RakuAstClass::VarAttributePublic
-        )
-    {
+    if left.origin.0.is_some() {
         return;
     }
-    let Some(name) = leaf_text(left) else {
+    let name = match left.class {
+        RakuAstClass::VarLexical
+        | RakuAstClass::VarDynamic
+        | RakuAstClass::VarAttribute
+        | RakuAstClass::VarAttributePublic => leaf_text(left),
+        // `% = a => 1`: an anonymous variable is its sigil.
+        RakuAstClass::VarDeclarationAnonymous => left.fields.iter().find_map(|f| match &f.value {
+            RakuAstFieldValue::Node(v) if f.name == Some("sigil") => match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            },
+            _ => None,
+        }),
+        _ => None,
+    };
+    let Some(name) = name else {
         return;
     };
     let written =
