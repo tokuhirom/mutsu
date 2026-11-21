@@ -83,6 +83,7 @@ fn bare_block(node: &mut RakuAstNode) {
 /// `Statement::Expression`, which covers exactly that expression.
 // Cost: O(f), f = fields of the nodes on the path.
 fn statement_operand(node: &mut RakuAstNode) {
+    super::lone_term_origins::prefixed_modified_statement(node);
     with_child_at(node, 0, |statement| {
         if statement.class != RakuAstClass::StatementExpression || statement.origin.0.is_some() {
             return;
