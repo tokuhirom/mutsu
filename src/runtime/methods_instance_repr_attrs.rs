@@ -52,7 +52,12 @@ impl Interpreter {
         }
         // Rakudo renders the most recently mixed role first, then earlier
         // roles, then the class; each owner keeps its declaration order.
-        entries.extend(class_attrs.into_iter().map(|attr| (attr, None)));
+        // A punned role also appears as the instance's class. Its attributes
+        // share the same cells and must be rendered only once.
+        let punned_role = mixin.is_some() && self.registry().roles.contains_key(class_name);
+        if !punned_role {
+            entries.extend(class_attrs.into_iter().map(|attr| (attr, None)));
+        }
         let mut parts = Vec::new();
         for (attr, role) in entries {
             if !attr.is_public {

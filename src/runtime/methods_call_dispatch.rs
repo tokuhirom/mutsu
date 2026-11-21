@@ -1975,6 +1975,13 @@ impl Interpreter {
                 let composed = self.mixin_instance_type_name(&target, inner, mixins)?;
                 if let ValueView::Instance { class_name, .. } = inner.view()
                     && !self.has_user_method(&class_name.resolve(), method)
+                    // Exception gist is supplied by its native/role dispatch,
+                    // even when the underlying class declares no user method.
+                    && !(method == "gist"
+                        && (inner.instance_is_exception_by_name()
+                            || self.class_mro(&class_name.resolve()).iter().any(|owner| {
+                                owner == "Exception" || owner == "Failure"
+                            })))
                     && let Some(result) = self.default_instance_repr_with_mixin(
                         inner.as_ref(),
                         method,
