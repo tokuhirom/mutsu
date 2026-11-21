@@ -764,13 +764,9 @@ impl Walk<'_> {
         let (len, value) = if delimiter == '\'' {
             single_quoted(inner)?
         } else {
-            let len = inner.find(delimiter)?;
-            (len, inner[..len].to_string())
+            super::regex_modifier_origins::double_quoted(inner)?
         };
         let written = value.as_str();
-        if delimiter == '"' && written.contains(['\\', '$', '@', '%', '&', '{']) {
-            return None;
-        }
         let quoted = super::infix_origins::child_at(node, 0)?;
         let segments = quoted.fields.iter().find_map(|f| match &f.value {
             RakuAstFieldValue::List(items) if f.name == Some("segments") => Some(items),
