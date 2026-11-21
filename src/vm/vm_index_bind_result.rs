@@ -36,7 +36,10 @@ impl Interpreter {
     // Cost: O(s + d), as `bind_expression_value`, d = `indices`.
     pub(crate) fn nested_bind_expression_value(&self, indices: usize) -> Option<Value> {
         let at = self.stack.len().checked_sub(indices + 1)?;
-        if !self.stack[at + 1..].iter().all(Self::is_single_element_subscript) {
+        if !self.stack[at + 1..]
+            .iter()
+            .all(Self::is_single_element_subscript)
+        {
             return None;
         }
         Self::bind_expression_value(&self.stack[at])
