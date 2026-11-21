@@ -10,7 +10,11 @@ use crate::ast::SrcSpan;
 /// block whose text holds a comment, a backslash or a `「」` quote, which
 /// could hide a brace, is left alone.
 // Cost: O(n + s), n = length of the block, s = its statements.
-pub(super) fn block_at(block: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(usize, usize)> {
+pub(super) fn block_at(
+    block: &mut RakuAstNode,
+    cursor: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
     let close = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
         if !text.starts_with('{') {
             return None;
