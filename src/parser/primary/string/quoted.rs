@@ -336,6 +336,12 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 if let Some(block) =
                     crate::parser::primary::string::parse_interpolation_block(block_src)?
                 {
+                    // Where the block is written: the statement its terms
+                    // belong to in the RakuAST view.
+                    crate::parser::term_origins::note(
+                        &block,
+                        crate::parser::primary::source_span(rest, &rest[end + 1..]),
+                    );
                     parts.push(block);
                 }
                 rest = &rest[end + 1..];
@@ -484,6 +490,12 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                 if let Some(block) =
                     crate::parser::primary::string::parse_interpolation_block(block_src)?
                 {
+                    // Where the block is written: the statement its terms
+                    // belong to in the RakuAST view.
+                    crate::parser::term_origins::note(
+                        &block,
+                        crate::parser::primary::source_span(rest, &rest[end + 1..]),
+                    );
                     parts.push(block);
                 }
                 rest = &rest[end + 1..];
