@@ -265,7 +265,10 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         };
         // `my @a of Int` / `my @a does R`: a `Trait::Of` / `Trait::Does`
         // over its type.
-        if matches!(trait_node.class, RakuAstClass::TraitOf | RakuAstClass::TraitDoes) {
+        if matches!(
+            trait_node.class,
+            RakuAstClass::TraitOf | RakuAstClass::TraitDoes
+        ) {
             let keyword = if trait_node.class == RakuAstClass::TraitOf {
                 "of"
             } else {
