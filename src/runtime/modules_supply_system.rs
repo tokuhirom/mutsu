@@ -9,6 +9,7 @@ mod supply_emit_frame;
 mod supply_preserving_derive;
 mod supply_quit_drive;
 pub(crate) mod supply_tap_stream;
+pub(crate) mod supply_whenever_prebuffer;
 pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
 mod supply_transform;
