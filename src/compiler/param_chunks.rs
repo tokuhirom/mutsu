@@ -238,9 +238,7 @@ impl Compiler {
         let mut reads: Vec<(Symbol, bool)> = Vec::new();
         Self::collect_param_chunk_reads(param_defs, &mut reads);
         for (sym, writes) in reads {
-            let skip = sym.with_str(|name| {
-                name == "_" || bound.iter().any(|b| b == name)
-            });
+            let skip = sym.with_str(|name| name == "_" || bound.iter().any(|b| b == name));
             if !skip {
                 sym.with_str(|name| child.note_forced_outer_scalar_capture(name, writes));
             }
@@ -262,7 +260,10 @@ impl Compiler {
     }
 
     // Cost: O(c * f), as `force_param_chunk_captures`.
-    fn collect_param_chunk_reads(param_defs: &[crate::ast::ParamDef], out: &mut Vec<(Symbol, bool)>) {
+    fn collect_param_chunk_reads(
+        param_defs: &[crate::ast::ParamDef],
+        out: &mut Vec<(Symbol, bool)>,
+    ) {
         for pd in param_defs {
             if let Some(chunks) = pd.code.get() {
                 let compiled = chunks
