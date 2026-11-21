@@ -923,6 +923,18 @@ impl Interpreter {
                         None => 1,
                     }
                 };
+                // ADR-18443: over a plain live source `head` is a per-tap
+                // recipe like `map`: each tap taps the source, and reaching
+                // the count closes that source tap.
+                if has_supplier
+                    && !attributes.contains_key("preserving")
+                    && !attributes.contains_key("scheduler")
+                    && !attributes.contains_key("shared_on_demand")
+                {
+                    let attrs_map: ValueMap = attributes.into();
+                    let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+                    return Ok(Self::make_on_demand_head_supply(source, count));
+                }
                 if let Some(source_sid) =
                     crate::runtime::native_methods::supplier_id_from_attrs(attributes)
                 {

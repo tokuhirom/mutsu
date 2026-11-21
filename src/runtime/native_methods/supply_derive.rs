@@ -310,21 +310,35 @@ impl Interpreter {
                     };
                     self.call_method_with_values(emitter.clone(), "emit", vec![arg])?;
                     if last {
-                        self.call_method_with_values(emitter, "done", vec![])?;
+                        self.call_method_with_values(emitter.clone(), "done", vec![])?;
+                        // The stage is complete: release the source tap it
+                        // made, as rakudo does (ADR-18443).
+                        self.release_derive_source(&emitter)?;
                     }
                     return Ok(Value::NIL);
                 }
-                let out = match attributes
+                let applied = match attributes
                     .get("mode")
                     .map(Value::to_string_value)
                     .as_deref()
                 {
-                    Some("map") => Some(self.call_supply_callback(callable, vec![arg])?),
-                    Some("do") => {
-                        self.call_supply_callback(callable, vec![arg.clone()])?;
-                        Some(arg)
+                    Some("map") => self.call_supply_callback(callable, vec![arg]).map(Some),
+                    Some("do") => self
+                        .call_supply_callback(callable, vec![arg.clone()])
+                        .map(|_| Some(arg)),
+                    _ => Ok(self.smart_match_values(&arg, &callable).then_some(arg)),
+                };
+                // A dying callable quits this stage's supply instead of
+                // unwinding into whatever emitted the value (#18473), and the
+                // stopped stage lets go of its source.
+                let out = match applied {
+                    Ok(out) => out,
+                    Err(err) => {
+                        let reason = Self::supply_stage_quit_reason(err)?;
+                        self.call_method_with_values(emitter.clone(), "quit", vec![reason])?;
+                        self.release_derive_source(&emitter)?;
+                        return Ok(Value::NIL);
                     }
-                    _ => self.smart_match_values(&arg, &callable).then_some(arg),
                 };
                 if let Some(value) = out {
                     self.call_method_with_values(emitter, "emit", vec![value])?;
@@ -390,6 +404,23 @@ impl Interpreter {
                 method, CLASS
             ))),
         }
+    }
+
+    /// Close the source tap a derived stage made, once the stage itself has
+    /// finished on its own (a `head` that reached its count, a callable that
+    /// died): run the close callbacks `derive_start` registered on the stage's
+    /// emitter. A tap close of the derived supply runs the same callbacks;
+    /// taking them makes it run-once.
+    // Cost: O(c), c = close callbacks registered on the emitter.
+    fn release_derive_source(&mut self, emitter: &Value) -> Result<(), RuntimeError> {
+        if let ValueView::Instance { attributes, .. } = emitter.view()
+            && let Some(ValueView::Int(sid)) = attributes.as_map().get("supplier_id").map(Value::view)
+        {
+            for cb in super::state_supplier::take_supplier_close_callbacks(sid as u64) {
+                self.call_sub_value(cb, vec![])?;
+            }
+        }
+        Ok(())
     }
 
     /// One value through a react-side stage: apply the transform and hand the
