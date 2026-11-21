@@ -38,6 +38,48 @@ pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
         }
         return true;
     }
+    // `$::($u)::y7`: the indirect part, then simple parts.
+    if parts.len() > 2
+        && parts[..2]
+            == [
+                Some(RakuAstClass::NamePartEmptyEdge),
+                Some(RakuAstClass::NamePartExpression),
+            ]
+        && parts[2..]
+            .iter()
+            .all(|p| *p == Some(RakuAstClass::NamePartSimple))
+    {
+        let tail: Option<Vec<String>> = name
+            .fields
+            .iter()
+            .filter(|f| f.name == Some("parts"))
+            .flat_map(|f| match &f.value {
+                RakuAstFieldValue::List(parts) => parts.as_slice(),
+                _ => &[],
+            })
+            .skip(2)
+            .map(super::name_parts::part_identifier)
+            .collect();
+        let indirect = tail.and_then(|tail| {
+            super::unit_source::with_text(span, |text| {
+                let rest = text.strip_prefix("::(")?;
+                let mut end = rest.len();
+                for part in tail.iter().rev() {
+                    let head = rest[..end].strip_suffix(part.as_str())?;
+                    let sep = crate::qualified::last_separator(head)?;
+                    if sep + 2 != head.len() {
+                        return None;
+                    }
+                    end = sep;
+                }
+                rest[..end].ends_with(')').then_some(())
+            })
+        });
+        if indirect.is_some() {
+            super::origin::set_span(name, span);
+        }
+        return true;
+    }
     // `MY::(q[$x])`: simple parts, then the indirect part.
     if parts.len() > 1
         && parts.last() == Some(&Some(RakuAstClass::NamePartExpression))

@@ -109,3 +109,61 @@ fn body_ranges(span: SrcSpan, items: Option<(usize, usize)>) -> Option<(usize, (
         }
     })
 }
+
+/// `sub ($x) { put $x }`: the statements of a one-line body carry no line
+/// marks, so a term the parser kept no range for (`$x`) leaves its statement
+/// unplaced. Once the body's list is placed, its text is parsed again on its
+/// own ([`super::fragment_origins::statements`]), and each statement that is
+/// just an expression takes the expression's range.
+// Cost: O(n + s), n = length of the body's text, s = its statements, plus
+// the parse of the text.
+pub(super) fn statements(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
+    use super::infix_origins::{byte_range, child, with_child, with_child_at};
+    if !matches!(
+        node.class,
+        RakuAstClass::Sub | RakuAstClass::Method | RakuAstClass::Submethod
+    ) || child(node, "name").is_some()
+    {
+        return;
+    }
+    let Some(list) = child(node, "body").and_then(|b| super::infix_origins::child_at(b, 0)) else {
+        return;
+    };
+    let Some((from, to)) = byte_range(list) else {
+        return;
+    };
+    // A statement can be placed with terms inside it left unplaced
+    // (`self.foo($y) if $y`): the copy fills only what has no range.
+    if from >= to {
+        return;
+    }
+    let Some(text) = super::unit_source::with_text(SrcSpan::new(from, to), |t| Some(t.to_string()))
+    else {
+        return;
+    };
+    with_child(node, "body", |body| {
+        with_child_at(body, 0, |list| {
+            super::fragment_origins::statements(names, list, &text, from);
+            for i in 0..list.fields.len() {
+                with_child_at(list, i, bare_statement);
+            }
+        })
+    });
+}
+
+/// A `Statement::Expression` with no range and nothing but its expression
+/// takes the expression's range.
+// Cost: O(1).
+fn bare_statement(statement: &mut RakuAstNode) {
+    if statement.class != RakuAstClass::StatementExpression
+        || statement.origin.0.is_some()
+        || statement.fields.len() != 1
+    {
+        return;
+    }
+    if let Some(expression) = super::infix_origins::child_at(statement, 0)
+        && expression.origin.0.is_some()
+    {
+        statement.origin.0 = expression.origin.0.clone();
+    }
+}

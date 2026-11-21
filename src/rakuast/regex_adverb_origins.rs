@@ -89,10 +89,24 @@ pub(super) fn place_adverbs(node: &mut RakuAstNode, written: &[(usize, usize)]) 
             })
             .is_some()
         });
-        if !spelled {
+        // `:2nd`: a number, then the key.
+        let numbered = pair.class == RakuAstClass::ColonPairNumber
+            && leaf_text(pair).is_some_and(|name| {
+                super::unit_source::with_text(SrcSpan::new(from + a + 1, from + b), |t| {
+                    let digits = t.strip_suffix(name.as_str())?;
+                    (!digits.is_empty() && digits.bytes().all(|c| c.is_ascii_digit())).then_some(())
+                })
+                .is_some()
+            });
+        if !spelled && !numbered {
             return;
         }
         let mut pair = RakuAstNode::clone(pair);
+        if numbered {
+            super::origin::set_span(&mut pair, SrcSpan::new(from + a, from + b));
+            *item = Value::rakuast(Box::new(pair));
+            continue;
+        }
         super::origin::set_span(&mut pair, SrcSpan::new(from + a, from + b));
         // `:p($pos)` / `:c(0)`: its parentheses and what they hold; a value
         // the parser rebuilt is placed from a fragment parse of its text.

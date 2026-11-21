@@ -35,6 +35,14 @@ pub(super) fn view_spelled(names: &NameScope, call: &Expr) -> Result<RakuAstNode
         fields: vec![leaf_field(Some("operator"), Value::str(symbol.to_string()))],
     };
     postfix.origin.3 = Some(USER_POSTFIX_MARK.into());
+    // `*!`: an operator applied to a bare `*` primes it, as Rakudo's tree
+    // says (`WhateverCode::Argument`).
+    let primed = Expr::WhateverArg;
+    let operand = if matches!(operand, Expr::Whatever) {
+        &primed
+    } else {
+        operand
+    };
     super::postfix_grouping::view_node(names, operand, postfix)
 }
 
