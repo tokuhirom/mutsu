@@ -238,7 +238,15 @@ impl Walk<'_> {
                         && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
                 });
                 self.eat(if negated { "<!" } else { "<?" })?;
-                self.child(names, node, "assertion")?;
+                let (rest, at) = (&self.text[self.at..], self.base + self.at);
+                let mut plain = None;
+                super::infix_origins::with_child(node, "assertion", |inner| {
+                    plain = super::regex_assertion_spelling::lookaround_named(inner, rest, at);
+                });
+                match plain {
+                    Some(len) => self.at += len,
+                    None => self.child(names, node, "assertion")?,
+                }
                 self.eat(">")?
             }
             // `before X` inside a lookaround: the name, blanks, the argument.
@@ -516,6 +524,14 @@ impl Walk<'_> {
             !(matches!(f.name, Some("name" | "capturing")) || call && f.name == Some("args"))
         }) {
             return None;
+        }
+        // `<|w>`: the word boundary, its name unplaced.
+        let rest = self.text[self.at..].strip_prefix('<');
+        if let Some(len) =
+            rest.and_then(|r| super::regex_assertion_spelling::word_boundary_len(node, r))
+        {
+            self.at += 1 + len;
+            return self.eat(">");
         }
         let capturing = node.fields.iter().any(|f| f.name == Some("capturing"));
         let name_node = super::infix_origins::child(node, "name")?;
