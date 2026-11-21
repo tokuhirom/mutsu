@@ -111,16 +111,16 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
     loop {
         let gap = trivia_len(&text[at..])?;
         let rest = &text[at + gap..];
-        // `is NAME` / `of TYPE`.
-        let Some(after) = ["is", "of"]
+        // `is NAME` / `of TYPE` / `does ROLE`.
+        let Some((keyword, after)) = ["is", "of", "does"]
             .into_iter()
-            .find_map(|kw| rest.strip_prefix(kw))
-            .filter(|r| r.starts_with(char::is_whitespace))
+            .find_map(|kw| rest.strip_prefix(kw).map(|after| (kw.len(), after)))
+            .filter(|(_, r)| r.starts_with(char::is_whitespace))
         else {
             break;
         };
         let start = at + gap;
-        let name_from = start + 2 + trivia_len(after)?;
+        let name_from = start + keyword + trivia_len(after)?;
         let name_len = text[name_from..]
             .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'')))
             .unwrap_or(text.len() - name_from);
@@ -263,8 +263,14 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         let ValueView::RakuAst(trait_node) = value.view() else {
             return;
         };
-        // `my @a of Int`: a `Trait::Of` over its type.
-        if trait_node.class == RakuAstClass::TraitOf {
+        // `my @a of Int` / `my @a does R`: a `Trait::Of` / `Trait::Does`
+        // over its type.
+        if matches!(trait_node.class, RakuAstClass::TraitOf | RakuAstClass::TraitDoes) {
+            let keyword = if trait_node.class == RakuAstClass::TraitOf {
+                "of"
+            } else {
+                "does"
+            };
             let typed = child_at(trait_node, 0)
                 .and_then(child_name)
                 .is_some_and(|name| {
@@ -274,8 +280,8 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
                     .is_some()
                 });
             let of = super::unit_source::with_text(
-                SrcSpan::new(clause.whole.0, clause.whole.0 + 2),
-                |w| (w == "of").then_some(()),
+                SrcSpan::new(clause.whole.0, clause.whole.0 + keyword.len()),
+                |w| (w == keyword).then_some(()),
             );
             if !typed || of.is_none() || clause.argument.is_some() {
                 return;

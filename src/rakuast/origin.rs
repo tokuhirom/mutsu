@@ -285,7 +285,17 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.class != super::RakuAstClass::QuotedString {
         return;
     }
-    let words = node.fields.iter().any(|f| f.name == Some("processors"));
+    // A word quote's processors (`<words val>`); `qx//`'s `exec` alone
+    // leaves the text as it was written.
+    let words = node.fields.iter().any(|f| {
+        f.name == Some("processors")
+            && match &f.value {
+                RakuAstFieldValue::List(items) => items
+                    .iter()
+                    .any(|v| !matches!(v.view(), ValueView::Str(s) if s.as_str() == "exec")),
+                _ => true,
+            }
+    });
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
         return;
     };
@@ -365,33 +375,7 @@ pub(super) fn named_term(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         if name.class != super::RakuAstClass::Name || name.origin.0.is_some() {
             return;
         }
-        // `::("Int")`: an indirect name, `Name::Part::EmptyEdge` then the
-        // `Name::Part::Expression` in parentheses, spans the term's text.
-        let parts: Vec<_> = name
-            .fields
-            .iter()
-            .filter(|f| f.name == Some("parts"))
-            .flat_map(|f| match &f.value {
-                RakuAstFieldValue::List(parts) => parts.as_slice(),
-                _ => &[],
-            })
-            .map(|v| match v.view() {
-                ValueView::RakuAst(part) => Some(part.class),
-                _ => None,
-            })
-            .collect();
-        if parts
-            == [
-                Some(super::RakuAstClass::NamePartEmptyEdge),
-                Some(super::RakuAstClass::NamePartExpression),
-            ]
-        {
-            let indirect = super::unit_source::with_text(span, |text| {
-                (text.starts_with("::(") && text.ends_with(')')).then_some(())
-            });
-            if indirect.is_some() {
-                set_span(name, span);
-            }
+        if super::indirect_name_origins::place(name, span) {
             return;
         }
         let Some(NameShape::Identifier(written)) = name_shape(name) else {
