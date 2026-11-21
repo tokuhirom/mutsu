@@ -375,7 +375,11 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     class: RakuAstClass::CallName,
                     ..control_call(names, "fail", args)?
                 },
-                None => control_call(names, "fail", crate::ast::spelled::written_control_args(expr))?,
+                None => control_call(
+                    names,
+                    "fail",
+                    crate::ast::spelled::written_control_args(expr),
+                )?,
             },
         ))),
         // `take EXPR` / `take-rw EXPR` are bare calls too.

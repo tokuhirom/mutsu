@@ -285,7 +285,9 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
                 [only] => only.clone(),
                 _ => Expr::ArrayLiteral(args.clone()),
             };
-            let expr = Expr::spelled(failed, || crate::ast::spelled::Spelling::ControlCallArgs(args));
+            let expr = Expr::spelled(failed, || {
+                crate::ast::spelled::Spelling::ControlCallArgs(args)
+            });
             return parse_statement_modifier(r, Stmt::Fail(expr));
         }
     }

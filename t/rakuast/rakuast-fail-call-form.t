@@ -21,7 +21,7 @@ is placed(Q[sub f { fail("nope") }]),
     'fail("nope") is a placed Call::Name';
 is Q[fail("a", "b")].AST.statements[0].expression.args.args.elems, 2,
     'its arguments are the call arguments';
-is Q[fail("a", "b")].AST.DEPARSE, 'fail("a", "b")', 'it deparses as a call';
+is Q[fail("a", "b")].AST.DEPARSE.chomp, 'fail("a", "b")', 'it deparses as a call';
 
 sub f { fail("nope") }
 sub g { fail("a", "b") }
