@@ -4,9 +4,10 @@ use Test;
 # `.origin` (#15780), measured on rakudo 2026.11: an argument list that
 # starts or ends with an angle-quoted number (`<1+2i>`) follows its range
 # inside the brackets; a regex's `<&wc>`, `<wc=&wc>` and `<x=.alpha>` place
-# their assertions.
+# their assertions; a phaser over a statement (`LEAVE say $x`) places the
+# statement.
 
-plan 5;
+plan 7;
 sub placed($src) {
     my @l;
     sub w($n) {
@@ -32,3 +33,9 @@ is placed(Q[my &wc = /d/; say "d" ~~ /<wc=&wc>/]),
 is placed(Q[say "d" ~~ /<x=.alpha>/]),
     'Call::Name::WithoutParentheses@0-23 Name@0-3 ArgList@4-23 ApplyInfix@4-23 Infix@8-10 ArgList@4-23 QuotedString@4-7 StrLiteral@5-6 QuotedRegex@11-23 Regex::Assertion::Alias@12-22 Regex::Assertion::Named@16-21 Name@16-21',
     'an aliased non-capturing assertion';
+is placed(Q[my $x = 1; LEAVE say $x, 2]),
+    'VarDeclaration::Simple@0-9 Initializer::Assign@6-9 IntLiteral@8-9 Call::Name::WithoutParentheses@17-26 Name@17-20 ArgList@21-26 Var::Lexical@21-23 IntLiteral@25-26',
+    'a phaser over a statement';
+is placed(Q[END say 3]),
+    'Call::Name::WithoutParentheses@4-9 Name@4-7 ArgList@8-9 IntLiteral@8-9',
+    'an END phaser over a statement';

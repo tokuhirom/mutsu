@@ -9,3 +9,7 @@
 - a regex's callable assertion `<&wc>` with its callee, and the aliased
   assertions `<wc=&wc>` and `<x=.alpha>`, the inner assertion without
   brackets of its own (#15780).
+
+A phaser written over a statement rather than a block (`LEAVE say $x, 2`,
+`END pass 'x'`) now places that statement and the expression in it, from
+after the keyword to the end of the phaser.

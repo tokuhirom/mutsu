@@ -285,3 +285,59 @@ fn blockoid(node: &mut RakuAstNode, at: usize, to: usize) {
         });
     });
 }
+
+/// `LEAVE say $x;` / `END pass "x";`: a phaser written over a statement, not
+/// a block. Its `Statement::Expression` and the expression in it cover the
+/// text after the keyword, to the end of the phaser.
+// Cost: O(n), n = length of the phaser's source.
+pub(super) fn phaser_statement(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
+    use RakuAstClass as C;
+    if !matches!(
+        node.class,
+        C::StatementPrefixPhaserBegin
+            | C::StatementPrefixPhaserCheck
+            | C::StatementPrefixPhaserInit
+            | C::StatementPrefixPhaserEnd
+            | C::StatementPrefixPhaserEnter
+            | C::StatementPrefixPhaserLeave
+            | C::StatementPrefixPhaserKeep
+            | C::StatementPrefixPhaserUndo
+            | C::StatementPrefixPhaserFirst
+            | C::StatementPrefixPhaserNext
+            | C::StatementPrefixPhaserLast
+            | C::StatementPrefixPhaserPre
+            | C::StatementPrefixPhaserPost
+            | C::StatementPrefixPhaserQuit
+            | C::StatementPrefixPhaserClose
+    ) {
+        return;
+    }
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(span) = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let keyword = text.find(char::is_whitespace)?;
+        if !text[..keyword].chars().all(|c| c.is_ascii_uppercase()) {
+            return None;
+        }
+        let body = text[keyword..].trim_start();
+        (!body.is_empty() && !body.starts_with('{')).then(|| SrcSpan::new(to - body.len(), to))
+    }) else {
+        return;
+    };
+    with_child_at(node, 0, |statement| {
+        if statement.class != RakuAstClass::StatementExpression || statement.origin.0.is_some() {
+            return;
+        }
+        super::origin::set_span(statement, span);
+        with_child_at(statement, 0, |expression| {
+            if expression.origin.0.is_none() {
+                super::origin::set_span(expression, span);
+                super::origin::named_term(expression, span);
+                super::origin::quoted_text(expression, span);
+                super::call_origins::postfix_call(expression, span);
+                super::infix_origins::derive(names, expression);
+            }
+        });
+    });
+}
