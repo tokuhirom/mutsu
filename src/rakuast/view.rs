@@ -2349,6 +2349,19 @@ pub(super) fn signature_bind_node(
 }
 
 pub(super) fn view_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    // `:($x where &ok)`: a literal the parser builds at run time is still the
+    // source's signature literal (#18570).
+    if let Some((defs, return_type)) = crate::ast::signature_bind::run_time_signature_literal(expr)
+    {
+        return Ok(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::FakeSignature,
+            fields: vec![node_field(
+                None,
+                signature(names, defs, false, return_type.map(String::as_str))?,
+            )],
+        });
+    }
     let mut node = view_expr_at(names, expr)?;
     // A term the parser placed (ADR-10723 Stage 2).
     if let Some(span) = super::expr_origins::of(expr) {

@@ -97,26 +97,40 @@ pub(crate) fn supports(expr: &Expr) -> bool {
     param_infos(expr).is_some()
 }
 
+/// The declared parameters and return type of a `:(...)` literal the parser
+/// builds at run time from an empty routine (`AnonSubParams.signature`):
+/// one whose parameters carry code or custom traits
+/// (`parser::primary::misc::colonpair`, #18570). `None` for any other
+/// expression.
+// Cost: O(1).
+pub(crate) fn run_time_signature_literal(
+    expr: &Expr,
+) -> Option<(&[crate::ast::ParamDef], Option<&String>)> {
+    let Expr::MethodCall {
+        target, name, args, ..
+    } = expr
+    else {
+        return None;
+    };
+    let Expr::AnonSubParams {
+        param_defs,
+        return_type,
+        body,
+        ..
+    } = target.as_ref()
+    else {
+        return None;
+    };
+    (name.resolve() == "signature" && args.is_empty() && body.is_empty())
+        .then_some((param_defs.as_slice(), return_type.as_ref()))
+}
+
 /// Extract parameter names and named-argument metadata from a Signature value.
 // Cost: O(p), p = signature parameters.
 fn param_infos(expr: &Expr) -> Option<Vec<ParamInfo>> {
-    // A literal whose parameters carry code is built at run time from an
-    // empty routine (`parser::primary::misc::colonpair`, #18570): its
-    // parameters are the routine's.
-    if let Expr::MethodCall {
-        target, name, args, ..
-    } = expr
-        && name.resolve() == "signature"
-        && args.is_empty()
-        && let Expr::AnonSubParams {
-            param_defs,
-            return_type,
-            body,
-            ..
-        } = target.as_ref()
-        && body.is_empty()
-    {
-        let info = crate::value::signature::param_defs_to_sig_info(param_defs, return_type.clone());
+    if let Some((param_defs, return_type)) = run_time_signature_literal(expr) {
+        let info =
+            crate::value::signature::param_defs_to_sig_info(param_defs, return_type.cloned());
         return signature_param_infos(&crate::value::signature::make_signature_value(info, None));
     }
     let Expr::Literal(literal) = expr else {
