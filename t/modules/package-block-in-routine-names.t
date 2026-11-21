@@ -7,7 +7,7 @@ use Test;
 # `$?PACKAGE` is that package block. mutsu folded `$?PACKAGE` to the routine's
 # enclosing package and left the block unqualified (#18480).
 
-plan 7;
+plan 8;
 
 sub top-level { module PkgInTopSub { our sub name { $?PACKAGE.^name } }; PkgInTopSub::name() }
 is top-level(), 'PkgInTopSub', '$?PACKAGE in a package block inside a sub';
@@ -28,3 +28,7 @@ is compile-it(q[module FromLoaded { our sub name { $?PACKAGE.^name } }; FromLoad
 
 class WithMethod18480 { method m { package P { our sub name { $?PACKAGE.^name } }; P::name() } }
 is WithMethod18480.m, 'WithMethod18480::P', 'a package in a method is qualified by the class';
+
+module Ctx18480 { our sub ev(Str $code) { EVAL $code, context => CALLER:: } }
+is Ctx18480::ev(q[package CtxPkg18480 { our sub name { $?PACKAGE.^name } }; CtxPkg18480::name()]),
+    'CtxPkg18480', 'EVAL with context => CALLER:: declares in the caller package';

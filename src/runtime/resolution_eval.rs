@@ -354,7 +354,17 @@ impl Interpreter {
             // Set enclosing_package to the clean package name so that
             // $?PACKAGE resolves to the package, not the mangled routine
             // scope (e.g., "PackageTest" instead of "PackageTest::&pkg").
-            compiler.enclosing_package = Some(frame.package.resolve());
+            // An `EVAL $code, context => $ctx` compiles as if it stood at
+            // `$ctx`, whose package `builtin_eval` already made current: a
+            // package the code declares (`throws-like 'package A { }'`) is the
+            // caller's, not the EVALing routine's (#18480).
+            compiler.enclosing_package = Some(
+                if is_eval_unit && self.pending_eval_context_routine.is_some() {
+                    self.current_package()
+                } else {
+                    frame.package.resolve()
+                },
+            );
             format!("{}::&{}", frame.package, frame.name)
         } else {
             self.current_package()
