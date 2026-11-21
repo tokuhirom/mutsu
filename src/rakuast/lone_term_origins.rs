@@ -230,27 +230,34 @@ pub(super) fn subscript_assignee(node: &mut RakuAstNode, operand_end: usize) {
     });
 }
 
-/// `(repeat { ... } while COND)` / `(loop { last })`: a lone loop statement
-/// inside parentheses written at `inside`, which the parser left unplaced. Its
-/// text is parsed again as a fragment and the ranges copied over.
+/// `(repeat { ... } while COND)` / `(loop { last })` / `(1, 2)`: a lone loop
+/// or expression statement inside parentheses written at `inside`, which the
+/// parser left unplaced. Its text is parsed again as a fragment and the
+/// ranges copied over.
 // Cost: O(n), n = length of the statement's text, plus the parse of it.
 pub(super) fn loop_statement(list: &mut RakuAstNode, inside: SrcSpan) {
     use super::infix_origins::child_at;
     let [_] = list.fields.as_slice() else {
         return;
     };
-    let is_loop = child_at(list, 0).is_some_and(|s| {
+    let unplaced = child_at(list, 0).is_some_and(|s| {
         s.origin.0.is_none()
-            && matches!(
-                s.class,
+            && match s.class {
                 RakuAstClass::StatementLoop
-                    | RakuAstClass::StatementLoopWhile
-                    | RakuAstClass::StatementLoopUntil
-                    | RakuAstClass::StatementLoopRepeatWhile
-                    | RakuAstClass::StatementLoopRepeatUntil
-            )
+                | RakuAstClass::StatementLoopWhile
+                | RakuAstClass::StatementLoopUntil
+                | RakuAstClass::StatementLoopRepeatWhile
+                | RakuAstClass::StatementLoopRepeatUntil => true,
+                // `((1, 2) Z (3, 4), 1)`: an expression whose terms share a
+                // shape with others of the statement, which the conversion
+                // could not tell apart.
+                RakuAstClass::StatementExpression => {
+                    s.fields.len() == 1 && child_at(s, 0).is_some_and(|e| e.origin.0.is_none())
+                }
+                _ => false,
+            }
     });
-    if !is_loop {
+    if !unplaced {
         return;
     }
     let Some(text) = super::unit_source::with_text(inside, |t| Some(t.to_string())) else {
