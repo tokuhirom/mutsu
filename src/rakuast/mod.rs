@@ -180,6 +180,7 @@ mod multidim_splat;
 mod name_colonpairs;
 pub(crate) mod name_parts;
 mod named_ctor;
+mod name_quote_origins;
 mod named_param;
 mod negated_set;
 mod nesting;
