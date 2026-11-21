@@ -76,6 +76,30 @@ fn prefix(node: &mut RakuAstNode) {
         with_child(node, "prefix", |p| {
             super::origin::set_span(p, SrcSpan::new(from, from + op.len()))
         });
+        glued_variable_operand(node, from + op.len());
+    }
+}
+
+/// `⚛$n`: a variable operand the parser kept no range for, written right
+/// after the operator at `at` up to the application's end.
+// Cost: O(k), k = length of the variable's name.
+fn glued_variable_operand(node: &mut RakuAstNode, at: usize) {
+    let Some((_, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(name) = child(node, "operand")
+        .filter(|v| v.class == RakuAstClass::VarLexical && v.origin.0.is_none())
+        .and_then(leaf_text)
+    else {
+        return;
+    };
+    let exact = super::unit_source::with_text(SrcSpan::new(at, to), |text| {
+        (text == name).then_some(())
+    });
+    if exact.is_some() {
+        with_child(node, "operand", |v| {
+            super::origin::set_span(v, SrcSpan::new(at, to))
+        });
     }
 }
 

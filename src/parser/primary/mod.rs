@@ -838,7 +838,13 @@ pub(in crate::parser) use regex::parse_call_arg_list;
 // `expr`.
 pub(in crate::parser) fn note_origin(input: &str, rest: &str, expr: &Expr) {
     if crate::parser::term_origins::is_new(input, rest, expr) {
-        crate::parser::term_origins::note(expr, term_span(input, rest));
+        // An object hash (`:{ 1 => 2 }`, `:{}.elems`) starts at its `{` in
+        // Rakudo: the `:` is not part of the term's range.
+        let start = match input.strip_prefix(':') {
+            Some(brace) if brace.starts_with('{') => brace,
+            _ => input,
+        };
+        crate::parser::term_origins::note(expr, term_span(start, rest));
     }
 }
 
