@@ -47,8 +47,9 @@ const PATH_SIZE: usize = 4096;
 const MAX_SUFFIX: i64 = 1000;
 
 /// # Safety
-/// `info` must be null or the kernel-supplied `siginfo_t` for `sig`.
-pub(super) unsafe fn write_report(sig: c_int, info: *mut libc::siginfo_t) {
+/// `info` must be null or the kernel-supplied `siginfo_t` for `sig`, and `ctx`
+/// null or the `ucontext_t` that came with it.
+pub(super) unsafe fn write_report(sig: c_int, info: *mut libc::siginfo_t, ctx: *mut libc::c_void) {
     // SAFETY: getpid takes no arguments and cannot fail.
     let pid = unsafe { libc::getpid() };
 
@@ -118,6 +119,8 @@ pub(super) unsafe fn write_report(sig: c_int, info: *mut libc::siginfo_t) {
 
     write_all(fd, b"--- backtrace (raw) ---\n");
     write_raw_backtrace(fd);
+    // SAFETY: `ctx` is the caller's kernel-supplied ucontext (or null).
+    unsafe { super::context::write_context(fd, ctx) };
 
     // Everything above is async-signal-safe and already on disk. What follows
     // allocates and takes locks, so it can deadlock outright if the fault was
@@ -249,7 +252,7 @@ fn write_raw_backtrace(fd: c_int) {
     write_all(fd, b"(unavailable on this platform)\n");
 }
 
-fn write_all(fd: c_int, mut data: &[u8]) {
+pub(super) fn write_all(fd: c_int, mut data: &[u8]) {
     while !data.is_empty() {
         // SAFETY: writing `data.len()` bytes from a live slice.
         let n = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
@@ -339,38 +342,38 @@ fn thread_name(_buf: &mut [u8; 32]) -> &[u8] {
 }
 
 /// Fixed-capacity, allocation-free formatting buffer for the report header.
-struct Buf {
+pub(super) struct Buf {
     data: [u8; BUF_SIZE],
     len: usize,
 }
 
 impl Buf {
-    fn new() -> Buf {
+    pub(super) fn new() -> Buf {
         Buf {
             data: [0; BUF_SIZE],
             len: 0,
         }
     }
-    fn b(&mut self, bytes: &[u8]) {
+    pub(super) fn b(&mut self, bytes: &[u8]) {
         let n = bytes.len().min(self.data.len() - self.len);
         self.data[self.len..self.len + n].copy_from_slice(&bytes[..n]);
         self.len += n;
     }
-    fn s(&mut self, s: &str) {
+    pub(super) fn s(&mut self, s: &str) {
         self.b(s.as_bytes());
     }
-    fn dec(&mut self, v: i64) {
+    pub(super) fn dec(&mut self, v: i64) {
         let mut num = [0u8; 24];
         self.b(dec(&mut num, v));
     }
-    fn hex(&mut self, v: u64) {
+    pub(super) fn hex(&mut self, v: u64) {
         let mut num = [0u8; 16];
         for (i, slot) in num.iter_mut().enumerate() {
             *slot = b"0123456789abcdef"[((v >> (60 - i * 4)) & 0xf) as usize];
         }
         self.b(&num);
     }
-    fn flush(&mut self, fd: c_int) {
+    pub(super) fn flush(&mut self, fd: c_int) {
         write_all(fd, &self.data[..self.len]);
         self.len = 0;
     }
