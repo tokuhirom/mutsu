@@ -26,6 +26,15 @@ impl Interpreter {
             _ => Vec::new(),
         };
 
+        // Over a live source the stage is a per-tap recipe (ADR-18443);
+        // `:expires` keeps the eager stage, which owns the expiry clock.
+        if expires.is_none() && Self::stage_is_live_recipe(attributes) {
+            let attrs_map: crate::value::ValueMap = attributes.into();
+            let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+            return Ok(Self::mark_live_recipe(Self::make_on_demand_dedup_supply(
+                source, squish, as_fn, with_fn,
+            )));
+        }
         // A live (Supplier-backed) source gets a real pipeline stage: its
         // own derived supplier, fed by a unique-transform tap on the
         // source, exactly as `map`/`grep`/`flat` do. It used to keep the

@@ -383,6 +383,7 @@ pub(super) fn heredoc(
     if !written.is_some() {
         return;
     }
+    super::heredoc_body_origins::drop_borrowed(node, written);
     let single_literal = node
         .fields
         .iter_mut()

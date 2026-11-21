@@ -6020,7 +6020,6 @@ impl Interpreter {
                 // source's cell.
                 let leaf_val = bind_cell
                     .as_ref()
-                    .filter(|_| !binding_creates_path)
                     .map(|c| Value::container_ref_bound_itemized(c.clone()))
                     .unwrap_or_else(|| {
                         if is_bind_value {
@@ -6125,7 +6124,7 @@ impl Interpreter {
 
         // Write the shared cell back to the source variable so both sides alias
         // the same container (the symmetric counterpart of the leaf store above).
-        if !binding_creates_path && let (Some(src), Some(cell)) = (bind_source, bind_cell) {
+        if let (Some(src), Some(cell)) = (bind_source, bind_cell) {
             let cell_val = Value::container_ref(cell);
             self.set_env_with_main_alias(&src, cell_val.clone());
             self.update_local_if_exists(code, &src, &cell_val);

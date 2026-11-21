@@ -138,6 +138,10 @@ impl SupplyOp {
                 | SupplyOp::Grep
                 | SupplyOp::Do
                 | SupplyOp::Head
+                | SupplyOp::Lines
+                | SupplyOp::Reduce
+                | SupplyOp::Unique
+                | SupplyOp::Squish
                 | SupplyOp::Share
                 | SupplyOp::Supply
                 | SupplyOp::Live
