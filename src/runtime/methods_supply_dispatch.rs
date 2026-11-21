@@ -745,6 +745,12 @@ impl Interpreter {
         ) {
             return Err(RuntimeError::new("must be code if specified"));
         }
+        // Over a live source the fold is a per-tap recipe (ADR-18443).
+        if Self::stage_is_live_recipe(attributes) {
+            return Ok(Self::mark_live_recipe(Self::make_on_demand_reduce_supply(
+                target, callable,
+            )));
+        }
         // A live (Supplier-backed) source folds as it emits and delivers the
         // single result when the source is done. Snapshotting `values` here
         // instead would reduce over an empty list: the reduce Supply is tapped
