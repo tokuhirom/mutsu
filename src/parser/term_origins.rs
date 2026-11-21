@@ -67,12 +67,14 @@ impl Wanted {
 /// parse's notes on drop.
 pub(crate) struct Recording {
     previous: Option<Vec<(u64, SrcSpan)>>,
+    previous_last: LastTerm,
 }
 
 impl Drop for Recording {
     fn drop(&mut self) {
         let previous = self.previous.take();
         NOTES.with(|n| *n.borrow_mut() = previous);
+        LAST.with(|last| last.set(self.previous_last));
     }
 }
 
@@ -82,7 +84,15 @@ impl Drop for Recording {
 pub(crate) fn begin(keep: bool) -> Recording {
     let keep = keep && crate::ast::spelled::kept();
     let previous = NOTES.with(|n| n.replace(keep.then(Vec::new)));
-    Recording { previous }
+    // The term noted last belongs to the enclosing parse: its buffer may
+    // since have been dropped and this parse's buffer given its address
+    // (a fragment parsed from a fresh `String`), and a term this parse reads
+    // at the same offset must not pass for it (#18506).
+    let previous_last = LAST.with(|last| last.replace((0, 0, None)));
+    Recording {
+        previous,
+        previous_last,
+    }
 }
 
 /// A term's structural fingerprint, read through `Expr::WhateverCurry`
@@ -148,10 +158,12 @@ impl VisitMut for Uncurry {
     }
 }
 
+/// The addresses a term was read from and up to, and its node kind.
+type LastTerm = (usize, usize, Option<std::mem::Discriminant<Expr>>);
+
 thread_local! {
     /// The source positions and node kind of the term noted last.
-    static LAST: std::cell::Cell<(usize, usize, Option<std::mem::Discriminant<Expr>>)> =
-        const { std::cell::Cell::new((0, 0, None)) };
+    static LAST: std::cell::Cell<LastTerm> = const { std::cell::Cell::new((0, 0, None)) };
 }
 
 /// Whether `expr`, read from `input` up to `rest`, is not the term noted just
@@ -458,81 +470,5 @@ pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sp(from: u32, to: u32) -> SrcSpan {
-        SrcSpan { from, to }
-    }
-
-    #[test]
-    fn notes_belong_to_the_innermost_statement() {
-        // `f({ $x }, $x)`: the closure's statement 3..5 sits inside 0..12.
-        let out = bucket_by_statement(
-            vec![(1, sp(9, 11)), (1, sp(3, 5))],
-            vec![sp(0, 12), sp(3, 5)],
-        );
-        assert_eq!(
-            out,
-            vec![(sp(3, 5), 1, sp(3, 5)), (sp(0, 12), 1, sp(9, 11))]
-        );
-    }
-
-    #[test]
-    fn a_term_read_again_is_noted_once() {
-        // The same fingerprint at the same range, read by several parsers.
-        let out = bucket_by_statement(
-            vec![(1, sp(3, 5)), (1, sp(3, 5)), (2, sp(3, 5)), (1, sp(3, 5))],
-            vec![sp(0, 12)],
-        );
-        assert_eq!(
-            out,
-            vec![(sp(0, 12), 1, sp(3, 5)), (sp(0, 12), 2, sp(3, 5))]
-        );
-    }
-
-    #[test]
-    fn is_new_skips_only_the_term_just_noted() {
-        let text = "1 + 2";
-        let (a, b) = (&text[0..1], &text[1..]);
-        let one = Expr::Literal(crate::value::Value::int(1));
-        let two = Expr::Literal(crate::value::Value::int(2));
-        assert!(is_new(a, b, &one));
-        assert!(!is_new(a, b, &one));
-        assert!(!is_new(a, b, &two), "same range and kind: the same term");
-        assert!(is_new(b, a, &one), "another range is another term");
-    }
-
-    #[test]
-    fn a_surplus_note_attaches_nothing_for_its_fingerprint() {
-        let stmt = sp(0, 20);
-        // One term of fingerprint 7, but an abandoned alternative noted a
-        // second range for it: neither is attached.
-        let ranges = matched_ranges(
-            vec![(7, sp(2, 4)), (7, sp(10, 12)), (8, sp(14, 16))],
-            &[(stmt, 7), (stmt, 8)],
-            vec![stmt],
-        );
-        assert!(!ranges.contains_key(&key(stmt, 7)));
-        assert_eq!(ranges[&key(stmt, 8)], [sp(14, 16)]);
-    }
-
-    #[test]
-    fn a_copied_or_synthesized_term_leaves_the_range_to_the_first() {
-        let stmt = sp(0, 20);
-        // `$x += 1` keeps two copies of `$x`, read once.
-        let ranges = matched_ranges(vec![(7, sp(0, 2))], &[(stmt, 7), (stmt, 7)], vec![stmt]);
-        assert_eq!(ranges[&key(stmt, 7)], [sp(0, 2)]);
-    }
-
-    #[test]
-    fn equal_terms_take_their_ranges_in_source_order() {
-        let stmt = sp(0, 20);
-        let ranges = matched_ranges(
-            vec![(7, sp(10, 12)), (7, sp(2, 4)), (7, sp(2, 4))],
-            &[(stmt, 7), (stmt, 7)],
-            vec![stmt],
-        );
-        assert_eq!(ranges[&key(stmt, 7)], [sp(2, 4), sp(10, 12)]);
-    }
-}
+#[path = "term_origins_tests.rs"]
+mod tests;
