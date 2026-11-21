@@ -347,6 +347,7 @@ pub(crate) mod vm_method_lean_frame;
 mod vm_method_named_slurpy;
 mod vm_method_return_spec;
 mod vm_method_role_bindings;
+pub(crate) mod vm_method_slot_frame;
 mod vm_method_straight;
 pub(crate) mod vm_misc_assign;
 pub(crate) mod vm_misc_block;
@@ -727,6 +728,11 @@ pub(crate) struct VmCallFrame {
     /// The caller frame's `rw_param_rebinds` (see `vm_rw_param_rebind`),
     /// hidden while this frame runs and restored on pop.
     pub saved_rw_param_rebinds: Vec<(u32, Option<Value>)>,
+    /// A slot frame's slim record (ADR-18393 D1, `vm_method_slot_frame`): it
+    /// saved only the env handle, the caller code, the line, the slot window
+    /// and the stack depth. Every other field is empty and was never moved
+    /// out of the interpreter, so `pop_call_frame` must not restore it.
+    pub slot: bool,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

@@ -153,6 +153,7 @@ impl Interpreter {
                 &mut self.pending_caller_var_writeback,
             ),
             saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
+            slot: false,
         };
         self.call_frames.push(frame);
     }
@@ -190,6 +191,7 @@ impl Interpreter {
                 &mut self.pending_caller_var_writeback,
             ),
             saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
+            slot: false,
         };
         self.call_frames.push(frame);
     }
@@ -207,6 +209,10 @@ impl Interpreter {
         self.cur_source_line = frame.saved_cur_line;
         if let Some(caller) = frame.saved_locals_base.take() {
             self.locals.pop_frame(caller);
+        }
+        if frame.slot {
+            // A slot frame moved nothing else out (ADR-18393 D1).
+            return frame;
         }
         self.upvalues = std::mem::take(&mut frame.saved_upvalues);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
