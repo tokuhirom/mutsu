@@ -13,7 +13,7 @@ use crate::symbol::Symbol;
 /// The captured-env name the shim's body reads its instance from.
 const SHIM_INSTANCE: &str = "native_shim_instance";
 
-/// Build the shim: `-> $v { instance.method_name($v) }` when `has_param`,
+/// Build the shim: `-> $v { instance.method_name($v<>) }` when `has_param`,
 /// otherwise `{ instance.method_name() }`.
 pub(in crate::runtime) fn native_method_shim(
     instance: Value,
@@ -52,7 +52,13 @@ pub(in crate::runtime) fn native_method_shim(
                 code: Default::default(),
                 trait_args: Vec::new(),
             }],
-            vec![crate::ast::Expr::Var("v".to_string())],
+            // `$v<>`: what arrived goes on decontainerized, as rakudo's
+            // `-> \value` forwarders pass it -- through `$v` alone a List
+            // would come out itemized (`$(1, 2)`), and a `flat` further down
+            // would not flatten it.
+            vec![crate::ast::Expr::ZenSlice(Box::new(crate::ast::Expr::Var(
+                "v".to_string(),
+            )))],
         )
     } else {
         (Vec::new(), Vec::new(), Vec::new())

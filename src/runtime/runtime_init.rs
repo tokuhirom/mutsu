@@ -633,6 +633,33 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__SupplyDeriveMulti".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                // The producer and forwarders of a live `merge` / `zip` /
+                // `zip-latest` recipe — see `native_methods::supply_derive_multi`.
+                native_methods: [
+                    "__mutsu_multi_start",
+                    "__mutsu_multi_emit",
+                    "__mutsu_multi_done",
+                    "__mutsu_multi_quit",
+                    "__mutsu_multi_close",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: sym_mro(&["__SupplyDeriveMulti"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: HashSet::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: ValueMap::default(),
+            },
+        );
+        classes.insert(
             "__SupplyDerive".to_string(),
             ClassDef {
                 parents: Vec::new(),

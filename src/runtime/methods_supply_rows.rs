@@ -125,6 +125,17 @@ impl SupplyOp {
 }
 
 impl SupplyOp {
+    /// The combination kind of `merge` / `zip` / `zip-latest`.
+    // Cost: O(1).
+    fn multi_source_kind(self) -> Option<&'static str> {
+        match self {
+            SupplyOp::Merge => Some("merge"),
+            SupplyOp::Zip => Some("zip"),
+            SupplyOp::ZipLatest => Some("zip-latest"),
+            _ => None,
+        }
+    }
+
     /// Whether the op handles a live per-tap recipe (ADR-18443) as it is:
     /// tapping it, stacking another per-tap stage on it, or sharing it.
     // Cost: O(1).
@@ -148,6 +159,10 @@ impl SupplyOp {
                 | SupplyOp::Elems
                 | SupplyOp::Words
                 | SupplyOp::Channel
+                | SupplyOp::Flat
+                | SupplyOp::Merge
+                | SupplyOp::Zip
+                | SupplyOp::ZipLatest
                 | SupplyOp::Share
                 | SupplyOp::Supply
                 | SupplyOp::Live
@@ -175,6 +190,13 @@ impl Interpreter {
                 ..
             } if crate::value::supply_class::is_supply_class(class_name) => attributes,
             ValueView::Package(name) if name == "Supply" => {
+                // Over a live source the combination is a per-tap recipe
+                // (ADR-18443).
+                if let Some(kind) = op.multi_source_kind()
+                    && let Some(recipe) = Self::multi_source_recipe(kind, &args)
+                {
+                    return Some(Ok(recipe));
+                }
                 return match op {
                     SupplyOp::Merge => Some(self.dispatch_supply_merge(&args)),
                     SupplyOp::Zip => Some(self.dispatch_supply_zip_class(&args)),
@@ -186,6 +208,16 @@ impl Interpreter {
             }
             _ => return None,
         };
+        // `$a.merge($b)` / `.zip` / `.zip-latest` over a live source is a
+        // per-tap recipe over the invocant and the arguments (ADR-18443).
+        if let Some(kind) = op.multi_source_kind() {
+            let mut all = Vec::with_capacity(args.len() + 1);
+            all.push(target.clone());
+            all.extend(args.iter().cloned());
+            if let Some(recipe) = Self::multi_source_recipe(kind, &all) {
+                return Some(Ok(recipe));
+            }
+        }
         // ADR-18443: a live stage is a per-tap recipe. The combinators not
         // converted yet only know a live source by its supplier, so they get
         // the recipe instantiated once, when they are called.
