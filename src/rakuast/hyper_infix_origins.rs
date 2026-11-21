@@ -24,7 +24,7 @@ pub(super) fn place(
     };
     let Some((op, inner)) = child(node, "infix")
         .and_then(|hyper| child(hyper, "infix"))
-        .and_then(super::infix_origins::written)
+        .and_then(super::infix_spelling::written)
     else {
         return;
     };
