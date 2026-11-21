@@ -12,7 +12,8 @@
 
 use super::*;
 use crate::runtime::native_methods::{
-    TransformMode, register_supplier_transform_tap_if_drained, supplier_done, supplier_status,
+    TransformMode, register_supplier_tap, register_supplier_tap_if_drained,
+    register_supplier_transform_tap, supplier_done, supplier_status,
     supplier_take_preserved_backlog, supplier_take_preserved_terminal,
 };
 
@@ -44,14 +45,47 @@ impl Interpreter {
                     value,
                 );
             }
-            if register_supplier_transform_tap_if_drained(source_sid, downstream_sid, callable, mode)
-            {
+            if register_supplier_tap_if_drained(source_sid, || {
+                register_supplier_transform_tap(source_sid, downstream_sid, callable.clone(), mode)
+            }) {
                 break;
             }
         }
         let (_, source_done, _) = supplier_status(source_sid);
         if source_done && supplier_take_preserved_terminal(source_sid) {
             supplier_done(downstream_sid);
+        }
+    }
+
+    /// `tap` of a `Supplier::Preserving` supply `sid`: replay its un-replayed
+    /// backlog to `tap_cb`, then register `tap_cb` as a live tap -- only once
+    /// the backlog is drained, under the emit gate, as
+    /// [`Self::tap_preserved_source_into_derived`] does. A value another
+    /// thread emits meanwhile stays in the backlog for the next round, so it
+    /// is delivered exactly once and after the values before it. Registering
+    /// first and replaying after let such a value arrive twice, ahead of the
+    /// backlog, or not at all.
+    // Cost: O(b), b = the values replayed over the rounds.
+    pub(in crate::runtime) fn tap_preserved_source(
+        &mut self,
+        sid: u64,
+        tap_cb: &Value,
+        attrs: &crate::value::AttrMap,
+        delay_seconds: f64,
+    ) -> Result<(), RuntimeError> {
+        let do_cbs = Self::supply_do_callbacks(attrs);
+        let throttle_limit = Self::supply_throttle_limit(attrs);
+        let mut idx = 0;
+        loop {
+            for value in supplier_take_preserved_backlog(sid) {
+                self.deliver_tap_value(tap_cb, &do_cbs, delay_seconds, throttle_limit, idx, &value)?;
+                idx += 1;
+            }
+            if register_supplier_tap_if_drained(sid, || {
+                register_supplier_tap(sid, tap_cb.clone(), delay_seconds)
+            }) {
+                return Ok(());
+            }
         }
     }
 }

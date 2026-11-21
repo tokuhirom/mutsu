@@ -109,7 +109,7 @@ pub(in crate::runtime) use state_supplier::{
     register_supplier_zip_latest_tap, register_supplier_zip_tap, register_zip_latest_state,
     register_zip_state, set_supplier_serialize_group, set_supplier_serialize_group_if_absent,
     supplier_done_call_count, emit_gate, supplier_emit_callbacks, supplier_emit_collect,
-    register_supplier_transform_tap_if_drained, supplier_produce_update_acc,
+    register_supplier_tap_if_drained, supplier_produce_update_acc,
     supplier_serialize_group, supplier_tap_count, supplier_unique_get_seen,
     supplier_unique_mark_seen, take_supplier_close_callbacks, take_supplier_done_callbacks,
     take_supplier_quit_callbacks_via_group, take_supplier_reduce_results,

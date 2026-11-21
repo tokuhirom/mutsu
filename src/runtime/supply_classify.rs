@@ -26,13 +26,17 @@ impl Interpreter {
             _ => Vec::new(),
         };
 
-        // Over a live source the stage is a per-tap recipe (ADR-18443);
-        // `:expires` keeps the eager stage, which owns the expiry clock.
-        if expires.is_none() && Self::stage_is_live_recipe(attributes) {
-            let attrs_map: crate::value::ValueMap = attributes.into();
-            let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+        // `:expires` only applies to `unique`.
+        let expires_secs = expires.as_ref().filter(|_| !squish).map(Value::to_f64);
+        // Over a live source the stage is a per-tap recipe (ADR-18443), with
+        // its own expiry clock per tap.
+        if Self::stage_is_live_recipe(attributes) {
             return Ok(Self::mark_live_recipe(Self::make_on_demand_dedup_supply(
-                source, squish, as_fn, with_fn,
+                Self::supply_from_attrs(attributes),
+                squish,
+                as_fn,
+                with_fn,
+                expires_secs,
             )));
         }
         // A live (Supplier-backed) source gets a real pipeline stage: its
@@ -77,10 +81,12 @@ impl Interpreter {
             || Self::is_channel_backed_source(attributes)
             || attributes.contains_key("head_limit")
         {
-            let attrs_map: crate::value::ValueMap = attributes.into();
-            let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
             return Ok(Self::make_on_demand_dedup_supply(
-                source, squish, as_fn, with_fn,
+                Self::supply_from_attrs(attributes),
+                squish,
+                as_fn,
+                with_fn,
+                expires_secs,
             ));
         }
 

@@ -653,33 +653,22 @@ impl Interpreter {
         if attributes.contains_key("shared_on_demand") {
             return None;
         }
-        // A stage over a live recipe is a recipe too (ADR-18443).
-        if attributes.contains_key(Self::LIVE_RECIPE_KEY) {
-            let attrs_map: ValueMap = attributes.into();
-            let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+        // ADR-18443: a stage over a live source (or over a recipe) is a
+        // recipe, not a subscription. Each tap of the derived Supply taps the
+        // source for itself (and runs the callable for itself); closing that
+        // tap, or the chain completing, closes the source tap it made.
+        // Nothing is registered on the source here, so an untapped stage
+        // does no work.
+        if Self::stage_is_live_recipe(attributes) {
             return Some(Self::mark_live_recipe(Self::make_on_demand_derived_supply(
-                source, mode, callable,
+                Self::supply_from_attrs(attributes),
+                mode,
+                callable,
             )));
         }
+        // A source carrying seeded values keeps the eager stage below.
         let source_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes)?;
         let preserving = attributes.contains_key("preserving");
-        // ADR-18443: a stage over a plain live source is a recipe, not a
-        // subscription. Each tap of the derived Supply taps the source for
-        // itself (and runs the callable for itself); closing that tap, or the
-        // chain completing, closes the source tap it made. Nothing is
-        // registered on the source here, so an untapped stage does no work.
-        // The preserving and seeded-value sources keep the eager stage below
-        // until a later slice moves them.
-        let seeded = !attributes.get("live").is_some_and(Value::truthy)
-            && matches!(attributes.get("values").map(Value::view),
-                Some(ValueView::Array(values, ..)) if !values.is_empty());
-        if !preserving && !seeded && !attributes.contains_key("scheduler") {
-            let attrs_map: ValueMap = attributes.into();
-            let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
-            return Some(Self::mark_live_recipe(Self::make_on_demand_derived_supply(
-                source, mode, callable,
-            )));
-        }
         let downstream_sid = crate::runtime::native_methods::next_supplier_id();
         // A `Supplier::Preserving` source registers its tap only after its
         // backlog is carried over (`supply_preserving_derive`, #8825).

@@ -254,7 +254,7 @@ impl Interpreter {
                             .as_map()
                             .contains_key(crate::runtime::Interpreter::LIVE_RECIPE_KEY) =>
                     {
-                        bridged = self.instantiate_live_recipe(&items[0])?;
+                        bridged = self.instantiate_live_recipe(&items[0], true)?;
                         &bridged
                     }
                     _ => &items[0],

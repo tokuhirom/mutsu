@@ -1307,7 +1307,7 @@ pub(in crate::runtime) fn emit_gate() -> std::sync::MutexGuard<'static, ()> {
 /// Emit `value` on `supplier_id` and return what its live taps ask for: the
 /// push, the callback collection and the "a live tap consumed this" backlog
 /// bookkeeping happen as one step with respect to
-/// [`register_supplier_transform_tap_if_drained`].
+/// [`register_supplier_tap_if_drained`].
 // Cost: O(s + t), s = the sinks, t = the taps of the supplier.
 pub(in crate::runtime) fn supplier_emit_collect(
     supplier_id: u64,
@@ -1329,23 +1329,21 @@ pub(in crate::runtime) fn supplier_emit_collect(
     actions
 }
 
-/// Register the `grep`/`map`/`do` transform tap of a `Supplier::Preserving`
-/// derived supply once the source has no backlog left. Returns `false`
-/// (registering nothing) while a backlog remains: the caller runs it through
-/// the transform first and tries again, so a value emitted in the meantime
-/// still reaches the derived supply after the ones before it.
+/// Run `register` (a tap registration on the `Supplier::Preserving`
+/// `source_sid`) once the source has no backlog left, under the emit gate.
+/// Returns `false` (registering nothing) while a backlog remains: the caller
+/// replays it first and tries again, so a value emitted in the meantime
+/// still reaches the tap after the ones before it.
 // Cost: O(1) amortized.
-pub(in crate::runtime) fn register_supplier_transform_tap_if_drained(
+pub(in crate::runtime) fn register_supplier_tap_if_drained(
     source_sid: u64,
-    downstream_sid: u64,
-    callable: &Value,
-    mode: TransformMode,
+    register: impl FnOnce(),
 ) -> bool {
     let _gate = emit_gate();
     if supplier_has_preserved_backlog(source_sid) {
         return false;
     }
-    register_supplier_transform_tap(source_sid, downstream_sid, callable.clone(), mode);
+    register();
     true
 }
 
