@@ -5730,7 +5730,9 @@ pub(super) fn call_name(
     if let (true, [], Some(term)) = (without_parentheses, args, super::term_named::view(name)) {
         return Ok(term);
     }
-    let name_node = name_from_identifier(name);
+    // `prefix:<!>(1)`: an operator's name holds its symbol as a word quote.
+    let name_node =
+        super::name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
     let arg_list = arg_list(names, args)?;
     // A qualified name (`M::foo`) is a `Call::Name` however it is spelled:
     // raku has the `WithoutParentheses` form for a plain identifier only
