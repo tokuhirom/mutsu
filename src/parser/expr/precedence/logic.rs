@@ -426,25 +426,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     is_positional,
                     spelling,
                 } if is_bindable_index_target(target.as_ref())
-                    && !matches!(
-                        index.as_ref(),
-                        Expr::ArrayLiteral(_)
-                        | Expr::Whatever
-                        // ADR-0033 Phase 1: a Whatever-index (`@a[*-1] := ...`) is
-                        // still an un-expanded `WhateverCurry` marker at this
-                        // (pre-compile) parse-time point, not yet the built
-                        // `Lambda`/`AnonSubParams` closure below (kept as a
-                        // belt-and-suspenders match; only reachable pre-ADR-0033).
-                        | Expr::WhateverCurry(..)
-                        | Expr::Lambda {
-                            is_whatever_code: true,
-                            ..
-                        }
-                        | Expr::AnonSubParams {
-                            is_whatever_code: true,
-                            ..
-                        }
-                    ) =>
+                    && !is_slice_or_whatever_index(index.as_ref()) =>
                 {
                     // Indexed bind RHSs are values too: preserve a compound
                     // `*` expression as WhateverCode instead of evaluating it
@@ -552,8 +534,21 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
 /// a sigil variable, a pseudo-stash (`Pkg::<@a> := v`, #10546) or the result
 /// of a method call (`type.WHO<R> := v` binds into the stash that `.WHO`
 /// hands back, as the statement form already does, #15948).
-// Cost: O(1).
-fn is_bindable_index_target(target: &Expr) -> bool {
+/// A chained subscript (`%h<a><b> := v`) binds into the element its inner
+/// subscripts reach, as the statement form does (#18499).
+// Cost: O(d), d = chained subscripts.
+fn is_bindable_index_target(mut target: &Expr) -> bool {
+    while let Expr::Index {
+        target: inner,
+        index,
+        ..
+    } = target
+    {
+        if is_slice_or_whatever_index(index) {
+            return false;
+        }
+        target = inner;
+    }
     matches!(
         target,
         Expr::ArrayVar(_)
@@ -561,5 +556,31 @@ fn is_bindable_index_target(target: &Expr) -> bool {
             | Expr::Var(_)
             | Expr::PseudoStash(_)
             | Expr::MethodCall { .. }
+    )
+}
+
+/// Whether a subscript names several elements or a Whatever position: a
+/// slice bind (`@a[0,1] := 4,5`) and a Whatever-index bind (`@a[*-1] := 42`,
+/// illegal) are left to the statement-level handler, which distributes or
+/// rejects them.
+// Cost: O(1).
+fn is_slice_or_whatever_index(index: &Expr) -> bool {
+    matches!(
+        index,
+        Expr::ArrayLiteral(_)
+            | Expr::Whatever
+            // ADR-0033 Phase 1: a Whatever-index (`@a[*-1] := ...`) is still an
+            // un-expanded `WhateverCurry` marker at this (pre-compile) parse-time
+            // point, not yet the built `Lambda`/`AnonSubParams` closure below
+            // (kept as a belt-and-suspenders match; only reachable pre-ADR-0033).
+            | Expr::WhateverCurry(..)
+            | Expr::Lambda {
+                is_whatever_code: true,
+                ..
+            }
+            | Expr::AnonSubParams {
+                is_whatever_code: true,
+                ..
+            }
     )
 }
