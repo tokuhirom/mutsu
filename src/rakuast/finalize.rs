@@ -50,23 +50,9 @@ impl Drop for Executing {
     }
 }
 
-/// Finalize the parsed compilation unit `stmts` for execution: the statements
-/// the compiler receives.
-// Cost: O(n), n = size of the unit.
-pub(super) fn finalize_unit(
-    names: &NameScope,
-    mut stmts: Vec<Stmt>,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    let mut unit = UnitFinalizer::begin(names, &stmts);
-    for stmt in stmts.iter_mut() {
-        unit.commit(stmt);
-    }
-    unit.finish(&mut stmts)?;
-    Ok(stmts)
-}
-
 /// The finalization of one compilation unit, fed its top-level statements in
-/// source order (ADR-15760 §7.2 (b), slice 2d): [`UnitFinalizer::commit`]
+/// source order when the unit's own statement list closes, at the end of the
+/// unit (ADR-15760 §7.2 (b), Amendment 3): [`UnitFinalizer::commit`]
 /// finalizes one statement, with every list nested in it, and
 /// [`UnitFinalizer::finish`] runs the passes that need the whole lowered unit.
 ///

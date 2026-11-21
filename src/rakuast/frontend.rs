@@ -62,11 +62,17 @@ pub(crate) fn finish_unit_in(
     // A slang's overrides of core actions see the parsed unit before it is
     // finalized (ADR-15762 slice 3).
     super::slang_bridge::apply_action_overrides(&mut stmts)?;
-    // The finalization also qualifies the type names of each statement
-    // (ADR-15760 §7.2 (d)).
-    let mut lowered = super::finalize::finalize_unit(names, stmts)?;
-    crate::parser::p6_frame_state::lower_program(&mut lowered);
-    Ok(lowered)
+    // The unit's own statement list has closed: its statements are finalized
+    // in source order, each with the lists nested in it (ADR-15760 §7.2 (b),
+    // Amendment 3). The finalization also qualifies the type names of each
+    // statement (ADR-15760 §7.2 (d)).
+    let mut unit = super::finalize::UnitFinalizer::begin(names, &stmts);
+    for stmt in stmts.iter_mut() {
+        unit.commit(stmt);
+    }
+    unit.finish(&mut stmts)?;
+    crate::parser::p6_frame_state::lower_program(&mut stmts);
+    Ok(stmts)
 }
 
 /// [`finish_unit`] for an `EVAL` string, whose bare names may be declared
