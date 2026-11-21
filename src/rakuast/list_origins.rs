@@ -130,6 +130,11 @@ fn leading_variable(node: &mut RakuAstNode, start: usize) {
     let Some(operand) = child(node, "operand") else {
         return;
     };
+    // `f(1).{"a"}`: a call with parentheses, to its `)`.
+    if operand.origin.0.is_none() && operand.class == RakuAstClass::CallName {
+        leading_call(node, start);
+        return;
+    }
     if operand.origin.0.is_some()
         || !matches!(
             operand.class,
@@ -151,6 +156,34 @@ fn leading_variable(node: &mut RakuAstNode, start: usize) {
             super::origin::set_span(operand, SrcSpan::new(start, end))
         });
     }
+}
+
+/// The `name(...)` call a subscripted application starts with
+/// (`f(1).{"a"}`), which the parser left unplaced: from the start of the
+/// application to the `)` closing its arguments, when the call's name is
+/// written there and a subscript or its dot follows.
+// Cost: O(n), n = length of the call's text.
+fn leading_call(node: &mut RakuAstNode, start: usize) {
+    let Some(name) = child(node, "operand")
+        .and_then(|call| child(call, "name"))
+        .and_then(super::infix_origins::leaf_text)
+    else {
+        return;
+    };
+    let Some(end) = super::unit_source::with_text_from(start, |text| {
+        let args = text.strip_prefix(name.as_str())?.strip_prefix('(')?;
+        let close = super::subst_origins::closing(args, '(', ')')?;
+        let end = name.len() + 1 + close + 1;
+        text[end..]
+            .starts_with(['.', '[', '{', '<', '\u{ab}'])
+            .then_some(start + end)
+    }) else {
+        return;
+    };
+    with_child(node, "operand", |call| {
+        super::origin::set_span(call, SrcSpan::new(start, end));
+        super::infix_origins::derive(&crate::scope::NameScope::default(), call);
+    });
 }
 
 /// `(my Int $x = 1)` / `($s = 5)`: parentheses around a lone declaration or
