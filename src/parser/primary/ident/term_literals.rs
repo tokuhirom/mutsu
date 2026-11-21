@@ -692,8 +692,10 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             }
         }
     }
+    // `once(...)` -- an identifier directly followed by `(` -- is always a
+    // call of a routine named `once`, never the phaser (#18228).
     if input.starts_with("once")
-        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+        && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-' || c == '(')
     {
         let r = &input[4..];
         let (r, _) = ws(r)?;
