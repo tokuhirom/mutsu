@@ -72,7 +72,10 @@ mod tests {
     #[test]
     fn double_quoted_escapes() {
         assert_eq!(double_quoted(r#"a\n" x"#), Some((3, "a\n".to_string())));
-        assert_eq!(double_quoted(r#"\e[0m""#), Some((5, "\u{1b}[0m".to_string())));
+        assert_eq!(
+            double_quoted(r#"\e[0m""#),
+            Some((5, "\u{1b}[0m".to_string()))
+        );
         assert_eq!(double_quoted(r#"\"q\"""#), Some((5, "\"q\"".to_string())));
         assert_eq!(double_quoted(r#"$x""#), None);
         assert_eq!(double_quoted(r#"\x41""#), None);
