@@ -17,19 +17,9 @@ impl Interpreter {
     /// or threads share variables and the name is not one this lineage
     /// re-declared (the store's entry would belong to the shadowed outer
     /// binding).
-    ///
-    /// A private attribute (`@!x`) never takes it: its one home is the
-    /// instance's attribute cell, which every thread already reaches through
-    /// `self`, and the receiver the call site hands over is read from that
-    /// cell (ADR-18356 D2). A name-keyed store entry under `@!x` is at most a
-    /// spawn-time snapshot `clone_for_thread` seeded, so a removal through it
-    /// missed every element pushed after the spawn (#18438).
-    // Cost: O(1), one env read (plus an O(n) twigil test of the name).
+    // Cost: O(1), one env read.
     pub(crate) fn shared_array_lane_applies(&self, name: &str, target: &Value) -> bool {
         if !name.starts_with('@') || !self.threads.shared_vars_active {
-            return false;
-        }
-        if matches!(crate::value::attr_twigil_base(name), Some((_, true))) {
             return false;
         }
         let celled = self.env().get(name).is_some_and(Value::is_container_ref);
