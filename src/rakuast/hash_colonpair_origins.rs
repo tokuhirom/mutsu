@@ -82,7 +82,11 @@ pub(super) fn infix_adverbs(node: &mut RakuAstNode) {
     if to != right_end {
         return;
     }
-    let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("colonpairs")) else {
+    let Some(field) = node
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("colonpairs"))
+    else {
         return;
     };
     let RakuAstFieldValue::List(pairs) = &mut field.value else {
