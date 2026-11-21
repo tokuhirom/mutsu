@@ -50,23 +50,9 @@ impl Drop for Executing {
     }
 }
 
-/// Finalize the parsed compilation unit `stmts` for execution: the statements
-/// the compiler receives.
-// Cost: O(n), n = size of the unit.
-pub(super) fn finalize_unit(
-    names: &NameScope,
-    mut stmts: Vec<Stmt>,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    let mut unit = UnitFinalizer::begin(names, &stmts);
-    for stmt in stmts.iter_mut() {
-        unit.commit(stmt);
-    }
-    unit.finish(&mut stmts)?;
-    Ok(stmts)
-}
-
 /// The finalization of one compilation unit, fed its top-level statements in
-/// source order (ADR-15760 §7.2 (b), slice 2d): [`UnitFinalizer::commit`]
+/// source order when the unit's own statement list closes, at the end of the
+/// unit (ADR-15760 §7.2 (b), Amendment 3): [`UnitFinalizer::commit`]
 /// finalizes one statement, with every list nested in it, and
 /// [`UnitFinalizer::finish`] runs the passes that need the whole lowered unit.
 ///
@@ -96,6 +82,7 @@ pub(super) struct UnitFinalizer<'s> {
 impl<'s> UnitFinalizer<'s> {
     /// Begin finalizing the unit whose top-level statements are `unit`.
     // Cost: O(n), n = size of the unit (its lookahead inputs).
+    #[inline]
     pub(super) fn begin(names: &'s NameScope, unit: &[Stmt]) -> Self {
         let executing = Executing::enter();
         // The lowering of a converted construct builds no spellings either.
@@ -141,6 +128,7 @@ impl<'s> UnitFinalizer<'s> {
 
     /// Finalize the unit's next top-level statement.
     // Cost: O(s), s = size of the statement.
+    #[inline]
     pub(super) fn commit(&mut self, stmt: &mut Stmt) {
         let index = self.next;
         self.next += 1;
@@ -150,6 +138,7 @@ impl<'s> UnitFinalizer<'s> {
     /// The unit's statements are all committed: `stmts` is the finalized
     /// unit, put through the passes that need it whole.
     // Cost: O(n), n = size of the unit.
+    #[inline]
     pub(super) fn finish(mut self, stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
         // The unit's own list is closed.
         drop(self._top_scope);
