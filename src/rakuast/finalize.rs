@@ -84,7 +84,7 @@ pub(super) struct UnitFinalizer<'s> {
     _top_scope: super::bareword::BlockScope<'s>,
     _keywords: crate::scope::ListScope<'s>,
     _operators: crate::scope::ListScope<'s>,
-    _unit: super::shadowed_terms::UnitGuard<'s>,
+    _unit: crate::scope::UnitGuard<'s>,
     _method_scope: super::underscore_bindings::MethodScope,
     _declared: super::bareword::DeclaredNames<'s>,
     _block_scope: super::underscore_bindings::Scope,
