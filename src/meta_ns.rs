@@ -266,6 +266,10 @@ pub(crate) enum MetaNs {
 }
 
 impl MetaNs {
+    /// How many namespaces there are: the last variant's discriminant plus
+    /// one. `count_covers_every_namespace` pins it against [`Self::ALL`].
+    const COUNT: usize = MetaNs::NextcalleeChain as usize + 1;
+
     /// Every namespace, so a test can assert a property of all of them and a
     /// new variant cannot be added without appearing here.
     ///
@@ -412,21 +416,18 @@ impl MetaNs {
     /// name as a `Symbol` already (a compiled `SetLocal` slot, a `SetGlobal`
     /// constant, a bound parameter all do) and probe with `Env::get_sym` /
     /// `Env::contains_key_sym`, so that no string is hashed at all.
+    // Cost: O(1) on a hit (one atomic load from this namespace's
+    // symbol-indexed table); the first call per pair formats and interns.
     pub(crate) fn key(self, name: Symbol) -> Symbol {
-        thread_local! {
-            static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<(MetaNs, Symbol), Symbol>> =
-                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-        }
-        let pair = (self, name);
-        if let Some(sym) = KEYS.with(|c| c.borrow().get(&pair).copied()) {
-            return sym;
-        }
+        // One process-global table per namespace, indexed by the name's
+        // symbol id: the key is a pure function of (namespace, text), so a
+        // hit is an array index and an atomic load, where the thread-local
+        // `(MetaNs, Symbol)` hash map it replaces paid a thread-local access,
+        // a hash and a `RefCell` borrow per probe.
+        static KEYS: [crate::symbol::SymbolSymMemo; MetaNs::COUNT] =
+            [const { crate::symbol::SymbolSymMemo::new() }; MetaNs::COUNT];
         let prefix = self.prefix();
-        let sym = name.with_str(|n| Symbol::intern(&format!("{prefix}{n}")));
-        KEYS.with(|c| {
-            c.borrow_mut().insert(pair, sym);
-        });
-        sym
+        KEYS[self as usize].get_with(name, |n| Symbol::intern(&format!("{prefix}{n}")))
     }
 
     /// This namespace's env key for a two-part name (`<outer>::<inner>`), as a
@@ -581,6 +582,24 @@ mod tests {
             "the memo is keyed by (namespace, name); a name-only key would \
              hand `__mutsu_hash_key_type::` the `__mutsu_type::` entry"
         );
+    }
+
+    /// `MetaNs::key`'s per-namespace tables are indexed by discriminant, so
+    /// every namespace must fall below `COUNT` and own a distinct table.
+    #[test]
+    fn count_covers_every_namespace() {
+        assert_eq!(MetaNs::ALL.len(), MetaNs::COUNT);
+        let mut seen = [false; MetaNs::COUNT];
+        for ns in MetaNs::ALL {
+            let i = *ns as usize;
+            assert!(i < MetaNs::COUNT && !seen[i], "{ns:?}");
+            seen[i] = true;
+        }
+        // Two namespaces asked for the same name answer their own keys.
+        let n = Symbol::intern("$count_covers");
+        for ns in MetaNs::ALL {
+            assert_eq!(ns.key(n).as_str(), format!("{}$count_covers", ns.prefix()));
+        }
     }
 
     /// The exact key every namespace produces, spelled out.
