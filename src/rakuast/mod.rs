@@ -171,6 +171,7 @@ pub(crate) mod fresh_copy;
 mod hyper_infix_origins;
 pub(crate) mod implicit_signature;
 mod infix_origins;
+mod initializer_origins;
 mod infix_spelling;
 mod inherited_fields;
 mod keyed_hash;

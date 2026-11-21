@@ -70,3 +70,35 @@ pub(super) fn operand_ranges(
     }
     (left, right)
 }
+
+/// Locate an origin-less priming `*` that starts or ends `node`, an
+/// `ApplyListInfix` with a range (`* max *`, `1 min *`), in `ranges`, the
+/// byte ranges of its `operands`: the first at the application's start, the
+/// last at its end, when the text there is a `*`.
+// Cost: O(k), k = operands.
+pub(super) fn list_operand_ranges(
+    node: &RakuAstNode,
+    operands: &[crate::value::Value],
+    ranges: &mut [Range],
+) {
+    let Some((from, to)) = super::infix_origins::byte_range(node) else {
+        return;
+    };
+    let priming = |i: usize| {
+        operands.get(i).is_some_and(|v| match v.view() {
+            crate::value::ValueView::RakuAst(o) => o.class == RakuAstClass::WhateverCodeArgument,
+            _ => false,
+        })
+    };
+    let last = ranges.len().saturating_sub(1);
+    let written = |at: usize| {
+        super::unit_source::with_text(SrcSpan::new(at, at + 1), |t| (t == "*").then_some(()))
+            .is_some()
+    };
+    if ranges.len() > 1 && ranges[0].is_none() && priming(0) && written(from) {
+        ranges[0] = Some((from, from + 1));
+    }
+    if ranges.len() > 1 && ranges[last].is_none() && priming(last) && to > from && written(to - 1) {
+        ranges[last] = Some((to - 1, to));
+    }
+}

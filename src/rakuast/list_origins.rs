@@ -28,13 +28,15 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     }) else {
         return;
     };
-    let ranges: Option<Vec<(usize, usize)>> = operands
+    let mut ranges: Vec<Option<(usize, usize)>> = operands
         .iter()
         .map(|v| match v.view() {
             ValueView::RakuAst(operand) => byte_range(operand),
             _ => None,
         })
         .collect();
+    super::whatever_origins::list_operand_ranges(node, operands, &mut ranges);
+    let ranges: Option<Vec<(usize, usize)>> = ranges.into_iter().collect();
     // One operand is a list only through its trailing comma (`("a",)`).
     let Some(ranges) = ranges.filter(|r| !r.is_empty()) else {
         return;
