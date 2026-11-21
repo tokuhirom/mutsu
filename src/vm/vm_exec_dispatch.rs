@@ -6399,6 +6399,7 @@ impl Interpreter {
                 target_slot,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                let bound = self.nested_bind_expression_value(2);
                 self.with_package_lexical_seeded(code, *name_idx, |vm| {
                     vm.exec_index_assign_expr_nested_op(
                         code,
@@ -6409,6 +6410,7 @@ impl Interpreter {
                     )
                 })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                self.answer_bind_expression_value(bound);
                 *ip += 1;
             }
             // Cost: O(p), p = subscript depth.
@@ -6419,6 +6421,7 @@ impl Interpreter {
                 target_slot,
             } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                let bound = self.nested_bind_expression_value(*depth as usize);
                 self.with_package_lexical_seeded(code, *name_idx, |vm| {
                     vm.exec_index_assign_deep_nested_op(
                         code,
@@ -6429,6 +6432,7 @@ impl Interpreter {
                     )
                 })?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                self.answer_bind_expression_value(bound);
                 *ip += 1;
             }
 

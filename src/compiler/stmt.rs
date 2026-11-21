@@ -5,6 +5,7 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 mod default;
+mod sink_bind;
 
 impl Compiler {
     /// Pre-qualify a class/role declaration's name with the compiler's
@@ -1098,7 +1099,10 @@ impl Compiler {
                 // it — except under `use fatal`, which the opcode handles.
                 // Scalar `$x = ...` takes the Stmt::Assign path and already
                 // behaves this way.
-                if Self::stmt_is_pointy_bind_call(expr) {
+                // An element bind (`%h<k> := $seq;`) is never sunk either: its
+                // value is the bound value itself (#18260), and rakudo leaves
+                // a bound Seq unconsumed.
+                if Self::stmt_is_pointy_bind_call(expr) || Self::stmt_value_is_index_bind(expr) {
                     self.code.emit(OpCode::Pop);
                 } else if Self::stmt_value_is_assignment(expr) {
                     self.code.emit(OpCode::SinkPopAssign);
