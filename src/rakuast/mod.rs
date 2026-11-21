@@ -166,6 +166,7 @@ mod assign_ro;
 mod call_term_origins;
 mod carried;
 mod decl_postfix_origins;
+mod dotty_infix_view;
 mod finalize;
 pub(crate) mod fresh_copy;
 mod hyper_infix_origins;
