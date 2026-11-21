@@ -180,6 +180,7 @@ mod initializer_origins;
 mod keyed_hash;
 mod label_context;
 mod list_origins;
+mod listop_origins;
 mod literal_parameter;
 mod lone_term_origins;
 mod lower;
