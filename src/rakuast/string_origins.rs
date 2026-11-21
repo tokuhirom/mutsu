@@ -328,9 +328,18 @@ fn postfix_at(
 ) -> Option<(usize, usize)> {
     let name = leaf_text(interpolated_variable(segment)?)?;
     let postfix = super::infix_origins::child(segment, "postfix")?.class;
+    // `"@x.[]"`: the dot a subscript may be written after.
+    let mut dot = 0;
     let to = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
-        let rest = text.strip_prefix(name.as_str())?;
-        let at = name.len();
+        let mut rest = text.strip_prefix(name.as_str())?;
+        if postfix != RakuAstClass::CallMethod
+            && let Some(after) = rest.strip_prefix('.')
+            && after.starts_with(['[', '{', '<'])
+        {
+            rest = after;
+            dot = 1;
+        }
+        let at = name.len() + dot;
         let close = match postfix {
             RakuAstClass::PostcircumfixArrayIndex => balanced(rest, '[', ']')?,
             RakuAstClass::PostcircumfixHashIndex => balanced(rest, '{', '}')?,
@@ -366,7 +375,7 @@ fn postfix_at(
             postfix,
             RakuAstClass::PostcircumfixArrayIndex | RakuAstClass::PostcircumfixHashIndex
         ) {
-            let open = cursor + name.len() + 1;
+            let open = cursor + name.len() + dot + 1;
             let inner =
                 super::unit_source::with_text(SrcSpan::new(open, to - 1), |t| Some(t.to_string()));
             if let Some(inner) = inner {

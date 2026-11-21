@@ -427,6 +427,7 @@ pub(super) fn statement_list(list: &mut RakuAstNode, inside: SrcSpan) {
     ) {
         return;
     }
+    super::lone_term_origins::trailing_variable(list, inside);
     statement_ranges(list);
     let statements: Vec<Option<(usize, usize)>> = list
         .fields
