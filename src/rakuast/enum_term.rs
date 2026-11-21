@@ -152,11 +152,14 @@ fn of_type(node: &mut RakuAstNode, from: usize, to: usize) {
         let head = text[..text.find(" enum")?].trim_end();
         let start = head.len().checked_sub(name.len())?;
         let before = &head[..start];
-        (head.ends_with(name.as_str()) && (before.is_empty() || before.ends_with(char::is_whitespace)))
-            .then(|| crate::ast::SrcSpan::new(from + start, from + head.len()))
+        (head.ends_with(name.as_str())
+            && (before.is_empty() || before.ends_with(char::is_whitespace)))
+        .then(|| crate::ast::SrcSpan::new(from + start, from + head.len()))
     });
     if let Some(span) = span {
-        with_child(node, "of", |ty| super::routine_origins::type_origin(ty, span));
+        with_child(node, "of", |ty| {
+            super::routine_origins::type_origin(ty, span)
+        });
     }
 }
 

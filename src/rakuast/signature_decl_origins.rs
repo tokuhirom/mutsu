@@ -116,13 +116,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
             if param.fields.iter().any(|f| {
                 matches!(
                     f.name,
-                    Some(
-                        "where"
-                            | "type-captures"
-                            | "invocant"
-                            | "array-shape"
-                            | "slurpy"
-                    )
+                    Some("where" | "type-captures" | "invocant" | "array-shape" | "slurpy")
                 )
             }) {
                 return None;
