@@ -80,8 +80,7 @@ pub(super) fn execution_source_of(node: &RakuAstNode) -> String {
         return code;
     };
     let first_line = first - code[..at].matches('\n').count() as i64;
-    let folded =
-        crate::parser::fold_line_in_code_blocks(&format!("{{{code}}}"), first_line);
+    let folded = crate::parser::fold_line_in_code_blocks(&format!("{{{code}}}"), first_line);
     folded
         .strip_prefix('{')
         .and_then(|s| s.strip_suffix('}'))
@@ -102,7 +101,9 @@ fn first_compiler_line(node: &RakuAstNode) -> Option<i64> {
         };
     }
     node.fields.iter().find_map(|f| match &f.value {
-        RakuAstFieldValue::Node(v) => super::lower::rakuast_node_of(v).and_then(first_compiler_line),
+        RakuAstFieldValue::Node(v) => {
+            super::lower::rakuast_node_of(v).and_then(first_compiler_line)
+        }
         RakuAstFieldValue::List(items) => items
             .iter()
             .filter_map(super::lower::rakuast_node_of)
