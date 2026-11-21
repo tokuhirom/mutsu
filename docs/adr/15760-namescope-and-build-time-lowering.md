@@ -1,7 +1,8 @@
 # ADR-15760: NameScope — one scope type, source-order classification, and a typed node lowered where the parser builds it
 
 - **Status**: Accepted (maintainer decision, 2026-10-31) after revision; Amendment 1 Accepted (maintainer decision, 2026-11-01), §6;
-  Amendment 2 Accepted (maintainer decision, 2026-11-20, with the conditions in §7.5), §7
+  Amendment 2 Accepted (maintainer decision, 2026-11-20, with the conditions in §7.5), §7; Amendment 3 Accepted
+  (maintainer decision, 2026-11-21), §8
 - **Date**: 2026-10-31
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#15760](https://github.com/tokuhirom/mutsu/issues/15760) (RakuAST C2). Roadmap:
@@ -442,3 +443,63 @@ roast pass under 2b (`scripts/dev gate --full`, 2026-11-20). No real-world harm 
 sense that it is not modelled differently from rakudo's hoisting. The one merge rule 2b needed: a routine a later
 statement declares adds a name only when nothing declared it yet, so an imported constant `phi` stays the term where
 a nested `sub phi` is declared (`t/routines/nested-sub-shadows-imported-constant-term.t`).
+
+## 8. Amendment 3 (Accepted, 2026-11-21): the unit's own list commits at its close
+
+**Decision (maintainer, 2026-11-21, option A′ on [#15760](https://github.com/tokuhirom/mutsu/issues/15760)).** Slice
+2d is completed as §7.2 (b) read literally: the commit point of a list's finalization is the close of that list, and
+the close of the unit's own list is the end of the unit. The frontend finalizes the unit's top-level statements in
+source order when the parse is complete, each together with the lists nested in it (`UnitFinalizer`: `begin` /
+`commit` / `finish`). The separate `finalize_unit` function is deleted. The parser does not finalize a top-level
+statement while the rest of the unit is still being parsed. No behaviour changes.
+
+### 8.1 What slice 2d did
+
+- **2d-1** ([#18435](https://github.com/tokuhirom/mutsu/pull/18435)): the parser's post-parse passes (whatever-curry
+  mark with the CORE type fold, `use trace` numbering, out-of-scope `whenever`, outer-redeclaration scan, sink
+  analysis, top-level `CHECK` detection) keep their state across the unit's top-level statements
+  (`parser::unit_passes`); the diagnostics are settled at the end of the unit in their old order.
+- **2d-2** ([#18453](https://github.com/tokuhirom/mutsu/pull/18453)): the finalization is `UnitFinalizer`; each
+  commit finalizes one top-level statement in its own parser lexical scope.
+- **A′**: the frontend drives `UnitFinalizer` directly; `finalize_unit` is gone.
+
+### 8.2 Why the parser does not commit each top-level statement as it parses it
+
+The 2d finding (C2 session 3): with every per-statement step in place, what is left is the lookahead, meaning
+decisions about statement *k* that read the statements of the unit's list after *k*.
+
+| Input | Decided from the later statements | Safe "declared so far"? |
+| --- | --- | --- |
+| hoisted routines (`scan_routines`, ~6 lowering decisions via `is_declared`) | a routine declared later | yes: a census over all of `t/` and the 1434 whitelisted roast files found no decision that flips |
+| later capitalised terms (`say X; constant X = 3` pins `CORE::X`, slice 2b) | a later `constant` / enum value | no; every capitalised setting word is a candidate |
+| `later_core_types` (`UnitQualify`, slice 2c) | a later `my class DateTime` | no; every core type name is a candidate |
+| CORE type fold (ADR-0115) | any binding anywhere in the unit | no; every `nqp::` operand naming a core type |
+| `@_` / `%_` block bits | a later top-level `my @_` | rare, but unknown at commit |
+
+These decisions are made inside a statement's finalization, which rewrites the statement in place. To finalize
+statement *k* as the parser commits it, they must be corrected when the unit ends.
+
+### 8.3 Alternatives not taken
+
+- **B′, re-finalization from retained originals.** Keep an unfinalized copy of every top-level statement until the
+  unit ends, and re-finalize the statements a later declaration contradicts. This adds a deep clone of every unit
+  and a second finalization path, and removes no work: the finalization being moved is ~5.9% of frontend Ir. The
+  headroom to Amendment 1 of ADR-15334 is ~3 points on zef-cli.
+- **C′, source-order rules.** Pin every not-yet-declared capitalised setting word and core type to `CORE::` at once,
+  and decide the fold without later bindings. This changes run-time behaviour (`CORE::` lookups everywhere, special
+  cases for `sub EXPORT` imports) and would need its own rakudo comparison per rule.
+- Recording the sites to re-pin at the end of the unit would need a second way to address nodes that the
+  lowering has already moved or duplicated.
+
+None of these is in §7.2 (b)-(e), and none has a cost case, so the maintainer's condition (3) for slice 2d applied.
+
+### 8.4 Consequences
+
+- Slice 2d, and with it §2.5 item 3, is complete: `finalize_unit` is deleted, and the executing
+  `qualify_type_names` call went with 2c. `frontend::finish_unit_in` applies the slang action overrides, drives
+  `UnitFinalizer` over the unit's statements, and runs `p6_frame_state::lower_program`.
+- The finalization still runs after the parse, as one statement-ordered pass over the unit. This is the commit point
+  §7.2 (b) names for the unit's own list. Its cost is unchanged: zef-cli 101.1%, grammar-cursor 93.4% of the
+  baseline on 2026-11-21.
+- Finalizing statements while the parse continues stays possible later. It needs a decided correction mechanism
+  for the inputs of §8.2 and a cost case, and would be a new amendment.

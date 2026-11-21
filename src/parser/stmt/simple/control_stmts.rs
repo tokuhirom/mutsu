@@ -268,11 +268,28 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     // general call parser takes it, which keeps `die("S")` apart from
     // `die ("S")` (RakuAST: `Call::Name` over the arguments, not over a
     // parenthesised one).
-    // TODO: `fail(...)` stays `Stmt::Fail` -- its opcode records the failure's
-    // origin backtrace, which the call form does not -- so `fail("S")` still
-    // deparses as `fail ("S")`.
+    // `fail(...)` stays `Stmt::Fail` -- its opcode records the failure's
+    // origin backtrace, which the call form does not -- with its arguments
+    // kept as written for RakuAST (`Call::Name`, not `fail ("S")`).
     if !is_fail && rest.starts_with('(') {
         return Err(PError::expected("die call"));
+    }
+    if is_fail && let Some(after) = rest.strip_prefix('(') {
+        let (r, _) = ws(after)?;
+        let (r, args) = crate::parser::primary::parse_call_arg_list(r)?;
+        let (r, _) = ws(r)?;
+        if let Some(r) = r.strip_prefix(')')
+            && !args.is_empty()
+        {
+            let failed = match args.as_slice() {
+                [only] => only.clone(),
+                _ => Expr::ArrayLiteral(args.clone()),
+            };
+            let expr = Expr::spelled(failed, || {
+                crate::ast::spelled::Spelling::ControlCallArgs(args)
+            });
+            return parse_statement_modifier(r, Stmt::Fail(expr));
+        }
     }
     let (rest, _) = ws(rest)?;
     // `die`/`fail` with no argument: followed by `;`, end, `}`, or a statement modifier

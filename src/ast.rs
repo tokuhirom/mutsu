@@ -3349,11 +3349,20 @@ pub(crate) enum Stmt {
         /// the base variable.
         nested_lvalue: bool,
     },
+    /// `temp`/`let` over a method-call lvalue: `temp $obj.m = v`,
+    /// `let Type.^meta = v`, a bare `temp $obj.m;`. What the call yields is
+    /// saved and assigned back through the same rw call when the scope leaves
+    /// (`temp`) or fails (`let`).
     TempMethodAssign {
         var_name: String,
         method_name: String,
         method_args: Vec<Expr>,
-        value: Expr,
+        /// The assigned value; `None` for a bare `temp $obj.m;`, which saves
+        /// without assigning.
+        value: Option<Expr>,
+        /// `let` rather than `temp`: restored only when the scope fails.
+        #[serde(default)]
+        is_let: bool,
         /// The source was an attribute access (`$.x`) rather than a method
         /// call (`self.x`). Both save the same `self` slot at runtime.
         #[serde(default)]

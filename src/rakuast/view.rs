@@ -369,11 +369,19 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
             "die",
             expr.written_die_args(),
         )?))),
-        Stmt::Fail(expr) => Ok(Some(statement_expression(control_call(
-            names,
-            "fail",
-            crate::ast::spelled::written_control_args(expr),
-        )?))),
+        Stmt::Fail(expr) => Ok(Some(statement_expression(
+            match crate::ast::spelled::control_call_args(expr) {
+                Some(args) => RakuAstNode {
+                    class: RakuAstClass::CallName,
+                    ..control_call(names, "fail", args)?
+                },
+                None => control_call(
+                    names,
+                    "fail",
+                    crate::ast::spelled::written_control_args(expr),
+                )?,
+            },
+        ))),
         // `take EXPR` / `take-rw EXPR` are bare calls too.
         Stmt::Take(expr, is_rw) => Ok(Some(statement_expression(control_call(
             names,
@@ -2584,6 +2592,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             | Spelling::ConstantBind
             | Spelling::AttributeCall(_)
             | Spelling::ImplicitError
+            | Spelling::ControlCallArgs(_)
             | Spelling::HashPairKey { .. } => view_expr(names, &spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
@@ -5706,7 +5715,9 @@ fn heredoc_node(
     stop: &str,
     written: crate::ast::SrcSpan,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = view_expr(names, body)?;
+    // Not looked up by shape: a string of the same value elsewhere in the
+    // statement is not the heredoc's body; the heredoc is placed as a whole.
+    let mut node = view_expr_at(names, body)?;
     if node.class != RakuAstClass::QuotedString {
         return Err(unsupported("a heredoc that is not quoted text"));
     }

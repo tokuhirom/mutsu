@@ -85,6 +85,7 @@ pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: cr
     if node.class == super::RakuAstClass::StatementWhenever {
         super::expr_block_origins::whenever(node, span);
     }
+    super::expr_block_origins::exception_block(node, span);
     // A `Statement::Expression` with no statement modifier was written as just
     // its expression, which therefore has the statement's range (a `Sub`, a
     // `Class`, a `VarDeclaration`, a call) unless the parser placed it itself.

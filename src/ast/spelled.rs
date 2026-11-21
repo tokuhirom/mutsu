@@ -161,6 +161,10 @@ pub(crate) enum Spelling {
     /// The `$!` a bare `die` / `fail` throws again: the parser supplies it as
     /// the argument, while RakuAST keeps the call without arguments.
     ImplicitError,
+    /// `fail(EXPR, ...)`: the arguments of a `fail` written as a call, in
+    /// parentheses right after the name (RakuAST `Call::Name`), as written;
+    /// the spelled expression is what the statement fails with.
+    ControlCallArgs(Vec<Expr>),
     /// `:5($n)`: a radix conversion the parser runs as `UNBASE(5, $n)`, which
     /// RakuAST keeps as a `Term::RadixNumber`.
     RadixNumber,
@@ -346,6 +350,19 @@ impl Expr {
 // Cost: O(1).
 pub(crate) fn implicit_error() -> Expr {
     Expr::spelled(Expr::Var("!".to_string()), || Spelling::ImplicitError)
+}
+
+/// The arguments of a `fail(...)` written as a call, `None` for any other
+/// spelling.
+// Cost: O(1).
+pub(crate) fn control_call_args(arg: &Expr) -> Option<&[Expr]> {
+    match arg {
+        Expr::Spelled(spelled) => match &spelled.spelling {
+            Spelling::ControlCallArgs(args) => Some(args),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// The arguments of a `fail` as written: none for the `$!` a bare one

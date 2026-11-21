@@ -18,7 +18,7 @@ use crate::ast::SrcSpan;
 pub(super) fn derive(node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::Block => bare_block(node),
-        RakuAstClass::Sub => anonymous_sub(node),
+        RakuAstClass::Sub | RakuAstClass::Method | RakuAstClass::Submethod => anonymous_sub(node),
         RakuAstClass::PointyBlock => pointy_block(node),
         class if is_prefix(class) => prefix_block(node),
         _ => {}
@@ -127,10 +127,24 @@ fn anonymous_sub(node: &mut RakuAstNode) {
     if super::infix_origins::child(node, "name").is_some() {
         return;
     }
-    let Some(at) = brace_after_word(from, to) else {
+    let Some(at) = brace_after_word(from, to).or_else(|| brace_after_signature(from, to)) else {
         return;
     };
     blockoid(node, at, to);
+}
+
+/// The offset of the `{` after the parenthesized signature that follows the
+/// first word of `from..to` (`sub ($a) { ... }`), when the term ends with
+/// the `}` closing it.
+// Cost: O(n), n = length of the signature.
+fn brace_after_signature(from: usize, to: usize) -> Option<usize> {
+    super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let word = text.find(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))?;
+        let signature = text[word..].trim_start().strip_prefix('(')?;
+        let close = super::subst_origins::closing(signature, '(', ')')?;
+        let rest = signature[close + 1..].trim_start();
+        (rest.starts_with('{') && rest.ends_with('}')).then_some(to - rest.len())
+    })
 }
 
 /// `-> $x, Int $y { ... }`: the `Signature` is the parameters between the
@@ -283,5 +297,83 @@ fn blockoid(node: &mut RakuAstNode, at: usize, to: usize) {
         with_child_at(blockoid, 0, |list| {
             super::list_origins::statement_list(list, SrcSpan::new(at + 1, to - 1))
         });
+    });
+}
+
+/// `LEAVE say $x;` / `END pass "x";`: a phaser written over a statement, not
+/// a block. Its `Statement::Expression` and the expression in it cover the
+/// text after the keyword, to the end of the phaser.
+// Cost: O(n), n = length of the phaser's source.
+pub(super) fn phaser_statement(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
+    use RakuAstClass as C;
+    if !matches!(
+        node.class,
+        C::StatementPrefixPhaserBegin
+            | C::StatementPrefixPhaserCheck
+            | C::StatementPrefixPhaserInit
+            | C::StatementPrefixPhaserEnd
+            | C::StatementPrefixPhaserEnter
+            | C::StatementPrefixPhaserLeave
+            | C::StatementPrefixPhaserKeep
+            | C::StatementPrefixPhaserUndo
+            | C::StatementPrefixPhaserFirst
+            | C::StatementPrefixPhaserNext
+            | C::StatementPrefixPhaserLast
+            | C::StatementPrefixPhaserPre
+            | C::StatementPrefixPhaserPost
+            | C::StatementPrefixPhaserQuit
+            | C::StatementPrefixPhaserClose
+    ) {
+        return;
+    }
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(span) = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let keyword = text.find(char::is_whitespace)?;
+        if !text[..keyword].chars().all(|c| c.is_ascii_uppercase()) {
+            return None;
+        }
+        let body = text[keyword..].trim_start();
+        (!body.is_empty() && !body.starts_with('{')).then(|| SrcSpan::new(to - body.len(), to))
+    }) else {
+        return;
+    };
+    with_child_at(node, 0, |statement| {
+        if statement.class != RakuAstClass::StatementExpression || statement.origin.0.is_some() {
+            return;
+        }
+        super::origin::set_span(statement, span);
+        with_child_at(statement, 0, |expression| {
+            if expression.origin.0.is_none() {
+                super::origin::set_span(expression, span);
+                super::origin::named_term(expression, span);
+                super::origin::quoted_text(expression, span);
+                super::call_origins::postfix_call(expression, span);
+                super::infix_origins::derive(names, expression);
+            }
+        });
+    });
+}
+
+/// `CATCH { ... }` / `CONTROL { ... }`, a statement written at `span`: its
+/// `Block` is the braces after the keyword, to the end of the statement.
+// Cost: O(n + s), n = length of the statement's source, s = its statements.
+pub(super) fn exception_block(statement: &mut RakuAstNode, span: SrcSpan) {
+    if !matches!(
+        statement.class,
+        RakuAstClass::StatementCatch | RakuAstClass::StatementControl
+    ) {
+        return;
+    }
+    let (from, to) = (span.from as usize, span.to as usize);
+    let Some(at) = brace_after_word(from, to) else {
+        return;
+    };
+    super::infix_origins::with_child(statement, "body", |block| {
+        if block.class == RakuAstClass::Block && block.origin.0.is_none() {
+            super::origin::set_span(block, SrcSpan::new(at, to));
+            blockoid(block, at, to);
+        }
     });
 }

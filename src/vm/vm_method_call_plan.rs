@@ -68,6 +68,9 @@ pub(crate) struct MethodCallPlan {
     /// The method needs none of the general binder's optional machinery
     /// and runs in the lean frame (`vm_method_lean_frame`).
     pub(crate) lean: bool,
+    /// The lean frame may run as a slot frame (ADR-18393 stage 1,
+    /// `vm_method_slot_frame`): decided once per plan from the body's ops.
+    pub(crate) slot_frame: bool,
     /// A parameter may alias the caller's container (sigilless, `is raw`,
     /// `is rw`): whether this call binds it on the fast binder depends on
     /// where each argument came from, so a replay re-checks the argument
@@ -338,11 +341,13 @@ impl Interpreter {
             receiver,
             gate.can_skip_merge,
         );
+        let slot_frame = lean && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner);
         Some(std::sync::Arc::new(MethodCallPlan {
             owner,
             def: std::sync::Arc::clone(def),
             can_skip_merge: gate.can_skip_merge,
             lean,
+            slot_frame,
             container_params: def.has_container_params(),
         }))
     }
@@ -450,18 +455,19 @@ impl Interpreter {
         let empty_fns = CompiledFns::default();
         let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let method_result = if plan.lean && self.lean_args_ok(def, &args) {
-            self.call_compiled_method_lean(
-                &super::vm_method_lean_frame::LeanMethodCall {
-                    receiver_class_name: class_sym.as_str(),
-                    owner_sym: owner,
-                    method_sym,
-                    method_def: def,
-                    cc,
-                    compiled_fns: fns_ref,
-                },
-                args,
-                target.clone(),
-            )
+            let call = super::vm_method_lean_frame::LeanMethodCall {
+                receiver_class_name: class_sym.as_str(),
+                owner_sym: owner,
+                method_sym,
+                method_def: def,
+                cc,
+                compiled_fns: fns_ref,
+            };
+            if plan.slot_frame && self.slot_frame_entry_ok() {
+                self.call_compiled_method_slot(&call, args, target.clone())
+            } else {
+                self.call_compiled_method_lean(&call, args, target.clone())
+            }
         } else {
             self.call_compiled_method_fast(
                 class_sym.as_str(),

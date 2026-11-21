@@ -29,7 +29,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         return;
     };
     let span = |(a, b): (usize, usize)| SrcSpan::new(from + a, from + b);
-    super::regex_origins::place_adverbs(node, &layout.adverbs);
+    super::regex_adverb_origins::place_adverbs(node, &layout.adverbs);
     with_child(node, "pattern", |pattern| {
         if pattern.origin.0.is_none() {
             super::regex_origins::walk_body(names, pattern, span(layout.pattern));
@@ -181,7 +181,7 @@ fn unescaped(text: &str, delimiter: char) -> Option<usize> {
 /// matches it, counting nested pairs and skipping escaped characters and
 /// quoted strings.
 // Cost: O(n), n = bytes scanned.
-fn closing(text: &str, open: char, close: char) -> Option<usize> {
+pub(super) fn closing(text: &str, open: char, close: char) -> Option<usize> {
     let mut depth = 1usize;
     let mut quote: Option<char> = None;
     let mut chars = text.char_indices();

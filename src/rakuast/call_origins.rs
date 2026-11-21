@@ -157,6 +157,7 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
 /// its `ArgList`'s, as for a postfix call; the text starts at the dot.
 // Cost: O(n), n = length of the call's source.
 fn topic_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    super::topic_subscript_origins::place(node, span);
     place_call(node, None, span.from as usize, span, false);
 }
 
@@ -442,16 +443,22 @@ pub(super) fn parenthesized(
         [first, .., last] | [first @ last] => {
             let (first, last) = ((*first)?.0, (*last)?.1);
             let leading = text.get(..first.checked_sub(base)?)?;
-            if trivia_len(leading)? != leading.len() {
+            // An angle-quoted number (`<1+2i>`) is placed inside its
+            // brackets: an argument list it starts starts there too, one
+            // it ends runs past the `>`.
+            let lead = trivia_len(leading)?;
+            if !matches!(&leading[lead..], "" | "<") {
                 return None;
             }
-            let tail = text.get(last.checked_sub(base)?..)?;
+            let written = text.get(last.checked_sub(base)?..)?;
+            let tail = written.strip_prefix('>').unwrap_or(written);
+            let skipped = written.len() - tail.len();
             let mut end = trivia_len(tail)?;
             let to = if tail[end..].starts_with(',') {
                 end += 1;
-                last + end
+                last + skipped + end
             } else {
-                last
+                last + skipped
             };
             (trivia_len(&tail[end..])? == tail.len() - end).then_some((first, to))
         }
@@ -471,4 +478,40 @@ fn angle_close(operand: &RakuAstNode, end: u32) -> u32 {
     )
     .is_some();
     end + u32::from(angled)
+}
+
+/// `refused { ... }, "x"`: the block a listop call's arguments start with,
+/// written after the name, when the parser left it unplaced. It runs from its
+/// `{` to the `}` closing it, and its parts are derived from that range.
+// Cost: O(n), n = length of the block's text.
+pub(super) fn leading_block_argument(node: &mut RakuAstNode, name_end: usize, to: usize) {
+    use super::infix_origins::{child, child_at, with_child, with_child_at};
+    let unplaced = child(node, "args")
+        .and_then(|list| child_at(list, 0))
+        .is_some_and(|b| b.class == super::RakuAstClass::Block && b.origin.0.is_none());
+    if !unplaced {
+        return;
+    }
+    let Some(span) =
+        super::unit_source::with_text(crate::ast::SrcSpan::new(name_end, to), |text| {
+            let body = text.trim_start();
+            let lead = text.len() - body.len();
+            if lead == 0 {
+                return None;
+            }
+            let close = super::regex_block_origins::closing_brace(body)?;
+            Some(crate::ast::SrcSpan::new(
+                name_end + lead,
+                name_end + lead + close + 1,
+            ))
+        })
+    else {
+        return;
+    };
+    with_child(node, "args", |list| {
+        with_child_at(list, 0, |block| {
+            super::origin::set_span(block, span);
+            super::expr_block_origins::derive(block);
+        })
+    });
 }

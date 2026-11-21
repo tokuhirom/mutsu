@@ -1,6 +1,6 @@
 # ADR-15761: Parameter placeholders are read from `ParamDef.target`, never recognised by name
 
-- **Status**: Proposed
+- **Status**: Accepted (maintainer decision 2026-11-21)
 - **Date**: 2026-11-08
 - **Deciders**: Claude (lane:rakuast worker 19), for the maintainer's review
 - **Issue**: [#15761](https://github.com/tokuhirom/mutsu/issues/15761) (reading (A), family 1: the `ParamDef` placeholders)

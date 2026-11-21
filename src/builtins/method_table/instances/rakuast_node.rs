@@ -791,6 +791,7 @@ fn prepost_of_pos(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 pub(crate) fn children(node: &RakuAstNode) -> Vec<Value> {
     let mut out = children_without_docs(node);
+    out.splice(0..0, crate::rakuast::visit_order::of_trait_type(node));
     crate::rakuast::doc_children::insert(node, &mut out);
     out
 }

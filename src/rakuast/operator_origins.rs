@@ -31,6 +31,7 @@ pub(super) fn derive(node: &mut RakuAstNode) {
 /// `-$x`: the `Prefix` is the operator the application starts with.
 // Cost: O(o), o = length of the operator.
 fn prefix(node: &mut RakuAstNode) {
+    word_prefix(node);
     let Some((from, _)) = byte_range(node) else {
         return;
     };
@@ -78,6 +79,47 @@ fn prefix(node: &mut RakuAstNode) {
     }
 }
 
+/// `so 1` / `not $x`: a word prefix the parser left unplaced runs from the
+/// word, written before its operand after blanks, to the operand's end.
+// Cost: O(w), w = the blanks between the word and the operand.
+fn word_prefix(node: &mut RakuAstNode) {
+    if node.origin.0.is_some() {
+        return;
+    }
+    let Some(op) = child(node, "prefix")
+        .filter(|p| p.class == RakuAstClass::Prefix)
+        .and_then(leaf_text)
+        .filter(|op| op.chars().all(char::is_alphabetic))
+    else {
+        return;
+    };
+    let Some((operand_from, operand_to)) = child(node, "operand").and_then(byte_range) else {
+        return;
+    };
+    // The longest run of blanks tried between the word and the operand.
+    const BLANKS: usize = 16;
+    let start = (1..=BLANKS).find_map(|blanks| {
+        let start = operand_from.checked_sub(op.len() + blanks)?;
+        let before = start.checked_sub(1);
+        super::unit_source::with_text(SrcSpan::new(start, operand_from), |text| {
+            let rest = text.strip_prefix(op.as_str())?;
+            rest.chars().all(char::is_whitespace).then_some(())
+        })?;
+        // Not the tail of a longer word.
+        let boundary = before.is_none_or(|b| {
+            super::unit_source::with_text(SrcSpan::new(b, start), |c| {
+                (!c.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-'))
+                    .then_some(())
+            })
+            .is_some()
+        });
+        boundary.then_some(start)
+    });
+    if let Some(start) = start {
+        super::origin::set_span(node, SrcSpan::new(start, operand_to));
+    }
+}
+
 /// `$x++`: the `Postfix` is the operator written after the operand.
 // Cost: O(n), n = length of the application's source.
 fn postfix(node: &mut RakuAstNode) {
@@ -99,6 +141,33 @@ fn postfix(node: &mut RakuAstNode) {
             super::unit_source::with_text(SrcSpan::new(from, to), |text| {
                 text.starts_with('*').then_some(from + 1)
             })
+        }
+        // `0.0i` / `3e2i`: a numeric literal written right before the
+        // operator, which the parser read as one token.
+        None if operand.is_some_and(|o| {
+            matches!(
+                o.class,
+                RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::NumLiteral
+            )
+        }) =>
+        {
+            let op = child(node, "postfix")
+                .filter(|p| p.class == RakuAstClass::Postfix)
+                .and_then(leaf_text);
+            let end = op.and_then(|op| {
+                super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+                    let number = text.strip_suffix(op.as_str())?;
+                    number
+                        .starts_with(|c: char| c.is_ascii_digit())
+                        .then_some(from + number.len())
+                })
+            });
+            if let Some(end) = end {
+                with_child(node, "operand", |o| {
+                    super::origin::set_span(o, SrcSpan::new(from, end))
+                });
+            }
+            end
         }
         None => None,
     };

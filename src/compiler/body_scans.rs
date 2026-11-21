@@ -35,7 +35,9 @@ impl<'ast> Visit<'ast> for LetScan {
         }
         match stmt {
             Stmt::Let { is_temp, .. } if !self.real_only || !*is_temp => self.found = true,
-            Stmt::TempMethodAssign { .. } if !self.real_only => self.found = true,
+            Stmt::TempMethodAssign { is_let, .. } if !self.real_only || *is_let => {
+                self.found = true
+            }
             // A loop body owns a save frame per iteration
             // (`Compiler::loop_body_let_frame`); only the loop's header
             // runs in this block.

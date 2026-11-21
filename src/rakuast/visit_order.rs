@@ -23,3 +23,29 @@ pub(crate) fn reorder(node: &RakuAstNode, fields: &mut Vec<&RakuAstField>) {
         fields.insert(to, field);
     }
 }
+
+/// `my @a of Int`: a declaration with no type of its own takes its `of`
+/// trait's, which Rakudo answers as `.type` and visits first.
+// Cost: O(t), t = traits of `node`.
+pub(crate) fn of_trait_type(node: &RakuAstNode) -> Option<crate::value::Value> {
+    use super::RakuAstFieldValue;
+    use crate::value::ValueView;
+    if node.class != RakuAstClass::VarDeclarationSimple
+        || node.fields.iter().any(|f| f.name == Some("type"))
+    {
+        return None;
+    }
+    let field = node.fields.iter().find(|f| f.name == Some("traits"))?;
+    let RakuAstFieldValue::List(traits) = &field.value else {
+        return None;
+    };
+    traits.iter().find_map(|t| match t.view() {
+        ValueView::RakuAst(t) if t.class == RakuAstClass::TraitOf => {
+            match &t.fields.first()?.value {
+                RakuAstFieldValue::Node(ty) => Some(ty.clone()),
+                _ => None,
+            }
+        }
+        _ => None,
+    })
+}

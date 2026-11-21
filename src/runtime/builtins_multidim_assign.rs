@@ -1055,7 +1055,9 @@ impl Interpreter {
 
     /// `temp $obj.attr = v`: remember what `$obj.attr` holds now, to put back
     /// through the same rw accessor when the scope exits (#16144). Arguments:
-    /// invocant, method name, method arguments (an array). Answers `Nil`.
+    /// invocant, method name, method arguments (an array), and optionally
+    /// whether this is a `temp` (the default) rather than a `let`, which
+    /// restores only when its scope fails (#18392). Answers `Nil`.
     // Cost: O(1) plus the accessor call and the snapshot of its value.
     pub(super) fn builtin_temp_method_save(
         &mut self,
@@ -1075,7 +1077,8 @@ impl Interpreter {
         };
         let old = self.call_method_with_values(target.clone(), &method, method_args.clone())?;
         let old = old.deref_container();
-        self.let_saves_push_method_attr(target, method, method_args, old);
+        let is_temp = args.get(3).is_none_or(|flag| flag.truthy());
+        self.let_saves_push_method_attr(target, method, method_args, old, is_temp);
         Ok(Value::NIL)
     }
 

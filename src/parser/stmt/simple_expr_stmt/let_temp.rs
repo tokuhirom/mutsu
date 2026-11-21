@@ -8,6 +8,9 @@ use crate::parser::stmt::modifier::parse_statement_modifier;
 use crate::parser::stmt::pub_shims::ident_pub;
 use crate::value::Value;
 
+mod method_lvalue;
+use method_lvalue::method_lvalue_temporize;
+
 /// A `temp` / `let` the parser builds in its RakuAST shape: the prefix over its
 /// lvalue and the assignment that follows (`ParsedStmt::Temporize`), lowered
 /// to the save the compiler runs.
@@ -149,6 +152,13 @@ fn assigned_value(sigil: char, input: &str) -> PResult<'_, Expr> {
 pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("let", input).ok_or_else(|| PError::expected("let statement"))?;
     let (rest, _) = ws1(rest)?;
+    // `let $obj.m = v`, `let Type.m = v`, a bare `let $obj.m;` (#18392).
+    if let Ok((expr_rest, expr)) = expression(rest)
+        && let Some(parsed) =
+            method_lvalue_temporize(&crate::parser::lowered_assignment(expr), expr_rest, false)
+    {
+        return parsed;
+    }
     // Parse sigil + var name
     let sigil = rest
         .chars()
@@ -277,37 +287,6 @@ fn temp_declaration_stmt(input: &str) -> Option<PResult<'_, Stmt>> {
     Some(parse_statement_modifier(rest, stmt))
 }
 
-/// The type a `temp Type.method …` names: a bare name, or one an import spelled.
-/// A unit that imported through a `sub EXPORT` hook parses every bareword as
-/// an imported term (`ParsedExpr::ImportedTerm`), so `temp Bla.^table = …`
-/// after `use Red` names its type that way (#18377).
-fn type_object_invocant_name(invocant: &Expr) -> Option<&str> {
-    let invocant = match invocant {
-        Expr::Spelled(spelled) => &spelled.expr,
-        other => other,
-    };
-    match invocant {
-        Expr::BareWord(name) => Some(name),
-        Expr::Ast(node) => match node.as_ref() {
-            crate::ast::parsed::ParsedExpr::ImportedTerm(name) => Some(name),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// The variable a `temp <invocant>.method …` saves: a plain scalar `$obj`, or
-/// `self` — spelled `self` or as the `$.attr` invocant carrier, which the
-/// parser leaves as the collapsed anonymous-state name `__ANON_STATE#`.
-fn temp_method_invocant_name(invocant: &Expr) -> Option<String> {
-    match invocant {
-        Expr::Var(name) if name == "__ANON_STATE#" => Some("self".to_string()),
-        Expr::Var(name) => Some(name.clone()),
-        Expr::BareWord(name) if name == "self" => Some("self".to_string()),
-        _ => None,
-    }
-}
-
 /// Parse `temp` statement — same semantics as `let` (save/restore at scope exit).
 pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("temp", input).ok_or_else(|| PError::expected("temp statement"))?;
@@ -363,156 +342,8 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 temporize(true, Target::Element(expr), Assigned::No)?,
             );
         }
-        // temp on lvalue method call: `temp $obj.method = value`, where the
-        // expression parser has already lowered `$obj.method = value` to the
-        // `__mutsu_assign_method_lvalue` writeback call (an rw-accessor assignment
-        // is a full expression). Recover the pieces to save/restore the target.
-        if let Some(parts) = crate::rakuast::method_lvalue_call_parts(&expr)
-            && let Expr::Call { args, .. } = &expr
-            && args.len() == 5
-            && let Some(var_name) = temp_method_invocant_name(parts.invocant)
-        {
-            return parse_statement_modifier(
-                expr_rest,
-                Stmt::TempMethodAssign {
-                    var_name,
-                    method_name: parts.method_name.to_string(),
-                    method_args: parts.method_args.to_vec(),
-                    value: parts.value.clone(),
-                    is_attribute: matches!(parts.invocant, Expr::Var(name) if name == "__ANON_STATE#"),
-                    type_invocant: false,
-                    invocant_expr: None,
-                },
-            );
-        }
-        // `temp @a[0].n = value` / `temp %h<k>.n = value`: the invocant is an
-        // element, so the object it holds (not a variable) is what the
-        // attribute is saved on and restored through (#16165).
-        if let Some(parts) = crate::rakuast::method_lvalue_call_parts(&expr)
-            && let Expr::Call { args, .. } = &expr
-            && args.len() == 5
-            && matches!(parts.invocant, Expr::Index { .. })
-        {
-            return parse_statement_modifier(
-                expr_rest,
-                Stmt::TempMethodAssign {
-                    var_name: String::new(),
-                    method_name: parts.method_name.to_string(),
-                    method_args: parts.method_args.to_vec(),
-                    value: parts.value.clone(),
-                    is_attribute: false,
-                    type_invocant: false,
-                    invocant_expr: Some(Box::new(parts.invocant.clone())),
-                },
-            );
-        }
-        // `temp Type.^meta = value` / `temp Type.method = value`: a type object
-        // is not a variable `LetSave` could snapshot, so the compiler saves what
-        // the rw call yields and writes it back when the enclosing scope leaves.
-        if let Some(parts) = crate::rakuast::method_lvalue_call_parts(&expr)
-            && let Expr::Call { args, .. } = &expr
-            && args.len() == 5
-            && let Some(type_name) = type_object_invocant_name(parts.invocant)
-            && type_name != "self"
-        {
-            return parse_statement_modifier(
-                expr_rest,
-                Stmt::TempMethodAssign {
-                    var_name: type_name.to_string(),
-                    method_name: parts.method_name.to_string(),
-                    method_args: parts.method_args.to_vec(),
-                    value: parts.value.clone(),
-                    is_attribute: false,
-                    type_invocant: true,
-                    invocant_expr: None,
-                },
-            );
-        }
-        // temp on a compound assignment through a method lvalue:
-        // `temp $obj.indent ~= '  '`, `temp $.indent ~= '  '` (CSS::Writer).
-        // The expanded writeback call already carries the combined value
-        // (`$obj.indent ~ '  '`), so temporize the invocant exactly as the
-        // plain `temp $obj.method = value` form above does.
-        if let Expr::CompoundAssign {
-            target, expanded, ..
-        } = &expr
-            && let Expr::MethodCall {
-                target: invocant,
-                name: method_name,
-                args: method_args,
-                ..
-            } = target.as_ref()
-            && let element = matches!(invocant.as_ref(), Expr::Index { .. })
-            && let Some(var_name) =
-                temp_method_invocant_name(invocant).or_else(|| element.then(String::new))
-            && let Some(parts) = crate::rakuast::method_lvalue_call_parts(expanded)
-        {
-            return parse_statement_modifier(
-                expr_rest,
-                Stmt::TempMethodAssign {
-                    var_name,
-                    method_name: method_name.resolve(),
-                    method_args: method_args.clone(),
-                    value: parts.value.clone(),
-                    is_attribute: matches!(invocant.as_ref(), Expr::Var(name) if name == "__ANON_STATE#"),
-                    type_invocant: false,
-                    invocant_expr: element.then(|| invocant.clone()),
-                },
-            );
-        }
-        // `temp $.attr = value` / `temp $.attr ~= value`: the `$.attr` lvalue
-        // is `self.attr`, so it is the method-lvalue form on `self`. The
-        // compound form's expansion is the plain assignment of the combined
-        // value.
-        let plain_assign = match &expr {
-            Expr::CompoundAssign { expanded, .. } => expanded.as_ref(),
-            other => other,
-        };
-        if let Expr::AssignExpr {
-            name,
-            expr: value,
-            is_bind: false,
-        } = plain_assign
-            && let Some(method_name) = name.strip_prefix('.')
-            && method_name.starts_with(crate::parser::helpers::is_raku_identifier_start)
-        {
-            return parse_statement_modifier(
-                expr_rest,
-                Stmt::TempMethodAssign {
-                    var_name: "self".to_string(),
-                    method_name: method_name.to_string(),
-                    method_args: Vec::new(),
-                    value: (**value).clone(),
-                    is_attribute: true,
-                    type_invocant: false,
-                    invocant_expr: None,
-                },
-            );
-        }
-        // temp on lvalue method call: `temp $obj.method = value`
-        let (expr_rest_ws, _) = ws(expr_rest)?;
-        if expr_rest_ws.starts_with('=')
-            && !expr_rest_ws.starts_with("==")
-            && let Expr::MethodCall {
-                target, name, args, ..
-            } = expr
-            && let Expr::Var(var_name) = target.as_ref()
-        {
-            let rhs_rest = &expr_rest_ws[1..];
-            let (rhs_rest, _) = ws(rhs_rest)?;
-            let (rhs_rest, rhs_expr) = expression(rhs_rest)?;
-            return parse_statement_modifier(
-                rhs_rest,
-                Stmt::TempMethodAssign {
-                    var_name: var_name.clone(),
-                    method_name: name.resolve(),
-                    method_args: args,
-                    value: rhs_expr,
-                    is_attribute: false,
-                    type_invocant: false,
-                    invocant_expr: None,
-                },
-            );
+        if let Some(parsed) = method_lvalue_temporize(&expr, expr_rest, true) {
+            return parsed;
         }
     }
     // temp undefine($var) [= value]:
