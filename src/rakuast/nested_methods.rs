@@ -287,7 +287,16 @@ fn was_hoisted(stmt: &Stmt) -> bool {
 /// it stood for, and the copies `hoist` appended are dropped. The RakuAST
 /// reader renders a package from this form (rakudo's tree has the
 /// declaration where it was written), and its lowering hoists again.
-pub(crate) fn unhoist(body: &[Stmt]) -> Vec<Stmt> {
+///
+/// A body `hoist` left alone is the body as written already, and is borrowed:
+/// a copy would move every term away from the slot its origin was recorded
+/// at (`expr_origins::of`).
+// Cost: O(s) when nothing was hoisted, s = statements of `body`; O(n)
+// otherwise, n = size of the body.
+pub(crate) fn unhoist(body: &[Stmt]) -> std::borrow::Cow<'_, [Stmt]> {
+    if !body.iter().any(was_hoisted) {
+        return std::borrow::Cow::Borrowed(body);
+    }
     let mut methods: Vec<Option<Stmt>> = Vec::new();
     let mut written = Vec::with_capacity(body.len());
     for stmt in body {
@@ -338,5 +347,5 @@ pub(crate) fn unhoist(body: &[Stmt]) -> Vec<Stmt> {
     for stmt in &mut written {
         crate::ast_visit::VisitMut::visit_stmt_mut(&mut restore, stmt);
     }
-    written
+    std::borrow::Cow::Owned(written)
 }

@@ -417,7 +417,11 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
         child(node, "args").and_then(|list| {
             let first = child_at(list, 0).and_then(byte_range)?;
             let last = child_at(list, list.fields.len().checked_sub(1)?).and_then(byte_range)?;
+            // `say :{ 1 => 2 }`: an object hash's range starts at its `{`.
+            let brace =
+                super::unit_source::with_text_from(first.0, |t| t.starts_with('{').then_some(()));
             let gap = super::unit_source::with_text(SrcSpan::new(name_end, first.0), |gap| {
+                let gap = brace.and(gap.strip_suffix(':')).unwrap_or(gap);
                 gap.chars().all(char::is_whitespace).then_some(())
             });
             (gap.is_some() && last.1 == to).then_some((first.0, last.1))
@@ -461,6 +465,8 @@ fn initializer(names: &NameScope, node: &mut RakuAstNode) {
         return;
     }
     let op_at = super::unit_source::with_text(SrcSpan::new(from, expr_from), |before| {
+        // `my %o = :{ 1 => 2 }`: an object hash's range starts at its `{`.
+        let before = before.strip_suffix(':').unwrap_or(before);
         let head = before.trim_end().strip_suffix(op)?;
         // `==`, `::=` and the like are other operators.
         (!head.ends_with(['=', ':', '!', '<', '>', '~'])).then_some(from + head.len())
