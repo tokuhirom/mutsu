@@ -55,8 +55,11 @@ pub(super) fn meta_item(node: &mut RakuAstNode) {
     }
     let written = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let name = text.strip_prefix("$.^")?;
-        (!name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')))
-            .then_some(())
+        (!name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')))
+        .then_some(())
     });
     if written.is_none() {
         return;
