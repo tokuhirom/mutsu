@@ -26,6 +26,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             initializer(node);
             super::decl_origins::derive(names, node);
         }
+        // `\(1, 2)`: the capture's arguments.
+        RakuAstClass::TermCapture => super::capture_term::arg_list_origin(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
         RakuAstClass::VarDeclarationConstant => initializer(node),
         RakuAstClass::VarDeclarationSignature => {
