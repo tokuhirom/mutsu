@@ -32,18 +32,11 @@ use crate::ast_visit::{Visit, walk_expr, walk_stmt, walk_stmts};
 use super::SUPPLY_EMITTER_PREFIX;
 use crate::ast::parsed::ParsedExpr;
 
-/// Returns the 1-based source line of the first `whenever` block found outside
-/// the scope of a `react`/`supply` block, or `None` if every `whenever` is
-/// properly scoped.
-// Cost: O(n), n = size of the AST.
-pub(crate) fn find_out_of_scope_whenever(stmts: &[Stmt]) -> Option<i64> {
-    let mut scan = WheneverScope::default();
-    walk_stmts(&mut scan, stmts);
-    scan.found
-}
-
+/// The scan for the first `whenever` block outside the scope of a
+/// `react`/`supply` block; `unit_passes` feeds it one top-level statement at a
+/// time. Cost: O(n), n = size of the AST.
 #[derive(Default)]
-struct WheneverScope {
+pub(super) struct WheneverScope {
     /// Whether some `react`/`supply` block lexically encloses the current node.
     in_scope: bool,
     line: i64,
@@ -51,6 +44,12 @@ struct WheneverScope {
 }
 
 impl WheneverScope {
+    /// The line of the first `whenever` found out of scope so far.
+    // Cost: O(1).
+    pub(super) fn found(&self) -> Option<i64> {
+        self.found
+    }
+
     fn scoped(&mut self, in_scope: bool, f: impl FnOnce(&mut Self)) {
         let saved = std::mem::replace(&mut self.in_scope, in_scope);
         f(self);
