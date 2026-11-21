@@ -3295,6 +3295,10 @@ pub(crate) enum Stmt {
         scope: u32,
     },
     ProtoDecl {
+        /// Where its name, signature and block were written (ADR-10723
+        /// Stage 2; `None` for a built or copied declaration).
+        #[serde(default)]
+        spans: Option<Box<parsed::RoutineSpans>>,
         name: Symbol,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
