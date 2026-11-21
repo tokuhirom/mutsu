@@ -46,7 +46,9 @@ pub(super) fn in_parentheses(list: &mut RakuAstNode, inside: SrcSpan) {
     }) else {
         return;
     };
-    with_child_at(list, 0, |statement| super::origin::set_span(statement, span));
+    with_child_at(list, 0, |statement| {
+        super::origin::set_span(statement, span)
+    });
 }
 
 /// `do for @a { }`: the statement-control statement a statement prefix
