@@ -82,6 +82,7 @@ pub(super) struct UnitFinalizer<'s> {
 impl<'s> UnitFinalizer<'s> {
     /// Begin finalizing the unit whose top-level statements are `unit`.
     // Cost: O(n), n = size of the unit (its lookahead inputs).
+    #[inline]
     pub(super) fn begin(names: &'s NameScope, unit: &[Stmt]) -> Self {
         let executing = Executing::enter();
         // The lowering of a converted construct builds no spellings either.
@@ -127,6 +128,7 @@ impl<'s> UnitFinalizer<'s> {
 
     /// Finalize the unit's next top-level statement.
     // Cost: O(s), s = size of the statement.
+    #[inline]
     pub(super) fn commit(&mut self, stmt: &mut Stmt) {
         let index = self.next;
         self.next += 1;
@@ -136,6 +138,7 @@ impl<'s> UnitFinalizer<'s> {
     /// The unit's statements are all committed: `stmts` is the finalized
     /// unit, put through the passes that need it whole.
     // Cost: O(n), n = size of the unit.
+    #[inline]
     pub(super) fn finish(mut self, stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
         // The unit's own list is closed.
         drop(self._top_scope);
