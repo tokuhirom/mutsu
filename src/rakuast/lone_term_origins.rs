@@ -377,3 +377,58 @@ pub(super) fn variable_before_operator(node: &mut RakuAstNode) {
         super::origin::set_span(left, SrcSpan::new(at, at + name.len()))
     });
 }
+
+/// `try die "x" for 1` / `do (1) for 1`: the statement a prefix holds, with a
+/// statement modifier, runs from after the keyword to the modifier's end; an
+/// unplaced expression before the modifier is placed from a fragment parse
+/// of its text.
+// Cost: O(n), n = length of the prefix's text, plus the parse of it.
+pub(super) fn prefixed_modified_statement(node: &mut RakuAstNode) {
+    use super::infix_origins::{byte_range, child, child_at, with_child, with_child_at};
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(statement) = child_at(node, 0)
+        .filter(|s| s.class == RakuAstClass::StatementExpression && s.origin.0.is_none())
+    else {
+        return;
+    };
+    let Some(modifier) = ["condition-modifier", "loop-modifier"]
+        .into_iter()
+        .find_map(|name| child(statement, name).and_then(byte_range))
+    else {
+        return;
+    };
+    if modifier.0 <= from || modifier.1 > to {
+        return;
+    }
+    // The keyword, then blanks, then the statement.
+    let Some((body, written)) =
+        super::unit_source::with_text(SrcSpan::new(from, modifier.0), |text| {
+            let keyword = text.find(|c: char| !c.is_alphanumeric())?;
+            let rest = &text[keyword..];
+            let after = rest.trim_start();
+            if keyword == 0 || after.len() == rest.len() {
+                return None;
+            }
+            let written = after.trim_end();
+            (!written.is_empty()).then(|| (from + (text.len() - after.len()), written.to_string()))
+        })
+    else {
+        return;
+    };
+    let names = crate::scope::NameScope::default();
+    with_child_at(node, 0, |statement| {
+        with_child(statement, "expression", |expression| {
+            if expression.origin.0.is_none() {
+                super::fragment_origins::expression(&names, expression, &written, body);
+            }
+        });
+        let placed = child(statement, "expression")
+            .and_then(byte_range)
+            .is_some_and(|(start, end)| start == body && end == body + written.len());
+        if placed {
+            super::origin::set_span(statement, SrcSpan::new(body, modifier.1));
+        }
+    });
+}
