@@ -202,6 +202,13 @@ fn apply_infix(node: &mut RakuAstNode) {
         super::hyper_infix_origins::place(node, left, right);
         return;
     }
+    if child(node, "infix")
+        .and_then(|i| child_at(i, 0))
+        .is_some_and(|i| i.class == RakuAstClass::MetaInfixHyper)
+    {
+        super::hyper_infix_origins::place_assign(node, left, right);
+        return;
+    }
     let Some((text, inner)) = child(node, "infix").and_then(super::infix_spelling::written) else {
         return;
     };
