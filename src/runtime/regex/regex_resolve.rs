@@ -118,25 +118,17 @@ impl Interpreter {
         Some(adverb.to_string())
     }
 
-    /// Check if a regex pattern's own token list has a bare code block `{}`.
-    ///
-    /// Gates the eager-code-block buffer (`enable_eager_code_blocks`), which makes a
-    /// plain `{ … }` block's side effects survive a failed parse. LTM no longer uses
-    /// this: `declarative_prefix_match_len` applies the terminate/skip rules inside
-    /// the matcher, which — unlike this predicate — also sees through subrules.
-    pub(crate) fn has_code_block_in_prefix(&self, pattern: &str) -> bool {
-        let Some(parsed) = self.parse_regex(pattern) else {
-            return false;
-        };
-        parsed.tokens.iter().any(|t| {
-            matches!(
-                &t.atom,
-                RegexAtom::CodeAssertion {
-                    is_assertion: false,
-                    ..
-                }
-            )
-        })
+    /// Whether a regex pattern holds a code atom (`{ … }`, `<?{ … }>`,
+    /// `:my …;`) anywhere at its own capture level, nested groups and
+    /// alternatives included. A search that must run the pattern's code (and
+    /// so its side effects) takes the capturing engine path for it: `.comb`
+    /// on `/[ a { $n++ } | b ]/` skipped the block when only the top-level
+    /// tokens were checked (#18529).
+    // Cost: O(1) after the first call for a pattern (the parse and the answer
+    // are memoized); O(p) on the first, p = pattern atoms.
+    pub(crate) fn pattern_runs_code(&self, pattern: &str) -> bool {
+        self.parse_regex(pattern)
+            .is_some_and(|parsed| super::regex_helpers::pattern_contains_code(&parsed))
     }
 
     /// Compute the declarative prefix match length against actual input text:
