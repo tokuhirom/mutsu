@@ -24,6 +24,8 @@ fn enclosing(
 fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
     let mut leading: HashMap<usize, Vec<&Comment>> = HashMap::new();
     let mut trailing: HashMap<usize, Vec<&Comment>> = HashMap::new();
+    // Where each owner's comments start and end.
+    let mut spans: HashMap<usize, (usize, usize)> = HashMap::new();
     for (&at, comment) in &t.comments {
         let owner = if comment.trailing {
             t.sites
@@ -41,6 +43,8 @@ fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
                 &mut leading
             };
             texts.entry(owner).or_default().push(comment);
+            let span = spans.entry(owner).or_insert((at, comment.end));
+            *span = (span.0.min(at), span.1.max(comment.end));
         }
     }
     let mut docs: HashMap<usize, DeclDoc> = HashMap::new();
@@ -63,6 +67,13 @@ fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
         let doc = docs.entry(owner).or_default();
         doc.trailing = Some(join(&comments));
         doc.trailing_lines = raws(&comments);
+    }
+    for (owner, (from, to)) in spans {
+        if let (Some(doc), Ok(from), Ok(to)) =
+            (docs.get_mut(&owner), u32::try_from(from), u32::try_from(to))
+        {
+            doc.span = Some((from, to));
+        }
     }
     docs
 }

@@ -58,10 +58,10 @@ pub(crate) fn bracketed_comment_len(input: impl Iterator<Item = char>) -> Option
 }
 
 /// The length of the whitespace and comments `text` starts with: plain `#`
-/// line comments and embedded ``#`(...)`` comments. `None` when the run holds
-/// what Rakudo keeps as a node of its own (Pod, a `#|` / `#=` declarator
-/// comment) or an unterminated comment, so a caller placing statements around
-/// it can tell it cannot.
+/// line comments, embedded ``#`(...)`` comments and `#|` / `#=` declarator
+/// comments. `None` when the run holds what Rakudo keeps as a node of its own
+/// (Pod) or an unterminated comment, so a caller placing statements around it
+/// can tell it cannot.
 // Cost: O(n), n = length of the run.
 pub(crate) fn trivia_len(text: &str) -> Option<usize> {
     let mut at = 0;
@@ -74,8 +74,16 @@ pub(crate) fn trivia_len(text: &str) -> Option<usize> {
             at += blank;
             continue;
         }
-        if rest.starts_with("#|") || rest.starts_with("#=") {
-            return None;
+        // A `#|` / `#=` declarator comment is documentation of a declaration
+        // (`WHY`), not a node among the statements: rakudo 2026.11 places the
+        // statements around it as around any comment. Its bracketed form
+        // (`#|(...)`) is read like an embedded comment.
+        if (rest.starts_with("#|") || rest.starts_with("#="))
+            && let Some(span) = bracketed_comment_len(rest.chars())
+        {
+            at += span.bytes;
+            line_start = false;
+            continue;
         }
         if rest.starts_with("#\x60") {
             at += bracketed_comment_len(rest.chars())?.bytes;
@@ -167,10 +175,12 @@ mod tests {
     fn trivia_and_terminators() {
         assert_eq!(trivia_len("  # c\n  #\x60(x) 1"), Some(14));
         assert_eq!(trivia_len("\n=begin pod\n"), None);
-        assert_eq!(trivia_len(" #| doc\n"), None);
+        // Declarator comments are trivia, line and bracketed forms alike.
+        assert_eq!(trivia_len(" #| doc\n"), Some(8));
+        assert_eq!(trivia_len("#|( a\n b ) 1"), Some(11));
         assert_eq!(terminators_end(" ;; # c\n ; }"), Some(10));
         assert_eq!(terminators_end(" # c\n }"), Some(0));
-        assert_eq!(terminators_end("; #= d\n;"), None);
+        assert_eq!(terminators_end("; #= d\n;"), Some(8));
         assert_eq!(statement_list_end(" # c\n 1 ; # d\n", 6, 7), Some(9));
         assert_eq!(statement_list_end(" 1; x", 1, 2), None);
     }
