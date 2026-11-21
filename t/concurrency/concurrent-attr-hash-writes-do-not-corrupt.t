@@ -1,19 +1,21 @@
 use Test;
 
-# #11701: Method::Protected's test hammers one `has %!hash` from three threads.
-# With its lock not in effect the process died with SIGSEGV in
-# `drop_in_place::<GcBox<HashData>>` (3 of 8 runs of the bare version below on a
-# release build), and the runs that finished reported `.elems` of 697..803 for
-# 702 possible keys -- a torn map. Rakudo promises no atomicity here, but it does
-# not corrupt its heap either (ADR-0068; docs/security.md "Memory safety").
+# #11701: Method::Protected's test hammers one `has %!hash` from three threads
+# under its lock. With the lock not in effect the process died with SIGSEGV in
+# `drop_in_place::<GcBox<HashData>>`. The structure writes are since serialized
+# on the ADR-0068 stripes.
 #
-# Each block hammers one container for a fixed number of iterations from three
-# threads and then asserts the one thing that must hold whatever the
-# interleaving: the structure is intact (every key is distinct and present in
-# the set of keys that could have been written). The old build died before the
-# assertion or failed it.
+# ADR-12814 (#18430): the guarantee is rakudo's. A program that synchronizes
+# its shared hash is memory-safe and loses no update; one that races a hash
+# from several threads with no synchronization has no defined result. rakudo
+# 2026.11 dies on the unsynchronized version of every block below
+# (`MoarVM oops: MVM_str_hash_fetch_nocheck called with a stale hashtable
+# pointer`, 6 runs of 6), and mutsu panicked on it about one run in fifteen, so
+# that version is no longer asserted here. Each block synchronizes every access
+# with a `Lock`, as Raku asks, and checks both the structure and the exact
+# result the serialization implies.
 
-plan 8;
+plan 9;
 
 my @words = (('a'..'z').list, (('a'..'z') X~ ('a'..'z')).list).flat.list;   # 702 keys
 my %legal = @words.map({ $_ => True });
@@ -24,18 +26,22 @@ sub hammer(&body) {
 
 # `%!h{$k}++` in a method: the read-modify-write route (PostIncrementIndex).
 {
-    class Counter { has %!h; method hit { %!h{@words.pick}++ }
-                    method keys-seen { %!h.keys.sort.list } }
+    class Counter { has %!h; has $!lock = Lock.new;
+                    method hit { $!lock.protect: { %!h{@words.pick}++ } }
+                    method keys-seen { %!h.keys.sort.list }
+                    method total { [+] %!h.values } }
     my $c = Counter.new;
     hammer({ $c.hit });
     my @k = $c.keys-seen;
     is @k.elems, @k.unique.elems, 'incr: every key is distinct';
     ok @k.all ~~ %legal, 'incr: no key outside the written set';
+    is $c.total, 3 * 6000, 'incr: no update is lost';
 }
 
 # `%!h{$k}:delete` interleaved with inserts.
 {
-    class Churn { has %!h; method go { %!h{@words.pick} = 1; %!h{@words.pick}:delete }
+    class Churn { has %!h; has $!lock = Lock.new;
+                  method go { $!lock.protect: { %!h{@words.pick} = 1; %!h{@words.pick}:delete } }
                   method keys-seen { %!h.keys.sort.list } }
     my $c = Churn.new;
     hammer({ $c.go });
@@ -44,33 +50,26 @@ sub hammer(&body) {
     ok @k.all ~~ %legal, 'delete: no key outside the written set';
 }
 
-# A leaf read (`.keys`, `.elems`) racing a structural write.
+# A leaf read (`.keys`, `.elems`) interleaved with a structural write.
 {
-    class Reader { has %!h; method go { %!h{@words.pick} = 1; %!h.keys.elems } }
+    class Reader { has %!h; has $!lock = Lock.new;
+                   method go { $!lock.protect: { %!h{@words.pick} = 1; %!h.keys.elems } } }
     my $c = Reader.new;
     my $max = 0;
-    hammer({ $max max= $c.go });
+    my $max-lock = Lock.new;
+    hammer({ my $n = $c.go; $max-lock.protect: { $max max= $n } });
     ok $max <= 702, 'read: .keys.elems never exceeds the possible key count';
 }
 
 # The same read-modify-write on a file-scope hash a method reaches by name.
 {
     my %shared;
-    class Global { method hit { %shared{@words.pick}++ } }
+    my $lock = Lock.new;
+    class Global { method hit { $lock.protect: { %shared{@words.pick}++ } } }
     my $g = Global.new;
     hammer({ $g.hit });
     my @k = %shared.keys.sort.list;
     is @k.elems, @k.unique.elems, 'file-scope hash: every key is distinct';
     ok @k.all ~~ %legal, 'file-scope hash: no key outside the written set';
-}
-
-# The lock that motivated all this still excludes: with every access inside
-# `Lock.protect` no update may be lost.
-{
-    class Locked { has %!h; has $.lock = Lock.new;
-                   method hit { $!lock.protect: { %!h{@words.pick}++ } }
-                   method total { [+] %!h.values } }
-    my $c = Locked.new;
-    hammer({ $c.hit });
-    is $c.total, 3 * 6000, 'a Lock.protect-ed increment loses no update';
+    is ([+] %shared.values), 3 * 6000, 'file-scope hash: no update is lost';
 }
