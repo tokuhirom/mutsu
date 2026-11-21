@@ -77,7 +77,7 @@ pub(super) fn segments(
                 next.filter(|&next| {
                     next > cursor && literal_matches(&segment, cursor, next, indent)
                 })
-                    .map(|next| (cursor, next))
+                .map(|next| (cursor, next))
             }
             RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
                 variable_at(&segment, cursor, end)
@@ -119,7 +119,9 @@ fn body(text: &str) -> Option<(usize, usize)> {
     // `Q:s|$n|` / `q:c{...}`: the adverbs that make the quote interpolate.
     let mut adverbs = 0;
     while let Some(after) = rest.strip_prefix(':') {
-        let len = after.find(|c: char| !c.is_alphanumeric()).unwrap_or(after.len());
+        let len = after
+            .find(|c: char| !c.is_alphanumeric())
+            .unwrap_or(after.len());
         // `:c` closures are kept in a shape of their own; other adverbs
         // (`:!s`, `:to`) are not read here.
         if !matches!(
@@ -145,12 +147,8 @@ fn body(text: &str) -> Option<(usize, usize)> {
         '/' | '|' | '!' if !prefix.is_empty() => open,
         _ => return None,
     };
-    text.ends_with(close).then(|| {
-        (
-            prefix_len + open.len_utf8(),
-            text.len() - close.len_utf8(),
-        )
-    })
+    text.ends_with(close)
+        .then(|| (prefix_len + open.len_utf8(), text.len() - close.len_utf8()))
 }
 
 /// Whether the byte at `at` is escaped by an odd run of backslashes.
@@ -444,19 +442,18 @@ pub(super) fn heredoc(
     if !written.is_some() {
         return;
     }
-    let indent = stop
-        .chars()
-        .take_while(|c| matches!(c, ' ' | '\t'))
-        .count();
-    let single_literal = node.fields.iter_mut().find(|f| f.name == Some("segments")).and_then(|f| {
-        match &mut f.value {
+    let indent = stop.chars().take_while(|c| matches!(c, ' ' | '\t')).count();
+    let single_literal = node
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("segments"))
+        .and_then(|f| match &mut f.value {
             RakuAstFieldValue::List(items) => match items.as_mut_slice() {
                 [only] => Some(only),
                 _ => None,
             },
             _ => None,
-        }
-    });
+        });
     if let Some(only) = single_literal
         && let ValueView::RakuAst(text) = only.view()
         && text.class == RakuAstClass::StrLiteral
@@ -466,5 +463,11 @@ pub(super) fn heredoc(
         *only = Value::rakuast(Box::new(text));
         return;
     }
-    segments(names, node, written.from as usize, written.to as usize, indent);
+    segments(
+        names,
+        node,
+        written.from as usize,
+        written.to as usize,
+        indent,
+    );
 }
