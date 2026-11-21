@@ -351,3 +351,21 @@ pub(super) fn declares_export_stash(code: &str) -> bool {
 #[cfg(test)]
 #[path = "source_scan_tests.rs"]
 mod tests;
+
+/// Whether a module with a `sub EXPORT` hook may re-export what its own
+/// `use`s imported: its source names another module's export stash
+/// (`Other::EXPORT::DEFAULT`) or a lexical pseudo-stash holding the imports
+/// (`UNIT::`, `MY::`, `OUTER::`, `LEXICAL::`, `CALLER::`).
+// Cost: O(n), n = source bytes (one scan per pattern).
+pub(super) fn hook_may_reexport_imports(code: &str) -> bool {
+    [
+        "EXPORT::",
+        "UNIT::",
+        "MY::",
+        "OUTER::",
+        "LEXICAL::",
+        "CALLER::",
+    ]
+    .iter()
+    .any(|stash| code.contains(stash))
+}
