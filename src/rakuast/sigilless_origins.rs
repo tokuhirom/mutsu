@@ -13,12 +13,12 @@ pub(super) fn name(node: &mut RakuAstNode) {
     let Some((from, to)) = super::infix_origins::byte_range(node) else {
         return;
     };
-    let Some(text) = super::infix_origins::child(node, "name")
-        .and_then(|name| match super::name_parts::name_shape(name)? {
+    let Some(text) = super::infix_origins::child(node, "name").and_then(|name| {
+        match super::name_parts::name_shape(name)? {
             super::name_parts::NameShape::Identifier(text) => Some(text),
             _ => None,
-        })
-    else {
+        }
+    }) else {
         return;
     };
     let at = super::unit_source::with_text(SrcSpan::new(from, to), |source| {
@@ -27,7 +27,8 @@ pub(super) fn name(node: &mut RakuAstNode) {
         let lead = after.len() - after.trim_start().len();
         let rest = &after[lead..];
         (rest.starts_with(text.as_str())
-            && !rest[text.len()..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-'))
+            && !rest[text.len()..]
+                .starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-'))
         .then_some(from + slash + 1 + lead)
     });
     if let Some(at) = at {
