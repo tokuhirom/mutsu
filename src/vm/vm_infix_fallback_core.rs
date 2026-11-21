@@ -2,6 +2,9 @@
 //! still coerce and autothread like their opcodes do (#18478).
 use super::*;
 
+/// A core binary operator body over two owned operands.
+type CoreBinary = fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>;
+
 impl Interpreter {
     /// The core answer of `name` over `call_args` when `name` is a string or
     /// numeric comparison or `~`; `None` for every other operator. Reached
@@ -43,16 +46,15 @@ impl Interpreter {
         // The numeric comparisons likewise, through the one implementation
         // their opcodes and `&infix:<==>` share.
         if call_args.len() == 2 {
-            let compare: Option<fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>> =
-                match name {
-                    "==" => Some(Self::num_eq_values),
-                    "!=" | "≠" => Some(Self::num_ne_values),
-                    "<" => Some(Self::num_lt_values),
-                    "<=" | "≤" => Some(Self::num_le_values),
-                    ">" => Some(Self::num_gt_values),
-                    ">=" | "≥" => Some(Self::num_ge_values),
-                    _ => None,
-                };
+            let compare: Option<CoreBinary> = match name {
+                "==" => Some(Self::num_eq_values),
+                "!=" | "≠" => Some(Self::num_ne_values),
+                "<" => Some(Self::num_lt_values),
+                "<=" | "≤" => Some(Self::num_le_values),
+                ">" => Some(Self::num_gt_values),
+                ">=" | "≥" => Some(Self::num_ge_values),
+                _ => None,
+            };
             if let Some(compare) = compare {
                 let left =
                     self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[0].clone()))?;
