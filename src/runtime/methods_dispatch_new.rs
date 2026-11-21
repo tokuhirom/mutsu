@@ -530,8 +530,32 @@ impl Interpreter {
             // With a BUILD phase the initializer runs AFTER BUILD and only where
             // BUILD left the attribute alone, so the slot is seeded with the
             // no-initializer value now (runtime/attr_build_defaults.rs).
-            let is_deferred = plan.has_build && default.is_some();
-            let val = if !is_deferred
+            // A MOP `Attribute.set_build` closure replaces the initializer,
+            // exactly as in `.new` (Red's `%!___DIRTY_COLS_DATA___` builds a
+            // `SetHash`; through `self.bless` it was left an empty Hash,
+            // #18463).
+            let build_override = self.attribute_build_override(cn_resolved, attr_name);
+            let built_by_override = build_override.is_some();
+            let is_deferred = plan.has_build && (default.is_some() || built_by_override);
+            let val = if !is_deferred && let Some(build) = build_override.clone() {
+                // Rakudo calls the closure as `(object, type)`: the instance
+                // built so far and the attribute's type object.
+                let early = early_inv
+                    .get_or_insert_with(|| Value::make_instance(class_name, attributes.clone()));
+                if let Some(cell) = Self::self_instance_attrs(early) {
+                    cell.commit_attrs(attributes.clone());
+                }
+                let early = early.clone();
+                let attr_type = self
+                    .class_attribute_default(cn_resolved, attr_name)
+                    .unwrap_or_else(|| match plan.attr_seeds[i] {
+                        super::AttrSeed::TypeObject(sym) => Value::package(sym),
+                        _ => Value::package(crate::symbol::wk::any()),
+                    });
+                let built = self.call_sub_value(build, vec![early, attr_type])?;
+                self.reify_list_attr_value(&built, *sigil)?;
+                Self::coerce_attr_value_by_sigil(built, *sigil)
+            } else if !is_deferred
                 && let Some(lit_val) = default.as_ref().and_then(|a| a.literal())
             {
                 // Fast path: simple literal defaults (e.g. native type
@@ -655,7 +679,7 @@ impl Interpreter {
                     captured_env: attr.captured_env.clone(),
                     captured_unit: attr.captured_unit,
                     declaring_package: attr.declaring_package,
-                    build_override: None,
+                    build_override,
                     seed: val.clone(),
                     default_is_seed: attr.default_is_seed,
                     plan_index: Some(i),
@@ -665,7 +689,9 @@ impl Interpreter {
             // no initializer, the parser's synthesized type-object default,
             // and one whose initializer waits for BUILD (`nqp::attrinited`).
             let val = Self::itemize_attr_store_value(*sigil, val);
-            if default.is_none() || attr.default_is_seed || is_deferred {
+            // A `set_build` closure is an initializer the program supplied.
+            let seeds = (default.is_none() || attr.default_is_seed) && !built_by_override;
+            if seeds || is_deferred {
                 attributes.insert_seed(attr_sym, val);
             } else if plan.attr_binds[i] {
                 Self::bind_constructor_attribute(&mut attributes, attr_sym, attr_name, val);

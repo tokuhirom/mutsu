@@ -1873,11 +1873,7 @@ impl Interpreter {
                     let seeds = default.is_none() || default_is_seed;
                     // Clone the override out and drop the registry guard before
                     // call_sub_value re-enters user code (RwLock is not reentrant).
-                    let build_override = self
-                        .registry()
-                        .attribute_build_overrides
-                        .get(&(class_key.to_string(), attr_name.clone()))
-                        .cloned();
+                    let build_override = self.attribute_build_override(class_key, &attr_name);
                     // With a BUILD phase the initializer runs AFTER BUILD and
                     // only if BUILD left the attribute alone, so seed the slot
                     // now and postpone the initializer (see attr_build_defaults).

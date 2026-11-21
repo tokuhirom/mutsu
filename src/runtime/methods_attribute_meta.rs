@@ -98,6 +98,17 @@ impl Interpreter {
         Ok(target.clone())
     }
 
+    /// The MOP `Attribute.set_build` closure registered for the attribute
+    /// `attr_name` of `class_key`, if any: what `.new` and `.bless` run in
+    /// place of the attribute's initializer.
+    // Cost: O(1), one hash probe.
+    pub(crate) fn attribute_build_override(&self, class_key: &str, attr_name: &str) -> Option<Value> {
+        self.registry()
+            .attribute_build_overrides
+            .get(&(class_key.to_string(), attr_name.to_string()))
+            .cloned()
+    }
+
     /// `Attribute.build`: what builds the attribute's value (`set_build`
     /// replaces it); the type object `Mu` when it has no initializer.
     // Cost: O(1), a few hash probes.
