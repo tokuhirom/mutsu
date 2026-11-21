@@ -1106,11 +1106,22 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         collect_export_hook_value_terms(&stmts, &mut value_terms);
         // A fifth idiom: the hook re-exports what a module it `use`d or
         // `need`ed exports (`Map.new(Other::EXPORT::DEFAULT.WHO.pairs)`,
-        // Qwiratry::Query::Slang). The set is only known once that module is
-        // scanned, so take it from there; a superset, like the rest.
+        // Qwiratry::Query::Slang), or builds its `Map` with a routine of such
+        // a module (Red::Migration::Configuration's `configuration-api()`).
+        // The set is only known once that module is scanned, so take it from
+        // there; a superset, like the rest. An operator candidate changes how
+        // the importer parses a core operator, though (`eq` became a call of
+        // a candidate it cannot see, #18496), so a hook passes those on only
+        // when its module names a stash it could hand on.
+        let reexports_stash = source_scan::hook_may_reexport_imports(&code);
         value_terms.extend(nested.value_terms);
         for export in nested.exports {
-            exports.entry(export.name.clone()).or_insert(export);
+            let operator = ["infix:<", "prefix:<", "postfix:<"]
+                .iter()
+                .any(|category| export.name.starts_with(category));
+            if reexports_stash || !operator {
+                exports.entry(export.name.clone()).or_insert(export);
+            }
         }
         for name in source_scan::unit_scope_routine_names(&code) {
             exports.entry(name.clone()).or_insert(InlineModuleExport {

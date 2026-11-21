@@ -10,3 +10,4 @@ multi infix:<==>(JOCNode $a, Numeric() $b) is export { 'node-==' }
 multi infix:<!=>(JOCNode $a, $b) is export { 'node-!=' }
 multi infix:«<»(JOCNode $a, $b) is export { 'node-<' }
 multi infix:<~>(JOCNode $a, $b) is export { 'node-~' }
+multi infix:<±>($a, $b) is export { 'plus-minus' }
