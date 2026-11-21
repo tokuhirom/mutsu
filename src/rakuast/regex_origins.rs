@@ -627,6 +627,16 @@ impl Walk<'_> {
         self.eat(">")
     }
 
+    /// A range's bound `ch`, plain or as an escape (`\x[41]`).
+    // Cost: O(1).
+    fn bound(&mut self, ch: char, plain: impl Fn(char) -> bool) -> Option<()> {
+        if plain(ch) && self.eat(&ch.to_string()).is_some() {
+            return Some(());
+        }
+        self.at += super::regex_escape_origins::escaped_len(&self.text[self.at..], ch)?;
+        Some(())
+    }
+
     /// `[ a b..c ]`: each `Character` and `Range` element at its spelling.
     // Cost: O(n), n = length of the enumeration's text.
     fn enumeration(&mut self, node: &mut RakuAstNode) -> Option<()> {
@@ -677,14 +687,19 @@ impl Walk<'_> {
                         })
                     };
                     let (from, to) = (bound("from")?, bound("to")?);
-                    if !plain(from) || !plain(to) {
-                        return None;
-                    }
-                    self.eat(&from.to_string())?;
+                    self.bound(from, plain)?;
                     self.blank();
                     self.eat("..")?;
                     self.blank();
-                    self.eat(&to.to_string())?;
+                    self.bound(to, plain)?;
+                }
+                // `\x[22]`: a character written as an escape.
+                RakuAstClass::RegexCharClass(super::regex_char_class::RegexCharClassKind::Specified) => {
+                    let mut chars = leaf_text(&element)?.chars().collect::<Vec<_>>().into_iter();
+                    let (Some(ch), None) = (chars.next(), chars.next()) else {
+                        return None;
+                    };
+                    self.at += super::regex_escape_origins::escaped_len(&self.text[self.at..], ch)?;
                 }
                 _ => return None,
             }

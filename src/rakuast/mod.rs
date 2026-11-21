@@ -217,6 +217,7 @@ mod regex_code;
 mod regex_decl_constructor;
 mod regex_declaration;
 mod regex_enumeration;
+mod regex_escape_origins;
 mod regex_extension;
 mod regex_modifier_origins;
 mod regex_quantifier;
