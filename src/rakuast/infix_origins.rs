@@ -178,7 +178,7 @@ pub(super) fn leaf_text(node: &RakuAstNode) -> Option<String> {
 /// How an infix operator node is written: its text, and the range of its
 /// inner `Infix` within that text (`R-` holds `-` at 1..2).
 // Cost: O(d), d = nesting of metaoperators.
-fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
+pub(super) fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
     let inner = || child_at(infix, 0).and_then(leaf_text_of_infix);
     Some(match infix.class {
         RakuAstClass::Infix | RakuAstClass::Mixin => (leaf_text(infix)?, None),
@@ -187,6 +187,12 @@ fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
             let op = inner()?;
             let len = op.len();
             (format!("{op}="), Some((0, len)))
+        }
+        // `[&plus]`: a routine used as an operator, its variable inside.
+        RakuAstClass::FunctionInfix => {
+            let var = child_at(infix, 0).and_then(leaf_text)?;
+            let len = var.len();
+            (format!("[{var}]"), Some((1, 1 + len)))
         }
         RakuAstClass::MetaInfixReverse | RakuAstClass::MetaInfixNegate => {
             let op = inner()?;
@@ -228,6 +234,10 @@ fn apply_infix(node: &mut RakuAstNode) {
     leading_variable(node);
     let left = child(node, "left").and_then(byte_range);
     let right = child(node, "right").and_then(byte_range);
+    if child(node, "infix").is_some_and(|i| i.class == RakuAstClass::MetaInfixHyper) {
+        super::hyper_infix_origins::place(node, left, right);
+        return;
+    }
     let Some((text, inner)) = child(node, "infix").and_then(written) else {
         return;
     };
@@ -397,6 +407,9 @@ fn call_name(node: &mut RakuAstNode) {
         return;
     }
     let name_end = from + name.len();
+    if !parens {
+        super::call_origins::leading_block_argument(node, name_end, to);
+    }
     let args = if parens {
         super::call_origins::parenthesized(child(node, "args"), SrcSpan::new(name_end + 1, to - 1))
     } else if child(node, "args").is_none() {
