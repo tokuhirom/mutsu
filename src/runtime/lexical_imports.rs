@@ -508,7 +508,9 @@ impl Interpreter {
         if binds_operator {
             super::lexical_operator_import_flag::note_operator_import();
         }
+        let binds_trait = set.keys().any(|name| name.with_str(is_trait_mod_family));
         self.module.lexical_imports.write(|tables| {
+            tables.binds_trait_family |= binds_trait;
             if binds_operator {
                 tables.operator_sets.insert(id);
             } else {
@@ -1021,8 +1023,22 @@ impl Interpreter {
 // Cost: O(m), m = bytes of `name`.
 pub(crate) fn extends_builtin_operator(name: &str) -> bool {
     name.contains(":<")
+        && !is_trait_mod_family(name)
         && (crate::lexical_builtin_op::binds_lexically(name)
             || !Interpreter::lexically_bindable_operator(name))
+}
+
+/// Whether `name` is a trait handler family (`trait_mod:<is>`,
+/// `trait_mod:<does>`, ...). A block-scoped `use` binds its imported
+/// candidates in the block's set as a dispatcher (ADR-8751 stage 2), which
+/// trait application tries before the by-name dispatch
+/// (`Interpreter::imported_trait_dispatcher`); a trait none of them accepts
+/// falls through to that dispatch, which reaches the program's own candidates
+/// and the built-in traits. So the dispatcher has no built-in fallback of its
+/// own, unlike an operator's.
+// Cost: O(1).
+pub(crate) fn is_trait_mod_family(name: &str) -> bool {
+    name.starts_with("trait_mod:<")
 }
 
 /// Whether a proto body only dispatches: it is `{*}` or empty. Such a proto

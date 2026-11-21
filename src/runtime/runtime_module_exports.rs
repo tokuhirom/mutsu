@@ -1375,7 +1375,9 @@ impl Interpreter {
                 proto_def.is_some()
             } else {
                 ((!is_operator && !name.contains(":<"))
-                    || crate::lexical_builtin_op::binds_lexically(&name))
+                    || crate::lexical_builtin_op::binds_lexically(&name)
+                    || (crate::runtime::lexical_imports::is_trait_mod_family(&name)
+                        && !self.lexical_import_is_module_unit()))
                     && !exported_method_candidates
                     && self.bind_family_lexically(&name, &function_entries, proto_def.as_deref())
             };

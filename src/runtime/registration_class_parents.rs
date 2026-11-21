@@ -377,8 +377,7 @@ impl Interpreter {
                 // restricted to lowercase names, which made every uppercase
                 // trait name (the overwhelmingly common spelling) an
                 // unknown-parent error instead.
-                if self.has_proto("trait_mod:<is>")
-                    || self.has_multi_candidates("trait_mod:<is>")
+                if self.has_trait_mod_handler("trait_mod:<is>")
                     || self.has_any_trait_mod_is()
                 {
                     deferred_custom_traits.push(resolved_parent_name.to_string());

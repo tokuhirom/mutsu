@@ -30,6 +30,12 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn imported_trait_dispatcher(&self, name: &str) -> Option<Value> {
         let name_sym = Symbol::lookup(name)?;
+        // A block-scoped `use` binds an imported trait family in the block's
+        // lexical import set (ADR-8751 stage 2): the declarations the block
+        // runs apply their traits through it.
+        if let Some(value) = self.lexical_trait_dispatcher(name_sym) {
+            return Some(value);
+        }
         if !self.module.export_amp_override_names.contains(&name_sym) {
             return None;
         }
@@ -57,6 +63,22 @@ impl Interpreter {
                 Some(value.clone())
             }
             _ => None,
+        }
+    }
+
+    /// The dispatcher an open block's lexical import set binds the trait
+    /// family `name` to. Traits apply while the declaration runs, so the sets
+    /// are the ones open now (`active_lexical_import_chain`), as for a lookup
+    /// by a run-time name.
+    // Cost: O(1) when no lexical import set binds a trait family; else O(s),
+    // s = open import scopes' sets.
+    fn lexical_trait_dispatcher(&self, name: Symbol) -> Option<Value> {
+        if !self.module.lexical_imports.read().binds_trait_family {
+            return None;
+        }
+        match self.lexical_import_binding(&self.active_lexical_import_chain(), name)? {
+            crate::runtime::lexical_imports::LexicalImport::Code(value) => Some(value),
+            crate::runtime::lexical_imports::LexicalImport::Routine(_) => None,
         }
     }
 
