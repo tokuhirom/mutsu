@@ -102,8 +102,41 @@ fn list_origins(node: &mut RakuAstNode, field: &str, spans: &[TraitSpans]) {
         if trait_node.class == RakuAstClass::TraitHandles {
             super::package_trait_origins::handles_term(&mut trait_node, at.whole);
         }
+        trait_argument(&mut trait_node, at);
         *value = Value::rakuast(Box::new(trait_node));
     }
+}
+
+/// `is DEPRECATED("x")` / `is Tag(:tag<m>)`: the parentheses written right
+/// after the trait's name, to its end, are its argument. Their text is parsed
+/// again as a fragment, whose ranges are copied onto the argument.
+// Cost: O(n), n = length of the argument's text, plus the parse of it.
+fn trait_argument(trait_node: &mut RakuAstNode, at: &TraitSpans) {
+    let (Some(name_end), whole_end) = (
+        at.name.is_some().then_some(at.name.to as usize),
+        at.whole.to as usize,
+    ) else {
+        return;
+    };
+    let Some(text) =
+        super::unit_source::with_text(crate::ast::SrcSpan::new(name_end, whole_end), |t| {
+            (t.starts_with('(') && t.ends_with(')')).then(|| t.to_string())
+        })
+    else {
+        return;
+    };
+    with_child(trait_node, "argument", |argument| {
+        if argument.class == RakuAstClass::CircumfixParentheses && argument.origin.0.is_none() {
+            super::fragment_origins::expression(
+                &crate::scope::NameScope::default(),
+                argument,
+                &text,
+                name_end,
+            );
+            // The statement inside the parentheses spans their text.
+            super::list_origins::circumfix(argument);
+        }
+    });
 }
 
 /// Give the package `statement` declares (a `Class`, `Grammar` or `Role`

@@ -1,6 +1,6 @@
 # ADR-18393: A call frame is slots plus a slim record — no `Env` overlay, readonly scope or fat record per call; the name view is materialised on demand
 
-- **Status**: Proposed (2026-11-21)
+- **Status**: Accepted (maintainer approved, 2026-11-21; proposed 2026-11-21)
 - **Issue**: [#18393](https://github.com/tokuhirom/mutsu/issues/18393), a child of
   [#12529](https://github.com/tokuhirom/mutsu/issues/12529). Goal: the ecosystem ledger at
   100%. The two files still short are AttrX::Mooish `t/090-concurrent.custom` (240 s

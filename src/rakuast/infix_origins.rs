@@ -66,8 +66,14 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::list_origins::place_lone_declaration(names, node);
             super::list_origins::circumfix(node)
         }
+        // `s:g/a/b/` / `s[a] = b`: the adverbs, pattern, operator, replacement.
+        RakuAstClass::Substitution => super::subst_origins::derive(names, node),
         // `{:2b, :!c, :e(5)}`: the colonpairs among the composer's entries.
         RakuAstClass::CircumfixHashComposer => super::hash_colonpair_origins::derive(names, node),
+        RakuAstClass::ContextualizerHash => {
+            super::hash_colonpair_origins::contextualizer(names, node);
+            super::operator_origins::derive(node);
+        }
         RakuAstClass::ApplyPostfix => {
             super::list_origins::postcircumfix(node);
             super::operator_origins::derive(node);
@@ -262,6 +268,7 @@ fn apply_infix(node: &mut RakuAstNode) {
     {
         super::origin::set_span(node, SrcSpan::new(from, to));
     }
+    super::hash_colonpair_origins::infix_adverbs(node);
     let text = spelled.unwrap_or(text);
     with_child(node, "infix", |infix| {
         if text != leaf_text(infix).unwrap_or_default() {

@@ -90,14 +90,29 @@ impl Interpreter {
         target_slot: Option<u32>,
     ) -> Option<AttrOpPre> {
         let slot = Self::aggregate_attr_slot(code, target_slot)?;
+        let sym = code.locals_sym[slot];
         let container = match self.read_self_attr_cell_slot(code, slot) {
             Some(container) => {
                 self.locals[slot] = container.clone();
+                // The op's receiver place writes through the env binding of
+                // the attribute's name (`ReceiverPlace::slot`). A visible
+                // binding holding another container is a stale copy -- a
+                // thread clone's spawn-time snapshot, or a `BUILD`
+                // parameter's binding from before a nested call replaced the
+                // attribute -- so the op would mutate (or find empty) that
+                // copy instead of the instance's container (#18438). Rebind
+                // it to the live container in this frame. A `:=`-bound cell
+                // keeps its own handling.
+                if self.env().get_sym(sym).is_some_and(|bound| {
+                    !bound.is_container_ref() && !bound.same_binding(&container)
+                }) {
+                    self.env_mut().insert_sym(sym, container.clone());
+                }
                 container
             }
             None => self.locals[slot].clone(),
         };
-        let env_before = self.env().get_sym_in_frame(code.locals_sym[slot]).cloned();
+        let env_before = self.env().get_sym_in_frame(sym).cloned();
         Some(AttrOpPre::Slot {
             slot,
             container,

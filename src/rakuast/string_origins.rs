@@ -25,21 +25,35 @@ pub(super) fn interpolated(names: &crate::scope::NameScope, node: &mut RakuAstNo
     }) else {
         return;
     };
+    // A single literal segment is placed by `quoted_text`; a single
+    // interpolation is placed here.
+    let single_literal = node.fields.iter().any(|f| {
+        f.name == Some("segments")
+            && matches!(&f.value, RakuAstFieldValue::List(segments) if matches!(
+                segments.as_slice(),
+                [only] if matches!(only.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::StrLiteral)
+            ))
+    });
+    if !single_literal {
+        segments(names, node, start, end);
+    }
+}
+
+/// Place the segments of `node`, a `QuotedString` whose body (the text
+/// between its delimiters) is written at `start..end`, left to right.
+// Cost: O(n + s), n = end - start, s = segments.
+pub(super) fn segments(
+    names: &crate::scope::NameScope,
+    node: &mut RakuAstNode,
+    start: usize,
+    end: usize,
+) {
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
         return;
     };
     let RakuAstFieldValue::List(segments) = &mut field.value else {
         return;
     };
-    // A single literal segment is placed by `quoted_text`; a single
-    // interpolation is placed here.
-    let single_literal = matches!(
-        segments.as_slice(),
-        [only] if matches!(only.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::StrLiteral)
-    );
-    if segments.is_empty() || single_literal {
-        return;
-    }
     let mut cursor = start;
     for i in 0..segments.len() {
         let ValueView::RakuAst(segment) = segments[i].view() else {
@@ -67,6 +81,7 @@ pub(super) fn interpolated(names: &crate::scope::NameScope, node: &mut RakuAstNo
             RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
                 match_variable_at(&mut segment, cursor, end)
             }
+            RakuAstClass::QuoteWordsAtom => quote_words_atom(names, &mut segment, cursor, end),
             _ => None,
         };
         let Some((at, next)) = placed else {
@@ -133,6 +148,8 @@ fn written_start(next: &RakuAstNode, cursor: usize, end: usize) -> Option<usize>
         RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
             super::match_vars::interpolated_text(next)?
         }
+        // `« :a<b> »`: a colonpair among the words.
+        RakuAstClass::QuoteWordsAtom => ":".to_string(),
         _ => return None,
     };
     super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
@@ -336,4 +353,26 @@ fn balanced(text: &str, open: char, close: char) -> Option<usize> {
         }
     }
     None
+}
+
+/// The range of a `QuoteWordsAtom` written at `cursor` of an interpolating
+/// word quote (`« :X<x> b »`): the colonpair it holds, placed over its text
+/// with its value.
+// Cost: O(n), n = end - cursor.
+fn quote_words_atom(
+    names: &crate::scope::NameScope,
+    atom: &mut RakuAstNode,
+    cursor: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
+    let pair = super::infix_origins::child_at(atom, 0)?;
+    let len = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
+        super::hash_colonpair_origins::colonpair_len(pair, text)
+    })?;
+    let span = SrcSpan::new(cursor, cursor + len);
+    super::infix_origins::with_child_at(atom, 0, |pair| {
+        super::origin::set_span(pair, span);
+        super::infix_origins::derive(names, pair);
+    });
+    Some((cursor, cursor + len))
 }
