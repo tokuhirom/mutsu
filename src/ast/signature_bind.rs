@@ -100,6 +100,26 @@ pub(crate) fn supports(expr: &Expr) -> bool {
 /// Extract parameter names and named-argument metadata from a Signature value.
 // Cost: O(p), p = signature parameters.
 fn param_infos(expr: &Expr) -> Option<Vec<ParamInfo>> {
+    // A literal whose parameters carry code is built at run time from an
+    // empty routine (`parser::primary::misc::colonpair`, #18570): its
+    // parameters are the routine's.
+    if let Expr::MethodCall {
+        target, name, args, ..
+    } = expr
+        && name.resolve() == "signature"
+        && args.is_empty()
+        && let Expr::AnonSubParams {
+            param_defs,
+            return_type,
+            body,
+            ..
+        } = target.as_ref()
+        && body.is_empty()
+    {
+        let info = crate::value::signature::param_defs_to_sig_info(param_defs, return_type.clone());
+        let literal = Expr::Literal(crate::value::signature::make_signature_value(info, None));
+        return param_infos(&literal);
+    }
     let Expr::Literal(literal) = expr else {
         return None;
     };
