@@ -28,7 +28,7 @@ pub(super) fn statements(names: &NameScope, list: &mut RakuAstNode, text: &str, 
     let Ok(source) = super::view::statement_list(names, &stmts) else {
         return;
     };
-    copy_fields(list, &source);
+    copy_fields(list, &source, true);
 }
 
 /// Give `target`, the expression node converted from `text` (the single
@@ -52,7 +52,7 @@ pub(super) fn expression(names: &NameScope, target: &mut RakuAstNode, text: &str
     let Some(expression) = super::infix_origins::child_at(statement, 0) else {
         return;
     };
-    copy(target, expression);
+    copy(target, expression, false);
 }
 
 /// Give each argument of `call`'s `args`, written at `inside` (between a
@@ -164,30 +164,32 @@ fn comma_items(names: &NameScope, mut items: Vec<&mut Value>, from: usize, to: u
 
 /// Copy the origins of `source` onto `target`, a node of the same shape.
 // Cost: O(n), n = nodes of the smaller tree.
-fn copy(target: &mut RakuAstNode, source: &RakuAstNode) {
+fn copy(target: &mut RakuAstNode, source: &RakuAstNode, top: bool) {
     if target.class != source.class {
         return;
     }
-    // A statement's range is relative to the fragment (the statement list
-    // derives it from the terms inside instead).
-    if target.origin.0.is_none() && target.class != super::RakuAstClass::StatementExpression {
+    // A top-level statement's range is relative to the fragment (the
+    // statement list derives it from the terms inside instead).
+    if target.origin.0.is_none()
+        && !(top && target.class == super::RakuAstClass::StatementExpression)
+    {
         target.origin.0 = source.origin.0.clone();
     }
-    copy_fields(target, source);
+    copy_fields(target, source, false);
 }
 
 /// [`copy`] over the fields of two nodes, which must hold as many.
 // Cost: O(n), n = nodes of the smaller tree.
-fn copy_fields(target: &mut RakuAstNode, source: &RakuAstNode) {
+fn copy_fields(target: &mut RakuAstNode, source: &RakuAstNode, top: bool) {
     if target.fields.len() != source.fields.len() {
         return;
     }
     for (t, s) in target.fields.iter_mut().zip(&source.fields) {
         match (&mut t.value, &s.value) {
-            (RakuAstFieldValue::Node(t), RakuAstFieldValue::Node(s)) => copy_value(t, s),
+            (RakuAstFieldValue::Node(t), RakuAstFieldValue::Node(s)) => copy_value(t, s, top),
             (RakuAstFieldValue::List(t), RakuAstFieldValue::List(s)) if t.len() == s.len() => {
                 for (t, s) in t.iter_mut().zip(s) {
-                    copy_value(t, s);
+                    copy_value(t, s, top);
                 }
             }
             _ => {}
@@ -196,11 +198,11 @@ fn copy_fields(target: &mut RakuAstNode, source: &RakuAstNode) {
 }
 
 // Cost: O(n), n = nodes of the smaller tree.
-fn copy_value(target: &mut Value, source: &Value) {
+fn copy_value(target: &mut Value, source: &Value, top: bool) {
     let (ValueView::RakuAst(t), ValueView::RakuAst(s)) = (target.view(), source.view()) else {
         return;
     };
     let mut t = RakuAstNode::clone(t);
-    copy(&mut t, s);
+    copy(&mut t, s, top);
     *target = Value::rakuast(Box::new(t));
 }
