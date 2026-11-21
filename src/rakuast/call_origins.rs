@@ -144,6 +144,7 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
                     crate::ast::SrcSpan::new(operand_end, span.to as usize),
                 );
                 place_call(hyper, None, operand_end + skip, span, false);
+                super::call_term_origins::place_hyper(hyper, operand_end + skip, span);
             });
         }
         return;
