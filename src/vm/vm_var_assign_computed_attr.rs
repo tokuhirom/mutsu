@@ -215,6 +215,12 @@ impl Interpreter {
         }
     }
 
+    /// Whether `code` is a method body: its invocant is its first local slot.
+    // Cost: O(1).
+    pub(super) fn is_method_body(code: &CompiledCode) -> bool {
+        code.locals_sym.first() == Some(&crate::symbol::wk::self_())
+    }
+
     /// `self` for an attribute access made by `code`'s frame. A method body's
     /// invocant is its first local slot (`self`), so reading it from there
     /// skips the by-name env resolution (`get_env_self`), which walks the
@@ -224,7 +230,7 @@ impl Interpreter {
     /// object, resolves it by name as before.
     // Cost: O(1) for a method body; get_env_self's cost otherwise.
     pub(super) fn attr_access_self(&self, code: &CompiledCode) -> Option<Value> {
-        if code.locals_sym.first() == Some(&crate::symbol::wk::self_())
+        if Self::is_method_body(code)
             && let Some(v) = self.locals.first()
             && matches!(
                 v.view(),

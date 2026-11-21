@@ -30,7 +30,7 @@ impl Interpreter {
         let Some((code, _)) = site else {
             return method_owner();
         };
-        if code.locals_sym.first() == Some(&crate::symbol::wk::self_()) {
+        if Self::is_method_body(code) {
             return method_owner();
         }
         let Some(fixtures) = self.frame_fixtures() else {

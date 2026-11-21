@@ -162,14 +162,8 @@ impl Interpreter {
         let current = {
             let map = attributes.as_map();
             let owner_key = owner.and_then(|_| {
-                Self::attr_key_in_map(
-                    owner,
-                    crate::symbol::Symbol::intern(attr),
-                    true,
-                    '$',
-                    &map,
-                )
-                .filter(|k| k.as_str().contains('\0'))
+                Self::attr_key_in_map(owner, crate::symbol::Symbol::intern(attr), true, '$', &map)
+                    .filter(|k| k.as_str().contains('\0'))
             });
             if let Some(owner_key) = owner_key
                 && let Some(v) = map.get(owner_key.as_str())
