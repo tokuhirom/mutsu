@@ -245,12 +245,18 @@ fn colonpair_value(node: &mut RakuAstNode) {
         }
         return;
     }
-    if value.class != RakuAstClass::CircumfixParentheses || value.origin.0.is_some() {
+    // `:key(...)` / `:key[...]`: the parentheses or brackets after the key.
+    let (open_bracket, close_bracket) = match value.class {
+        RakuAstClass::CircumfixParentheses => ('(', ')'),
+        RakuAstClass::CircumfixArrayComposer => ('[', ']'),
+        _ => return,
+    };
+    if value.origin.0.is_some() {
         return;
     }
     let written = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let rest = text.strip_prefix(':')?.strip_prefix(key.as_str())?;
-        (rest.starts_with('(') && rest.ends_with(')')).then_some(())
+        (rest.starts_with(open_bracket) && rest.ends_with(close_bracket)).then_some(())
     });
     if written.is_some() && open < to {
         with_child(node, "value", |value| {

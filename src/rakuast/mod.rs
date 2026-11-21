@@ -148,6 +148,7 @@ mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+mod hash_colonpair_origins;
 mod hash_pair_origins;
 pub(crate) mod hierarchy;
 mod hyper_prefix;
