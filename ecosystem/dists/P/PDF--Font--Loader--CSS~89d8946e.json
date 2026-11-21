@@ -58,23 +58,22 @@
   "dist": "PDF::Font::Loader::CSS",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "require expects a module name",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 9.02,
+        "secs": 7.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01basic.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 174.85,
+        "secs": 148.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,10 +85,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0b8b1c2",
+    "mutsu_commit": "9d2d39bf",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -100,13 +99,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/DF/PDF_FONT_LOADER_CSS/cac2fa07550d5e0360360821bfc2b4b685bc5ead.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 4,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }

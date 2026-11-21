@@ -1,10 +1,10 @@
 {
-  "accepted_files": 15,
-  "assertion_parity": 99.8,
-  "baseline_assertions": 198298,
-  "baseline_files": 5151,
-  "dist_parity": 99.1,
-  "distributions": 1684,
+  "accepted_files": 13,
+  "assertion_parity": 100.0,
+  "baseline_assertions": 198473,
+  "baseline_files": 5157,
+  "dist_parity": 99.8,
+  "distributions": 1686,
   "excluded_dists": [
     "App::MoarVM::Debug",
     "App::MoarVM::HeapAnalyzer::Model",
@@ -21,19 +21,19 @@
     "Template::HAML",
     "uniprop"
   ],
-  "file_parity": 99.2,
-  "generated": "2026-11-20",
-  "graded_distributions": 1339,
-  "green_distributions": 1327,
-  "mutsu_assertions": 197977,
-  "parity_files": 5111,
+  "file_parity": 99.9,
+  "generated": "2026-11-21",
+  "graded_distributions": 1340,
+  "green_distributions": 1337,
+  "mutsu_assertions": 198383,
+  "parity_files": 5150,
   "schema": 1,
   "status": {
     "blocked_dep": 3,
-    "blocked_load": 7,
-    "green": 1330,
+    "blocked_load": 8,
+    "green": 1340,
     "no_baseline": 327,
-    "partial": 9,
-    "red": 8
+    "partial": 1,
+    "red": 7
   }
 }
