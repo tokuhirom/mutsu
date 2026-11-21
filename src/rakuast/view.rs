@@ -2352,6 +2352,10 @@ pub(super) fn view_expr(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, R
     let mut node = view_expr_at(names, expr)?;
     // A term the parser placed (ADR-10723 Stage 2).
     if let Some(span) = super::expr_origins::of(expr) {
+        // `my regex ($x) { }`: the declarator term runs from its `my`.
+        if matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::Expr(_))) {
+            node.origin.0 = None;
+        }
         origin::set_span(&mut node, span);
         origin::named_term(&mut node, span);
         origin::quoted_text(&mut node, span);
