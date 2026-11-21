@@ -37,8 +37,10 @@ pub(crate) fn retype(receiver: &Value, method: &str, answer: Value) -> Value {
     if !retypes(method) {
         return answer;
     }
+    // An itemized native array (`my $c = @native; $c.head(2)`) is the same
+    // array behind a `$`: Rakudo answers its own type there too (#18389).
     let receiver = receiver.deref_container();
-    let ValueView::Array(data, ArrayKind::Array) = receiver.view() else {
+    let ValueView::Array(data, ArrayKind::Array | ArrayKind::ItemArray) = receiver.view() else {
         return answer;
     };
     let Some(elem) = data.value_type.as_deref().filter(|e| is_native_elem(e)) else {
