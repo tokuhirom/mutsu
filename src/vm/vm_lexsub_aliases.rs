@@ -348,7 +348,17 @@ impl Interpreter {
         let found = self
             .lexsub_alias_slot(&name)
             .or_else(|| self.env().get_sym(a.var))?;
-        found.is_container_ref().then(|| found.clone())
+        if found.is_container_ref() {
+            return Some(found.clone());
+        }
+        // ... or this frame's own alias of it is the snapshot of a readonly
+        // signature parameter of the routine that declared this frame's sub,
+        // a binding that never changes: a nested sub's alias takes that value
+        // too (`sub a($p) { my sub t() { my sub u() { $p }; ... } }`).
+        // Without it the nested sub resolved `$p` by name, in whatever env
+        // its caller had (#18248 shape D).
+        self.lexsub_alias_is_readonly_snapshot(a.var, found)
+            .then(|| found.clone())
     }
 
     /// Whether the running routine-nested sub reads its free variable `var`

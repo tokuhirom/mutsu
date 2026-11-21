@@ -4,7 +4,7 @@ use Test;
 # routine activation that declared it, not whatever same-named local its
 # caller has (mutsu#9111).
 
-plan 14;
+plan 18;
 
 sub sh($p) { my sub t() { $p }; -> { my $p = 99; t() } }
 is sh(5)(), 5, 'closure declaring a same-named local calls the inner sub';
@@ -54,3 +54,19 @@ is rec(3), '0123', 'recursion keeps one binding per activation';
 sub esc($p) { my sub t() { $p }; &t }
 sub callit(&f) { my $p = 'caller'; f() }
 is callit(esc(30)), 30, 'an escaped &t ignores its caller\'s same-named local';
+
+# #18248 shape D: a sub nested two levels deep reads a readonly parameter of
+# the outermost routine. The middle sub's alias of it is the parameter's value,
+# not a cell, and the innermost sub's alias takes that value too, so a caller
+# with its own `$p` does not answer. Checked against rakudo 2026.11.
+sub d1($p) { my sub t() { my sub u() { $p }; -> $p { u() } }; t()(0) }
+is d1(1), 1, 'a nested sub called from a closure whose parameter shadows the variable';
+
+sub d2($p) { my sub t() { my sub u() { $p }; my $c = -> { my $p = 0; u() }; $c() }; t() }
+is d2(2), 2, '... called while the middle sub is still running';
+
+sub d3($p) { my sub t() { my sub u() { $p }; sub ($p) { u() } }; t()(0) }
+is d3(3), 3, '... called from an anonymous sub whose parameter shadows it';
+
+sub d4($p) { my sub t() { my sub u() { my sub v() { $p }; -> $p { v() } }; u() }; t()(0) }
+is d4(4), 4, 'a sub nested three levels deep';
