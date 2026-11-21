@@ -82,7 +82,7 @@ pub(super) fn segments(
             RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
                 variable_at(&segment, cursor, end)
             }
-            RakuAstClass::Block => block_at(&mut segment, cursor, end),
+            RakuAstClass::Block => super::string_block_origins::block_at(&mut segment, cursor, end),
             RakuAstClass::ApplyPostfix => postfix_at(names, &mut segment, cursor, end),
             RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
                 match_variable_at(&mut segment, cursor, end)
@@ -268,38 +268,6 @@ fn match_variable_at(
     super::origin::set_span(segment, SrcSpan::new(range.0, range.1));
     super::match_vars::named_capture_origins(segment);
     Some(range)
-}
-
-/// The range of a `{ ... }` block written at `cursor`, its `Blockoid`'s and
-/// `StatementList`'s, and its statements' (from their expressions). Quoted
-/// strings inside the block are skipped whole (`regex_block_origins`); a
-/// block whose text holds a comment, a backslash or a `「」` quote, which
-/// could hide a brace, is left alone.
-// Cost: O(n + s), n = length of the block, s = its statements.
-fn block_at(block: &mut RakuAstNode, cursor: usize, end: usize) -> Option<(usize, usize)> {
-    let close = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
-        if !text.starts_with('{') {
-            return None;
-        }
-        let close = super::regex_block_origins::closing_brace(text)?;
-        (!text[..close].contains(['「', '」'])).then_some(cursor + close)
-    })?;
-    let inside = super::list_origins::bracketed(cursor, close + 1, ('{', '}'))?;
-    let whole = SrcSpan::new(cursor, close + 1);
-    super::routine_origins::block_origins(
-        block,
-        crate::ast::parsed::BlockSpans {
-            span: whole,
-            blockoid: whole,
-            list: SrcSpan::NONE,
-        },
-    );
-    super::infix_origins::with_child(block, "body", |blockoid| {
-        super::infix_origins::with_child_at(blockoid, 0, |list| {
-            super::list_origins::statement_list(list, inside)
-        })
-    });
-    Some((cursor, close + 1))
 }
 
 /// The variable an interpolated postfix application (`@x[0]`, `%h<a>`,

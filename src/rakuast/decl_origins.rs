@@ -107,6 +107,12 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
         }
     }
     at += variable.len();
+    // `my %h{Str} of Int` / `my @a[3] is default(0)`: a shape between the
+    // variable and its traits.
+    if let Some(open @ ('{' | '[')) = text[at..].chars().next() {
+        let close = if open == '{' { '}' } else { ']' };
+        at += 1 + super::subst_origins::closing(&text[at + 1..], open, close)? + 1;
+    }
     let mut traits = Vec::new();
     loop {
         let gap = trivia_len(&text[at..])?;

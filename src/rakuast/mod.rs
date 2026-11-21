@@ -251,6 +251,7 @@ mod slang_statement_action;
 mod source_identifier;
 #[cfg(test)]
 mod source_identifier_tests;
+mod string_block_origins;
 mod string_origins;
 mod stub_package;
 mod subclass;
