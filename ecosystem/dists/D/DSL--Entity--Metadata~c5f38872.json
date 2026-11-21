@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.58,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -43,29 +43,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 13.66,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/Data-type-names-parsing.t",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.87,
+        "secs": 13.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,12 +60,34 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/Data-type-names-parsing.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/Metadata-names-parsing.t",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.83,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +109,7 @@
     "date": "2026-11-21",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9d2d39bf",
+    "mutsu_commit": "bf76ee0f",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

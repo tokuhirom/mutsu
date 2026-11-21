@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 11.09,
+        "secs": 8.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,32 +58,24 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 92.55,
+        "secs": 107.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 71.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/02-basic-usage-apriori.rakutest",
       "raku": {
+        "first_failure": "This type cannot unbox to a native string: P6opaque, Int",
         "nok": 0,
-        "ok": 5,
+        "ok": 4,
         "plan": 5,
-        "secs": 15.38,
+        "secs": 9.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     },
     {
@@ -92,7 +84,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 9.81,
+        "secs": 7.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,54 +94,38 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.21,
+        "secs": 5.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 21.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/04-correct-support.rakutest",
       "raku": {
-        "nok": 0,
-        "ok": 3,
+        "first_failure": "Titanic correctness check",
+        "nok": 1,
+        "ok": 0,
         "plan": 3,
-        "secs": 6.71,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       }
     },
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 18.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/05-basic-usage-associationa-rules.rakutest",
       "raku": {
+        "first_failure": "This type cannot unbox to a native string: P6opaque, Int",
         "nok": 0,
-        "ok": 3,
+        "ok": 1,
         "plan": 3,
-        "secs": 6.89,
+        "secs": 4.44,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     }
   ],
@@ -163,10 +139,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "d0b8b1c2",
+    "mutsu_commit": "bf76ee0f",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -179,10 +155,10 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 25,
-    "baseline_files": 5,
-    "mutsu_assertions": 25,
-    "parity_files": 5,
+    "baseline_assertions": 14,
+    "baseline_files": 2,
+    "mutsu_assertions": 14,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.1.5"
