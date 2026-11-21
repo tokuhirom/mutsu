@@ -28,4 +28,23 @@ impl Interpreter {
         }
         Some(value)
     }
+
+    /// [`Self::bind_expression_value`] for a store whose value sits under
+    /// `indices` subscripts on the stack (`%h<a><b> := v`).
+    // Cost: O(s), as `bind_expression_value`.
+    pub(crate) fn nested_bind_expression_value(&self, indices: usize) -> Option<Value> {
+        let at = self.stack.len().checked_sub(indices + 1)?;
+        Self::bind_expression_value(&self.stack[at])
+    }
+
+    /// Replace a finished store's result with the bound value, when there is
+    /// one (see [`Self::bind_expression_value`]).
+    // Cost: O(1).
+    pub(crate) fn answer_bind_expression_value(&mut self, bound: Option<Value>) {
+        if let Some(bound) = bound
+            && let Some(result) = self.stack.last_mut()
+        {
+            *result = bound;
+        }
+    }
 }
