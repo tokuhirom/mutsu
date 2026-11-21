@@ -103,7 +103,10 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         | RakuAstClass::StatementPrefixOnce
         | RakuAstClass::StatementPrefixReact
         | RakuAstClass::StatementPrefixSupply => super::expr_block_origins::derive(node),
-        _ => super::operator_origins::derive(node),
+        _ => {
+            super::expr_block_origins::phaser_statement(names, node);
+            super::operator_origins::derive(node)
+        }
     }
 }
 
