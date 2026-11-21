@@ -1306,7 +1306,7 @@ pub(in crate::runtime) fn emit_gate() -> std::sync::MutexGuard<'static, ()> {
 /// Emit `value` on `supplier_id` and return what its live taps ask for: the
 /// push, the callback collection and the "a live tap consumed this" backlog
 /// bookkeeping happen as one step with respect to
-/// [`register_supplier_transform_tap_if_drained`].
+/// [`register_supplier_tap_if_drained`].
 // Cost: O(s + t), s = the sinks, t = the taps of the supplier.
 pub(in crate::runtime) fn supplier_emit_collect(
     supplier_id: u64,
