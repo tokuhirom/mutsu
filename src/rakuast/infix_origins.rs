@@ -21,9 +21,9 @@ use crate::value::{Value, ValueView};
 pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::ApplyInfix => apply_infix(node),
-        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
+        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(names, node),
         RakuAstClass::VarDeclarationSimple => {
-            initializer(node);
+            initializer(names, node);
             super::call_origins::call_assign_initializer(node);
             super::decl_origins::derive(names, node);
         }
@@ -33,18 +33,21 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::VarAttributePublic => super::attribute_call_origins::public_args(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
         RakuAstClass::VarDeclarationConstant | RakuAstClass::VarDeclarationAnonymous => {
-            initializer(node)
+            initializer(names, node)
         }
         // `my \x = EXPR`: the name after the backslash, and the initializer.
         RakuAstClass::VarDeclarationTerm => {
-            initializer(node);
+            initializer(names, node);
             super::sigilless_origins::name(node);
         }
         RakuAstClass::VarDeclarationSignature => {
-            initializer(node);
+            initializer(names, node);
             super::signature_decl_origins::declaration(node);
         }
-        RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
+        RakuAstClass::ApplyListInfix => {
+            super::fragment_origins::list_operands(names, node);
+            super::list_origins::apply_list_infix(node)
+        }
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
         RakuAstClass::VarNamedCapture => super::match_vars::named_capture_origins(node),
         // `HyperWhatever:D` as a term: the inner `Type::Simple` spans all of
@@ -399,7 +402,7 @@ pub(super) fn with_child_at(
 /// ([`super::call_origins::parenthesized`]) or from its first argument to its
 /// last.
 // Cost: O(n + a), n = length of the call's source, a = its arguments.
-fn call_name(node: &mut RakuAstNode) {
+fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -422,8 +425,10 @@ fn call_name(node: &mut RakuAstNode) {
     let name_end = from + name.len();
     if !parens {
         super::call_origins::leading_block_argument(node, name_end, to);
+        super::fragment_origins::arguments(names, node, SrcSpan::new(name_end, to));
     }
     let args = if parens {
+        super::fragment_origins::arguments(names, node, SrcSpan::new(name_end + 1, to - 1));
         super::call_origins::parenthesized(child(node, "args"), SrcSpan::new(name_end + 1, to - 1))
     } else if child(node, "args").is_none() {
         // A bare `foo`: Rakudo's empty `ArgList` sits right after the name.
@@ -452,7 +457,7 @@ fn call_name(node: &mut RakuAstNode) {
 /// `my $x = EXPR` / `my $x := EXPR`: the `Initializer` runs from its `=` /
 /// `:=` to the end of the expression.
 // Cost: O(n), n = length of the declaration's source.
-fn initializer(node: &mut RakuAstNode) {
+fn initializer(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, _)) = byte_range(node) else {
         return;
     };
@@ -465,6 +470,7 @@ fn initializer(node: &mut RakuAstNode) {
         _ => return,
     };
     let Some((expr_from, expr_to)) = child_at(init, 0).and_then(byte_range) else {
+        super::initializer_origins::unplaced_expression(names, node, op);
         return;
     };
     if expr_from <= from {

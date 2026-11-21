@@ -173,6 +173,7 @@ pub(crate) mod implicit_signature;
 mod infix_origins;
 mod infix_spelling;
 mod inherited_fields;
+mod initializer_origins;
 mod keyed_hash;
 mod label_context;
 mod list_origins;
