@@ -1137,6 +1137,7 @@ mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
+mod self_reading_container_decl;
 mod short_circuit;
 mod stash_entry_var;
 mod str_eq_local_const;

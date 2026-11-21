@@ -952,6 +952,11 @@ impl Compiler {
         if self.hoist_nested_decl_stmt(stmt) {
             return;
         }
+        if let Some((decl, assign)) = Self::split_self_reading_container_decl(stmt) {
+            self.compile_stmt(&decl);
+            self.compile_stmt(&assign);
+            return;
+        }
         // A statement is an expression-depth boundary: its own operands are
         // one frame below it, and a `Stmt::Expr` root is reset to depth 0
         // below (see `Compiler::expr_depth`).
