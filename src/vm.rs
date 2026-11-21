@@ -399,6 +399,7 @@ mod vm_shared_array_lane;
 mod vm_slot_type_constraint;
 mod vm_user_iterator_lazy;
 pub(crate) use vm_slot_type_constraint::StoreDecl;
+mod vm_attr_owner;
 mod vm_index_bind_result;
 mod vm_store_place;
 mod vm_user_subscript_lvalue;

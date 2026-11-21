@@ -155,9 +155,29 @@ impl Interpreter {
         let mut key = String::with_capacity(attr.len() + 1);
         key.push('$');
         key.push_str(attr);
+        // A private attribute a parent and a child both declare is stored per
+        // declaring class (`Owner\0x`): the access's owner -- the method's, or
+        // for a closure the method it was made in -- names its copy (#17936).
+        let (owner, _) = self.attr_access_owner(Some((code, 0)));
         let current = {
             let map = attributes.as_map();
-            if let Some(v) = map.get(key.as_str()) {
+            let owner_key = owner.and_then(|_| {
+                Self::attr_key_in_map(
+                    owner,
+                    crate::symbol::Symbol::intern(attr),
+                    true,
+                    '$',
+                    &map,
+                )
+                .filter(|k| k.as_str().contains('\0'))
+            });
+            if let Some(owner_key) = owner_key
+                && let Some(v) = map.get(owner_key.as_str())
+            {
+                key.clear();
+                key.push_str(owner_key.as_str());
+                v.clone()
+            } else if let Some(v) = map.get(key.as_str()) {
                 v.clone()
             } else if let Some(v) = map.get(attr) {
                 key.clear();

@@ -454,10 +454,10 @@ impl Interpreter {
             crate::symbol::Symbol,
         ) -> R,
     ) -> Option<R> {
-        let owner = self.method_class_stack_top_sym();
+        let (owner, owner_is_role) = self.attr_access_owner(site);
         let owner_str = owner.map_or("", |o| o.as_str());
         let (role_cell, inner_cell) =
-            Self::method_attr_cells_for(self_val, owner_str, self.method_class_top_is_role());
+            Self::method_attr_cells_for(self_val, owner_str, owner_is_role);
         if let Some(attributes) = role_cell {
             let map = attributes.as_map();
             let key = Self::role_attr_key_in_mixin(self_val, owner_str, bare)
