@@ -130,48 +130,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             && let Ok((r3, _)) = ws(r3)
             && let Ok((r3, _)) = parse_char(r3, ')')
         {
-            // A parameter's `where` clause or computed default reads names of
-            // the scope the literal is written in, which a constant has no
-            // scope for: built from a routine, the signature closes over
-            // that scope as any block does, and `ACCEPTS` binds through it
-            // (#18570).
-            // A custom parameter trait (`:(Int $x is tagged)`) is applied by a
-            // user `trait_mod:<is>` when the signature is built, and its effect
-            // (`$param does Role`) cannot exist in a constant parsed here. Build
-            // the signature at run time from a routine carrying the same
-            // parameters -- the path a `sub`'s parameters already take.
-            if has_custom_param_trait(&param_defs)
-                || crate::value::signature::params_carry_code(&param_defs)
-            {
-                let params = param_defs.iter().map(|p| p.name.clone()).collect();
-                let routine = Expr::AnonSubParams {
-                    params,
-                    param_defs,
-                    return_type,
-                    body: Vec::new(),
-                    is_rw: false,
-                    is_raw: false,
-                    custom_traits: Default::default(),
-                    is_whatever_code: false,
-                    declarator: crate::ast::RoutineDeclarator::Sub,
-                };
-                return Ok((
-                    r3,
-                    Expr::MethodCall {
-                        target: Box::new(routine),
-                        name: Symbol::intern("signature"),
-                        args: Vec::new(),
-                        modifier: None,
-                        quoted: false,
-                        sugar: false,
-                    },
-                ));
-            }
-            let sig_info = param_defs_to_sig_info(&param_defs, return_type);
-            // No interpreter is available at parse time, so a user-declared
-            // subset parameter type in a bare `:(...)` signature literal is
-            // left unresolved (see resolve_subset_base in value/signature.rs).
-            return Ok((r3, Expr::Literal(make_signature_value(sig_info, None))));
+            return Ok((r3, signature_literal_expr(param_defs, return_type)));
         }
 
         // Fallback path: permissive parsing for legacy forms like :(:$a = True)
@@ -922,6 +881,57 @@ fn parse_object_hash_body(input: &str) -> PResult<'_, Expr> {
 
 /// Whether any parameter (or sub-signature parameter) carries a trait the
 /// signature machinery does not know, i.e. one a user `trait_mod:<is>` may handle.
+/// The expression a `:(...)` signature literal with these parameters stands
+/// for: the one construction the parser and the RakuAST lowering of a
+/// `FakeSignature` share.
+///
+/// A plain literal is a constant `Signature` value. A literal whose parameters
+/// carry code or custom traits is built at run time from an empty routine
+/// carrying the same parameters (`AnonSubParams.signature`, recognized again
+/// by `ast::signature_bind::run_time_signature_literal`):
+/// - a `where` clause or computed default reads names of the scope the
+///   literal is written in, which a constant has no scope for; the routine
+///   closes over that scope as any block does, and `ACCEPTS` binds through
+///   it (#18570);
+/// - a custom parameter trait (`:(Int $x is tagged)`) is applied by a user
+///   `trait_mod:<is>` when the signature is built, and its effect
+///   (`$param does Role`) cannot exist in a constant (#12205).
+// Cost: O(p), p = the parameters, sub-signatures included.
+pub(crate) fn signature_literal_expr(
+    param_defs: Vec<crate::ast::ParamDef>,
+    return_type: Option<String>,
+) -> Expr {
+    if has_custom_param_trait(&param_defs)
+        || crate::value::signature::params_carry_code(&param_defs)
+    {
+        let params = param_defs.iter().map(|p| p.name.clone()).collect();
+        let routine = Expr::AnonSubParams {
+            params,
+            param_defs,
+            return_type,
+            body: Vec::new(),
+            is_rw: false,
+            is_raw: false,
+            custom_traits: Default::default(),
+            is_whatever_code: false,
+            declarator: crate::ast::RoutineDeclarator::Sub,
+        };
+        return Expr::MethodCall {
+            target: Box::new(routine),
+            name: Symbol::intern("signature"),
+            args: Vec::new(),
+            modifier: None,
+            quoted: false,
+            sugar: false,
+        };
+    }
+    // No interpreter is available at parse time, so a user-declared subset
+    // parameter type in a bare `:(...)` signature literal is left unresolved
+    // (see resolve_subset_base in value/signature.rs).
+    let sig_info = param_defs_to_sig_info(&param_defs, return_type);
+    Expr::Literal(make_signature_value(sig_info, None))
+}
+
 fn has_custom_param_trait(params: &[crate::ast::ParamDef]) -> bool {
     params.iter().any(|p| {
         p.traits
