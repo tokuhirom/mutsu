@@ -462,6 +462,12 @@ impl Interpreter {
                 *slot = slot.clone().hllize_for_binding();
             }
         }
+        // The value of an element bind is what was bound (#18260).
+        let bound = self
+            .stack
+            .len()
+            .checked_sub(2)
+            .and_then(|at| Self::bind_expression_value(&self.stack[at]));
         let pre = self.attr_elem_env_snapshot(code, name_idx);
         let depth = self.stack.len();
         if let Err(err) = self.exec_index_assign_expr_named_op(
@@ -479,6 +485,11 @@ impl Interpreter {
             return Err(err);
         }
         self.mirror_attr_elem_env_to_cell(code, name_idx, pre);
+        if let Some(bound) = bound
+            && let Some(result) = self.stack.last_mut()
+        {
+            *result = bound;
+        }
         Ok(())
     }
 }
