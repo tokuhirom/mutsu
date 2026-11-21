@@ -156,6 +156,7 @@ impl<'s> UnitFinalizer<'s> {
     pub(super) fn finish(mut self, stmts: &mut [Stmt]) -> Result<(), RuntimeError> {
         // The unit's own list is closed.
         drop(self._top_scope);
+        super::declared_routines::CENSUS_SO_FAR.with(|s| *s.borrow_mut() = None);
         if let Some(err) = self.finalize.failed.take() {
             return Err(err);
         }
