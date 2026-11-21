@@ -24,6 +24,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
         RakuAstClass::VarDeclarationSimple => {
             initializer(node);
+            super::call_origins::call_assign_initializer(node);
             super::decl_origins::derive(names, node);
         }
         // `\(1, 2)`: the capture's arguments.
@@ -62,6 +63,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             }
         }
         RakuAstClass::CircumfixParentheses | RakuAstClass::CircumfixArrayComposer => {
+            super::list_origins::place_lone_declaration(names, node);
             super::list_origins::circumfix(node)
         }
         RakuAstClass::ApplyPostfix => {
