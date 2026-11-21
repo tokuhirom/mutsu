@@ -653,6 +653,22 @@ impl Env {
             .and_then(|scope| scope.get_sym(key))
     }
 
+    /// Whether a lookup of `key` that a closure frame root marked
+    /// [`Self::mark_outer_is_capture`] did not answer
+    /// ([`Self::closure_outer_hit`]) ends there instead of walking on into
+    /// the frames that call the closure. A lexically scoped name the
+    /// closure's capture and the program scope both miss is not visible to
+    /// the closure's code: its callers' lexicals are a dynamic scope, not
+    /// its outer (ADR-12529 phase 4, #18248).
+    // Cost: O(1).
+    #[inline]
+    pub(super) fn closure_outer_ends(&self, key: Symbol) -> bool {
+        self.outer_is_capture
+            && !suppressed()
+            && key.shadow_meta_subject().is_none()
+            && lexically_scoped(key)
+    }
+
     /// Whether this env is a frame root marked by [`Self::mark_outer_is_unit`]
     /// with nothing bound in its own overlay -- a frame a callee that is also
     /// declared at program scope can run in without a root of its own, since

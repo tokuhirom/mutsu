@@ -2819,6 +2819,9 @@ impl Env {
                 if let Some(v) = cur.closure_outer_hit(key) {
                     return Some(v);
                 }
+                if cur.closure_outer_ends(key) {
+                    return found;
+                }
                 // A closure whose capture holds the variable takes the
                 // variable's record from that capture too, never from the
                 // frames that happen to call it (ADR-13757).
