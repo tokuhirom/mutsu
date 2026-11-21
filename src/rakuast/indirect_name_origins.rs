@@ -73,3 +73,96 @@ pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
     }
     false
 }
+
+/// `$OUR::x` / `$::($n)`: the `Name` of `node`, a `Var::Package` with a
+/// range, runs from after its sigil to the end, when it spells it.
+// Cost: O(p + n), p = parts of the name, n = length of the variable's text.
+pub(super) fn package_variable(node: &mut RakuAstNode) {
+    let Some((from, to)) = super::infix_origins::byte_range(node) else {
+        return;
+    };
+    let Some(sigil) = super::decl_origins::leaf(node, "sigil") else {
+        return;
+    };
+    let span = crate::ast::SrcSpan::new(from + sigil.len(), to);
+    let written = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |text| {
+        text.strip_prefix(sigil.as_str()).map(str::to_string)
+    });
+    let Some(written) = written else {
+        return;
+    };
+    super::infix_origins::with_child(node, "name", |name| {
+        if name.origin.0.is_some() || place(name, span) {
+            return;
+        }
+        let spelled = matches!(
+            super::name_parts::name_shape(name),
+            Some(super::name_parts::NameShape::Identifier(n)) if n == written
+        );
+        if spelled {
+            super::origin::set_span(name, span);
+        }
+    });
+}
+
+/// `prefix:<!>`: the word quote an operator's `Name` holds in its
+/// `colonpairs`, when the name written at `span` is `CATEGORY:<...>`: the
+/// quote over the brackets, its text inside them.
+// Cost: O(n), n = length of the name's text.
+pub(super) fn operator_quote(name: &mut RakuAstNode, span: crate::ast::SrcSpan) {
+    let Some(field) = name
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("colonpairs"))
+    else {
+        return;
+    };
+    let RakuAstFieldValue::List(items) = &mut field.value else {
+        return;
+    };
+    let [quote] = items.as_mut_slice() else {
+        return;
+    };
+    let ValueView::RakuAst(node) = quote.view() else {
+        return;
+    };
+    if node.class != RakuAstClass::QuotedString || node.origin.0.is_some() {
+        return;
+    }
+    let from = span.from as usize;
+    let Some((open, close)) = super::unit_source::with_text(span, |text| {
+        let open = text.find(":<")? + 1;
+        (text.ends_with('>') && open + 1 < text.len() - 1).then_some((open, text.len() - 1))
+    }) else {
+        return;
+    };
+    let mut node = RakuAstNode::clone(node);
+    super::origin::set_span(
+        &mut node,
+        crate::ast::SrcSpan::new(from + open, from + close + 1),
+    );
+    super::origin::quoted_text(
+        &mut node,
+        crate::ast::SrcSpan::new(from + open, from + close + 1),
+    );
+    *quote = crate::value::Value::rakuast(Box::new(node));
+}
+
+/// `prefix:<!>`: how an operator's `Name` (its category, then its symbol as
+/// a word quote in `colonpairs`) is written.
+// Cost: O(n), n = length of the name.
+pub(super) fn written_operator(name: &RakuAstNode) -> Option<String> {
+    let category = super::infix_origins::leaf_text(name)?;
+    let field = name.fields.iter().find(|f| f.name == Some("colonpairs"))?;
+    let RakuAstFieldValue::List(items) = &field.value else {
+        return None;
+    };
+    let [quote] = items.as_slice() else {
+        return None;
+    };
+    let ValueView::RakuAst(quote) = quote.view() else {
+        return None;
+    };
+    let symbol = super::name_parts::quoted_text(quote)?;
+    Some(category + ":<" + &symbol + ">")
+}
