@@ -798,6 +798,9 @@ pub(crate) fn children(node: &RakuAstNode) -> Vec<Value> {
 
 // Cost: O(f + c), f = fields of `node`, c = child nodes listed in them.
 fn children_without_docs(node: &RakuAstNode) -> Vec<Value> {
+    if let Some(ordered) = crate::rakuast::visit_order::where_declaration(node) {
+        return ordered;
+    }
     // The implicit parameters of a method's signature, and the expansion of a
     // public attribute variable, are visited though the source wrote neither.
     if let Some(with_signature) = crate::rakuast::implicit_signature::method_with_signature(node) {

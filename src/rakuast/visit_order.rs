@@ -49,3 +49,44 @@ pub(crate) fn of_trait_type(node: &RakuAstNode) -> Option<crate::value::Value> {
         _ => None,
     })
 }
+
+/// `my Int $x where * > 1 = 3`: Rakudo visits a declaration with a `where`
+/// clause as the clause, the type, the initializer, the type again, then the
+/// rest (its traits). `None` for any other node.
+// Cost: O(f), f = fields of `node`.
+pub(crate) fn where_declaration(node: &RakuAstNode) -> Option<Vec<crate::value::Value>> {
+    use super::RakuAstFieldValue;
+    if node.class != RakuAstClass::VarDeclarationSimple {
+        return None;
+    }
+    let field = |name: &str| {
+        node.fields.iter().find_map(|f| match &f.value {
+            RakuAstFieldValue::Node(v) if f.name == Some(name) && super::is_node_value(v) => {
+                Some(v.clone())
+            }
+            _ => None,
+        })
+    };
+    let clause = field("where")?;
+    let ty = field("type");
+    let mut out = vec![clause];
+    out.extend(ty.clone());
+    out.extend(field("initializer"));
+    out.extend(ty);
+    for f in &node.fields {
+        if matches!(f.name, Some("where" | "type" | "initializer"))
+            || super::is_unvisited_field(node, f)
+            || super::is_unwalked_field(node, f)
+        {
+            continue;
+        }
+        match &f.value {
+            RakuAstFieldValue::Node(v) if super::is_node_value(v) => out.push(v.clone()),
+            RakuAstFieldValue::List(items) => {
+                out.extend(items.iter().filter(|v| super::is_node_value(v)).cloned())
+            }
+            _ => {}
+        }
+    }
+    Some(out)
+}
