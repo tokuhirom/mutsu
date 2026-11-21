@@ -50,6 +50,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::list_origins::apply_list_infix(node)
         }
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
+        RakuAstClass::VarPackage => super::indirect_name_origins::package_variable(node),
         RakuAstClass::VarNamedCapture => super::match_vars::named_capture_origins(node),
         // `HyperWhatever:D` as a term: the inner `Type::Simple` spans all of
         // it, its `Name` the name before the smiley.
@@ -375,7 +376,9 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
-    let Some(name) = child(node, "name").and_then(leaf_text) else {
+    let Some(name) = child(node, "name")
+        .and_then(|n| super::indirect_name_origins::written_operator(n).or_else(|| leaf_text(n)))
+    else {
         return;
     };
     let parens = node.class == RakuAstClass::CallName;
@@ -413,7 +416,8 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
         })
     };
     with_child(node, "name", |n| {
-        super::origin::set_span(n, SrcSpan::new(from, name_end))
+        super::origin::set_span(n, SrcSpan::new(from, name_end));
+        super::indirect_name_origins::operator_quote(n, SrcSpan::new(from, name_end));
     });
     if let Some((args_from, args_to)) = args {
         super::empty_fields::set_span(node, "args", SrcSpan::new(args_from, args_to));
