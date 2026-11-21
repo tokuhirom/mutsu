@@ -1,10 +1,9 @@
 use crate::runtime::*;
-use crate::value::ValueView;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use super::supply_derive_buffer::{
-    batch_admit, batch_time_period, elems_tick, take_complete_words_from_buffer,
+    batch_admit, batch_time_period, elems_tick, flat_items, take_complete_words_from_buffer,
 };
 use super::state::{
     supplier_emit_push, supplier_has_preserved_backlog, supplier_mark_preserved_consumed,
@@ -1499,14 +1498,7 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
             } else if let Some(downstream_sid) = tap.flat_downstream {
                 // Flatten the emitted value and emit each element individually
                 // to the downstream supplier.
-                let items: Vec<Value> = match emitted_value.view() {
-                    ValueView::Array(arr, kind) if !kind.is_itemized() => {
-                        arr.iter().cloned().collect()
-                    }
-                    ValueView::Seq(arr) => arr.iter().cloned().collect(),
-                    ValueView::Slip(arr) => arr.iter().cloned().collect(),
-                    _ => vec![emitted_value.clone()],
-                };
+                let items = flat_items(emitted_value);
                 actions.push(SupplierEmitAction::FlatEmit {
                     downstream_supplier_id: downstream_sid,
                     items,

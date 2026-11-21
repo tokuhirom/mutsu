@@ -1,5 +1,6 @@
-//! The buffering stages `batch`, `tail`, `produce`, `elems` and `words` as
-//! per-tap recipes (ADR-18443 slice 2b).
+//! The buffering stages `batch`, `tail`, `produce`, `elems` and `words`, and
+//! the stateless `flat` and `start`, as per-tap recipes (ADR-18443 slices 2b
+//! and 3).
 //!
 //! Rakudo defines each as `supply { whenever self { ... } }` with its state
 //! (the pending batch, the last N values, the accumulator, the count, the
@@ -42,6 +43,10 @@ enum BufferState {
     },
     /// `words`: the text after the last complete word.
     Words { buffer: String },
+    /// `flat`: no state.
+    Flat,
+    /// `start(&block)`: no state; each value starts the block.
+    Start,
 }
 
 fn states() -> &'static std::sync::Mutex<HashMap<u64, BufferState>> {
@@ -79,6 +84,8 @@ pub(super) fn buffer_register(mode: &str, params: &Value) -> Option<u64> {
         "words" => BufferState::Words {
             buffer: String::new(),
         },
+        "flat" => BufferState::Flat,
+        "start" => BufferState::Start,
         _ => return None,
     };
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -238,6 +245,18 @@ pub(super) fn take_complete_words_from_buffer(buffer: &mut String, finish: bool)
     words
 }
 
+/// The elements `flat` passes on for one value: a list's elements, or the
+/// value itself.
+// Cost: O(k), k = elements of the value.
+pub(super) fn flat_items(value: &Value) -> Vec<Value> {
+    match value.view() {
+        ValueView::Array(items, kind) if !kind.is_itemized() => items.to_vec(),
+        ValueView::Seq(items) => items.to_vec(),
+        ValueView::Slip(items) => items.to_vec(),
+        _ => vec![value.clone()],
+    }
+}
+
 /// One `elems` tick: count the value, and answer the count to report when
 /// the reporting interval allows one.
 // Cost: O(1).
@@ -265,6 +284,8 @@ enum Step {
     Emit(Vec<Value>),
     /// `produce`: fold with the callable (outside the lock).
     Fold(Option<Value>, Value),
+    /// `start`: run the block on the value in a thread of its own.
+    Start(Value),
 }
 
 impl Interpreter {
@@ -339,6 +360,8 @@ impl Interpreter {
                         .into_iter()
                         .collect(),
                 ),
+                BufferState::Flat => Step::Emit(flat_items(&arg)),
+                BufferState::Start => Step::Start(arg),
                 BufferState::Words { buffer } => {
                     buffer.push_str(&arg.to_string_value());
                     Step::Emit(
@@ -352,6 +375,16 @@ impl Interpreter {
         };
         let out = match step {
             Step::Emit(values) => values,
+            Step::Start(value) => {
+                // The Supply of the block's result goes out on the stage's
+                // own supplier, as the eager `start` stage does.
+                if let ValueView::Instance { attributes, .. } = emitter.view()
+                    && let Some(sid) = attributes.as_map().get("supplier_id").and_then(Value::as_int)
+                {
+                    self.run_start_call_in_thread(callable.clone(), value, sid as u64);
+                }
+                Vec::new()
+            }
             Step::Fold(acc, arg) => {
                 let next = match acc {
                     Some(acc) => {

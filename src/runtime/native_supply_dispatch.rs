@@ -1021,6 +1021,15 @@ impl Interpreter {
                 }
             }
             "flat" => {
+                // Over a live source the stage is a per-tap recipe
+                // (ADR-18443).
+                if Self::stage_is_live_recipe(attributes) {
+                    return Ok(Self::make_on_demand_buffer_supply(
+                        Self::supply_from_attrs(attributes),
+                        "flat",
+                        Value::NIL,
+                    ));
+                }
                 // For live (Supplier-backed) supplies, set up a flat tap chain:
                 // incoming values are flattened and each element is re-emitted
                 // to a new downstream supplier.
@@ -1705,6 +1714,15 @@ impl Interpreter {
                 // the result in a single-value Supply, emitting that Supply downstream.
                 let block = args.first().cloned().unwrap_or(Value::NIL);
 
+                // Over a live source the stage is a per-tap recipe
+                // (ADR-18443).
+                if Self::stage_is_live_recipe(attributes) {
+                    return Ok(Self::make_on_demand_buffer_supply(
+                        Self::supply_from_attrs(attributes),
+                        "start",
+                        block,
+                    ));
+                }
                 // For live (Supplier-backed) supplies, create a derived supplier
                 // and register a start-transform tap on the source.
                 if let Some(source_supplier_id) = supplier_id_from_attrs(attributes) {
