@@ -71,18 +71,9 @@ pub(crate) fn bareword_target_key(name: &str) -> String {
 /// bareword read pays no `format!` or string hash.
 // Cost: O(1) expected.
 pub(crate) fn term_key_sym(name: Symbol) -> Symbol {
-    thread_local! {
-        static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-    }
-    if let Some(sym) = KEYS.with(|c| c.borrow().get(&name).copied()) {
-        return sym;
-    }
-    let sym = name.with_str(|n| Symbol::intern(&term_key(n)));
-    KEYS.with(|c| {
-        c.borrow_mut().insert(name, sym);
-    });
-    sym
+    // Process-global and indexed by symbol id: one atomic load on a hit.
+    static KEYS: crate::symbol::SymbolSymMemo = crate::symbol::SymbolSymMemo::new();
+    KEYS.get(name, |n| Symbol::intern(&term_key(n)))
 }
 
 /// The spelling of a term-namespace storage key (`\b` → `b`), or `None` when
@@ -155,21 +146,14 @@ pub(crate) fn lexical_type_key(name: &str) -> String {
 /// The memoized type-namespace key for an already interned source name.
 // Cost: O(1) after the first lookup; O(n) once, n = name length.
 pub(crate) fn lexical_type_key_sym(name: Symbol) -> Symbol {
-    thread_local! {
-        static KEYS: std::cell::RefCell<std::collections::HashMap<Symbol, Symbol>> =
-            std::cell::RefCell::new(std::collections::HashMap::new());
-    }
-    if let Some(key) = KEYS.with(|keys| keys.borrow().get(&name).copied()) {
-        return key;
-    }
-    let key = name.with_str(|name| {
+    // Process-global and indexed by symbol id: one atomic load on a hit.
+    static KEYS: crate::symbol::SymbolSymMemo = crate::symbol::SymbolSymMemo::new();
+    KEYS.get(name, |name| {
         let mut key = String::with_capacity(name.len() + 1);
         key.push(LEXICAL_TYPE_PREFIX);
         key.push_str(name);
         Symbol::intern(&key)
-    });
-    KEYS.with(|keys| keys.borrow_mut().insert(name, key));
-    key
+    })
 }
 
 /// Bind every lexical (`my class` / `my role`) type recorded under its

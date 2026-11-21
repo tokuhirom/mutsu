@@ -616,11 +616,47 @@ impl SymbolSymMemo {
         }
     }
 
+    /// Marks an entry whose memoized answer is "no symbol" ([`Self::get_opt`]).
+    /// Ids are a `Vec`'s length, so neither this nor [`Self::EMPTY`] is ever
+    /// a real id.
+    const NONE: u32 = u32::MAX - 1;
+
     /// `compute(sym.as_str())`, computed once per symbol. An id past the
     /// table's reach recomputes every time (correct, unmemoized).
     // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
     #[inline]
     pub(crate) fn get(&self, sym: Symbol, compute: fn(&str) -> Symbol) -> Symbol {
+        self.get_with(sym, compute)
+    }
+
+    /// [`Self::get`] for a `compute` that captures fixed context (a
+    /// namespace's prefix, say). Each memo must still map a symbol to one
+    /// stable answer, so the captured context is the memo's own, never a
+    /// per-call value.
+    // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get_with(&self, sym: Symbol, compute: impl FnOnce(&str) -> Symbol) -> Symbol {
+        let raw = self.get_raw(sym, |text| compute(text).0);
+        debug_assert!(raw != Self::NONE, "a SymbolSymMemo is used by get_opt too");
+        Symbol(raw)
+    }
+
+    /// [`Self::get`] for a pure function that may answer "no symbol" (a
+    /// package's parent, which a top-level package has none of). A memo is
+    /// used through `get`/`get_with` or through this, never both.
+    // Cost: O(1) on a hit (one atomic load); O(compute) once per symbol.
+    #[inline]
+    pub(crate) fn get_opt(
+        &self,
+        sym: Symbol,
+        compute: fn(&str) -> Option<Symbol>,
+    ) -> Option<Symbol> {
+        let raw = self.get_raw(sym, |text| compute(text).map_or(Self::NONE, |s| s.0));
+        (raw != Self::NONE).then_some(Symbol(raw))
+    }
+
+    #[inline]
+    fn get_raw(&self, sym: Symbol, compute: impl FnOnce(&str) -> u32) -> u32 {
         let idx = sym.0 as usize;
         let Some(cell) = self.chunks.get(idx >> FLAG_CHUNK_BITS) else {
             return compute(sym.as_str());
@@ -628,13 +664,13 @@ impl SymbolSymMemo {
         if let Some(chunk) = cell.get() {
             let v = chunk[idx & (FLAG_CHUNK_LEN - 1)].load(Ordering::Relaxed);
             if v != Self::EMPTY {
-                return Symbol(v);
+                return v;
             }
         }
         let v = compute(sym.as_str());
         let chunk =
             cell.get_or_init(|| Box::new([const { AtomicU32::new(Self::EMPTY) }; FLAG_CHUNK_LEN]));
-        chunk[idx & (FLAG_CHUNK_LEN - 1)].store(v.0, Ordering::Relaxed);
+        chunk[idx & (FLAG_CHUNK_LEN - 1)].store(v, Ordering::Relaxed);
         v
     }
 }
@@ -1689,6 +1725,29 @@ pub(crate) mod well_known {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `SymbolSymMemo::get_opt` keeps "no symbol" apart from "not computed"
+    /// and from every real id, and answers the memoized value afterwards
+    /// without calling `compute` again.
+    #[test]
+    fn symbol_sym_memo_get_opt_memoizes_none_and_some() {
+        static MEMO: SymbolSymMemo = SymbolSymMemo::new();
+        let some = Symbol::intern("sym_memo_opt::Parent::Child");
+        let none = Symbol::intern("sym_memo_opt_top");
+        let parent = |t: &str| t.rfind("::").map(|at| Symbol::intern(&t[..at]));
+        assert_eq!(
+            MEMO.get_opt(some, parent).map(|s| s.as_str()),
+            Some("sym_memo_opt::Parent")
+        );
+        assert_eq!(MEMO.get_opt(none, parent), None);
+        // Memoized: a compute that would answer differently is not consulted.
+        let never = |_: &str| -> Option<Symbol> { panic!("recomputed a memoized entry") };
+        assert_eq!(
+            MEMO.get_opt(some, never).map(|s| s.as_str()),
+            Some("sym_memo_opt::Parent")
+        );
+        assert_eq!(MEMO.get_opt(none, never), None);
+    }
     use std::collections::HashMap;
 
     #[test]
