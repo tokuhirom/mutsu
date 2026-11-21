@@ -181,7 +181,7 @@ fn unescaped(text: &str, delimiter: char) -> Option<usize> {
 /// matches it, counting nested pairs and skipping escaped characters and
 /// quoted strings.
 // Cost: O(n), n = bytes scanned.
-fn closing(text: &str, open: char, close: char) -> Option<usize> {
+pub(super) fn closing(text: &str, open: char, close: char) -> Option<usize> {
     let mut depth = 1usize;
     let mut quote: Option<char> = None;
     let mut chars = text.char_indices();
