@@ -44,7 +44,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
                 return;
             }
             super::origin::set_span(replacement, span(body));
-            super::string_origins::segments(names, replacement, from + body.0, from + body.1);
+            super::string_origins::segments(names, replacement, from + body.0, from + body.1, 0);
         }),
         Rest::Assigned { infix, value } => {
             if !infix_spelled(node, &text[infix.0..infix.1]) {

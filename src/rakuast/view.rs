@@ -5698,8 +5698,8 @@ pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAs
 }
 
 /// `q:to/END/`: the heredoc's text as the quoted string it evaluates to,
-/// plus the terminator line rakudo keeps as `stop`. A body that is one piece
-/// of text has the origin of the lines it was written on, as in Rakudo.
+/// plus the terminator line rakudo keeps as `stop`, with the origins of its
+/// segments ([`super::string_origins::heredoc`]).
 fn heredoc_node(
     names: &NameScope,
     body: &Expr,
@@ -5710,16 +5710,7 @@ fn heredoc_node(
     if node.class != RakuAstClass::QuotedString {
         return Err(unsupported("a heredoc that is not quoted text"));
     }
-    if let Some(segments) = node.fields.iter_mut().find(|f| f.name == Some("segments"))
-        && let RakuAstFieldValue::List(items) = &mut segments.value
-        && let [only] = items.as_mut_slice()
-        && let ValueView::RakuAst(text) = only.view()
-        && text.class == RakuAstClass::StrLiteral
-    {
-        let mut text = RakuAstNode::clone(text);
-        origin::set_span(&mut text, written);
-        *only = Value::rakuast(Box::new(text));
-    }
+    super::string_origins::heredoc(names, &mut node, written, stop);
     node.class = RakuAstClass::Heredoc;
     node.fields
         .push(leaf_field(Some("stop"), Value::str(stop.to_string())));

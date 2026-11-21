@@ -35,18 +35,22 @@ pub(super) fn interpolated(names: &crate::scope::NameScope, node: &mut RakuAstNo
             ))
     });
     if !single_literal {
-        segments(names, node, start, end);
+        segments(names, node, start, end, 0);
     }
 }
 
 /// Place the segments of `node`, a `QuotedString` whose body (the text
-/// between its delimiters) is written at `start..end`, left to right.
+/// between its delimiters) is written at `start..end`, left to right. A
+/// heredoc's body is written `indent` columns deeper than its value: that
+/// much leading whitespace on each line is part of a literal's range, not
+/// of its value.
 // Cost: O(n + s), n = end - start, s = segments.
 pub(super) fn segments(
     names: &crate::scope::NameScope,
     node: &mut RakuAstNode,
     start: usize,
     end: usize,
+    indent: usize,
 ) {
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
         return;
@@ -70,7 +74,9 @@ pub(super) fn segments(
                     Some(_) => None,
                     None => Some(end),
                 };
-                next.filter(|&next| next > cursor && literal_matches(&segment, cursor, next))
+                next.filter(|&next| {
+                    next > cursor && literal_matches(&segment, cursor, next, indent)
+                })
                     .map(|next| (cursor, next))
             }
             RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
@@ -106,10 +112,29 @@ fn body(text: &str) -> Option<(usize, usize)> {
                 .then(|| (open.len(), text.len() - close.len()));
         }
     }
-    let (prefix, rest) = text.split_at(text.find(|c: char| !c.is_alphanumeric())?);
-    if !matches!(prefix, "" | "qq" | "qqw") {
+    let (prefix, mut rest) = text.split_at(text.find(|c: char| !c.is_alphanumeric())?);
+    if !matches!(prefix, "" | "qq" | "qqw" | "q" | "Q") {
         return None;
     }
+    // `Q:s|$n|` / `q:c{...}`: the adverbs that make the quote interpolate.
+    let mut adverbs = 0;
+    while let Some(after) = rest.strip_prefix(':') {
+        let len = after.find(|c: char| !c.is_alphanumeric()).unwrap_or(after.len());
+        // `:c` closures are kept in a shape of their own; other adverbs
+        // (`:!s`, `:to`) are not read here.
+        if !matches!(
+            &after[..len],
+            "s" | "a" | "h" | "f" | "b" | "scalar" | "array" | "hash" | "function" | "backslash"
+        ) {
+            return None;
+        }
+        rest = &after[len..];
+        adverbs += 1 + len;
+    }
+    if matches!(prefix, "q" | "Q") && adverbs == 0 {
+        return None;
+    }
+    let prefix_len = prefix.len() + adverbs;
     let open = rest.chars().next()?;
     let close = match open {
         '"' if prefix.is_empty() => '"',
@@ -122,7 +147,7 @@ fn body(text: &str) -> Option<(usize, usize)> {
     };
     text.ends_with(close).then(|| {
         (
-            prefix.len() + open.len_utf8(),
+            prefix_len + open.len_utf8(),
             text.len() - close.len_utf8(),
         )
     })
@@ -168,14 +193,42 @@ fn written_start(next: &RakuAstNode, cursor: usize, end: usize) -> Option<usize>
 /// Whether a literal written at `from..to` can be the `StrLiteral`
 /// `segment`: equal to its value when written without escapes.
 // Cost: O(n), n = to - from.
-fn literal_matches(segment: &RakuAstNode, from: usize, to: usize) -> bool {
+fn literal_matches(segment: &RakuAstNode, from: usize, to: usize, indent: usize) -> bool {
     let Some(value) = leaf_text(segment) else {
         return false;
     };
+    let line_start = from == 0
+        || super::unit_source::with_text(SrcSpan::new(from - 1, from), |t| {
+            (t == "\n").then_some(())
+        })
+        .is_some();
     super::unit_source::with_text(SrcSpan::new(from, to), |text| {
-        (text.contains('\\') || text == value).then_some(())
+        (text.contains('\\') || dedent(text, indent, line_start) == value).then_some(())
     })
     .is_some()
+}
+
+/// `text` without up to `indent` blanks at the start of each of its lines
+/// (its first line too when `line_start`).
+// Cost: O(n), n = length of `text`.
+fn dedent(text: &str, indent: usize, line_start: bool) -> String {
+    if indent == 0 {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    for (i, line) in text.split_inclusive('\n').enumerate() {
+        if i == 0 && !line_start {
+            out.push_str(line);
+            continue;
+        }
+        let blank = line
+            .chars()
+            .take(indent)
+            .take_while(|c| matches!(c, ' ' | '\t'))
+            .count();
+        out.push_str(&line[blank..]);
+    }
+    out
 }
 
 /// The range of a variable written at `cursor`, when its spelling is there
@@ -375,4 +428,43 @@ fn quote_words_atom(
         super::infix_origins::derive(names, pair);
     });
     Some((cursor, cursor + len))
+}
+
+/// Place the segments of a heredoc's `node`, whose body was written at
+/// `written` (the lines before the terminator) and is dedented by the blanks
+/// the terminator line `stop` starts with. A body that is one piece of text
+/// has the range of all its lines, as in Rakudo.
+// Cost: O(n + s), n = length of the body, s = segments.
+pub(super) fn heredoc(
+    names: &crate::scope::NameScope,
+    node: &mut RakuAstNode,
+    written: SrcSpan,
+    stop: &str,
+) {
+    if !written.is_some() {
+        return;
+    }
+    let indent = stop
+        .chars()
+        .take_while(|c| matches!(c, ' ' | '\t'))
+        .count();
+    let single_literal = node.fields.iter_mut().find(|f| f.name == Some("segments")).and_then(|f| {
+        match &mut f.value {
+            RakuAstFieldValue::List(items) => match items.as_mut_slice() {
+                [only] => Some(only),
+                _ => None,
+            },
+            _ => None,
+        }
+    });
+    if let Some(only) = single_literal
+        && let ValueView::RakuAst(text) = only.view()
+        && text.class == RakuAstClass::StrLiteral
+    {
+        let mut text = RakuAstNode::clone(text);
+        super::origin::set_span(&mut text, written);
+        *only = Value::rakuast(Box::new(text));
+        return;
+    }
+    segments(names, node, written.from as usize, written.to as usize, indent);
 }
