@@ -262,7 +262,16 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
     let RakuAstFieldValue::List(nodes) = &mut field.value else {
         return;
     };
-    if nodes.len() != at.len() {
+    // `has $.x is rw = 1`: the default's implicit `Trait::WillBuild` comes
+    // last and is not written.
+    let implicit = nodes
+        .iter()
+        .rev()
+        .take_while(|v| {
+            matches!(v.view(), ValueView::RakuAst(t) if t.class == RakuAstClass::TraitWillBuild)
+        })
+        .count();
+    if nodes.len() - implicit != at.len() {
         return;
     }
     for (value, clause) in nodes.iter_mut().zip(at) {

@@ -74,8 +74,11 @@ pub(super) fn segments(
                     Some(_) => None,
                     None => Some(end),
                 };
+                // `s/a//`: an empty literal sits where it was (not) written.
+                let empty = leaf_text(&segment).is_some_and(|t| t.is_empty());
                 next.filter(|&next| {
-                    next > cursor && literal_matches(&segment, cursor, next, indent)
+                    (next > cursor && literal_matches(&segment, cursor, next, indent))
+                        || (empty && next == cursor)
                 })
                 .map(|next| (cursor, next))
             }

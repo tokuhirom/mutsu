@@ -37,10 +37,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     });
     match layout.rest {
         Rest::Quoted(body) => with_child(node, "replacement", |replacement| {
-            if replacement.class != RakuAstClass::QuotedString
-                || replacement.origin.0.is_some()
-                || body.0 == body.1
-            {
+            if replacement.class != RakuAstClass::QuotedString || replacement.origin.0.is_some() {
                 return;
             }
             super::origin::set_span(replacement, span(body));
