@@ -83,12 +83,14 @@ pub(super) fn term_origins(names: &NameScope, node: &mut RakuAstNode) {
         return;
     };
     let located = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |text| {
-        let at = text.find(['(', '<'])?;
+        let at = text.find(['(', '<', '\u{ab}'])?;
         let term = text.get(at..)?.trim_end();
         let closed = (term.starts_with('(') && term.ends_with(')'))
-            || (term.starts_with('<') && term.ends_with('>') && !term.starts_with("<<"));
+            || (term.starts_with('<') && term.ends_with('>'))
+            || (term.starts_with('\u{ab}') && term.ends_with('\u{bb}'));
         closed.then(|| (from + at, term.to_string()))
     });
+    of_type(node, from, to);
     let Some((at, term_text)) = located else {
         return;
     };
@@ -101,6 +103,14 @@ pub(super) fn term_origins(names: &NameScope, node: &mut RakuAstNode) {
                 super::fragment_origins::expression(names, term, &term_text, at);
                 // The statement inside the parentheses spans their text.
                 super::list_origins::circumfix(term);
+            }
+            // `« :a<x> b »` / `<< ... >>`: an interpolating word quote,
+            // whose words and colonpairs are placed as a string's segments.
+            RakuAstClass::QuotedString
+                if term_text.starts_with('\u{ab}') || term_text.starts_with("<<") =>
+            {
+                super::origin::set_span(term, crate::ast::SrcSpan::new(at, at + term_text.len()));
+                super::string_origins::interpolated(names, term);
             }
             RakuAstClass::QuotedString if term_text.starts_with('<') => {
                 let inner = &term_text[1..term_text.len() - 1];
@@ -124,6 +134,30 @@ pub(super) fn term_origins(names: &NameScope, node: &mut RakuAstNode) {
             _ => {}
         }
     });
+}
+
+/// `our Str enum Sel ...`: the `of` type, written as the word right before
+/// `enum`, gets that word's range.
+// Cost: O(n), n = length of the text before `enum`.
+fn of_type(node: &mut RakuAstNode, from: usize, to: usize) {
+    use super::infix_origins::{child, with_child};
+    let Some(name) = child(node, "of")
+        .filter(|ty| ty.class == RakuAstClass::TypeSimple && ty.origin.0.is_none())
+        .and_then(|ty| super::infix_origins::child_at(ty, 0))
+        .and_then(super::infix_origins::leaf_text)
+    else {
+        return;
+    };
+    let span = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |text| {
+        let head = text[..text.find(" enum")?].trim_end();
+        let start = head.len().checked_sub(name.len())?;
+        let before = &head[..start];
+        (head.ends_with(name.as_str()) && (before.is_empty() || before.ends_with(char::is_whitespace)))
+            .then(|| crate::ast::SrcSpan::new(from + start, from + head.len()))
+    });
+    if let Some(span) = span {
+        with_child(node, "of", |ty| super::routine_origins::type_origin(ty, span));
+    }
 }
 
 /// A computed body is the parenthesized term itself.

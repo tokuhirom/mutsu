@@ -775,7 +775,15 @@ fn view_block(
             None,
         )?,
     };
-    Ok(with_block_origins(node, block.spans()))
+    let mut node = with_block_origins(node, block.spans());
+    // `given $t -> $x is copy { ... }`: the parameters the parser left
+    // unplaced are read back from the text after the arrow.
+    if node.class == RakuAstClass::PointyBlock
+        && super::infix_origins::child(&node, "signature").is_some_and(|s| s.origin.0.is_none())
+    {
+        super::expr_block_origins::derive(&mut node);
+    }
+    Ok(node)
 }
 
 /// `node` (a `Block` or `PointyBlock` over a `Blockoid` over a

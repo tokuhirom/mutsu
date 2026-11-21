@@ -81,6 +81,7 @@ pub(super) fn segments(
             RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
                 match_variable_at(&mut segment, cursor, end)
             }
+            RakuAstClass::QuoteWordsAtom => quote_words_atom(names, &mut segment, cursor, end),
             _ => None,
         };
         let Some((at, next)) = placed else {
@@ -147,6 +148,8 @@ fn written_start(next: &RakuAstNode, cursor: usize, end: usize) -> Option<usize>
         RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
             super::match_vars::interpolated_text(next)?
         }
+        // `« :a<b> »`: a colonpair among the words.
+        RakuAstClass::QuoteWordsAtom => ":".to_string(),
         _ => return None,
     };
     super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
@@ -350,4 +353,26 @@ fn balanced(text: &str, open: char, close: char) -> Option<usize> {
         }
     }
     None
+}
+
+/// The range of a `QuoteWordsAtom` written at `cursor` of an interpolating
+/// word quote (`« :X<x> b »`): the colonpair it holds, placed over its text
+/// with its value.
+// Cost: O(n), n = end - cursor.
+fn quote_words_atom(
+    names: &crate::scope::NameScope,
+    atom: &mut RakuAstNode,
+    cursor: usize,
+    end: usize,
+) -> Option<(usize, usize)> {
+    let pair = super::infix_origins::child_at(atom, 0)?;
+    let len = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
+        super::hash_colonpair_origins::colonpair_len(pair, text)
+    })?;
+    let span = SrcSpan::new(cursor, cursor + len);
+    super::infix_origins::with_child_at(atom, 0, |pair| {
+        super::origin::set_span(pair, span);
+        super::infix_origins::derive(names, pair);
+    });
+    Some((cursor, cursor + len))
 }
