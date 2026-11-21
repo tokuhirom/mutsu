@@ -32,7 +32,9 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         // `$.foo(1)` / `$.foo: 5`: the accessor call's arguments.
         RakuAstClass::VarAttributePublic => super::attribute_call_origins::public_args(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
-        RakuAstClass::VarDeclarationConstant => initializer(node),
+        RakuAstClass::VarDeclarationConstant | RakuAstClass::VarDeclarationAnonymous => {
+            initializer(node)
+        }
         // `my \x = EXPR`: the name after the backslash, and the initializer.
         RakuAstClass::VarDeclarationTerm => {
             initializer(node);
