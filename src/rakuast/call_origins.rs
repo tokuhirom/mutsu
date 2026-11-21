@@ -76,6 +76,7 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         return;
     }
     super::decl_postfix_origins::operand(node, span);
+    super::lone_term_origins::parenthesized_operand(node, span);
     let operand = node
         .fields
         .iter()

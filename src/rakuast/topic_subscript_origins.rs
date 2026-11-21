@@ -1,5 +1,6 @@
-//! Origins of a subscript on the topic, `.[0]` / `.{"a"}` / `.<a>`
-//! (`Term::TopicCall` over a `Postcircumfix`; ADR-10723 Stage 2, #15780):
+//! Origins of a subscript or postfix operator on the topic, `.[0]` /
+//! `.{"a"}` / `.<a>` / `.++` (`Term::TopicCall` over a `Postcircumfix` or
+//! `Postfix`; ADR-10723 Stage 2, #15780):
 //! the subscript runs from after the `.` to the end of the term, as Rakudo's
 //! does, and its index is placed inside the brackets.
 
@@ -22,6 +23,20 @@ pub(super) fn place(node: &mut RakuAstNode, span: SrcSpan) {
         return;
     }
     let brackets = match class {
+        // `.++` / `.--`: a postfix operator on the topic, after its dot.
+        RakuAstClass::Postfix => {
+            let op = child_at(node, 0).and_then(super::infix_origins::leaf_text);
+            let written = op.is_some_and(|op| {
+                super::unit_source::with_text(SrcSpan::new(from, to), |t| (t == op).then_some(()))
+                    .is_some()
+            });
+            if written {
+                with_child_at(node, 0, |p| {
+                    super::origin::set_span(p, SrcSpan::new(from, to))
+                });
+            }
+            return;
+        }
         RakuAstClass::PostcircumfixArrayIndex => ('[', ']'),
         RakuAstClass::PostcircumfixHashIndex => ('{', '}'),
         RakuAstClass::PostcircumfixLiteralHashIndex => {
