@@ -817,7 +817,13 @@ impl Interpreter {
         mode: crate::runtime::native_methods::TransformMode,
         value: Value,
     ) -> Result<(), RuntimeError> {
-        use crate::runtime::native_methods::TransformMode;
+        use crate::runtime::native_methods::{TransformMode, supplier_status};
+        // A stage whose output already quit (its callable died on an earlier
+        // value) has stopped: rakudo closes its subscription to the source.
+        let (_, done, quit) = supplier_status(downstream_supplier_id);
+        if done || quit.is_some() {
+            return Ok(());
+        }
         match mode {
             TransformMode::Grep => {
                 // `grep` uses smart-match semantics (`$_ ~~ matcher`), so a
@@ -828,17 +834,35 @@ impl Interpreter {
                     self.handle_supply_forward(downstream_supplier_id, value)?;
                 }
             }
-            TransformMode::Map => {
-                let mapped = self.call_supply_callback(callable, vec![value])?;
-                self.handle_supply_forward(downstream_supplier_id, mapped)?;
-            }
+            TransformMode::Map => match self.call_supply_callback(callable, vec![value]) {
+                Ok(mapped) => self.handle_supply_forward(downstream_supplier_id, mapped)?,
+                Err(err) => self.quit_live_transform_stage(downstream_supplier_id, err)?,
+            },
             TransformMode::Do => {
                 // Side-effect only: the original value passes through.
-                self.call_supply_callback(callable, vec![value.clone()])?;
-                self.handle_supply_forward(downstream_supplier_id, value)?;
+                match self.call_supply_callback(callable, vec![value.clone()]) {
+                    Ok(_) => self.handle_supply_forward(downstream_supplier_id, value)?,
+                    Err(err) => self.quit_live_transform_stage(downstream_supplier_id, err)?,
+                }
             }
         }
         Ok(())
+    }
+
+    /// The callable of a live `map`/`do` stage died with `err`: the stage's
+    /// own supply quits with it, so the exception reaches its taps' `quit`
+    /// handlers (or QUIT phasers) instead of unwinding into the
+    /// `Supplier.emit` that fed the stage (#18473). A control signal is not a
+    /// failure and propagates unchanged.
+    // Cost: O(t + d), see `propagate_supplier_quit`.
+    fn quit_live_transform_stage(
+        &mut self,
+        downstream_supplier_id: u64,
+        err: RuntimeError,
+    ) -> Result<(), RuntimeError> {
+        let reason = Self::supply_stage_quit_reason(err)?;
+        crate::runtime::native_methods::supplier_quit(downstream_supplier_id, reason.clone());
+        self.propagate_supplier_quit(downstream_supplier_id, reason)
     }
 
     /// Supply.zip-latest(...) as a class method
