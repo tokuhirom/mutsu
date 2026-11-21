@@ -21,9 +21,9 @@ use crate::value::{Value, ValueView};
 pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::ApplyInfix => apply_infix(node),
-        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(node),
+        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(names, node),
         RakuAstClass::VarDeclarationSimple => {
-            initializer(node);
+            initializer(names, node);
             super::call_origins::call_assign_initializer(node);
             super::decl_origins::derive(names, node);
         }
@@ -33,18 +33,21 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::VarAttributePublic => super::attribute_call_origins::public_args(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
         RakuAstClass::VarDeclarationConstant | RakuAstClass::VarDeclarationAnonymous => {
-            initializer(node)
+            initializer(names, node)
         }
         // `my \x = EXPR`: the name after the backslash, and the initializer.
         RakuAstClass::VarDeclarationTerm => {
-            initializer(node);
+            initializer(names, node);
             super::sigilless_origins::name(node);
         }
         RakuAstClass::VarDeclarationSignature => {
-            initializer(node);
+            initializer(names, node);
             super::signature_decl_origins::declaration(node);
         }
-        RakuAstClass::ApplyListInfix => super::list_origins::apply_list_infix(node),
+        RakuAstClass::ApplyListInfix => {
+            super::fragment_origins::list_operands(names, node);
+            super::list_origins::apply_list_infix(node)
+        }
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
         RakuAstClass::VarNamedCapture => super::match_vars::named_capture_origins(node),
         // `HyperWhatever:D` as a term: the inner `Type::Simple` spans all of
@@ -232,6 +235,7 @@ fn leaf_text_of_infix(node: &RakuAstNode) -> Option<String> {
 // Cost: O(n), n = length of the source between the operands.
 fn apply_infix(node: &mut RakuAstNode) {
     leading_variable(node);
+    super::lone_term_origins::variable_before_operator(node);
     let left = child(node, "left").and_then(byte_range);
     let right = child(node, "right").and_then(byte_range);
     if child(node, "infix").is_some_and(|i| i.class == RakuAstClass::MetaInfixHyper) {
@@ -275,6 +279,16 @@ fn apply_infix(node: &mut RakuAstNode) {
                     .then_some(own_start + trimmed.len() - text.len())
             })
         }
+        // `$x = $y = 1`: a right operand the parser left unplaced; the
+        // operator follows the left one after blanks, and blanks follow it.
+        (Some((_, left_end)), None, Some((_, own_end))) if left_end < own_end => {
+            super::unit_source::with_text(SrcSpan::new(left_end, own_end), |after_left| {
+                let after = after_left.trim_start();
+                let rest = after.strip_prefix(text.as_str())?;
+                rest.starts_with(char::is_whitespace)
+                    .then_some(left_end + (after_left.len() - after.len()))
+            })
+        }
         _ => None,
     };
     let Some(op_at) = op_at else {
@@ -286,7 +300,8 @@ fn apply_infix(node: &mut RakuAstNode) {
         super::origin::set_span(node, SrcSpan::new(from, to));
     }
     super::hash_colonpair_origins::infix_adverbs(node);
-    left_before_operator(node, op_at);
+    super::lone_term_origins::left_before_operator(node, op_at);
+    super::lone_term_origins::right_after_operator(node, op_at + text.len());
     let text = spelled.unwrap_or(text);
     with_child(node, "infix", |infix| {
         if text != leaf_text(infix).unwrap_or_default() {
@@ -387,7 +402,7 @@ pub(super) fn with_child_at(
 /// ([`super::call_origins::parenthesized`]) or from its first argument to its
 /// last.
 // Cost: O(n + a), n = length of the call's source, a = its arguments.
-fn call_name(node: &mut RakuAstNode) {
+fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -410,8 +425,10 @@ fn call_name(node: &mut RakuAstNode) {
     let name_end = from + name.len();
     if !parens {
         super::call_origins::leading_block_argument(node, name_end, to);
+        super::fragment_origins::arguments(names, node, SrcSpan::new(name_end, to));
     }
     let args = if parens {
+        super::fragment_origins::arguments(names, node, SrcSpan::new(name_end + 1, to - 1));
         super::call_origins::parenthesized(child(node, "args"), SrcSpan::new(name_end + 1, to - 1))
     } else if child(node, "args").is_none() {
         // A bare `foo`: Rakudo's empty `ArgList` sits right after the name.
@@ -440,7 +457,7 @@ fn call_name(node: &mut RakuAstNode) {
 /// `my $x = EXPR` / `my $x := EXPR`: the `Initializer` runs from its `=` /
 /// `:=` to the end of the expression.
 // Cost: O(n), n = length of the declaration's source.
-fn initializer(node: &mut RakuAstNode) {
+fn initializer(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, _)) = byte_range(node) else {
         return;
     };
@@ -453,6 +470,7 @@ fn initializer(node: &mut RakuAstNode) {
         _ => return,
     };
     let Some((expr_from, expr_to)) = child_at(init, 0).and_then(byte_range) else {
+        super::initializer_origins::unplaced_expression(names, node, op);
         return;
     };
     if expr_from <= from {
@@ -480,32 +498,4 @@ pub(super) fn set_leaf_text(node: &mut RakuAstNode, text: &str) {
     {
         field.value = RakuAstFieldValue::Node(Value::str(text.to_string()));
     }
-}
-
-/// `@a[0] := $v`: a postfix left operand the parser left unplaced, in an application
-/// with a range, runs from the application's start to the blanks before the
-/// operator (at byte `op_at`), and its parts are derived from that range.
-// Cost: O(n), n = length of the operand's text.
-fn left_before_operator(node: &mut RakuAstNode, op_at: usize) {
-    let Some((from, _)) = byte_range(node) else {
-        return;
-    };
-    // Only a postfix application (`@a[0]`, `$o.m`), whose text is its own:
-    // a term the parser unwrapped from parentheses would not be.
-    if child(node, "left")
-        .is_none_or(|left| left.origin.0.is_some() || left.class != RakuAstClass::ApplyPostfix)
-        || op_at <= from
-    {
-        return;
-    }
-    let Some(len) = super::unit_source::with_text(SrcSpan::new(from, op_at), |text| {
-        let written = text.trim_end();
-        (!written.is_empty()).then_some(written.len())
-    }) else {
-        return;
-    };
-    with_child(node, "left", |left| {
-        super::origin::set_span(left, SrcSpan::new(from, from + len));
-        derive(&NameScope::default(), left);
-    });
 }

@@ -84,22 +84,17 @@ pub(crate) fn split_qualified_var(name: Symbol) -> Option<QualifiedVar> {
 // Cost: O(1) amortized (one memo probe; the first call per symbol splits and
 // interns the package).
 pub(crate) fn qualified_var_package(name: Symbol) -> Option<Symbol> {
-    thread_local! {
-        static PACKAGES: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Option<Symbol>>> =
-            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-    }
+    // A pure function of the text: a process-global symbol-indexed table,
+    // one atomic load on a hit.
+    static PACKAGES: crate::symbol::SymbolSymMemo = crate::symbol::SymbolSymMemo::new();
     if !super::is_qualified(name) {
         return None;
     }
-    if let Some(pkg) = PACKAGES.with(|c| c.borrow().get(&name).copied()) {
-        return pkg;
-    }
-    let pkg = split_qualified_var(name)
-        .map(|split| super::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg)));
-    PACKAGES.with(|c| {
-        c.borrow_mut().insert(name, pkg);
-    });
-    pkg
+    PACKAGES.get_opt(name, |text| {
+        split_qualified_var(Symbol::intern(text)).map(|split| {
+            super::known_symbol(split.pkg.strip_prefix("GLOBAL::").unwrap_or(split.pkg))
+        })
+    })
 }
 
 #[cfg(test)]

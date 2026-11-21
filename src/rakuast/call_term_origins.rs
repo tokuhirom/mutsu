@@ -34,6 +34,14 @@ pub(super) fn place_hyper(hyper: &mut RakuAstNode, after_marker: usize, span: Sr
 // Cost: O(n), n = length of the call's source.
 fn measure(operand_end: usize, to: usize) -> Option<(usize, (usize, usize))> {
     // `$f.(1)`: the call starts at the `(` after the dot.
+    // `(* + *)(3, 4)`: parentheses around the operand are not a node of
+    // their own, so the call starts after their `)`.
+    let paren = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
+        let rest = text.trim_start_matches(|c: char| c == ')' || c.is_whitespace());
+        (rest.len() < text.len() && text.starts_with(')')).then_some(text.len() - rest.len())
+    })
+    .unwrap_or(0);
+    let operand_end = operand_end + paren;
     let dot = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
         Some(usize::from(text.starts_with(".(")))
     })

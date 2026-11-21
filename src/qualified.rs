@@ -123,20 +123,15 @@ pub(crate) fn attr_twigil_names(attr: Symbol) -> [Symbol; 6] {
 /// This is `rsplit_once("::")` decided once per package rather than per walk
 /// step: a type lookup walks the whole enclosing chain, and every lookup for
 /// the same package walks the same chain.
+// Cost: O(1) on a hit (one atomic load from a symbol-indexed table); the
+// first call per symbol scans and interns.
 pub(crate) fn package_parent(pkg: Symbol) -> Option<Symbol> {
-    thread_local! {
-        static PARENTS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Option<Symbol>>> =
-            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-    }
-    if let Some(parent) = PARENTS.with(|c| c.borrow().get(&pkg).copied()) {
-        return parent;
-    }
-    let text = pkg.as_str();
-    let parent = split::last_separator(text).map(|at| Symbol::intern(&text[..at]));
-    PARENTS.with(|c| {
-        c.borrow_mut().insert(pkg, parent);
-    });
-    parent
+    // A pure function of the text, so a process-global table indexed by
+    // symbol id answers it: no thread-local, no hash, no `RefCell` borrow.
+    static PARENTS: crate::symbol::SymbolSymMemo = crate::symbol::SymbolSymMemo::new();
+    PARENTS.get_opt(pkg, |text| {
+        split::last_separator(text).map(|at| Symbol::intern(&text[..at]))
+    })
 }
 
 /// `pkg` and each enclosing package in turn: `Foo::Bar::Baz`, `Foo::Bar`,
@@ -186,17 +181,17 @@ mod flags {
     /// A `%` variable addressed through a real package stash.
     pub(super) const PACKAGE_HASH: u8 = 1 << 4;
 
+    // Cost: O(1) on a hit (one atomic load from a symbol-indexed table).
     pub(super) fn of(sym: Symbol) -> u8 {
-        thread_local! {
-            static TABLE: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
-        }
-        let idx = sym.id() as usize;
-        if let Some(f) = TABLE.with(|c| c.borrow().get(idx).copied())
-            && f & CLASSIFIED != 0
-        {
-            return f;
-        }
-        let text = sym.as_str();
+        // Process-global and lock-free: the classification is a pure function
+        // of the text, so one table serves every thread, and a hit is one
+        // atomic load where the thread-local `RefCell<Vec<u8>>` it replaces
+        // paid a thread-local access and a borrow-flag write pair.
+        static TABLE: crate::symbol::SymbolMemo = crate::symbol::SymbolMemo::new();
+        TABLE.get(sym, |text| u16::from(classify(text))) as u8
+    }
+
+    fn classify(text: &str) -> u8 {
         let mut f = CLASSIFIED;
         if super::split::has_separator(text) {
             f |= QUALIFIED;
@@ -209,13 +204,6 @@ mod flags {
         if crate::str_scan::has_routine_scope_marker(text) {
             f |= ROUTINE_SCOPED;
         }
-        TABLE.with(|c| {
-            let mut table = c.borrow_mut();
-            if table.len() <= idx {
-                table.resize(idx + 1, 0);
-            }
-            table[idx] = f;
-        });
         f
     }
 
@@ -352,31 +340,24 @@ pub(crate) fn is_routine_scoped_package(pkg: Symbol) -> bool {
 /// variable it records, and the hand-written form allocated a fresh `String`
 /// to do it — 354,298 of the 1,390,603 `StrSearcher` constructions in a
 /// ten-decode `JSON::Fast` profile came from that one derivation.
+// Cost: O(1) on a hit (one atomic load from a symbol-indexed table); the
+// first call per symbol scans and interns.
 pub(crate) fn unqualified_part(key: Symbol) -> Symbol {
-    thread_local! {
-        static BARE: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
-            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-    }
-    if let Some(sym) = BARE.with(|c| c.borrow().get(&key).copied()) {
-        return sym;
-    }
-    let text = key.as_str();
-    let (sigil, rest) = match text.as_bytes().first() {
-        Some(b'$' | b'@' | b'%' | b'&') => text.split_at(1),
-        _ => ("", text),
-    };
-    let bare = rest.rsplit("::").next().unwrap_or(rest);
-    // The common case is an already-unqualified, sigil-less name, where the
-    // answer is the key itself and there is nothing to intern.
-    let sym = if sigil.is_empty() && bare.len() == text.len() {
-        key
-    } else {
-        Symbol::intern(&format!("{sigil}{bare}"))
-    };
-    BARE.with(|c| {
-        c.borrow_mut().insert(key, sym);
-    });
-    sym
+    static BARE: crate::symbol::SymbolSymMemo = crate::symbol::SymbolSymMemo::new();
+    BARE.get_with(key, |text| {
+        let (sigil, rest) = match text.as_bytes().first() {
+            Some(b'$' | b'@' | b'%' | b'&') => text.split_at(1),
+            _ => ("", text),
+        };
+        let bare = rest.rsplit("::").next().unwrap_or(rest);
+        // The common case is an already-unqualified, sigil-less name, where
+        // the answer is the key itself and there is nothing to intern.
+        if sigil.is_empty() && bare.len() == text.len() {
+            key
+        } else {
+            Symbol::intern(&format!("{sigil}{bare}"))
+        }
+    })
 }
 
 /// Whether `pkg` names no package at all — unset, or the default top-level

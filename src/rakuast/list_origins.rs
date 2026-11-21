@@ -28,13 +28,15 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     }) else {
         return;
     };
-    let ranges: Option<Vec<(usize, usize)>> = operands
+    let mut ranges: Vec<Option<(usize, usize)>> = operands
         .iter()
         .map(|v| match v.view() {
             ValueView::RakuAst(operand) => byte_range(operand),
             _ => None,
         })
         .collect();
+    super::whatever_origins::list_operand_ranges(node, operands, &mut ranges);
+    let ranges: Option<Vec<(usize, usize)>> = ranges.into_iter().collect();
     // One operand is a list only through its trailing comma (`("a",)`).
     let Some(ranges) = ranges.filter(|r| !r.is_empty()) else {
         return;
@@ -118,6 +120,7 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
         with_child_at(node, 0, |list| {
             place_lone_dotty(list, inside);
             super::lone_term_origins::modified_statement(list, inside);
+            super::lone_term_origins::loop_statement(list, inside);
             statement_list(list, inside);
         });
     }
@@ -311,6 +314,7 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let Some(operand_end) = operand_end else {
         return;
     };
+    super::lone_term_origins::subscript_assignee(node, operand_end);
     // Parentheses around the operand (`(@a)[0]`) are not a node of their
     // own, so the subscript starts after their `)`; the dot of `$x.[0]` is
     // not part of it either.

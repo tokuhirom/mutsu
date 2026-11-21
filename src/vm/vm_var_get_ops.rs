@@ -386,6 +386,14 @@ impl Interpreter {
         // resolves only where that module's GLOBAL is merged: in the scope that
         // ran its `need`/`use`, or in the module itself (ADR-11136).
         if self.module_name_hidden_here(name) {
+            // A package the running scope declared under that
+            // spelling (`use Mod; my package Configuration { }`, where `Mod`
+            // loaded a global `Configuration` of its own) is this scope's own
+            // name, not the hidden module's (#18409).
+            if let Some(storage) = self.own_package_binding(name_sym) {
+                self.stack.push(Value::package(storage));
+                return Ok(());
+            }
             return self.push_hidden_type_name(name, compiled_fns);
         }
         // Rakudo's core `REPL` and `Perl6::Compiler` classes are registered

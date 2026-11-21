@@ -11,6 +11,13 @@
 //! a per-process report and then lets the signal through, so the wait status
 //! and any core-dump behaviour are exactly what they are today.
 //!
+//! Besides the backtraces the report carries the faulting thread's registers,
+//! the first stack words at `sp` and the `/proc/self/maps` lines those
+//! addresses fall in (`context.rs`). A call through a bad function pointer
+//! leaves `pc` at the bad address, where no unwinder can start; the caller is
+//! then only in `[sp]` (x86-64) or `lr` (aarch64). Resolve such an address
+//! offline as `addr - map_start + map_offset` against the mapped file.
+//!
 //! By default the report goes to **stderr** and no file is written: the
 //! shipped binary must not drop files into whatever directory a user runs it
 //! from (#11219). When `MUTSU_CRASH_DIR` is set, the report goes to a fresh
@@ -57,6 +64,8 @@
 //! This is instrumentation, not a fix: it buys nothing until the next crash,
 //! and then it buys an answer instead of another dead end.
 
+#[cfg(all(unix, feature = "native"))]
+mod context;
 #[cfg(all(unix, feature = "native"))]
 mod handler;
 #[cfg(all(unix, feature = "native"))]

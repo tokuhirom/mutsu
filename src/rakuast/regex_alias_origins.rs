@@ -1,5 +1,5 @@
 //! Origins of a regex's callable and aliased assertions (`<&wc>`,
-//! `<wc=&wc>`, `<x=.alpha>`; ADR-10723 Stage 2, #15780), for the walk of a
+//! `<wc=&wc>`, `<x=.alpha>`, `<x=word("a")>`; ADR-10723 Stage 2, #15780), for the walk of a
 //! regex body (`regex_origins`).
 
 use super::infix_origins::{child, leaf_text, with_child};
@@ -46,6 +46,44 @@ pub(super) fn place(node: &mut RakuAstNode, text: &str, at: usize) -> Option<usi
                         with_child(named, "name", |n| super::origin::set_span(n, span));
                     });
                     1 + word.len()
+                }
+                // `<alias=word("a")>`: a named assertion with arguments.
+                RakuAstClass::RegexAssertionNamedArgs => {
+                    let word = match super::name_parts::name_shape(child(assertion, "name")?)? {
+                        super::name_parts::NameShape::Identifier(word) => word,
+                        _ => return None,
+                    };
+                    let after = rest.strip_prefix(word.as_str())?;
+                    // `word(ARGS)`, or `word: ARGS` to the assertion's `>`.
+                    let (args, args_len, len) = match after.strip_prefix('(') {
+                        Some(args) => {
+                            let args_len = super::regex_call_origins::args_len(args)?;
+                            (args, args_len, word.len() + 1 + args_len + 1)
+                        }
+                        None => {
+                            let args = after.strip_prefix(':')?;
+                            let args_len = super::regex_call_origins::colon_args_len(args)?;
+                            (args, args_len, word.len() + 1 + args_len)
+                        }
+                    };
+                    let args_at = start + word.len() + 1;
+                    let mut placed = None;
+                    with_child(node, "assertion", |named| {
+                        placed = super::regex_call_origins::place(
+                            &crate::scope::NameScope::default(),
+                            named,
+                            &args[..args_len],
+                            args_at,
+                        );
+                        if placed.is_some() {
+                            super::origin::set_span(named, SrcSpan::new(start, start + len));
+                            with_child(named, "name", |n| {
+                                super::origin::set_span(n, SrcSpan::new(start, start + word.len()))
+                            });
+                        }
+                    });
+                    placed?;
+                    len
                 }
                 _ => return None,
             };

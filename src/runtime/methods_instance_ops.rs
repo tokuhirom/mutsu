@@ -165,6 +165,16 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        self.default_instance_repr_with_mixin(target, method, args, None)
+    }
+
+    pub(crate) fn default_instance_repr_with_mixin(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+        mixin: Option<(&crate::value::MixinOverrides, &str)>,
+    ) -> Option<Result<Value, RuntimeError>> {
         let ValueView::Instance {
             class_name,
             attributes,
@@ -479,20 +489,27 @@ impl Interpreter {
         let class_key = class_name.resolve();
         // A type renamed with `.^set_name` renders its instances by the new
         // name, as `.^name` reports it (`$obj does R; $obj.^set_name(...)`).
-        let display_name: std::borrow::Cow<'_, str> = match self
-            .types
-            .type_metadata
-            .get(&class_key)
-            .and_then(|m| m.get("__set_name__"))
-        {
-            Some(name) => std::borrow::Cow::Owned(name.to_string_value()),
-            None => crate::value::user_facing_type_name(&class_key),
+        let display_name: std::borrow::Cow<'_, str> = match mixin {
+            Some((_, name)) => std::borrow::Cow::Borrowed(name),
+            None => match self
+                .types
+                .type_metadata
+                .get(&class_key)
+                .and_then(|m| m.get("__set_name__"))
+            {
+                Some(name) => std::borrow::Cow::Owned(name.to_string_value()),
+                None => crate::value::user_facing_type_name(&class_key),
+            },
         };
         // A CStruct's fields live in C memory (a body it owns, or the memory C
         // handed back): read them out before rendering them.
         self.seed_cstruct_fields_for_method(&class_key, Some(target));
         self.raku_cycle_guards.leaf.enter(target_id);
-        let public_attrs = self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
+        let public_attrs = self.collect_public_raku_attrs(
+            &class_key,
+            &(attributes).as_map(),
+            mixin.map(|(overrides, _)| overrides),
+        );
         let cycle_hit = self.raku_cycle_guards.leaf.leave(&target_id);
         let body = if public_attrs.is_empty() {
             format!("{}.new", display_name)
@@ -2600,62 +2617,6 @@ impl Interpreter {
             // `value_type_name`) — see `Interpreter::dispatch_owner_name`.
             _ => self.dispatch_owner_name(value).to_string(),
         }
-    }
-
-    /// Collect public attribute representations for `.raku` output.
-    /// Returns a list of `"name => value.raku"` strings for public attributes.
-    pub(crate) fn collect_public_raku_attrs(
-        &mut self,
-        class_name: &str,
-        attributes: &AttrMap,
-    ) -> Vec<String> {
-        let class_attrs = self.collect_class_attributes_display_order(class_name);
-        // A punned role is materialized as a temporary class during `.new`, then
-        // withdrawn so its type object remains a role. Its instance still carries
-        // the role's attribute values, so render from the composed role metadata
-        // when the class shell is no longer in the registry.
-        let class_attrs =
-            if class_attrs.is_empty() && self.registry().roles.contains_key(class_name) {
-                self.collect_role_attributes_for_class(class_name)
-            } else {
-                class_attrs
-            };
-        let mut parts = Vec::new();
-        for attr in &class_attrs {
-            let (attr_name, is_public, sigil) = (&attr.name, attr.is_public, attr.sigil);
-            if !is_public {
-                continue;
-            }
-            // Rakudo's default `.raku` lists only the attributes `.new` can
-            // set: a public `is built(False)` attribute is left out.
-            if !self.is_attribute_buildable(class_name, attr_name) {
-                continue;
-            }
-            // Reading the attribute to render it vivifies it, as Rakudo's
-            // `.raku` does through `Attribute.get_value` (#11003).
-            if let Some(val) = attributes.get_vivify(attr_name.as_str()) {
-                // Render what the slot holds, not the cell a `:=` bind or an
-                // `=` value share (Slice 2e) put around it.
-                let val = &val.deref_container();
-                // The cycle-guarded dispatch renders a direct instance-valued
-                // attribute that refers back up the chain (`$x.next = $y;
-                // $y.next = $x`) as a backreference instead of recursing.
-                let rendered = self
-                    .dispatch_raku_leaf(val)
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|_| val.to_string_value());
-                // A `$`-sigil attribute is a Scalar container, so an aggregate
-                // it holds renders itemized: `Foo.new(x => $[1, 2])`. `@`/`%`
-                // attributes are the aggregate itself and stay bare.
-                let rendered = if sigil == '$' {
-                    crate::builtins::methods_0arg::raku_repr::itemize_scalar_repr(val, rendered)
-                } else {
-                    rendered
-                };
-                parts.push(format!("{} => {}", attr_name, rendered));
-            }
-        }
-        parts
     }
 
     /// Whether a routine body is exactly a yada stub (`...`/`!!!`/`???`), which

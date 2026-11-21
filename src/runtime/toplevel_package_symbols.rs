@@ -172,6 +172,26 @@ impl Interpreter {
     // Cost: O(c * d + |name|), c = running package candidates (at most 4),
     // d = package nesting depth, including the global table lookup.
     pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<&Value> {
+        self.toplevel_package_symbol_keyed(name, None)
+    }
+
+    /// [`Self::toplevel_package_symbol`] for a caller that already holds
+    /// `name`'s interned form, so the table probe does not intern it again.
+    /// The package-chain miss path (`package_chain_var_fallback` →
+    /// `get_env_with_main_alias_sym`) asks this for every package candidate
+    /// of every bareword it resolves, and the re-intern (a thread-local
+    /// string-hash probe plus a `memcmp`) was ~0.5% of an AttrX::Mooish round.
+    // Cost: as `toplevel_package_symbol`, without the intern.
+    pub(crate) fn toplevel_package_symbol_sym(&self, name: Symbol) -> Option<&Value> {
+        self.toplevel_package_symbol_keyed(name.as_str(), Some(name))
+    }
+
+    // Cost: as `toplevel_package_symbol`; `name_sym` saves the intern.
+    fn toplevel_package_symbol_keyed(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> Option<&Value> {
         if let Some(scoped) =
             self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
         {
@@ -183,6 +203,6 @@ impl Interpreter {
         self.module
             .module_toplevel
             .package_symbols
-            .get(&Symbol::intern(name))
+            .get(&name_sym.unwrap_or_else(|| Symbol::intern(name)))
     }
 }
