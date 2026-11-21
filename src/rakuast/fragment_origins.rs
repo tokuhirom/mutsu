@@ -126,7 +126,8 @@ fn comma_items(names: &NameScope, mut items: Vec<&mut Value>, from: usize, to: u
         if lo >= hi {
             continue;
         }
-        let Some(text) = super::unit_source::with_text(SrcSpan::new(lo, hi), |t| Some(t.to_string()))
+        let Some(text) =
+            super::unit_source::with_text(SrcSpan::new(lo, hi), |t| Some(t.to_string()))
         else {
             continue;
         };
