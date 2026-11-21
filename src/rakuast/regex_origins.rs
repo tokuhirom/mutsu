@@ -694,7 +694,9 @@ impl Walk<'_> {
                     self.bound(to, plain)?;
                 }
                 // `\x[22]`: a character written as an escape.
-                RakuAstClass::RegexCharClass(super::regex_char_class::RegexCharClassKind::Specified) => {
+                RakuAstClass::RegexCharClass(
+                    super::regex_char_class::RegexCharClassKind::Specified,
+                ) => {
                     let mut chars = leaf_text(&element)?.chars().collect::<Vec<_>>().into_iter();
                     let (Some(ch), None) = (chars.next(), chars.next()) else {
                         return None;

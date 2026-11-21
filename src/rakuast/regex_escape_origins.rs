@@ -20,7 +20,9 @@ pub(super) fn escaped_len(text: &str, ch: char) -> Option<usize> {
             (&inner[..close], close + 4)
         }
         None if radix != 10 => {
-            let end = rest.find(|c: char| !c.is_digit(radix)).unwrap_or(rest.len());
+            let end = rest
+                .find(|c: char| !c.is_digit(radix))
+                .unwrap_or(rest.len());
             (&rest[..end], 2 + end)
         }
         None => return None,
