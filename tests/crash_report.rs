@@ -87,6 +87,51 @@ fn segv_writes_a_report_and_keeps_the_wait_status() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A call through a bad function pointer (#16811: a pool thread inside
+/// `ffi_call` jumped to a heap address) leaves `pc` at the bad address, where
+/// no unwinder can start. The report must still name the caller: the return
+/// address the call left at `[sp]` (x86-64) or in `lr` (aarch64), and the
+/// mapping it falls in.
+#[cfg(all(
+    target_os = "linux",
+    target_env = "gnu",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+#[test]
+fn a_jump_to_a_bad_address_reports_registers_and_the_caller() {
+    let (signal, dir) = run_crashing("jump", "jump", &[]);
+    assert_eq!(signal, Some(libc::SIGSEGV));
+    let report = read_report(&dir);
+    let fault = field(&report, "fault-addr:").to_string();
+    let pc_key = if cfg!(target_arch = "x86_64") {
+        "rip:"
+    } else {
+        "pc:"
+    };
+    // The faulting pc is the heap address that was called.
+    assert_eq!(
+        field(&report, pc_key),
+        fault,
+        "pc is the bad target:\n{report}"
+    );
+    assert!(report.contains("--- stack (from sp) ---"), "{report}");
+    assert!(field(&report, "[sp+0]:").starts_with("0x"), "{report}");
+    // Among the mappings listed for pc, lr and the stack words is the mutsu
+    // binary itself: the caller (`crash_jump`) is in it.
+    let maps = report
+        .split("--- mappings of pc, lr and the stack words ---\n")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no mappings section:\n{report}"));
+    let maps = maps.split("--- backtrace").next().unwrap_or("");
+    let exe = std::fs::canonicalize(env!("CARGO_BIN_EXE_mutsu")).unwrap();
+    assert!(
+        maps.lines().any(|l| l.ends_with(exe.to_str().unwrap())
+            && l.split_whitespace().nth(1).is_some_and(|p| p.contains('x'))),
+        "the caller's executable mapping is listed:\n{report}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn abort_is_reported_too() {
     let (signal, dir) = run_crashing("abort", "abort", &[]);

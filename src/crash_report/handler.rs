@@ -207,7 +207,7 @@ fn preamble() -> Box<[u8]> {
     out.into_boxed_slice()
 }
 
-extern "C" fn handler(sig: c_int, info: *mut libc::siginfo_t, _ctx: *mut libc::c_void) {
+extern "C" fn handler(sig: c_int, info: *mut libc::siginfo_t, ctx: *mut libc::c_void) {
     // Exactly one report per process. A fault *inside* the handler must not
     // loop, and a second thread faulting concurrently must not interleave its
     // writes into the same file — both go straight to the hand-off so the
@@ -216,8 +216,9 @@ extern "C" fn handler(sig: c_int, info: *mut libc::siginfo_t, _ctx: *mut libc::c
     // most the tail of the report, which is why the fields that matter are
     // written first.)
     if !IN_HANDLER.swap(true, Ordering::SeqCst) {
-        // SAFETY: `info` is the kernel-supplied siginfo for `sig`.
-        unsafe { super::report::write_report(sig, info) };
+        // SAFETY: `info` and `ctx` are the kernel-supplied siginfo and
+        // ucontext for `sig` (the handler is installed with SA_SIGINFO).
+        unsafe { super::report::write_report(sig, info, ctx) };
     }
     // SAFETY: `info` is the kernel-supplied siginfo for `sig`.
     hand_off(sig, unsafe { super::report::si_code(info) });
@@ -262,6 +263,10 @@ pub(super) fn selftest_if_requested() {
     match std::env::var("MUTSU_CRASH_SELFTEST").as_deref() {
         Ok("segv") => crash_segv(),
         Ok("abort") => std::process::abort(),
+        // A call through a function pointer into non-executable heap memory:
+        // the shape of #16811, where only the return address at `[sp]` (or
+        // `lr`) can name the caller.
+        Ok("jump") => crash_jump(),
         // The same two faults, but on a worker spawned exactly the way a
         // `start` block or a Supply tap is. That is the half the mechanism
         // silently lacked: the handler is process-wide, so it *ran* on such a
@@ -281,6 +286,17 @@ pub(super) fn selftest_if_requested() {
         }
         _ => {}
     }
+}
+
+/// Call into a heap buffer, which is mapped without execute permission, so
+/// the fault's `pc` is the heap address and the caller is only on the stack.
+#[inline(never)]
+fn crash_jump() {
+    let code: &'static mut [u8] = Box::leak(vec![0xc3u8; 64].into_boxed_slice());
+    // SAFETY: none -- deliberately calling a non-executable address so the
+    // process faults; the selftest exists to produce exactly this crash.
+    let f: extern "C" fn() = unsafe { std::mem::transmute(code.as_mut_ptr()) };
+    f();
 }
 
 /// A real fault, so the report's `si_addr` is a real fault address.
