@@ -89,7 +89,12 @@ pub(super) fn segments(
                     }
                     _ => None,
                 };
-                super::string_variable_origins::variable_at(&segment, cursor, end, literal.as_deref())
+                super::string_variable_origins::variable_at(
+                    &segment,
+                    cursor,
+                    end,
+                    literal.as_deref(),
+                )
             }
             RakuAstClass::Block => super::string_block_origins::block_at(&mut segment, cursor, end),
             RakuAstClass::ApplyPostfix => postfix_at(names, &mut segment, cursor, end),
