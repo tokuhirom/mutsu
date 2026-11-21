@@ -178,39 +178,6 @@ pub(super) fn leaf_text(node: &RakuAstNode) -> Option<String> {
     })
 }
 
-/// How an infix operator node is written: its text, and the range of its
-/// inner `Infix` within that text (`R-` holds `-` at 1..2).
-// Cost: O(d), d = nesting of metaoperators.
-pub(super) fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
-    let inner = || child_at(infix, 0).and_then(leaf_text_of_infix);
-    Some(match infix.class {
-        RakuAstClass::Infix | RakuAstClass::Mixin => (leaf_text(infix)?, None),
-        RakuAstClass::Assignment => ("=".to_string(), None),
-        RakuAstClass::MetaInfixAssign => {
-            let op = inner()?;
-            let len = op.len();
-            (format!("{op}="), Some((0, len)))
-        }
-        // `[&plus]`: a routine used as an operator, its variable inside.
-        RakuAstClass::FunctionInfix => {
-            let var = child_at(infix, 0).and_then(leaf_text)?;
-            let len = var.len();
-            (format!("[{var}]"), Some((1, 1 + len)))
-        }
-        RakuAstClass::MetaInfixReverse | RakuAstClass::MetaInfixNegate => {
-            let op = inner()?;
-            let prefix = if infix.class == RakuAstClass::MetaInfixReverse {
-                "R"
-            } else {
-                "!"
-            };
-            let len = op.len();
-            (format!("{prefix}{op}"), Some((1, 1 + len)))
-        }
-        _ => return None,
-    })
-}
-
 /// The node in `node`'s `index`-th field.
 // Cost: O(1).
 pub(super) fn child_at(node: &RakuAstNode, index: usize) -> Option<&RakuAstNode> {
@@ -221,13 +188,6 @@ pub(super) fn child_at(node: &RakuAstNode, index: usize) -> Option<&RakuAstNode>
         },
         _ => None,
     }
-}
-
-// Cost: O(f), f = fields of `node`.
-fn leaf_text_of_infix(node: &RakuAstNode) -> Option<String> {
-    (node.class == RakuAstClass::Infix)
-        .then(|| leaf_text(node))
-        .flatten()
 }
 
 /// `left OP right`: the application spans its operands (when it has no
@@ -242,7 +202,7 @@ fn apply_infix(node: &mut RakuAstNode) {
         super::hyper_infix_origins::place(node, left, right);
         return;
     }
-    let Some((text, inner)) = child(node, "infix").and_then(written) else {
+    let Some((text, inner)) = child(node, "infix").and_then(super::infix_spelling::written) else {
         return;
     };
     let (left, right) = super::whatever_origins::operand_ranges(node, &text, left, right);
@@ -310,7 +270,8 @@ fn apply_infix(node: &mut RakuAstNode) {
         super::origin::set_span(infix, SrcSpan::new(op_at, op_at + text.len()));
         if let Some((from, to)) = inner {
             with_child_at(infix, 0, |op| {
-                super::origin::set_span(op, SrcSpan::new(op_at + from, op_at + to))
+                super::origin::set_span(op, SrcSpan::new(op_at + from, op_at + to));
+                super::infix_spelling::place_inner(op, op_at + from);
             });
         }
     });

@@ -9,6 +9,8 @@
 //! aliases, the `Infix` takes it. Exact or absent: an operator whose text
 //! does not read as an alias keeps its ASCII name.
 
+use super::{RakuAstClass, RakuAstNode};
+
 /// The Unicode spellings rakudo keeps for the infix the parser names `op`,
 /// each measured on rakudo 2026.09.
 // Cost: O(1).
@@ -78,4 +80,79 @@ pub(super) fn lowered_name(name: &str) -> &str {
         "xor" => "^^",
         other => other,
     }
+}
+
+/// How an infix operator node is written: its text, and the range of its
+/// inner `Infix` within that text (`R-` holds `-` at 1..2).
+// Cost: O(d), d = nesting of metaoperators.
+pub(super) fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
+    // The operator inside: an `Infix`, or a meta-operator over one (`+=`
+    // inside `R+=`, `[+]` inside `[+]=`).
+    let inner = || {
+        let op = super::infix_origins::child_at(infix, 0)?;
+        leaf_text_of_infix(op).or_else(|| {
+            matches!(
+                op.class,
+                RakuAstClass::MetaInfixAssign
+                    | RakuAstClass::MetaInfixReverse
+                    | RakuAstClass::MetaInfixNegate
+                    | RakuAstClass::BracketedInfix
+            )
+            .then(|| written(op).map(|(text, _)| text))
+            .flatten()
+        })
+    };
+    Some(match infix.class {
+        RakuAstClass::Infix | RakuAstClass::Mixin => (super::infix_origins::leaf_text(infix)?, None),
+        RakuAstClass::Assignment => ("=".to_string(), None),
+        RakuAstClass::MetaInfixAssign => {
+            let op = inner()?;
+            let len = op.len();
+            (format!("{op}="), Some((0, len)))
+        }
+        // `[+]`: an operator in brackets.
+        RakuAstClass::BracketedInfix => {
+            let op = inner()?;
+            let len = op.len();
+            (format!("[{op}]"), Some((1, 1 + len)))
+        }
+        // `[&plus]`: a routine used as an operator, its variable inside.
+        RakuAstClass::FunctionInfix => {
+            let var = super::infix_origins::child_at(infix, 0).and_then(super::infix_origins::leaf_text)?;
+            let len = var.len();
+            (format!("[{var}]"), Some((1, 1 + len)))
+        }
+        RakuAstClass::MetaInfixReverse | RakuAstClass::MetaInfixNegate => {
+            let op = inner()?;
+            let prefix = if infix.class == RakuAstClass::MetaInfixReverse {
+                "R"
+            } else {
+                "!"
+            };
+            let len = op.len();
+            (format!("{prefix}{op}"), Some((1, 1 + len)))
+        }
+        _ => return None,
+    })
+}
+
+// Cost: O(f), f = fields of `node`.
+fn leaf_text_of_infix(node: &RakuAstNode) -> Option<String> {
+    (node.class == RakuAstClass::Infix)
+        .then(|| super::infix_origins::leaf_text(node))
+        .flatten()
+}
+
+/// The operator inside `infix`, a meta-operator written at byte `at`
+/// (`+=` inside `R+=`), and the operators inside that, each where its
+/// spelling puts it.
+// Cost: O(d), d = nesting depth of the meta-operators.
+pub(super) fn place_inner(infix: &mut RakuAstNode, at: usize) {
+    let Some((_, Some((from, to)))) = written(infix) else {
+        return;
+    };
+    super::infix_origins::with_child_at(infix, 0, |op| {
+        super::origin::set_span(op, crate::ast::SrcSpan::new(at + from, at + to));
+        place_inner(op, at + from);
+    });
 }
