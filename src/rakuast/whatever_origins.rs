@@ -28,6 +28,21 @@ pub(super) fn operand_ranges(
 ) -> (Range, Range) {
     let mut left = left;
     let mut right = right;
+    // `* + *`: both operands primed, read off the application's own text.
+    if left.is_none()
+        && right.is_none()
+        && is_priming(node, "left")
+        && is_priming(node, "right")
+        && let Some((from, to)) = super::infix_origins::byte_range(node)
+    {
+        let both = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+            let middle = text.strip_prefix('*')?.strip_suffix('*')?.trim();
+            (middle == op).then_some(())
+        });
+        if both.is_some() {
+            return (Some((from, from + 1)), Some((to - 1, to)));
+        }
+    }
     if left.is_none()
         && is_priming(node, "left")
         && let Some((right_start, _)) = right

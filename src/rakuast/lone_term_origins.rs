@@ -229,3 +229,66 @@ pub(super) fn subscript_assignee(node: &mut RakuAstNode, operand_end: usize) {
         })
     });
 }
+
+/// `(repeat { ... } while COND)` / `(loop { last })`: a lone loop statement
+/// inside parentheses written at `inside`, which the parser left unplaced. Its
+/// text is parsed again as a fragment and the ranges copied over.
+// Cost: O(n), n = length of the statement's text, plus the parse of it.
+pub(super) fn loop_statement(list: &mut RakuAstNode, inside: SrcSpan) {
+    use super::infix_origins::child_at;
+    let [_] = list.fields.as_slice() else {
+        return;
+    };
+    let is_loop = child_at(list, 0).is_some_and(|s| {
+        s.origin.0.is_none()
+            && matches!(
+                s.class,
+                RakuAstClass::StatementLoop
+                    | RakuAstClass::StatementLoopWhile
+                    | RakuAstClass::StatementLoopUntil
+                    | RakuAstClass::StatementLoopRepeatWhile
+                    | RakuAstClass::StatementLoopRepeatUntil
+            )
+    });
+    if !is_loop {
+        return;
+    }
+    let Some(text) = super::unit_source::with_text(inside, |t| Some(t.to_string())) else {
+        return;
+    };
+    super::fragment_origins::statements(
+        &crate::scope::NameScope::default(),
+        list,
+        &text,
+        inside.from as usize,
+    );
+}
+
+/// `(* + *)(3, 4)`: an infix operand of a postfix application written at
+/// `span`, in parentheses the parser did not place, is the text inside them,
+/// trimmed, and its parts are derived from that range.
+// Cost: O(n), n = length of the parenthesized text.
+pub(super) fn parenthesized_operand(node: &mut RakuAstNode, span: SrcSpan) {
+    use super::infix_origins::{child, with_child};
+    let unplaced = child(node, "operand")
+        .is_some_and(|o| o.origin.0.is_none() && o.class == RakuAstClass::ApplyInfix);
+    if !unplaced {
+        return;
+    }
+    let from = span.from as usize;
+    let Some(inner) = super::unit_source::with_text(span, |text| {
+        let body = text.strip_prefix('(')?;
+        let close = super::subst_origins::closing(body, '(', ')')?;
+        let inside = &body[..close];
+        let lead = inside.len() - inside.trim_start().len();
+        let written = inside.trim();
+        (!written.is_empty())
+            .then(|| SrcSpan::new(from + 1 + lead, from + 1 + lead + written.len()))
+    }) else {
+        return;
+    };
+    with_child(node, "operand", |operand| {
+        super::origin::set_span(operand, inner);
+        super::infix_origins::derive(&crate::scope::NameScope::default(), operand);
+    });
+}
