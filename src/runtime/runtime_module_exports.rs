@@ -1373,6 +1373,16 @@ impl Interpreter {
                 // The routine is bound; the proto a bare-file module left under
                 // `GLOBAL::name` only keeps the family's own handling off.
                 proto_def.is_some()
+            } else if crate::runtime::lexical_imports::is_trait_mod_family(&name) {
+                // A trait family a block imports binds in the block's set too
+                // (ADR-8751 stage 2), as a dispatcher trait application asks
+                // first; a unit's top-level import keeps the registry path.
+                !exported_method_candidates
+                    && self.bind_trait_family_lexically(
+                        &name,
+                        &function_entries,
+                        proto_def.as_deref(),
+                    )
             } else {
                 ((!is_operator && !name.contains(":<"))
                     || crate::lexical_builtin_op::binds_lexically(&name))

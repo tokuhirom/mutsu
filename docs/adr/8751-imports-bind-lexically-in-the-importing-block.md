@@ -511,6 +511,26 @@ Consequences that pin the design:
     (`code_is_loaded_module_code`). The earlier "hook module's `my class Hk`
     clobbers the program's" remainder no longer reproduces on `main`. Left
     for the stage 1 exit: the `ImportScope` class-table rollback itself.
+  - Trait handler families bind in the set (2026-11-21). An exported
+    `multi trait_mod:<is>` was the last multi family a block's `use` still
+    aliased into the registry. A routine whose body `use`s such a module
+    (Test) re-ran the import on every call, and each run re-inserted the
+    candidate and its exit took it out again, flushing every routine
+    resolution cache: ~48k instructions per call against ~5k without the
+    `use`. A `use` inside an open block now binds the family as a dispatcher
+    with no built-in fallback (`bind_trait_family_lexically`), and records the
+    set (`LexicalImportTables::trait_sets`). Trait application asks those sets
+    first (`imported_trait_dispatcher`, `try_lexical_trait_mod`) and falls
+    back to the by-name dispatch, which keeps the built-in traits and the
+    program's own candidates. A unit's top-level `use` keeps the registry
+    path, whose per-importer scoping keeps a module's unexported candidates
+    out (#11310). With that, the per-call cost of a block-scoped `use` no
+    longer depends on what it imports, and a replayed `use` writes no
+    registry function at all. The class-table snapshot is already gone (the
+    scope keeps an undo log of registry-path writes, `import_writes`). Per
+    its documentation that log still serves an import that keeps the
+    registry: a family the block extends itself, a core listop, an operator
+    family that does not bind in the set, and another unit's import.
 
 ## 5. Acceptance
 

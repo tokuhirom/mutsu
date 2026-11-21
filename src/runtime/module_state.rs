@@ -1053,4 +1053,11 @@ pub(crate) struct LexicalImportTables {
     /// `ImportScopeSnapshot::lexical_sets`). A lookup by a run-time name reads
     /// the running unit's after every open scope's.
     pub(crate) unit_sets: HashMap<Symbol, Vec<Symbol>>,
+    /// Whether any set binds a trait handler family (`trait_mod:<is>`),
+    /// which trait application then asks before its by-name dispatch
+    /// (`Interpreter::imported_trait_dispatcher`). Sticky: a program that
+    /// never imports one in a block pays one flag read per trait.
+    pub(crate) binds_trait_family: bool,
+    /// The ids of the sets that bind a trait family as a dispatcher.
+    pub(crate) trait_sets: HashSet<Symbol>,
 }

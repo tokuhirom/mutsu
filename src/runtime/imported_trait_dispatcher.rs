@@ -30,6 +30,12 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn imported_trait_dispatcher(&self, name: &str) -> Option<Value> {
         let name_sym = Symbol::lookup(name)?;
+        // A block-scoped `use` binds an imported trait family in the block's
+        // lexical import set (ADR-8751 stage 2): the declarations the block
+        // runs apply their traits through it.
+        if let Some(value) = self.lexical_trait_dispatcher(name_sym) {
+            return Some(value);
+        }
         if !self.module.export_amp_override_names.contains(&name_sym) {
             return None;
         }
@@ -60,6 +66,27 @@ impl Interpreter {
         }
     }
 
+    /// The dispatcher an open block's lexical import set binds the trait
+    /// family `name` to. Traits apply while the declaration runs, so the sets
+    /// are the ones open now (`active_lexical_import_chain`), as for a lookup
+    /// by a run-time name.
+    // Cost: O(1) when no lexical import set binds a trait family; else O(s),
+    // s = open import scopes' sets.
+    fn lexical_trait_dispatcher(&self, name: Symbol) -> Option<Value> {
+        if !self.module.lexical_imports.read().binds_trait_family {
+            return None;
+        }
+        let mut chain = self.active_lexical_import_chain();
+        {
+            let tables = self.module.lexical_imports.read();
+            chain.retain(|id| tables.trait_sets.contains(id));
+        }
+        match self.lexical_import_binding(&chain, name)? {
+            crate::runtime::lexical_imports::LexicalImport::Code(value) => Some(value),
+            crate::runtime::lexical_imports::LexicalImport::Routine(_) => None,
+        }
+    }
+
     /// Whether any `name` (`trait_mod:<is>`) handler is reachable from the
     /// running scope: a registered proto, multi or plain sub, or an imported
     /// dispatcher.
@@ -85,6 +112,49 @@ impl Interpreter {
             Err(e) if Self::is_trait_mod_no_candidate(&e) => None,
             other => Some(other),
         }
+    }
+
+    /// Apply the trait handler `name` through the dispatcher an open block's
+    /// lexical import set binds (ADR-8751). `None` when there is none, or when
+    /// none of its candidates accepts the call. Unlike
+    /// [`Self::try_imported_trait_mod`] it does not consult a `sub EXPORT`
+    /// hook's `&name` env binding: the sites that use it dispatch by name
+    /// otherwise, and keep doing so.
+    // Cost: O(1) when no lexical import set binds a trait family; else one
+    // candidate selection over the dispatcher's candidates.
+    pub(crate) fn try_lexical_trait_mod(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let dispatcher = self.lexical_trait_dispatcher(Symbol::lookup(name)?)?;
+        match self.call_sub_value(dispatcher, args.to_vec()) {
+            Err(e) if Self::is_trait_mod_no_candidate(&e) => None,
+            other => Some(other),
+        }
+    }
+
+    /// [`Self::try_lexical_trait_mod`], else the by-name dispatch.
+    // Cost: as `try_lexical_trait_mod`, plus the by-name dispatch.
+    pub(crate) fn call_trait_mod_lexical_first(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        match self.try_lexical_trait_mod(name, &args) {
+            Some(result) => result,
+            None => self.call_function(name, args),
+        }
+    }
+
+    /// Whether `name` has a handler in the registry or in an open block's
+    /// lexical import set (no `sub EXPORT` hook's env binding; see
+    /// [`Self::try_lexical_trait_mod`]).
+    // Cost: as `has_multi_candidates`, plus O(s) for the open sets.
+    pub(crate) fn has_registry_or_lexical_trait_mod(&mut self, name: &str) -> bool {
+        self.has_proto(name)
+            || self.has_multi_candidates(name)
+            || Symbol::lookup(name).is_some_and(|sym| self.lexical_trait_dispatcher(sym).is_some())
     }
 
     /// [`Self::try_imported_trait_mod`], else the by-name dispatch.

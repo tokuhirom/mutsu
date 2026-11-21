@@ -230,7 +230,7 @@ impl Interpreter {
                 // NoSuchRole` is a typo, not a trait, and must stay the
                 // `Unknown role:` error below rather than becoming an
                 // unknown-*parent* one.
-                if (self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>"))
+                if self.has_registry_or_lexical_trait_mod("trait_mod:<is>")
                     && (op.from_is
                         || role_name_str
                             .chars()

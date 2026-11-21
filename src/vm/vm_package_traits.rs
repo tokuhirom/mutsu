@@ -25,8 +25,9 @@ impl Interpreter {
         } else {
             Value::pair(name.to_string(), argument)
         };
-        if self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>") {
-            match self.vm_call_function("trait_mod:<is>", vec![target, trait_argument]) {
+        if self.has_registry_or_lexical_trait_mod("trait_mod:<is>") {
+            match self.call_trait_mod_lexical_first("trait_mod:<is>", vec![target, trait_argument])
+            {
                 Ok(_) => return Ok(()),
                 Err(error) if Self::is_trait_mod_no_candidate(&error) => {}
                 Err(error) => return Err(error),

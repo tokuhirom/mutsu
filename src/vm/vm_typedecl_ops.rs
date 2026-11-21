@@ -1077,8 +1077,7 @@ impl Interpreter {
                 // them at compile time, once (#12708); the in-place registration,
                 // repeated on every entry of the enclosing code, must not.
                 let has_trait_mod = !traits_ran_in_shell
-                    && (self.has_proto("trait_mod:<is>")
-                        || self.has_multi_candidates("trait_mod:<is>")
+                    && (self.has_registry_or_lexical_trait_mod("trait_mod:<is>")
                         || self.has_any_trait_mod_is());
                 if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
                     let type_obj = Value::package(Symbol::intern(&storage_name));
@@ -1153,7 +1152,13 @@ impl Interpreter {
                     for parent in &mapped_parents {
                         let parent_obj = Value::package(Symbol::intern(parent));
                         let call_args = vec![type_obj.clone(), parent_obj];
-                        if self.typed_is_trait_candidate_matches(&call_args) {
+                        // A block-imported candidate (ADR-8751) applies when it
+                        // accepts the parent; none accepting is no trait.
+                        if let Some(result) =
+                            self.try_lexical_trait_mod("trait_mod:<is>", &call_args)
+                        {
+                            result?;
+                        } else if self.typed_is_trait_candidate_matches(&call_args) {
                             self.vm_call_function("trait_mod:<is>", call_args)?;
                         }
                     }
@@ -1755,8 +1760,7 @@ impl Interpreter {
                 .unwrap_or_default();
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined
-            let has_trait_mod =
-                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+            let has_trait_mod = self.has_registry_or_lexical_trait_mod("trait_mod:<is>");
             if has_trait_mod && (!custom_traits.is_empty() || !role_deferred.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&qualified_name));
                 for (trait_name, trait_arg) in custom_traits {

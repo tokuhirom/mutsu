@@ -1268,8 +1268,15 @@ impl Interpreter {
     /// that code object, so `class X is Singleton` inside a module that
     /// `use`s the trait's provider reaches the provider's `trait_mod:<is>`
     /// (Pop, #15827). A second no-candidate answer returns the first error.
-    // Cost: the dispatch of the trait candidates, twice on the fallback.
+    // Cost: the dispatch of the trait candidates, twice on the fallback, plus
+    // one selection over an imported dispatcher's candidates when there is one.
     pub(crate) fn vm_call_trait_mod_is(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        // A block-scoped `use` binds an imported trait family in the block's
+        // set (ADR-8751): its candidates go first, the by-name dispatch takes
+        // a trait none of them accepts.
+        if let Some(result) = self.try_lexical_trait_mod("trait_mod:<is>", &args) {
+            return result;
+        }
         match self.vm_call_function("trait_mod:<is>", args.clone()) {
             Err(err) if Self::is_trait_mod_no_candidate(&err) => {
                 // The same resolution `&trait_mod:<is>` gets (module-scope
