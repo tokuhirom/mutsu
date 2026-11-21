@@ -53,9 +53,6 @@ pub(super) fn stmt_carried(stmt: &Stmt) -> bool {
         Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::PackageHeader { .. }) => {
             !holds_nested_method(stmt)
         }
-        // `temp Type.meth = v` is expanded (save, assign, restore) by the
-        // conversion of the temporizer, not by the compiler.
-        Stmt::TempMethodAssign { .. } => false,
         _ => true,
     }
 }
