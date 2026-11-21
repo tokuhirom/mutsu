@@ -267,7 +267,7 @@ pub(crate) enum MetaNs {
 
 impl MetaNs {
     /// How many namespaces there are: the last variant's discriminant plus
-    /// one. `count_covers_every_namespace` pins it against [`Self::ALL`].
+    /// one. `count_covers_every_namespace` pins it against the test-only `ALL`.
     const COUNT: usize = MetaNs::NextcalleeChain as usize + 1;
 
     /// Every namespace, so a test can assert a property of all of them and a
