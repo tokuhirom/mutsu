@@ -247,7 +247,9 @@ pub(super) fn unit_list_span(stmts: &[Stmt], source: &str) -> crate::ast::SrcSpa
         last = super::unit_span::widen_statement(last, unit);
     }
     let (from, end) = (first.from as usize, last.to as usize);
-    match crate::source_comments::statement_list_end(source, from, end) {
+    match crate::source_comments::statement_list_end(source, from, end)
+        .or_else(|| super::unit_span::end_before_heredocs(source, from, last))
+    {
         Some(to) => crate::ast::SrcSpan::new(from, to),
         None => crate::ast::SrcSpan::NONE,
     }
