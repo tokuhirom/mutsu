@@ -118,6 +118,11 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     {
         return node_accessor(ty, "where");
     }
+    if method == "type"
+        && let Some(ty) = super::visit_order::of_trait_type(node)
+    {
+        return Some(ty);
+    }
     if method == "container-type" && node.class == RakuAstClass::VarDeclarationSimple {
         return Some(resolve::container_type(node));
     }

@@ -10,7 +10,7 @@
 //! quote) keeps those parts without a range: exact or absent. A type
 //! application (`Array[Int]`) is placed by `type_origins`.
 
-use super::infix_origins::{byte_range, child, with_child};
+use super::infix_origins::{byte_range, child, child_at, with_child};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
 use crate::scope::NameScope;
@@ -111,8 +111,10 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
     loop {
         let gap = trivia_len(&text[at..])?;
         let rest = &text[at + gap..];
-        let Some(after) = rest
-            .strip_prefix("is")
+        // `is NAME` / `of TYPE`.
+        let Some(after) = ["is", "of"]
+            .into_iter()
+            .find_map(|kw| rest.strip_prefix(kw))
             .filter(|r| r.starts_with(char::is_whitespace))
         else {
             break;
@@ -261,6 +263,32 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         let ValueView::RakuAst(trait_node) = value.view() else {
             return;
         };
+        // `my @a of Int`: a `Trait::Of` over its type.
+        if trait_node.class == RakuAstClass::TraitOf {
+            let typed = child_at(trait_node, 0).and_then(child_name).is_some_and(|name| {
+                super::unit_source::with_text(SrcSpan::new(clause.name.0, clause.name.1), |w| {
+                    (w == name).then_some(())
+                })
+                .is_some()
+            });
+            let of = super::unit_source::with_text(
+                SrcSpan::new(clause.whole.0, clause.whole.0 + 2),
+                |w| (w == "of").then_some(()),
+            );
+            if !typed || of.is_none() || clause.argument.is_some() {
+                return;
+            }
+            let mut trait_node = RakuAstNode::clone(trait_node);
+            super::origin::set_span(
+                &mut trait_node,
+                SrcSpan::new(clause.whole.0, clause.whole.1),
+            );
+            super::infix_origins::with_child_at(&mut trait_node, 0, |ty| {
+                type_origin(ty, (clause.name.0, clause.name.1, clause.name.1))
+            });
+            *value = Value::rakuast(Box::new(trait_node));
+            continue;
+        }
         if trait_node.class != RakuAstClass::TraitIs {
             return;
         }
