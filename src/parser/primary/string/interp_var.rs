@@ -65,15 +65,16 @@ fn split_interp_var_name(var_rest: &str) -> Option<(&str, &str)> {
         return None;
     };
     let body = &var_rest[twigil_len..];
-    // An identifier may contain `-` only between two word parts
-    // (`$foo-bar`): `"%PDF-{$v}"` is the literal `%PDF-` followed by
-    // a block, not a hash named `PDF-`, and `"$x-1"` is `$x` then `-1`.
+    // An identifier may contain `-` or `'` only between two word parts
+    // (`$foo-bar`, `$don't`, #18326): `"%PDF-{$v}"` is the literal `%PDF-`
+    // followed by a block, not a hash named `PDF-`, `"$x-1"` is `$x` then
+    // `-1`, and `"'$src' is"` ends the name at the quote.
     let mut end = 0;
     let mut chars = body.char_indices().peekable();
     while let Some((i, c)) = chars.next() {
         if c.is_alphanumeric() || c == '_' {
             end = i + c.len_utf8();
-        } else if c == '-'
+        } else if (c == '-' || c == '\'')
             && chars
                 .peek()
                 .is_some_and(|&(_, n)| n.is_alphabetic() || n == '_')
