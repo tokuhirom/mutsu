@@ -1,7 +1,7 @@
 //! `temp` / `let` over a method-call lvalue (`Stmt::TempMethodAssign`).
 
 use super::Compiler;
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::opcode::OpCode;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -21,29 +21,33 @@ impl Compiler {
     /// object's class-level state (`temp Bla.^table`, Red) is what is restored
     /// (#18392).
     // Cost: O(n), n = nodes in the method arguments and the assigned value.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn compile_temp_method_assign(
-        &mut self,
-        var_name: &str,
-        method_name: &str,
-        method_args: &[Expr],
-        value: Option<&Expr>,
-        is_let: bool,
-        is_attribute: bool,
-        type_invocant: bool,
-        invocant_expr: Option<&Expr>,
-    ) {
+    pub(super) fn compile_temp_method_assign(&mut self, stmt: &Stmt) {
+        let Stmt::TempMethodAssign {
+            var_name,
+            method_name,
+            method_args,
+            value,
+            is_let,
+            is_attribute,
+            type_invocant,
+            invocant_expr,
+        } = stmt
+        else {
+            return;
+        };
+        let (is_let, is_attribute, type_invocant) = (*is_let, *is_attribute, *type_invocant);
+        let invocant_expr = invocant_expr.as_deref();
         let invocant = if let Some(e) = invocant_expr {
             e.clone()
         } else if var_name == "self" || type_invocant {
-            Expr::BareWord(var_name.to_string())
+            Expr::BareWord(var_name.clone())
         } else {
-            Expr::Var(var_name.to_string())
+            Expr::Var(var_name.clone())
         };
         let frame_invocant = invocant_expr.is_none() && (var_name == "self" || is_attribute);
         if frame_invocant {
             let slot = self.local_map.get(var_name).copied();
-            let name_idx = self.code.add_constant(Value::str(var_name.to_string()));
+            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LetSave {
                 name_idx,
                 is_temp: !is_let,
@@ -54,8 +58,8 @@ impl Compiler {
                 name: Symbol::intern("__mutsu_temp_method_save"),
                 args: vec![
                     invocant.clone(),
-                    Expr::Literal(Value::str(method_name.to_string())),
-                    Expr::ArrayLiteral(method_args.to_vec()),
+                    Expr::Literal(Value::str(method_name.clone())),
+                    Expr::ArrayLiteral(method_args.clone()),
                     Expr::Literal(if is_let { Value::FALSE } else { Value::TRUE }),
                 ],
                 listop: false,
@@ -81,12 +85,12 @@ impl Compiler {
         } else if type_invocant {
             Some(format!("\\{var_name}"))
         } else {
-            Some(var_name.to_string())
+            Some(var_name.clone())
         };
         let assign_expr = crate::lvalue_call::assign_method(
             invocant,
-            Expr::Literal(Value::str(method_name.to_string())),
-            method_args.to_vec(),
+            Expr::Literal(Value::str(method_name.clone())),
+            method_args.clone(),
             value,
             crate::lvalue_call::AssignMethodHints {
                 target_var,

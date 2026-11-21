@@ -5454,25 +5454,7 @@ impl Compiler {
                     self.emit_set_named_var(name);
                 }
             }
-            Stmt::TempMethodAssign {
-                var_name,
-                method_name,
-                method_args,
-                value,
-                is_let,
-                is_attribute,
-                type_invocant,
-                invocant_expr,
-            } => self.compile_temp_method_assign(
-                var_name,
-                method_name,
-                method_args,
-                value.as_ref(),
-                *is_let,
-                *is_attribute,
-                *type_invocant,
-                invocant_expr.as_deref(),
-            ),
+            Stmt::TempMethodAssign { .. } => self.compile_temp_method_assign(stmt),
             Stmt::SetLine(line, _) => {
                 // No instruction: the line is static data. Attach it to every op
                 // emitted for the statements that follow (`CompiledCode::op_lines`),
