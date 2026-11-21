@@ -70,6 +70,10 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::Substitution => super::subst_origins::derive(names, node),
         // `{:2b, :!c, :e(5)}`: the colonpairs among the composer's entries.
         RakuAstClass::CircumfixHashComposer => super::hash_colonpair_origins::derive(names, node),
+        RakuAstClass::ContextualizerHash => {
+            super::hash_colonpair_origins::contextualizer(names, node);
+            super::operator_origins::derive(node);
+        }
         RakuAstClass::ApplyPostfix => {
             super::list_origins::postcircumfix(node);
             super::operator_origins::derive(node);
