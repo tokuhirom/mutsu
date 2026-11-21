@@ -70,7 +70,19 @@ pub(super) fn is_user_call_field(field: &RakuAstField) -> bool {
 /// `shadowed_terms::scan`).
 // Cost: O(k), k = length of `name`.
 pub(super) fn is_declared(names: &crate::scope::NameScope, name: &str) -> bool {
-    names.unit().routines.contains(name)
+    let full = names.unit().routines.contains(name);
+    if full {
+        CENSUS_SO_FAR.with(|s| {
+            if let Some(s) = s.borrow().as_ref() && !s.contains(name) {
+                eprintln!("ROUTINE-CENSUS FLIP {name}");
+            }
+        });
+    }
+    full
+}
+
+thread_local! {
+    pub(super) static CENSUS_SO_FAR: std::cell::RefCell<Option<std::collections::HashSet<String>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// The routine name `node` itself declares (not its children): a named `sub`,

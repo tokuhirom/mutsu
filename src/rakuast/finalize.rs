@@ -97,6 +97,9 @@ impl<'s> UnitFinalizer<'s> {
     /// Begin finalizing the unit whose top-level statements are `unit`.
     // Cost: O(n), n = size of the unit (its lookahead inputs).
     pub(super) fn begin(names: &'s NameScope, unit: &[Stmt]) -> Self {
+        if std::env::var_os("MUTSU_ROUTINE_CENSUS").is_some() {
+            super::declared_routines::CENSUS_SO_FAR.with(|s| *s.borrow_mut() = Some(Default::default()));
+        }
         let executing = Executing::enter();
         // The lowering of a converted construct builds no spellings either.
         let spellings = crate::ast::spelled::KeepSpellings::enter(false);
@@ -667,6 +670,12 @@ impl Finalize<'_> {
     /// as in rakudo, even inside a routine body.
     // Cost: O(s·d), s = size of the statement, d = package nesting depth.
     fn top_statement(&mut self, index: usize, stmt: &mut Stmt) {
+        if std::env::var_os("MUTSU_ROUTINE_CENSUS").is_some() {
+            let r = super::shadowed_terms::census_routines(stmt);
+            super::declared_routines::CENSUS_SO_FAR.with(|s| {
+                s.borrow_mut().get_or_insert_with(Default::default).extend(r)
+            });
+        }
         super::bareword::declare_statement(self.names, stmt);
         super::shadowed_terms::declare_statement(self.names, stmt);
         self.declared_types

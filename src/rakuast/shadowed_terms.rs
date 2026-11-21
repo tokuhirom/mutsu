@@ -105,6 +105,10 @@ pub(super) fn declare_statement(names: &NameScope, stmt: &Stmt) {
     names.extend_unit_in_order(facts_of(std::slice::from_ref(stmt)));
 }
 
+pub(super) fn census_routines(stmt: &Stmt) -> HashSet<String> {
+    facts_of(std::slice::from_ref(stmt)).routines
+}
+
 /// The facts the statements `stmts` declare.
 // Cost: O(n), n = nodes of `stmts`.
 fn facts_of(stmts: &[Stmt]) -> UnitFacts {
