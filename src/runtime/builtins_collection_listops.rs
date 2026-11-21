@@ -73,6 +73,13 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_join(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(threaded) = self.thread_join_separator(args.first(), |interp, separator| {
+            let mut call = args.to_vec();
+            call[0] = separator;
+            interp.builtin_join(&call)
+        }) {
+            return threaded;
+        }
         let sep = args
             .first()
             .map(|v| v.to_string_value())
@@ -160,10 +167,7 @@ impl Interpreter {
         {
             return Err(err);
         }
-        if let Some(threaded) = crate::builtins::thread_junctions_in_items(&flat_items, &|c| {
-            let parts: Vec<String> = c.iter().map(|v| v.to_str_context()).collect();
-            Value::str(crate::builtins::str_prim::join(&parts, &sep))
-        }) {
+        if let Some(threaded) = crate::builtins::join_items_threading_junctions(&flat_items, &sep) {
             return Ok(threaded);
         }
         match crate::builtins::join_flat(&sep, &rendered) {

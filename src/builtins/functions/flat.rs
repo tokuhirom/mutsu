@@ -94,6 +94,24 @@ pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<Result<String, Runt
     Some(Ok(crate::builtins::str_prim::join(&parts, sep)))
 }
 
+/// `join`'s answer over already flattened `items` when one of them is a
+/// Junction: the join threaded over its eigenstates, or -- for a list that
+/// is nothing but one Junction -- that Junction itself, unstringified, as
+/// rakudo's `List.join` hands back its only element. `None` when no item is
+/// a Junction. Shared by `join(...)` and `.join` (#18221).
+// Cost: O(e * n), e = eigenstate combinations, n = characters joined.
+pub(crate) fn join_items_threading_junctions(items: &[Value], sep: &str) -> Option<Value> {
+    if let [only] = items
+        && matches!(only.view(), ValueView::Junction { .. })
+    {
+        return Some(only.clone());
+    }
+    thread_junctions_in_items(items, &|c| {
+        let parts: Vec<String> = c.iter().map(|v| v.to_str_context()).collect();
+        Value::str(crate::builtins::str_prim::join(&parts, sep))
+    })
+}
+
 /// If a (already fully flattened) list of items contains a `Junction`
 /// anywhere, thread `render` across the cross product of every SAME-kind
 /// junction position's eigenstates, returning one flat `Junction` of that
