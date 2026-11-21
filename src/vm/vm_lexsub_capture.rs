@@ -183,8 +183,7 @@ impl Interpreter {
             // capture, so the recursion stays in this activation instead of
             // reaching the registry's latest activation of the routine
             // (#18248 shape C).
-            if siblings.iter().any(|(s, _)| *s == name)
-                || !Self::code_names_routine(&cf.code, name)
+            if siblings.iter().any(|(s, _)| *s == name) || !Self::code_names_routine(&cf.code, name)
             {
                 continue;
             }
