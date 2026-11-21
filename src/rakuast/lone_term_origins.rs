@@ -94,11 +94,13 @@ pub(super) fn modified_statement(list: &mut RakuAstNode, inside: SrcSpan) {
         return;
     }
     let from = inside.from as usize;
-    let Some((at, written)) = super::unit_source::with_text(SrcSpan::new(from, modifier.0), |text| {
-        let lead = text.len() - text.trim_start().len();
-        let written = text.trim();
-        (!written.is_empty()).then(|| (from + lead, written.to_string()))
-    }) else {
+    let Some((at, written)) =
+        super::unit_source::with_text(SrcSpan::new(from, modifier.0), |text| {
+            let lead = text.len() - text.trim_start().len();
+            let written = text.trim();
+            (!written.is_empty()).then(|| (from + lead, written.to_string()))
+        })
+    else {
         return;
     };
     // The expression's text is parsed again as a fragment, whose ranges
