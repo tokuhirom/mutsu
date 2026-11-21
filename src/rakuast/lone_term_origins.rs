@@ -120,8 +120,9 @@ pub(super) fn modified_statement(list: &mut RakuAstNode, inside: SrcSpan) {
     });
 }
 
-/// `$x = $y = 1`: an infix or postfix application on the right of another
-/// infix, which the parser left unplaced, runs from after the operator
+/// `$x = $y = 1` / `10 R+= ($a ||= 42)`: an infix or postfix application
+/// or a parenthesized term on the right of another infix, which the parser
+/// left unplaced, runs from after the operator
 /// (ending at byte `op_end`) and its blanks to the end of the outer
 /// application, and its parts are derived from that range.
 // Cost: O(n), n = length of the operand's text.
@@ -130,18 +131,33 @@ pub(super) fn right_after_operator(node: &mut RakuAstNode, op_end: usize) {
     let Some((_, to)) = byte_range(node) else {
         return;
     };
-    let unplaced = child(node, "right").is_some_and(|right| {
-        right.origin.0.is_none()
-            && matches!(
-                right.class,
-                RakuAstClass::ApplyInfix | RakuAstClass::ApplyPostfix
+    let Some(class) = child(node, "right")
+        .filter(|right| right.origin.0.is_none())
+        .map(|right| right.class)
+        .filter(|class| {
+            matches!(
+                class,
+                RakuAstClass::ApplyInfix
+                    | RakuAstClass::ApplyPostfix
+                    | RakuAstClass::CircumfixParentheses
             )
-    });
-    if !unplaced || op_end >= to {
+        })
+    else {
+        return;
+    };
+    if op_end >= to {
         return;
     }
     let Some(from) = super::unit_source::with_text(SrcSpan::new(op_end, to), |text| {
         let operand = text.trim_start();
+        // `10 R+= ($a ||= 42)`: parentheses written up to the end.
+        if class == RakuAstClass::CircumfixParentheses {
+            let inside = operand.strip_prefix('(')?;
+            let close = super::subst_origins::closing(inside, '(', ')')?;
+            if close + 2 != operand.len() {
+                return None;
+            }
+        }
         (operand.len() < text.len() && !operand.is_empty()).then(|| to - operand.len())
     }) else {
         return;
