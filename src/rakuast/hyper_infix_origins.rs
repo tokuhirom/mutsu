@@ -86,7 +86,9 @@ pub(super) fn place_assign(
             let lead = between.len() - between.trim_start().len();
             let rest = &between[lead..];
             let open = MARKERS.into_iter().find(|m| rest.starts_with(m))?;
-            let after = rest[open.len()..].strip_prefix(op.as_str())?.strip_prefix('=')?;
+            let after = rest[open.len()..]
+                .strip_prefix(op.as_str())?
+                .strip_prefix('=')?;
             let close = MARKERS.into_iter().find(|m| after.starts_with(m))?;
             let written = rest.len() - after.len() + close.len();
             after[close.len()..]
