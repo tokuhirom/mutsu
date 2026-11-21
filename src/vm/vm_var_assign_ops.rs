@@ -1352,6 +1352,11 @@ impl Interpreter {
         resolved_source: &str,
         bind_source_slot: Option<u32>,
     ) -> bool {
+        // An attribute slot's source is this frame's invocant's attribute,
+        // never a caller's binding (`bind_source_is_attr_slot`).
+        if Self::bind_source_is_attr_slot(code, bind_source_slot, resolved_source) {
+            return true;
+        }
         if source_name == resolved_source
             && let Some(slot) = bind_source_slot
         {
