@@ -178,8 +178,12 @@ impl Interpreter {
         building.push((data.name, None));
         for plan in &code.sub_decl_plans {
             let name = plan.name;
-            if name == data.name
-                || siblings.iter().any(|(s, _)| *s == name)
+            // The routine's own name is bound too, when its body names it (a
+            // recursive call): the back-edge cell below receives this very
+            // capture, so the recursion stays in this activation instead of
+            // reaching the registry's latest activation of the routine
+            // (#18248 shape C).
+            if siblings.iter().any(|(s, _)| *s == name)
                 || !Self::code_names_routine(&cf.code, name)
             {
                 continue;
@@ -199,6 +203,11 @@ impl Interpreter {
             siblings.push((name, sibling));
         }
         let back_edge = building.pop().and_then(|(_, cell)| cell);
+        // A routine that reads nothing of this activation is the same routine
+        // in every activation: its self-reference resolves by name as before.
+        if cells.is_empty() && siblings.iter().all(|(s, _)| *s == data.name) {
+            siblings.clear();
+        }
         if cells.is_empty() && siblings.is_empty() {
             if let Some(cell) = back_edge {
                 cell.assign_into_container(val.clone());
