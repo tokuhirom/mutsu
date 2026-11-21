@@ -36,6 +36,7 @@ mod builtins_collection_listops;
 mod builtins_collection_mapgrep;
 mod builtins_collection_minmax;
 mod builtins_control_flow;
+mod builtins_fail_site;
 mod builtins_dispatch_next;
 mod builtins_dispatch_next_core;
 mod builtins_eval_misc;
