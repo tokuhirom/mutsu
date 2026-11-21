@@ -4,7 +4,7 @@ use Test;
 # it is compiled ahead of a destructuring declaration before it. Its methods
 # still write those variables through their declaration's cells.
 
-plan 6;
+plan 7;
 
 my ($general, $other) = 0, 0;
 my $sentry = 0;
@@ -30,3 +30,11 @@ BEGIN { };
 role R { }
 class K does R { method m { $a + $b } }
 is K.new.m, 11, 'the destructured values are visible to the method';
+
+my ($first, @rest) = 1, 2, 3;
+role ArrayCaptureRole { }
+class ArrayCaptureClass does ArrayCaptureRole {
+    method append { @rest.push(9) }
+}
+ArrayCaptureClass.new.append;
+is-deeply @rest, [2, 3, 9], 'the method and mainline share the destructured array';
