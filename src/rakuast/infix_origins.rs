@@ -28,6 +28,11 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         // `constant X = EXPR` / `my constant %h := EXPR`.
         RakuAstClass::VarDeclarationConstant => initializer(node),
+        // `my \x = EXPR`: the name after the backslash, and the initializer.
+        RakuAstClass::VarDeclarationTerm => {
+            initializer(node);
+            super::sigilless_origins::name(node);
+        }
         RakuAstClass::VarDeclarationSignature => {
             initializer(node);
             super::signature_decl_origins::declaration(node);
