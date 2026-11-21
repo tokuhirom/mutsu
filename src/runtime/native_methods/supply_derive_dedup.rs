@@ -11,13 +11,17 @@
 //! per-tap seen keys and the duplicate test.
 
 use crate::runtime::*;
+use crate::thread_compat::Instant;
 use crate::value::AttrMap;
 
 /// The keys each live `unique` / `squish` tap has seen, keyed by a per-tap
 /// id (the forwarder instances are rebuilt per delivery, as for `head`).
-/// A `squish` tap keeps only the last key.
-fn seen_keys() -> &'static std::sync::Mutex<HashMap<u64, Vec<Value>>> {
-    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<u64, Vec<Value>>>> =
+/// A `squish` tap keeps only the last key. Each key carries when it was
+/// seen, for `unique(:expires)`.
+type SeenKeys = Vec<(Value, Instant)>;
+
+fn seen_keys() -> &'static std::sync::Mutex<HashMap<u64, SeenKeys>> {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<u64, SeenKeys>>> =
         std::sync::OnceLock::new();
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
@@ -49,11 +53,17 @@ pub(super) fn dedup_finish(id: u64) {
     }
 }
 
-/// The `:as` / `:with` pair a dedup stage carries as its `callable`.
-pub(super) fn dedup_callable(as_fn: Option<Value>, with_fn: Option<Value>) -> Value {
+/// The `:as` / `:with` / `:expires` a dedup stage carries as its
+/// `callable`.
+pub(super) fn dedup_callable(
+    as_fn: Option<Value>,
+    with_fn: Option<Value>,
+    expires: Option<f64>,
+) -> Value {
     Value::array(vec![
         as_fn.unwrap_or(Value::NIL),
         with_fn.unwrap_or(Value::NIL),
+        expires.map_or(Value::NIL, Value::num),
     ])
 }
 
@@ -62,7 +72,7 @@ pub(super) fn dedup_callable(as_fn: Option<Value>, with_fn: Option<Value>) -> Va
 pub(in crate::runtime) fn visit_dedup_roots(visitor: &mut dyn crate::gc::RootVisitor) {
     if let Ok(map) = seen_keys().lock() {
         for keys in map.values() {
-            for key in keys {
+            for (key, _) in keys {
                 visitor.visit_value(key);
             }
         }
@@ -81,24 +91,34 @@ impl Interpreter {
         callable: &Value,
         value: &Value,
     ) -> Result<bool, RuntimeError> {
-        let (as_fn, with_fn) = match callable.view() {
+        let (as_fn, with_fn, expires) = match callable.view() {
             ValueView::Array(items, ..) => (
                 items.first().cloned().filter(|f| !f.is_nil()),
                 items.get(1).cloned().filter(|f| !f.is_nil()),
+                items.get(2).filter(|e| !e.is_nil()).map(Value::to_f64),
             ),
-            _ => (None, None),
+            _ => (None, None, None),
         };
         let key = match as_fn {
             Some(f) => self.call_supply_callback(f, vec![value.clone()])?,
             None => value.clone(),
         };
-        let seen = seen_keys()
-            .lock()
-            .ok()
-            .and_then(|map| map.get(&id).cloned())
-            .unwrap_or_default();
+        let now = Instant::now();
+        let seen = match seen_keys().lock() {
+            Ok(mut map) => match map.get_mut(&id) {
+                Some(keys) => {
+                    // `:expires`: a key seen that long ago no longer counts.
+                    if let Some(secs) = expires {
+                        keys.retain(|(_, at)| now.duration_since(*at).as_secs_f64() < secs);
+                    }
+                    keys.clone()
+                }
+                None => Vec::new(),
+            },
+            Err(_) => Vec::new(),
+        };
         let mut duplicate = false;
-        for earlier in &seen {
+        for (earlier, _) in &seen {
             let same = match &with_fn {
                 Some(f) => self
                     .call_supply_callback(f.clone(), vec![earlier.clone(), key.clone()])?
@@ -115,27 +135,29 @@ impl Interpreter {
         {
             if squish {
                 keys.clear();
-                keys.push(key);
+                keys.push((key, now));
             } else if !duplicate {
-                keys.push(key);
+                keys.push((key, now));
             }
         }
         Ok(!duplicate)
     }
 
     /// The derived on-demand Supply for `source.unique` / `source.squish`
-    /// (with their `:as` / `:with`), where `source` is an on-demand supply.
+    /// (with their `:as` / `:with`, and `:expires` for `unique`), where
+    /// `source` is an on-demand supply or a live recipe.
     // Cost: O(1).
     pub(in crate::runtime) fn make_on_demand_dedup_supply(
         source: Value,
         squish: bool,
         as_fn: Option<Value>,
         with_fn: Option<Value>,
+        expires: Option<f64>,
     ) -> Value {
         Self::make_on_demand_derived_supply_named(
             source,
             if squish { "squish" } else { "unique" },
-            dedup_callable(as_fn, with_fn),
+            dedup_callable(as_fn, with_fn, expires),
         )
     }
 }

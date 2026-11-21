@@ -146,10 +146,11 @@ impl Interpreter {
     pub(crate) const LIVE_RECIPE_KEY: &'static str = "live_recipe";
 
     /// Whether a stage over `attributes` is built as a per-tap recipe
-    /// (ADR-18443): the source is a recipe already, or a plain live supplier
-    /// -- not a `Supplier::Preserving` one, a `schedule-on` one, a shared
-    /// on-demand one or one carrying seeded values, which keep their eager
-    /// stage for now.
+    /// (ADR-18443): the source is a recipe already, or a live supplier --
+    /// a plain one, a `Supplier::Preserving` one (each tap of the stage taps
+    /// it, so its first one replays the backlog) or a `schedule-on` one --
+    /// but not a shared on-demand one or one carrying seeded values, which
+    /// keep their eager stage for now.
     // Cost: O(1).
     pub(in crate::runtime) fn stage_is_live_recipe(attributes: &AttrMap) -> bool {
         if attributes.contains_key(Self::LIVE_RECIPE_KEY) {
@@ -160,8 +161,6 @@ impl Interpreter {
                 Some(ValueView::Array(values, ..)) if !values.is_empty());
         super::supplier_id_from_attrs(attributes).is_some()
             && !seeded
-            && !attributes.contains_key("preserving")
-            && !attributes.contains_key("scheduler")
             && !attributes.contains_key("shared_on_demand")
     }
 

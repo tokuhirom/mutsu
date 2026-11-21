@@ -82,6 +82,9 @@ impl Interpreter {
                 let shared_started = shared_on_demand
                     && !supplier_id_from_attrs(&attrs).is_some_and(shared_supply_claim_start);
                 let mut outer_tap_registered = false;
+                // The backlog of a preserving supply was replayed already
+                // (`tap_preserved_source`).
+                let mut preserved_replayed = false;
 
                 // ADR-0028 Slice 1: `Supply.schedule-on($scheduler)` genuinely
                 // defers tap/done/quit delivery instead of letting it reach
@@ -144,6 +147,19 @@ impl Interpreter {
                     // `is_lines`/`is_words` -- handled entirely below, by the
                     // channel-tap branch that reads `attrs` directly.)
                     if Self::supply_has_active_callback(&tap_cb)
+                        && attrs.contains_key("preserving")
+                        && !shared_on_demand
+                    {
+                        // Replay the backlog, then go live (see
+                        // `tap_preserved_source`).
+                        self.tap_preserved_source(
+                            supplier_id as u64,
+                            &tap_cb,
+                            &attrs,
+                            delay_seconds,
+                        )?;
+                        preserved_replayed = true;
+                    } else if Self::supply_has_active_callback(&tap_cb)
                         && (!shared_on_demand || shared_started)
                     {
                         register_supplier_tap(supplier_id as u64, tap_cb.clone(), delay_seconds);
@@ -1428,7 +1444,7 @@ impl Interpreter {
                         // still reach this tap — and only the *un-replayed* part
                         // of it, so a second tap gets nothing.
                         if attrs.contains_key("preserving") {
-                            if Self::supply_has_active_callback(&tap_cb) {
+                            if Self::supply_has_active_callback(&tap_cb) && !preserved_replayed {
                                 supplier_take_preserved_backlog(supplier_id as u64)
                             } else {
                                 Vec::new()
@@ -1926,7 +1942,7 @@ impl Interpreter {
 
     /// A Supply's `.do` callbacks, run on each value before the tap.
     // Cost: O(d), d = number of `do` callbacks.
-    fn supply_do_callbacks(attrs: &AttrMap) -> Vec<Value> {
+    pub(super) fn supply_do_callbacks(attrs: &AttrMap) -> Vec<Value> {
         match attrs.get("do_callbacks").map(Value::view) {
             Some(ValueView::Array(a, ..)) => a.to_vec(),
             _ => Vec::new(),
@@ -1935,7 +1951,7 @@ impl Interpreter {
 
     /// A Supply's `.throttle` limit: values delivered per delay period.
     // Cost: O(1).
-    fn supply_throttle_limit(attrs: &AttrMap) -> Option<usize> {
+    pub(super) fn supply_throttle_limit(attrs: &AttrMap) -> Option<usize> {
         match attrs.get("throttle_limit").map(Value::view) {
             Some(ValueView::Int(n)) => Some(n as usize),
             _ => None,

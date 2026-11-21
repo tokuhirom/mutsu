@@ -395,7 +395,7 @@ impl Interpreter {
                             .last()
                             .is_some_and(|f| f.is_react) =>
                 {
-                    self.instantiate_live_recipe(&supply_val)?
+                    self.instantiate_live_recipe(&supply_val, true)?
                 }
                 _ => supply_val,
             };

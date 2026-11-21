@@ -147,6 +147,7 @@ impl SupplyOp {
                 | SupplyOp::Produce
                 | SupplyOp::Elems
                 | SupplyOp::Words
+                | SupplyOp::Channel
                 | SupplyOp::Share
                 | SupplyOp::Supply
                 | SupplyOp::Live
@@ -157,72 +158,6 @@ impl SupplyOp {
 }
 
 impl Interpreter {
-    /// Instantiate a live per-tap recipe (ADR-18443) for one consumer that
-    /// only knows a live source by its supplier (a react `whenever`, a
-    /// combinator not converted to a recipe yet): tap the recipe -- the one
-    /// instantiation path every tap takes -- with forwarders into a fresh
-    /// supplier, and answer a Supply over that supplier. Its
-    /// `on_close_callbacks` close the tap, which releases every stage below;
-    /// a react runs them when the `whenever` or the react ends.
-    // Cost: O(d), d = stages in the recipe, plus the recipe's own tap.
-    pub(crate) fn instantiate_live_recipe(&mut self, recipe: &Value) -> Result<Value, RuntimeError> {
-        use crate::runtime::native_methods::{native_method_shim, next_supplier_id};
-        let out_sid = next_supplier_id();
-        let mut supplier_attrs = HashMap::new();
-        supplier_attrs.insert("done".to_string(), Value::FALSE);
-        supplier_attrs.insert("supplier_id".to_string(), Value::int(out_sid as i64));
-        let supplier = Value::make_instance(Symbol::intern("Supplier"), supplier_attrs);
-        let tap = self.call_method_with_values(
-            recipe.clone(),
-            "tap",
-            vec![
-                native_method_shim(supplier.clone(), "emit", true),
-                Value::pair(
-                    "done".to_string(),
-                    native_method_shim(supplier.clone(), "done", false),
-                ),
-                Value::pair("quit".to_string(), native_method_shim(supplier, "quit", true)),
-            ],
-        )?;
-        let mut attrs = HashMap::new();
-        attrs.insert("values".to_string(), Value::array(Vec::new()));
-        attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("supplier_id".to_string(), Value::int(out_sid as i64));
-        attrs.insert("live".to_string(), Value::truth(Self::live_recipe_is_live(recipe)));
-        attrs.insert(
-            "on_close_callbacks".to_string(),
-            Value::array(vec![native_method_shim(tap, "close", false)]),
-        );
-        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
-    }
-
-    /// `.live` of a live per-tap recipe: walk its stages down to the live
-    /// source; a `head` stage on the way makes it not live.
-    // Cost: O(d), d = stages in the recipe.
-    pub(crate) fn live_recipe_is_live(supply: &Value) -> bool {
-        let mut cur = supply.clone();
-        loop {
-            let ValueView::Instance { attributes, .. } = cur.view() else {
-                return false;
-            };
-            let attrs = attributes.as_map();
-            if !attrs.contains_key(Self::LIVE_RECIPE_KEY) {
-                return attrs.get("live").is_some_and(Value::truthy);
-            }
-            if attrs
-                .get("derive_mode")
-                .is_some_and(|m| !matches!(m.to_string_value().as_str(), "map" | "grep" | "do"))
-            {
-                return false;
-            }
-            let Some(next) = attrs.get("derive_source").cloned() else {
-                return false;
-            };
-            drop(attrs);
-            cur = next;
-        }
-    }
-
     /// Run `op` on `target`, a `Supply` instance (or, for the class methods
     /// `merge`, `zip` and `zip-latest`, the `Supply` type object). `None` for
     /// any other receiver.
@@ -258,7 +193,7 @@ impl Interpreter {
         // and drop this; it keeps one shared instance of the chain below
         // such a combinator, which rakudo would not.
         if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY) && !op.knows_live_recipes() {
-            let live = match self.instantiate_live_recipe(target) {
+            let live = match self.instantiate_live_recipe(target, false) {
                 Ok(live) => live,
                 Err(err) => return Some(Err(err)),
             };
@@ -299,6 +234,13 @@ impl Interpreter {
             // `.delayed(0)` (or less) is the supply itself.
             SupplyOp::Delayed if args.first().is_some_and(|delay| delay.to_f64() <= 0.0) => {
                 Ok(target)
+            }
+            // A live per-tap recipe (ADR-18443): the subscriber's tap goes on
+            // first, then the stages below it are instantiated.
+            SupplyOp::Tap | SupplyOp::Act
+                if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY) =>
+            {
+                self.tap_live_recipe(&attributes.as_map(), op.name(), args)
             }
             SupplyOp::Tap | SupplyOp::Act | SupplyOp::OnClose => {
                 self.call_native_instance_method_mut_in_place(&attributes, "Supply", op.name(), args)
