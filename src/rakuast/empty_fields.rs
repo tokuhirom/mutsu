@@ -20,6 +20,12 @@ use crate::value::Value;
 pub struct EmptyOrigins(Option<Box<[(&'static str, Value)]>>);
 
 impl EmptyOrigins {
+    /// Whether no absent field has an origin.
+    // Cost: O(1).
+    pub(super) fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
     // Cost: O(e), e = empty fields with an origin (at most two).
     fn get(&self, field: &str) -> Option<&Value> {
         self.0

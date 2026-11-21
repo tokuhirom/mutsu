@@ -962,7 +962,8 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                     _ => None,
                 })
                 .collect();
-            (!exprs.is_empty()).then_some(exprs)
+            // `M::foo`: no expression part, nothing visited.
+            Some(exprs)
         }
         // Rakudo's `Term::Enum` visits its `Name`, written where the term is.
         RakuAstClass::TermEnum => {

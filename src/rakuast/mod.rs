@@ -102,6 +102,7 @@ mod view;
 use crate::core_type_names;
 use crate::scope::NameScope;
 mod decl_compound_assign;
+mod decl_compound_origins;
 mod decl_modifier_split;
 mod sigilless_lower;
 mod sigilless_origins;

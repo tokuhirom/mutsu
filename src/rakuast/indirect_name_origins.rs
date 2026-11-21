@@ -230,3 +230,28 @@ pub(super) fn call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
     }
     placed
 }
+
+/// `M::foo if True`: a qualified name written as a bare word is a
+/// `Call::Name` with no arguments of its own. Its `Name` spans the call's
+/// whole text (`span`) and the empty `ArgList` it visits sits at the end.
+/// Whether the name was placed.
+// Cost: O(n), n = length of the name.
+pub(super) fn bare_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
+    use super::infix_origins::{child, with_child};
+    if node.class != RakuAstClass::CallName || child(node, "args").is_some() {
+        return false;
+    }
+    let Some(super::name_parts::NameShape::Identifier(name)) =
+        child(node, "name").and_then(super::name_parts::name_shape)
+    else {
+        return false;
+    };
+    let exact = super::unit_source::with_text(span, |text| (text == name).then_some(()));
+    if exact.is_none() {
+        return false;
+    }
+    with_child(node, "name", |n| super::origin::set_span(n, span));
+    let end = crate::ast::SrcSpan::new(span.to as usize, span.to as usize);
+    super::empty_fields::set_span(node, "args", end);
+    true
+}

@@ -201,6 +201,7 @@ pub(super) fn child_at(node: &RakuAstNode, index: usize) -> Option<&RakuAstNode>
 // Cost: O(n), n = length of the source between the operands.
 fn apply_infix(node: &mut RakuAstNode) {
     leading_variable(node);
+    super::decl_compound_origins::leading_declaration(node);
     super::lone_term_origins::variable_before_operator(node);
     let left = child(node, "left").and_then(byte_range);
     let right = child(node, "right").and_then(byte_range);
@@ -380,7 +381,9 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
-    if super::indirect_name_origins::call(node, SrcSpan::new(from, to)) {
+    if super::indirect_name_origins::call(node, SrcSpan::new(from, to))
+        || super::indirect_name_origins::bare_call(node, SrcSpan::new(from, to))
+    {
         return;
     }
     let Some(name) = child(node, "name")

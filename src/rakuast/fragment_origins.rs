@@ -175,6 +175,10 @@ fn copy(target: &mut RakuAstNode, source: &RakuAstNode, top: bool) {
     {
         target.origin.0 = source.origin.0.clone();
     }
+    // `$hash.kv`: the empty `ArgList` a call visits keeps its range there.
+    if target.origin.1.is_empty() {
+        target.origin.1 = source.origin.1.clone();
+    }
     copy_fields(target, source, false);
 }
 
