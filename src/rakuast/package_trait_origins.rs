@@ -158,7 +158,14 @@ fn clauses(text: &str, base: usize) -> Vec<Clause> {
         let mut end = name_to;
         let mut argument = None;
         if text[name_to..].starts_with('(') {
-            let Some(close) = closing_paren(&text[name_to..]) else {
+            // `is repr('CStruct')`: the representation, a quoted name, which
+            // the package absorbs; the clauses after it are read on.
+            let close = if name == "repr" {
+                super::subst_origins::closing(&text[name_to + 1..], '(', ')').map(|c| c + 1)
+            } else {
+                closing_paren(&text[name_to..])
+            };
+            let Some(close) = close else {
                 break;
             };
             end = name_to + close + 1;
@@ -179,8 +186,8 @@ fn clauses(text: &str, base: usize) -> Vec<Clause> {
 /// Start the body `Block` of `decl` (a package with traits) at its first
 /// trait, as rakudo does; `block` is the range the parser gave the block.
 // Cost: O(t), t = traits.
-pub(super) fn block_from_first_trait(decl: &mut RakuAstNode, block: SrcSpan) {
-    let first = decl
+pub(super) fn block_from_first_trait(decl: &mut RakuAstNode, block: SrcSpan, header: SrcSpan) {
+    let listed = decl
         .fields
         .iter()
         .find(|f| f.name == Some("traits"))
@@ -191,6 +198,20 @@ pub(super) fn block_from_first_trait(decl: &mut RakuAstNode, block: SrcSpan) {
             }),
             _ => None,
         });
+    // `class T is repr('CStruct') { }`: a trait the package absorbs (its
+    // representation) is not listed, yet the block starts at it too.
+    let absorbed = super::unit_source::with_text(header, |text| {
+        let written = text.trim_start();
+        let at = header.from as usize + (text.len() - written.len());
+        written
+            .strip_prefix("is")
+            .is_some_and(|rest| rest.trim_start().starts_with("repr("))
+            .then_some((at, at))
+    });
+    let first = match (listed, absorbed) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
     let Some((from, _)) = first else {
         return;
     };
