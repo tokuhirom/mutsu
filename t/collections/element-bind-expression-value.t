@@ -3,7 +3,7 @@ use Test;
 # #18260: the value of an element bind expression is the bound value itself,
 # not an itemized `$(...)` of it. The element was already stored bare.
 
-plan 14;
+plan 17;
 
 my %h;
 is (%h<a> := (1, 2).Seq).raku, '(1, 2).Seq', 'hash element bind of a Seq';
@@ -41,3 +41,14 @@ is $x, 7, 'assigning to a hash element bind of $x writes $x';
 (@a[1] := $x) = 9;
 is $x, 9, 'assigning to an array element bind of $x writes $x';
 is (%h<f> := $x).raku, '9', 'the value of a bind to $x';
+
+# A bind statement is not sunk: the bound Seq stays unconsumed (rakudo).
+my %s;
+%s<k> := (4, 5).Seq;
+is %s<k>.elems, 2, 'a Seq bound by a statement is still readable';
+my @s;
+@s[0] := (6, 7).Seq if True;
+is @s[0].elems, 2, 'also under a statement modifier';
+my $mapped = 0;
+%s<m> := (1, 2).Seq.map({ $mapped++; $_ });
+is $mapped, 0, 'a bound map Seq is not iterated by the statement';
