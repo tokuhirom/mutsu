@@ -89,6 +89,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         | RakuAstClass::RegexDeclaration => super::regex_decl_origins::declaration(names, node),
         RakuAstClass::Block
         | RakuAstClass::Sub
+        | RakuAstClass::Method
+        | RakuAstClass::Submethod
         | RakuAstClass::PointyBlock
         | RakuAstClass::StatementPrefixDo
         | RakuAstClass::StatementPrefixTry
@@ -177,7 +179,7 @@ pub(super) fn leaf_text(node: &RakuAstNode) -> Option<String> {
 fn written(infix: &RakuAstNode) -> Option<(String, Option<(usize, usize)>)> {
     let inner = || child_at(infix, 0).and_then(leaf_text_of_infix);
     Some(match infix.class {
-        RakuAstClass::Infix => (leaf_text(infix)?, None),
+        RakuAstClass::Infix | RakuAstClass::Mixin => (leaf_text(infix)?, None),
         RakuAstClass::Assignment => ("=".to_string(), None),
         RakuAstClass::MetaInfixAssign => {
             let op = inner()?;
@@ -315,6 +317,11 @@ fn leading_variable(node: &mut RakuAstNode) {
             },
             _ => None,
         }),
+        // `foo = 7`: a sigilless term, its `Name` over the same text.
+        RakuAstClass::TermName => match child_at(left, 0).and_then(super::name_parts::name_shape) {
+            Some(super::name_parts::NameShape::Identifier(name)) => Some(name),
+            _ => None,
+        },
         _ => None,
     };
     let Some(name) = name else {
@@ -333,8 +340,10 @@ fn leading_variable(node: &mut RakuAstNode) {
             })
         });
     if written.is_some() {
+        let span = SrcSpan::new(from, from + name.len());
         with_child(node, "left", |left| {
-            super::origin::set_span(left, SrcSpan::new(from, from + name.len()))
+            super::origin::set_span(left, span);
+            super::origin::named_term(left, span);
         });
     }
 }
