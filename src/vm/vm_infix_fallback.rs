@@ -129,52 +129,8 @@ impl Interpreter {
                 .deitemize_element();
             return self.cmp_value(left, right);
         }
-        // `eq ne lt gt le ge` reach here when the compiler kept the generic
-        // infix-call route for a user candidate that does not apply at run
-        // time (a module's operator that is out of scope here, #18478). The
-        // core operator coerces with `.Stringy` and autothreads a Junction
-        // operand, which the reduction table below does not.
-        if call_args.len() == 2
-            && let Some(kind) = super::vm_operator_values::StrCmp::from_op(name)
-        {
-            return self.str_cmp_values_core(
-                kind,
-                Self::unwrap_operand_value(call_args[0].clone()),
-                Self::unwrap_operand_value(call_args[1].clone()),
-            );
-        }
-        // `~` likewise, folded through its one implementation (`infix_concat`
-        // threads a Junction operand and coerces with `.Stringy`).
-        if name == "~" && call_args.len() >= 2 {
-            let mut acc =
-                self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[0].clone()))?;
-            for rhs in &call_args[1..] {
-                let rhs = self.fetch_proxy_for_store(Self::unwrap_operand_value(rhs.clone()))?;
-                acc = self.infix_concat(acc, rhs)?;
-            }
-            return Ok(acc);
-        }
-        // The numeric comparisons likewise, through the one implementation
-        // their opcodes and `&infix:<==>` share.
-        if call_args.len() == 2 {
-            let compare: Option<
-                fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>,
-            > = match name {
-                "==" => Some(Self::num_eq_values),
-                "!=" | "≠" => Some(Self::num_ne_values),
-                "<" => Some(Self::num_lt_values),
-                "<=" | "≤" => Some(Self::num_le_values),
-                ">" => Some(Self::num_gt_values),
-                ">=" | "≥" => Some(Self::num_ge_values),
-                _ => None,
-            };
-            if let Some(compare) = compare {
-                let left =
-                    self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[0].clone()))?;
-                let right =
-                    self.fetch_proxy_for_store(Self::unwrap_operand_value(call_args[1].clone()))?;
-                return compare(self, left, right);
-            }
+        if let Some(value) = self.core_comparison_or_concat(name, &call_args)? {
+            return Ok(value);
         }
         if call_args.len() == 2
             && let Some(result) = self.range_instance_arithmetic(
@@ -492,7 +448,7 @@ impl Interpreter {
     /// subscripted one, which an `is rw` candidate would have bound but a core
     /// operator reads through.
     // Cost: O(1).
-    fn unwrap_operand_value(value: Value) -> Value {
+    pub(super) fn unwrap_operand_value(value: Value) -> Value {
         let value = Self::unwrap_var_ref_value(value);
         if value.is_container_ref() {
             value.into_deref()
