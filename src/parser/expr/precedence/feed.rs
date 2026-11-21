@@ -95,10 +95,7 @@ pub(crate) fn lift_feed_in_list(items: Vec<Expr>) -> Vec<Expr> {
 /// after it (`@p <== 3, 4`) are part of the source, an [`Expr::ArrayLiteral`]
 /// as a declaration feed's (`my @p <== 3, 4`). A `,,` or a list end stops it.
 // Cost: O(n), n = length of the list's text.
-pub(in crate::parser::expr) fn leftward_source_list(
-    input: &str,
-    first: Expr,
-) -> PResult<'_, Expr> {
+pub(in crate::parser::expr) fn leftward_source_list(input: &str, first: Expr) -> PResult<'_, Expr> {
     let mut items = vec![first];
     let mut rest = input;
     loop {
