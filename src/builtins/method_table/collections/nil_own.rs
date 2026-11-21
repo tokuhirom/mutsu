@@ -32,10 +32,11 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 type Answer = Option<Result<Value, RuntimeError>>;
 
-/// A `Nil:` candidate: no positional argument, any named one (`*%_`).
-const BARE: RowFlags = RowFlags::OWNER_ONLY
-    .or(RowFlags::TYPE_OBJECT_OK)
-    .or(RowFlags::ANY_NAMED);
+/// A `Nil:` candidate: no positional argument. Its implicit `*%_` swallows
+/// any named one: the handlers read none. (No `ANY_NAMED`: that flag states
+/// the names every row of a method binds, and would keep `Str.subst`'s
+/// undeclared adverbs from being dropped, `implicit_named.rs`.)
+const BARE: RowFlags = RowFlags::OWNER_ONLY.or(RowFlags::TYPE_OBJECT_OK);
 
 /// A `Nil: |` candidate: any argument list.
 const CAPTURE: RowFlags = BARE
