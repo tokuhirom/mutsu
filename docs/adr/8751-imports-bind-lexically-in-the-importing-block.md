@@ -527,10 +527,10 @@ Consequences that pin the design:
     out (#11310). With that, the per-call cost of a block-scoped `use` no
     longer depends on what it imports, and a replayed `use` writes no
     registry function at all. The class-table snapshot is already gone (the
-    scope keeps an undo log of registry-path writes, `import_writes`); what
-    the log still serves is a block that extends an imported family itself,
-    a core listop family, a top-level operator import, and the `GLOBAL::MAIN`
-    candidate rule.
+    scope keeps an undo log of registry-path writes, `import_writes`). Per
+    its documentation that log still serves an import that keeps the
+    registry: a family the block extends itself, a core listop, an operator
+    family that does not bind in the set, and another unit's import.
 
 ## 5. Acceptance
 
