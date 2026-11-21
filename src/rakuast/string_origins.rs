@@ -80,7 +80,13 @@ pub(super) fn segments(
                 .map(|next| (cursor, next))
             }
             RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
-                variable_at(&segment, cursor, end)
+                let literal = match segments.get(i + 1).map(Value::view) {
+                    Some(ValueView::RakuAst(next)) if next.class == RakuAstClass::StrLiteral => {
+                        leaf_text(next)
+                    }
+                    _ => None,
+                };
+                variable_at(&segment, cursor, end, literal.as_deref())
             }
             RakuAstClass::Block => super::string_block_origins::block_at(&mut segment, cursor, end),
             RakuAstClass::ApplyPostfix => postfix_at(names, &mut segment, cursor, end),
@@ -113,7 +119,7 @@ fn body(text: &str) -> Option<(usize, usize)> {
         }
     }
     let (prefix, mut rest) = text.split_at(text.find(|c: char| !c.is_alphanumeric())?);
-    if !matches!(prefix, "" | "qq" | "qqw" | "q" | "Q") {
+    if !matches!(prefix, "" | "qq" | "qqw" | "qqx" | "q" | "Q") {
         return None;
     }
     // `Q:s|$n|` / `q:c{...}`: the adverbs that make the quote interpolate.
@@ -231,12 +237,21 @@ fn dedent(text: &str, indent: usize, line_start: bool) -> String {
 
 /// The range of a variable written at `cursor`, when its spelling is there
 /// and nothing that would extend the interpolation (`[`, `{`, `<`, `(`, `.`)
-/// follows it.
-// Cost: O(v), v = length of the variable's name.
-fn variable_at(segment: &RakuAstNode, cursor: usize, end: usize) -> Option<(usize, usize)> {
+/// follows it, unless that is the text of `literal`, the literal segment
+/// after it (`"$n.new answers"`: no call without parentheses).
+// Cost: O(v + l), v = length of the variable's name, l = of `literal`.
+fn variable_at(
+    segment: &RakuAstNode,
+    cursor: usize,
+    end: usize,
+    literal: Option<&str>,
+) -> Option<(usize, usize)> {
     let name = leaf_text(segment)?;
     super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
         let rest = text.strip_prefix(name.as_str())?;
+        if literal.is_some_and(|l| l.starts_with('.') && rest.starts_with(l)) {
+            return Some((cursor, cursor + name.len()));
+        }
         // A `-` or `'` continues the name only before a letter (`$x-y`,
         // `$don't`); `'$src' is` ends it.
         let joins = rest
