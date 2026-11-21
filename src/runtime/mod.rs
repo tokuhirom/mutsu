@@ -1281,6 +1281,10 @@ pub(crate) struct NativeCtorPlan {
     pub(crate) type_constraints: Arc<HashMap<String, String>>,
     pub(crate) has_build: bool,
     pub(crate) has_tweak: bool,
+    /// Whether an `Attribute.set_build` closure is registered for this class
+    /// (`Attribute.set_build` drops every cached plan, so this stays current):
+    /// `bless` looks the closures up per attribute only when it is set.
+    pub(crate) has_build_overrides: bool,
     /// Whether the default `.new` of this class skips `BUILD`/`TWEAK`: the
     /// class derives from a built-in container (`Hash`, `Map`, `Array`,
     /// `List`, `Set`, `Bag`, `Mix`, ...) whose `new` builds the object
