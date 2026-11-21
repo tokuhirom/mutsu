@@ -121,6 +121,7 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
             place_lone_dotty(list, inside);
             super::lone_term_origins::modified_statement(list, inside);
             super::lone_term_origins::loop_statement(list, inside);
+            super::control_statement_origins::in_parentheses(list, inside);
             statement_list(list, inside);
         });
     }

@@ -165,6 +165,7 @@ mod angle_subscript;
 mod assign_ro;
 mod call_term_origins;
 mod carried;
+mod control_statement_origins;
 mod decl_postfix_origins;
 mod dotty_infix_view;
 mod finalize;
