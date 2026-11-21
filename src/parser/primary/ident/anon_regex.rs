@@ -48,8 +48,11 @@ pub(super) fn anon_regex_value(
             .find(raw_body)
             .map_or(0, |at| body_region[..at].matches('\n').count() as i64);
     let folded_body = fold_line_in_code_blocks(raw_body, body_line);
-    let raw_body = folded_body.as_str();
+    // The source tree is the body as written: it is what the RakuAST view
+    // reads, where `$?LINE` keeps its spelling (#18291). It is parsed at its
+    // place in the unit, so its own `$?LINE` already reads that line.
     let source = normalize_token_pattern(raw_body);
+    let raw_body = folded_body.as_str();
     let unit_base =
         crate::parser::primary::fragment_attempts::unit_offset_of_copy(body_source, &source);
     let tree =
@@ -69,7 +72,7 @@ pub(super) fn anon_regex_value(
 /// line it is written on. `first_line` is the line of the body's opening `{`
 /// (`body` starts right after it). Quoted text and escapes are skipped.
 // Cost: O(n), n = body length.
-fn fold_line_in_code_blocks(body: &str, first_line: i64) -> String {
+pub(crate) fn fold_line_in_code_blocks(body: &str, first_line: i64) -> String {
     if !body.contains("$?LINE") {
         return body.to_string();
     }
