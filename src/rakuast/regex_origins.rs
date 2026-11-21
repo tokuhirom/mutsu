@@ -527,7 +527,9 @@ impl Walk<'_> {
         }
         // `<|w>`: the word boundary, its name unplaced.
         let rest = self.text[self.at..].strip_prefix('<');
-        if let Some(len) = rest.and_then(|r| super::regex_assertion_spelling::word_boundary_len(node, r)) {
+        if let Some(len) =
+            rest.and_then(|r| super::regex_assertion_spelling::word_boundary_len(node, r))
+        {
             self.at += 1 + len;
             return self.eat(">");
         }
