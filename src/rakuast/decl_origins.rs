@@ -47,6 +47,39 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     super::decl_shape_origins::key_types(node, &variable);
 }
 
+/// `my constant \C is export(:tag) = ...`: place the traits of `node`, a
+/// `VarDeclaration::Constant` with a range, read after its name.
+// Cost: O(n + t), n = length of the declaration's source, t = its traits.
+pub(super) fn constant_traits(names: &NameScope, node: &mut RakuAstNode) {
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(name) = leaf(node, "name") else {
+        return;
+    };
+    let at = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let mut rest = text;
+        if let Some(scope) = SCOPES
+            .iter()
+            .find(|s| rest.starts_with(**s) && rest[s.len()..].starts_with(char::is_whitespace))
+        {
+            rest = rest[scope.len()..].trim_start();
+        }
+        let rest = rest.strip_prefix("constant")?;
+        let after = rest.trim_start();
+        if after.len() == rest.len() {
+            return None;
+        }
+        let after = after.strip_prefix('\\').unwrap_or(after);
+        let after = after.strip_prefix(name.as_str())?;
+        let at = text.len() - after.len();
+        read_traits(text, at, from)
+    });
+    if let Some(at) = at {
+        traits(names, node, &at);
+    }
+}
+
 /// What the text of a declaration says about where its parts are.
 struct Parts {
     /// The type word with its smiley, and where its name ends.
@@ -113,6 +146,15 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
         let close = if open == '{' { '}' } else { ']' };
         at += 1 + super::subst_origins::closing(&text[at + 1..], open, close)? + 1;
     }
+    let traits = read_traits(text, at, base)?;
+    Some(Parts { type_at, traits })
+}
+
+/// The `is` / `of` / `does` clauses of a declaration's `text` from byte
+/// `at` on, `base` being where `text` starts in the unit; reading stops at
+/// the first clause it cannot read whole.
+// Cost: O(n), n = length of `text` after `at`.
+fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
     let mut traits = Vec::new();
     loop {
         let gap = trivia_len(&text[at..])?;
@@ -131,19 +173,19 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
             .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'')))
             .unwrap_or(text.len() - name_from);
         if name_len == 0 {
-            return Some(Parts { type_at, traits });
+            return Some(traits);
         }
         let name_to = name_from + name_len;
         let mut end = name_to;
         let mut argument = None;
         if text[name_to..].starts_with('(') {
             let Some(close) = closing_paren(&text[name_to..]) else {
-                return Some(Parts { type_at, traits });
+                return Some(traits);
             };
             end = name_to + close + 1;
             argument = Some((base + name_to, base + end));
         } else if text[name_to..].starts_with(['<', '[', '{']) {
-            return Some(Parts { type_at, traits });
+            return Some(traits);
         }
         traits.push(TraitAt {
             whole: (base + start, base + end),
@@ -152,7 +194,7 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
         });
         at = end;
     }
-    Some(Parts { type_at, traits })
+    Some(traits)
 }
 
 /// The offset of the `)` closing the `(` `text` starts with, when nothing

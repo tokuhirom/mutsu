@@ -31,7 +31,21 @@ impl Interpreter {
             if is_global_package(anc) {
                 continue;
             }
-            if !self.is_known_package(qualified(anc, prefix_sym).as_str()) {
+            let package = qualified(anc, prefix_sym);
+            // A `my package P` the block of `anc` declared is stored under its
+            // mangled name (`M::P\0<id>`) and is no registered package kind:
+            // a routine of the block reaches its `our sub`s through the
+            // storage the block recorded (#18520).
+            if let Some(&storage) = self.types.package_block_types.get(&package)
+                && storage != package
+            {
+                let short = crate::qualified::unqualified_part(name_sym);
+                let candidate = qualified(storage, short);
+                if self.fn_base_name_registered_sym(candidate.as_str(), candidate) {
+                    return Some(candidate.as_str().to_string());
+                }
+            }
+            if !self.is_known_package(package.as_str()) {
                 continue;
             }
             let candidate = qualified(anc, name_sym);

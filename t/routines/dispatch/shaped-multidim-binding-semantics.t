@@ -124,8 +124,10 @@ plan 47;
     my %fresh;
     %fresh<a><b> := $x;
     $x = 2;
-    is %fresh<a><b>, 1, 'a newly vivified intermediate receives a bound value';
-    dies-ok { %fresh<a><b> = 3 }, 'the value bound through vivification is readonly';
+    # rakudo 2026.11: the vivified path binds the source's Scalar too (#18534).
+    is %fresh<a><b>, 2, 'a newly vivified intermediate binds the source Scalar';
+    %fresh<a><b> = 3;
+    is $x, 3, 'the binding through vivification writes through its source';
     my %existing = a => {};
     %existing<a><b> := $x;
     $x = 4;

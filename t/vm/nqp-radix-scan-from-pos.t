@@ -43,12 +43,14 @@ sub scan-time(int $n --> Num) {
     (now - $t0).Num;
 }
 
-scan-time(5000);   # warm up, so the first timed run pays no one-off cost
-# Best of three per size: a single sample can be inflated by an unrelated
+scan-time(20000);   # warm up, so the first timed run pays no one-off cost
+# Best of five per size: a single sample can be inflated by an unrelated
 # process's burst (the parallel `make test` on a 4-core box), which skews the
-# ratio; the minimum is the run least disturbed by such load.
-my $small = min (^3).map: { scan-time(5000) };
-my $large = min (^3).map: { scan-time(20000) };
+# ratio; the minimum is the run least disturbed by such load. The sizes keep
+# each sample in the tens of milliseconds: a millisecond-long one was at the
+# mercy of one scheduler tick (#18501, a CI ratio above 9).
+my $small = min (^5).map: { scan-time(20000) };
+my $large = min (^5).map: { scan-time(80000) };
 my $ratio = $large / ($small || 1e-9);
 ok $ratio < 9, "tokenizing 4x the text costs ~4x, not ~16x (ratio $ratio.fmt('%.2f'))";
 

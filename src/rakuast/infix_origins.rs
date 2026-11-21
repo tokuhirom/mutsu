@@ -33,7 +33,8 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::VarAttributePublic => super::attribute_call_origins::public_args(node),
         // `constant X = EXPR` / `my constant %h := EXPR`.
         RakuAstClass::VarDeclarationConstant | RakuAstClass::VarDeclarationAnonymous => {
-            initializer(names, node)
+            initializer(names, node);
+            super::decl_origins::constant_traits(names, node);
         }
         // `my \x = EXPR`: the name after the backslash, and the initializer.
         RakuAstClass::VarDeclarationTerm => {
@@ -437,6 +438,9 @@ fn initializer(names: &NameScope, node: &mut RakuAstNode) {
         RakuAstClass::InitializerBind => ":=",
         _ => return,
     };
+    if !super::initializer_origins::placed_by_rakudo(node, init) {
+        return;
+    }
     let Some((expr_from, expr_to)) = child_at(init, 0).and_then(byte_range) else {
         super::initializer_origins::unplaced_expression(names, node, op);
         return;

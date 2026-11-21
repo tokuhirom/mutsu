@@ -452,3 +452,27 @@ pub(super) fn word_brackets(written: &str) -> Option<(usize, usize)> {
         None
     }
 }
+
+/// Clear the origins of `node` and of every node under it: a copy of a
+/// written term that Rakudo keeps without ranges.
+// Cost: O(n), n = nodes under `node`.
+pub(super) fn clear_tree(node: &mut super::RakuAstNode) {
+    node.origin.0 = None;
+    for field in node.fields.iter_mut() {
+        match &mut field.value {
+            RakuAstFieldValue::Node(v) => clear_value(v),
+            RakuAstFieldValue::List(items) => items.iter_mut().for_each(clear_value),
+            _ => {}
+        }
+    }
+}
+
+// Cost: O(n), n = nodes under `value`.
+fn clear_value(value: &mut crate::value::Value) {
+    let ValueView::RakuAst(held) = value.view() else {
+        return;
+    };
+    let mut held = super::RakuAstNode::clone(held);
+    clear_tree(&mut held);
+    *value = crate::value::Value::rakuast(Box::new(held));
+}

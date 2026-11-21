@@ -204,7 +204,12 @@ pub(super) fn package_origins(
         }
         // Rakudo's package block starts at the first trait, which it visits.
         if !matches!(stmt, Stmt::RoleDecl { .. }) && block.span.is_some() {
-            super::package_trait_origins::block_from_first_trait(decl, block.span);
+            let header = if spans.name.is_some() && spans.block.blockoid.is_some() {
+                crate::ast::SrcSpan::new(name_end, spans.block.blockoid.from as usize)
+            } else {
+                crate::ast::SrcSpan::NONE
+            };
+            super::package_trait_origins::block_from_first_trait(decl, block.span, header);
         }
     });
 }

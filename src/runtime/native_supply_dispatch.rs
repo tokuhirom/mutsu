@@ -628,6 +628,15 @@ impl Interpreter {
                 let chomp = Self::named_value(&args, "chomp")
                     .map(|v| v.truthy())
                     .unwrap_or(true);
+                // Over a live source the stage is a per-tap recipe
+                // (ADR-18443).
+                if Self::stage_is_live_recipe(attributes) {
+                    let attrs_map: ValueMap = attributes.into();
+                    return Ok(Self::mark_live_recipe(Self::make_on_demand_lines_supply(
+                        Value::make_instance(Symbol::intern("Supply"), attrs_map),
+                        chomp,
+                    )));
+                }
                 // A live (Supplier-backed) source gets a real pipeline stage:
                 // its own derived supplier, fed by a lines-transform tap on
                 // the source, exactly as `map`/`grep`/`flat` do. It used to

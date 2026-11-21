@@ -103,6 +103,8 @@ pub(super) fn statement_list_inner(
             if let Some((n, span)) = line.take() {
                 let span = super::unit_span::widen_statement(span, stmt);
                 origin::set(names, &mut node, n, span);
+            } else {
+                super::listop_origins::unmarked_statement(names, &mut node);
             }
             fields.push(node_field(None, node));
         }

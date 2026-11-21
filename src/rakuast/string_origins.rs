@@ -82,19 +82,24 @@ pub(super) fn segments(
                 })
                 .map(|next| (cursor, next))
             }
-            RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
+            class if super::string_variable_origins::is_variable(class) => {
                 let literal = match segments.get(i + 1).map(Value::view) {
                     Some(ValueView::RakuAst(next)) if next.class == RakuAstClass::StrLiteral => {
                         leaf_text(next)
                     }
                     _ => None,
                 };
-                variable_at(&segment, cursor, end, literal.as_deref())
+                super::string_variable_origins::variable_at(
+                    &segment,
+                    cursor,
+                    end,
+                    literal.as_deref(),
+                )
             }
             RakuAstClass::Block => super::string_block_origins::block_at(&mut segment, cursor, end),
             RakuAstClass::ApplyPostfix => postfix_at(names, &mut segment, cursor, end),
             RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
-                match_variable_at(&mut segment, cursor, end)
+                super::string_variable_origins::match_variable_at(&mut segment, cursor, end)
             }
             RakuAstClass::QuoteWordsAtom => quote_words_atom(names, &mut segment, cursor, end),
             _ => None,
@@ -172,9 +177,7 @@ fn escaped(text: &str, at: usize) -> bool {
 // Cost: O(n), n = end - cursor.
 fn written_start(next: &RakuAstNode, cursor: usize, end: usize) -> Option<usize> {
     let needle = match next.class {
-        RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
-            leaf_text(next)?
-        }
+        class if super::string_variable_origins::is_variable(class) => leaf_text(next)?,
         RakuAstClass::Block => "{".to_string(),
         RakuAstClass::ApplyPostfix => leaf_text(interpolated_variable(next)?)?,
         RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
@@ -238,66 +241,12 @@ fn dedent(text: &str, indent: usize, line_start: bool) -> String {
     out
 }
 
-/// The range of a variable written at `cursor`, when its spelling is there
-/// and nothing that would extend the interpolation (`[`, `{`, `<`, `(`, `.`)
-/// follows it, unless that is the text of `literal`, the literal segment
-/// after it (`"$n.new answers"`: no call without parentheses).
-// Cost: O(v + l), v = length of the variable's name, l = of `literal`.
-fn variable_at(
-    segment: &RakuAstNode,
-    cursor: usize,
-    end: usize,
-    literal: Option<&str>,
-) -> Option<(usize, usize)> {
-    let name = leaf_text(segment)?;
-    super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
-        let rest = text.strip_prefix(name.as_str())?;
-        if literal.is_some_and(|l| l.starts_with('.') && rest.starts_with(l)) {
-            return Some((cursor, cursor + name.len()));
-        }
-        // A `-` or `'` continues the name only before a letter (`$x-y`,
-        // `$don't`); `'$src' is` ends it.
-        let joins = rest
-            .strip_prefix(['-', '\''])
-            .is_some_and(|after| after.starts_with(|c: char| c.is_alphabetic() || c == '_'));
-        let extends = joins
-            || rest.starts_with(['[', '{', '<', '(', '.'])
-            || rest.starts_with(|c: char| c.is_alphanumeric() || c == '_');
-        (!extends).then_some((cursor, cursor + name.len()))
-    })
-}
-
-/// The range of a match variable (`$<word>`, `$0`) written at `cursor`;
-/// a `$<word>`'s word quote is placed between its brackets.
-// Cost: O(n), n = length of the variable.
-fn match_variable_at(
-    segment: &mut RakuAstNode,
-    cursor: usize,
-    end: usize,
-) -> Option<(usize, usize)> {
-    let written = super::match_vars::interpolated_text(segment)?;
-    super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
-        let rest = text.strip_prefix(written.as_str())?;
-        let extends = segment.class == RakuAstClass::VarPositionalCapture
-            && rest.starts_with(|c: char| c.is_ascii_digit());
-        (!extends && !rest.starts_with(['[', '{', '<', '.'])).then_some(())
-    })?;
-    let range = (cursor, cursor + written.len());
-    super::origin::set_span(segment, SrcSpan::new(range.0, range.1));
-    super::match_vars::named_capture_origins(segment);
-    Some(range)
-}
-
 /// The variable an interpolated postfix application (`@x[0]`, `%h<a>`,
 /// `@x.elems()`) is applied to.
 // Cost: O(f), f = fields of `node`.
 fn interpolated_variable(node: &RakuAstNode) -> Option<&RakuAstNode> {
     let operand = super::infix_origins::child(node, "operand")?;
-    matches!(
-        operand.class,
-        RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute
-    )
-    .then_some(operand)
+    super::string_variable_origins::is_variable(operand.class).then_some(operand)
 }
 
 /// The range of an interpolated `$x[...]` / `%h{...}` / `%h<...>` /
@@ -439,6 +388,7 @@ pub(super) fn heredoc(
     if !written.is_some() {
         return;
     }
+    super::heredoc_body_origins::drop_borrowed(node, written);
     let single_literal = node
         .fields
         .iter_mut()

@@ -53,6 +53,10 @@ pub(super) fn place(node: &mut RakuAstNode, text: &str, at: usize) -> Option<usi
                         super::name_parts::NameShape::Identifier(word) => word,
                         _ => return None,
                     };
+                    // `<alias=.word("a")>`: a non-capturing call, its dot
+                    // before the assertion.
+                    let dot = usize::from(!capturing(assertion) && rest.starts_with('.'));
+                    let (rest, start) = (&rest[dot..], start + dot);
                     let after = rest.strip_prefix(word.as_str())?;
                     // `word(ARGS)`, or `word: ARGS` to the assertion's `>`.
                     let (args, args_len, len) = match after.strip_prefix('(') {
@@ -83,7 +87,7 @@ pub(super) fn place(node: &mut RakuAstNode, text: &str, at: usize) -> Option<usi
                         }
                     });
                     placed?;
-                    len
+                    dot + len
                 }
                 _ => return None,
             };

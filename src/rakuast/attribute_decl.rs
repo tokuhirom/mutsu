@@ -303,20 +303,36 @@ pub(super) fn initializer_value(same: bool, field: Option<&RakuAstField>) -> Opt
     let ValueView::RakuAst(node) = value.view() else {
         return None;
     };
-    let literal = match node.class {
+    let literal = literal_default(node);
+    literal.then(|| value.clone())
+}
+
+/// Whether an attribute default `node` is one Rakudo keeps as written: a
+/// number, a quote with nothing interpolated (a word quote too), a
+/// colonpair or a name (`True`, `pi`). Such a default has an origin and an
+/// implicit `Trait::WillBuild` carrying it; `1 + 2`, `{ ... }` or `-1` has
+/// neither (measured on rakudo 2026.11).
+// Cost: O(s), s = segments of a quoted default.
+pub(super) fn literal_default(node: &RakuAstNode) -> bool {
+    match node.class {
         RakuAstClass::IntLiteral
         | RakuAstClass::NumLiteral
         | RakuAstClass::RatLiteral
-        | RakuAstClass::ComplexLiteral => true,
+        | RakuAstClass::ComplexLiteral
+        | RakuAstClass::TermName
+        | RakuAstClass::TermEnum
+        | RakuAstClass::ColonPairTrue
+        | RakuAstClass::ColonPairFalse
+        | RakuAstClass::ColonPairNumber
+        | RakuAstClass::ColonPairValue => true,
         RakuAstClass::QuotedString => node.fields.iter().all(|f| match &f.value {
-            RakuAstFieldValue::List(items) => items.iter().all(|item| {
+            RakuAstFieldValue::List(items) if f.name == Some("segments") => items.iter().all(|item| {
                 matches!(item.view(), ValueView::RakuAst(seg) if seg.class == RakuAstClass::StrLiteral)
             }),
             _ => true,
         }),
         _ => false,
-    };
-    literal.then(|| value.clone())
+    }
 }
 
 /// The `traits` field of an attribute declaration whose default is `value`:
