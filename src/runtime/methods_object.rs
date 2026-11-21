@@ -687,6 +687,12 @@ impl Interpreter {
         let deferred_seeds = (0..class_attrs.len())
             .map(|_| std::sync::OnceLock::new())
             .collect();
+        let has_build_overrides = registered
+            && self
+                .registry()
+                .attribute_build_overrides
+                .keys()
+                .any(|(owner, _)| owner == cn_resolved);
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             seed_defaults,
             deferred_seeds,
@@ -704,6 +710,7 @@ impl Interpreter {
             type_constraints,
             has_build,
             has_tweak,
+            has_build_overrides,
             new_skips_phases,
             has_smiley,
             has_subset_attr,

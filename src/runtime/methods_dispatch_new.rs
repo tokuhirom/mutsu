@@ -534,7 +534,10 @@ impl Interpreter {
             // exactly as in `.new` (Red's `%!___DIRTY_COLS_DATA___` builds a
             // `SetHash`; through `self.bless` it was left an empty Hash,
             // #18463).
-            let build_override = self.attribute_build_override(cn_resolved, attr_name);
+            let build_override = plan
+                .has_build_overrides
+                .then(|| self.attribute_build_override(cn_resolved, attr_name))
+                .flatten();
             let built_by_override = build_override.is_some();
             let is_deferred = plan.has_build && (default.is_some() || built_by_override);
             let val = if !is_deferred && let Some(build) = build_override.clone() {
