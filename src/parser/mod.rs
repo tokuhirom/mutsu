@@ -158,6 +158,7 @@ pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate:
 pub(crate) mod stmt_ending_brace;
 pub(crate) mod term_boundary;
 pub(crate) mod term_origins;
+mod unit_passes;
 pub(crate) mod unit_revisions;
 pub(crate) mod unit_state;
 mod whenever_scope;
@@ -726,6 +727,15 @@ pub(super) fn add_parse_warning(msg: String, line: i64) {
     let display_file = file.as_deref().unwrap_or("-e");
     let tagged = format!("{msg}\n    at {display_file}:{line}");
     PARSE_WARNINGS.with(|w| w.borrow_mut().push((file, tagged)));
+}
+
+/// The parse warnings `f` adds, taken back out of the unit's list so the
+/// caller can publish them later (`unit_passes`).
+// Cost: O(w) plus `f`, w = warnings `f` adds.
+fn capture_parse_warnings(f: impl FnOnce()) -> Vec<(Option<String>, String)> {
+    let before = PARSE_WARNINGS.with(|w| w.borrow().len());
+    f();
+    PARSE_WARNINGS.with(|w| w.borrow_mut().split_off(before))
 }
 
 /// Record a detected VCS conflict marker (`<<<<<<<` ... `>>>>>>>` block) at the
@@ -1352,17 +1362,16 @@ pub(crate) fn parse_program_unfinalized(
     stmt::simple::apply_slang_preseed().map_err(RuntimeError::new)?;
     let result = match stmt::program(source) {
         Ok((rest, mut stmts)) => {
-            // ADR-0033 Phase 2: classify every `*` leaf as a value
-            // (`Expr::Whatever`) or a priming argument (`Expr::WhateverArg`)
-            // now that the whole program tree exists. Pure annotation --
-            // behaviour-preserving by construction (section 2.2's invariant).
-            // The CORE type fold (ADR-0115) rides the same whole-program walk,
-            // once every scope's bindings are known.
+            // The CORE type fold (ADR-0115) is settled once every scope's
+            // bindings are known; the unit's passes then run statement by
+            // statement (`unit_passes`, ADR-15760 slice 2d).
             stmt::simple::settle_core_type_fold();
-            crate::whatever_curry::mark::mark_program(&mut stmts);
-            // `use trace` hooks hold their statement's source offset until the
-            // whole unit's statement attempts are known.
-            stmt::trace::number_statements(&mut stmts);
+            let mut passes = unit_passes::UnitPasses::new(eval_value_tail, suppress_sink);
+            for stmt in &mut stmts {
+                passes.commit(stmt);
+            }
+            // The unit's statement attempts are no longer needed.
+            primary::take_statement_numbering();
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
                 let consumed = source.len() - rest.len();
@@ -1380,37 +1389,8 @@ pub(crate) fn parse_program_unfinalized(
                 );
                 err.set_parse_pos(source[..near_offset].chars().count());
                 Err(err)
-            } else if let Some(line) = whenever_scope::find_out_of_scope_whenever(&stmts) {
-                // A `whenever` outside a `supply`/`react` block is a compile-time
-                // error in rakudo (X::Comp::WheneverOutOfScope).
-                Err(build_whenever_out_of_scope_error(line))
-            } else if let Some(error) = stmt::simple::take_exporthow_error() {
-                // A `use`d module's `EXPORTHOW` conflicts with a declarator
-                // already in scope, or supersedes one that does not exist.
-                Err(build_exporthow_error(error))
-            } else if let Some(diag) = outer_redecl::find_scope_diagnostic(&mut stmts) {
-                // Redeclaring a lexical after referencing its outer binding in the
-                // same scope (X::Redeclaration::Outer), or `my $x = $x`
-                // (X::Syntax::Variable::Initializer), is a compile-time error.
-                Err(outer_redecl::scope_diagnostic_error(diag))
-            } else if let Some(error) = settle_soft_sorries(source, &stmts) {
-                // A "sorry" of the grammar no compile-phase code can observe
-                // is the answer outright, as it always was.
-                Err(render_parse_error(source, error))
             } else {
-                if suppress_sink {
-                    // An internal fragment re-parse (see `parse_fragment`).
-                } else if eval_value_tail {
-                    sink_warn::add_sink_warnings_value_tail(&stmts);
-                } else {
-                    sink_warn::add_sink_warnings(&stmts);
-                }
-                decl_doc::finish_unit();
-                // Every decision the parser and its whole-unit passes make
-                // about the unit's terms is made: they can carry where they
-                // were written now.
-                term_origins::attach(&mut stmts);
-                Ok((stmts, finish_content))
+                settle_unit(source, passes, &mut stmts).map(|()| (stmts, finish_content))
             }
         }
         Err(e) => {
@@ -1455,26 +1435,57 @@ pub(crate) fn parse_program_unfinalized(
     result
 }
 
+/// The diagnostics of a unit whose statements all parsed, in the order the
+/// parser reports them; with none, the unit is finished: its sink warnings,
+/// declarator docs and term origins are published.
+// Cost: O(w + n), w = sink warnings, n = size of the unit (term origins of a
+// `.AST` parse only).
+fn settle_unit(
+    source: &str,
+    passes: unit_passes::UnitPasses,
+    stmts: &mut [Stmt],
+) -> Result<(), RuntimeError> {
+    if let Some(line) = passes.whenever_out_of_scope() {
+        // A `whenever` outside a `supply`/`react` block is a compile-time
+        // error in rakudo (X::Comp::WheneverOutOfScope).
+        return Err(build_whenever_out_of_scope_error(line));
+    }
+    if let Some(error) = stmt::simple::take_exporthow_error() {
+        // A `use`d module's `EXPORTHOW` conflicts with a declarator
+        // already in scope, or supersedes one that does not exist.
+        return Err(build_exporthow_error(error));
+    }
+    if let Some(diag) = passes.scope_diagnostic() {
+        // Redeclaring a lexical after referencing its outer binding in the
+        // same scope (X::Redeclaration::Outer), or `my $x = $x`
+        // (X::Syntax::Variable::Initializer), is a compile-time error.
+        return Err(outer_redecl::scope_diagnostic_error(diag.clone()));
+    }
+    if let Some(error) = settle_soft_sorries(source, passes.has_check()) {
+        // A "sorry" of the grammar no compile-phase code can observe
+        // is the answer outright, as it always was.
+        return Err(render_parse_error(source, error));
+    }
+    passes.publish_sink_warnings();
+    decl_doc::finish_unit();
+    // Every decision the parser and its whole-unit passes make
+    // about the unit's terms is made: they can carry where they
+    // were written now.
+    term_origins::attach(stmts);
+    Ok(())
+}
+
 /// The grammar's "sorries" found by a parse that otherwise succeeded
 /// (`soft_sorry`). A unit with a `CHECK` phaser that is being compiled queues
 /// them on the unit, where its compile phase reports them after the phaser ran,
 /// as rakudo does; for any other parse the first is returned, to be raised at
 /// once.
 // Cost: O(p + l), p = sorries found, l = length of the line each is on.
-fn settle_soft_sorries(source: &str, stmts: &[Stmt]) -> Option<PError> {
+fn settle_soft_sorries(source: &str, has_check: bool) -> Option<PError> {
     let mut pending = soft_sorry::take();
     if pending.is_empty() {
         return None;
     }
-    let has_check = stmts.iter().any(|stmt| {
-        matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: crate::ast::PhaserKind::Check,
-                ..
-            }
-        )
-    });
     if !has_check {
         return pending.into_iter().next();
     }

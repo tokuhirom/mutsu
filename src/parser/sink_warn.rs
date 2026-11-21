@@ -14,59 +14,27 @@
 
 use crate::ast::parsed::{ModifierKind, ParsedStmt};
 use crate::ast::{DoBlockOrigin, Expr, Stmt};
-use crate::ast_visit::{
-    Visit, walk_expr, walk_stmt as walk_ast_stmt, walk_stmts as walk_ast_stmts,
-};
+use crate::ast_visit::{Visit, walk_expr, walk_stmt as walk_ast_stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 use crate::value::ValueView;
-
-/// Entry point: emit sink-context warnings for the mainline statement list.
-pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
-    let line = std::cell::Cell::new(1i64);
-    walk_stmts(stmts, false, &line);
-    // A `gather { ... }` block evaluates its body in sink context regardless of
-    // where the `gather` appears (mainline, an initializer, inside a sub, an
-    // argument, ...). Scan the whole tree for gather blocks and warn their
-    // bodies, independently of the enclosing statement's own context.
-    scan_gathers_stmts(stmts);
-    scan_source_do_blocks(stmts);
-}
-
-/// Like [`add_sink_warnings`], but for a unit evaluated for its value (EVAL /
-/// EVALFILE): the final statement is the unit's return value, not sink
-/// context, so it is exempt from the analysis. Raku warns on `EVAL '42; $x'`
-/// only for the `42`. Trailing `SetLine` markers are skipped when locating
-/// the final real statement.
-pub(super) fn add_sink_warnings_value_tail(stmts: &[Stmt]) {
-    let last_real = crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers);
-    let line = std::cell::Cell::new(1i64);
-    for (i, stmt) in stmts.iter().enumerate() {
-        if Some(i) == last_real {
-            continue;
-        }
-        walk_stmt(stmt, false, &line);
-    }
-    scan_gathers_stmts(stmts);
-    scan_source_do_blocks(stmts);
-}
 
 /// A source `do` block evaluates every statement but its last in sink context,
 /// regardless of whether the block's result is used. Scan all expression
 /// positions, including initializers and routine bodies. The outer sink walk
 /// handles the last statement when the block's result is also discarded.
-// Cost: O(n), n = size of the AST (plus the sink walk of each do-block prefix).
-fn scan_source_do_blocks(stmts: &[Stmt]) {
-    walk_ast_stmts(
-        &mut SourceDoScan {
-            line: std::cell::Cell::new(1),
-        },
-        stmts,
-    );
+/// `unit_passes` runs it statement by statement, keeping its line across them.
+pub(super) struct SourceDoScan {
+    line: std::cell::Cell<i64>,
 }
 
-struct SourceDoScan {
-    line: std::cell::Cell<i64>,
+impl SourceDoScan {
+    // Cost: O(1).
+    pub(super) fn new() -> Self {
+        SourceDoScan {
+            line: std::cell::Cell::new(1),
+        }
+    }
 }
 
 impl<'ast> Visit<'ast> for SourceDoScan {
@@ -95,11 +63,7 @@ impl<'ast> Visit<'ast> for SourceDoScan {
 /// a `gather` anywhere outside a signature — an argument, an initializer, an
 /// attribute default, a regex code block, a routine body — is found.
 // Cost: O(n), n = size of the AST (plus the sink walk of each gather body).
-fn scan_gathers_stmts(stmts: &[Stmt]) {
-    walk_ast_stmts(&mut GatherScan, stmts);
-}
-
-struct GatherScan;
+pub(super) struct GatherScan;
 
 impl<'ast> Visit<'ast> for GatherScan {
     fn visit_expr(&mut self, expr: &'ast Expr) {
@@ -146,7 +110,7 @@ fn walk_stmts(stmts: &[Stmt], nil_hint: bool, line: &std::cell::Cell<i64>) {
     }
 }
 
-fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
+pub(super) fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
     match stmt {
         Stmt::SetLine(n, _) => line.set(*n),
         Stmt::Expr(e) => warn_expr_sink(e, nil_hint, line.get()),
@@ -247,12 +211,27 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
 /// Whether `elems` is the value list the parser appends after a scalar
 /// declaration with trailing comma items (`my $d = 6, 3`): its head is the
 /// variable a `VarDecl` in the same desugaring block declares.
+// Cost: O(m), m = statements in `body`.
 fn is_decl_value_head(body: &[Stmt], elems: &[Expr]) -> bool {
-    let Some(Expr::Var(head)) = elems.first() else {
-        return false;
-    };
-    body.iter()
-        .any(|s| matches!(s, Stmt::VarDecl { name, .. } if name == head))
+    decl_value_head(elems).is_some_and(|head| body.iter().any(|s| declared_scalar(s) == Some(head)))
+}
+
+/// The variable heading a declaration's value list (see [`is_decl_value_head`]).
+// Cost: O(1).
+pub(super) fn decl_value_head(elems: &[Expr]) -> Option<&str> {
+    match elems.first() {
+        Some(Expr::Var(head)) => Some(head.as_str()),
+        _ => None,
+    }
+}
+
+/// The variable a `VarDecl` statement declares.
+// Cost: O(1).
+pub(super) fn declared_scalar(stmt: &Stmt) -> Option<&str> {
+    match stmt {
+        Stmt::VarDecl { name, .. } => Some(name.as_str()),
+        _ => None,
+    }
 }
 
 /// The statements of `body` that are genuinely in sink context when the block's
@@ -290,7 +269,7 @@ fn is_modifier_body(body: &[Stmt]) -> bool {
 
 /// Warn for an expression evaluated in sink context. Comma lists distribute the
 /// sink to each element.
-fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
+pub(super) fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
     match expr {
         // A parenthesized expression is never reported, whatever it holds
         // (`(5);`, `(1, 2);`, `(1 + 2);` are silent on rakudo); only an

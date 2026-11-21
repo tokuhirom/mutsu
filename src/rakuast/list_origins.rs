@@ -122,6 +122,96 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
     }
 }
 
+/// `$x.[0]`: an operand variable the parser left without a range is the
+/// variable's spelling at the start of the application, when it is written
+/// there and a subscript (or its dot) follows.
+// Cost: O(v), v = length of the variable's name.
+fn leading_variable(node: &mut RakuAstNode, start: usize) {
+    let Some(operand) = child(node, "operand") else {
+        return;
+    };
+    if operand.origin.0.is_some()
+        || !matches!(
+            operand.class,
+            RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute
+        )
+    {
+        return;
+    }
+    let Some(name) = super::infix_origins::leaf_text(operand) else {
+        return;
+    };
+    let end = start + name.len();
+    let written = super::unit_source::with_text(SrcSpan::new(start, end + 2), |text| {
+        let rest = text.strip_prefix(name.as_str())?;
+        rest.starts_with(['.', '[', '{', '<', '«']).then_some(())
+    });
+    if written.is_some() {
+        with_child(node, "operand", |operand| {
+            super::origin::set_span(operand, SrcSpan::new(start, end))
+        });
+    }
+}
+
+/// `(my Int $x = 1)` / `($s = 5)`: parentheses around a lone declaration or
+/// assignment the parser did not place (it read it as a statement), or the
+/// rebuilt colonpair of `is built(:bind)`. The text inside the parentheses,
+/// trimmed, is exactly that expression when it ends in no `;`; its parts are
+/// derived once it has the range.
+// Cost: O(n), n = length of the parenthesized source.
+pub(super) fn place_lone_declaration(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
+    if node.class != RakuAstClass::CircumfixParentheses {
+        return;
+    }
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(inside) = bracketed(from, to, ('(', ')')) else {
+        return;
+    };
+    let Some(span) = super::unit_source::with_text(inside, |text| {
+        let lead = text.len() - text.trim_start().len();
+        let trimmed = text.trim();
+        (!trimmed.is_empty() && !trimmed.ends_with(';')).then(|| {
+            SrcSpan::new(
+                inside.from as usize + lead,
+                inside.from as usize + lead + trimmed.len(),
+            )
+        })
+    }) else {
+        return;
+    };
+    with_child_at(node, 0, |list| {
+        let [field] = list.fields.as_mut_slice() else {
+            return;
+        };
+        let RakuAstFieldValue::Node(held) = &mut field.value else {
+            return;
+        };
+        let ValueView::RakuAst(statement) = held.view() else {
+            return;
+        };
+        if statement.class != RakuAstClass::StatementExpression || statement.fields.len() != 1 {
+            return;
+        }
+        let mut statement = RakuAstNode::clone(statement);
+        with_child_at(&mut statement, 0, |decl| {
+            if decl.origin.0.is_some() {
+                return;
+            }
+            let assignment = decl.class == RakuAstClass::ApplyInfix
+                && child(decl, "infix").is_some_and(|i| i.class == RakuAstClass::Assignment);
+            if decl.class == RakuAstClass::VarDeclarationSimple || assignment {
+                super::origin::set_span(decl, span);
+                super::infix_origins::derive(names, decl);
+            } else {
+                super::lone_term_origins::place(decl, span);
+            }
+        });
+        *held = Value::rakuast(Box::new(statement));
+    });
+}
+
 /// `($a .= lc)`: a bracketed list of one statement whose expression is a `.=`
 /// application the parser did not place. The text inside the brackets,
 /// trimmed, is exactly that application.
@@ -172,6 +262,7 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     let Some((start, to)) = byte_range(node) else {
         return;
     };
+    leading_variable(node, start);
     let operand = child(node, "operand");
     let operand_end = match operand {
         // The curried `*` of `*{...}` has no origin of its own (rakudo gives
@@ -187,9 +278,14 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
         return;
     };
     // Parentheses around the operand (`(@a)[0]`) are not a node of their
-    // own, so the subscript starts after their `)`.
+    // own, so the subscript starts after their `)`; the dot of `$x.[0]` is
+    // not part of it either.
     let from = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
         let rest = text.trim_start_matches(|c: char| c == ')' || c.is_whitespace());
+        let rest = rest
+            .strip_prefix('.')
+            .filter(|r| r.starts_with(['[', '{', '<', '«']))
+            .unwrap_or(rest);
         Some(operand_end + (text.len() - rest.len()))
     })
     .unwrap_or(operand_end);

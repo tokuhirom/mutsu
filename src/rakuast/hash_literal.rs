@@ -87,7 +87,9 @@ fn contents_node(
                 right: Box::new(spelled.expr.clone()),
                 form: *form,
             };
-            fatarrows.push(view_expr(names, &pair)?);
+            let mut node = view_expr(names, &pair)?;
+            super::hash_pair_origins::place(names, &mut node);
+            fatarrows.push(node);
             continue;
         }
         // `{:2b, :!c, :d<x>}`: the parser wrapped the value to remember the

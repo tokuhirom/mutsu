@@ -182,8 +182,19 @@ pub(super) fn dotty_assign(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if !is_call_assign {
         return;
     }
+    // `(TERM).= rest`: a left side placed already ends where the operator's
+    // blanks begin.
+    let left_end = super::infix_origins::child(node, "left")
+        .and_then(super::infix_origins::byte_range)
+        .filter(|(from, _)| *from == span.from as usize)
+        .map(|(_, end)| end - span.from as usize);
     // `VAR .= rest`: the variable, blanks, then the operator.
     let Some((var_len, op_at)) = super::unit_source::with_text(span, |text| {
+        if let Some(end) = left_end {
+            let after = text.get(end..)?.trim_start();
+            let op_at = text.len() - after.len();
+            return after.starts_with(".=").then_some((end, op_at));
+        }
         let var_len = text
             .find(|c: char| c.is_whitespace() || c == '.')
             .filter(|n| *n > 1)?;
@@ -246,6 +257,30 @@ fn dotty_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         }
     });
     place_call(node, Some("right"), dot + 1, span, true);
+}
+
+/// `my Int $x .= new`: the `Initializer::CallAssign` of `decl`, a variable
+/// declaration with a range, runs from its `.=` to the end, and the call it
+/// holds is placed as the right side of a `.=` is.
+// Cost: O(n), n = length of the declaration's source.
+pub(super) fn call_assign_initializer(decl: &mut RakuAstNode) {
+    let Some((from, to)) = super::infix_origins::byte_range(decl) else {
+        return;
+    };
+    let is_call_assign = super::infix_origins::child(decl, "initializer")
+        .is_some_and(|i| i.class == super::RakuAstClass::InitializerCallAssign);
+    if !is_call_assign {
+        return;
+    }
+    let span = crate::ast::SrcSpan::new(from, to);
+    let Some(op) = super::unit_source::with_text(span, |text| text.find(".=")) else {
+        return;
+    };
+    super::infix_origins::with_child(decl, "initializer", |init| {
+        set_span(init, crate::ast::SrcSpan::new(from + op, to));
+        let field = init.fields.first().map(|f| f.name).unwrap_or(None);
+        place_call(init, field, from + op + 2, span, true);
+    });
 }
 
 /// Place the method call held in field `field` of `node`, which starts after

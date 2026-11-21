@@ -15,7 +15,12 @@ pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
-    let Some(name) = super::infix_origins::child(node, "name").and_then(leaf_text) else {
+    // An anonymous `token { ... }` has no name.
+    let name = match super::infix_origins::child(node, "name") {
+        Some(name) => leaf_text(name),
+        None => Some(String::new()),
+    };
+    let Some(name) = name else {
         return;
     };
     let body = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
@@ -25,7 +30,9 @@ pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
         let rest = &text[word..];
         let name_at = from + word + (rest.len() - rest.trim_start().len());
         let after_name = rest.trim_start().strip_prefix(name.as_str())?;
-        if after_name.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-') {
+        if !name.is_empty()
+            && after_name.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
+        {
             return None;
         }
         // `token word($value) { ... }`: the parameters between parentheses.
