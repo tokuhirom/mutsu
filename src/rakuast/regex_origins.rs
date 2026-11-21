@@ -734,8 +734,7 @@ impl Walk<'_> {
                     let (Some(ch), None) = (chars.next(), chars.next()) else {
                         return None;
                     };
-                    let escaped =
-                        !ch.is_alphanumeric() && self.eat(&format!("\\{ch}")).is_some();
+                    let escaped = !ch.is_alphanumeric() && self.eat(&format!("\\{ch}")).is_some();
                     if !escaped {
                         if !(plain(ch) || matches!(ch, '+' | '-' | '.')) {
                             return None;
