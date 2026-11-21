@@ -3942,8 +3942,9 @@ mod tests {
         // Marked: the capture, then the program scope, before any caller.
         assert_eq!(frame.get_sym(s("x")), Some(&Value::int(2)));
         assert_eq!(frame.get_sym(s("ps")), Some(&Value::int(10)));
-        // A name neither binds still reaches the caller that declared it.
-        assert_eq!(frame.get_sym(s("later")), Some(&Value::int(5)));
+        // A name neither binds is not the closure's: its callers' lexicals
+        // are a dynamic scope, not its outer (#18248).
+        assert_eq!(frame.get_sym(s("later")), None);
     }
 
     #[test]
