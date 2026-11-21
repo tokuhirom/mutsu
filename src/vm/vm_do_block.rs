@@ -58,6 +58,18 @@ impl Interpreter {
         if scope_routines {
             self.push_block_scope_depth();
         }
+        // A lazy-gather pull that suspended inside the body re-enters here and
+        // continues where it stopped instead of skipping the rest of the block
+        // (#18259). Only a block with no env tier of its own: a scope-isolating
+        // block's exit reverts its declarations, which a resume could not
+        // restore.
+        let do_ip = *ip;
+        let resumable = isolation == crate::opcode::DoBlockIsolation::None;
+        let body_start = if resumable {
+            self.region_gather_resume(code, do_ip, compiled_fns)
+        } else {
+            Ok(body_start)
+        };
         // A scope-isolating block runs over a block tier (see `vm_block_env`),
         // so its exit reads back only what it wrote by name, and saves just the
         // local slots it may have to revert rather than the whole frame (#9170).
@@ -85,8 +97,13 @@ impl Interpreter {
         // (`todo/tickets/labelled-bare-block-is-not-a-loop-construct.md`).
         // Only `leave` (a block-exit statement, not a loop-control one) is
         // caught by an enclosing block regardless of label.
-        let result = match self.run_range(code, body_start, end, compiled_fns) {
+        let mut suspended = false;
+        let result = match body_start.and_then(|start| self.run_range(code, start, end, compiled_fns)) {
             Ok(()) => Ok(()),
+            Err(e) if resumable && Self::is_gather_take_limit_signal(&e) => {
+                suspended = true;
+                Err(self.park_try_catch_gather_suspend(code, do_ip, end, e))
+            }
             Err(e)
                 if e.is_leave
                     && e.leave_callable_id().is_none()
@@ -196,7 +213,10 @@ impl Interpreter {
             }
             self.stack.push(block_result);
         }
-        *ip = end;
+        // A suspended pull keeps its ip on this op, to re-enter it.
+        if !suspended {
+            *ip = end;
+        }
         result
     }
 

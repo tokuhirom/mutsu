@@ -7,6 +7,8 @@
 //! see it, and the region it passes through must not end. So `OpCode::TryCatch`
 //! parks a [`ForLoopResumeState::TryCatch`] continuation instead of dispatching
 //! the signal to its handlers, and consumes it when the pull re-enters the op.
+//! `OpCode::LoopExitGuard` and a value-position `do` block
+//! (`OpCode::DoBlockExpr`) are regions the same way.
 
 use super::*;
 use crate::value::ForLoopResumeState;
@@ -90,5 +92,32 @@ impl Interpreter {
             inner,
         });
         e
+    }
+
+    /// Where the body of the region op at `scope_ip` (a `DoBlockExpr`) starts
+    /// running: right after the op on a fresh entry, or where a suspended
+    /// lazy-gather pull stopped (#18259). The registry snapshot taken on entry
+    /// rolled back the routines the body had declared when it suspended, so a
+    /// resume first
+    /// replays the body's leading `RegisterDecl` prologue -- the hoisted
+    /// declarations, which a call after the resume point still needs.
+    // Cost: O(1) on a fresh entry; O(d) plus the registrations on a resume,
+    // d = leading declarations.
+    pub(super) fn region_gather_resume(
+        &mut self,
+        code: &CompiledCode,
+        scope_ip: usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<usize, RuntimeError> {
+        let Some(resume_ip) = self.take_try_catch_gather_resume(code, scope_ip) else {
+            return Ok(scope_ip + 1);
+        };
+        for op_ip in scope_ip + 1..resume_ip {
+            let OpCode::RegisterDecl(idx) = code.ops[op_ip] else {
+                break;
+            };
+            self.exec_register_decl_op(code, idx, compiled_fns)?;
+        }
+        Ok(resume_ip)
     }
 }
