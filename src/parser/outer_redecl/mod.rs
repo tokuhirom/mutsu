@@ -68,7 +68,7 @@ impl Scope {
 }
 
 /// A compile-time error the walk found.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ScopeDiagnostic {
     /// `X::Redeclaration::Outer` for `(sigil+name, line)`.
     OuterRedeclaration(String, i64),
@@ -216,15 +216,40 @@ fn normalized(sigil: char, base: &str) -> Option<String> {
 /// compiler resolves those reads to it.
 // Cost: O(n * d), n = size of the program's tree, d = lexical scope depth.
 pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnostic> {
-    let mut ctx = Ctx {
-        scopes: vec![Scope::new()],
-        line: 0,
-        initializing: Vec::new(),
-        declaring_where: Vec::new(),
-        found: None,
-    };
-    walk_list(stmts, &mut ctx);
-    ctx.found
+    let mut scan = UnitScan::new();
+    for stmt in stmts.iter_mut() {
+        scan.scan(stmt);
+    }
+    scan.0.found
+}
+
+/// [`find_scope_diagnostic`] fed one top-level statement at a time
+/// (`unit_passes`): the unit's scope stays open across them.
+pub(in crate::parser) struct UnitScan(Ctx);
+
+impl UnitScan {
+    // Cost: O(1).
+    pub(in crate::parser) fn new() -> Self {
+        UnitScan(Ctx {
+            scopes: vec![Scope::new()],
+            line: 0,
+            initializing: Vec::new(),
+            declaring_where: Vec::new(),
+            found: None,
+        })
+    }
+
+    /// The unit's next top-level statement.
+    // Cost: O(s·d), s = size of the statement, d = lexical scope depth.
+    pub(in crate::parser) fn scan(&mut self, stmt: &mut Stmt) {
+        walk_listed(stmt, &mut self.0);
+    }
+
+    /// The first offense found so far.
+    // Cost: O(1).
+    pub(in crate::parser) fn found(&self) -> Option<&ScopeDiagnostic> {
+        self.0.found.as_ref()
+    }
 }
 
 /// The keys a routine's or block's parameters declare in its scope.
@@ -237,18 +262,23 @@ fn param_keys(params: &[String], param_defs: &[ParamDef]) -> Vec<String> {
 /// the statements after it are examined.
 fn walk_list(stmts: &mut [Stmt], ctx: &mut Ctx) {
     for stmt in stmts.iter_mut() {
-        // `my \x = ...` lowers to a `VarDecl` of `x` marked as a sigilless
-        // term. The sigilless `x` is a different symbol from `$x`, so the
-        // initializer may freely read `$x`.
-        let sigilless = matches!(
-            stmt,
-            Stmt::VarDecl { marks, .. } if marks.term != crate::ast::var_marks::TermMark::No
-        );
-        if sigilless {
-            walk_var_decl(stmt, false, ctx);
-        } else {
-            ctx.visit_stmt_mut(stmt);
-        }
+        walk_listed(stmt, ctx);
+    }
+}
+
+/// One statement of a list.
+fn walk_listed(stmt: &mut Stmt, ctx: &mut Ctx) {
+    // `my \x = ...` lowers to a `VarDecl` of `x` marked as a sigilless
+    // term. The sigilless `x` is a different symbol from `$x`, so the
+    // initializer may freely read `$x`.
+    let sigilless = matches!(
+        stmt,
+        Stmt::VarDecl { marks, .. } if marks.term != crate::ast::var_marks::TermMark::No
+    );
+    if sigilless {
+        walk_var_decl(stmt, false, ctx);
+    } else {
+        ctx.visit_stmt_mut(stmt);
     }
 }
 
