@@ -5,7 +5,7 @@ use Test;
 # an untapped stage runs nothing, every tap has its own buffer / accumulator /
 # count, and closing the tap releases the source.
 
-plan 12;
+plan 14;
 
 my $n = 0;
 my $s = Supplier.new;
@@ -118,4 +118,45 @@ my $src = $s.Supply.map({ $n++; $_ });
     $s5.Supply.map({ $m++; $_ }).produce(&[+]).head(2).tap({ @got.push: $_ });
     $s5.emit($_) for 1..5;
     is-deeply ($m, @got), (2, [1, 3]), 'a completed head releases the produce below it';
+}
+
+{
+    my $s6 = Supplier.new;
+    my $m = 0;
+    my @got;
+    my $ready = Promise.new;
+    my $fin = start {
+        react {
+            whenever $s6.Supply.map({ $m++; $_ }).produce(&[+]) -> $v {
+                @got.push: $v;
+                done if @got == 2;
+            }
+            $ready.keep;
+        }
+    }
+    await $ready;
+    $s6.emit($_) for 1..2;
+    await Promise.anyof($fin, Promise.in(10));
+    $s6.emit(3);
+    is-deeply ($m, @got), (2, [1, 3]), 'a react over a produce recipe releases it when done';
+}
+
+{
+    my $s7 = Supplier.new;
+    my @b;
+    my $ready = Promise.new;
+    my $fin = start {
+        react {
+            whenever $s7.Supply.lines.batch(:elems(2)) -> @v {
+                @b.push: @v.join(',');
+                done if @b == 2;
+            }
+            $ready.keep;
+        }
+    }
+    await $ready;
+    $s7.emit("a\nb\nc");
+    $s7.emit("\nd\n");
+    await Promise.anyof($fin, Promise.in(10));
+    is-deeply @b, ["a,b", "c,d"], 'a react over a batch of a lines recipe';
 }

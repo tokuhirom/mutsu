@@ -245,9 +245,8 @@ impl Interpreter {
             if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
             {
-                // A `react` subscribes to a live per-tap recipe through its
-                // shared instance (ADR-18443 bridge).
-                // TODO: drive the recipe per subscription (ADR-18443 slices 2-3).
+                // A `react` subscribes to a live per-tap recipe through an
+                // instance of its own (ADR-18443).
                 let bridged;
                 let source = match items[0].view() {
                     ValueView::Instance { attributes, .. }
@@ -255,7 +254,7 @@ impl Interpreter {
                             .as_map()
                             .contains_key(crate::runtime::Interpreter::LIVE_RECIPE_KEY) =>
                     {
-                        bridged = self.live_recipe_shared_instance(&attributes.as_map())?;
+                        bridged = self.instantiate_live_recipe(&items[0])?;
                         &bridged
                     }
                     _ => &items[0],
