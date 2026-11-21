@@ -2667,7 +2667,11 @@ impl Interpreter {
                                 // advancing (the SetLocal twin excludes it as
                                 // `synthetic_index_source`).
                                 let existing = if source_name.starts_with("__mutsu_bind_index_ref_")
-                                {
+                                    || Self::bind_source_is_attr_slot(
+                                        code,
+                                        bind_source_slot,
+                                        &resolved_source,
+                                    ) {
                                     None
                                 } else if let Some(arc) = Self::bind_source_local_slot(
                                     code,

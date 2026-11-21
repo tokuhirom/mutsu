@@ -93,6 +93,24 @@ impl Interpreter {
             .or_else(|| code.locals.iter().rposition(|n| n == name))
     }
 
+    /// Whether the bind source `name` is a private aggregate attribute
+    /// (`@!x` / `%!x`) this frame addresses through its attribute slot
+    /// (ADR-18356 D2). Such a source's container is `self`'s attribute, which
+    /// the source read has just refreshed into the slot: it is never found by
+    /// name in the env chain. A callee's env is a scoped child of its
+    /// caller's, so a by-name probe there answers the CALLER's binding of the
+    /// same spelling -- another invocant's attribute when the caller is a
+    /// method of the same class that bound it (`my @p := @!p` in both).
+    // Cost: O(l), l = the chunk's locals (the by-name slot fallback).
+    pub(super) fn bind_source_is_attr_slot(
+        code: &CompiledCode,
+        compiled_slot: Option<u32>,
+        name: &str,
+    ) -> bool {
+        Self::bind_source_local_slot(code, compiled_slot, name)
+            .is_some_and(|idx| code.is_private_aggregate_attr_slot(idx))
+    }
+
     /// Restore the env/slot invariant for slot `idx` after a by-name write
     /// stored a plain value into it: if this frame's overlay still holds a
     /// container for the slot's symbol, the slot takes that container. This

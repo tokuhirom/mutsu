@@ -38,7 +38,8 @@ pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
         // `token word($value) { ... }`: the parameters between parentheses.
         let mut after_signature = after_name;
         let mut signature = None;
-        if let Some(inner) = after_name.strip_prefix('(') {
+        // `token word ($e)`: blanks may come before the parameters.
+        if let Some(inner) = after_name.trim_start().strip_prefix('(') {
             let close = closing_paren(inner)?;
             let at = to - text.len() + (text.len() - inner.len());
             signature = Some((SrcSpan::new(at, at + close), inner[..close].to_string()));
