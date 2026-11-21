@@ -498,6 +498,15 @@ impl Interpreter {
         // directions (issue #8474). `initial_count` still seeds the
         // running count from whatever the source already emitted before
         // this tap registered.
+        // Over a live source the stage is a per-tap recipe (ADR-18443),
+        // counting from 0 per tap.
+        if Self::stage_is_live_recipe(attributes) {
+            return Ok(Self::make_on_demand_buffer_supply(
+                Self::supply_from_attrs(attributes),
+                "elems",
+                Value::num(interval),
+            ));
+        }
         if let Some(source_sid) = crate::runtime::native_methods::supplier_id_from_attrs(attributes)
         {
             let (emitted_count, ..) = crate::runtime::native_methods::supplier_status(source_sid);

@@ -219,9 +219,9 @@ impl Interpreter {
                 // supplier, fed by a tail tap that keeps the last N values and
                 // releases them when the source is done -- as `head` does
                 // (issue #11839).
-                if let Some(source_sid) =
-                    crate::runtime::native_methods::supplier_id_from_attrs(attributes)
-                {
+                let recipe = Self::stage_is_live_recipe(attributes);
+                let live_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes);
+                if recipe || live_sid.is_some() {
                     // The source's length is unknowable: `tail(*)`/`tail(Inf)`
                     // keep everything (`i64::MAX`, not `usize::MAX`: the count
                     // is clamped as an `i64`). A callable (`*-3`) is asked with
@@ -233,6 +233,18 @@ impl Interpreter {
                         _ => i64::MAX as usize,
                     };
                     let count = self.resolve_supply_tail_count(args.first(), live_total)?;
+                    // Over a live source the stage is a per-tap recipe
+                    // (ADR-18443).
+                    if recipe {
+                        return Ok(Self::make_on_demand_buffer_supply(
+                            Self::supply_from_attrs(attributes),
+                            "tail",
+                            Value::int(count.min(i64::MAX as usize) as i64),
+                        ));
+                    }
+                    let Some(source_sid) = live_sid else {
+                        return Err(RuntimeError::new("a live tail without a supplier"));
+                    };
                     let downstream_sid = next_supplier_id();
                     register_supplier_tail_tap(source_sid, downstream_sid, count);
                     let mut new_attrs = HashMap::new();
@@ -1075,6 +1087,15 @@ impl Interpreter {
                 // and dropped the attribute (`.produce(...).map(...)` mapped the
                 // raw values), and the previous stage's own derived supplier had
                 // no tap that would reach it.
+                // Over a live source the stage is a per-tap recipe
+                // (ADR-18443).
+                if Self::stage_is_live_recipe(attributes) {
+                    return Ok(Self::make_on_demand_buffer_supply(
+                        Self::supply_from_attrs(attributes),
+                        "produce",
+                        reducer,
+                    ));
+                }
                 if let Some(source_sid) =
                     crate::runtime::native_methods::supplier_id_from_attrs(attributes)
                 {
@@ -1128,6 +1149,18 @@ impl Interpreter {
                     }
                 }
 
+                // Over a live source the stage is a per-tap recipe
+                // (ADR-18443).
+                if Self::stage_is_live_recipe(attributes) {
+                    return Ok(Self::make_on_demand_buffer_supply(
+                        Self::supply_from_attrs(attributes),
+                        "batch",
+                        crate::runtime::native_methods::batch_stage_params(
+                            batch_elems,
+                            batch_seconds,
+                        ),
+                    ));
+                }
                 // For supplier-backed (live) supplies, set up a batch tap chain
                 if let Some(ValueView::Int(source_supplier_id)) =
                     attributes.get("supplier_id").map(Value::view)
@@ -1225,6 +1258,15 @@ impl Interpreter {
                 // Live (Supplier-backed) source: real pipeline stage, same
                 // shape as `lines` above (issue #8474). A channel-backed
                 // source keeps the existing marker-forwarding path below.
+                // Over a live source the stage is a per-tap recipe
+                // (ADR-18443).
+                if Self::stage_is_live_recipe(attributes) {
+                    return Ok(Self::make_on_demand_buffer_supply(
+                        Self::supply_from_attrs(attributes),
+                        "words",
+                        Value::NIL,
+                    ));
+                }
                 if let Some(source_sid) =
                     crate::runtime::native_methods::supplier_id_from_attrs(attributes)
                 {

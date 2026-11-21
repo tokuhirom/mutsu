@@ -34,6 +34,7 @@ pub(crate) mod supply_channel;
 mod supply_collector;
 mod supply_derive;
 mod supply_derive_dedup;
+mod supply_derive_buffer;
 mod supply_quit_forwarder;
 mod system;
 pub(crate) mod thread_lock_count;
@@ -55,6 +56,7 @@ pub(in crate::runtime) use act_loop::ActLoop;
 pub(in crate::runtime) use descriptor_forward::{forward_stream_bytes, request_native_descriptor};
 pub(in crate::runtime) use attr_publish::AttrPublisher;
 pub(in crate::runtime) use native_shim::native_method_shim;
+pub(in crate::runtime) use supply_derive_buffer::batch_stage_params;
 
 // Re-export items accessed from sibling `runtime` modules. A handful are also
 // re-exported `pub(crate)` below for the VM-side react/supply drive loop

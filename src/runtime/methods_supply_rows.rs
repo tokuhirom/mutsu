@@ -142,6 +142,11 @@ impl SupplyOp {
                 | SupplyOp::Reduce
                 | SupplyOp::Unique
                 | SupplyOp::Squish
+                | SupplyOp::Batch
+                | SupplyOp::Tail
+                | SupplyOp::Produce
+                | SupplyOp::Elems
+                | SupplyOp::Words
                 | SupplyOp::Share
                 | SupplyOp::Supply
                 | SupplyOp::Live
@@ -152,67 +157,49 @@ impl SupplyOp {
 }
 
 impl Interpreter {
-    /// A live per-tap recipe (ADR-18443) instantiated once and shared, for a
-    /// consumer that only knows a live source by its supplier: the chain is
-    /// rebuilt with the eager stages (a stage tap registered on the source
-    /// now, feeding a derived supplier) every live `map`/`grep`/`do`/`head`
-    /// had before the recipes.
-    // TODO: retire with the bridge (ADR-18443 slices 2-3).
-    // Cost: O(d), d = stages in the recipe.
-    pub(crate) fn live_recipe_shared_instance(
-        &mut self,
-        attributes: &AttrMap,
-    ) -> Result<Value, RuntimeError> {
-        use crate::runtime::native_methods::{
-            TransformMode, next_supplier_id, register_supplier_head_tap,
-            register_supplier_transform_tap, supplier_id_from_attrs,
-        };
-        let source = attributes.get("derive_source").cloned().unwrap_or(Value::NIL);
-        let ValueView::Instance { attributes: source_attrs, .. } = source.view() else {
-            return Err(RuntimeError::new("a live Supply recipe without a source"));
-        };
-        let source_attrs = source_attrs.as_map().clone();
-        let base = if source_attrs.contains_key(Self::LIVE_RECIPE_KEY) {
-            self.live_recipe_shared_instance(&source_attrs)?
-        } else {
-            source.clone()
-        };
-        let base_sid = match base.view() {
-            ValueView::Instance { attributes, .. } => supplier_id_from_attrs(&attributes.as_map()),
-            _ => None,
-        }
-        .ok_or_else(|| RuntimeError::new("a live Supply recipe over a non-live source"))?;
-        let callable = attributes.get("derive_callable").cloned().unwrap_or(Value::NIL);
-        let mode = attributes.get("derive_mode").map(Value::to_string_value).unwrap_or_default();
-        let downstream_sid = next_supplier_id();
-        let live = match mode.as_str() {
-            "head" => {
-                let count = callable.as_int().unwrap_or(0).max(0) as usize;
-                register_supplier_head_tap(base_sid, downstream_sid, count);
-                false
-            }
-            other => {
-                let mode = match other {
-                    "map" => TransformMode::Map,
-                    "do" => TransformMode::Do,
-                    _ => TransformMode::Grep,
-                };
-                register_supplier_transform_tap(base_sid, downstream_sid, callable, mode);
-                true
-            }
-        };
+    /// Instantiate a live per-tap recipe (ADR-18443) for one consumer that
+    /// only knows a live source by its supplier (a react `whenever`, a
+    /// combinator not converted to a recipe yet): tap the recipe -- the one
+    /// instantiation path every tap takes -- with forwarders into a fresh
+    /// supplier, and answer a Supply over that supplier. Its
+    /// `on_close_callbacks` close the tap, which releases every stage below;
+    /// a react runs them when the `whenever` or the react ends.
+    // Cost: O(d), d = stages in the recipe, plus the recipe's own tap.
+    pub(crate) fn instantiate_live_recipe(&mut self, recipe: &Value) -> Result<Value, RuntimeError> {
+        use crate::runtime::native_methods::{native_method_shim, next_supplier_id};
+        let out_sid = next_supplier_id();
+        let mut supplier_attrs = HashMap::new();
+        supplier_attrs.insert("done".to_string(), Value::FALSE);
+        supplier_attrs.insert("supplier_id".to_string(), Value::int(out_sid as i64));
+        let supplier = Value::make_instance(Symbol::intern("Supplier"), supplier_attrs);
+        let tap = self.call_method_with_values(
+            recipe.clone(),
+            "tap",
+            vec![
+                native_method_shim(supplier.clone(), "emit", true),
+                Value::pair(
+                    "done".to_string(),
+                    native_method_shim(supplier.clone(), "done", false),
+                ),
+                Value::pair("quit".to_string(), native_method_shim(supplier, "quit", true)),
+            ],
+        )?;
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
-        attrs.insert("live".to_string(), Value::truth(live));
+        attrs.insert("supplier_id".to_string(), Value::int(out_sid as i64));
+        attrs.insert("live".to_string(), Value::truth(Self::live_recipe_is_live(recipe)));
+        attrs.insert(
+            "on_close_callbacks".to_string(),
+            Value::array(vec![native_method_shim(tap, "close", false)]),
+        );
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
     /// `.live` of a live per-tap recipe: walk its stages down to the live
     /// source; a `head` stage on the way makes it not live.
     // Cost: O(d), d = stages in the recipe.
-    fn live_recipe_is_live(supply: &Value) -> bool {
+    pub(crate) fn live_recipe_is_live(supply: &Value) -> bool {
         let mut cur = supply.clone();
         loop {
             let ValueView::Instance { attributes, .. } = cur.view() else {
@@ -264,15 +251,14 @@ impl Interpreter {
             }
             _ => return None,
         };
-        // ADR-18443 slice 1: a live `map`/`grep`/`do`/`head` stage is a
-        // per-tap recipe. The combinators not converted yet only know a live
-        // source by its supplier, so they get the recipe instantiated once
-        // and shared -- the eager stage they had before.
-        // TODO: compile every combinator to a per-tap recipe (ADR-18443
-        // slices 2-3) and drop this bridge; it keeps one shared instance of
-        // the chain below such a combinator, which rakudo would not.
+        // ADR-18443: a live stage is a per-tap recipe. The combinators not
+        // converted yet only know a live source by its supplier, so they get
+        // the recipe instantiated once, when they are called.
+        // TODO: make every combinator a per-tap recipe (ADR-18443 slice 3)
+        // and drop this; it keeps one shared instance of the chain below
+        // such a combinator, which rakudo would not.
         if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY) && !op.knows_live_recipes() {
-            let live = match self.live_recipe_shared_instance(&attributes.as_map()) {
+            let live = match self.instantiate_live_recipe(target) {
                 Ok(live) => live,
                 Err(err) => return Some(Err(err)),
             };
