@@ -47,6 +47,9 @@ enum BufferState {
     Flat,
     /// `start(&block)`: no state; each value starts the block.
     Start,
+    /// `classify` / `categorize`: the groups live in
+    /// [`super::supply_derive_classify`].
+    Classify { categorize: bool },
 }
 
 fn states() -> &'static std::sync::Mutex<HashMap<u64, BufferState>> {
@@ -86,11 +89,17 @@ pub(super) fn buffer_register(mode: &str, params: &Value) -> Option<u64> {
         },
         "flat" => BufferState::Flat,
         "start" => BufferState::Start,
-        _ => return None,
+        other => match super::supply_derive_classify::classify_mode(other) {
+            Some(categorize) => BufferState::Classify { categorize },
+            None => return None,
+        },
     };
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    if matches!(state, BufferState::Classify { .. }) {
+        super::supply_derive_classify::classify_register(id);
+    }
     if let Ok(mut map) = states().lock() {
         map.insert(id, state);
     }
@@ -136,6 +145,7 @@ pub(super) fn buffer_retire(id: u64) {
     if let Ok(mut map) = states().lock() {
         map.remove(&id);
     }
+    super::supply_derive_classify::classify_take_groups(id);
 }
 
 /// Keep every value the GC must see: the values the live taps hold back.
@@ -286,6 +296,8 @@ enum Step {
     Fold(Option<Value>, Value),
     /// `start`: run the block on the value in a thread of its own.
     Start(Value),
+    /// `classify` / `categorize`: map the value to its group(s).
+    Classify(bool, Value),
 }
 
 impl Interpreter {
@@ -362,6 +374,7 @@ impl Interpreter {
                 ),
                 BufferState::Flat => Step::Emit(flat_items(&arg)),
                 BufferState::Start => Step::Start(arg),
+                BufferState::Classify { categorize } => Step::Classify(*categorize, arg),
                 BufferState::Words { buffer } => {
                     buffer.push_str(&arg.to_string_value());
                     Step::Emit(
@@ -375,6 +388,9 @@ impl Interpreter {
         };
         let out = match step {
             Step::Emit(values) => values,
+            Step::Classify(categorize, value) => {
+                return self.classify_stage_emit(id, categorize, callable, value, emitter);
+            }
             Step::Start(value) => {
                 // The Supply of the block's result goes out on the stage's
                 // own supplier, as the eager `start` stage does.

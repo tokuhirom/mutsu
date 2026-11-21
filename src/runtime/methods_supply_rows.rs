@@ -160,6 +160,8 @@ impl SupplyOp {
                 | SupplyOp::Words
                 | SupplyOp::Channel
                 | SupplyOp::Flat
+                | SupplyOp::Classify
+                | SupplyOp::Categorize
                 | SupplyOp::Merge
                 | SupplyOp::Zip
                 | SupplyOp::ZipLatest
