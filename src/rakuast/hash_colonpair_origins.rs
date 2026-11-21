@@ -89,7 +89,7 @@ fn place_entry(
 /// `:!c`, `:2b`, or `:d` followed by its bracketed value. `None` when `text`
 /// does not spell it.
 // Cost: O(n), n = length of the colonpair's text.
-fn colonpair_len(node: &RakuAstNode, text: &str) -> Option<usize> {
+pub(super) fn colonpair_len(node: &RakuAstNode, text: &str) -> Option<usize> {
     let key = leaf_text(node)?;
     let rest = text.strip_prefix(':')?;
     let rest = match node.class {

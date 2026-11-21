@@ -31,6 +31,8 @@ pub(super) struct Written {
     default: Option<(usize, usize)>,
     /// A sub-signature `($a, $b)` written in place of a variable.
     sub: Option<Vec<Written>>,
+    /// The names of the `is NAME` traits after the variable (`$x is copy`).
+    traits: Vec<String>,
 }
 
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
@@ -85,6 +87,8 @@ pub(super) struct Spans {
     ty: SrcSpan,
     /// A sub-signature's range (inside its parentheses) and parameters.
     sub: Option<(SrcSpan, Vec<Spans>)>,
+    /// Each `is NAME` trait's range and its name's.
+    traits: Vec<(SrcSpan, SrcSpan)>,
 }
 
 /// The parameters of `signature`, as written, when every one is a plain
@@ -112,22 +116,17 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
             if param.fields.iter().any(|f| {
                 matches!(
                     f.name,
-                    Some(
-                        "where"
-                            | "type-captures"
-                            | "invocant"
-                            | "array-shape"
-                            | "slurpy"
-                            | "traits"
-                    )
+                    Some("where" | "type-captures" | "invocant" | "array-shape" | "slurpy")
                 )
             }) {
                 return None;
             }
+            let traits = is_traits(param)?;
             // `($a, $b)`: a sub-signature in place of the variable.
             if let Some(sub) = child(param, "sub-signature") {
                 if child(param, "target").is_some()
                     || child(param, "default").is_some()
+                    || !traits.is_empty()
                     || param.fields.iter().any(|f| f.name == Some("names"))
                 {
                     return None;
@@ -140,6 +139,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     marker: None,
                     default: None,
                     sub: Some(parameters(sub)?),
+                    traits,
                 });
             }
             let target = child(param, "target")?;
@@ -187,6 +187,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     marker,
                     default,
                     sub: None,
+                    traits,
                 });
             }
             if target.class != RakuAstClass::ParameterTargetVar {
@@ -200,9 +201,67 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 marker,
                 default,
                 sub: None,
+                traits,
             })
         })
         .collect()
+}
+
+/// The names of `param`'s traits, when each is a plain `is NAME` (no
+/// argument, no type); `None` for any other trait.
+// Cost: O(t), t = traits.
+fn is_traits(param: &RakuAstNode) -> Option<Vec<String>> {
+    let Some(field) = param.fields.iter().find(|f| f.name == Some("traits")) else {
+        return Some(Vec::new());
+    };
+    let RakuAstFieldValue::List(nodes) = &field.value else {
+        return None;
+    };
+    nodes
+        .iter()
+        .map(|value| match value.view() {
+            ValueView::RakuAst(node)
+                if node.class == RakuAstClass::TraitIs
+                    && child(node, "argument").is_none()
+                    && child(node, "type").is_none() =>
+            {
+                leaf_text(child(node, "name")?)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Read the `is NAME` traits `names` back from `inner` at `at`, each after
+/// blanks: the trait's range and its name's, and the offset after them.
+// Cost: O(n), n = length of the traits' text.
+fn scan_traits(
+    inner: &str,
+    mut at: usize,
+    names: &[String],
+    base: usize,
+) -> Option<(Vec<(SrcSpan, SrcSpan)>, usize)> {
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        let gap = inner[at..].len() - inner[at..].trim_start().len();
+        let start = at + gap;
+        let after_is = inner[start..].strip_prefix("is")?;
+        let blank = after_is.len() - after_is.trim_start().len();
+        if gap == 0 || blank == 0 {
+            return None;
+        }
+        let name_at = start + 2 + blank;
+        let rest = inner[name_at..].strip_prefix(name.as_str())?;
+        if rest.starts_with(|c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '(' | '[')) {
+            return None;
+        }
+        at = name_at + name.len();
+        out.push((
+            SrcSpan::new(base + start, base + at),
+            SrcSpan::new(base + name_at, base + at),
+        ));
+    }
+    Some((out, at))
 }
 
 /// The simple type name of `param` (`Some(None)` when it has none), or `None`
@@ -314,6 +373,7 @@ pub(super) fn scan(
                 var: SrcSpan::NONE,
                 ty,
                 sub: Some((range, spans)),
+                traits: Vec::new(),
             });
             at += inner[at..].len() - inner[at..].trim_start().len();
             if i + 1 < parameters.len() {
@@ -332,6 +392,8 @@ pub(super) fn scan(
         {
             at += 1;
         }
+        let (traits, after_traits) = scan_traits(inner, at, &written.traits, base)?;
+        at = after_traits;
         if let Some((from, to)) = written.default {
             let rest = inner[at..].trim_start().strip_prefix('=')?;
             let value_at = inner.len() - rest.trim_start().len();
@@ -345,6 +407,7 @@ pub(super) fn scan(
             var,
             ty,
             sub: None,
+            traits,
         });
         at += inner[at..].len() - inner[at..].trim_start().len();
         if i + 1 < parameters.len() {
@@ -374,12 +437,36 @@ pub(super) fn place(signature: &mut RakuAstNode, spans: &[Spans]) {
         };
         let mut node = RakuAstNode::clone(node);
         super::routine_origins::parameter(&mut node, span.param, span.var, span.ty);
+        place_traits(&mut node, &span.traits);
         if let Some((range, spans)) = &span.sub {
             super::infix_origins::with_child(&mut node, "sub-signature", |signature| {
                 super::origin::set_span(signature, *range);
                 place(signature, spans);
             });
         }
+        *value = Value::rakuast(Box::new(node));
+    }
+}
+
+/// Give a parameter's `Trait::Is` nodes their ranges and their names'.
+// Cost: O(t), t = traits.
+fn place_traits(param: &mut RakuAstNode, traits: &[(SrcSpan, SrcSpan)]) {
+    if traits.is_empty() {
+        return;
+    }
+    let Some(field) = param.fields.iter_mut().find(|f| f.name == Some("traits")) else {
+        return;
+    };
+    let RakuAstFieldValue::List(nodes) = &mut field.value else {
+        return;
+    };
+    for (value, &(whole, name)) in nodes.iter_mut().zip(traits) {
+        let ValueView::RakuAst(node) = value.view() else {
+            continue;
+        };
+        let mut node = RakuAstNode::clone(node);
+        super::origin::set_span(&mut node, whole);
+        super::infix_origins::with_child(&mut node, "name", |n| super::origin::set_span(n, name));
         *value = Value::rakuast(Box::new(node));
     }
 }
