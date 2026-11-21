@@ -442,16 +442,22 @@ pub(super) fn parenthesized(
         [first, .., last] | [first @ last] => {
             let (first, last) = ((*first)?.0, (*last)?.1);
             let leading = text.get(..first.checked_sub(base)?)?;
-            if trivia_len(leading)? != leading.len() {
+            // An angle-quoted number (`<1+2i>`) is placed inside its
+            // brackets: an argument list it starts starts there too, one
+            // it ends runs past the `>`.
+            let lead = trivia_len(leading)?;
+            if !matches!(&leading[lead..], "" | "<") {
                 return None;
             }
-            let tail = text.get(last.checked_sub(base)?..)?;
+            let written = text.get(last.checked_sub(base)?..)?;
+            let tail = written.strip_prefix('>').unwrap_or(written);
+            let skipped = written.len() - tail.len();
             let mut end = trivia_len(tail)?;
             let to = if tail[end..].starts_with(',') {
                 end += 1;
-                last + end
+                last + skipped + end
             } else {
-                last
+                last + skipped
             };
             (trivia_len(&tail[end..])? == tail.len() - end).then_some((first, to))
         }

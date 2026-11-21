@@ -207,6 +207,7 @@ mod node_origin_debug;
 mod quoted_method_origins;
 mod quoted_string;
 mod react;
+mod regex_alias_origins;
 mod regex_assertion_spelling;
 mod regex_char_class;
 mod regex_code;

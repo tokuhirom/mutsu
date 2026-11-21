@@ -225,6 +225,10 @@ impl Walk<'_> {
             RakuAstClass::RegexAnchorEndOfLine => self.eat("$$")?,
             RakuAstClass::RegexNamedCapture => self.named_capture(names, node)?,
             RakuAstClass::RegexAssertionCharClass => self.char_class(node)?,
+            RakuAstClass::RegexAssertionCallable | RakuAstClass::RegexAssertionAlias => {
+                let (rest, at) = (&self.text[self.at..], self.base + self.at);
+                self.at += super::regex_alias_origins::place(node, rest, at)?;
+            }
             RakuAstClass::RegexInterpolation => self.interpolation(node, false)?,
             RakuAstClass::RegexAssertionInterpolatedVar => self.interpolation(node, true)?,
             RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs => {
