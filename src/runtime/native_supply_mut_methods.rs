@@ -651,7 +651,24 @@ impl Interpreter {
                                         None,
                                         0.0,
                                     );
-                                register_supplier_tap(supplier_id, wrapped_body_cb, 0.0);
+                                // Swap the collection this `whenever` started when
+                                // it ran for the real tap, with no emission in
+                                // between (#18524); its values reach the body
+                                // once the block's own tap is wired, below.
+                                let collected = {
+                                    let _gate = emit_gate();
+                                    let collected = arr
+                                        .get(4)
+                                        .and_then(Value::as_int)
+                                        .map(|id| {
+                                            crate::runtime::supply_whenever_prebuffer::take(
+                                                id as u64,
+                                            )
+                                        })
+                                        .unwrap_or_default();
+                                    register_supplier_tap(supplier_id, wrapped_body_cb, 0.0);
+                                    collected
+                                };
                                 if let Some(tid) = last_supplier_tap_id(supplier_id) {
                                     if let Some(pump_id) = whenever_pump_id {
                                         // Route the upstream-close cascade
@@ -754,6 +771,9 @@ impl Interpreter {
                                     for v in supplier_take_preserved_backlog(supplier_id) {
                                         self.call_supply_callback(body_cb.clone(), vec![v])?;
                                     }
+                                }
+                                for v in collected {
+                                    self.call_supply_callback(body_cb.clone(), vec![v])?;
                                 }
                                 // A non-live source can carry values seeded next
                                 // to its supplier (`Supply.merge` of a live and

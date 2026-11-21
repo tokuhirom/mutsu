@@ -419,6 +419,21 @@ impl Interpreter {
             {
                 self.prerun_cold_supply_source(&supply_val, whenever_id, &callback_with_id);
             }
+            // A supply block being tapped opens this `whenever`'s source only
+            // after its body returns; collect what a live source emits until
+            // then, as rakudo has subscribed already (#18524).
+            if let Some(frame) = self.async_state.supply_emit_buffer.last()
+                && !frame.is_react
+                && !frame.capture_only
+                && frame.owner.is_some()
+                && let ValueView::Instance { attributes, .. } = supply_val.view()
+                && !attributes.as_map().contains_key("preserving")
+                && let Some(ValueView::Int(sid)) =
+                    attributes.as_map().get("supplier_id").map(Value::view)
+                && sid > 0
+            {
+                super::supply_whenever_prebuffer::start(whenever_id, sid as u64);
+            }
             if let Some(last) = self.async_state.supply_emit_buffer.last_mut() {
                 // A react body tapping a live supplier: its producers now wait
                 // for this react to handle what they emit (#11268).
