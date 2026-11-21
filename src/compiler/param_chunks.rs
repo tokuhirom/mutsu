@@ -198,6 +198,9 @@ impl Compiler {
         package: &ParamChunkScope,
     ) -> crate::opcode::CompiledDeclExpr {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
+        // A `where &ok` reads the enclosing `&ok` as a free variable, which
+        // the owning closure then captures (`force_param_chunk_captures`).
+        self.inherit_outer_code_var_names(&mut chunk_compiler);
         chunk_compiler.enclosing_package = Some(package.package.clone());
         chunk_compiler.set_current_package(package.scope.clone());
         chunk_compiler.is_routine = true;
@@ -214,6 +217,71 @@ impl Compiler {
             code: std::sync::Arc::new(code),
             fns: std::sync::Arc::new(fns),
             reads_attributes: true,
+        }
+    }
+
+    /// Make `child` -- the compiler of the routine or closure that owns
+    /// `param_defs` -- capture every outer name the signature's precompiled
+    /// chunks read (a `where &ok`, a default `= $fallback`). The chunks run in
+    /// the env the binder prepares from that closure's captures, so a name
+    /// only they read has to be captured like one the body reads; otherwise
+    /// a closure that outlives its creating scope (`sub mk { my &ok = ...;
+    /// sub ($x where &ok) { } }`) no longer sees it (#18570). Names the
+    /// signature binds itself, and the topic, are not outer names.
+    // Cost: O(c * f), c = chunks in the signature, f = free names per chunk.
+    pub(super) fn force_param_chunk_captures(
+        child: &mut Compiler,
+        param_defs: &[crate::ast::ParamDef],
+    ) {
+        let mut bound: Vec<String> = Vec::new();
+        Self::collect_signature_bound_names(param_defs, &mut bound);
+        let mut reads: Vec<(Symbol, bool)> = Vec::new();
+        Self::collect_param_chunk_reads(param_defs, &mut reads);
+        for (sym, writes) in reads {
+            let skip = sym.with_str(|name| {
+                name == "_" || bound.iter().any(|b| b == name)
+            });
+            if !skip {
+                sym.with_str(|name| child.note_forced_outer_scalar_capture(name, writes));
+            }
+        }
+    }
+
+    // Cost: O(p), p = the parameters, sub-signatures included.
+    fn collect_signature_bound_names(param_defs: &[crate::ast::ParamDef], out: &mut Vec<String>) {
+        for pd in param_defs {
+            if !pd.name.is_empty() {
+                out.push(pd.name.clone());
+                out.push(pd.storage_name().into_owned());
+                out.push(pd.name.trim_start_matches('$').to_string());
+            }
+            for nested in pd.sub_signature.iter().chain(&pd.outer_sub_signature) {
+                Self::collect_signature_bound_names(nested, out);
+            }
+        }
+    }
+
+    // Cost: O(c * f), as `force_param_chunk_captures`.
+    fn collect_param_chunk_reads(param_defs: &[crate::ast::ParamDef], out: &mut Vec<(Symbol, bool)>) {
+        for pd in param_defs {
+            if let Some(chunks) = pd.code.get() {
+                let compiled = chunks
+                    .where_chunk
+                    .iter()
+                    .chain(chunks.default_chunk.iter())
+                    .chain(chunks.shape_chunks.iter().flatten());
+                for chunk in compiled {
+                    for sym in &chunk.code.free_var_syms {
+                        let writes = chunk.code.free_var_writes.contains(sym);
+                        if !out.iter().any(|(s, _)| s == sym) {
+                            out.push((*sym, writes));
+                        }
+                    }
+                }
+            }
+            for nested in pd.sub_signature.iter().chain(&pd.outer_sub_signature) {
+                Self::collect_param_chunk_reads(nested, out);
+            }
         }
     }
 }

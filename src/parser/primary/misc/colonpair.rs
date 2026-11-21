@@ -130,12 +130,19 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             && let Ok((r3, _)) = ws(r3)
             && let Ok((r3, _)) = parse_char(r3, ')')
         {
+            // A parameter's `where` clause or computed default reads names of
+            // the scope the literal is written in, which a constant has no
+            // scope for: built from a routine, the signature closes over
+            // that scope as any block does, and `ACCEPTS` binds through it
+            // (#18570).
             // A custom parameter trait (`:(Int $x is tagged)`) is applied by a
             // user `trait_mod:<is>` when the signature is built, and its effect
             // (`$param does Role`) cannot exist in a constant parsed here. Build
             // the signature at run time from a routine carrying the same
             // parameters -- the path a `sub`'s parameters already take.
-            if has_custom_param_trait(&param_defs) {
+            if has_custom_param_trait(&param_defs)
+                || crate::value::signature::params_carry_code(&param_defs)
+            {
                 let params = param_defs.iter().map(|p| p.name.clone()).collect();
                 let routine = Expr::AnonSubParams {
                     params,

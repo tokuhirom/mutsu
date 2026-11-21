@@ -168,6 +168,28 @@ pub(crate) struct SigInfo {
     /// assembled from parts (`Signature.new`, a synthesized native one).
     #[serde(default, with = "param_defs_serde")]
     pub(crate) param_defs: Option<std::sync::Arc<Vec<ParamDef>>>,
+    /// A routine with this signature and an empty body, when a parameter
+    /// carries code that reads names of the scope the signature is written
+    /// in (a `where` clause, a computed default; see [`params_carry_code`]).
+    /// `Signature.ACCEPTS(Capture)` binds the capture by calling it, so that
+    /// code runs in the routine's own scope -- as rakudo's trial bind does --
+    /// rather than in the scope of whoever smartmatches (#18570).
+    #[serde(skip)]
+    pub(crate) binder: Option<Value>,
+}
+
+/// Whether a parameter in `params` carries code that reads names of the
+/// scope the signature is written in: a `where` clause (`:($x where &ok)`)
+/// or a computed default (`:($x = $fallback)`), in a sub-signature too.
+// Cost: O(p), p = the parameters, sub-signatures included.
+pub(crate) fn params_carry_code(params: &[ParamDef]) -> bool {
+    params.iter().any(|p| {
+        p.where_constraint.is_some()
+            || p.default
+                .as_ref()
+                .is_some_and(|e| !matches!(e, Expr::Literal(_)))
+            || p.sub_signature.as_deref().is_some_and(params_carry_code)
+    })
 }
 
 /// Serde for [`SigInfo::param_defs`]: the shared `Arc` is written as the plain
@@ -226,6 +248,7 @@ pub(crate) fn synthesize_native_signature(owner: &str) -> SigInfo {
         params: vec![invocant, capture],
         return_type: None,
         param_defs: None,
+        binder: None,
     }
 }
 
@@ -501,6 +524,7 @@ pub(crate) fn sig_info_from_new_args(args: &[Value]) -> SigInfo {
         params,
         return_type,
         param_defs: None,
+        binder: None,
     }
 }
 
@@ -857,6 +881,7 @@ pub(crate) fn param_defs_to_sig_info(params: &[ParamDef], return_type: Option<St
         params: params.iter().map(param_def_to_sig_param).collect(),
         return_type,
         param_defs: Some(std::sync::Arc::new(params.to_vec())),
+        binder: None,
     }
 }
 
@@ -1307,6 +1332,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
                     .as_ref()
                     .and_then(|cs| cs.return_type.clone()),
                 param_defs: None,
+                binder: None,
             },
             interp,
         ),
@@ -1591,6 +1617,7 @@ pub(crate) fn extract_sig_info(val: &Value) -> Option<SigInfo> {
             params: Vec::new(),
             return_type: None,
             param_defs: None,
+            binder: None,
         });
     }
     None
