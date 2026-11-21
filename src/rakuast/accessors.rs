@@ -335,6 +335,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         .chain(inherited_fields::for_class(node.class))
         .find(|(name, _)| *name == method)?;
     match absent {
+        fields::Absent::EmptyNode(_) if empty_fields::stays_undefined(node, name) => Some(
+            Value::package(crate::symbol::Symbol::intern("RakuAST::Signature")),
+        ),
         fields::Absent::EmptyNode(class) => Some(empty_fields::empty_node(node, name, *class)),
         _ => absent.value(),
     }

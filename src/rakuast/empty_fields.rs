@@ -56,6 +56,17 @@ fn visited(class: RakuAstClass) -> &'static [&'static str] {
     }
 }
 
+/// Whether `node`'s absent `field` stays a type object rather than an empty
+/// node: a `sub` with no written signature that declares placeholders
+/// (`sub { $^a }`) has no `Signature` until it is compiled, so Rakudo's
+/// `.signature` is the type object and `visit-children` skips it.
+// Cost: O(n), n = size of the routine's own body.
+pub(crate) fn stays_undefined(node: &RakuAstNode, field: &str) -> bool {
+    node.class == RakuAstClass::Sub
+        && field == "signature"
+        && super::block_queries::declares_placeholder(node)
+}
+
 /// The empty `class` node `node`'s absent field `field` stands for, with the
 /// origin the parse gave it.
 // Cost: O(e), e = empty fields with an origin.
@@ -114,7 +125,7 @@ pub(crate) fn materialized(node: &RakuAstNode) -> Option<RakuAstNode> {
     let mut out = node.clone();
     let before_len = out.fields.len();
     for name in names {
-        if out.fields.iter().any(|f| f.name == Some(*name)) {
+        if out.fields.iter().any(|f| f.name == Some(*name)) || stays_undefined(node, name) {
             continue;
         }
         let Some((name, super::fields::Absent::EmptyNode(class))) =
