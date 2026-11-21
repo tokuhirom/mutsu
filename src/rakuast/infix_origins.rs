@@ -403,6 +403,7 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     }
     let name_end = from + name.len();
     if !parens {
+        super::label_origins::name_argument(node, name_end, to);
         super::call_origins::leading_block_argument(node, name_end, to);
         super::fragment_origins::arguments(names, node, SrcSpan::new(name_end, to));
     }

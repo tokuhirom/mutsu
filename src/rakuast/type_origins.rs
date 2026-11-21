@@ -195,16 +195,37 @@ pub(super) fn coercion(node: &mut RakuAstNode, span: SrcSpan) {
     }) else {
         return;
     };
-    with_child(node, "base-type", |base| {
-        if base.class != RakuAstClass::TypeSimple {
-            return;
-        }
+    let place_simple = |base: &mut RakuAstNode, name_end: usize| {
         base.origin = Default::default();
         super::origin::set_span(base, span);
         with_first(base, |name| {
             name.origin = Default::default();
             super::origin::set_span(name, SrcSpan::new(from, from + name_end));
         });
+    };
+    with_child(node, "base-type", |base| match base.class {
+        RakuAstClass::TypeSimple => place_simple(base, name_end),
+        // `Int:D(Str)`: Rakudo leaves the `Type::Definedness` unplaced and
+        // places its `Type::Simple` as a plain base type's, over the whole
+        // coercion, its `Name` over the name without the smiley.
+        RakuAstClass::TypeDefinedness => {
+            let bare = super::unit_source::with_text(SrcSpan::new(from, from + name_end), |t| {
+                let bare = t
+                    .strip_suffix(":D")
+                    .or_else(|| t.strip_suffix(":U"))
+                    .or_else(|| t.strip_suffix(":_"))?;
+                Some(bare.len())
+            });
+            if let Some(bare) = bare {
+                base.origin = Default::default();
+                with_first(base, |inner| {
+                    if inner.class == RakuAstClass::TypeSimple {
+                        place_simple(inner, bare)
+                    }
+                });
+            }
+        }
+        _ => {}
     });
     if let Some((a, b)) = inner {
         with_child(node, "constraint", |constraint| {

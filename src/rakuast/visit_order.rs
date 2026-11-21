@@ -6,10 +6,16 @@ use super::{RakuAstClass, RakuAstField, RakuAstNode};
 /// Move the fields of `node` that Rakudo visits out of their listed order:
 /// a declaration visits its initializer before its `shape` (`my @a[3] =
 /// 1,2,3`), a substitution its pattern before its `infix` (`s[a] = b`), an
-/// enum its term before its `of` type (`our Str enum E <a>`), and a constant
-/// its initializer before its traits (`constant C is export = 1`).
+/// enum its term before its `of` type (`our Str enum E <a>`), a constant
+/// its initializer before its traits (`constant C is export = 1`), and a
+/// statement its labels after everything else (`L: for @a { }`).
 // Cost: O(f), f = fields of `node`.
 pub(crate) fn reorder(node: &RakuAstNode, fields: &mut Vec<&RakuAstField>) {
+    // `L: for @a { }`: a statement visits its labels last.
+    if let Some(at) = fields.iter().position(|f| f.name == Some("labels")) {
+        let field = fields.remove(at);
+        fields.push(field);
+    }
     let (moved, after) = match node.class {
         RakuAstClass::VarDeclarationSimple => ("shape", "initializer"),
         RakuAstClass::Substitution => ("infix", "pattern"),

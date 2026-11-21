@@ -190,6 +190,13 @@ impl<'s> BlockScope<'s> {
                 } if constant.is_some() => {
                     own.insert(name.clone(), constant_kind(names, expr));
                 }
+                // `my \uint8 = 3`: a sigilless term shadows a setting type
+                // in its block, as it does a routine.
+                Stmt::Ast(parsed) => {
+                    if let crate::ast::parsed::ParsedStmt::SigillessDecl(d) = parsed.as_ref() {
+                        own.insert(d.name.clone(), DeclaredKind::Term);
+                    }
+                }
                 _ => {}
             }
         }
