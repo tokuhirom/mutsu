@@ -99,9 +99,8 @@ pub(super) fn place_adverbs(node: &mut RakuAstNode, written: &[(usize, usize)]) 
         let name_len = leaf_text(&pair).map_or(0, |n| n.len());
         let open = from + a + 1 + name_len;
         if open < from + b
-            && let Some(text) = super::unit_source::with_text(SrcSpan::new(open, from + b), |t| {
-                Some(t.to_string())
-            })
+            && let Some(text) =
+                super::unit_source::with_text(SrcSpan::new(open, from + b), |t| Some(t.to_string()))
         {
             super::infix_origins::with_child(&mut pair, "value", |value| {
                 if value.class == RakuAstClass::CircumfixParentheses && value.origin.0.is_none() {

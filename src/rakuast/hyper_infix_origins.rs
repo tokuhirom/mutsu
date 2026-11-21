@@ -3,8 +3,8 @@
 //! operator is read between the operands: a `>>` / `<<` / `»` / `«` marker,
 //! the inner operator as written, and a closing marker.
 
-use super::infix_origins::{child, with_child, with_child_at};
 use super::RakuAstNode;
+use super::infix_origins::{child, with_child, with_child_at};
 use crate::ast::SrcSpan;
 
 /// The hyper markers, ASCII and Unicode.

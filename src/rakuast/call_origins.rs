@@ -491,18 +491,20 @@ pub(super) fn leading_block_argument(node: &mut RakuAstNode, name_end: usize, to
     if !unplaced {
         return;
     }
-    let Some(span) = super::unit_source::with_text(crate::ast::SrcSpan::new(name_end, to), |text| {
-        let body = text.trim_start();
-        let lead = text.len() - body.len();
-        if lead == 0 {
-            return None;
-        }
-        let close = super::regex_block_origins::closing_brace(body)?;
-        Some(crate::ast::SrcSpan::new(
-            name_end + lead,
-            name_end + lead + close + 1,
-        ))
-    }) else {
+    let Some(span) =
+        super::unit_source::with_text(crate::ast::SrcSpan::new(name_end, to), |text| {
+            let body = text.trim_start();
+            let lead = text.len() - body.len();
+            if lead == 0 {
+                return None;
+            }
+            let close = super::regex_block_origins::closing_brace(body)?;
+            Some(crate::ast::SrcSpan::new(
+                name_end + lead,
+                name_end + lead + close + 1,
+            ))
+        })
+    else {
         return;
     };
     with_child(node, "args", |list| {
