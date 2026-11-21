@@ -65,7 +65,12 @@ pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
                 let rest = text.strip_prefix("::(")?;
                 let mut end = rest.len();
                 for part in tail.iter().rev() {
-                    end = rest[..end].strip_suffix(part.as_str())?.strip_suffix("::")?.len();
+                    let head = rest[..end].strip_suffix(part.as_str())?;
+                    let sep = crate::qualified::last_separator(head)?;
+                    if sep + 2 != head.len() {
+                        return None;
+                    }
+                    end = sep;
                 }
                 rest[..end].ends_with(')').then_some(())
             })

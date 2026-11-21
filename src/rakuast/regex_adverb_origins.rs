@@ -94,8 +94,7 @@ pub(super) fn place_adverbs(node: &mut RakuAstNode, written: &[(usize, usize)]) 
             && leaf_text(pair).is_some_and(|name| {
                 super::unit_source::with_text(SrcSpan::new(from + a + 1, from + b), |t| {
                     let digits = t.strip_suffix(name.as_str())?;
-                    (!digits.is_empty() && digits.bytes().all(|c| c.is_ascii_digit()))
-                        .then_some(())
+                    (!digits.is_empty() && digits.bytes().all(|c| c.is_ascii_digit())).then_some(())
                 })
                 .is_some()
             });
