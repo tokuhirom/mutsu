@@ -465,6 +465,8 @@ fn initializer(names: &NameScope, node: &mut RakuAstNode) {
         return;
     }
     let op_at = super::unit_source::with_text(SrcSpan::new(from, expr_from), |before| {
+        // `my %o = :{ 1 => 2 }`: an object hash's range starts at its `{`.
+        let before = before.strip_suffix(':').unwrap_or(before);
         let head = before.trim_end().strip_suffix(op)?;
         // `==`, `::=` and the like are other operators.
         (!head.ends_with(['=', ':', '!', '<', '>', '~'])).then_some(from + head.len())

@@ -975,6 +975,18 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                 &node.origin,
             )])
         }
+        // `:$!x` / `:&!f`: an attributive target visits the attribute it
+        // binds, not a declaration.
+        RakuAstClass::ParameterTargetVar if let Some(name) = attributive_target(node) => {
+            Some(vec![rakuast(
+                RakuAstClass::VarAttribute,
+                vec![RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(Value::str(name)),
+                }],
+                &node.origin,
+            )])
+        }
         RakuAstClass::ParameterTargetVar => Some(vec![
             node_value("declaration")
                 .or_else(|| crate::rakuast::annotated_target_declaration(node))
@@ -1059,6 +1071,18 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
         }
         _ => None,
     }
+}
+
+/// The name of an attributive `ParameterTarget::Var` (`$!x`, `&!f`).
+// Cost: O(f), f = fields of `target`.
+fn attributive_target(target: &RakuAstNode) -> Option<String> {
+    target.fields.iter().find_map(|f| match &f.value {
+        RakuAstFieldValue::Node(name) if f.name == Some("name") => match name.view() {
+            ValueView::Str(s) if s.get(1..2) == Some("!") => Some(s.to_string()),
+            _ => None,
+        },
+        _ => None,
+    })
 }
 
 /// The class of the declaration a `ParameterTarget::Var` visits: an
