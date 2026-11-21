@@ -137,6 +137,8 @@ impl Walk<'_> {
             RakuAstClass::RegexCharClass(_) => {
                 self.eat(&super::regex_char_class::written(node)?)?
             }
+            RakuAstClass::RegexAssertionPass => self.eat("<?>")?,
+            RakuAstClass::RegexAssertionFail => self.eat("<!>")?,
             RakuAstClass::RegexAnchorBeginningOfString => self.eat("^")?,
             RakuAstClass::RegexAnchorEndOfString => self.eat("$")?,
             RakuAstClass::RegexAnchorBeginningOfLine => self.eat("^^")?,

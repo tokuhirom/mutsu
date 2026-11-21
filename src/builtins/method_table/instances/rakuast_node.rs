@@ -962,7 +962,23 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                     _ => None,
                 })
                 .collect();
-            // `M::foo`: no expression part, nothing visited.
+            // `infix:<|>`: the word quote of an operator's name is visited
+            // too; `M::foo` visits nothing.
+            let mut exprs = exprs;
+            for f in node.fields.iter().filter(|f| f.name == Some("colonpairs")) {
+                match &f.value {
+                    RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
+                        exprs.push(v.clone())
+                    }
+                    RakuAstFieldValue::List(items) => exprs.extend(
+                        items
+                            .iter()
+                            .filter(|v| crate::rakuast::is_node_value(v))
+                            .cloned(),
+                    ),
+                    _ => {}
+                }
+            }
             Some(exprs)
         }
         // Rakudo's `Term::Enum` visits its `Name`, written where the term is.
