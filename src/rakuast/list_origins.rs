@@ -117,6 +117,7 @@ pub(super) fn circumfix(node: &mut RakuAstNode) {
     if let Some(inside) = bracketed(from, to, brackets) {
         with_child_at(node, 0, |list| {
             place_lone_dotty(list, inside);
+            super::lone_term_origins::modified_statement(list, inside);
             statement_list(list, inside);
         });
     }

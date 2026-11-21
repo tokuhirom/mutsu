@@ -67,3 +67,53 @@ pub(super) fn trailing_variable(list: &mut RakuAstNode, inside: SrcSpan) {
         })
     });
 }
+
+/// `(1 if True)` / `($c(1) for @a)`: a lone statement with a modifier inside
+/// parentheses written at `inside`, whose modifier is placed but whose
+/// expression the parser left unplaced. The expression is the text from the
+/// start of the parentheses' contents to the modifier, trimmed (parsed again
+/// for its ranges), and the statement runs from it to the modifier's end.
+// Cost: O(n), n = length of the statement's text.
+pub(super) fn modified_statement(list: &mut RakuAstNode, inside: SrcSpan) {
+    use super::infix_origins::{byte_range, child, child_at, with_child, with_child_at};
+    let [_] = list.fields.as_slice() else {
+        return;
+    };
+    let Some(statement) = child_at(list, 0)
+        .filter(|s| s.class == RakuAstClass::StatementExpression && s.origin.0.is_none())
+    else {
+        return;
+    };
+    let Some(modifier) = ["condition-modifier", "loop-modifier"]
+        .into_iter()
+        .find_map(|name| child(statement, name).and_then(byte_range))
+    else {
+        return;
+    };
+    if child(statement, "expression").is_none_or(|e| e.origin.0.is_some()) {
+        return;
+    }
+    let from = inside.from as usize;
+    let Some((at, written)) = super::unit_source::with_text(SrcSpan::new(from, modifier.0), |text| {
+        let lead = text.len() - text.trim_start().len();
+        let written = text.trim();
+        (!written.is_empty()).then(|| (from + lead, written.to_string()))
+    }) else {
+        return;
+    };
+    // The expression's text is parsed again as a fragment, whose ranges
+    // are copied over: exact or absent.
+    with_child_at(list, 0, |statement| {
+        with_child(statement, "expression", |expression| {
+            super::fragment_origins::expression(
+                &crate::scope::NameScope::default(),
+                expression,
+                &written,
+                at,
+            );
+        });
+        if child(statement, "expression").is_some_and(|e| e.origin.0.is_some()) {
+            super::origin::set_span(statement, SrcSpan::new(at, modifier.1));
+        }
+    });
+}

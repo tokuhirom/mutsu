@@ -355,3 +355,25 @@ pub(super) fn phaser_statement(names: &crate::scope::NameScope, node: &mut RakuA
         });
     });
 }
+
+/// `CATCH { ... }` / `CONTROL { ... }`, a statement written at `span`: its
+/// `Block` is the braces after the keyword, to the end of the statement.
+// Cost: O(n + s), n = length of the statement's source, s = its statements.
+pub(super) fn exception_block(statement: &mut RakuAstNode, span: SrcSpan) {
+    if !matches!(
+        statement.class,
+        RakuAstClass::StatementCatch | RakuAstClass::StatementControl
+    ) {
+        return;
+    }
+    let (from, to) = (span.from as usize, span.to as usize);
+    let Some(at) = brace_after_word(from, to) else {
+        return;
+    };
+    super::infix_origins::with_child(statement, "body", |block| {
+        if block.class == RakuAstClass::Block && block.origin.0.is_none() {
+            super::origin::set_span(block, SrcSpan::new(at, to));
+            blockoid(block, at, to);
+        }
+    });
+}
