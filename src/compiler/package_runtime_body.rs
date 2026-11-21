@@ -57,6 +57,9 @@ impl Compiler {
         let saved_package = std::mem::replace(&mut self.current_package, qualified_name);
         let saved_in_unit = std::mem::replace(&mut self.in_unit_package, false);
         let saved_package_kind = self.current_package_kind.take();
+        // `$?PACKAGE` in the body is the body's package, also inside a
+        // routine whose own enclosing package is set (#18480).
+        let saved_enclosing = self.enclosing_package.take();
         // In an EVAL'd unit a bare variable the body does not declare is the
         // caller's lexical (the unit has no slot for it): keep it bare.
         let saved_our_names = if self.in_eval_unit && !self.eval_unit_lax {
@@ -119,6 +122,7 @@ impl Compiler {
         self.package_body_lexicals = saved_lexicals;
         self.package_runtime_our_names = saved_our_names;
         self.current_package = saved_package;
+        self.enclosing_package = saved_enclosing;
         self.in_unit_package = saved_in_unit;
         self.current_package_kind = saved_package_kind;
         self.code.patch_body_end(pkg_idx);
