@@ -66,6 +66,7 @@ mod methods_grammar_action_walk;
 mod methods_grammar_method_start;
 mod methods_grammar_wrapped_start;
 pub(crate) mod methods_instance_ops;
+mod methods_instance_repr_attrs;
 mod methods_instance_clone;
 pub(crate) mod module_merge;
 mod main_unit_routines;

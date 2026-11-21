@@ -1972,13 +1972,31 @@ impl Interpreter {
             // `gist`/`raku`, or one gisting as its backing array/hash, is left
             // exactly as it rendered).
             if matches!(method, "gist" | "raku") && args.is_empty() {
+                let composed = self.mixin_instance_type_name(&target, inner, mixins)?;
+                if let ValueView::Instance { class_name, .. } = inner.view()
+                    && !self.has_user_method(&class_name.resolve(), method)
+                    // Exception gist is supplied by its native/role dispatch,
+                    // even when the underlying class declares no user method.
+                    && !(method == "gist"
+                        && (inner.instance_is_exception_by_name()
+                            || self.class_mro(&class_name.resolve()).iter().any(|owner| {
+                                owner == "Exception" || owner == "Failure"
+                            })))
+                    && let Some(result) = self.default_instance_repr_with_mixin(
+                        inner.as_ref(),
+                        method,
+                        &args,
+                        Some((mixins, &composed)),
+                    )
+                {
+                    return result;
+                }
                 let rendered =
                     self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args)?;
                 let base = crate::value::types::what_type_name(inner.as_ref());
                 // The name `.^name` reports: a `.^set_name` on the type object
                 // this instance was built from (`Box[Int]`) wins over the
                 // synthesized `Box+{BoxOf[Int]}`.
-                let composed = self.mixin_instance_type_name(&target, inner, mixins)?;
                 if composed != base
                     && let ValueView::Str(text) = rendered.view()
                     && let Some(tail) = text.strip_prefix(base.as_str())
