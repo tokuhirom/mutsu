@@ -34,7 +34,49 @@ pub(super) fn derive(names: &NameScope, composer: &mut RakuAstNode) {
         return;
     };
     let mut contents = RakuAstNode::clone(contents);
-    let mut at = 1;
+    place_contents(names, &mut contents, &text, from, 1);
+    *held = Value::rakuast(Box::new(contents));
+}
+
+/// `%(:a(1))`: place the colonpairs of `node`, a `Contextualizer::Hash` with
+/// a range, as a composer's, inside its statement.
+// Cost: O(n + p), n = length of the contextualizer's text, p = its entries.
+pub(super) fn contextualizer(names: &NameScope, node: &mut RakuAstNode) {
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(text) = super::unit_source::with_text(SrcSpan::new(from, to), |t| {
+        (t.starts_with("%(") && t.ends_with(')')).then(|| t.to_string())
+    }) else {
+        return;
+    };
+    use super::infix_origins::{with_child, with_child_at};
+    with_child_at(node, 0, |sequence| {
+        if sequence.class != RakuAstClass::StatementSequence || sequence.fields.len() != 1 {
+            return;
+        }
+        with_child_at(sequence, 0, |statement| {
+            with_child(statement, "expression", |expression| {
+                if expression.origin.0.is_none() {
+                    place_contents(names, expression, &text, from, 2);
+                }
+            });
+        });
+    });
+}
+
+/// Place the entries of `contents`, a composer's lone entry or comma list of
+/// entries, written from byte `at` of `text` (which starts at byte `from` of
+/// the unit).
+// Cost: O(n + p), n = length of the entries' text, p = entries.
+fn place_contents(
+    names: &NameScope,
+    contents: &mut RakuAstNode,
+    text: &str,
+    from: usize,
+    at: usize,
+) {
+    let mut at = at;
     if contents.class == RakuAstClass::ApplyListInfix {
         let Some(operands) = contents.fields.iter_mut().find_map(|f| match &mut f.value {
             RakuAstFieldValue::List(items) if f.name == Some("operands") => Some(items),
@@ -47,7 +89,7 @@ pub(super) fn derive(names: &NameScope, composer: &mut RakuAstNode) {
                 return;
             };
             let mut entry = RakuAstNode::clone(entry);
-            let Some(end) = place_entry(names, &mut entry, &text, from, at) else {
+            let Some(end) = place_entry(names, &mut entry, text, from, at) else {
                 return;
             };
             *operand = Value::rakuast(Box::new(entry));
@@ -57,11 +99,10 @@ pub(super) fn derive(names: &NameScope, composer: &mut RakuAstNode) {
             };
             at = text.len() - after.len();
         }
-        super::infix_origins::derive(names, &mut contents);
+        super::infix_origins::derive(names, contents);
     } else {
-        place_entry(names, &mut contents, &text, from, at);
+        place_entry(names, contents, text, from, at);
     }
-    *held = Value::rakuast(Box::new(contents));
 }
 
 /// Place `entry`, written after whitespace at byte `at` of `text` (the
