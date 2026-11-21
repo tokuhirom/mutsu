@@ -25,21 +25,35 @@ pub(super) fn interpolated(names: &crate::scope::NameScope, node: &mut RakuAstNo
     }) else {
         return;
     };
+    // A single literal segment is placed by `quoted_text`; a single
+    // interpolation is placed here.
+    let single_literal = node.fields.iter().any(|f| {
+        f.name == Some("segments")
+            && matches!(&f.value, RakuAstFieldValue::List(segments) if matches!(
+                segments.as_slice(),
+                [only] if matches!(only.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::StrLiteral)
+            ))
+    });
+    if !single_literal {
+        segments(names, node, start, end);
+    }
+}
+
+/// Place the segments of `node`, a `QuotedString` whose body (the text
+/// between its delimiters) is written at `start..end`, left to right.
+// Cost: O(n + s), n = end - start, s = segments.
+pub(super) fn segments(
+    names: &crate::scope::NameScope,
+    node: &mut RakuAstNode,
+    start: usize,
+    end: usize,
+) {
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
         return;
     };
     let RakuAstFieldValue::List(segments) = &mut field.value else {
         return;
     };
-    // A single literal segment is placed by `quoted_text`; a single
-    // interpolation is placed here.
-    let single_literal = matches!(
-        segments.as_slice(),
-        [only] if matches!(only.view(), ValueView::RakuAst(n) if n.class == RakuAstClass::StrLiteral)
-    );
-    if segments.is_empty() || single_literal {
-        return;
-    }
     let mut cursor = start;
     for i in 0..segments.len() {
         let ValueView::RakuAst(segment) = segments[i].view() else {

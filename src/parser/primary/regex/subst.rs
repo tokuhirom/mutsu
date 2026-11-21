@@ -1,35 +1,8 @@
 //! Substitution expression building helpers.
 
 use crate::ast::Expr;
-use crate::parser::expr::expression_no_word_logical;
-use crate::parser::helpers::ws;
-use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
-
-pub(super) fn parse_subst_replacement_expr(input: &str) -> PResult<'_, String> {
-    let (input, _) = ws(input)?;
-    // Parse the FULL replacement expression (not just the first primary): the
-    // literal shortcut is only valid when the entire replacement is a single
-    // literal. Using `primary` here would stop after the first term, so a
-    // compound replacement like `"<" ~ $/ ~ ">"` would leave `~ $/ ~ ">"` in the
-    // stream to be (mis)parsed as an outer binary expression, silently dropping
-    // it from the substitution. Requiring the parse to yield a bare `Literal`
-    // routes any compound replacement to the closure/block path instead.
-    // The RHS sits at item-assignment precedence, so the loose word-logical
-    // operators bind looser than it: `s{^ "row="} = "" and f()` assigns only
-    // `""` and leaves `and f()` for the enclosing statement.
-    let (rest, expr) = expression_no_word_logical(input)?;
-    let replacement = match expr {
-        Expr::Literal(value) => value.to_string_value(),
-        _ => {
-            return Err(PError::expected(
-                "literal replacement expression after '=' in substitution",
-            ));
-        }
-    };
-    Ok((rest, replacement))
-}
 
 /// Try to strip a compound assignment operator (e.g. `+=`, `x=`, `~=`) from the input.
 /// Returns the operator string (without `=`) and the remaining input after `=`.
