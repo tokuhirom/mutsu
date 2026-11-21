@@ -277,9 +277,16 @@ pub(super) fn loop_statement(list: &mut RakuAstNode, inside: SrcSpan) {
 // Cost: O(n), n = length of the parenthesized text.
 pub(super) fn parenthesized_operand(node: &mut RakuAstNode, span: SrcSpan) {
     use super::infix_origins::{child, with_child};
-    let unplaced = child(node, "operand")
-        .is_some_and(|o| o.origin.0.is_none() && o.class == RakuAstClass::ApplyInfix);
-    if !unplaced {
+    let Some(class) = child(node, "operand")
+        .filter(|o| o.origin.0.is_none())
+        .map(|o| o.class)
+    else {
+        return;
+    };
+    // `(@a[0] = 7).say`: an assigning subscript, whose parentheses Rakudo
+    // drops, is placed from a fragment parse of the text inside them.
+    let fragment = class == RakuAstClass::ApplyPostfix;
+    if class != RakuAstClass::ApplyInfix && !fragment {
         return;
     }
     let from = span.from as usize;
@@ -294,9 +301,19 @@ pub(super) fn parenthesized_operand(node: &mut RakuAstNode, span: SrcSpan) {
     }) else {
         return;
     };
+    let names = crate::scope::NameScope::default();
+    if fragment {
+        let Some(text) = super::unit_source::with_text(inner, |t| Some(t.to_string())) else {
+            return;
+        };
+        with_child(node, "operand", |operand| {
+            super::fragment_origins::expression(&names, operand, &text, inner.from as usize)
+        });
+        return;
+    }
     with_child(node, "operand", |operand| {
         super::origin::set_span(operand, inner);
-        super::infix_origins::derive(&crate::scope::NameScope::default(), operand);
+        super::infix_origins::derive(&names, operand);
     });
 }
 
