@@ -174,6 +174,7 @@ mod hyper_infix_origins;
 pub(crate) mod implicit_signature;
 mod indirect_name_origins;
 mod infix_origins;
+mod listop_origins;
 mod infix_spelling;
 mod inherited_fields;
 mod initializer_origins;
