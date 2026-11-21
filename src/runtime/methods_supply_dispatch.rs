@@ -644,6 +644,14 @@ impl Interpreter {
         if attributes.contains_key("shared_on_demand") {
             return None;
         }
+        // A stage over a live recipe is a recipe too (ADR-18443).
+        if attributes.contains_key(Self::LIVE_RECIPE_KEY) {
+            let attrs_map: ValueMap = attributes.into();
+            let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+            return Some(Self::mark_live_recipe(Self::make_on_demand_derived_supply(
+                source, mode, callable,
+            )));
+        }
         let source_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes)?;
         let preserving = attributes.contains_key("preserving");
         // ADR-18443: a stage over a plain live source is a recipe, not a
@@ -659,7 +667,9 @@ impl Interpreter {
         if !preserving && !seeded && !attributes.contains_key("scheduler") {
             let attrs_map: ValueMap = attributes.into();
             let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
-            return Some(Self::make_on_demand_derived_supply(source, mode, callable));
+            return Some(Self::mark_live_recipe(Self::make_on_demand_derived_supply(
+                source, mode, callable,
+            )));
         }
         let downstream_sid = crate::runtime::native_methods::next_supplier_id();
         // A `Supplier::Preserving` source registers its tap only after its

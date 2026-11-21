@@ -881,9 +881,11 @@ impl Interpreter {
                         _ => None,
                     }
                 {
+                    let is_recipe = attributes.contains_key(Self::LIVE_RECIPE_KEY);
                     let attrs_map: ValueMap = attributes.into();
                     let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
-                    return Ok(Self::make_on_demand_head_supply(source, count));
+                    let head = Self::make_on_demand_head_supply(source, count);
+                    return Ok(if is_recipe { Self::mark_live_recipe(head) } else { head });
                 }
                 let source_values = self.supply_get_values(attributes)?;
                 let count = if args.is_empty() {
@@ -933,7 +935,9 @@ impl Interpreter {
                 {
                     let attrs_map: ValueMap = attributes.into();
                     let source = Value::make_instance(Symbol::intern("Supply"), attrs_map);
-                    return Ok(Self::make_on_demand_head_supply(source, count));
+                    return Ok(Self::mark_live_recipe(Self::make_on_demand_head_supply(
+                        source, count,
+                    )));
                 }
                 if let Some(source_sid) =
                     crate::runtime::native_methods::supplier_id_from_attrs(attributes)

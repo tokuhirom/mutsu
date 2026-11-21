@@ -140,6 +140,26 @@ impl Interpreter {
         Self::make_on_demand_derived_supply_named(source, "lines", Value::truth(chomp))
     }
 
+    /// The attribute marking a derived Supply as a per-tap recipe over a live
+    /// source (ADR-18443): it is on-demand like any derived stage, but what
+    /// it ultimately taps is a live supplier.
+    pub(crate) const LIVE_RECIPE_KEY: &'static str = "live_recipe";
+
+    /// `derived` (a derived on-demand Supply) marked as a live recipe.
+    // Cost: O(a), a = the Supply's attributes.
+    pub(in crate::runtime) fn mark_live_recipe(derived: Value) -> Value {
+        let ValueView::Instance { attributes, .. } = derived.view() else {
+            return derived;
+        };
+        let mut attrs: HashMap<String, Value> = attributes
+            .as_map()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        attrs.insert(Self::LIVE_RECIPE_KEY.to_string(), Value::TRUE);
+        Value::make_instance(Symbol::intern("Supply"), attrs)
+    }
+
     pub(super) fn make_on_demand_derived_supply_named(source: Value, mode: &str, callable: Value) -> Value {
         let mut producer_attrs = HashMap::new();
         producer_attrs.insert("source".to_string(), source.clone());

@@ -124,7 +124,82 @@ impl SupplyOp {
     }
 }
 
+impl SupplyOp {
+    /// Whether the op handles a live per-tap recipe (ADR-18443) as it is:
+    /// tapping it, stacking another per-tap stage on it, or sharing it.
+    // Cost: O(1).
+    fn knows_live_recipes(self) -> bool {
+        matches!(
+            self,
+            SupplyOp::Tap
+                | SupplyOp::Act
+                | SupplyOp::OnClose
+                | SupplyOp::Map
+                | SupplyOp::Grep
+                | SupplyOp::Do
+                | SupplyOp::Head
+                | SupplyOp::Share
+                | SupplyOp::Supply
+                | SupplyOp::Live
+                | SupplyOp::Serialize
+                | SupplyOp::Sanitize
+        )
+    }
+}
+
 impl Interpreter {
+    /// A live per-tap recipe (ADR-18443) instantiated once and shared: what a
+    /// consumer that only knows a live source by its supplier gets instead of
+    /// the recipe. `share` starts the recipe, so what is left is a plain live
+    /// supplier, and the on-demand marks the eager stages refuse are dropped.
+    // TODO: retire with the bridge (ADR-18443 slices 2-3).
+    // Cost: O(a) plus starting the recipe, a = the Supply's attributes.
+    pub(crate) fn live_recipe_shared_instance(
+        &mut self,
+        attributes: &AttrMap,
+    ) -> Result<Value, RuntimeError> {
+        let shared = self.native_supply(attributes, "share", Vec::new())?;
+        Ok(match shared.view() {
+            ValueView::Instance { attributes: shared_attrs, .. } => {
+                let attrs: HashMap<String, Value> = shared_attrs
+                    .as_map()
+                    .iter()
+                    .filter(|(k, _)| !matches!(k.as_str(), "shared_on_demand" | "on_demand_callback"))
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect();
+                Value::make_instance(Symbol::intern("Supply"), attrs)
+            }
+            _ => shared,
+        })
+    }
+
+    /// `.live` of a live per-tap recipe: walk its stages down to the live
+    /// source; a `head` stage on the way makes it not live.
+    // Cost: O(d), d = stages in the recipe.
+    fn live_recipe_is_live(supply: &Value) -> bool {
+        let mut cur = supply.clone();
+        loop {
+            let ValueView::Instance { attributes, .. } = cur.view() else {
+                return false;
+            };
+            let attrs = attributes.as_map();
+            if !attrs.contains_key(Self::LIVE_RECIPE_KEY) {
+                return attrs.get("live").is_some_and(Value::truthy);
+            }
+            if attrs
+                .get("derive_mode")
+                .is_some_and(|m| !matches!(m.to_string_value().as_str(), "map" | "grep" | "do"))
+            {
+                return false;
+            }
+            let Some(next) = attrs.get("derive_source").cloned() else {
+                return false;
+            };
+            drop(attrs);
+            cur = next;
+        }
+    }
+
     /// Run `op` on `target`, a `Supply` instance (or, for the class methods
     /// `merge`, `zip` and `zip-latest`, the `Supply` type object). `None` for
     /// any other receiver.
@@ -153,6 +228,20 @@ impl Interpreter {
             }
             _ => return None,
         };
+        // ADR-18443 slice 1: a live `map`/`grep`/`do`/`head` stage is a
+        // per-tap recipe. The combinators not converted yet only know a live
+        // source by its supplier, so they get the recipe instantiated once
+        // and shared -- the eager stage they had before.
+        // TODO: compile every combinator to a per-tap recipe (ADR-18443
+        // slices 2-3) and drop this bridge; it keeps one shared instance of
+        // the chain below such a combinator, which rakudo would not.
+        if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY) && !op.knows_live_recipes() {
+            let live = match self.live_recipe_shared_instance(&attributes.as_map()) {
+                Ok(live) => live,
+                Err(err) => return Some(Err(err)),
+            };
+            return self.supply_call(&live, op, args);
+        }
         let target = target.clone();
         Some(match op {
             SupplyOp::Map => self.dispatch_supply_map(&target, &attributes.as_map(), &args),
@@ -177,6 +266,12 @@ impl Interpreter {
             SupplyOp::Minmax => self.dispatch_minmax_method(target, op.name(), args)?,
             SupplyOp::Grab => self.dispatch_supply_grab(&attributes.as_map(), &args),
             SupplyOp::Skip => self.dispatch_supply_skip(&attributes.as_map(), &args),
+            // A per-tap recipe (ADR-18443) answers as the eager stage did:
+            // `map`/`grep`/`do` keep their source's liveness, `head` is not
+            // live.
+            SupplyOp::Live if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY) => {
+                Ok(Value::truth(Self::live_recipe_is_live(&target)))
+            }
             SupplyOp::Live => self.native_supply(&attributes.as_map(), op.name(), Vec::new()),
             SupplyOp::Collate => self.dispatch_collate(target),
             // `.delayed(0)` (or less) is the supply itself.
