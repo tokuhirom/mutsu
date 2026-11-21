@@ -4,7 +4,7 @@
 //! Each pass that used to walk the whole unit after the parse keeps its state
 //! across the unit's top-level statements instead, so it can run as each
 //! statement is committed: [`UnitPasses::commit`] takes one statement, and
-//! [`UnitPasses::finish`] settles what only the whole unit decides (which
+//! the parser's `settle_unit` settles what only the whole unit decides (which
 //! diagnostic wins, the value-tail exemption of the sink analysis, the soft
 //! sorries a `CHECK` phaser defers). The result is the one the whole-unit walks
 //! gave: every pass visits the statements in source order, and a statement's
