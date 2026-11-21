@@ -53,10 +53,20 @@ pub(super) fn place(node: &mut RakuAstNode, text: &str, at: usize) -> Option<usi
                         super::name_parts::NameShape::Identifier(word) => word,
                         _ => return None,
                     };
-                    let args = rest.strip_prefix(word.as_str())?.strip_prefix('(')?;
-                    let args_len = super::regex_call_origins::args_len(args)?;
+                    let after = rest.strip_prefix(word.as_str())?;
+                    // `word(ARGS)`, or `word: ARGS` to the assertion's `>`.
+                    let (args, args_len, len) = match after.strip_prefix('(') {
+                        Some(args) => {
+                            let args_len = super::regex_call_origins::args_len(args)?;
+                            (args, args_len, word.len() + 1 + args_len + 1)
+                        }
+                        None => {
+                            let args = after.strip_prefix(':')?;
+                            let args_len = super::regex_call_origins::colon_args_len(args)?;
+                            (args, args_len, word.len() + 1 + args_len)
+                        }
+                    };
                     let args_at = start + word.len() + 1;
-                    let len = word.len() + 1 + args_len + 1;
                     let mut placed = None;
                     with_child(node, "assertion", |named| {
                         placed = super::regex_call_origins::place(

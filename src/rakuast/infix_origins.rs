@@ -232,6 +232,7 @@ fn leaf_text_of_infix(node: &RakuAstNode) -> Option<String> {
 // Cost: O(n), n = length of the source between the operands.
 fn apply_infix(node: &mut RakuAstNode) {
     leading_variable(node);
+    super::lone_term_origins::variable_before_operator(node);
     let left = child(node, "left").and_then(byte_range);
     let right = child(node, "right").and_then(byte_range);
     if child(node, "infix").is_some_and(|i| i.class == RakuAstClass::MetaInfixHyper) {

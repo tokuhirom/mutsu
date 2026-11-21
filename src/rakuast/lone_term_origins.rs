@@ -292,3 +292,64 @@ pub(super) fn parenthesized_operand(node: &mut RakuAstNode, span: SrcSpan) {
         super::infix_origins::derive(&crate::scope::NameScope::default(), operand);
     });
 }
+
+/// `$d + 1` in a routine literal that reads its parameter `$d` again: a
+/// variable left operand the conversion could not tell apart from the other
+/// terms of its shape, in an application with no range, whose right operand
+/// is placed. It is the variable's spelling right before the operator, which
+/// is written right before the right operand, blanks between them.
+// Cost: O(v + o), v = length of the variable's name, o = of the operator.
+pub(super) fn variable_before_operator(node: &mut RakuAstNode) {
+    use super::infix_origins::{byte_range, child, leaf_text, with_child};
+    if node.origin.0.is_some() {
+        return;
+    }
+    let Some(name) = child(node, "left")
+        .filter(|l| {
+            l.origin.0.is_none()
+                && matches!(l.class, RakuAstClass::VarLexical | RakuAstClass::VarDynamic)
+        })
+        .and_then(leaf_text)
+    else {
+        return;
+    };
+    let Some(op) = child(node, "infix")
+        .filter(|i| i.class == RakuAstClass::Infix)
+        .and_then(leaf_text)
+    else {
+        return;
+    };
+    let Some((right_start, _)) = child(node, "right").and_then(byte_range) else {
+        return;
+    };
+    // The longest run of blanks tried around the operator.
+    const BLANKS: usize = 8;
+    let window = name.len() + op.len() + 2 * BLANKS;
+    let mut from = right_start.saturating_sub(window);
+    let found = loop {
+        if let Some(found) =
+            super::unit_source::with_text(SrcSpan::new(from, right_start), |text| {
+                let head = text.trim_end().strip_suffix(op.as_str())?.trim_end();
+                let before = head.strip_suffix(name.as_str())?;
+                // Not the tail of a longer name.
+                (!before.ends_with(|c: char| {
+                    c.is_alphanumeric() || matches!(c, '_' | '-' | '$' | '@' | '%' | '&')
+                }))
+                .then(|| from + before.len())
+            })
+        {
+            break Some(found);
+        }
+        // Not on a character boundary, or not written so: step forward.
+        from += 1;
+        if from + name.len() + op.len() > right_start {
+            break None;
+        }
+    };
+    let Some(at) = found else {
+        return;
+    };
+    with_child(node, "left", |left| {
+        super::origin::set_span(left, SrcSpan::new(at, at + name.len()))
+    });
+}
