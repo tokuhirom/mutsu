@@ -230,17 +230,26 @@ pub(super) fn subscript_assignee(node: &mut RakuAstNode, operand_end: usize) {
     });
 }
 
-/// `(repeat { ... } while COND)` / `(loop { last })` / `(1, 2)`: a lone loop
-/// or expression statement inside parentheses written at `inside`, which the
-/// parser left unplaced. Its text is parsed again as a fragment and the
+/// `(repeat { ... } while COND)` / `(loop { last })` / `(1, 2)` /
+/// `(1, 2; 3)`: a lone loop or expression statement, or several expression
+/// statements, inside parentheses written at `inside`, which the parser left
+/// unplaced. Its text is parsed again as a fragment and the
 /// ranges copied over.
 // Cost: O(n), n = length of the statement's text, plus the parse of it.
 pub(super) fn loop_statement(list: &mut RakuAstNode, inside: SrcSpan) {
     use super::infix_origins::child_at;
-    let [_] = list.fields.as_slice() else {
-        return;
-    };
-    let unplaced = child_at(list, 0).is_some_and(|s| {
+    // `(1, 2; 3)`: several expression statements, some left unplaced (a
+    // fragment copy only fills in what has no range).
+    if list.fields.len() > 1 {
+        let statements = (0..list.fields.len()).all(|i| {
+            child_at(list, i).is_some_and(|s| s.class == RakuAstClass::StatementExpression)
+        });
+        let unplaced =
+            (0..list.fields.len()).any(|i| child_at(list, i).is_some_and(|s| s.origin.0.is_none()));
+        if !statements || !unplaced {
+            return;
+        }
+    } else if !child_at(list, 0).is_some_and(|s| {
         s.origin.0.is_none()
             && match s.class {
                 RakuAstClass::StatementLoop
@@ -256,8 +265,7 @@ pub(super) fn loop_statement(list: &mut RakuAstNode, inside: SrcSpan) {
                 }
                 _ => false,
             }
-    });
-    if !unplaced {
+    }) {
         return;
     }
     let Some(text) = super::unit_source::with_text(inside, |t| Some(t.to_string())) else {
