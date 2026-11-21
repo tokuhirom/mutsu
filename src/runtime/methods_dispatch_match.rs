@@ -430,7 +430,7 @@ impl Interpreter {
                     return Some(Ok(make_seq(result)));
                 }
                 let spans: Vec<(usize, usize)> =
-                    if self.has_code_block_in_prefix(&pat) || has_markers {
+                    if self.pattern_runs_code(&pat) || has_markers {
                         let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
                         for (_, _, caps) in &mut matches {
                             if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
