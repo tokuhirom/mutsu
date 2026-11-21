@@ -63,7 +63,7 @@ impl UnitPasses {
         self.whenever.visit_stmt(stmt);
         self.redecl.scan(stmt);
         if let Some(sink) = &mut self.sink {
-            sink.commit(stmt);
+            sink.statement(stmt);
         }
     }
 
@@ -134,7 +134,7 @@ impl UnitSink {
 
     // Cost: O(s), s = size of the statement (plus the sink walk of each gather
     // and do-block body in it).
-    fn commit(&mut self, stmt: &Stmt) {
+    fn statement(&mut self, stmt: &Stmt) {
         let mainline = super::capture_parse_warnings(|| {
             if self.value_tail {
                 sink_warn::walk_stmt(stmt, false, &self.line);
