@@ -157,7 +157,9 @@ pub(crate) fn interpreter_version() -> String {
     // gained `raw_init` (ADR-10779 D3).
     // 67: `OpCode::MarkSigillessBindSource` lost its name operand and
     // `OpCode::MarkSigillessBind` gained `from_stack` (ADR-10779 D3).
-    const CACHE_FORMAT_VERSION: u32 = 68;
+    // 69: `Stmt::TempMethodAssign`'s value became optional and it gained
+    // `is_let` (#18392).
+    const CACHE_FORMAT_VERSION: u32 = 69;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

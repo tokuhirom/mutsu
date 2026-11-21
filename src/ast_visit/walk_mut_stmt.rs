@@ -402,6 +402,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             method_name: _,
             method_args,
             value,
+            is_let: _,
             is_attribute: _,
             type_invocant: _,
             invocant_expr,
@@ -410,7 +411,9 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
                 v.visit_expr_mut(e);
             }
             exprs_mut(v, method_args);
-            v.visit_expr_mut(value);
+            if let Some(value) = value {
+                v.visit_expr_mut(value);
+            }
         }
     }
 }

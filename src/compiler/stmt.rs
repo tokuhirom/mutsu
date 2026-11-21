@@ -5454,75 +5454,7 @@ impl Compiler {
                     self.emit_set_named_var(name);
                 }
             }
-            Stmt::TempMethodAssign {
-                var_name,
-                method_name,
-                method_args,
-                value,
-                is_attribute,
-                type_invocant,
-                invocant_expr,
-            } => {
-                // `self` is a term, not a variable (`temp self.x = v`,
-                // `temp $.x ~= v`).
-                let invocant = if let Some(e) = invocant_expr {
-                    (**e).clone()
-                } else if var_name == "self" {
-                    Expr::BareWord(var_name.clone())
-                } else {
-                    Expr::Var(var_name.clone())
-                };
-                // `temp $obj.attr = v` temporizes the ATTRIBUTE: its old value
-                // goes back through the same rw accessor, so `$obj` stays the
-                // one shared object. Saving the variable instead restored it to
-                // a detached copy that no other holder of the object saw
-                // (#16144). `self`, `$.x` and a type invocant keep the variable
-                // save: they restore through the frame's invocant / a write-back.
-                if (var_name != "self" && !*is_attribute && !*type_invocant)
-                    || invocant_expr.is_some()
-                {
-                    let save = Expr::Call {
-                        name: Symbol::intern("__mutsu_temp_method_save"),
-                        args: vec![
-                            invocant.clone(),
-                            Expr::Literal(Value::str(method_name.clone())),
-                            Expr::ArrayLiteral(method_args.clone()),
-                        ],
-                        listop: false,
-                    };
-                    self.compile_expr(&save);
-                    self.code.emit(OpCode::Pop);
-                } else {
-                    let slot = self.local_map.get(var_name).copied();
-                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                    self.code.emit(OpCode::LetSave {
-                        name_idx,
-                        is_temp: true,
-                        slot,
-                    });
-                }
-                let value = match value {
-                    Expr::Unary {
-                        op: TokenKind::Pipe,
-                        ..
-                    } => Expr::Grouped(Box::new(value.clone())),
-                    _ => value.clone(),
-                };
-                let assign_expr = crate::lvalue_call::assign_method(
-                    invocant,
-                    Expr::Literal(Value::str(method_name.clone())),
-                    method_args.clone(),
-                    value,
-                    crate::lvalue_call::AssignMethodHints {
-                        // No variable to write the result back to for an
-                        // element invocant.
-                        target_var: invocant_expr.is_none().then(|| var_name.clone()),
-                        ..Default::default()
-                    },
-                );
-                self.compile_expr(&assign_expr);
-                self.code.emit(OpCode::Pop);
-            }
+            Stmt::TempMethodAssign { .. } => self.compile_temp_method_assign(stmt),
             Stmt::SetLine(line, _) => {
                 // No instruction: the line is static data. Attach it to every op
                 // emitted for the statements that follow (`CompiledCode::op_lines`),

@@ -1189,6 +1189,7 @@ mod stmt_nested_decl;
 mod stmt_synthetic;
 mod subset_decl;
 mod subst_thunk;
+mod temp_method;
 mod term_constants;
 mod trir_call;
 mod whenever_scope;
