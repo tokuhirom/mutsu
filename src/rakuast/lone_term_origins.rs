@@ -327,13 +327,17 @@ pub(super) fn variable_before_operator(node: &mut RakuAstNode) {
     let window = name.len() + op.len() + 2 * BLANKS;
     let mut from = right_start.saturating_sub(window);
     let found = loop {
-        if let Some(found) = super::unit_source::with_text(SrcSpan::new(from, right_start), |text| {
-            let head = text.trim_end().strip_suffix(op.as_str())?.trim_end();
-            let before = head.strip_suffix(name.as_str())?;
-            // Not the tail of a longer name.
-            (!before.ends_with(|c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '$' | '@' | '%' | '&')))
+        if let Some(found) =
+            super::unit_source::with_text(SrcSpan::new(from, right_start), |text| {
+                let head = text.trim_end().strip_suffix(op.as_str())?.trim_end();
+                let before = head.strip_suffix(name.as_str())?;
+                // Not the tail of a longer name.
+                (!before.ends_with(|c: char| {
+                    c.is_alphanumeric() || matches!(c, '_' | '-' | '$' | '@' | '%' | '&')
+                }))
                 .then(|| from + before.len())
-        }) {
+            })
+        {
             break Some(found);
         }
         // Not on a character boundary, or not written so: step forward.
