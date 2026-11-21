@@ -29,7 +29,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         return;
     };
     let span = |(a, b): (usize, usize)| SrcSpan::new(from + a, from + b);
-    super::regex_origins::place_adverbs(node, &layout.adverbs);
+    super::regex_adverb_origins::place_adverbs(node, &layout.adverbs);
     with_child(node, "pattern", |pattern| {
         if pattern.origin.0.is_none() {
             super::regex_origins::walk_body(names, pattern, span(layout.pattern));
