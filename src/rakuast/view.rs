@@ -5706,7 +5706,9 @@ fn heredoc_node(
     stop: &str,
     written: crate::ast::SrcSpan,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = view_expr(names, body)?;
+    // Not looked up by shape: a string of the same value elsewhere in the
+    // statement is not the heredoc's body; the heredoc is placed as a whole.
+    let mut node = view_expr_at(names, body)?;
     if node.class != RakuAstClass::QuotedString {
         return Err(unsupported("a heredoc that is not quoted text"));
     }
