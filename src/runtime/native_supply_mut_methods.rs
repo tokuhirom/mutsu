@@ -591,6 +591,14 @@ impl Interpreter {
                     // subscriptions are never opened (a plain emitted value
                     // still is delivered).
                     let mut supply_completed = false;
+                    // A `whenever` body can run `done` (`$emitter.done()`)
+                    // while this loop opens its source -- a chained supply
+                    // block that emits during its own setup delivers to the
+                    // body synchronously. The completion marker below is only
+                    // registered on the emitter after the loop, so that `done`
+                    // would reach nothing: count it, and complete like a body
+                    // `done` (#18472).
+                    let emitter_done_calls_before = supplier_done_call_count(emitter_supplier_id);
                     for item in emitted {
                         if supply_completed
                             && matches!(item.view(), ValueView::Array(arr, ..)
@@ -1125,6 +1133,9 @@ impl Interpreter {
                     // body registered as a tap on its stand-in supplier, so the
                     // promises can be armed without racing the registration.
                     self.arm_pending_promise_whenevers();
+                    let whenever_ran_done =
+                        supplier_done_call_count(emitter_supplier_id) > emitter_done_calls_before;
+                    let body_done = body_done || whenever_ran_done;
                     // A `done` that terminates the whole supply (an explicit
                     // `done` in the block body, or a `done` inside a whenever
                     // body) fires the block's close callbacks (its CLOSE

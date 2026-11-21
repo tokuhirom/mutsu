@@ -123,10 +123,18 @@ impl Interpreter {
             if let Some(upstream_taps) = attrs.get("upstream_taps") {
                 self.close_upstream_taps(upstream_taps)?;
             }
+            // The downstream done can itself be a marker: a supply block
+            // tapped by another block's `whenever` gets that whenever's LAST
+            // phasers and its block's done-group marker as one done chain,
+            // which only `invoke_done_callback` knows how to run (#18472).
             if let Some(down) = attrs.get("done_cb")
                 && Self::supply_has_active_callback(down)
             {
-                let _ = self.call_sub_value(down.clone(), vec![]);
+                if down.as_sub().is_some() {
+                    let _ = self.call_sub_value(down.clone(), vec![]);
+                } else {
+                    self.invoke_done_callback(down.clone())?;
+                }
             }
             return Ok(false);
         }
