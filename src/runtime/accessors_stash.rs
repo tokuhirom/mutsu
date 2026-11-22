@@ -718,6 +718,17 @@ impl Interpreter {
         }
     }
 
+    /// Whether a qualified variable store (`$Foo::x = 1`, `$Foo::x := $y`)
+    /// put a variable in `package`'s stash: the package exists then, though no
+    /// declaration made it. Only variables count -- a type a `require` loaded
+    /// into a lexical scope must stay invisible outside it, routines and all.
+    // Cost: O(k), k = interned names under `package` (the package index).
+    fn has_autovivified_package_vars(&self, package: &str) -> bool {
+        crate::qualified_tail_index::names_under_package(package)
+            .into_iter()
+            .any(|name| self.get_our_var_sym(name).is_some())
+    }
+
     fn has_package_members(&self, package: &str) -> bool {
         let prefix = format!("{package}::");
         self.env
@@ -1025,7 +1036,7 @@ impl Interpreter {
             // package symbol too: `::('Foo')` is that package, as in rakudo.
             || (!name_is_qualified
                 && !first.starts_with(['$', '@', '%', '&'])
-                && self.has_package_members(first))
+                && self.has_autovivified_package_vars(first))
             || (name_is_qualified
                 && (self.has_package_members(first)
                     || self.has_class(first)
