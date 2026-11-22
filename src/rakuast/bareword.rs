@@ -858,7 +858,7 @@ fn call_name(name: &str) -> RakuAstNode {
         },
         fields: vec![node_field(
             Some("name"),
-            super::name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name)),
+            super::name_parts::operator_or_identifier(name),
         )],
     }
 }
