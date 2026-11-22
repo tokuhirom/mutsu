@@ -5133,29 +5133,47 @@ impl Interpreter {
         first_cell: &mut Option<usize>,
     ) -> *mut Value {
         const MAX_DESCENT: usize = 256;
+        // The cell a hop leads to. Only the ROOT (the caller's own slot) is
+        // read through `current`; every later hop is read through its cell's
+        // guard, so the walk never reads a cell's slot with its mutex released
+        // while another thread's `store` replaces it (#18667, TSan).
+        let next_cell = |value: &Value| match value.view() {
+            ValueView::ContainerRef(cell) => Some(cell.clone()),
+            // A scalar assignment from an array/hash variable preserves
+            // the itemized Scalar wrapper around the shared cell. Index
+            // assignment must still descend through that wrapper so
+            // `$scalar[0] = value` writes the aliased aggregate rather
+            // than detaching a new one-element value.
+            ValueView::Scalar(inner) if inner.is_container_ref() => match inner.view() {
+                ValueView::ContainerRef(cell) => Some(cell.clone()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some(mut cell) = next_cell(unsafe { &*current }) else {
+            return current;
+        };
         for _ in 0..MAX_DESCENT {
-            let cell = match unsafe { &*current }.view() {
-                ValueView::ContainerRef(cell) => cell.clone(),
-                // A scalar assignment from an array/hash variable preserves
-                // the itemized Scalar wrapper around the shared cell. Index
-                // assignment must still descend through that wrapper so
-                // `$scalar[0] = value` writes the aliased aggregate rather
-                // than detaching a new one-element value.
-                ValueView::Scalar(inner) if inner.is_container_ref() => match inner.view() {
-                    ValueView::ContainerRef(cell) => cell.clone(),
-                    _ => return current,
-                },
-                _ => return current,
-            };
             if first_cell.is_none() {
                 *first_cell = Some(crate::gc::Gc::as_ptr(&cell) as usize);
             }
-            // The pointer outlives the guard (the caller writes through it
-            // with the mutex released), so the cell stops publishing its
-            // value lock-free for good (ADR-8069, `value::cell_publish`).
-            current = cell.lock().unwrap().escape_slot();
+            let guard = cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(inner) = next_cell(&guard) {
+                drop(guard);
+                cell = inner;
+                continue;
+            }
+            // The last hop: the pointer outlives the guard (the caller writes
+            // through it with the mutex released), so the cell stops
+            // publishing its value lock-free for good (ADR-8069,
+            // `value::cell_publish`).
+            return guard.escape_slot();
         }
-        current
+        cell.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .escape_slot()
     }
 
     /// Read a root variable for index-assignment, descending through any
