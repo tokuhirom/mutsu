@@ -24,7 +24,9 @@ impl Interpreter {
     // Cost: O(1), one env probe.
     pub(super) fn env_holds_container_cell(&self, code: &CompiledCode, name_idx: u32) -> bool {
         matches!(
-            self.env().get_sym(code.const_sym(name_idx)).map(Value::view),
+            self.env()
+                .get_sym(code.const_sym(name_idx))
+                .map(Value::view),
             Some(ValueView::ContainerRef(_))
         )
     }
@@ -35,7 +37,10 @@ impl Interpreter {
     /// `:=`-bound cell, a `Proxy`, an itemized `Scalar` element, a varref
     /// back-reference, a bound-element marker), whose rules the full path owns.
     // Cost: O(1).
-    pub(super) fn element_slot_takes_plain_store(items: &crate::gc::Gc<ArrayData>, i: usize) -> bool {
+    pub(super) fn element_slot_takes_plain_store(
+        items: &crate::gc::Gc<ArrayData>,
+        i: usize,
+    ) -> bool {
         if i > items.len() {
             return false;
         }
