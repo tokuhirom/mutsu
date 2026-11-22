@@ -179,7 +179,18 @@ impl Interpreter {
         pattern: &str,
         text: &str,
     ) -> Vec<RegexCaptures> {
-        self.regex_match_captures_impl(pattern, text, false, false)
+        self.regex_match_captures_impl(pattern, text, false, false, 0)
+    }
+
+    /// [`Self::regex_match_all_with_captures`] for matches starting at or after
+    /// the char position `from` (`.match(…, :c(from), :ov)`).
+    pub(in crate::runtime) fn regex_match_all_with_captures_from(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        from: usize,
+    ) -> Vec<RegexCaptures> {
+        self.regex_match_captures_impl(pattern, text, false, false, from)
     }
 
     /// Like [`Self::regex_match_all_with_captures`], but at each start position
@@ -207,7 +218,19 @@ impl Interpreter {
         pattern: &str,
         text: &str,
     ) -> Vec<RegexCaptures> {
-        self.regex_match_captures_impl(pattern, text, true, true)
+        self.regex_match_captures_impl(pattern, text, true, true, 0)
+    }
+
+    /// [`Self::regex_match_non_overlapping`] scanning from the char position
+    /// `from` (`.match(…, :c(from), :g)`): a match that would cover `from`
+    /// from an earlier start is never tried.
+    pub(in crate::runtime) fn regex_match_non_overlapping_from(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        from: usize,
+    ) -> Vec<RegexCaptures> {
+        self.regex_match_captures_impl(pattern, text, true, true, from)
     }
 
     // Cost: O(n + r log r) plus engine work, n = chars of `text`, r = matches
@@ -218,6 +241,7 @@ impl Interpreter {
         text: &str,
         canonical_only: bool,
         skip_covered: bool,
+        min_start: usize,
     ) -> Vec<RegexCaptures> {
         let Some(parsed) = self.parse_regex_for_match(pattern) else {
             return Vec::new();
@@ -280,6 +304,10 @@ impl Interpreter {
                         orig_len,
                     );
                     caps.set_target(Some(target.clone()));
+                    // The offset is in the original subject's chars.
+                    if caps.from < min_start {
+                        break;
+                    }
                     if skip_covered {
                         if caps.from < last_end {
                             break;
@@ -301,11 +329,11 @@ impl Interpreter {
         if parsed.anchor_start {
             starts.push(0usize);
         } else {
-            starts.extend(regex_scan_positions(self, &parsed, orig_chars, 0, pkg));
+            starts.extend(regex_scan_positions(self, &parsed, orig_chars, min_start, pkg));
         }
-        let mut last_end = 0usize;
+        let mut last_end = min_start;
         for start in starts {
-            if skip_covered && start < last_end {
+            if start < min_start || (skip_covered && start < last_end) {
                 continue;
             }
             // See the `ignore_mark` twin above: one end is all `canonical_only`
