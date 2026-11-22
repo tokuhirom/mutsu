@@ -77,13 +77,12 @@ impl SiteLines {
     /// line rule does not apply.
     // Cost: O(1).
     pub(super) fn base_line(&self, at: usize) -> Option<i64> {
-        self.bound.then(|| {
-            if at < self.body_end {
-                self.start_line
-            } else {
-                self.end_line
-            }
-        })
+        let line = if at < self.body_end {
+            self.start_line
+        } else {
+            self.end_line
+        };
+        self.bound.then_some(line)
     }
 }
 
