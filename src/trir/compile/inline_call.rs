@@ -229,9 +229,16 @@ impl TrirCompiler<'_> {
         let join = at as u32;
         let nil_const = self.constants.len() as u32 + callee.constants.len() as u32;
         let mut body = Vec::with_capacity(at - start);
+        let shape = RegionShape {
+            pos: &pos,
+            region,
+            join,
+            nil_const,
+            reseed,
+        };
         body.push(TrOp::InlineEnter { region, join });
         for op in &callee.ops {
-            body.extend(self.inline_op(op, &map, &pos, region, join, nil_const, reseed)?);
+            body.extend(self.inline_op(op, &map, &shape)?);
         }
         // Everything is proved: commit the tables the body indexes.
         let mut calls = Vec::with_capacity(callee.calls.len());
@@ -276,17 +283,14 @@ impl TrirCompiler<'_> {
 
     /// One callee op, renamed into the caller.
     // Cost: O(1).
-    #[allow(clippy::too_many_arguments)]
-    fn inline_op(
-        &self,
-        op: &TrOp,
-        m: &SlotMap,
-        pos: &[u32],
-        region: u32,
-        join: u32,
-        nil_const: u32,
-        reseed: bool,
-    ) -> Option<Vec<TrOp>> {
+    fn inline_op(&self, op: &TrOp, m: &SlotMap, shape: &RegionShape<'_>) -> Option<Vec<TrOp>> {
+        let RegionShape {
+            pos,
+            region,
+            join,
+            nil_const,
+            reseed,
+        } = *shape;
         let to = |t: &u32| pos.get(*t as usize).copied();
         let reference = |s: &u16| m.refs.get(s).copied();
         let op = match op {
@@ -517,4 +521,17 @@ fn native_slot(op: &TrOp) -> Option<u16> {
         | TrOp::PushISlotLocalVoid { slot: s, .. } => Some(*s),
         _ => None,
     }
+}
+
+/// Where one inlined region sits in its caller: the callee op index → caller
+/// op index map (`pos`, one past the end is the join), the region's index,
+/// its join, the Nil constant a bare `return` produces, and whether the
+/// callee's calls must re-seed its free variables.
+#[derive(Clone, Copy)]
+struct RegionShape<'a> {
+    pos: &'a [u32],
+    region: u32,
+    join: u32,
+    nil_const: u32,
+    reseed: bool,
 }
