@@ -42,22 +42,16 @@ fn collect(value: &Value, seen: &mut HashSet<usize>) {
             collect(k, seen);
             collect(v, seen);
         }
-        ValueView::ContainerRef(cell) => {
-            if seen.insert(crate::gc::Gc::as_ptr(&cell) as usize)
-                && let Ok(inner) = cell.lock().map(|v| v.clone())
-            {
+        ValueView::ContainerRef(cell) if seen.insert(crate::gc::Gc::as_ptr(&cell) as usize) => {
+            if let Ok(inner) = cell.lock().map(|v| v.clone()) {
                 collect(&inner, seen);
             }
         }
-        ValueView::Array(data, _) => {
-            if seen.insert(crate::gc::Gc::as_ptr(&data) as usize) {
-                data.iter().for_each(|v| collect(v, seen));
-            }
+        ValueView::Array(data, _) if seen.insert(crate::gc::Gc::as_ptr(&data) as usize) => {
+            data.iter().for_each(|v| collect(v, seen));
         }
-        ValueView::Hash(data) => {
-            if seen.insert(crate::gc::Gc::as_ptr(&data) as usize) {
-                data.map.values().for_each(|v| collect(v, seen));
-            }
+        ValueView::Hash(data) if seen.insert(crate::gc::Gc::as_ptr(&data) as usize) => {
+            data.map.values().for_each(|v| collect(v, seen));
         }
         _ => {}
     }
