@@ -19,7 +19,9 @@ plan 15;
 # X::Undeclared
 {
     try { die X::Undeclared.new(symbol => '$foo', what => "Variable") };
-    is $!.message, "Variable '\$foo' is not declared",
+    # With no suggestion rakudo adds the forgotten-`sub` hint, wrapped at 72
+    # columns (#18731).
+    is $!.message, "Variable '\$foo' is not declared. Perhaps you forgot a 'sub' if this was\nintended to be part of a signature?",
         "X::Undeclared .message";
 }
 

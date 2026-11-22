@@ -50,24 +50,8 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
         "X::Undeclared" => {
             let what = attr_str_or(attrs, "what", "Variable");
             let symbol = attr_str(attrs, "symbol");
-            let mut msg = format!("{} '{}' is not declared", what, symbol);
-            // Append suggestions if present
-            if let Some(sugg) = attrs.get("suggestions") {
-                let items = suggestion_list(sugg);
-                if !items.is_empty() {
-                    if items.len() == 1 {
-                        msg.push_str(&format!(". Did you mean '{}'?", items[0]));
-                    } else {
-                        let quoted: Vec<String> =
-                            items.iter().map(|s| format!("'{}'", s)).collect();
-                        msg.push_str(&format!(
-                            ". Did you mean any of these: {}?",
-                            quoted.join(", ")
-                        ));
-                    }
-                }
-            }
-            Some(msg)
+            let items = attrs.get("suggestions").map(suggestion_list).unwrap_or_default();
+            Some(undeclared_message(&what, &symbol, &items))
         }
         "X::Cannot::Lazy" => {
             let action = attr_str(attrs, "action");
@@ -321,6 +305,24 @@ fn attr_str_or(attrs: &AttrMap, key: &str, default: &str) -> String {
 }
 
 /// Extract a list of suggestion strings from a Value.
+/// Rakudo's `X::Undeclared.message`: the suggestions, or with none the
+/// forgotten-`sub` hint, word-wrapped at 72 columns as rakudo's is (#18731).
+// Cost: O(m), m = chars of the message.
+pub(crate) fn undeclared_message(what: &str, symbol: &str, suggestions: &[String]) -> String {
+    let msg = format!("{} '{}' is not declared", what, symbol);
+    match suggestions {
+        [] => crate::word_wrap::naive_word_wrap(
+            &format!("{msg}. Perhaps you forgot a 'sub' if this was intended to be part of a signature?"),
+            72,
+        ),
+        [one] => format!("{msg}. Did you mean '{one}'?"),
+        many => {
+            let quoted: Vec<String> = many.iter().map(|s| format!("'{}'", s)).collect();
+            format!("{msg}. Did you mean any of these: {}?", quoted.join(", "))
+        }
+    }
+}
+
 fn suggestion_list(v: &Value) -> Vec<String> {
     match v.view() {
         ValueView::Array(items, _) => items.iter().map(|item| item.to_string_value()).collect(),

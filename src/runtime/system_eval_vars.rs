@@ -122,16 +122,7 @@ impl Interpreter {
         // still expecting at the eject point. For an undeclared variable
         // there is nothing else expected, so it is an empty list.
         attrs.insert("highexpect".to_string(), Value::array(vec![]));
-        let mut message = format!("Variable '{}' is not declared.", symbol);
-        if suggestions.len() == 1 {
-            message.push_str(&format!(" Did you mean '{}'?", suggestions[0]));
-        } else if suggestions.len() > 1 {
-            let quoted: Vec<String> = suggestions.iter().map(|s| format!("'{}'", s)).collect();
-            message.push_str(&format!(
-                " Did you mean any of these: {}?",
-                quoted.join(", ")
-            ));
-        }
+        let message = crate::value::exception_message::undeclared_message("Variable", &symbol, &suggestions);
         attrs.insert(
             "suggestions".to_string(),
             Value::array(suggestions.into_iter().map(Value::str).collect()),
