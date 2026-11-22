@@ -100,6 +100,9 @@ pub(super) fn view_node(
         explicit_default.map(|value| {
             if *default_is_bind {
                 Initializer::Bind(value)
+            } else if let Some(call) = call_assign(value) {
+                // `has R $.r .= new(...)`: an `Initializer::CallAssign`.
+                Initializer::CallAssignMarker(call)
             } else {
                 Initializer::Assign(value)
             }
@@ -144,6 +147,22 @@ pub(super) fn view_node(
     Ok(Some(statement_expression(decl)))
 }
 
+/// The method call of an attribute default written `.= method(...)`.
+// Cost: O(1).
+fn call_assign(default: &crate::ast::Expr) -> Option<&crate::ast::Expr> {
+    match default {
+        crate::ast::Expr::Spelled(spelled)
+            if matches!(
+                spelled.spelling,
+                crate::ast::spelled::Spelling::AttributeCallAssign
+            ) =>
+        {
+            Some(&spelled.expr)
+        }
+        _ => None,
+    }
+}
+
 /// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The view renders
 /// an attribute as a `VarDeclaration::Simple` with `scope => "has"` and a
 /// `twigil` (`.` public / `!` private, none for the alias `has $x`); `our $.x`
@@ -157,14 +176,15 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         None => None,
         Some(f) => {
             let init = child_node(&f.value)?;
-            if !matches!(
-                init.class,
-                RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
-            ) {
-                return Err(unsupported(node));
+            match init.class {
+                RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind => {
+                    default_is_bind = init.class == RakuAstClass::InitializerBind;
+                    Some(lower_expr(names, named_child_or_positional(init)?)?)
+                }
+                // `has R $.r .= new(...)`: the call on the declared type.
+                RakuAstClass::InitializerCallAssign => Some(lower_call_assign(names, node, init)?),
+                _ => return Err(unsupported(node)),
             }
-            default_is_bind = init.class == RakuAstClass::InitializerBind;
-            Some(lower_expr(names, named_child_or_positional(init)?)?)
         }
     };
     let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
@@ -351,4 +371,32 @@ pub(super) fn will_build_field(value: Value) -> RakuAstField {
         name: Some("traits"),
         value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
     }
+}
+
+/// The default of `node`, an attribute declared `.= method(...)` (`init` its
+/// `Initializer::CallAssign`): the method called on the declared type, as
+/// the parser builds it (the attribute's own name when untyped).
+// Cost: O(n), n = size of the call.
+fn lower_call_assign(
+    names: &NameScope,
+    node: &RakuAstNode,
+    init: &RakuAstNode,
+) -> Result<crate::ast::Expr, RuntimeError> {
+    let (method, callee, args) =
+        super::dynamic_method::call_assign_initializer(names, named_child_or_positional(init)?)?;
+    if callee.is_some() {
+        return Err(unsupported(node));
+    }
+    let invocant = match named_child(node, "type") {
+        Ok(type_node) => simple_type_name(names, node, type_node)?,
+        Err(_) => return Err(unsupported(node)),
+    };
+    Ok(crate::ast::Expr::MethodCall {
+        target: Box::new(crate::parser::call_assign_invocant(invocant)),
+        name: crate::symbol::Symbol::intern(&method),
+        args,
+        modifier: None,
+        quoted: false,
+        sugar: false,
+    })
 }

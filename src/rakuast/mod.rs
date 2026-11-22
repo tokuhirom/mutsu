@@ -298,6 +298,7 @@ mod use_stmt;
 mod user_postfix;
 mod user_prefix;
 pub(crate) mod visit_order;
+mod will_build_origins;
 mod zip_chain;
 pub(crate) use user_prefix::user_prefix_overrides_core;
 mod var_decl_constructor;
