@@ -282,6 +282,7 @@ pub(crate) fn walk_regex_tree<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, tree: &'
         match_immediately: _,
         adverbs,
         declaration_kind: _,
+        exec_memo: _,
     } = tree;
     v.visit_regex_node(body);
     for adverb in adverbs {

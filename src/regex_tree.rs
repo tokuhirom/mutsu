@@ -36,6 +36,61 @@ pub(crate) struct RegexTree {
     /// execution lowerer.
     #[serde(default)]
     pub(crate) declaration_kind: Option<RegexDeclKind>,
+    /// What the execution layer derives from this tree, kept with it so a
+    /// match decides it once per tree rather than once per match (#18003).
+    /// Not part of the tree: it is skipped by serde and `Hash`, emptied by
+    /// `Clone` and by a mutating walk.
+    #[serde(skip)]
+    pub(crate) exec_memo: ExecMemo,
+}
+
+/// A slot for facts a higher layer derives from a [`RegexTree`], computed on
+/// first use. The tree does not know their type (the layer rule: the AST names
+/// no runtime type), so the slot holds them type-erased; the runtime's
+/// `regex_value_memo` module is the only writer and reader.
+#[derive(Default)]
+pub(crate) struct ExecMemo(std::sync::Mutex<Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>>);
+
+impl ExecMemo {
+    /// The stored facts, when some were stored.
+    // Cost: O(1) (an uncontended lock and a refcount bump).
+    pub(crate) fn get(&self) -> Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
+        self.0.lock().ok().and_then(|slot| slot.clone())
+    }
+
+    /// Replace the stored facts.
+    // Cost: O(1).
+    pub(crate) fn set(&self, facts: std::sync::Arc<dyn std::any::Any + Send + Sync>) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(facts);
+        }
+    }
+
+    /// Forget the stored facts (the tree was edited).
+    // Cost: O(1).
+    pub(crate) fn clear(&mut self) {
+        if let Ok(slot) = self.0.get_mut() {
+            *slot = None;
+        }
+    }
+}
+
+impl Clone for ExecMemo {
+    // A copy of a tree may be edited independently, so it starts empty.
+    fn clone(&self) -> Self {
+        ExecMemo::default()
+    }
+}
+
+impl std::fmt::Debug for ExecMemo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ExecMemo")
+    }
+}
+
+impl std::hash::Hash for ExecMemo {
+    // Derived facts are not part of the tree's identity.
+    fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
 #[derive(
@@ -370,6 +425,7 @@ impl RegexTree {
             match_immediately: false,
             adverbs: Vec::new(),
             declaration_kind: None,
+            exec_memo: ExecMemo::default(),
         })
     }
 

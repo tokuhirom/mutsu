@@ -135,7 +135,10 @@ pub(crate) fn walk_regex_tree_mut<V: VisitMut + ?Sized>(v: &mut V, tree: &mut Re
         match_immediately: _,
         adverbs: _,
         declaration_kind: _,
+        exec_memo,
     } = tree;
+    // The body may change, so nothing derived from it holds any more.
+    exec_memo.clear();
     v.visit_regex_node_mut(body);
 }
 

@@ -20,7 +20,7 @@ impl Interpreter {
         }
     }
 
-    fn parse_regex_declarative_prefix(pattern: &str) -> (Vec<(String, String)>, String) {
+    pub(super) fn parse_regex_declarative_prefix(pattern: &str) -> (Vec<(String, String)>, String) {
         let mut decls = Vec::new();
         let mut rest = pattern;
         let mut preserved_adverbs: Vec<String> = Vec::new();
@@ -183,19 +183,16 @@ impl Interpreter {
         // A tree holding a construct execution never reads (`:constant $x = 1;`,
         // `<?alpha>`, ...) is the tree the pattern had before it was modelled:
         // none. It keeps that path whole, declarative prefix included.
-        if tree.holds_extension()
-            || Self::parse_anchored_single_subrule(&pattern).is_some()
-            || (!Self::parse_regex_declarative_prefix(&pattern).0.is_empty()
-                && tree.declaration_kind.is_none())
-        {
-            return self.regex_match_with_captures(&pattern, text);
-        }
+        //
         // The value-aware parse cache is keyed by the source tree, but the
         // legacy parser substitutes outer lexical interpolation while it
         // builds its plan. Keep anchored interpolation on that established
         // path until the tree can carry the lexical cell identity; otherwise
         // the first value can be reused for later loop iterations.
-        if tree.contains_anchor() && !tree.interpolation_names().is_empty() {
+        //
+        // All of that is a function of the tree and the pattern, so it is
+        // decided once per tree (`regex_value_memo`).
+        if super::regex_value_memo::regex_value_facts(tree, &pattern).string_path {
             return self.regex_match_with_captures(&pattern, text);
         }
         let parsed = self.parse_regex_value(regex)?;
@@ -254,7 +251,7 @@ impl Interpreter {
         Some(caps)
     }
 
-    fn parse_anchored_single_subrule(pattern: &str) -> Option<String> {
+    pub(super) fn parse_anchored_single_subrule(pattern: &str) -> Option<String> {
         let compact: String = pattern.chars().filter(|c| !c.is_whitespace()).collect();
         let inner = compact.strip_prefix("^<")?.strip_suffix(">$")?;
         if inner.is_empty()

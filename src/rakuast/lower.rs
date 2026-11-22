@@ -1846,6 +1846,7 @@ fn lower_regex_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt
         match_immediately: false,
         adverbs: Vec::new(),
         declaration_kind: Some(declaration_kind),
+        exec_memo: crate::regex_tree::ExecMemo::default(),
     };
     let source = tree.to_source();
     let execution_pattern = match node.class {
@@ -4530,6 +4531,7 @@ fn lower_anon_regex_declaration(
         match_immediately: false,
         adverbs: Vec::new(),
         declaration_kind: Some(kind),
+        exec_memo: crate::regex_tree::ExecMemo::default(),
     };
     let pattern = crate::parser::finalize_anon_declarator_pattern(&tree.to_source(), kind);
     let params = node
@@ -4649,6 +4651,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 match_immediately,
                 adverbs: lowered_adverbs.adverbs,
                 declaration_kind: None,
+                exec_memo: crate::regex_tree::ExecMemo::default(),
             };
             let value = if is_rx_literal {
                 crate::parser::rx_execution_value(tree.to_source(), &tree.adverbs)
