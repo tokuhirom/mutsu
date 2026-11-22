@@ -1933,8 +1933,7 @@ impl Interpreter {
                 ValueView::Array(..) => true,
                 ValueView::Hash(items) => items.key_type.is_none() && !items.has_typed_keys(),
                 _ => false,
-            }
-        {
+            } {
             if Self::index_needs_target_elems(&index) {
                 if let Some(copy) = crate::value::container_read::shared_snapshot(&target) {
                     target = copy;
