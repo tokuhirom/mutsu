@@ -236,7 +236,26 @@ impl Interpreter {
                     // text was re-read by the enclosing string's own
                     // interpolation rules, so a value holding `$`, `@`, `{` or
                     // `"` did not survive the round trip.
-                    match Self::param_read_at(&chars, i, param_names) {
+                    //
+                    // An array parameter interpolates only as a zen slice,
+                    // `"@x[]"`: its elements joined by a space (#18670).
+                    if chars[i] == '@'
+                        && let Some((name, next)) =
+                            Self::param_read_at(&chars, i, param_names, true)
+                        && chars.get(next) == Some(&'[')
+                        && chars.get(next + 1) == Some(&']')
+                        && let Some(value) = self.env.get(&name).cloned()
+                    {
+                        let joined = crate::value::to_list::value_to_list(&value)
+                            .iter()
+                            .map(Value::to_string_value)
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        out.push_str(&Self::escape_for_double_quoted(&joined));
+                        i = next + 2;
+                        continue;
+                    }
+                    match Self::param_read_at(&chars, i, param_names, false) {
                         Some((name, next)) => match self.env.get(&name) {
                             Some(value) => {
                                 out.push_str(&Self::escape_for_double_quoted(
@@ -295,7 +314,7 @@ impl Interpreter {
                         }
                         _ => {}
                     }
-                    match Self::param_read_at(&chars, i, param_names) {
+                    match Self::param_read_at(&chars, i, param_names, true) {
                         Some((name, next)) => match self
                             .env
                             .get(&name)
@@ -322,11 +341,21 @@ impl Interpreter {
         out
     }
 
-    /// The `$name` of a bound parameter starting at `chars[i]`, with the index
-    /// just past it. `None` when this is not a `$`, or names something the
+    /// The env key of a bound parameter read starting at `chars[i]`, with the
+    /// index just past it: the bare name for `$name`, and with `aggregates`
+    /// (a code block, not a string) the sigiled `@name` / `%name` a token's
+    /// array or hash parameter -- a slurpy `*@x` above all -- is bound under
+    /// (#18670). `None` when this is no such read, or names something the
     /// caller did not bind.
-    fn param_read_at(chars: &[char], i: usize, param_names: &[String]) -> Option<(String, usize)> {
-        if chars[i] != '$' {
+    // Cost: O(n + p), n = the name's length, p = the parameter names.
+    fn param_read_at(
+        chars: &[char],
+        i: usize,
+        param_names: &[String],
+        aggregates: bool,
+    ) -> Option<(String, usize)> {
+        let sigil = chars[i];
+        if !(sigil == '$' || (aggregates && matches!(sigil, '@' | '%'))) {
             return None;
         }
         let next = *chars.get(i + 1)?;
@@ -338,7 +367,10 @@ impl Interpreter {
             j += 1;
         }
         let name: String = chars[i + 1..j].iter().collect();
-        param_names.contains(&name).then_some((name, j))
+        if !param_names.contains(&name) {
+            return None;
+        }
+        Some((if sigil == '$' { name } else { format!("{sigil}{name}") }, j))
     }
 
     /// Escape a value for splicing into a double-quoted Raku string, so that
