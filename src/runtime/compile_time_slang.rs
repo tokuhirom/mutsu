@@ -8,9 +8,9 @@
 //! and the `EXPORTHOW` declarators the hook bound — is kept per `use`
 //! ([`ParseTimeSlangActivation`]) for the parser to read.
 //!
-//! A slang whose productions run on a slang host (ADR-15762) still gets that
-//! host from the activation interpreter (`slang_activation.rs`) until the
-//! host's hooks run on this interpreter too.
+//! A slang whose productions run on a slang host (ADR-15762) is hosted by this
+//! interpreter too (slice 4b, `slang_host_inline.rs`): its hooks run here
+//! through the compile-time loader.
 
 use super::regex_grammar_state::ParseTimeSlangActivation;
 use super::*;
@@ -52,15 +52,12 @@ impl Interpreter {
         }
         result?;
         let rules = self.regex_state.defined_slang_rules[rules_before..].to_vec();
-        // A production a slang host has to run cannot be answered here yet.
-        let hooked = rules.iter().any(|rule| {
+        // A production a slang host has to run runs here, in this interpreter.
+        let hosted = rules.iter().any(|rule| {
             crate::parser::slang_hook_rule(&rule.name).is_some()
                 || crate::parser::slang_action_rule(&rule.name)
                 || crate::parser::slang_wrapper_rule(&rule.name)
         });
-        if hooked {
-            return Ok(());
-        }
         let mut declarators: Vec<_> = self
             .regex_state
             .defined_slang_declarators
@@ -103,6 +100,7 @@ impl Interpreter {
                 rules,
                 declarators,
                 supersede_keywords,
+                hosted,
             });
         Ok(())
     }
@@ -125,7 +123,7 @@ impl Interpreter {
             rules: found.rules.clone(),
             declarators: found.declarators.clone(),
             supersede_keywords: found.supersede_keywords.clone(),
-            host: None,
+            host: found.hosted.then(crate::slang_link::in_process),
             exports: Vec::new(),
         })
     }

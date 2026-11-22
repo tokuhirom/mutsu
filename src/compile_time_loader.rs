@@ -164,6 +164,15 @@ pub(crate) trait CompileTimeLoader {
     /// unit it may reach (`unit`).
     fn run_begin(&mut self, begin: &crate::ast::Stmt, unit: &UnitAtParse<'_>) -> BeginOutcome;
 
+    /// Run one production of a slang this loader hosts (ADR-17558 slice 4b):
+    /// the slang's token, or its action over `request.node`, with
+    /// `back_call` answering the core productions the token reaches back for.
+    fn run_slang_hook(
+        &mut self,
+        request: crate::slang_link::HookRequest,
+        back_call: &mut crate::slang_link::BackCall<'_>,
+    ) -> crate::slang_link::HostAnswer;
+
     /// The installation stamp of a `multi` candidate the parser just finished
     /// at the program's top level: rakudo installs a candidate when the parser
     /// reaches it, so it ranks against the candidates of the modules loaded
@@ -266,6 +275,16 @@ pub(crate) fn slang_activation(
 // Cost: O(1) when there is no loader; the phaser's analysis and run otherwise.
 pub(crate) fn run_begin(begin: &crate::ast::Stmt, unit: &UnitAtParse<'_>) -> BeginOutcome {
     with_loader(|loader| loader.run_begin(begin, unit)).unwrap_or(BeginOutcome::NotTaken)
+}
+
+/// Ask this thread's current loader to run a production of a slang it hosts.
+// Cost: O(1) when there is no loader; the production otherwise.
+pub(crate) fn run_slang_hook(
+    request: crate::slang_link::HookRequest,
+    back_call: &mut crate::slang_link::BackCall<'_>,
+) -> crate::slang_link::HostAnswer {
+    with_loader(|loader| loader.run_slang_hook(request, back_call))
+        .unwrap_or_else(|| Err("the slang's host is not reachable from this parse".to_string()))
 }
 
 /// Ask this thread's current loader for the installation stamp of a `multi`

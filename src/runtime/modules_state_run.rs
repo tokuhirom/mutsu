@@ -77,6 +77,7 @@ pub(crate) mod slang_activation;
 pub(crate) mod slang_class_replay;
 pub(crate) mod slang_action_replay;
 pub(crate) mod slang_host;
+mod slang_host_inline;
 pub(crate) mod slang_declarator;
 mod slang_foreign_lang;
 mod slang_declarator_replay;

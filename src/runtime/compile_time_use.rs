@@ -216,6 +216,15 @@ impl CompileTimeLoader for Interpreter {
         self.run_parse_time_begin(begin, unit)
     }
 
+    // Cost: the production.
+    fn run_slang_hook(
+        &mut self,
+        request: crate::slang_link::HookRequest,
+        back_call: &mut crate::slang_link::BackCall<'_>,
+    ) -> crate::slang_link::HostAnswer {
+        self.run_in_process_slang_hook(request, back_call)
+    }
+
     // Cost: O(1).
     fn reserve_decl_order(&mut self) -> Option<u64> {
         crate::runtime::compile_time_begin::is_program_parse()

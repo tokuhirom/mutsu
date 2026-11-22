@@ -14,6 +14,9 @@ pub(crate) struct ParseTimeSlangActivation {
     pub(crate) rules: Vec<crate::slang_link::SlangRuleOverride>,
     pub(crate) declarators: Vec<crate::slang_link::SlangDeclarator>,
     pub(crate) supersede_keywords: Vec<String>,
+    /// Whether the slang has productions a host runs (a hook, an action
+    /// override, a wrapper): this interpreter hosts them (ADR-17558 slice 4b).
+    pub(crate) hosted: bool,
 }
 
 #[derive(Default)]
