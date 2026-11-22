@@ -102,6 +102,9 @@ fn subclass_payload(target: &Value) -> Option<Value> {
     if let Some(payload) = crate::value::numeric_payload::native_base_payload(target) {
         return Some(payload);
     }
+    if target.is_lazy_match_value() {
+        return None;
+    }
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };
@@ -183,6 +186,10 @@ pub(crate) fn has_iterable_payload(target: &Value) -> bool {
 /// answer for it (`shapeless_row`).
 // Cost: O(1), four attribute-map lookups.
 pub(crate) fn has_collection_payload(target: &Value) -> bool {
+    // A lazy Match carries no payload; its `view()` would materialize it.
+    if target.is_lazy_match_value() {
+        return false;
+    }
     let ValueView::Instance { attributes, .. } = target.view() else {
         return false;
     };

@@ -130,7 +130,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(target.view(), ValueView::Junction { .. }) {
+        if !target.is_junction_value() {
             return None;
         }
         crate::builtins::method_table::invoke_owner(self, &["Junction"], method, args, || {

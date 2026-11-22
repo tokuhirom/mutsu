@@ -1451,6 +1451,9 @@ impl Interpreter {
         if is_full_parse
             && !grammar_is_6e
             && let Ok(v) = &result
+            // A successful parse is a lazy Match: test the tag, not its
+            // `view()`, which would materialize every capture (#12917).
+            && !v.is_lazy_match_value()
             && let ValueView::Instance { class_name, .. } = v.view()
             && class_name == "Failure"
         {

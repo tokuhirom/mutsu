@@ -281,7 +281,9 @@ impl Interpreter {
         // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) has no `Mu`
         // methods beyond the meta-object ones; the native `gist`/`raku` lanes
         // would otherwise answer before the dispatcher's gate sees it.
-        if matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
+        // Tag-probed: `view()` of a lazy Match would materialize it.
+        if target.is_package_value()
+            && matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
             && matches!(
                 method,
                 "raku" | "gist" | "perl" | "Str" | "say" | "put" | "print"
@@ -412,6 +414,17 @@ impl Interpreter {
         // hand back.
         let method = method_sym.as_str();
         if !args.is_empty() || has_modifier || (Self::quoting_matters(quoted, method) && !want_ref)
+        {
+            return None;
+        }
+        // A lazy Match reads on only for a declared accessor of its grammar
+        // (the attribute map is then needed): asked on its class, since
+        // `view()` materializes it (#12917).
+        if let Some(class) = target.match_lazy_class_sym()
+            && !matches!(
+                self.resolve_user_method_or_accessor_sym(class.as_str(), method_sym),
+                Some(crate::runtime::UserMethodOrAccessor::Accessor)
+            )
         {
             return None;
         }
@@ -658,7 +671,9 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
-        if !matches!(method, "Str" | "gist") || !args.is_empty() {
+        // A Match (even of a grammar declared under `X::`) is no exception;
+        // the tag answers without materializing a lazy one (#12917).
+        if !matches!(method, "Str" | "gist") || !args.is_empty() || target.is_lazy_match_value() {
             return Ok(None);
         }
         let ValueView::Instance {
@@ -1241,7 +1256,9 @@ impl Interpreter {
                 return Err(self.type_check_assignment_failure(sigil, &ty, &fresh));
             }
         }
-        let target = if method != "VAR" {
+        // A lazy Match is none of the containers below; its `view()` would
+        // materialize it on every method call (#12917).
+        let target = if method != "VAR" && !target.is_lazy_match_value() {
             match target.view() {
                 // A `.VAR` view answers container metadata as Scalar. Other
                 // methods retain ordinary value semantics by reading through the
@@ -1418,8 +1435,9 @@ impl Interpreter {
         // reads `@x[0]` as the `Array[Int]` type object — pushing builds a fresh
         // typed `Array[Int]` whose elements are type-checked (so a later
         // `@x[0].push('foo')` still dies), and the result is written back to the slot.
-        if let ValueView::Package(type_name) = target.view()
-            && matches!(method, "push" | "append" | "unshift" | "prepend")
+        if matches!(method, "push" | "append" | "unshift" | "prepend")
+            && target.is_package_value()
+            && let ValueView::Package(type_name) = target.view()
             && let Some(result) = self.autoviv_typed_array_push(type_name.as_str(), &args)?
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -1523,7 +1541,8 @@ impl Interpreter {
             return Ok(());
         }
         // Junction auto-threading: thread method calls over junction values
-        if let ValueView::Junction { kind, values } = target.view()
+        if target.is_junction_value()
+            && let ValueView::Junction { kind, values } = target.view()
             && Interpreter::junction_invocant_autothreads(method)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "junction-invocant");
@@ -1709,16 +1728,20 @@ impl Interpreter {
         // `VAR` is never a built-in row.
         let mut skip_native =
             method == "VAR" || self.user_shadows_builtin(&target, method_sym, &args, quoted)?;
-        let is_junction_target = match target.view() {
-            ValueView::Junction { .. } => true,
-            ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
-            _ => false,
-        };
+        // Tag-probed from here on where a lazy Match receiver would otherwise
+        // reach a `view()` that materializes it (#12917).
+        let is_junction_target = !target.is_lazy_match_value()
+            && match target.view() {
+                ValueView::Junction { .. } => true,
+                ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
+                _ => false,
+            };
         if matches!(method, "gist" | "raku") && is_junction_target {
             skip_native = true;
         }
         if !skip_native
             && matches!(method, "AT-KEY" | "keys" | "values")
+            && !target.is_lazy_match_value()
             && matches!(target.view(), ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str()))
         {
             skip_native = true;
@@ -1768,11 +1791,12 @@ impl Interpreter {
         // Auto-FETCH Proxy containers for reads, including `.WHAT`: type
         // introspection describes the fetched value, not the Proxy container.
         // Skip auto-FETCH for Proxy subclass attribute access and decontainerized proxies
-        let target = if let ValueView::Proxy {
-            subclass,
-            decontainerized,
-            ..
-        } = target.view()
+        let target = if !target.is_lazy_match_value()
+            && let ValueView::Proxy {
+                subclass,
+                decontainerized,
+                ..
+            } = target.view()
             && !decontainerized
             && !matches!(
                 method,
@@ -1811,7 +1835,8 @@ impl Interpreter {
         // A lazy receiver's pull answers first: the placeholders of
         // `gist`/`Str`/`raku`, `cache`, `values`, and the refusals of the
         // counting methods (the lazy step, ADR-13891).
-        if let ValueView::LazyList(ll) = target.view()
+        if !target.is_lazy_match_value()
+            && let ValueView::LazyList(ll) = target.view()
             && let Some(answer) = self.lazy_receiver_pull(&target, &ll, method, &args)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-pull");
@@ -1836,7 +1861,8 @@ impl Interpreter {
             self.stack.push(stage);
             return Ok(());
         }
-        let target = if let ValueView::LazyList(ll) = target.view()
+        let target = if !target.is_lazy_match_value()
+            && let ValueView::LazyList(ll) = target.view()
             && Self::lazy_lane_reifies(&ll, &target, method)
         {
             let saved_env = self.env().clone();
@@ -1900,16 +1926,20 @@ impl Interpreter {
             return Ok(());
         }
         // Convert HyperSeq/RaceSeq to List for method dispatch
-        let target = match target.view() {
-            ValueView::HyperSeq(items) | ValueView::RaceSeq(items)
-                if !crate::builtins::method_table::hyper_seq_answers_as_itself(method) =>
-            {
-                Value::array_with_kind(
-                    crate::value::Value::array_arc(items.to_vec()),
-                    crate::value::ArrayKind::List,
-                )
+        let target = if target.is_lazy_match_value() {
+            target
+        } else {
+            match target.view() {
+                ValueView::HyperSeq(items) | ValueView::RaceSeq(items)
+                    if !crate::builtins::method_table::hyper_seq_answers_as_itself(method) =>
+                {
+                    Value::array_with_kind(
+                        crate::value::Value::array_arc(items.to_vec()),
+                        crate::value::ArrayKind::List,
+                    )
+                }
+                _ => target,
             }
-            _ => target,
         };
         // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
         if let Some(result) = self.try_regex_bool_method(&target, method, &args) {
