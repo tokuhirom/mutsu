@@ -794,10 +794,19 @@ impl Interpreter {
             // this class declaration, rather than guessing from every slot in
             // this chunk: a class static or later `$x` must not replace the
             // method's normal environment.
+            // The class's own name, read by its bare key or, when the class is
+            // block-declared, by its type-only key (#18327).
             let captured_type_aliases: Vec<Symbol> = lexical_type_aliases
                 .iter()
-                .copied()
+                .flat_map(|alias| [*alias, crate::term_names::lexical_type_key_sym(*alias)])
                 .filter(|alias| capture_syms.contains(alias))
+                // A method that reads its class by the type-only key and also
+                // reads the bare key reads a same-named scalar of the
+                // declaring frame there (`$R`), whose cell is captured below.
+                .filter(|alias| {
+                    !(outer_lexical_slots.iter().any(|(outer, _)| outer == alias)
+                        && capture_syms.contains(&crate::term_names::lexical_type_key_sym(*alias)))
+                })
                 .collect();
             // A lexical type of an enclosing scope that the method names (its
             // compiler reads it by name, see `lexical_types_in_scope`) is
@@ -824,8 +833,14 @@ impl Interpreter {
                     let source_name = type_name.with_str(|n| {
                         Symbol::intern(n.split_once('\u{0}').map_or(n, |(name, _)| name))
                     });
-                    let names_itself = source_name == *sym
-                        || crate::qualified::unqualified_part(source_name) == *sym;
+                    // A block-declared lexical type is read by its type-only
+                    // key (#17711, #18327), which names the type too.
+                    let named = sym.with_str(|n| {
+                        n.strip_prefix(crate::term_names::LEXICAL_TYPE_PREFIX)
+                            .map_or(*sym, Symbol::intern)
+                    });
+                    let names_itself = source_name == named
+                        || crate::qualified::unqualified_part(source_name) == named;
                     names_itself.then(|| (*sym, value.clone()))
                 })
                 .collect();
