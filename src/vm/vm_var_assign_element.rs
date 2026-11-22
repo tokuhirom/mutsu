@@ -770,7 +770,7 @@ impl Interpreter {
                 .map(|value| value.deref_container().descalarize().clone())
                 .filter(|value| value.is_range())
         {
-            return Err(RuntimeError::assignment_ro_value(value));
+            return Err(self.range_element_store_refusal(value));
         }
         // A positional subscript write on an `is Map` instance (`%vm[0] = 42`,
         // a ValueMap) reaches `Any.ASSIGN-POS`, which stores through the Map and
@@ -829,7 +829,7 @@ impl Interpreter {
                     crate::runtime::utils::value_type_name(&value)
                 )));
             }
-            return Err(RuntimeError::assignment_ro_value(value));
+            return Err(self.range_element_store_refusal(value));
         }
         // `%h{*} = ...` is refused: an associative slice has no order to assign
         // across. rakudo answers `X::AdHoc` with this exact message, and the
