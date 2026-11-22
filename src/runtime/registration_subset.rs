@@ -187,4 +187,18 @@ impl Interpreter {
                 .insert(name.to_string(), Value::package(Symbol::intern(&canonical)));
         }
     }
+
+    /// Whether `name` is an `our`-scoped subset by that exact spelling: a
+    /// package symbol visible to `::('name')` wherever the program runs,
+    /// whichever routine or thread declared it (ADR-17216). A `my subset`
+    /// also files its bare name in the registry, but always next to its
+    /// declaration-site key (`Name\0<id>`, ADR-0047), which rules it out; a
+    /// name declared both ways stays unresolved here (the lexical lookups
+    /// before this one answer in scope).
+    // Cost: O(1) expected: one probe, plus the lexical-key index probe
+    // (rebuilt once per registry key change, O(t), t = type keys).
+    pub(crate) fn is_package_scoped_subset(&self, name: &str) -> bool {
+        let registry = self.registry();
+        registry.subsets.contains_key(name) && !registry.has_lexical_type_key_for(name)
+    }
 }

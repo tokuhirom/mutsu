@@ -695,10 +695,11 @@ impl Interpreter {
             && current_scope
                 .iter()
                 .any(|(n, inv)| n == name && *inv == invocation)
-            && let Some(ValueView::Enum {
+            && let Some(prev) = self.enum_bare_value(name)
+            && let ValueView::Enum {
                 enum_type: prev_type,
                 ..
-            }) = self.enum_bare_value(name).map(Value::view)
+            } = prev.view()
             && prev_type.resolve() != enum_type
         {
             crate::runtime::cow_table_mut(&mut self.types.poisoned_enum_aliases)

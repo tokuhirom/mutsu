@@ -288,6 +288,33 @@ carries the routine-table cell of the context that created it, and a call on
 another context runs against that context's tables (#18135,
 `runtime/routine_context.rs`).
 
+### 3.7 Slice 3, part 2: enum keys and `our` subsets (2026-11-22)
+
+The enum and subset *types* were already world state with the registry
+(slice 2b), but two of their names were not reachable from another thread:
+
+- **An enum's bare keys.** A key declared below a module's top level (an
+  `EVAL`, a block, a routine) is bound in the frame env and, when the enum
+  is `our`, recorded under its package in `ModuleToplevel::enum_keys` so it
+  outlives the frame (#14019). That table is now a `WorldCell`: reads take
+  the thread's snapshot (`enum_bare_value` returns an owned `Value`), writes
+  publish, and recording a key the package already holds is not a write.
+  A module mainline's own top-level keys go to the same table, so a module
+  loaded on a worker contributes its keys to the world as well.
+- **Names `::('...')` resolves from the registry.** The indirect lookup
+  answered a class, role or enum type from the registry, but a subset or an
+  enum's qualified key (`E::key`) only from the frame env. It now also
+  answers an `our` subset (`is_package_scoped_subset`: a bare registry key
+  with no `my` declaration-site key next to it, ADR-0047) and walks into an
+  enum's stash for `E::key`. This also fixes the single-thread case of a
+  subset or enum `EVAL`'d in a routine that has returned.
+
+Left for the rest of slice 3: the other `ModuleToplevel` tables
+(`package_symbols`, `constant_markers`, `callable_ids`) and the `module.*`
+state (a module `require`d on a worker usable on the main thread), and the
+remaining per-thread `types.*` side tables (`package_type_aliases`,
+`my_scoped_package_items`, `suppressed_names`, ...).
+
 ## 4. Consequences
 
 - `start` and every other spawn see the program rakudo would show them: declarations, wraps,
