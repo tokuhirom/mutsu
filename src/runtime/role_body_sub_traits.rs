@@ -31,10 +31,39 @@ impl Interpreter {
     ) -> Option<(String, String)> {
         // A role body runs with the role as its current package.
         let role = self.current_package();
-        if !self.registry().roles.contains_key(&role) {
-            return None;
+        let routine = format!("{name}\0{identity}");
+        if self.registry().roles.contains_key(&role) {
+            return Some((role, routine));
         }
-        Some((role, format!("{name}\0{identity}")))
+        // A role body's sub re-declared in a composing class's package
+        // (`register_role_body_subs_per_composer`) answers to the role's
+        // record (#18721).
+        self.registry()
+            .role_body_traited_subs
+            .keys()
+            .find(|(_, r)| *r == routine)
+            .cloned()
+    }
+
+    /// Whether role `role`'s traited body `sub` `name` can be re-declared
+    /// over a composing class's cells: its traits ran (a record exists) and
+    /// did not wrap the routine or rebind its body (a `.wrap`, NativeCall's
+    /// `$!do`), which belong to the role's one routine (#18721).
+    // Cost: O(t), t = recorded traited role-body subs.
+    pub(crate) fn role_body_sub_reclosable(&self, role: &str, name: &str) -> bool {
+        let root = |r: &str| r.split(['[', '\0']).next().unwrap_or(r).to_string();
+        let role = root(role);
+        let prefix = format!("{name}\0");
+        let package = self
+            .registry()
+            .role_body_traited_subs
+            .iter()
+            .find(|((r, routine), _)| root(r) == role && routine.starts_with(&prefix))
+            .and_then(|(_, record)| record.def.as_ref().map(|def| def.package));
+        package.is_some_and(|package| {
+            !self.routine_is_wrapped(&super::code_do_attr::wrap_ledger_name(package, name))
+                && !self.routine_is_wrapped(name)
+        })
     }
 
     /// Whether a role-body `sub` named `name` (body identity `identity`)
@@ -60,6 +89,19 @@ impl Interpreter {
             return false;
         };
         let fq = crate::symbol::Symbol::intern(self.current_package_qualified(name));
+        // Re-declared over a composing class's cells, the routine keeps its
+        // own def (it closes over the class's cells); only a mixin is
+        // carried over.
+        let composer = self.current_package() != key.0;
+        let first = if composer {
+            super::registry::RoleBodyTraitedSub {
+                def: None,
+                callable_id: None,
+                ..first
+            }
+        } else {
+            first
+        };
         // The traited def is the routine: a trait that wrapped it or rebound
         // its `$!do` (NativeCall's `setup-nativecall`) did so to the routine
         // this def builds, so it replaces the one just registered.
