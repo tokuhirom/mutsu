@@ -418,6 +418,24 @@ impl Compiler {
                     self.code.emit(OpCode::NqpOp { id, arity: 0 });
                     return;
                 }
+                // A bare `decode` naming a lexical `my &decode` -- this scope's
+                // or an enclosing one's -- is a call of it with no arguments,
+                // as `decode()` is; the parser leaves it a bare word when the
+                // declaration follows the use (CBOR::Simple's decoders). As a
+                // call it is recorded as a free `&decode`, so a closure
+                // captures the declaring frame's binding (#18248).
+                if !name.contains("::")
+                    && !self.names_sigilless_binding(name)
+                    && !self.names_term_constant(name)
+                    && self.names_lexical_code_var(name)
+                {
+                    self.compile_expr(&Expr::Call {
+                        name: Symbol::intern(name),
+                        args: Vec::new(),
+                        listop: false,
+                    });
+                    return;
+                }
                 // `UNIT::errno` / `MY::errno` naming a lexical class declared in
                 // this compunit is that class, read by its bare name so a
                 // closure (a `Proxy` FETCH) captures the binding.

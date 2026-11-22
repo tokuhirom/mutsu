@@ -19,3 +19,9 @@ The walk had been hiding real bugs. Each was fixed first, in its own slice of
 
 With all of them fixed, the full test suite and roast pass without the
 fallback.
+
+This PR fixes one more such bug itself. A bare `decode` term, with no
+argument list, that names a `my &decode` declared later in the same scope (as
+in CBOR::Simple's decoders) is now compiled as a call. It is also recorded
+for the forward-declaration rewrite, so a closure created before the
+declaration captures it instead of reading the literal string `"decode"`.
