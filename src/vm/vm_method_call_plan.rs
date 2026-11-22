@@ -308,8 +308,13 @@ impl Interpreter {
         // smiley or `is rw` candidate; `multi_dispatch_type_cacheable`), which
         // is also the condition under which the dispatch tail memoizes its
         // resolution (ADR-15737 D1b).
+        // A container or Proxy argument's lane key does not change with what
+        // it holds (a FETCH may answer a different type on every call), so
+        // the winner would not be a function of the key.
         let multi_unplannable = def.is_multi
-            && match target.view() {
+            && (args.iter().any(|a| {
+                a.is_container_ref() || super::vm_call_helpers::bound_proxy(a).is_some()
+            }) || match target.view() {
                 ValueView::Instance { class_name, .. } => !self.multi_dispatch_type_cacheable(
                     class_name,
                     method_sym,
@@ -317,7 +322,7 @@ impl Interpreter {
                     method,
                 ),
                 _ => true,
-            };
+            });
         if method == "new"
             || method.starts_with('!')
             || crate::builtins::method_table::native_array_result::retypes(method)

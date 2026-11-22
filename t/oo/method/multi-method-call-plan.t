@@ -5,7 +5,7 @@ use Test;
 # plan after its first call with those types (ADR-15737 D1b). Deferral and
 # `samewith` from the planned winner, and a family with a value-dependent
 # candidate (never planned), must give rakudo's answers on every call.
-plan 5;
+plan 6;
 
 class Shape {
     multi method scale(Int $n) { $n * 2 }
@@ -51,3 +51,12 @@ class Def {
 my $d = Def.new;
 is (^4).map({ $d.d((1, Int)[$_ % 2]) }).join(','), 'defined,type object,defined,type object',
     'a smiley family decides per definedness';
+
+# A Proxy argument's key does not change with what it FETCHes, so a planned
+# winner for a plain value must not answer for it.
+class Px { multi method m(Numeric $v) { "num $v" }; multi method m(Str $v) { "str" } }
+my $px = Px.new;
+my $store = 'abc';
+my $proxy := Proxy.new(FETCH => sub ($) { $store }, STORE => sub ($, $v) { });
+is ($px.m(5), $px.m(6), $px.m($proxy)).join(' '), 'num 5 num 6 str',
+    'a Proxy argument after planned plain calls';
