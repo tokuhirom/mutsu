@@ -297,6 +297,15 @@ fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
         }
     }
 
+    // An `=end` no `=begin` opened (#18369).
+    if keyword == "end"
+        && let Some(target) = rest
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().next())
+    {
+        return Err(super::pod_delimited::orphan_end_error(input, target));
+    }
     if keyword == "begin" {
         // =begin IDENTIFIER ... =end IDENTIFIER
         // Match the identifier and ignore nested matching begin/end blocks.
@@ -307,41 +316,8 @@ fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
         if target.is_empty() {
             return Err(pod_begin_without_identifier_error(input));
         }
-        let is_table = target == "table";
-        let mut remaining = rest.get(begin_line_end + 1..).unwrap_or_default();
-        let mut depth = 1usize;
-        let mut content_lines: Vec<&str> = Vec::new();
-
-        while !remaining.is_empty() {
-            let line_end = remaining.find('\n').unwrap_or(remaining.len());
-            let line = &remaining[..line_end];
-            let next = remaining.get(line_end + 1..).unwrap_or_default();
-
-            if let Some((directive, directive_target)) = parse_pod_directive_line(line) {
-                if directive == "begin" && directive_target == target {
-                    depth += 1;
-                } else if directive == "end" && directive_target == target {
-                    depth -= 1;
-                    if depth == 0 {
-                        if is_table {
-                            // Only check for empty tables in =begin table blocks;
-                            // skip separator checks since cell content can contain
-                            // arbitrary whitespace characters.
-                            validate_pod_table_not_empty(&content_lines)?;
-                        }
-                        return Ok((next, ""));
-                    }
-                }
-            }
-
-            if is_table && depth == 1 {
-                content_lines.push(line);
-            }
-
-            remaining = next;
-        }
-
-        Ok(("", ""))
+        let body = rest.get(begin_line_end + 1..).unwrap_or_default();
+        super::pod_delimited::skip_body(body, target, margin)
     } else {
         // An abbreviated `=formula` holds one line only (the rest of its own
         // line, else the next non-blank line); what follows is code.
@@ -407,7 +383,7 @@ fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
 }
 
 /// Check that a Pod table has at least some data lines (not all blank).
-fn validate_pod_table_not_empty(lines: &[&str]) -> PResult<'static, ()> {
+pub(super) fn validate_pod_table_not_empty(lines: &[&str]) -> PResult<'static, ()> {
     let has_data = lines.iter().any(|l| !l.trim().is_empty());
     if !has_data {
         return Err(PError::expected("Pod table has no data"));
@@ -471,7 +447,7 @@ fn validate_pod_table(lines: &[&str]) -> PResult<'static, ()> {
     Ok(("", ()))
 }
 
-fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
+pub(super) fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
     let trimmed = line.trim_start();
     let rest = trimmed.strip_prefix('=')?;
     if rest.is_empty() || !rest.as_bytes()[0].is_ascii_alphabetic() {
