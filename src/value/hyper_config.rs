@@ -12,14 +12,19 @@ pub(crate) const DEFAULT_BATCH: i64 = 64;
 /// The core default `:degree`: the available CPU cores.
 // Cost: O(1), one system query.
 pub(crate) fn default_degree() -> i64 {
-    std::thread::available_parallelism().map(|n| n.get() as i64).unwrap_or(4)
+    std::thread::available_parallelism()
+        .map(|n| n.get() as i64)
+        .unwrap_or(4)
 }
 
 /// The `(batch, degree)` a configuration resolves to, defaults filled in.
 // Cost: O(1).
 pub(crate) fn resolve(config: Option<(Option<i64>, Option<i64>)>) -> (i64, i64) {
     let (batch, degree) = config.unwrap_or((None, None));
-    (batch.unwrap_or(DEFAULT_BATCH), degree.unwrap_or_else(default_degree))
+    (
+        batch.unwrap_or(DEFAULT_BATCH),
+        degree.unwrap_or_else(default_degree),
+    )
 }
 
 /// `.raku` of a `HyperConfiguration` with `config`.
@@ -34,5 +39,8 @@ pub(crate) fn configuration_raku(config: Option<(Option<i64>, Option<i64>)>) -> 
 // Cost: O(1).
 pub(crate) fn seq_raku(hyper: bool, config: Option<(Option<i64>, Option<i64>)>) -> String {
     let name = if hyper { "HyperSeq" } else { "RaceSeq" };
-    format!("{name}.new(configuration => {})", configuration_raku(config))
+    format!(
+        "{name}.new(configuration => {})",
+        configuration_raku(config)
+    )
 }

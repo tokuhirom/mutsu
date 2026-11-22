@@ -636,10 +636,10 @@ pub(crate) mod exception_message;
 pub(crate) mod flat;
 pub(crate) mod frame_fixtures;
 pub(crate) mod gist;
-pub(crate) mod hyper_config;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
 pub mod hash_key;
+pub(crate) mod hyper_config;
 pub(crate) mod identity;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;

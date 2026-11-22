@@ -414,7 +414,10 @@ fn hyper_raku(
         crate::value::HyperKind::Race => false,
         crate::value::HyperKind::Plain => return None,
     };
-    Some(Ok(Value::str(crate::value::hyper_config::seq_raku(hyper, list.hyper_config()))))
+    Some(Ok(Value::str(crate::value::hyper_config::seq_raku(
+        hyper,
+        list.hyper_config(),
+    ))))
 }
 
 /// `HyperSeq.is-lazy`: a hyper or race sequence is never lazy, though the
