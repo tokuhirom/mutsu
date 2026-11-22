@@ -2780,6 +2780,13 @@ fn core_scalar_satisfies(constraint: &str, value: &Value) -> bool {
             "Num" | "Numeric" | "Real" | "Cool" | "Any" | "Mu" | "num"
         ),
         ValueView::Str(_) => matches!(name, "Str" | "Cool" | "Any" | "Mu"),
+        // `Bool` is an `Int` enum: `True ~~ Int` and its parents hold, while
+        // the native `int` and `Enumeration` do not (rakudo answers False to
+        // both), so those take the full check.
+        ValueView::Bool(_) => matches!(
+            name,
+            "Bool" | "Int" | "Numeric" | "Real" | "Cool" | "Any" | "Mu"
+        ),
         // A built-in aggregate, pair or code value is a concrete `Any` (never a
         // `Junction`, which has its own view); a code value is `Callable`.
         // These are what a binder asks of an untyped or `&`-sigil parameter.

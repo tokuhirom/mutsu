@@ -30,6 +30,16 @@ impl Interpreter {
     // Cost: O(1) expected on a memo hit plus the capture probe; a miss is the
     // full resolution, O(d) in the owner's package depth d.
     pub(super) fn method_effective_return_spec(&mut self, owner_class: &str, spec: &str) -> String {
+        // A definite return names a value, and both arms below hand such a
+        // spec back unchanged; the literal spellings `is_definite_return_spec`
+        // accepts before any registry probe (`--> Nil` above all) need neither
+        // the capture probe nor the memo's key interning.
+        if matches!(
+            spec,
+            "Nil" | "True" | "False" | "Empty" | "pi" | "IterationEnd"
+        ) {
+            return spec.to_string();
+        }
         let punned = pun_pseudo_type(spec, owner_class);
         // The env-dependent step decides whether the memo applies at all: a
         // spec, or the base of a smileyed spec, that a capture of this call
