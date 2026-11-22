@@ -159,6 +159,23 @@ fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
     loop {
         let gap = trivia_len(&text[at..])?;
         let rest = &text[at + gap..];
+        // `handles q[aie]`: the term to the end of the declaration.
+        if let Some(after) = rest
+            .strip_prefix("handles")
+            .filter(|r| r.starts_with(char::is_whitespace))
+        {
+            let start = at + gap;
+            let term_from = start + "handles".len() + trivia_len(after)?;
+            let end = text.trim_end().len();
+            if term_from < end && !text[term_from..end].contains(" = ") {
+                traits.push(TraitAt {
+                    whole: (base + start, base + end),
+                    name: (base + term_from, base + end),
+                    argument: None,
+                });
+            }
+            return Some(traits);
+        }
         // `is NAME` / `of TYPE` / `does ROLE`.
         let Some((keyword, after)) = ["is", "of", "does"]
             .into_iter()
@@ -327,6 +344,25 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         let ValueView::RakuAst(trait_node) = value.view() else {
             return;
         };
+        // `handles q[aie]`: the term, parsed again from its text.
+        if trait_node.class == RakuAstClass::TraitHandles {
+            let (from, to) = clause.name;
+            let Some(text) =
+                super::unit_source::with_text(SrcSpan::new(from, to), |t| Some(t.to_string()))
+            else {
+                return;
+            };
+            let mut trait_node = RakuAstNode::clone(trait_node);
+            super::origin::set_span(
+                &mut trait_node,
+                SrcSpan::new(clause.whole.0, clause.whole.1),
+            );
+            super::infix_origins::with_child_at(&mut trait_node, 0, |term| {
+                super::fragment_origins::expression(names, term, &text, from)
+            });
+            *value = Value::rakuast(Box::new(trait_node));
+            continue;
+        }
         // `my @a of Int` / `my @a does R`: a `Trait::Of` / `Trait::Does`
         // over its type.
         if matches!(

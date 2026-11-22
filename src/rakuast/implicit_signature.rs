@@ -162,7 +162,15 @@ fn method_signature(method: &RakuAstNode) -> Value {
 /// in field order (after the name, ahead of the traits and the body).
 // Cost: O(f + p), f = fields of `method`, p = written parameters.
 pub(crate) fn method_with_signature(method: &RakuAstNode) -> Option<RakuAstNode> {
-    if !matches!(method.class, RakuAstClass::Method | RakuAstClass::Submethod) {
+    // A regex declaration is a method too (`my regex r { }`, `token t { }`).
+    if !matches!(
+        method.class,
+        RakuAstClass::Method
+            | RakuAstClass::Submethod
+            | RakuAstClass::RegexDeclaration
+            | RakuAstClass::TokenDeclaration
+            | RakuAstClass::RuleDeclaration
+    ) {
         return None;
     }
     let signature = method_signature(method);
