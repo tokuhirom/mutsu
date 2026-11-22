@@ -129,9 +129,11 @@ impl Interpreter {
                 .insert(parent.as_str().to_owned(), crate::ast::PackageKind::Package);
             if !self.module.module_load_stack.is_empty() {
                 let unit = self.executing_unit_sym_for_module_load();
-                crate::runtime::cow_table_mut(&mut self.module.world.package_declaring_units.write_guard())
-                    .entry(parent.as_str().to_owned())
-                    .or_insert(unit);
+                crate::runtime::cow_table_mut(
+                    &mut self.module.world.package_declaring_units.write_guard(),
+                )
+                .entry(parent.as_str().to_owned())
+                .or_insert(unit);
             }
             if !self.env().contains_key_sym(parent) {
                 self.env_mut().insert_sym(parent, Value::package(parent));

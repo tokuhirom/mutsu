@@ -64,9 +64,11 @@ impl Interpreter {
         }
         let pad = Self::lexical_pad_value(pad);
         // A unit still loading may yet add to its `EXPORT` package or Pod.
-        if self.module.world.loaded_modules.write_guard().contains(name) {
+        if self.module.world.loaded_modules.read().contains(name) {
             self.module
-                .world.loaded_unit_pads.read()
+                .world
+                .loaded_unit_pads
+                .write_guard()
                 .insert(name.to_string(), pad.clone());
         }
         pad

@@ -1139,7 +1139,6 @@ impl Interpreter {
                     } else {
                         self.module_scope_lexical_for_owner(owner, &term)
                             .or_else(|| self.module_scope_lexical_for_owner(owner, &current))
-                            .cloned()
                     }
                 });
             let Some(value) = value else {

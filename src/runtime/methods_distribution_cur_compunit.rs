@@ -210,7 +210,9 @@ impl Interpreter {
 
     pub(crate) fn cur_repo_loaded_push(&mut self, prefix: &str, compunit: Value) {
         self.module
-            .world.cur_repo.read()
+            .world
+            .cur_repo
+            .write_guard()
             .loaded
             .entry(prefix.to_string())
             .or_default()

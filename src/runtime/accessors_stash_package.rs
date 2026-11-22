@@ -115,16 +115,19 @@ impl Interpreter {
 
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {
             let mut symbols: ValueMap = ValueMap::default();
-            if let Some(subs) = self
-                .module
-                .world.exported_subs.read()
-                .get(module)
-                // A package-less compunit's exports are recorded under GLOBAL;
-                // the module the load attributed them to still names them
-                // (`CompUnit::Handle.export-package`, #15371).
+            // A package-less compunit's exports are recorded under GLOBAL;
+            // the module the load attributed them to still names them
+            // (`CompUnit::Handle.export-package`, #15371). Cloned out of the
+            // world tables so no guard is held across the loop's calls.
+            let subs = {
+                let exported_subs_r = self.module.world.exported_subs.read();
                 let module_owned_exports_r = self.module.world.module_owned_exports.read();
-                .or_else(|| module_owned_exports_r.get(module))
-            {
+                exported_subs_r
+                    .get(module)
+                    .or_else(|| module_owned_exports_r.get(module))
+                    .cloned()
+            };
+            if let Some(subs) = subs.as_ref() {
                 for (name, tags) in subs {
                     if tag != "ALL" && !tags.contains(tag) {
                         continue;
@@ -172,14 +175,14 @@ impl Interpreter {
 
         if let Some(module) = Self::package_export_module(&package_name) {
             let mut tags = std::collections::BTreeSet::new();
-            if let Some(subs) = self
-                .module
-                .world.exported_subs.read()
+            // A package-less compunit's exports are recorded under GLOBAL;
+            // the module the load attributed them to still names them
+            // (`CompUnit::Handle.export-package`, #15371).
+            let exported_subs_r = self.module.world.exported_subs.read();
+            let module_owned_exports_r = self.module.world.module_owned_exports.read();
+            if let Some(subs) = exported_subs_r
                 .get(module)
-                // A package-less compunit's exports are recorded under GLOBAL;
-                // the module the load attributed them to still names them
-                // (`CompUnit::Handle.export-package`, #15371).
-                .or_else(|| self.module.world.module_owned_exports.read().get(module))
+                .or_else(|| module_owned_exports_r.get(module))
             {
                 for tagset in subs.values() {
                     tags.extend(tagset.iter().cloned());

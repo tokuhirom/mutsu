@@ -160,12 +160,15 @@ impl CompileTimeLoader for Interpreter {
         // The `EXPORTHOW` declarators the load recorded for the module, a
         // BEGIN-time merge included (#17557), each with what its HOW object
         // builds (slice 3).
-        let declarators = self
+        let recorded = self
             .module
-            .world.exporthow_declares.read()
+            .world
+            .exporthow_declares
+            .read()
             .get(bare)
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let declarators = recorded
             .into_iter()
             .map(|(directive, keyword)| {
                 let is_role = directive == "DECLARE"

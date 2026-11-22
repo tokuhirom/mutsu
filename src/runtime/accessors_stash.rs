@@ -901,7 +901,7 @@ impl Interpreter {
         // A module's top-level enum value under a package-qualified name lives
         // off the frame env (ADR-0084 §2 group 2).
         if let Some(value) = self.toplevel_package_symbol(name) {
-            return value.clone();
+            return value;
         }
         // Fallback: check persistent `our`-scoped variables (constants, `our` decls)
         // which may have been removed from the lexical env by block-scope restoration.

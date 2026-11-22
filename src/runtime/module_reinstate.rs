@@ -66,7 +66,7 @@ impl Interpreter {
         if self.module.world.module_registered_functions.read().is_empty() {
             return;
         }
-        let tracked = &self.module.world.module_registered_functions.read();
+        let tracked = &std::sync::Arc::clone(&*self.module.world.module_registered_functions.read());
         if self
             .routines()
             .module_functions_present

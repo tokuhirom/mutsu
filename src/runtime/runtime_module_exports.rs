@@ -817,13 +817,13 @@ impl Interpreter {
                 .and_then(|e| e.get(name))
                 .cloned();
             let our_value = self.our_table().get(qualified.as_str()).cloned();
+            let module_scope_lexicals_r = self.module.world.module_scope_lexicals.read();
             return qualified_binding
                 .filter(|v| !is_type_self_binding(v))
                 .or(package_lexical.as_ref())
                 .or(our_value.as_ref())
                 .or_else(|| {
-                    self.module
-                        .world.module_scope_lexicals.read()
+                    module_scope_lexicals_r
                         .get(module)
                         .and_then(|e| e.get(name))
                 })
@@ -852,7 +852,6 @@ impl Interpreter {
                     return None;
                 }
                 self.toplevel_package_symbol(&qualified)
-                    .cloned()
                     .or_else(|| {
                         self.has_type_or_package_kind(&qualified)
                             .then(|| Value::package(crate::symbol::Symbol::intern(&qualified)))
@@ -863,18 +862,20 @@ impl Interpreter {
             // the declared package, even though its export metadata is also
             // mirrored under the requested path.
             .or_else(|| {
-                let declared = self
+                let declared = *self
                     .module
-                    .world.module_declared_unit_packages.read()
+                    .world
+                    .module_declared_unit_packages
+                    .read()
                     .get(&crate::symbol::Symbol::intern(module))?;
                 let key =
-                    crate::qualified::qualified(*declared, crate::symbol::Symbol::intern(name));
+                    crate::qualified::qualified(declared, crate::symbol::Symbol::intern(name));
                 // An exported enum value lives in the package-symbol table
                 // under the declared package, not in the env.
                 self.env
                     .get_sym(key)
-                    .or_else(|| self.toplevel_package_symbol(key.as_str()))
                     .cloned()
+                    .or_else(|| self.toplevel_package_symbol(key.as_str()))
                     .or_else(|| {
                         self.has_type_or_package_kind(key.as_str())
                             .then(|| Value::package(key))
@@ -1536,13 +1537,15 @@ impl Interpreter {
             // If this exported sub carried a trait-modified value (e.g. a role
             // mixed in via a custom `is` trait), restore it as the `&name` env
             // binding so `&name ~~ Role` works after import.
-            if let Some(val) = self
+            let exported_value = self
                 .module
-                .world.exported_sub_values.read()
+                .world
+                .exported_sub_values
+                .read()
                 .get(module)
                 .and_then(|m| m.get(&name))
-                .cloned()
-            {
+                .cloned();
+            if let Some(val) = exported_value {
                 let bare_key = format!("&{name}");
                 let qualified_key = format!("&{current_pkg}::{name}");
                 self.import_env_insert(&bare_key, val.clone());

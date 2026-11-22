@@ -217,12 +217,14 @@ impl Interpreter {
             return;
         }
         let module_sym = Symbol::intern(module);
-        let mut module_visibility_w = self.module.world.module_visibility.write_guard();
-        let table = crate::runtime::cow_table_mut(
-            &mut module_visibility_w.module_routine_providers,
-        );
-        for name in names {
-            table.entry(name).or_insert(module_sym);
+        {
+            let mut module_visibility_w = self.module.world.module_visibility.write_guard();
+            let table = crate::runtime::cow_table_mut(
+                &mut module_visibility_w.module_routine_providers,
+            );
+            for name in names {
+                table.entry(name).or_insert(module_sym);
+            }
         }
         self.invalidate_fn_resolution();
     }

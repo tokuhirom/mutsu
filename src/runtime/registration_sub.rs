@@ -1966,12 +1966,13 @@ impl Interpreter {
             && !self.module.suppress_exports
             && self.current_package_is_global_name()
             && let Some(owner) = self.module.module_load_stack.last()
-            && let Some(tags) = self
-                .module
-                .world.module_owned_exports.read()
-                .get(owner)
-                .and_then(|exports| exports.get(name))
-                .cloned()
+            && let Some(tags) = {
+                let module_owned_exports_r = self.module.world.module_owned_exports.read();
+                module_owned_exports_r
+                    .get(owner)
+                    .and_then(|exports| exports.get(name))
+                    .cloned()
+            }
         {
             let tags: Vec<String> = tags.into_iter().collect();
             self.register_exported_multi_candidates(

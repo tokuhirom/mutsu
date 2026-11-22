@@ -256,10 +256,10 @@ impl Interpreter {
         // `sub EXPORT` (the `Exportable` idiom) -- and its `EXPORT::<tag>`
         // mirror keys survive the restore. Only the loading module's own
         // exports: a module `require`d inside a block is still lexical to it.
+        let module_owned_exports_r = self.module.world.module_owned_exports.read();
         let owned_exports = if is_eval {
             None
         } else {
-            let module_owned_exports_r = self.module.world.module_owned_exports.read();
             self.module
                 .module_load_stack
                 .last()
@@ -277,6 +277,7 @@ impl Interpreter {
                     .collect()
             }
         };
+        drop(module_owned_exports_r);
         let module_protos = self.module_protos_missing_from(&proto_functions);
         let mut guard = self.routines_mut();
         let registry = guard.deref_mut_tables();

@@ -2175,10 +2175,13 @@ impl Interpreter {
                                 captured_unit.or_else(|| {
                                     declaring_package
                                         .and_then(|p| {
-                                            let class_declaring_units_r = self.module.world.class_declaring_units.read();
-                                            class_declaring_units_r.get(p.as_str())
+                                            self.module
+                                                .world
+                                                .class_declaring_units
+                                                .read()
+                                                .get(p.as_str())
+                                                .copied()
                                         })
-                                        .copied()
                                 }),
                             );
                             self.end_scoped_fixtures(fixtures_mark);

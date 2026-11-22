@@ -330,11 +330,15 @@ impl Interpreter {
                 .last()
                 .and_then(|module| module_owned_exports_r.get(module))
                 .and_then(|exports| exports.get(name))
+                .cloned()
         } else {
             self.module
-                .world.exported_subs.read()
+                .world
+                .exported_subs
+                .read()
                 .get(&package)
                 .and_then(|exports| exports.get(name))
+                .cloned()
         };
         let tags: Option<Vec<String>> = match recorded {
             Some(recorded) => {

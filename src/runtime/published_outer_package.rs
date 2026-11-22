@@ -40,9 +40,9 @@ impl Interpreter {
             return;
         }
         {
-            let mut published_outer_packages_w = self.module.world.published_outer_packages.write_guard();
-            let table =
-                crate::runtime::cow_table_mut(&mut published_outer_packages_w);
+            let mut published_outer_packages_w =
+                self.module.world.published_outer_packages.write_guard();
+            let table = crate::runtime::cow_table_mut(&mut published_outer_packages_w);
             let list = table.entry(module.clone().unwrap_or_default()).or_default();
             if !list.contains(&entry) {
                 list.push(entry.clone());
@@ -86,7 +86,8 @@ impl Interpreter {
     pub(crate) fn is_published_outer_package(&self, short: &str, target: &str) -> bool {
         self.module
             .world
-            .published_outer_packages.read()
+            .published_outer_packages
+            .read()
             .values()
             .any(|list| list.iter().any(|(s, t)| s == short && t == target))
     }
@@ -98,7 +99,8 @@ impl Interpreter {
         let Some(list) = self
             .module
             .world
-            .published_outer_packages.read()
+            .published_outer_packages
+            .read()
             .get(module)
             .cloned()
         else {
