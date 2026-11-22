@@ -200,14 +200,14 @@ impl Interpreter {
         }));
         // A loaded module's package is global, whatever frame the `EVAL` runs
         // in (`require Test; ... eval-lives-ok 'Test'` from inside `Test`).
-        names.extend(self.module.loaded_modules.iter().cloned());
+        names.extend(self.module.world.loaded_modules.iter().cloned());
         // Generated EXPORT stashes are visible namespace objects without being
         // user package declarations. Preserve their classification in EVAL.
         names.extend(
-            self.module.package_export_namespaces.iter().map(|name| name.resolve()),
+            self.module.world.package_export_namespaces.iter().map(|name| name.resolve()),
         );
         let unit = self.executing_unit_sym_for_module_load();
-        names.extend(self.module.unit_export_namespaces.iter().filter_map(|(owner, name)| {
+        names.extend(self.module.world.unit_export_namespaces.iter().filter_map(|(owner, name)| {
             if self.unit_chain_contains_unit(unit, *owner)
                 || self.unit_chain_contains_unit(self.current_unit, *owner)
             {

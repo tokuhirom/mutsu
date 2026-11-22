@@ -781,7 +781,12 @@ impl Interpreter {
             });
             let active_package_term = composed_role_term.or_else(|| {
                 frame_package
-                    .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))
+                    .and_then(|package| {
+                        self.module
+                            .world
+                            .module_scope_lexicals
+                            .get(package.as_str())
+                    })
                     .and_then(|lexicals| {
                         lexicals
                             .get(term_key.as_str())
