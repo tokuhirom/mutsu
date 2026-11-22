@@ -23,44 +23,12 @@ impl Interpreter {
             let ValueView::Sub(sub_data) = method_value.view() else {
                 return Ok(Value::NIL);
             };
-            let captured_env = if sub_data.env.is_empty() {
-                None
-            } else {
-                let mut env = sub_data.env.clone();
-                env.insert("__mutsu_declared_method_capture".to_string(), Value::int(2));
-                crate::term_names::bind_lexical_types_by_bare_name(&mut env);
-                Some(env)
-            };
-            let def = MethodDef {
-                value_prototype: None,
-                syms: Default::default(),
-                lexical_package: sub_data.package,
-                params: (sub_data.params.to_vec()).into(),
-                param_defs: (sub_data.param_defs.to_vec()).into(),
-                body: sub_data.body.clone(),
-                is_rw: sub_data.is_rw,
-                is_raw: sub_data.is_raw,
-                is_private: false,
-                is_multi: true,
-                is_my: false,
-                role_origin: None,
-                original_role: None,
-                return_type: None,
-                compiled_code: sub_data.compiled_code.clone(),
-                compiled_fns: None,
-                delegation: None,
-                is_default: false,
-                deprecated_message: None,
-                is_submethod: false,
-                is_hidden_from_backtrace: false,
-                captured_env,
-                source_file: sub_data.source_file.clone(),
-                role_param_bindings: None,
-                nested_capture_index: None,
-                captured_readonly: None,
-                routine_cell: Default::default(),
-                augment_epoch: 0,
-            };
+            // The same definition `^add_method` builds (the implicit invocant
+            // dropped, a declared `my method`'s bytecode taken from its
+            // routine), marked as a multi candidate: building it here by hand
+            // kept the invocant and an empty body, so the candidate answered
+            // Nil when called (#18797).
+            let def = self.method_def_from_code(&sub_data, false, true);
             // `^add_multi_method` must still *error* for an unregistered
             // class -- existence keys off `classes.contains_key`, not the
             // method table (ADR-0019 F4c design note (0)(iii)).
