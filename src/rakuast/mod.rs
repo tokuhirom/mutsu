@@ -181,6 +181,7 @@ mod finalize;
 pub(crate) mod fresh_copy;
 mod heredoc_body_origins;
 mod hyper_infix_origins;
+mod nested_words;
 mod hyper_subscript_origins;
 pub(crate) mod implicit_signature;
 mod indirect_name_origins;
