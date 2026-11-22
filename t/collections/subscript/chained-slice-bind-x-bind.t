@@ -6,7 +6,7 @@ use Test;
 # a slice at an inner level, throws X::Bind ("Cannot use bind operator with
 # this left-hand side"), as a statement and inside parentheses.
 
-plan 14;
+plan 16;
 
 # Refused.
 {
@@ -43,7 +43,8 @@ plan 14;
     my %h = a => { x => 1 };
     %h<a><x y> := (7, 8);
     is-deeply %h<a>, { x => 7, y => 8 }, 'an associative slice into a Hash element';
-    my @t = [[1, 2],];
+    my @t;
+    @t[0][0] = [1, 2];
     @t[0][0][0,1] := (5, 6);
     is @t.raku, '[[[5, 6],],]', 'three levels';
     @t[0][0][0] := 9;
