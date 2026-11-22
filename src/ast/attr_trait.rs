@@ -33,4 +33,7 @@ pub(crate) enum AttrTrait {
     Custom,
     /// The next `handles` clause, an entry of `handles_terms`.
     Handles,
+    /// `of TYPE`, the attribute's `type_constraint` written after its name
+    /// (`has @.a of Int`), which RakuAST keeps a `Trait::Of`.
+    Of,
 }

@@ -99,14 +99,37 @@ pub(super) fn push_of(
     of_type: Option<&str>,
 ) -> Result<(), RuntimeError> {
     if let Some(of_type) = of_type {
-        let of = RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitOf,
-            fields: vec![node_field(None, type_node(names, of_type)?)],
-        };
-        traits.insert(0, Value::rakuast(Box::new(of)));
+        traits.insert(0, of_trait(names, of_type)?);
     }
     Ok(())
+}
+
+/// `of TYPE`: a `Trait::Of` over the type.
+// Cost: O(|of_type|).
+pub(super) fn of_trait(names: &NameScope, of_type: &str) -> Result<Value, RuntimeError> {
+    Ok(Value::rakuast(Box::new(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::TraitOf,
+        fields: vec![node_field(None, type_node(names, of_type)?)],
+    })))
+}
+
+/// An attribute's `is NAME`, which is a container type (`Trait::Is(type =>
+/// Type::Simple)`) when `NAME` names one at parse time.
+// Cost: O(|name|).
+pub(super) fn trait_is_name_or_type(
+    names: &NameScope,
+    name: &str,
+    trait_is: impl FnOnce(&str) -> Value,
+) -> Value {
+    if is_container_type(names, name) {
+        return Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::TraitIs,
+            fields: vec![node_field(Some("type"), super::bareword::simple_type_node(name))],
+        }));
+    }
+    trait_is(name)
 }
 
 /// The `traits` items for a declaration's rendered custom traits, in source

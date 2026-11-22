@@ -71,6 +71,15 @@ pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
             });
         }
         super::infix_origins::with_child(node, "body", |regex| {
+            // `proto token a {*}`: Rakudo's `OnlyStar` is empty, at the `}`.
+            if regex.class == super::RakuAstClass::OnlyStar {
+                let star = super::unit_source::with_text(body, |t| (t.trim() == "*").then_some(()));
+                if star.is_some() && regex.origin.0.is_none() {
+                    let at = body.to as usize;
+                    super::origin::set_span(regex, SrcSpan::new(at, at));
+                }
+                return;
+            }
             super::regex_origins::walk_body(names, regex, body)
         });
     }

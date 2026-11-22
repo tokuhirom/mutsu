@@ -76,7 +76,12 @@ pub(super) fn view_node(
             "attribute with a `handles` spelling not kept as a term",
         ));
     }
-    let type_name = smiley_type.as_deref().or(type_constraint.as_deref());
+    // `has @.a of Int`: the type is the `Trait::Of`, not the declaration's.
+    let of_type = trait_order.contains(&crate::ast::attr_trait::AttrTrait::Of).then(|| type_constraint.clone());
+    let type_name = match of_type {
+        Some(_) => None,
+        None => smiley_type.as_deref().or(type_constraint.as_deref()),
+    };
     let twigil = match (*is_alias, *is_public) {
         (true, _) => None,
         (false, true) => Some("."),
@@ -138,6 +143,7 @@ pub(super) fn view_node(
             unknown_traits: unknown_traits.clone(),
             handles_terms: handles_terms.clone(),
             handles: handles.clone(),
+            of_type: of_type.flatten(),
         },
     )?;
     if let Some(constraint) = where_constraint {
@@ -233,7 +239,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     };
     let type_name = match node.fields.iter().find(|f| f.name == Some("type")) {
         Some(f) => Some(simple_type_name(names, node, child_node(&f.value)?)?),
-        None => None,
+        None => traits.of_type.clone(),
     };
     // `Int:D` comes back as the parser's base type plus its smiley.
     let (type_constraint, type_smiley) = match type_name.as_deref() {
