@@ -6,11 +6,13 @@
 //!   `chars`, `chomp`, `flip`, `lc`, `tc`, `tclc`, `uc` and `wordcase` take no
 //!   positional argument (`Nil:`), the others any (`Nil: |`);
 //! - the coercions `Int(|)`, `Numeric()` and `Str()`, which warn about the
-//!   numeric or string context and answer `0` or `""`;
+//!   numeric or string context and answer `0` or `""`, and `chrs`, which warns
+//!   about the numeric context and answers `"\0"`;
 //! - the subscript protocol's writers: `STORE` throws `X::Assignment::RO`,
 //!   `BIND-POS`/`BIND-KEY` answer an `X::Bind` `Failure`, and
 //!   `ASSIGN-POS`/`ASSIGN-KEY` die with `Use of Nil.<name> not allowed`;
-//! - `new(*@)`, which answers `Nil`;
+//! - `iterator`, the iterator of the one `Nil`, and `new(*@)`, which answers
+//!   `Nil`;
 //! - the six QuantHash coercions, `Set.new(Nil)` and its siblings.
 //!
 //! Each row is reached through its owner only (`Nil` has no shape): the VM's
@@ -21,8 +23,8 @@
 //!
 //! Not here: `push`/`append`/`unshift`/`prepend` (mutsu reads an undefined
 //! element as `Nil` and autovivifies it through `Any`'s growing rows; a literal
-//! `Nil.push` is refused at compile time), `iterator`, `gist`, `raku`, `sink`
-//! and `FALLBACK` (answered by their own entries).
+//! `Nil.push` is refused at compile time), `gist`, `raku`, `sink` and
+//! `FALLBACK` (answered by their own entries).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -131,6 +133,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     // The coercions.
     nil!("Int", CAPTURE, numeric_zero),
     nil!("Numeric", BARE, numeric_zero),
+    // `multi method chrs(Nil:)`: the codepoints of the one numified `Nil`.
+    nil!("chrs", BARE, chrs),
     nil!("Str", BARE, string_empty),
     // The subscript protocol's writers.
     nil!("STORE", CAPTURE, store),
@@ -138,6 +142,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     nil!("BIND-KEY", CAPTURE, bind_key),
     dies!("ASSIGN-POS"),
     dies!("ASSIGN-KEY"),
+    // `multi method iterator(Nil:) { Rakudo::Iterator.OneValue(Nil) }`.
+    nil!("iterator", BARE, iterator),
     // `multi method new(Nil: *@ --> Nil) { }`.
     nil!("new", CAPTURE, new),
     // `multi method Set(Nil:) { Set.new(Nil) }` and kin.
@@ -170,6 +176,15 @@ fn empty_string(interp: &mut Interpreter, target: &Value, name: &str) -> Answer 
 fn numeric_zero(interp: &mut Interpreter, target: &Value, _: &[Value], _: Named<'_>) -> Answer {
     is_nil(target)
         .then(|| interp.raise_resumable_warning("Use of Nil in numeric context", Value::int(0)))
+}
+
+/// `chrs`: `warn "Use of Nil in numeric context"`, then the character of
+/// codepoint `0`.
+// Cost: O(1) plus the warning's handlers.
+fn chrs(interp: &mut Interpreter, target: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    is_nil(target).then(|| {
+        interp.raise_resumable_warning("Use of Nil in numeric context", Value::str_from("\0"))
+    })
 }
 
 /// `Str`: `warn "Use of Nil in string context"`, then `""`.
@@ -229,6 +244,20 @@ fn not_allowed(target: &Value, args: &[Value], name: &str) -> Answer {
     Some(Err(RuntimeError::new(format!(
         "Use of Nil.{name} not allowed"
     ))))
+}
+
+/// `iterator`: the iterator that yields the one `Nil`.
+// Cost: O(1).
+fn iterator(interp: &mut Interpreter, target: &Value, _: &[Value], named: Named<'_>) -> Answer {
+    if !is_nil(target) {
+        return None;
+    }
+    crate::builtins::method_table::io_concurrency::class_methods::rakudo_iterator_one_value(
+        interp,
+        target,
+        &[Value::NIL],
+        named,
+    )
 }
 
 /// `new(*@)`: `Nil`, whatever the arguments.
