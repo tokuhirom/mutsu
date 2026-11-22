@@ -368,9 +368,13 @@ impl Interpreter {
             // twin at the nqp level; the ops below take their argument through
             // it, so a `$`-variable argument does not arrive as a Scalar.
             // Cost: O(1).
+            // An aliasing element cell (`%h.values[0]`, a `.pairs` value)
+            // is a container too: the result is the object it holds, so
+            // `nqp::decont(.value) =:= SENTINEL` compares objects (#18812).
             "decont" => Ok(crate::runtime::types::unwrap_varref_value(
                 args.first().cloned().unwrap_or(Value::NIL),
-            )),
+            )
+            .deref_container()),
             // nqp::ifnull($a, $b): `$a` unless it is the native null sentinel,
             // else `$b`. mutsu has no separate native-null representation from
             // `Nil`, so a Nil/absent `$a` is treated as null -- the same
