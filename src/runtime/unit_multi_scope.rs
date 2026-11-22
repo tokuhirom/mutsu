@@ -158,7 +158,8 @@ impl Interpreter {
             }
         }
         if !(added.functions.is_empty() && added.protos.is_empty()) {
-            self.invalidate_fn_resolution();
+            let changed = added.functions.iter().chain(&added.protos).copied();
+            self.invalidate_fn_resolution_changing_keys(changed.collect::<Vec<_>>());
         }
         added
     }
@@ -177,7 +178,8 @@ impl Interpreter {
         }
         let gone: HashSet<&String> = added.proto_subs.iter().collect();
         self.routines_mut().proto_subs_retain(|key| !gone.contains(key));
-        self.invalidate_fn_resolution();
+        let changed = added.functions.iter().chain(&added.protos).copied();
+        self.invalidate_fn_resolution_changing_keys(changed.collect::<Vec<_>>());
     }
 
     /// Scope the package-less `multi`/`proto` families the compunit at
@@ -304,6 +306,9 @@ impl Interpreter {
         if names.is_empty() {
             return;
         }
+        // Scoping changes who sees these families, not which registry keys
+        // exist: only their base names' index entries and memos go (#12026).
+        let scoped: Vec<Symbol> = names.iter().copied().collect();
         let table = crate::runtime::cow_table_mut(&mut self.module.operator_import_units);
         for name in names {
             let families = table.entry(name).or_default();
@@ -322,7 +327,7 @@ impl Interpreter {
             }
         }
         self.module.operator_import_gen += 1;
-        self.invalidate_fn_resolution();
+        self.invalidate_fn_resolution_changing_keys(scoped);
     }
 
     /// The candidates of the scoped family `name` that compunit `unit`
@@ -564,6 +569,6 @@ impl Interpreter {
             .entry(main)
             .or_default();
         self.module.operator_import_gen += 1;
-        self.invalidate_fn_resolution();
+        self.invalidate_fn_resolution_changing_keys([name_sym]);
     }
 }
