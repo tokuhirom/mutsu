@@ -3,6 +3,21 @@ use super::*;
 use crate::runtime::utils::{has_bracket, split_once_bracket};
 
 impl Interpreter {
+    /// Whether `type_name` names a registered class whose MRO does not reach
+    /// the core `Any` (`class M is Mu`): its type object is then no `Any`,
+    /// although `type_matches` answers `Any` for every type name (#18804).
+    /// `false` when the program declares its own `Any`.
+    // Cost: O(1) expected for a name that is not a registered class; else
+    // O(d), d = MRO length (the MRO is cached per class).
+    pub(crate) fn class_type_object_outside_any(&self, type_name: &str) -> bool {
+        if self.types.user_declared_classes.contains("Any")
+            || !self.registry().classes.contains_key(type_name)
+        {
+            return false;
+        }
+        !self.class_mro(type_name).iter().any(|c| c == "Any")
+    }
+
     /// A sized Blob/Buf constraint checks the buffer's type, never its contents.
     /// Plain `Buf` has the `Blob[uint8]` role but not the `Buf[uint8]` role.
     // Cost: O(n), n = class and type-argument name lengths.
