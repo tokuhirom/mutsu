@@ -148,6 +148,30 @@ fn assigned_value(sigil: char, input: &str) -> PResult<'_, Expr> {
     }
 }
 
+/// `temp 5`, `let &f`, `temp &f.wrap({ ... })`: a prefix over an operand that
+/// is not a container. The prefix binds as tightly as a symbolic unary one, so
+/// its operand is a power-level term; whatever the statement goes on with
+/// (`= 5`, `+ 1`) is parsed but never runs, since the prefix throws first.
+// Cost: O(n), n = length of the statement.
+fn no_container_stmt(input: &str, is_temp: bool) -> PResult<'_, Stmt> {
+    let (_, operand) = crate::parser::expr::precedence::power_operand(input)?;
+    let (rest, _) = expression(input)?;
+    // `temp 5 = 3`: the expression parser leaves an assignment to a literal
+    // to the statement; its value is read past and never assigned.
+    let (after, _) = ws(rest)?;
+    let rest = match after.strip_prefix('=') {
+        Some(value) if !value.starts_with(['=', '>']) => {
+            let (value, _) = ws(value)?;
+            expression(value)?.0
+        }
+        _ => rest,
+    };
+    parse_statement_modifier(
+        rest,
+        temporize(is_temp, Target::NoContainer(operand), Assigned::No)?,
+    )
+}
+
 /// Parse `let` statement: `let $var = expr`, `let $var`, `let @arr[idx] = expr`.
 pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("let", input).ok_or_else(|| PError::expected("let statement"))?;
@@ -165,7 +189,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
         .next()
         .ok_or_else(|| PError::expected("variable after let"))?;
     if sigil != '$' && sigil != '@' && sigil != '%' {
-        return Err(PError::expected("variable after let"));
+        return no_container_stmt(rest, false);
     }
     let var_start = rest;
     let rest_after_sigil = &rest[1..];
@@ -392,7 +416,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         .next()
         .ok_or_else(|| PError::expected("variable after temp"))?;
     if sigil != '$' && sigil != '@' && sigil != '%' {
-        return Err(PError::expected("variable after temp"));
+        return no_container_stmt(rest, true);
     }
     let var_start = rest;
     let after_sigil = &rest[1..];
