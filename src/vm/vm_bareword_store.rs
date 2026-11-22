@@ -142,8 +142,8 @@ impl Interpreter {
             // stores under the bare `red`, which an enum key `red` of
             // the package must not make immutable (#14019).
             if name_str.starts_with('\\')
-                && let Some(ValueView::Enum { enum_type, key, .. }) =
-                    self.enum_bare_value(name).map(Value::view)
+                && let Some(enum_val) = self.enum_bare_value(name)
+                && let ValueView::Enum { enum_type, key, .. } = enum_val.view()
                 && name == key.resolve()
             {
                 return Err(RuntimeError::assignment_ro_typename(

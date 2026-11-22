@@ -628,7 +628,7 @@ impl Interpreter {
     // Cost: O(1) expected, two lookups.
     pub(super) fn imported_term(&self, name: &str) -> Option<Value> {
         self.term_binding(name)
-            .or_else(|| self.enum_bare_value(name).cloned())
+            .or_else(|| self.enum_bare_value(name))
             .or_else(|| {
                 self.env()
                     .get(name)

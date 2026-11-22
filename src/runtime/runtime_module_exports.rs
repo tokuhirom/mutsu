@@ -724,7 +724,7 @@ impl Interpreter {
     /// unit package's, or the `GLOBAL` one.
     // Cost: O(1): three hashed lookups.
     fn module_toplevel_enum_key(&self, module: &str, name: &str) -> Option<Value> {
-        let table = &self.module.module_toplevel.enum_keys;
+        let table = self.module.module_toplevel.enum_keys.read();
         let declared = self
             .module
             .module_declared_unit_packages
@@ -875,7 +875,7 @@ impl Interpreter {
                             .then(|| Value::package(key))
                     })
             })
-            .or_else(|| self.enum_bare_value(name).cloned())
+            .or_else(|| self.enum_bare_value(name))
             .or_else(|| self.module_toplevel_enum_key(module, name))
             // A qualified package exported as itself (`unit module A::B::C is
             // export`) is registered under its full name, not under `module::`.
