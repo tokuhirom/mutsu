@@ -66,6 +66,7 @@ pub(in crate::runtime) use supply_derive_buffer::batch_stage_params;
 // re-exported `pub(crate)` below for the VM-side react/supply drive loop
 // (`crate::vm::vm_react_loop`): the supplier registry accessors it polls.
 pub(in crate::runtime) use state::{
+    supplier_mark_block_terminated,
     UdpBoundSocketState, discard_supply_channel, get_supply_collected_output, get_supply_enc,
     get_tcp_stream, register_tcp_stream, remove_tcp_stream,
     get_supply_done_taps, get_supply_quit_taps, get_supply_taps, is_supply_live_tapped,
@@ -100,7 +101,7 @@ pub(in crate::runtime) use state_supplier::{
     flush_supplier_words_taps, get_classify_state, get_classify_sub_supplier_ids,
     get_direct_transform_output_supplier_ids, get_start_output_supplier_ids,
     get_supplier_zip_latest_state_ids, get_supplier_zip_state_ids,
-    get_transform_output_supplier_ids, last_supplier_tap_id, migrate_switch_inner,
+    get_transform_output_supplier_ids, last_supplier_tap_id, migrate_current_inner, migrate_switch_inner,
     register_supplier_batch_tap, register_supplier_channel_tap, register_supplier_classify_tap,
     register_supplier_close_callback, register_supplier_done_callback,
     register_supplier_elems_transform_tap, register_supplier_flat_tap,

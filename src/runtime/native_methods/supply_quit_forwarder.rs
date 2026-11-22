@@ -94,6 +94,11 @@ impl Interpreter {
         if already_done || already_quit.is_some() {
             return Ok(());
         }
+        // `Supplier.quit` resets the emitter after delivering, so the status
+        // above does not see an earlier quit; the block's own flag does.
+        if !super::state::supplier_mark_block_terminated(sid as u64) {
+            return Ok(());
+        }
         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
             let mut a = HashMap::new();
             a.insert("done".to_string(), Value::FALSE);
@@ -108,6 +113,24 @@ impl Interpreter {
             self.call_method_with_values(emitter, "quit", vec![reason])?;
         }
         Ok(())
+    }
+
+    /// Deliver the quit of the supply block whose emitter is
+    /// `emitter_supplier_id` (when it has one) to its tap's `quit` handler,
+    /// unless the block already terminated: a block quits exactly once, and
+    /// the first of its `whenever`s to fail -- a source that quits, a source
+    /// whose tap fails, the body dying -- is the one rakudo reports.
+    // Cost: O(1) plus the handler.
+    pub(in crate::runtime) fn call_block_quit_handler(
+        &mut self,
+        emitter_supplier_id: Option<u64>,
+        handler: Value,
+        reason: Value,
+    ) -> Result<(), RuntimeError> {
+        if emitter_supplier_id.is_some_and(|sid| !super::state::supplier_mark_block_terminated(sid)) {
+            return Ok(());
+        }
+        self.call_supply_quit_handler(handler, reason)
     }
 
     /// A one-param synthesized callable whose body is a single `MethodCall` on
