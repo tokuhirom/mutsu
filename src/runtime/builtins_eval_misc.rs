@@ -651,18 +651,26 @@ impl Interpreter {
         // A diagnosis whose exception is not built yet (a typed
         // `X::Syntax::Confused: ...` message) carries the name on the error,
         // and the exception built from it later reports it.
+        //
+        // rakudo compiles the unit under its name joined onto `$*CWD`
+        // (`/home/me/EVAL_0`, while `$?FILE` stays `EVAL_0`), and an uncaught
+        // compile error renders under that name with a snippet of the EVAL'd
+        // source, not of the program that called EVAL.
         if let Err(ref mut e) = result
             && e.code().is_some_and(|c| c.is_parse())
         {
+            let compile_name = self.absolutify_unit_name(&unit_name);
             match e.exception.as_ref().map(|exc| exc.view()) {
                 Some(ValueView::Instance { attributes, .. }) => {
                     attributes
-                        .insert_if_absent("filename".to_string(), Value::str(unit_name.clone()));
-                    attributes.insert_if_absent("file".to_string(), Value::str(unit_name));
+                        .insert_if_absent("filename".to_string(), Value::str(compile_name.clone()));
+                    attributes.insert_if_absent("file".to_string(), Value::str(compile_name.clone()));
                 }
                 Some(_) => {}
-                None if e.source_file().is_none() => e.set_source_file(unit_name),
                 None => {}
+            }
+            if e.source_file().is_none() {
+                e.set_source_file_text(compile_name, code.to_string());
             }
         }
         crate::parser::set_parser_source_file(saved_source_file);
