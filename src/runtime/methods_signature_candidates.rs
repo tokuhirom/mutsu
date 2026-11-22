@@ -430,15 +430,13 @@ impl Interpreter {
         // for.
         let is_primed = !data.assumed_positional.is_empty() || !data.assumed_named.is_empty();
         // A routine whose parameters carry code binds a capture for its
-        // signature's `ACCEPTS` (`SigInfo::binder`) in its own scope. A
-        // signature literal (an empty routine) belongs to its closure value,
-        // so it is not cached per declaration; a routine's signature is, and
-        // reads the scope of the closure it was last asked of (#18661).
+        // signature's `ACCEPTS` (`SigInfo::binder`) in its own scope. Its
+        // signature is still one object per declaration, as rakudo's is --
+        // a signature literal's (an empty routine's) too -- and reads the
+        // scope of the closure it was last asked of (#18661, #18728).
         let binds_for_accepts =
             !is_primed && crate::value::signature::params_carry_code(&data.param_defs);
-        let is_literal = data.body.is_empty() && data.compiled_routine.is_none();
-        let cache_key = (!is_primed && !(binds_for_accepts && is_literal))
-            .then(|| Self::sub_signature_cache_key(data));
+        let cache_key = (!is_primed).then(|| Self::sub_signature_cache_key(data));
         if let Some(key) = &cache_key
             && let Some(cached) = cached_sub_signature(key)
         {
