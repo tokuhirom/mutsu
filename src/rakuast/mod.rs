@@ -180,6 +180,7 @@ mod dotty_infix_view;
 mod finalize;
 pub(crate) mod fresh_copy;
 mod heredoc_body_origins;
+mod function_infix;
 mod hyper_infix_origins;
 mod hyper_subscript_origins;
 pub(crate) mod implicit_signature;

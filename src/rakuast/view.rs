@@ -2528,6 +2528,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     &spelled.expr,
                 )
             }
+            Spelling::FunctionInfix => super::function_infix::view(names, &spelled.expr),
             Spelling::NegatedSetInfix(written) => {
                 let Some((left, _, right)) = negated_set_operands(&spelled.expr) else {
                     return Err(unsupported("negated set spelling without its relation"));
