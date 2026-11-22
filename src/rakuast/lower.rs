@@ -667,6 +667,13 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
                 None => lower_assign(names, node),
             }
         }
+        // `$::($p)::A::x := EXPR` / `::($p)::A := EXPR` -- a bind through a
+        // run-time name.
+        RakuAstClass::ApplyInfix
+            if infix_is_bind(node) && super::indirect_bind::is_target(node) =>
+        {
+            Ok(Stmt::Expr(super::indirect_bind::lower(names, node)?))
+        }
         // `@a[i] := EXPR` -- the parser's indexed-bind statement.
         RakuAstClass::ApplyInfix if infix_is_bind_to_subscript(node) => {
             Ok(Stmt::Expr(lower_index_bind(names, node)?))
@@ -5447,6 +5454,12 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                 expr: Box::new(expr),
                 is_bind: false,
             })
+        }
+        // `($::($p)::A::x := EXPR)` in expression position.
+        RakuAstClass::ApplyInfix
+            if infix_is_bind(node) && super::indirect_bind::is_target(node) =>
+        {
+            super::indirect_bind::lower(names, node)
         }
         // `(@a[i] := EXPR)` in expression position -> an indexed bind.
         RakuAstClass::ApplyInfix if infix_is_bind_to_subscript(node) => {

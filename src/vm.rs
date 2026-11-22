@@ -337,6 +337,7 @@ mod vm_map_grep_pull;
 mod vm_native_seq;
 pub(crate) use vm_map_grep_pull::callback_positionals;
 pub(crate) mod vm_begin_replay;
+pub(crate) mod vm_indirect_symbol_bind;
 mod vm_map_grep_pure;
 pub(crate) mod vm_meta_ops;
 pub(crate) mod vm_method_body_package;

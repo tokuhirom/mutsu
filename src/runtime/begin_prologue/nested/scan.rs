@@ -95,6 +95,7 @@ impl Scan {
                 op,
                 crate::opcode::OpCode::IndirectTypeLookup
                     | crate::opcode::OpCode::IndirectTypeLookupStore
+                    | crate::opcode::OpCode::IndirectSymbolBind(_)
             );
         }
         for nested in &code.closure_compiled_codes {

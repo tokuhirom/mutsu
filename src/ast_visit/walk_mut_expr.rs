@@ -325,7 +325,12 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             expr,
             value,
         }
-        | Expr::IndirectTypeLookupAssign { expr, value } => {
+        | Expr::IndirectTypeLookupAssign { expr, value }
+        | Expr::IndirectSymbolBind {
+            sigil: _,
+            expr,
+            value,
+        } => {
             v.visit_expr_mut(expr);
             v.visit_expr_mut(value);
         }

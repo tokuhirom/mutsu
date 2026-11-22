@@ -438,7 +438,12 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         crate::parser::index_bind_expr(target, index, is_positional, spelling, rhs),
                     ));
                 }
-                _ => {}
+                // `$::($p)::A::x := v`, `::($p)::A := v`: a run-time name.
+                target => {
+                    if let Ok(bind) = crate::rakuast::indirect_symbol_bind(target, rhs) {
+                        return Ok((r2, bind));
+                    }
+                }
             }
         }
     }

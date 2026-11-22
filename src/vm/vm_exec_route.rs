@@ -352,6 +352,7 @@ impl Interpreter {
             | OpCode::HyperMethodCallDynamic { .. }
             | OpCode::HyperOp { .. }
             | OpCode::IndirectCodeLookup(..)
+            | OpCode::IndirectSymbolBind(..)
             | OpCode::IndirectTypeLookup
             | OpCode::IndirectTypeLookupStore
             | OpCode::InfixFunc { .. }

@@ -436,6 +436,14 @@ impl Interpreter {
             self.stack.push(val);
             return;
         }
+        // `$::('OUR')::A::x` is `$OUR::A::x`: a name in the current package's
+        // own stash (`A::x` at file scope, `P::A::x` inside `package P`).
+        let name = match name.strip_prefix("OUR::") {
+            Some(rest) if !rest.is_empty() => {
+                Self::qualify_stash_name(&self.current_package(), rest)
+            }
+            _ => name,
+        };
         // `@::("R::bar")` where `R` is a lexical package bound to its storage
         // name (`R\0<id>`, #17477): the variable lives under that name.
         let name = if crate::qualified::is_qualified_str(&name)
@@ -609,6 +617,9 @@ impl Interpreter {
             "&" => format!("&{}", name),
             _ => name.to_string(),
         };
+        // `$::('OUR')::A::x = v` is `$OUR::A::x = v`: keyed in the current
+        // package, as the literal spelling stores it.
+        let store_name = self.our_pseudo_var_key(&store_name).unwrap_or(store_name);
         // A `$` symbolic-deref store is a scalar assignment: it stores the whole
         // value (a list is held itemized), NOT just its first element.
         // `$::('x') = 1, 2` is already parsed item-assignment (RHS is `1`), so a

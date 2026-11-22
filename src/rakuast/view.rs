@@ -1352,15 +1352,8 @@ pub(super) fn assignment_around(
 /// Unlike `=`, binding uses a plain `Infix`, not the special `Assignment` node.
 fn bind_infix(names: &NameScope, name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
-    Ok(RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::ApplyInfix,
-        fields: vec![
-            node_field(Some("left"), var_lexical(sigil, desigil)),
-            node_field(Some("infix"), plain_infix(":=")),
-            node_field(Some("right"), view_expr(names, rhs)?),
-        ],
-    })
+    let (left, right) = (var_lexical(sigil, desigil), view_expr(names, rhs)?);
+    Ok(super::indirect_bind::bind_node(left, right))
 }
 
 /// A yada-yada stub (`...`, `!!!`, `???`) -> `Stub::Fail` / `Die` / `Warn`,
@@ -2741,6 +2734,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         }
         // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
         Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::view_node(names, sigil, expr),
+        Expr::IndirectSymbolBind { .. } => super::indirect_bind::view(names, expr),
         Expr::IndirectCodeLookup {
             package,
             name,

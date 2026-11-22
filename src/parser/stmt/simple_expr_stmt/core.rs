@@ -14,7 +14,7 @@ use crate::symbol::Symbol;
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
-use crate::rakuast::callable_lvalue_assign_expr;
+use crate::rakuast::{callable_lvalue_assign_expr, indirect_symbol_bind};
 /// Parse an expression statement (fallback).
 pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
@@ -535,7 +535,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_bind: true,
             })
         } else {
-            Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)])
+            indirect_symbol_bind(expr, rhs).map_or_else(
+                |pair| Stmt::Block(vec![Stmt::Expr(pair.0), Stmt::Expr(pair.1)]),
+                Stmt::Expr,
+            )
         };
         return parse_statement_modifier(r, stmt);
     }
