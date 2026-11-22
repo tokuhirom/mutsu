@@ -241,6 +241,11 @@ fn apply_infix(node: &mut RakuAstNode) {
         super::hyper_infix_origins::place_assign(node, left, right);
         return;
     }
+    if let (Some((_, left_end)), Some((right_start, _))) = (left, right)
+        && left_end <= right_start
+    {
+        super::bracketed_infix::recover(node, SrcSpan::new(left_end, right_start));
+    }
     let Some((text, inner)) = child(node, "infix").and_then(super::infix_spelling::written) else {
         return;
     };
