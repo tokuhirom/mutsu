@@ -126,6 +126,7 @@ pub(crate) mod p6_frame_state;
 pub(crate) use stmt::decl::typed_default_expr;
 pub(crate) use stmt::decl::{ANON_SUBSET_PREFIX, mint_anon_subset_name};
 mod parse_result;
+mod pod_delimited;
 mod primary;
 mod quote_shadow;
 pub(crate) mod sink_warn;
