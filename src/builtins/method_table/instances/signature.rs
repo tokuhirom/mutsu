@@ -49,7 +49,9 @@ fn capture(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
         Some(Ok(g)) => g.to_string_value(),
         _ => crate::value::gist::gist_value(target),
     };
-    Some(Err(crate::builtins::methods_0arg::coercion::cannot_capture_described(target, &gist)))
+    Some(Err(
+        crate::builtins::methods_0arg::coercion::cannot_capture_described(target, &gist),
+    ))
 }
 
 fn rendering(target: &Value, key: &str) -> Option<Result<Value, RuntimeError>> {
