@@ -269,6 +269,10 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 p.sub_signature = Some(sub_params);
                 return Ok((r_ident, p));
             }
+            // Traits on a named capture: |c is raw
+            let (r_ident, (traits, trait_args)) = capture_traits(r_ident)?;
+            p.traits = traits;
+            p.trait_args = trait_args;
             // Check for where constraint on named capture: |c where { ... }
             let (r_ident, where_constraint) = if let Some(r2) =
                 super::super::keyword("where", r_ident)
@@ -290,21 +294,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         // multi-dispatch treat it as a hash+positional slurpy.
         p.sigilless = true;
         let (r, _) = ws(r)?;
-        let mut param_traits = Vec::new();
-        let mut param_trait_args = Vec::new();
-        let (mut r, _) = ws(r)?;
-        while let Some(r2) = super::super::keyword("is", r) {
-            let (r2, _) = ws1(r2)?;
-            let (r2, trait_name) = super::super::ident(r2)?;
-            let (r2, trait_arg) =
-                super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
-            if let Some(trait_arg) = trait_arg {
-                param_trait_args.push((trait_name.clone(), trait_arg));
-            }
-            param_traits.push(trait_name);
-            let (r2, _) = ws(r2)?;
-            r = r2;
-        }
+        let (r, (param_traits, param_trait_args)) = capture_traits(r)?;
         let (r, where_constraint) = if let Some(r2) = super::super::keyword("where", r) {
             let (r2, _) = ws1(r2)?;
             let (r2, constraint) = super::where_constraint::parse_where_constraint_expr(r2)?;
@@ -1634,4 +1624,25 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     p.code_signature = code_sig;
     p.shape_constraints = shape_constraints;
     Ok((rest, p))
+}
+
+/// The `is <trait>` list after a capture parameter (`|c is raw`, `| is raw`),
+/// with the arguments of the traits that take one.
+// Cost: O(t), t = traits.
+fn capture_traits(input: &str) -> PResult<'_, (Vec<String>, Vec<(String, crate::ast::Expr)>)> {
+    let mut traits = Vec::new();
+    let mut trait_args = Vec::new();
+    let (mut r, _) = ws(input)?;
+    while let Some(r2) = super::super::keyword("is", r) {
+        let (r2, _) = ws1(r2)?;
+        let (r2, trait_name) = super::super::ident(r2)?;
+        let (r2, trait_arg) = super::super::sub::validate_param_trait(&trait_name, &traits, r2)?;
+        if let Some(trait_arg) = trait_arg {
+            trait_args.push((trait_name.clone(), trait_arg));
+        }
+        traits.push(trait_name);
+        let (r2, _) = ws(r2)?;
+        r = r2;
+    }
+    Ok((r, (traits, trait_args)))
 }
