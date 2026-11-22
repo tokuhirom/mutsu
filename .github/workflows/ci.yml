@@ -1126,7 +1126,56 @@ jobs:
           cargo miri test --no-default-features --features native \
             --lib value::seq_body_shapes -- --test-threads=1
 
-      # Step 1b — ADR-8069 / ADR-18637's lock-free cell reads: the published
+      # Step 2 — the VM-level half (`gc::soundness_smoke`): a real `Interpreter`
+      # running a Raku program, so Miri watches the actual `gc_contents_mut` call
+      # sites rather than the primitive alone. This is the coverage ADR-0013 §4
+      # asked for, unblocked once startup stopped shelling out to `uname`.
+      #
+      # `-Zmiri-ignore-leaks` is REQUIRED here and is not a weakening of the
+      # gate: a whole interpreter intentionally leaves memory live at exit —
+      # process-lifetime statics (the env base tier, interned symbols) and
+      # uncollected reference cycles, which is exactly the condition the cycle
+      # collector exists to reclaim on demand rather than at teardown. Leak
+      # reports would drown the provenance errors this job is here to catch.
+      # Aliasing/provenance checking is UNAFFECTED by the flag.
+      #
+      # Measured 2026-08-03: 5 pass, ~245s of interpretation.
+      - name: cargo miri test (VM call sites)
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks
+        run: |
+          cargo miri test --no-default-features --features native \
+            --lib gc::soundness_smoke -- --test-threads=1
+
+  # ADR-8069 / ADR-18637's lock-free cell reads under Miri, as a job of its
+  # own so it runs beside `miri` instead of adding ~11 min to it (that job is
+  # near its timeout). Same gating, toolchain and setup as `miri`.
+  miri-cell-reads:
+    needs: changes
+    if: needs.changes.outputs.gc-value == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned nightly with Miri
+        run: |
+          rustup toolchain install nightly-2026-09-01 --profile minimal \
+            --component miri --component rust-src --no-self-update
+          rustup default nightly-2026-09-01
+
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "ci-miri-cell-reads"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo miri setup
+        run: cargo miri setup
+
+      # The published
       # cell word (`value::cell_publish`) and the epoch-held array snapshot
       # (`value::cell_snapshot`), whose threaded test races readers against a
       # writer so Miri's data-race and use-after-free checks see the protocol.
@@ -1148,27 +1197,6 @@ jobs:
             --lib value::cell_publish -- --test-threads=1
           cargo miri test --no-default-features --features native \
             --lib value::cell_snapshot -- --test-threads=1
-
-      # Step 2 — the VM-level half (`gc::soundness_smoke`): a real `Interpreter`
-      # running a Raku program, so Miri watches the actual `gc_contents_mut` call
-      # sites rather than the primitive alone. This is the coverage ADR-0013 §4
-      # asked for, unblocked once startup stopped shelling out to `uname`.
-      #
-      # `-Zmiri-ignore-leaks` is REQUIRED here and is not a weakening of the
-      # gate: a whole interpreter intentionally leaves memory live at exit —
-      # process-lifetime statics (the env base tier, interned symbols) and
-      # uncollected reference cycles, which is exactly the condition the cycle
-      # collector exists to reclaim on demand rather than at teardown. Leak
-      # reports would drown the provenance errors this job is here to catch.
-      # Aliasing/provenance checking is UNAFFECTED by the flag.
-      #
-      # Measured 2026-08-03: 5 pass, ~245s of interpretation.
-      - name: cargo miri test (VM call sites)
-        env:
-          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks
-        run: |
-          cargo miri test --no-default-features --features native \
-            --lib gc::soundness_smoke -- --test-threads=1
 
   wasm-e2e:
     # POST-MERGE ONLY (ADR-11581): runs on `main` (hourly) and in the release gate
@@ -1401,7 +1429,7 @@ jobs:
   # would otherwise add a comment per hour). Only scheduled runs report: a
   # dispatch reports to whoever started it, and a release gate to the release.
   report:
-    needs: [test-check, lint-configs, test-suites, wasm-e2e, debug-tap, miri]
+    needs: [test-check, lint-configs, test-suites, wasm-e2e, debug-tap, miri, miri-cell-reads]
     if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -1420,6 +1448,7 @@ jobs:
             wasm-e2e=${{ needs.wasm-e2e.result }}
             debug-tap=${{ needs.debug-tap.result }}
             miri=${{ needs.miri.result }}
+            miri-cell-reads=${{ needs.miri-cell-reads.result }}
         run: |
           set -euo pipefail
           failed=""

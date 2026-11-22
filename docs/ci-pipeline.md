@@ -50,7 +50,7 @@ The GC-stress (`MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`) an
 
 ## Required checks
 
-The required status checks live in the **repository ruleset** for `main`, not in classic branch protection: `test`, `wasm-e2e`, `lint-configs`, `miri`, `changes`. `gh api repos/tokuhirom/mutsu/rules/branches/main` lists them (the classic `branches/main/protection` endpoint is not where they are). A required check whose job is renamed or removed is never created, which leaves every PR pending forever with no error, so change the ruleset in the same step as the workflow.
+The required status checks live in the **repository ruleset** for `main`, not in classic branch protection: `test`, `wasm-e2e`, `lint-configs`, `miri`, `changes`. `miri-cell-reads` (ADR-18637's lock-free cell reads under Miri, split from `miri` so the two run in parallel) gates a merge only once it is added to that list too. `gh api repos/tokuhirom/mutsu/rules/branches/main` lists them (the classic `branches/main/protection` endpoint is not where they are). A required check whose job is renamed or removed is never created, which leaves every PR pending forever with no error, so change the ruleset in the same step as the workflow.
 
 ## Code-owned paths wait for a human review
 
