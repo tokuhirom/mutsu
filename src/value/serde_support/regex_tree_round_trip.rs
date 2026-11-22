@@ -5,23 +5,35 @@
 use crate::regex_tree::RegexTree;
 use crate::value::{RegexAdverbs, Value};
 
-fn round_trip(value: &Value) -> Value {
-    let encoded = serde_json::to_string(value).expect("serialize regex");
-    serde_json::from_str(&encoded).expect("deserialize regex")
+/// `value` serialized and read back; `None` when either step fails.
+fn round_trip(value: &Value) -> Option<Value> {
+    let encoded = serde_json::to_string(value).ok()?;
+    serde_json::from_str(&encoded).ok()
+}
+
+/// Whether `value` survives the round trip with a source tree.
+fn keeps_tree(value: &Value) -> bool {
+    round_trip(value).is_some_and(|v| v.regex_source_tree().is_some())
 }
 
 #[test]
 fn a_plain_regex_keeps_its_source_tree() {
-    let tree = RegexTree::parse_static("a (\\d+)", false).expect("static tree");
+    let tree = RegexTree::parse_static("a (\\d+)", false);
+    assert!(tree.is_some());
+    let Some(tree) = tree else { return };
     let value = Value::regex("a (\\d+)".to_string()).with_regex_source_tree(tree);
-    let restored = round_trip(&value);
-    assert!(restored.regex_source_tree().is_some());
-    assert_eq!(restored.to_string_value(), value.to_string_value());
+    assert!(keeps_tree(&value));
+    assert_eq!(
+        round_trip(&value).map(|v| v.to_string_value()),
+        Some(value.to_string_value())
+    );
 }
 
 #[test]
 fn an_adverbed_regex_keeps_its_source_tree() {
-    let tree = RegexTree::parse_static("abc", false).expect("static tree");
+    let tree = RegexTree::parse_static("abc", false);
+    assert!(tree.is_some());
+    let Some(tree) = tree else { return };
     let adverbs = RegexAdverbs {
         pattern: std::sync::Arc::new("abc".to_string()),
         global: false,
@@ -46,14 +58,11 @@ fn an_adverbed_regex_keeps_its_source_tree() {
     };
     let value = Value::regex_with_adverbs(adverbs).with_regex_source_tree(tree);
     assert!(value.regex_source_tree().is_some());
-    assert!(round_trip(&value).regex_source_tree().is_some());
+    assert!(keeps_tree(&value));
 }
 
 #[test]
 fn a_regex_without_a_tree_stays_without_one() {
-    assert!(
-        round_trip(&Value::regex("x".to_string()))
-            .regex_source_tree()
-            .is_none()
-    );
+    let restored = round_trip(&Value::regex("x".to_string()));
+    assert!(restored.is_some_and(|v| v.regex_source_tree().is_none()));
 }
