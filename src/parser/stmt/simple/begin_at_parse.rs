@@ -186,7 +186,13 @@ pub(in crate::parser) fn note_unit_prologue_effects_of(stmt: &Stmt) {
     // The replay of a parse-time `BEGIN` (a `BEGIN` of plain assignments)
     // is not one.
     if REPLAY_RETURNED.with(|flag| flag.replace(false))
-        && matches!(stmt, Stmt::Phaser { kind: PhaserKind::Begin, .. })
+        && matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                ..
+            }
+        )
     {
         return;
     }
