@@ -46,6 +46,7 @@ mod run_prelude_trait_export;
 mod run_prelude_x_comp;
 mod run_roast_preprocess;
 mod runtime_caller_env;
+mod caller_outer_lookup;
 mod runtime_class_query;
 pub(crate) mod elem_type_memo;
 mod runtime_container;
