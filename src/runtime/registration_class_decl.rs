@@ -231,9 +231,21 @@ impl Interpreter {
         // parametric role body (`class A is Array[T] {}`, composed with `T = Int`)
         // inherits from the concrete `Array[Int]`. Outside a role composition no
         // captures are bound, so `resolved_type_capture_name` is a no-op.
+        // A role's pun class (`R\0pun`) composes exactly that role, the
+        // registry entry its `does R` names: never a same-named lexical role
+        // the running scope binds (`my role R` in the block that first calls a
+        // method on the outer `R`, #18233).
+        let pun_source = Self::plain_role_pun_source(name);
         let parents: Vec<String> = parents
             .iter()
-            .map(|p| self.resolved_type_capture_name(&strip_colons(p)))
+            .map(|p| {
+                let p = strip_colons(p);
+                if pun_source == Some(p.as_str()) {
+                    p
+                } else {
+                    self.resolved_type_capture_name(&p)
+                }
+            })
             .collect();
         // A declared class (not an `augment`) that shadows a built-in type's
         // name and names no parent class is an ordinary class: it inherits

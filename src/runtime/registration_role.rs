@@ -255,6 +255,17 @@ impl Interpreter {
         pre_args: Option<&[Value]>,
     ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
         let parent = self.resolve_declared_type_name(parent);
+        self.resolve_role_candidate_named(&parent, pre_args)
+    }
+
+    /// [`Self::resolve_role_candidate_with_args`] for a `parent` that already
+    /// names the registry entry to compose, never re-resolved through the
+    /// running scope (a role's pun class composing that role, #18233).
+    pub(crate) fn resolve_role_candidate_named(
+        &mut self,
+        parent: &str,
+        pre_args: Option<&[Value]>,
+    ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
         if let Some(bracket_start) = parent.find('[') {
             let args_str = &parent[bracket_start + 1..parent.len() - 1];
             let arg_exprs = parse_role_type_args(args_str);
@@ -271,7 +282,7 @@ impl Interpreter {
         let base_role_name = if let Some(bracket) = parent.find('[') {
             &parent[..bracket]
         } else {
-            &parent
+            parent
         };
         let Some(candidates) = self.registry().role_candidates.get(base_role_name).cloned() else {
             if let Some(role) = self.registry().roles.get(base_role_name).map(|r| RoleDef::clone(r)) {
