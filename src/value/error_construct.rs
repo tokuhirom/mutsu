@@ -669,7 +669,7 @@ impl RuntimeError {
     }
 
     /// X::OutOfRange naming the value that is out of range (`what`):
-    /// "<what> out of range. Is: <got>, should be in <range>".
+    /// `"<what> out of range. Is: <got>, should be in <range>"`.
     // Cost: O(1) plus `got`'s Str.
     pub(crate) fn out_of_range_named(what: &str, got: Value, range: &str) -> Self {
         let msg = format!(
