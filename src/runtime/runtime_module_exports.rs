@@ -712,7 +712,8 @@ impl Interpreter {
         // is loading as well, allowing `use Module :tag` to import it and to
         // expose it through the importing lexical pseudo-stash.
         if let Some(owner) = self.module.module_load_stack.last().cloned() {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.world.exported_vars.write_guard())
+            let mut exported_vars_w = self.module.world.exported_vars.write_guard();
+            let mirror = crate::runtime::cow_table_mut(&mut exported_vars_w)
                 .entry(owner)
                 .or_default()
                 .entry(mirror_name)
