@@ -280,6 +280,8 @@ mod subscript_adverb;
 mod subscript_operand_origins;
 mod subst_origins;
 mod substitution;
+mod indirect_bind;
+pub(crate) use indirect_bind::indirect_symbol_bind;
 mod symbolic_deref;
 mod temporize;
 mod term_name;

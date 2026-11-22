@@ -803,6 +803,14 @@ impl Interpreter {
             let own = format!("{}::EXPORT::{rest}", self.current_package());
             return self.resolve_indirect_type_name(&own);
         }
+        // A leading `OUR` is the running package (`::('OUR')::A` is `A` at file
+        // scope, `P::A` inside `package P`), as `$OUR::A::x` already is.
+        if let Some(rest) = name.strip_prefix("OUR::")
+            && !rest.is_empty()
+        {
+            let own = Self::qualify_stash_name(&self.current_package(), rest);
+            return self.resolve_indirect_type_name(&own);
+        }
         // The core `IterationEnd` sentinel term (as the bareword resolves it
         // in `vm_var_get_ops`), so `::('IterationEnd') =:= IterationEnd`.
         if name == "IterationEnd" {
@@ -1012,6 +1020,12 @@ impl Interpreter {
         {
             value.clone()
         } else if crate::runtime::utils::is_known_type_constraint(first)
+            // A package no declaration created but a qualified store
+            // autovivified (`$Foo::x = 1`, `$::('OUR')::A::x := 1`) is a
+            // package symbol too: `::('Foo')` is that package, as in rakudo.
+            || (!name_is_qualified
+                && !first.starts_with(['$', '@', '%', '&'])
+                && self.has_package_members(first))
             || (name_is_qualified
                 && (self.has_package_members(first)
                     || self.has_class(first)

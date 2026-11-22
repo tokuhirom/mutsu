@@ -14,10 +14,11 @@
 //! ...), or that has no package at all, raises the same "not yet
 //! implemented" rakudo raises for every run-time bind.
 use super::*;
+use crate::value::ValueMap;
 
 /// What `exec_indirect_symbol_bind_op` binds: the package whose stash gets
-/// the symbol, the internal sigil spelling ("" for a scalar or a package
-/// symbol) and the bare symbol name.
+/// the symbol, the key's sigil ("" for a package symbol) and the bare
+/// symbol name.
 struct BindTarget {
     package: String,
     sigil: &'static str,
@@ -25,9 +26,9 @@ struct BindTarget {
 }
 
 impl Interpreter {
-    // Cost: O(n + s), n = chars of the name (split once and interned), s = the
-    // package-stash publish (hashed `our`/env stores; an `&` key also pays the
-    // routine-alias registration, see `index_assign_named_package_stash`).
+    // Cost: O(n), n = chars of the name (split once and interned), plus the
+    // hashed `our`/env stores of the bind; an `&` key also pays the
+    // routine-alias registration (see `index_assign_named_package_stash`).
     pub(super) fn exec_indirect_symbol_bind_op(
         &mut self,
         code: &CompiledCode,
@@ -36,17 +37,26 @@ impl Interpreter {
         let sigil = Self::const_str(code, sigil_idx).to_string();
         let name = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
         let raw = self.stack.pop().unwrap_or(Value::NIL);
-        let (value, _) = Self::unwrap_bind_index_value(raw);
+        let (value, source) = Self::unwrap_bind_index_value(raw);
         let Some(target) = self.indirect_bind_target(&sigil, &name) else {
             return Err(RuntimeError::new(
                 "This case of binding is not yet implemented",
             ));
         };
         if target.sigil == "&" {
+            // A routine: aliased in the routine registry and published as
+            // the package's symbol, as `Foo::<&f> := &g` does.
             self.register_package_code_alias(target.package.clone(), &target.bare, &value);
+            self.publish_package_stash_symbol(target.package, "&", &target.bare, &value);
+            self.stack.push(value);
+            return Ok(());
         }
-        self.publish_package_stash_symbol(target.package, target.sigil, &target.bare, &value);
-        self.stack.push(value);
+        // Any other key goes through the package-stash bind `Foo::{$k} := $v`
+        // uses, which shares the source variable's container.
+        let stash = Self::make_stash_instance(&target.package, ValueMap::default());
+        let key = format!("{}{}", target.sigil, target.bare);
+        let bound = self.bind_stash_key(code, &stash, &key, value, source.as_deref())?;
+        self.stack.push(bound);
         Ok(())
     }
 
@@ -72,7 +82,8 @@ impl Interpreter {
             return None;
         }
         let sigil = match sigil {
-            "$" | "" => "",
+            "$" => "$",
+            "" => "",
             "@" => "@",
             "%" => "%",
             "&" => "&",
