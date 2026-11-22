@@ -67,18 +67,20 @@ pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
         | ValueView::RangeExclStart(..)
         | ValueView::RangeExclBoth(..)
         | ValueView::GenericRange { .. } => Some(&["Range"]),
-        // No mutator of its own: `Any`'s rows, which end every chain, answer
-        // an undefined receiver (autovivification) and refuse a defined
-        // scalar (`5.push`).
-        ValueView::Nil
-        | ValueView::Int(_)
+        // `Nil` has no mutator of its own: `Any`'s rows, which end every
+        // chain, answer an undefined receiver (autovivification).
+        ValueView::Nil => Some(&[]),
+        // A number is `Cool`: `Cool`'s rows (`subst-mutate`, `substr-rw`) work
+        // on its `.Str`; `Any`'s refuse the other mutators of a defined scalar
+        // (`5.push`).
+        ValueView::Int(_)
         | ValueView::BigInt(_)
         | ValueView::Num(_)
         | ValueView::Bool(_)
         | ValueView::Rat(..)
         | ValueView::FatRat(..)
         | ValueView::BigRat(..)
-        | ValueView::Complex(..) => Some(&[]),
+        | ValueView::Complex(..) => Some(&["Cool"]),
         ValueView::Package(name) if name == "Any" || name == "Mu" => Some(&[]),
         // An immutable `List` is the same shape: its rows refuse the mutators.
         ValueView::Array(..) => Some(&["Array", "List"]),
@@ -102,10 +104,10 @@ pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
                 match crate::value::value_buf::buffer_class_type(&class_name.resolve()) {
                     Some(kind) if kind.starts_with("Buf") => Some(&["Buf"]),
                     Some(_) => Some(&["Blob"]),
-                    None => None,
+                    None => cool_instance(&class_name.resolve()),
                 }
             }
-            _ => None,
+            _ => cool_instance(&class_name.resolve()),
         },
         // A `Buf` type object: its `write-*` rows answer a fresh buffer.
         ValueView::Package(name) if crate::runtime::utils::is_buf_like_class(&name.resolve()) => {
@@ -113,6 +115,15 @@ pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
         }
         _ => None,
     }
+}
+
+/// `Some(["Cool"])` for an instance of a built-in `Cool` class (`IO::Path`,
+/// `Instant`, ...): `Cool`'s rows (`subst-mutate`, `substr-rw`) take it.
+// Cost: O(m), m = the class's built-in MRO length.
+fn cool_instance(class_name: &str) -> Option<&'static [&'static str]> {
+    crate::builtin_types::catalog::builtin_type_mro_syms(class_name)
+        .filter(|mro| mro.iter().any(|ancestor| ancestor.resolve() == "Cool"))
+        .map(|_| &["Cool"][..])
 }
 
 /// The owner chain of a container *type object* (`Array`, `SetHash`, ...),
