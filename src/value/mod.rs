@@ -2584,6 +2584,11 @@ pub struct HashData {
     pub pseudo_stash_6e: bool,
 }
 
+/// The type object of 6.e's `PseudoStash` class, as `CORE::v6e::PseudoStash`
+/// spells it. 6.c's (and so 6.d's) is the plain `PseudoStash`; a stash value
+/// tells the two apart by [`HashData::pseudo_stash_6e`].
+pub(crate) const V6E_PSEUDO_STASH: &str = "CORE::v6e::PseudoStash";
+
 /// Backing data for `Value::Array`: the element vector plus embedded
 /// container type metadata (mirrors `HashData`). `Deref`/`DerefMut` to
 /// `Vec<Value>` keep the overwhelming majority of read sites

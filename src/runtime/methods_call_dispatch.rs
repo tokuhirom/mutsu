@@ -5,6 +5,23 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Whether `value` is 6.e's `PseudoStash` (`Some(true)`) or 6.c's
+    /// (`Some(false)`), as a type object or a stash; `None` for anything else.
+    // Cost: O(1).
+    pub(crate) fn pseudo_stash_revision(value: &Value) -> Option<bool> {
+        match value.view() {
+            ValueView::Package(name) => match name.as_str() {
+                crate::value::V6E_PSEUDO_STASH => Some(true),
+                "PseudoStash" => Some(false),
+                _ => None,
+            },
+            ValueView::Hash(h) if h.declared_type.as_deref() == Some("PseudoStash") => {
+                Some(h.pseudo_stash_6e)
+            }
+            _ => None,
+        }
+    }
+
     /// Build a `HyperConfiguration` instance carrying `.batch`/`.degree`. A
     /// `None` reports the core default (batch 64; degree = available CPU cores).
     pub(crate) fn make_hyper_configuration(batch: Option<i64>, degree: Option<i64>) -> Value {

@@ -390,7 +390,7 @@ impl Compiler {
                 self.code.emit(OpCode::ReactDone);
             }
             Expr::BareWord(name) => {
-                if self.emit_strict_my_read("", name) {
+                if self.emit_strict_my_read("", name) || self.emit_core_revision_name(name) {
                     return;
                 }
                 // `OUTER::OUTER::Inner` names the type that scope declares,
