@@ -455,7 +455,7 @@ impl Interpreter {
                 registry
                     .class_composed_roles
                     .get(cn.as_str())
-                    .is_some_and(|roles| roles.iter().any(|r| *r == caller))
+                    .is_some_and(|roles| roles.contains(&caller))
             });
             return composer.map(|cn| cn.resolve()).filter(|cn| cn != receiver);
         }
