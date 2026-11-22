@@ -20,7 +20,9 @@ pub(super) fn view(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, Runtim
         return Err(super::view::unsupported("a function infix that is no call"));
     };
     let [left, right] = args.as_slice() else {
-        return Err(super::view::unsupported("a function infix without two operands"));
+        return Err(super::view::unsupported(
+            "a function infix without two operands",
+        ));
     };
     let infix = RakuAstNode {
         origin: Default::default(),
