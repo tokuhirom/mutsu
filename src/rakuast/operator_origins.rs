@@ -76,18 +76,21 @@ fn prefix(node: &mut RakuAstNode) {
         with_child(node, "prefix", |p| {
             super::origin::set_span(p, SrcSpan::new(from, from + op.len()))
         });
-        glued_variable_operand(node, from + op.len());
+        if let Some(index) = node.fields.iter().position(|f| f.name == Some("operand")) {
+            glued_variable_operand(node, index, from + op.len());
+        }
     }
 }
 
-/// `⚛$n`: a variable operand the parser kept no range for, written right
-/// after the operator at `at` up to the application's end.
+/// `⚛$n` / `$@a`: a variable operand the parser kept no range for, the
+/// child at `index` of `node`, written right after the operator or sigil at
+/// `at` up to `node`'s end.
 // Cost: O(k), k = length of the variable's name.
-fn glued_variable_operand(node: &mut RakuAstNode, at: usize) {
+fn glued_variable_operand(node: &mut RakuAstNode, index: usize, at: usize) {
     let Some((_, to)) = byte_range(node) else {
         return;
     };
-    let Some(name) = child(node, "operand")
+    let Some(name) = child_at(node, index)
         .filter(|v| v.class == RakuAstClass::VarLexical && v.origin.0.is_none())
         .and_then(leaf_text)
     else {
@@ -96,7 +99,7 @@ fn glued_variable_operand(node: &mut RakuAstNode, at: usize) {
     let exact =
         super::unit_source::with_text(SrcSpan::new(at, to), |text| (text == name).then_some(()));
     if exact.is_some() {
-        with_child(node, "operand", |v| {
+        with_child_at(node, index, |v| {
             super::origin::set_span(v, SrcSpan::new(at, to))
         });
     }
@@ -180,7 +183,9 @@ fn postfix(node: &mut RakuAstNode) {
             let end = op.and_then(|op| {
                 super::unit_source::with_text(SrcSpan::new(from, to), |text| {
                     let number = text.strip_suffix(op.as_str())?;
-                    number
+                    // `.5i`: a rational may start at its point.
+                    let digits = number.strip_prefix('.').unwrap_or(number);
+                    digits
                         .starts_with(|c: char| c.is_ascii_digit())
                         .then_some(from + number.len())
                 })
@@ -274,6 +279,24 @@ fn contextualizer(node: &mut RakuAstNode) {
             super::origin::set_span(inner, SrcSpan::new(from + 1, to));
             contextualizer(inner);
         });
+        return;
+    }
+    // `$@a` / `%$hash`: a variable written right after the sigil.
+    if inner.class == RakuAstClass::VarLexical && inner.origin.0.is_none() {
+        glued_variable_operand(node, 0, from + 1);
+        return;
+    }
+    // `$[ 21 ... 25 ]`: an array composer right after the sigil.
+    if inner.class == RakuAstClass::CircumfixArrayComposer && inner.origin.0.is_none() {
+        let bracket = super::unit_source::with_text(SrcSpan::new(from + 1, to), |text| {
+            (text.starts_with('[') && text.ends_with(']')).then_some(())
+        });
+        if bracket.is_some() {
+            with_child_at(node, 0, |composer| {
+                super::origin::set_span(composer, SrcSpan::new(from + 1, to));
+                super::list_origins::circumfix(composer);
+            });
+        }
         return;
     }
     if let Some(inside) = super::list_origins::bracketed(from + 1, to, ('(', ')')) {
