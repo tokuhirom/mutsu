@@ -996,6 +996,13 @@ pub(crate) enum OpCode {
     /// Same as `PatchRegexAdverbPos`, but for the `:continue(N)` / `:c(N)`
     /// search-from position.
     PatchRegexAdverbContinue,
+    /// Pop (regex-with-adverbs value, `:nth` value), clone the value with its
+    /// `:nth` argument set, and push it. Emitted for every `m:nth(EXPR)/.../`
+    /// (and `:1st`, `:2nd`, ...): the argument is an expression evaluated
+    /// where the match runs — see `Expr::MatchRegexDynamicAdverbs`.
+    PatchRegexAdverbNth,
+    /// Same as `PatchRegexAdverbNth`, for the `:x(EXPR)` argument.
+    PatchRegexAdverbX,
 
     // -- Variables --
     /// Read a lexical by its local slot. Stack: `[] → [value]`.
@@ -9998,36 +10005,6 @@ impl CompiledCode {
     /// A local needs env sync if it's referenced by GetGlobal/SetGlobal/etc.
     /// in this code. Locals only accessed via GetLocal don't need env sync,
     /// which reduces env size and makes method call env clones cheaper.
-    /// The variable spellings (`$n`, `@xs`, `%h`, and the sigil-less `n` a
-    /// scalar local is stored under) that source text names.
-    // Cost: O(t), t = bytes of `text`.
-    fn sigiled_names_in(text: &str) -> Vec<&str> {
-        let bytes = text.as_bytes();
-        let mut out = Vec::new();
-        let mut i = 0;
-        while i < bytes.len() {
-            if matches!(bytes[i], b'$' | b'@' | b'%') {
-                let start = i;
-                let mut j = i + 1;
-                while j < bytes.len()
-                    && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'_' | b'-'))
-                {
-                    j += 1;
-                }
-                if j > i + 1 {
-                    out.push(&text[start..j]);
-                    if bytes[start] == b'$' {
-                        out.push(&text[start + 1..j]);
-                    }
-                }
-                i = j;
-            } else {
-                i += 1;
-            }
-        }
-        out
-    }
-
     pub(crate) fn compute_needs_env_sync(&mut self) {
         // The ip -> line table must stay index-aligned with `ops`: a code path
         // that pushes/removes an op without going through `emit()` (or without
@@ -10410,26 +10387,6 @@ impl CompiledCode {
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
-            }
-        }
-        // A regex literal's adverb arguments (`m:nth($n)`, `:x(@counts)`) are kept as
-        // source text and evaluated by name when the match runs.
-        for c in &self.constants {
-            if let ValueView::RegexWithAdverbs(adverbs) = c.view() {
-                let args = adverbs.nth.iter().map(|a| a.as_str()).chain(
-                    adverbs
-                        .source_adverbs
-                        .iter()
-                        .flat_map(|list| list.iter())
-                        .filter_map(|(_, arg)| arg.as_deref()),
-                );
-                for text in args {
-                    for var in Self::sigiled_names_in(text) {
-                        if let Some(&slot) = locals_map.get(var) {
-                            self.needs_env_sync[slot] = true;
-                        }
-                    }
-                }
             }
         }
         // A regex match writes `$/` by name, so a `$/` that is a local or a

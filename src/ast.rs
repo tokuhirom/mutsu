@@ -1606,6 +1606,11 @@ pub(crate) enum Expr {
         value: Value,
         pos_expr: Option<Box<Expr>>,
         continue_expr: Option<Box<Expr>>,
+        /// The `:nth` argument (`m:nth($n)/.../`, `m:2nd/.../`), evaluated at
+        /// every match and patched onto `value`.
+        nth_expr: Option<Box<Expr>>,
+        /// The `:x` argument (`m:x(1..2)/.../`), likewise.
+        x_expr: Option<Box<Expr>>,
     },
     Subst {
         pattern: String,

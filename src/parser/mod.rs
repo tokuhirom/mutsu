@@ -30,8 +30,8 @@ pub(crate) use primary::ident::{
 };
 pub(crate) use primary::ident::{is_loop_control_label, loop_control_expr};
 pub(crate) use primary::regex::{
-    SubstFlags, parse_adverb_argument, regex_execution_value, rx_execution_value,
-    subst_compound_rhs, subst_compound_thunk, subst_pattern_source,
+    SubstFlags, match_adverb_exprs, parse_adverb_argument, regex_execution_value,
+    rx_execution_value, subst_compound_rhs, subst_compound_thunk, subst_pattern_source,
 };
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
 pub(crate) use primary::var::{

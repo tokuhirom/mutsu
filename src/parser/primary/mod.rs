@@ -1413,21 +1413,21 @@ mod tests {
 
     #[test]
     fn parse_match_regex_with_repetition_modifiers() {
-        let (rest1, expr1) = primary("m:2x/ab/").unwrap();
-        assert_eq!(rest1, "");
-        assert!(matches!(
-            &expr1,
-            Expr::MatchRegexTree { value: v, .. }
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2))
-        ));
-
-        let (rest2, expr2) = primary("m:x(2)/ab/").unwrap();
-        assert_eq!(rest2, "");
-        assert!(matches!(
-            &expr2,
-            Expr::MatchRegexTree { value: v, .. }
-                if matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat == Some(2))
-        ));
+        // `:x` is an expression evaluated where the match runs (#18833), so
+        // it rides beside the value, not on it.
+        for src in ["m:2x/ab/", "m:x(2)/ab/"] {
+            let (rest, expr) = primary(src).unwrap();
+            assert_eq!(rest, "");
+            assert!(
+                matches!(
+                    &expr,
+                    Expr::MatchRegexDynamicAdverbs { value: v, x_expr: Some(x), nth_expr: None, .. }
+                        if matches!(x.as_ref(), Expr::Literal(n) if n.as_int() == Some(2))
+                            && matches!(v.view(), ValueView::RegexWithAdverbs(a) if a.pattern.as_str() == "ab" && !a.exhaustive && a.repeat.is_none())
+                ),
+                "{src}: {expr:?}"
+            );
+        }
     }
 
     #[test]

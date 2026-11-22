@@ -356,6 +356,20 @@ impl Interpreter {
                 self.stack.push(regex_val.with_regex_continue_value(pos));
                 *ip += 1;
             }
+            // Cost: O(1) (as PatchRegexAdverbPos).
+            OpCode::PatchRegexAdverbNth => {
+                let nth = self.stack.pop().unwrap_or(Value::NIL);
+                let regex_val = self.stack.pop().unwrap_or(Value::NIL);
+                self.stack.push(regex_val.with_regex_nth_value(nth));
+                *ip += 1;
+            }
+            // Cost: O(1) (as PatchRegexAdverbPos).
+            OpCode::PatchRegexAdverbX => {
+                let repeat = self.stack.pop().unwrap_or(Value::NIL);
+                let regex_val = self.stack.pop().unwrap_or(Value::NIL);
+                self.stack.push(regex_val.with_regex_repeat_value(repeat));
+                *ip += 1;
+            }
 
             // -- Variables --
             // Cost: O(1) upvalue slot read; the by-name env fallback is O(d), d = env tiers.
