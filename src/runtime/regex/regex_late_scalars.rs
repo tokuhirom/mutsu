@@ -274,7 +274,10 @@ mod tests {
     fn every_scalar_of_a_pattern_is_read_at_match_time() {
         assert_eq!(scalars_in_pattern("$a { 1 } $b").0, ["a", "b"]);
         assert_eq!(scalars_in_pattern("$a $b").0, ["a", "b"]);
-        assert!(scalars_in_pattern("$a=$b").0.is_empty());
+        // An alias reads its variable; its atom is dropped.
+        assert_eq!(scalars_in_pattern("$a=$b").0, ["a"]);
+        assert_eq!(scalars_in_pattern("$^a $P::v").0, ["^a", "P::v"]);
+        assert_eq!(scalars_in_pattern("<<$n>>").0, ["n"]);
         assert!(scalars_in_pattern("<a=$b>").0.is_empty());
         assert_eq!(scalars_in_pattern("$<a>=$b").0, ["b"]);
         assert_eq!(scalars_in_pattern("$0 = $b").0, ["b"]);
