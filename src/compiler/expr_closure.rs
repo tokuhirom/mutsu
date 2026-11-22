@@ -745,6 +745,9 @@ impl Compiler {
         }
         let original_target = target;
         let target = target.peel_parens();
+        if self.emit_lexical_stash_bind(target, index, value) {
+            return;
+        }
         if self.compile_nested_index_bind_source(target, index, value, outer_positional) {
             return;
         }

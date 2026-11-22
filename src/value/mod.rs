@@ -2578,6 +2578,10 @@ pub struct HashData {
     /// From then on a bare value in the map is one `nqp::bindkey` bound on
     /// purpose, and `atkey` answers it as it is.
     pub storage_cells: bool,
+    /// A pseudo-stash (`declared_type` `PseudoStash`) built by 6.e code: its
+    /// class is `CORE::v6e::PseudoStash`, whose read of a symbol it does not
+    /// hold is an `X::NoSuchSymbol` Failure rather than 6.c's `Nil`.
+    pub pseudo_stash_6e: bool,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded

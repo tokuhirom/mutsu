@@ -2672,6 +2672,8 @@ impl Compiler {
                 // A `:=` bind of `&!attr` keeps the attribute's `!attr` key.
                 let effective_name = if name.starts_with("&!") && matches!(op, AssignOp::Bind) {
                     &name[1..]
+                } else if let Some(own) = self.my_pad_store_name(name) {
+                    own
                 } else {
                     name.as_str()
                 };

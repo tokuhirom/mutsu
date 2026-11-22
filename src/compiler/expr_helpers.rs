@@ -711,6 +711,14 @@ impl Compiler {
     }
 
     pub(super) fn compile_expr_var(&mut self, name: &str) {
+        if self.emit_strict_my_read("$", name) {
+            return;
+        }
+        if let Some(plain) = self.lexical_read_name(name) {
+            let plain = plain.to_string();
+            self.compile_expr_var(&plain);
+            return;
+        }
         // `$0`, `$1`, ... are `$/[0]`, `$/[1]`, ...: when this block declares
         // its own `$/` (a `-> $/ { }` / `method m($/)` parameter, `my $/`, a
         // substitution thunk's match), read the capture through it rather

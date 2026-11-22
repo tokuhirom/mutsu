@@ -4225,8 +4225,14 @@ impl Interpreter {
             OpCode::ContainerEqNamed {
                 left_name_idx,
                 right_name_idx,
+                left_slot,
+                right_slot,
             } => {
-                self.exec_container_eq_named_op(code, *left_name_idx, *right_name_idx);
+                self.exec_container_eq_named_op(
+                    code,
+                    (*left_name_idx, *left_slot),
+                    (*right_name_idx, *right_slot),
+                );
                 *ip += 1;
             }
             // Cost: O(a), a = length of the name's `:=` alias chain.

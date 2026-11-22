@@ -4,6 +4,12 @@ use super::*;
 use crate::opcode::{LEXICAL_STASH_ROUTINE_SLOT, LexicalStashRoutines};
 use crate::value::ValueMap;
 
+/// The pseudo-packages the root stash `::` names.
+const PSEUDO_PACKAGES: &[&str] = &[
+    "MY", "OUR", "CORE", "GLOBAL", "PROCESS", "DYNAMIC", "CALLER", "CALLERS", "OUTER", "OUTERS",
+    "LEXICAL", "UNIT", "SETTING", "CLIENT",
+];
+
 impl Interpreter {
     // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL, locals for MY::),
     // for a pseudo-package stash: it materializes a fresh map by scanning them all. A named
@@ -102,6 +108,16 @@ impl Interpreter {
         self.add_merged_module_packages(self.modules_merged_in_view(), &mut entries);
         if name == "::" {
             self.add_all_imports_to_pseudo_stash(&mut entries);
+            // The root stash answers each pseudo-package by name
+            // (`::<OUTERS>:exists`, `::.<MY>.WHO.<$l>`).
+            // TODO: rakudo's root PseudoStash answers these in AT-KEY /
+            // EXISTS-KEY without listing them in `.keys`; this snapshot
+            // hash has no separate key view, so it lists them too.
+            for pseudo in PSEUDO_PACKAGES {
+                entries
+                    .entry((*pseudo).to_string())
+                    .or_insert_with(|| Value::package(Symbol::intern(pseudo)));
+            }
         }
         if name == "UNIT::" {
             for (display, value) in self.unit_lexical_types() {
@@ -370,7 +386,16 @@ impl Interpreter {
         // level (`use Test`) is the unit's, not the block's. The block's own
         // `my class` stays.
         let block_pad = !matches!(routines, LexicalStashRoutines::All);
-        for (key, value) in self.env().iter() {
+        // `LEXICAL::` sees the packages every enclosing scope binds, which a
+        // nested block's env overlay alone does not hold.
+        let lexical_view = (!block_pad && self.env().is_scoped()).then(|| self.env().flattened());
+        let package_env = lexical_view.as_ref().unwrap_or_else(|| self.env());
+        let package_entries: Vec<(Symbol, Value)> = package_env
+            .iter()
+            .filter(|(_, value)| matches!(value.view(), ValueView::Package(_)))
+            .map(|(key, value)| (*key, value.clone()))
+            .collect();
+        for (key, value) in &package_entries {
             let key = key.resolve();
             // A module's package the BEGIN-time preload bound is a pad entry
             // only where the module is merged (ADR-11136, #13802).
@@ -574,7 +599,11 @@ impl Interpreter {
         if entries.get("$_").is_none_or(Value::is_nil) {
             entries.insert("$_".to_string(), Value::package(Symbol::intern("Any")));
         }
-        let hash = Value::hash_with_data(Value::hash_arc(entries));
+        let mut data = crate::value::HashData::new(entries);
+        // The running code's revision picks the stash's class (ADR-17287
+        // keeps the parser's revision that of the running routine's unit).
+        data.pseudo_stash_6e = crate::parser::current_language_version_starts_with("6.e");
+        let hash = Value::hash_with_data(Value::hash_arc(data));
         self.tag_container_metadata(
             hash,
             crate::runtime::ContainerTypeInfo {

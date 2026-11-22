@@ -91,8 +91,8 @@ impl Interpreter {
     pub(super) fn exec_container_eq_named_op(
         &mut self,
         code: &CompiledCode,
-        left_name_idx: u32,
-        right_name_idx: u32,
+        (left_name_idx, left_slot): (u32, u32),
+        (right_name_idx, right_slot): (u32, u32),
     ) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -105,14 +105,18 @@ impl Interpreter {
         // the root comparison below to find. Distinct cells may still be one
         // container (a `:=` binding cell over another), so only the positive
         // answer is decided here.
-        let slot_cell = |name: &str| {
-            self.find_local_slot(code, name)
+        let slot_cell = |name: &str, slot: u32| {
+            (slot != crate::opcode::NO_LOCAL_SLOT)
+                .then_some(slot as usize)
+                .or_else(|| self.find_local_slot(code, name))
                 .and_then(|slot| self.locals.get(slot))
                 .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
                 .cloned()
         };
-        if let (Some(a), Some(b)) = (slot_cell(left_name), slot_cell(right_name))
-            && let (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) = (a.view(), b.view())
+        if let (Some(a), Some(b)) = (
+            slot_cell(left_name, left_slot),
+            slot_cell(right_name, right_slot),
+        ) && let (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) = (a.view(), b.view())
             && crate::gc::Gc::ptr_eq(&x, &y)
         {
             self.stack.push(Value::TRUE);
