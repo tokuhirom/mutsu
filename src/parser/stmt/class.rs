@@ -45,7 +45,6 @@ pub(crate) use package_decl::{check_pseudo_package_in_decl, export_name_clash_er
 // Public entry points — preserve each function's original visibility.
 pub(crate) use class_decl::declare_term_decl;
 pub(super) use class_decl::{also_trait_stmt, apply_supersede, class_decl_body};
-pub(super) use package_syntax::unit_scope_too_late;
 pub(crate) use class_decl::{
     anon_class_decl, augment_class_decl, class_decl, declare_decl, native_decl,
 };
@@ -53,6 +52,7 @@ pub(super) use grammar_module::{
     does_decl, grammar_decl, grammar_decl_my, module_decl, token_decl, trusts_decl,
 };
 pub(super) use package_decl::{package_decl, package_decl_my, unit_module_stmt};
+pub(super) use package_syntax::unit_scope_too_late;
 pub(super) use proto_decl::{
     proto_decl, proto_decl_scoped, proto_method_after_keyword, proto_sub_after_keyword,
 };
