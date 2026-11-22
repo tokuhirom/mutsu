@@ -52,10 +52,11 @@ impl Parser {
                     self.parse_named_back_reference()
                 })
             }
-            '$' if self
-                .chars
-                .get(self.pos + 1)
-                .is_some_and(char::is_ascii_digit) =>
+            // `$0`, and `$٠` in any other decimal script (rakudo's
+            // `BackReference::Positional`).
+            '$' if self.chars.get(self.pos + 1).is_some_and(|c| {
+                crate::ucd::numeric::unicode_decimal_digit_value(*c).is_some()
+            }) =>
             {
                 let start = self.pos;
                 self.parse_numbered_capture().or_else(|| {

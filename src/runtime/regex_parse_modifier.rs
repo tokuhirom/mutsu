@@ -15,117 +15,65 @@ impl Interpreter {
         fn is_word_boundary(rest: &str) -> bool {
             rest.is_empty() || !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
         }
-        // A short modifier (`:i`, `:s`, `:r`, `:m`) ends wherever an identifier
-        // would: the next character just has to not continue the adverb's name.
-        // Anything else (a quote, bracket, backslash, metacharacter) is the
-        // start of the atom the modifier scopes over, and Rakudo needs no space
-        // there — `/:i'not('/` is how CSS::Grammar spells every case-insensitive
-        // CSS keyword. Requiring a space/`:`/`/` here silently left `:i'...'`
-        // unrecognized, which made the whole pattern fail to match.
+        // An adverb ends wherever an identifier would: the next character just
+        // has to not continue the adverb's name. Anything else (a quote,
+        // bracket, backslash, metacharacter) is the start of the atom the
+        // modifier scopes over, and Rakudo needs no space there — `/:i'not('/`
+        // is how CSS::Grammar spells every case-insensitive CSS keyword.
         // Longer adverbs (`:my`, `:sym<…>`, `:ss`) are still rejected, because
         // their next character IS an identifier character.
-        fn is_short_boundary(rest: &str) -> bool {
-            is_word_boundary(rest)
-        }
-        // Check negated long forms first
-        if let Some(rest) = remaining.strip_prefix("!ratchet")
-            && is_word_boundary(rest)
-        {
-            *ratchet = false;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("!ignorecase")
-            && is_word_boundary(rest)
-        {
-            *ignore_case = false;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("!ignoremark")
-            && is_word_boundary(rest)
-        {
-            *ignore_mark = false;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("!sigspace")
-            && is_word_boundary(rest)
-        {
-            *sigspace = false;
-            return Some(rest);
-        }
-        // Negated short forms
-        if let Some(rest) = remaining.strip_prefix("!r")
-            && is_short_boundary(rest)
-        {
-            *ratchet = false;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("!i")
-            && is_short_boundary(rest)
-        {
-            *ignore_case = false;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("!s")
-            && is_short_boundary(rest)
-        {
-            *sigspace = false;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("!m")
-            && is_short_boundary(rest)
-        {
-            *ignore_mark = false;
-            return Some(rest);
-        }
-        // Positive long forms
-        if let Some(rest) = remaining.strip_prefix("ratchet")
-            && is_word_boundary(rest)
-        {
-            *ratchet = true;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("ignorecase")
-            && is_word_boundary(rest)
-        {
-            *ignore_case = true;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("ignoremark")
-            && is_word_boundary(rest)
-        {
-            *ignore_mark = true;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("sigspace")
-            && is_word_boundary(rest)
-        {
-            *sigspace = true;
-            return Some(rest);
-        }
-        // Positive short forms
-        if let Some(rest) = remaining.strip_prefix("r")
-            && is_short_boundary(rest)
-        {
-            *ratchet = true;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("i")
-            && is_short_boundary(rest)
-        {
-            *ignore_case = true;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("s")
-            && is_short_boundary(rest)
-        {
-            *sigspace = true;
-            return Some(rest);
-        }
-        if let Some(rest) = remaining.strip_prefix("m")
-            && is_short_boundary(rest)
-        {
-            *ignore_mark = true;
-            return Some(rest);
+        //
+        // The spellings, as rakudo takes them: `:i` / `:ignorecase` switch the
+        // mode on, `:!i` off, and an integer argument — `:i(0)` or the prefix
+        // form `:0i` — switches it on unless the integer is zero. A negated
+        // adverb takes no argument (`:!i(1)`: the `(1)` is the next atom), and
+        // a non-integer argument (`:i($x)`) is not taken either.
+        let (negated, rest) = match remaining.strip_prefix('!') {
+            Some(rest) => (true, rest),
+            None => (false, remaining),
+        };
+        let digits = if negated {
+            0
+        } else {
+            rest.bytes().take_while(u8::is_ascii_digit).count()
+        };
+        let prefix_value = (digits > 0).then(|| rest[..digits].bytes().any(|b| b != b'0'));
+        let rest = &rest[digits..];
+        const NAMES: [(&str, &str); 4] = [
+            ("ratchet", "r"),
+            ("ignorecase", "i"),
+            ("ignoremark", "m"),
+            ("sigspace", "s"),
+        ];
+        for (index, (long, short)) in NAMES.iter().enumerate() {
+            let Some(after) = rest
+                .strip_prefix(long)
+                .filter(|after| is_word_boundary(after))
+                .or_else(|| rest.strip_prefix(short).filter(|after| is_word_boundary(after)))
+            else {
+                continue;
+            };
+            let (value, after) = if negated {
+                (false, after)
+            } else if let Some(value) = prefix_value {
+                (value, after)
+            } else if let Some(arg) = after.strip_prefix('(')
+                && let Some(close) = arg.find(')')
+                && close > 0
+                && arg[..close].bytes().all(|b| b.is_ascii_digit())
+            {
+                (arg[..close].bytes().any(|b| b != b'0'), &arg[close + 1..])
+            } else {
+                (true, after)
+            };
+            let flag = match index {
+                0 => &mut *ratchet,
+                1 => &mut *ignore_case,
+                2 => &mut *ignore_mark,
+                _ => &mut *sigspace,
+            };
+            *flag = value;
+            return Some(after);
         }
         None
     }

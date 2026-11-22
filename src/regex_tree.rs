@@ -1749,6 +1749,13 @@ impl Parser {
         stops: &[char],
         sequential_interpolation: bool,
     ) -> Option<RegexNode> {
+        // A leading `&` (`/a |& b/`, `/& a/`) opens no empty conjunct;
+        // rakudo drops it, as it drops a leading `|`.
+        let before_leading = self.pos;
+        self.skip_whitespace();
+        if !(self.consume_if('&') && self.chars.get(self.pos) != Some(&'&')) {
+            self.pos = before_leading;
+        }
         let mut operands = vec![self.parse_sequence(stops, sequential_interpolation)?];
         let mut sequential_operators = Vec::new();
         while self.chars.get(self.pos) == Some(&'&') {
@@ -1956,13 +1963,21 @@ impl Parser {
         nodes.push(term);
     }
 
-    /// `:i` / `:ignorecase` / `:m` / `:ignoremark`, optionally negated
-    /// (`:!i`). Any other adverb stays outside the tree.
-    // Cost: O(k), k = length of the adverb name.
+    /// `:i` / `:ignorecase` / `:m` / `:ignoremark` / `:s` / `:r` and their
+    /// long names, optionally negated (`:!i`) or with an integer argument
+    /// (`:i(0)`, `:1i`). Any other adverb stays outside the tree.
+    // Cost: O(k), k = length of the adverb name and its argument.
     fn parse_internal_modifier(&mut self) -> Option<RegexNode> {
         let start = self.pos;
         self.pos += 1;
         let negated = self.consume_if('!');
+        // `:1i` / `:0ignorecase`: the integer argument written before the name.
+        let digits_start = self.pos;
+        while !negated && self.chars.get(self.pos).is_some_and(char::is_ascii_digit) {
+            self.pos += 1;
+        }
+        let numeric_prefix = (self.pos > digits_start)
+            .then(|| self.chars[digits_start..self.pos].iter().any(|c| *c != '0') as u8);
         let name_start = self.pos;
         while self
             .chars
@@ -1986,11 +2001,27 @@ impl Parser {
                 return None;
             }
         };
-        // An argument (`:i(0)`) is not modelled. A `<` or `[` right after the
-        // adverb starts the next atom, as in rakudo (`:i<[ab]>`).
-        if self.chars.get(self.pos) == Some(&'(') {
-            self.pos = start;
-            return None;
+        // `:i(0)` / `:0i`: an integer argument switches the mode off when it
+        // is zero (rakudo's tree shows it as `negated`). An argument that is
+        // not an integer literal (`:i($x)`) is not modelled. A negated adverb
+        // takes no argument: in `:!i(1)` the `(1)` is the next atom. A `<` or
+        // `[` right after the adverb starts the next atom, as in rakudo
+        // (`:i<[ab]>`).
+        let mut negated = negated;
+        if let Some(value) = numeric_prefix {
+            negated = value == 0;
+        } else if !negated && self.chars.get(self.pos) == Some(&'(') {
+            let arg_start = self.pos + 1;
+            let mut arg_end = arg_start;
+            while self.chars.get(arg_end).is_some_and(char::is_ascii_digit) {
+                arg_end += 1;
+            }
+            if arg_end == arg_start || self.chars.get(arg_end) != Some(&')') {
+                self.pos = start;
+                return None;
+            }
+            negated = self.chars[arg_start..arg_end].iter().all(|c| *c == '0');
+            self.pos = arg_end + 1;
         }
         Some(RegexNode::InternalModifier {
             kind,
@@ -2589,19 +2620,23 @@ impl Parser {
         )))
     }
 
-    /// `$0`: match what the numbered capture matched.
+    /// `$0`: match what the numbered capture matched. The digits may be
+    /// any decimal script's (`$٠` is `$0`).
     // Cost: O(n), n = number of digits.
     fn parse_positional_back_reference(&mut self) -> Option<RegexNode> {
-        let start = self.pos + 1;
-        let mut end = start;
-        while self.chars.get(end).is_some_and(char::is_ascii_digit) {
+        let mut end = self.pos + 1;
+        let mut index: u32 = 0;
+        while let Some(digit) = self
+            .chars
+            .get(end)
+            .and_then(|c| crate::ucd::numeric::unicode_decimal_digit_value(*c))
+        {
+            index = index.checked_mul(10)?.checked_add(digit)?;
             end += 1;
         }
-        let index: u32 = self.chars[start..end]
-            .iter()
-            .collect::<String>()
-            .parse()
-            .ok()?;
+        if end == self.pos + 1 {
+            return None;
+        }
         self.pos = end;
         Some(RegexNode::Extension(
             RegexExtension::BackReferencePositional(index),
