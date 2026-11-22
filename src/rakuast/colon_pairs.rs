@@ -64,3 +64,32 @@ pub(super) fn view_node(names: &NameScope, run: &Expr) -> Result<RakuAstNode, Ru
         fields,
     })
 }
+
+/// `:shape(2;2)`: a colonpair whose parenthesized value has `;` sections,
+/// its `ColonPair::Value` with one statement per section in the value's
+/// `SemiList` (the `(1; 2)` term's view). `None` for any other value.
+// Cost: O(n), n = size of the value.
+pub(super) fn sections_pair(
+    names: &NameScope,
+    key: &str,
+    value: &Expr,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let Expr::Spelled(spelled) = value else {
+        return Ok(None);
+    };
+    if !matches!(spelled.spelling, crate::ast::spelled::Spelling::ParenSections(_)) {
+        return Ok(None);
+    }
+    let parentheses = view_expr(names, &Expr::Grouped(Box::new(value.clone())))?;
+    Ok(Some(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::ColonPairValue,
+        fields: vec![
+            super::view::leaf_field(
+                Some("key"),
+                crate::value::Value::str(key.to_string()),
+            ),
+            node_field(Some("value"), parentheses),
+        ],
+    }))
+}

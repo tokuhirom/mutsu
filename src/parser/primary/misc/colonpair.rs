@@ -522,13 +522,21 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = ws(r)?;
         // Check for separated list: :name(a, b, ...) or :name(a; b; ...) or :name(a,)
         if r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
+            // `:shape(2;2)`, `:s(1,2;3)`: each `;` section is an element, as in
+            // a parenthesized list (`finalize_paren_sections`).
+            let mut sections = Vec::new();
             let mut items = vec![first];
+            let mut saw_semicolon = false;
             let mut r = r;
             while r.starts_with(',') || (r.starts_with(';') && !r.starts_with(";;")) {
                 let sep = if r.starts_with(',') { ',' } else { ';' };
                 let (r2, _) = parse_char(r, sep)?;
                 let (r2, _) = ws(r2)?;
-                // Trailing comma: :name(a,)
+                if sep == ';' {
+                    saw_semicolon = true;
+                    sections.push(std::mem::take(&mut items));
+                }
+                // Trailing separator: :name(a,) / :name(a;)
                 if r2.starts_with(')') {
                     r = r2;
                     break;
@@ -538,7 +546,12 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 items.push(next);
                 r = r2;
             }
-            let (r, value) = colonpair_paren_value_tail(r, Expr::ArrayLiteral(items))?;
+            let list = if saw_semicolon {
+                crate::parser::primary::container::finalize_paren_sections(sections, items, true)
+            } else {
+                Expr::ArrayLiteral(items)
+            };
+            let (r, value) = colonpair_paren_value_tail(r, list)?;
             let (r, _) = parse_char(r, ')')?;
             return Ok((
                 r,
