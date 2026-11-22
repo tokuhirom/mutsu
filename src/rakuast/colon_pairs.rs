@@ -77,7 +77,10 @@ pub(super) fn sections_pair(
     let Expr::Spelled(spelled) = value else {
         return Ok(None);
     };
-    if !matches!(spelled.spelling, crate::ast::spelled::Spelling::ParenSections(_)) {
+    if !matches!(
+        spelled.spelling,
+        crate::ast::spelled::Spelling::ParenSections(_)
+    ) {
         return Ok(None);
     }
     let parentheses = view_expr(names, &Expr::Grouped(Box::new(value.clone())))?;
@@ -85,10 +88,7 @@ pub(super) fn sections_pair(
         origin: Default::default(),
         class: RakuAstClass::ColonPairValue,
         fields: vec![
-            super::view::leaf_field(
-                Some("key"),
-                crate::value::Value::str(key.to_string()),
-            ),
+            super::view::leaf_field(Some("key"), crate::value::Value::str(key.to_string())),
             node_field(Some("value"), parentheses),
         ],
     }))
