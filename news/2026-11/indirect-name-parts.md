@@ -16,5 +16,13 @@ A routine bound into the setting's stash (`&CORE::none := &f`,
 no declaration shadows it. A bare `OUTER::` is the pad one scope out
 (`OUTER::MY::`), so `OUTER::.values` holds the outer scope's values.
 
-roast `S02-names/pseudo-6d.t` and `6.c/S02-names/pseudo-6c.t` are down to 7
-failures each (#18742). Pin: `t/vm/scope/pseudo-indirect-parts.t`.
+Inside an `EVAL`, `&SETTING::not` is the routine of the scope the EVAL runs
+in, so a lexical `sub not` is found, as rakudo compiles the snippet against
+that scope. `&CALLER::SETTING::not` called from a frame an EVAL compiled
+works the same way. `&CALLER::($p)::f` used to drop its `CALLER` prefix; it
+now keeps it.
+
+roast `S02-names/pseudo-6d.t` and `6.c/S02-names/pseudo-6c.t` are down to 3
+failures each (#18742). The three left (`CALLER::OUTER::` and `CALLER::UNIT::`)
+need the caller frame's static link (#18787). Pins:
+`t/vm/scope/pseudo-indirect-parts.t`, `t/vm/scope/pseudo-setting-in-eval.t`.

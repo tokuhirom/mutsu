@@ -1785,9 +1785,21 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::IndirectTypeLookup);
             }
-            Expr::IndirectCodeLookup { package, name, .. } => {
+            Expr::IndirectCodeLookup {
+                package,
+                name,
+                caller,
+            } => {
                 self.note_eval_site_chain();
-                self.compile_expr(package);
+                // `&CALLER::($p)::f` looks the package up from the caller.
+                if *caller {
+                    let prefix = self.code.add_constant(Value::str("CALLER::".to_string()));
+                    self.code.emit(OpCode::LoadConst(prefix));
+                    self.compile_expr(package);
+                    self.code.emit(OpCode::Concat);
+                } else {
+                    self.compile_expr(package);
+                }
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::IndirectCodeLookup(name_idx));
             }
