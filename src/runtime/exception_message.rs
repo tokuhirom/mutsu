@@ -212,13 +212,28 @@ impl Interpreter {
             if let Some(formatted) = crate::builtins::method_table::exception_formatted_message(target) {
                 return Some(formatted);
             }
-            if let Some(formatted) =
-                crate::value::exception_message::format_exception_message(&cn, &map)
-            {
+            if let Some(formatted) = self.inherited_builtin_exception_message(&cn, &map) {
                 return Some(formatted);
             }
         }
         None
+    }
+
+    /// The message the first built-in exception class in `cn`'s MRO builds
+    /// from `attrs`: a user `class E is X::OutOfRange` inherits
+    /// `X::OutOfRange.message` (#18730). `cn` itself comes first.
+    // Cost: O(d), d = the class's MRO length, plus the message built.
+    pub(crate) fn inherited_builtin_exception_message(
+        &mut self,
+        cn: &str,
+        attrs: &crate::value::AttrMap,
+    ) -> Option<String> {
+        if let Some(text) = crate::value::exception_message::format_exception_message(cn, attrs) {
+            return Some(text);
+        }
+        self.class_mro(cn).iter().skip(1).find_map(|parent| {
+            crate::value::exception_message::format_exception_message(&parent.resolve(), attrs)
+        })
     }
 
     /// True when this value is an instance of a class the MRO identifies as an
