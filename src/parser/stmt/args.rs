@@ -58,10 +58,11 @@ fn parse_semicolon_sliced_paren_args(input: &str) -> PResult<'_, Vec<CallArg>> {
             rest = r2;
             continue;
         }
-        let (r2, item) = crate::parser::expr::expression(rest)?;
+        let (r2, item) = crate::parser::primary::regex::paren_arg_expr(rest)?;
         slices.last_mut().unwrap().push(item);
         let (r2, _) = ws(r2)?;
         rest = r2;
+        crate::parser::primary::regex::reject_loose_infix_after_arg(rest)?;
         if !(rest.starts_with(')') || rest.starts_with(';') || rest.starts_with(',')) {
             return Err(PError::expected("',', ';' or ')' in argument list"));
         }
@@ -173,6 +174,7 @@ fn parse_stmt_call_args_inner(
                 continue;
             }
             if !r2.starts_with(',') {
+                crate::parser::primary::regex::reject_loose_infix_after_arg(r2)?;
                 // Try closing paren
                 return Err(PError::expected("',' or ')'"));
             }
@@ -731,7 +733,8 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
         crate::parser::expr::listop_arg_expr_list_infix(input)
             .or_else(|_| reduction_call_style_expr(input))
     } else {
-        expression(input).or_else(|_| reduction_call_style_expr(input))
+        crate::parser::primary::regex::paren_arg_expr(input)
+            .or_else(|_| reduction_call_style_expr(input))
     };
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
         let (rest_ws, _) = ws(rest)?;
