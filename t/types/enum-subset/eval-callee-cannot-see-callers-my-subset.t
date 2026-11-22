@@ -5,7 +5,7 @@ use Test;
 # `EVAL`, a closure a helper runs, later uses in the routine and a mainline
 # block's subset are unaffected.
 
-plan 7;
+plan 9;
 
 sub callee { (try EVAL q[my Small $x = 5; $x]) // 'nv-subset' }
 
@@ -34,3 +34,10 @@ is constrained(), 3, '... and still constrains';
     sub in-block { (try EVAL q[my Blk $x = 5; $x]) // 'nv' }
     is in-block(), 5, 'a sub declared beside a mainline-block subset still sees it';
 }
+
+# Another routine declared the same name earlier: the declaring routine's own
+# subset is still the one hidden from its callee's EVAL.
+sub earlier-declarer { my subset Small of Int where * < 10; 1 }
+earlier-declarer();
+is caller-of-callee(), 'nv-subset', 'hidden after another routine declared the name';
+is own-eval(), 5, "... and the declaring routine's own EVAL still sees it";
