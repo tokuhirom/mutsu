@@ -95,7 +95,7 @@ impl Interpreter {
         }
         for frame in &self.call_frames {
             frame.saved_env.visit_values(visitor);
-            for v in &frame.saved_upvalues {
+            for v in frame.saved_upvalues() {
                 visit_opt(visitor, v);
             }
         }
