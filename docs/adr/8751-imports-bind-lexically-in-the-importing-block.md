@@ -455,6 +455,54 @@ Consequences that pin the design:
     `postfix:<++>` candidate left the element unchanged before, the unit's
     own candidate included.
 
+  **Slice 10 done** (`fix/17771-block-local-infix-lexical`, #18634,
+  2026-11-22): a block's *own* plain `sub infix:<op>` of a built-in
+  operator binds in a lexical set too, the way slice 5 binds an imported
+  one (#17771). Before, the declaration went into the registry and added the
+  whole unit to the `user_declared_infix_ops` gate, so a routine the block
+  called saw it.
+  - **The block opens a synthetic set.** A block below the unit's top level
+    that declares one gets a set whose id is `BLOCK_OPS_MARK`, the block's
+    import region key and the operator names (`compiler/block_operator_sets.rs`).
+    It is on the chain for the whole block, so every use gets the slice 2/5
+    prefixes. The block also opens an import region, which holds the set
+    while it runs, so a `where` predicate or an `EVAL` compiled there sees
+    it (`eval_lexical_import_chain`).
+  - **The declaration binds instead of registering.** Its plan carries the
+    set (`CompiledSubDeclPlan::block_operator_set`). The VM registers it
+    inside a registry snapshot, as an ADR-0113 frame-lexical routine is
+    derived, keeps the definition and rolls the registry and the gate back
+    (`vm_block_operator.rs`). The set then binds a one-candidate family that
+    shadows the built-in.
+  - A reduction or hyper over a family that *replaces* the built-in folds
+    with the dispatcher itself. With the candidates merely in scope, the
+    fold's native path never asked them. This also fixed `[**]` over an
+    imported plain `infix:<**>`.
+
+  **Slice 11 done** (`fix/18617-block-multi-operator-lexical`, #18652,
+  2026-11-22): a block's own `multi infix:<op>` binds in the same set
+  (#18617). This holds for an operator whose ops rank user candidates against
+  the core ones (`lexical_builtin_op::infix_ops_ask_user_candidates`).
+  - **The family adds to what is in scope.** The family is the block's
+    candidates plus those around the block: the innermost enclosing block's
+    family (`LexicalImportTables::families`), else the registry's (the
+    unit's own and its top-level imports). The built-in is the fallback
+    (`bind_block_operator_candidate`). `.candidates` lists the setting's
+    candidates first.
+  - **A string interpolation asks the candidates.** `StringConcat` gets the
+    `LexImportBuiltinOp` prefix for `~`, for imports too.
+  - **A recompiled callback keeps its sets.** A callback recompiled from
+    its AST is seeded with the sets around the closure that any of its call
+    sites reads. The common-suffix rule dropped every set once the sites
+    filtered different ones.
+  - **A built-in fallback does not loop.** It skips a builtin-fallback
+    dispatcher it finds as `&infix:<op>` in the candidate's frame, so a
+    candidate whose body uses its own operator on plain values no longer
+    recurses.
+  - Left on the registry: a block's `proto` of an operator, a set relation,
+    and a call-spelled operator (`⊆`, `x`). A call of a bound family skips
+    the core ranking those uses need.
+
   Left for stage 2:
   - `postcircumfix:<< >>` keeps its imported candidates in the registry.
   - A program's own `multi infix:<(|)>` candidate also answers `∪` (#13795):

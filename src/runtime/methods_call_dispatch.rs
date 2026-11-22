@@ -665,8 +665,11 @@ impl Interpreter {
                 }
                 // `$(...)` and `$(%h)` are `Scalar` containers for
                 // introspection, sharing the aggregate's storage.
+                // ... as a `.VAR` view that answers `.^name` `Scalar` and
+                // the container's `.of` (#18349).
                 if method == "VAR" {
-                    return Ok(Value::package(Symbol::intern("Scalar")));
+                    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(target.clone()));
+                    return Ok(Value::container_view(cell));
                 }
             }
             None => {}

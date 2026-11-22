@@ -343,6 +343,13 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
     })
 }
 
+/// The `Name` of a routine or term name: an operator's (`term:<x>`) with its
+/// word quote, any other one from its identifier.
+// Cost: O(n), n = length of the name.
+pub(super) fn operator_or_identifier(name: &str) -> RakuAstNode {
+    operator_name(name).unwrap_or_else(|| super::view::name_from_identifier(name))
+}
+
 /// A qualified name used as a term: `A::B`, or a package-qualified operator
 /// name (`M::term:<ab>`).
 // Cost: O(n), n = length of the name.

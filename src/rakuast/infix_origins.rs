@@ -31,6 +31,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             initializer(names, node);
             super::call_origins::call_assign_initializer(node);
             super::decl_origins::derive(names, node);
+            super::will_build_origins::place(node);
         }
         // `\(1, 2)`: the capture's arguments.
         RakuAstClass::TermCapture => super::capture_term::arg_list_origin(node),

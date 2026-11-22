@@ -3384,8 +3384,7 @@ impl Compiler {
                 self.code.emit(OpCode::Goto);
             }
             Stmt::Label { name, stmt } => {
-                let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::Label(name_idx));
+                self.emit_label_marker(name);
                 self.compile_stmt(stmt);
             }
             Stmt::Last(label) => {
@@ -5521,6 +5520,8 @@ impl Compiler {
     /// assignment yields the assigned value, and only genuinely valueless
     /// statements fall back to `True` ("completed" success).
     pub(super) fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
+        // `FOO: 42`: a labelled statement's value is its statement's (#18283).
+        let stmt = self.strip_tail_labels(stmt);
         match stmt {
             Stmt::Expr(expr) => {
                 // Tail expression escapes the frame (implicit result).

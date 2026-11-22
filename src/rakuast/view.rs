@@ -2065,8 +2065,7 @@ pub(super) fn term_declaration(
     if let Some(type_name) = decl.type_constraint {
         fields.push(node_field(Some("type"), build_type_node(names, type_name)?));
     }
-    let name =
-        name_parts::operator_name(decl.name).unwrap_or_else(|| name_from_identifier(decl.name));
+    let name = name_parts::operator_or_identifier(decl.name);
     fields.push(node_field(Some("name"), name));
     fields.push(node_field(
         Some("initializer"),
@@ -2489,9 +2488,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::ParenthesizedDeclaratorAdverb => {
                 parenthesized_expression(names, &spelled.expr)
             }
-            Spelling::BracketTraitArgument | Spelling::ParenSections(_) | Spelling::WrittenNil => {
-                view_expr(names, &spelled.expr)
-            }
+            Spelling::BracketTraitArgument
+            | Spelling::AttributeCallAssign
+            | Spelling::ParenSections(_)
+            | Spelling::WrittenNil => view_expr(names, &spelled.expr),
             Spelling::Heredoc { stop, body } => heredoc_node(names, &spelled.expr, stop, *body),
             Spelling::EmptyStatement => Ok(super::spelled_nodes::statement_empty()),
             Spelling::HyperMetaMethod => {
@@ -5760,8 +5760,7 @@ pub(super) fn call_name(
         return Ok(term);
     }
     // `prefix:<!>(1)`: an operator's name holds its symbol as a word quote.
-    let name_node =
-        super::name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
+    let name_node = name_parts::operator_or_identifier(name);
     let arg_list = arg_list(names, args)?;
     // A qualified name (`M::foo`) is a `Call::Name` however it is spelled:
     // raku has the `WithoutParentheses` form for a plain identifier only

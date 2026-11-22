@@ -75,6 +75,10 @@ pub(crate) enum Spelling {
     ParenthesizedDeclaratorAdverb,
     /// An attribute trait's direct `[ ... ]` argument, not `([ ... ])`.
     BracketTraitArgument,
+    /// `has R $.r .= new(...)`: an attribute default written as a `.=` call
+    /// on the declared type, which the parser keeps as the method call;
+    /// RakuAST has an `Initializer::CallAssign`.
+    AttributeCallAssign,
     /// `q:to/END/`: the terminator line as written, indentation and newline
     /// included (`    END\n`), and where the body was written (ADR-10723
     /// Stage 2: the origin of its text).
