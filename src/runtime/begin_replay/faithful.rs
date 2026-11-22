@@ -19,11 +19,48 @@ use crate::value::{Value, ValueView};
 use std::collections::HashSet;
 
 /// Whether `values` (taken together, so sharing between them counts) decode
-/// back to what they are. `Err` names the first part that would not.
-// Cost: O(v), v = total size of the values (each node visited once).
-pub(crate) fn check(values: &[&Value]) -> Result<(), String> {
+/// back to what they are, sharing no container with `others` either (lexicals
+/// the log does not hold, of any kind). `Err` names the first part that would
+/// not.
+// Cost: O(v + o), v = total size of the values, o = the containers reachable
+// from `others` (each node visited once).
+pub(crate) fn check(values: &[&Value], others: &[&Value]) -> Result<(), String> {
     let mut seen = HashSet::new();
+    for other in others {
+        collect(other, &mut seen);
+    }
     values.iter().try_for_each(|v| walk(v, &mut seen))
+}
+
+/// Record every container reachable from `value` through containers, without
+/// judging anything else about it.
+// Cost: O(o), o = containers reachable from `value`.
+fn collect(value: &Value, seen: &mut HashSet<usize>) {
+    match value.view() {
+        ValueView::Pair(_, v) => collect(v, seen),
+        ValueView::ValuePair(k, v) => {
+            collect(k, seen);
+            collect(v, seen);
+        }
+        ValueView::ContainerRef(cell) => {
+            if seen.insert(crate::gc::Gc::as_ptr(&cell) as usize)
+                && let Ok(inner) = cell.lock().map(|v| v.clone())
+            {
+                collect(&inner, seen);
+            }
+        }
+        ValueView::Array(data, _) => {
+            if seen.insert(crate::gc::Gc::as_ptr(&data) as usize) {
+                data.iter().for_each(|v| collect(v, seen));
+            }
+        }
+        ValueView::Hash(data) => {
+            if seen.insert(crate::gc::Gc::as_ptr(&data) as usize) {
+                data.map.values().for_each(|v| collect(v, seen));
+            }
+        }
+        _ => {}
+    }
 }
 
 // Cost: O(1).

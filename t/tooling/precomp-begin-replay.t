@@ -6,7 +6,7 @@ use Test;
 # construction, so each rejected class below must still run on the warm load,
 # and every warm run must print exactly what its cold run printed.
 
-plan 26;
+plan 28;
 
 my $root = $*TMPDIR.add("mutsu-begin-replay-{$*PID}");
 my $lib = $root.add('lib');
@@ -77,6 +77,15 @@ my %modules =
         my @two := BEGIN { nqp::bindkey($h, 'a', 2); nqp::list('set') };
         sub overwrite() is export { nqp::atkey($h, 'a') ~ @two[0] }
         M
+    # A recorded body whose input an earlier, unrecorded body sets differently
+    # on each load: its recorded result is stale, so it runs again.
+    BRInputs => q:to/M/,
+        use nqp;
+        my $h;
+        my @pid := BEGIN { $h := nqp::hash('pid', $*PID); () };
+        my @x := BEGIN { nqp::bindkey($h, 'x', 1); nqp::list() };
+        sub inputs() is export { nqp::atkey($h, 'pid') == $*PID && nqp::atkey($h, 'x') == 1 }
+        M
     # One container reached twice: a decode would build it twice.
     BRShared => q:to/M/,
         use nqp;
@@ -93,7 +102,7 @@ my $script = $root.add('probe.raku');
 $script.spurt: qq:to/PROBE/;
     use lib '$lib';
     use BRTable; use BRUserMethod; use BRSlowPath; use BRFileWrite;
-    use BRProcess; use BROverwrite; use BRShared;
+    use BRProcess; use BROverwrite; use BRShared; use BRInputs;
     say table().sort.map(\{ .key ~ '=' ~ .value.join(',') }).join(' ');
     say table().^name, ' ', table()<odd>.^name, ' ', words();
     say user-method();
@@ -102,6 +111,7 @@ $script.spurt: qq:to/PROBE/;
     say process-static();
     say overwrite();
     say shared();
+    say inputs();
     PROBE
 
 %*ENV<XDG_CACHE_HOME> = $root.add('cache').Str;
@@ -139,7 +149,10 @@ for <user-method slow-path> -> $class {
 ok $mark.e, 'warm: the file-writing body runs again';
 is @warm[5], 'True', 'warm: the process-specific body sees this process';
 is @warm[6], '2set', 'warm: the overwritten lexical keeps the new value';
-is @warm.tail, '1', 'warm: a container reached twice is still one container';
+is @warm[7], '1', 'warm: a container reached twice is still one container';
+is @warm[8], 'True', 'warm: a body whose recorded inputs differ runs again';
+is %warm<begin>.grep(*.contains('inputs differ')).elems, 1,
+    'warm: the replay checked the inputs';
 
 ok %cold<begin>.grep(*.contains('a BEGIN body is not recorded')).elems >= 2,
     'cold: the scan refuses the routine call and the dynamic read';

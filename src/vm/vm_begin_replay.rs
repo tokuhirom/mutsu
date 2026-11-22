@@ -4,18 +4,20 @@
 use super::*;
 use crate::runtime::begin_replay::{self, scan, watch::Watch};
 
-/// A `BEGIN` body being recorded: what its unit lexicals encoded to before it
-/// ran, and the watch over its run.
+/// A `BEGIN` body being recorded: the unit lexicals it reaches, what they
+/// encoded to before it ran, and the watch over its run.
 pub(super) struct BeginRecording {
-    before: Vec<(usize, Option<Vec<u8>>)>,
+    inputs: Vec<(usize, Vec<u8>)>,
+    /// The body's own slots (sorted).
+    declared: Vec<usize>,
     watch: Watch,
 }
 
 impl Interpreter {
     /// Start recording the `BEGIN` body `start..end` of `code`, or `None` when
     /// it cannot be proven replay-safe (then it just runs, as always).
-    // Cost: O(n + v), n = opcodes in the body, v = size of the unit lexicals it
-    // could change (encoded once before the body).
+    // Cost: O(n log n + v), n = opcodes in the body, v = size of the unit
+    // lexicals it reaches (encoded once before the body).
     pub(super) fn begin_recording(
         &self,
         code: &CompiledCode,
@@ -25,41 +27,29 @@ impl Interpreter {
         if !scan::body_is_recordable(code, start, end) {
             return None;
         }
-        let declared = scan::body_declared_slots(code, start, end);
-        let mut before = Vec::new();
-        for slot in 0..self.locals.len() {
-            if declared.contains(&slot) {
-                continue;
-            }
-            let value = self.locals[slot].deref_container();
-            match begin_replay::encoding_of(&value) {
-                Some(bytes) => before.push((slot, Some(bytes))),
-                // A type object cannot be changed by anything the scan admits;
-                // any other value the log cannot hold might be.
-                None if Self::begin_opaque_ok(&value) => before.push((slot, None)),
-                None => {
-                    begin_replay::trace("a unit lexical holds a value the log cannot hold");
-                    return None;
-                }
-            }
+        let slots = scan::body_slots(code, start, end);
+        let mut inputs = Vec::new();
+        for slot in slots.unit {
+            let value = self.locals.get(slot)?.deref_container();
+            let Some(bytes) = begin_replay::encoding_of(&value) else {
+                begin_replay::trace(
+                    "a unit lexical the body reaches holds a value the log cannot hold",
+                );
+                return None;
+            };
+            inputs.push((slot, bytes));
         }
         Some(BeginRecording {
-            before,
+            inputs,
+            declared: slots.declared,
             watch: Watch::start(code),
         })
     }
 
-    /// A unit lexical value the log cannot hold but the body cannot change
-    /// either: a type object. (A routine is not one: `nqp::bindattr` can edit
-    /// a `Code` object's attributes.)
-    // Cost: O(1).
-    fn begin_opaque_ok(value: &Value) -> bool {
-        matches!(value.view(), ValueView::Package(_))
-    }
-
     /// The `BEGIN` body `site_id` ran to `value`: record it if it stayed
     /// replay-safe.
-    // Cost: O(v), v = size of the unit lexicals compared and the value.
+    // Cost: O(v + l), v = size of the reached lexicals and the value, l = the
+    // containers reachable from the frame's other lexicals.
     pub(super) fn finish_begin_recording(
         &self,
         recording: BeginRecording,
@@ -72,30 +62,53 @@ impl Interpreter {
         }
         let mut changed = Vec::new();
         let mut unchanged = Vec::new();
-        for (slot, before) in recording.before {
-            let Some(current) = self.locals.get(slot).map(Value::deref_container) else {
+        for (slot, before) in &recording.inputs {
+            let Some(current) = self.locals.get(*slot).map(Value::deref_container) else {
                 return;
             };
-            let after = begin_replay::encoding_of(&current);
-            match (&before, &after) {
-                (Some(b), Some(a)) if b == a => unchanged.push(current),
-                // Still a type object: the body cannot have changed it.
-                (None, None) if Self::begin_opaque_ok(&current) => {}
-                (_, Some(_)) => changed.push((slot, current)),
-                _ => return,
+            match begin_replay::encoding_of(&current) {
+                Some(after) if after == *before => unchanged.push(current),
+                Some(_) => changed.push((*slot, current)),
+                None => {
+                    begin_replay::trace(&format!(
+                        "BEGIN {site_id}: a changed lexical is not recordable"
+                    ));
+                    return;
+                }
             }
         }
         // The value and the changed lexicals must decode to what they are, and
-        // share no container with each other or with a lexical left as it was
-        // (a decode would build the shared one twice).
+        // share no container with each other or with any other lexical of the
+        // frame that outlives the body (a decode would build the shared one
+        // twice).
         let mut all: Vec<&Value> = vec![value];
         all.extend(changed.iter().map(|(_, v)| v));
         all.extend(unchanged.iter());
-        if let Err(why) = begin_replay::faithful::check(&all) {
+        let others: Vec<Value> = (0..self.locals.len())
+            .filter(|slot| {
+                !recording.inputs.iter().any(|(s, _)| s == slot)
+                    && recording.declared.binary_search(slot).is_err()
+            })
+            .map(|slot| self.locals[slot].deref_container())
+            .collect();
+        let others: Vec<&Value> = others.iter().collect();
+        if let Err(why) = begin_replay::faithful::check(&all, &others) {
             begin_replay::trace(&format!("BEGIN {site_id} is not recorded: {why}"));
             return;
         }
-        begin_replay::record_site(site_id, value, &changed);
+        begin_replay::record_site(site_id, value, &changed, recording.inputs);
+    }
+
+    /// Whether the unit lexicals a recorded body reaches hold what they held
+    /// when it was recorded: only then is the recorded result its result now.
+    // Cost: O(v), v = size of those lexicals (encoded).
+    pub(super) fn begin_inputs_match(&self, inputs: &[(usize, Vec<u8>)]) -> bool {
+        inputs.iter().all(|(slot, before)| {
+            self.locals
+                .get(*slot)
+                .and_then(|v| begin_replay::encoding_of(&v.deref_container()))
+                .is_some_and(|now| now == *before)
+        })
     }
 
     /// Bind the unit lexicals a replayed `BEGIN` body changed, into the cells

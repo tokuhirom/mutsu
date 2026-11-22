@@ -80,7 +80,12 @@ impl Interpreter {
         // recorded into it (ADR-18012 S1, `runtime::begin_replay`).
         let mut recording_wanted = false;
         match crate::runtime::begin_replay::site_action(code, site_id) {
-            crate::runtime::begin_replay::SiteAction::Replay { value, locals } => {
+            crate::runtime::begin_replay::SiteAction::Replay {
+                value,
+                locals,
+                inputs,
+            } if self.begin_inputs_match(&inputs) => {
+                crate::runtime::begin_replay::trace(&format!("replayed BEGIN {site_id}"));
                 if let crate::runtime::once_store::OnceClaim::Claimed = store.claim(&cache_key) {
                     store.fulfill(&cache_key, value.clone());
                 }
@@ -88,6 +93,11 @@ impl Interpreter {
                 self.stack.push(value);
                 *ip = body_end as usize;
                 return Ok(());
+            }
+            crate::runtime::begin_replay::SiteAction::Replay { .. } => {
+                crate::runtime::begin_replay::trace(&format!(
+                    "BEGIN {site_id} runs: its inputs differ from the recorded ones"
+                ));
             }
             crate::runtime::begin_replay::SiteAction::Record => recording_wanted = true,
             crate::runtime::begin_replay::SiteAction::Run => {}

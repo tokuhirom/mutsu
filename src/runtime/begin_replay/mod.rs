@@ -56,6 +56,11 @@ pub(crate) struct SiteRecord {
     value: PortableValue,
     /// The unit lexicals the body changed: slot and final value.
     locals: Vec<(u32, PortableValue)>,
+    /// The unit lexicals the body reaches, as they were encoded before it ran.
+    /// A replay checks them first: the recorded result is the body's result
+    /// only for these inputs (an earlier `BEGIN` that is not replayed can give
+    /// them other values on another load).
+    inputs: Vec<(u32, Vec<u8>)>,
 }
 
 /// The log of one module mainline.
@@ -195,6 +200,8 @@ pub(crate) enum SiteAction {
     Replay {
         value: Value,
         locals: Vec<(usize, Value)>,
+        /// The inputs to check first (see [`SiteRecord::inputs`]).
+        inputs: Vec<(usize, Vec<u8>)>,
     },
 }
 
@@ -220,17 +227,19 @@ pub(crate) fn site_action(code: &CompiledCode, site_id: u64) -> SiteAction {
     match record {
         None => SiteAction::Run,
         Some(None) => SiteAction::Record,
-        Some(Some(record)) => {
-            trace(&format!("replayed BEGIN {site_id}"));
-            SiteAction::Replay {
+        Some(Some(record)) => SiteAction::Replay {
             value: record.value.into_value(),
             locals: record
                 .locals
                 .into_iter()
                 .map(|(slot, v)| (slot as usize, v.into_value()))
                 .collect(),
-            }
-        }
+            inputs: record
+                .inputs
+                .into_iter()
+                .map(|(slot, bytes)| (slot as usize, bytes))
+                .collect(),
+        },
     }
 }
 
@@ -260,7 +269,12 @@ pub(crate) fn trace(what: &str) {
 /// mainline produced `value` and left `locals` changed. Nothing is recorded
 /// when any of them cannot be encoded: that body then runs on every load.
 // Cost: O(v), v = size of the values (encoded).
-pub(crate) fn record_site(site_id: u64, value: &Value, locals: &[(usize, Value)]) {
+pub(crate) fn record_site(
+    site_id: u64,
+    value: &Value,
+    locals: &[(usize, Value)],
+    inputs: Vec<(usize, Vec<u8>)>,
+) {
     let Ok(value) = PortableValue::from_value(value) else {
         trace(&format!("BEGIN {site_id}: value not recordable"));
         return;
@@ -273,6 +287,13 @@ pub(crate) fn record_site(site_id: u64, value: &Value, locals: &[(usize, Value)]
         };
         encoded.push((slot, v));
     }
+    let mut kept = Vec::with_capacity(inputs.len());
+    for (slot, bytes) in inputs {
+        let Ok(slot) = u32::try_from(slot) else {
+            return;
+        };
+        kept.push((slot, bytes));
+    }
     FRAMES.with(|frames| {
         if let Some(frame) = frames.borrow_mut().last_mut() {
             trace(&format!("recorded BEGIN {site_id}"));
@@ -280,6 +301,7 @@ pub(crate) fn record_site(site_id: u64, value: &Value, locals: &[(usize, Value)]
                 site_id,
                 value,
                 locals: encoded,
+                inputs: kept,
             });
         }
     });

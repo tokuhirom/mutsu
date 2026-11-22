@@ -136,22 +136,42 @@ fn op_is_recordable(code: &CompiledCode, op: &OpCode, declared: &[u32]) -> bool 
     }
 }
 
-/// The frame slots the body `start..end` declares itself: its own `my`
-/// variables and loop parameters. Every other slot is a unit lexical the body
-/// may change, which the recorder compares.
-// Cost: O(n), n = opcodes in the body.
-pub(crate) fn body_declared_slots(code: &CompiledCode, start: usize, end: usize) -> Vec<usize> {
-    let mut slots = Vec::new();
+/// The frame slots of the body `start..end`.
+pub(crate) struct BodySlots {
+    /// The unit lexicals it reaches: the slots it reads or writes and does not
+    /// declare itself. The scan admits no other way to reach a frame slot, so
+    /// these are the body's only lexical inputs and outputs.
+    pub(crate) unit: Vec<usize>,
+    /// Its own `my` variables and loop parameters, sorted: nothing outside the
+    /// body can reach them (the scan admits no closure).
+    pub(crate) declared: Vec<usize>,
+}
+
+/// The frame slots the body `start..end` reaches and declares.
+// Cost: O(n log n), n = opcodes in the body.
+pub(crate) fn body_slots(code: &CompiledCode, start: usize, end: usize) -> BodySlots {
+    let mut declared = Vec::new();
+    let mut used = Vec::new();
     for op in code.ops.get(start..end).unwrap_or_default() {
         match op {
-            OpCode::SetLocalDecl { slot, .. } => slots.push(*slot as usize),
+            OpCode::SetLocalDecl { slot, .. } => declared.push(*slot as usize),
             OpCode::SetVarDynamic {
                 local_slot: Some(slot),
                 ..
-            } => slots.push(*slot as usize),
-            OpCode::ForLoop(spec) => slots.extend(spec.param_local.map(|s| s as usize)),
+            } => declared.push(*slot as usize),
+            OpCode::ForLoop(spec) => declared.extend(spec.param_local.map(|s| s as usize)),
+            OpCode::GetLocal(slot) | OpCode::SetLocal(slot) | OpCode::CheckReadOnly(slot) => {
+                used.push(*slot as usize)
+            }
             _ => {}
         }
     }
-    slots
+    declared.sort_unstable();
+    used.sort_unstable();
+    used.dedup();
+    used.retain(|slot| declared.binary_search(slot).is_err());
+    BodySlots {
+        unit: used,
+        declared,
+    }
 }
