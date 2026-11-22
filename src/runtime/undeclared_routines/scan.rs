@@ -391,6 +391,16 @@ impl<'ast> Visit<'ast> for Scan {
             };
             self.record_call(base);
         }
+        // `&name` names the routine `name` as a value: rakudo rejects an
+        // undeclared one at CHECK time like a call (`say &nosuch` is
+        // "Undeclared routine"). Only a plain identifier: `&infix:<+>`,
+        // `&?ROUTINE`, `&*dyn` and `&Pkg::name` resolve otherwise.
+        if let Expr::CodeVar(name) = expr
+            && name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+            && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+        {
+            self.record_call(name);
+        }
         // `$( ... )` is parsed as the `.item` of a desugared block, but is not
         // a lexical scope: a routine declared inside belongs to the enclosing one.
         if let Expr::DoBlock {
