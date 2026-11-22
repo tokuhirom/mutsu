@@ -104,6 +104,14 @@ impl Compiler {
         self.sigilless_locals.contains(name) || self.enclosing_sigilless.contains(name)
     }
 
+    /// Whether a lexical `&name` (a `my &name`, a `&name` parameter) is
+    /// visible here, in this scope or an enclosing one.
+    // Cost: O(|name|).
+    pub(super) fn names_lexical_code_var(&self, name: &str) -> bool {
+        let amp = format!("&{name}");
+        self.local_map.contains_key(amp.as_str()) || self.code.outer_code_var_names.contains(&amp)
+    }
+
     /// The storage key of the target of a `name = …` statement whose source
     /// spelled it without a sigil (`Stmt::Assign { target_is_sigilless }`):
     /// the term key when `name` is a sigilless binding (ADR-12441), an
