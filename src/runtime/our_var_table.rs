@@ -74,6 +74,11 @@ pub(crate) struct OurVarTable {
     /// `our sub` declared at run time on one thread (`EVAL`, a `require`) is
     /// found through on every other.
     routines: ShardedMap<Symbol, Arc<crate::ast::FunctionDef>>,
+    /// The bare names a program bound a routine for into the setting's
+    /// stash (`&CORE::none := &f`, `CORE::<&none> := &f`, stored under
+    /// `&CORE::none`). A call of such a name that no user declaration
+    /// shadows calls the bound routine (#18779). Append-only, like `vars`.
+    core_bound_routines: Arc<FxHashSet<Symbol>>,
 }
 
 impl OurVarTable {
@@ -122,6 +127,13 @@ impl OurVarTable {
         &self.global_names
     }
 
+    /// Whether a routine was bound into the setting's stash under `name`.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn core_routine_bound(&self, name: Symbol) -> bool {
+        !self.core_bound_routines.is_empty() && self.core_bound_routines.contains(&name)
+    }
+
     // Cost: O(1).
     pub(crate) fn is_term_key(&self, key: Symbol) -> bool {
         self.term_keys.contains(&key)
@@ -146,6 +158,14 @@ impl OurVarTable {
             && !self.global_names.contains(&key_sym)
         {
             Arc::make_mut(&mut self.global_names).insert(key_sym);
+        }
+        if let Some(bare) = key.strip_prefix("&CORE::")
+            && !bare.is_empty()
+        {
+            let bare = Symbol::intern(bare);
+            if !self.core_bound_routines.contains(&bare) {
+                Arc::make_mut(&mut self.core_bound_routines).insert(bare);
+            }
         }
         match self.vars.get_mut(key.as_str()) {
             Some(slot) => *slot = value,
@@ -222,9 +242,21 @@ impl Interpreter {
         {
             return;
         }
+        // A routine newly bound into the setting's stash changes what a call
+        // of its name reaches: retire the call sites that learned the builtin
+        // route (#18779).
+        let core_bind = key
+            .strip_prefix("&CORE::")
+            .is_some_and(|bare| !self.our_table().core_routine_bound(Symbol::intern(bare)));
         self.lexicals
             .our_vars
             .write(|table| table.insert(key, value));
+        if core_bind {
+            self.types.registry_write_gen.store(
+                crate::runtime::registry_gen::next_generation(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
     }
 
     /// Record that the store key `key` is a sigil-less term (`true`) or a `$`

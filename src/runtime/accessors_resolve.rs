@@ -699,7 +699,7 @@ impl Interpreter {
     /// (`&CORE::name := &f` or `CORE::<&name> := &f`), kept in the package
     /// store under `&CORE::name`.
     // Cost: O(|name|), one memoized name build and one hashed `our` probe.
-    fn core_stash_routine(&self, name: &str) -> Option<Value> {
+    pub(crate) fn core_stash_routine(&self, name: &str) -> Option<Value> {
         let key = crate::qualified::qualified_text("&CORE", name);
         self.get_our_var_sym(key).map(|value| value.deref_container())
     }
