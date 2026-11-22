@@ -19,9 +19,11 @@ dies-ok { Supply.stable(1) }, 'stable cannot be called as a class method';
 }
 
 {
-    # For an instantaneously-emitting (materialized) supply, a positive stable
-    # window collapses to just the final value.
+    # An instantaneously-emitting supply is done before any window ends, and
+    # `done` is passed on at once (#18615): nothing is emitted.
     my @got;
-    Supply.from-list(1..5).stable(2).tap({ @got.push($_) });
-    is-deeply @got, [5], 'instant emission debounces to the last value';
+    my $done = Promise.new;
+    Supply.from-list(1..5).stable(2).tap({ @got.push($_) }, done => { $done.keep });
+    await $done;
+    is-deeply @got, [], 'instant emission is done before any value is stable';
 }
