@@ -266,10 +266,11 @@ impl Interpreter {
                 {
                     return Ok(self.delayed_live_supply(source_id, delay_seconds));
                 }
-                let mut new_attrs = attributes.clone();
-                new_attrs.insert("delay_seconds".to_string(), Value::num(delay_seconds));
-                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+                // Any other source is a per-tap stage: each tap replays the
+                // source into its own delay worker, so `.tap` returns at once
+                // (#18696).
+                let source = Value::make_instance_with_id(Symbol::intern("Supply"), attributes.clone(), 0);
+                Ok(Self::make_eager_stage_supply(source, "delayed", vec![Value::num(delay_seconds)]))
             }
             "min" => {
                 let mapper = args.first().cloned();
