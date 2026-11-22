@@ -86,34 +86,3 @@ pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
         }
     }
 }
-
-/// `$::($p)::A::x := v` / `::($p)::A := v`: a bind whose target is named at
-/// run time, as [`Expr::IndirectSymbolBind`]; any other target is handed back
-/// with the value.
-// Cost: O(1).
-pub(super) fn indirect_symbol_bind(target: Expr, value: Expr) -> Result<Expr, (Expr, Expr)> {
-    let (sigil, expr) = match target {
-        Expr::SymbolicDeref { sigil, expr } => (sigil, expr),
-        Expr::IndirectTypeLookup(expr) => (String::new(), expr),
-        // `::($p)::A` names the same symbol as `::($p ~ '::A')`.
-        Expr::IndirectTypeLookupTail {
-            head,
-            tail,
-            trailing: false,
-        } => (
-            String::new(),
-            Box::new(Expr::Binary {
-                left: head,
-                op: crate::token_kind::TokenKind::Tilde,
-                right: Box::new(Expr::Literal(Value::str(tail.to_string()))),
-                form: Default::default(),
-            }),
-        ),
-        other => return Err((other, value)),
-    };
-    Ok(Expr::IndirectSymbolBind {
-        sigil,
-        expr,
-        value: Box::new(value),
-    })
-}

@@ -2741,6 +2741,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         }
         // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
         Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::view_node(names, sigil, expr),
+        Expr::IndirectSymbolBind { sigil, expr, value } => {
+            super::indirect_bind::view(names, sigil, expr, value)
+        }
         Expr::IndirectCodeLookup {
             package,
             name,

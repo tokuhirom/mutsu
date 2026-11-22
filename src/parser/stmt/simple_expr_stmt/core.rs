@@ -11,11 +11,10 @@ use crate::parser::stmt::simple::add_xor_sink_warnings;
 use crate::parser::term_boundary::{is_pure_value_expr, starts_with_unambiguous_term};
 use crate::symbol::Symbol;
 
-use super::lvalue::indirect_symbol_bind;
 use super::predicates::{
     is_literal_expr, is_pseudo_package, starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
-use crate::rakuast::callable_lvalue_assign_expr;
+use crate::rakuast::{callable_lvalue_assign_expr, indirect_symbol_bind};
 /// Parse an expression statement (fallback).
 pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topic mutating method call: .=method(args)
