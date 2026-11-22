@@ -1,4 +1,5 @@
-//! One thread at a time composes a role's pun class (#18858).
+//! One thread at a time composes a role's pun class (#18858), or a mixin
+//! type (`types/mixin_compose_lock.rs`, which takes this same lock).
 //!
 //! A pun class is composed on first use and found by name afterwards
 //! (`ensure_parametric_role_pun_class_for`, `ensure_plain_role_pun_class`).
