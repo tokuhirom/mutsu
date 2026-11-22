@@ -244,13 +244,11 @@ impl ContainerStructGuard {
             return None;
         }
         HOLDS_STRUCT_LOCK.with(|held| held.set(true));
-        let lock = |i: usize| {
-            StripeGuard::Exclusive(
-                STRIPE_LOCKS[i]
-                    .0
-                    .write()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
-            )
+        let lock = |i: usize| StripeGuard::Exclusive {
+            _held: STRIPE_LOCKS[i]
+                .0
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
         };
         let first = lock(ia.min(ib));
         let second = lock(ia.max(ib));
@@ -291,11 +289,11 @@ impl ContainerStructGuard {
         // unrelated container that hashes to it would then panic too. The
         // invariant this lock protects is "one writer at a time", which a
         // previous panic does not invalidate, so recover rather than propagate.
-        let guard = StripeGuard::Exclusive(
-            stripe_for(addr)
+        let guard = StripeGuard::Exclusive {
+            _held: stripe_for(addr)
                 .write()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()),
-        );
+        };
         HELD_STRIPES.with(|held| held.set((stripe_index(addr), NO_STRIPE)));
         Some(Self {
             _guard: guard,
@@ -330,8 +328,12 @@ impl ContainerStructGuard {
 /// *exclusive* side is everything else that holds a stripe (every structural
 /// write and every live-node read), as under ADR-0068.
 enum StripeGuard {
-    Exclusive(#[allow(dead_code)] RwLockWriteGuard<'static, ()>),
-    Shared(#[allow(dead_code)] RwLockReadGuard<'static, ()>),
+    Exclusive {
+        _held: RwLockWriteGuard<'static, ()>,
+    },
+    Shared {
+        _held: RwLockReadGuard<'static, ()>,
+    },
 }
 
 impl ContainerStructGuard {
@@ -350,13 +352,11 @@ impl ContainerStructGuard {
             return None;
         }
         let (ia, ib) = (stripe_index(cell), stripe_index(node));
-        let shared = |i: usize| {
-            StripeGuard::Shared(
-                STRIPE_LOCKS[i]
-                    .0
-                    .read()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner()),
-            )
+        let shared = |i: usize| StripeGuard::Shared {
+            _held: STRIPE_LOCKS[i]
+                .0
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
         };
         HOLDS_STRUCT_LOCK.with(|held| held.set(true));
         HOLDS_SHARED_SIDE.with(|held| held.set(true));
