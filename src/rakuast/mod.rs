@@ -265,6 +265,7 @@ mod source_identifier;
 mod source_identifier_tests;
 mod string_block_origins;
 mod string_origins;
+mod string_postfix_origins;
 mod string_variable_origins;
 mod stub_package;
 mod subclass;

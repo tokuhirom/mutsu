@@ -286,7 +286,7 @@ pub(crate) fn parse_param_list_with_return_inner(
             || invocant_type.ends_with(":D")
             || invocant_type.ends_with(":U")
         {
-            let mut inv = super::param_list::make_smiley_invocant_param(invocant_type);
+            let mut inv = super::param_list::make_smiley_invocant_param(invocant_type, head);
             inv.type_capture = invocant_capture;
             inv.multi_invocant = multi_invocant;
             params.push(inv);
