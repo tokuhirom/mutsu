@@ -196,6 +196,8 @@ impl SupplyOp {
                 | SupplyOp::Repeated
                 | SupplyOp::Delayed
                 | SupplyOp::ScheduleOn
+                | SupplyOp::Stable
+                | SupplyOp::Migrate
         )
     }
 }
