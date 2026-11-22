@@ -21,14 +21,20 @@ pub(crate) fn check_type_object_in_ordering_context(v: &Value) -> Result<(), Run
 
 /// A `Sub`/`Block`/`Method` has no `.Numeric` (nor `.Real`) candidate, so a
 /// numeric comparison with one fails the dispatch as rakudo's does (#9791 did
-/// this for the arithmetic operators). `Whatever` and `WhateverCode` are
-/// deliberately not caught: a chained comparison can reuse a compound Whatever
-/// as a shared operand (see `coerce_numeric_bridge_pair_strict`).
+/// this for the arithmetic operators). Neither has a bare `Whatever` value
+/// (`my $w = *; $w == 1`, #18766): a `*` written as an operand is curried at
+/// parse time, so only a `Whatever` *value* gets here. A `WhateverCode` is
+/// deliberately not caught: a chained comparison can reuse a compound
+/// Whatever as a shared operand (see `coerce_numeric_bridge_pair_strict`).
 // Cost: O(1)
 fn check_code_in_numeric_comparison(v: &Value, method: &str) -> Result<(), RuntimeError> {
     if matches!(
         v.view(),
-        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+        ValueView::Sub(_)
+            | ValueView::WeakSub(_)
+            | ValueView::Routine { .. }
+            | ValueView::Whatever
+            | ValueView::HyperWhatever
     ) && crate::runtime::utils::value_type_name(v) != "WhateverCode"
     {
         return Err(crate::runtime::mu_coercion_no_match_error(
