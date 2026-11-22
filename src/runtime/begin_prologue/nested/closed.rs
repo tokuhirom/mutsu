@@ -12,7 +12,10 @@
 //!
 //! The body is *closed* when, compiled on its own ([`Scan`]):
 //!
-//! - it has no free lexical: every variable it reads or writes it declares
+//! - it has no free lexical but plain `my` variables of the unit's top level
+//!   (the caller runs it over parse-time copies of them and replays what it
+//!   leaves into the unit's prologue, §7.17), and then makes no closure that
+//!   could keep a copy: every other variable it reads or writes it declares
 //!   itself, or is a dynamic variable (`%*ENV`), which is looked up at run
 //!   time along the callers and in PROCESS, the same at parse time as in the
 //!   prologue as long as the unit declares none of that name ahead of the
@@ -43,6 +46,19 @@ pub(crate) struct ClosedBegin {
     /// The routines it calls that `imported` answered for: a `use` loaded at
     /// parse time imports them, and the unit must not declare one of them.
     pub(crate) imported: Vec<String>,
+    /// The unit's top-level variables it reads or writes (`unit_var` answered
+    /// for them), by the compiler's name (`x`, `@a`).
+    pub(crate) unit_vars: Vec<String>,
+}
+
+/// What the unit provides that a parse-time `BEGIN` may still reach.
+pub(crate) struct UnitReach<'a> {
+    /// Whether a `use` the parser loaded ahead of the `BEGIN` imports this
+    /// routine.
+    pub(crate) imported: &'a dyn Fn(&str) -> bool,
+    /// Whether this is a plain `my` variable of the unit's top level declared
+    /// ahead of the `BEGIN`.
+    pub(crate) unit_var: &'a dyn Fn(&str) -> bool,
 }
 
 /// The names `body`, the body of a unit-level statement-form `BEGIN`, uses,
@@ -53,8 +69,9 @@ pub(crate) struct ClosedBegin {
 pub(crate) fn begin_body_core_names(
     body: &[Stmt],
     bare: bool,
-    imported: &dyn Fn(&str) -> bool,
+    reach: &UnitReach<'_>,
 ) -> Option<ClosedBegin> {
+    let imported = reach.imported;
     // A blockless `BEGIN my $x = ...` declares into the unit's scope.
     let mut escapes = Escapes {
         found: false,
@@ -100,6 +117,7 @@ pub(crate) fn begin_body_core_names(
     if scan.reflective {
         return None;
     }
+    let mut unit_vars = Vec::new();
     for free in scan.free() {
         // A dynamic variable is looked up at run time, along the callers and
         // then in PROCESS, which are the same at parse time as in the
@@ -107,8 +125,15 @@ pub(crate) fn begin_body_core_names(
         // keeps this `BEGIN` in the prologue) or the compiler binds it.
         match crate::parser::dynamic_var_key(free.as_str()) {
             Some(key) if !COMPILE_TIME_DYNAMICS.contains(&key.as_str()) => {}
-            _ => return None,
+            Some(_) => return None,
+            None if (reach.unit_var)(free.as_str()) => unit_vars.push(free.resolve()),
+            None => return None,
         }
+    }
+    // A closure made over a parse-time copy would keep the copy, not the
+    // unit's variable.
+    if !unit_vars.is_empty() && makes_closure(body) {
+        return None;
     }
     for callee in &scan.callees {
         if matches!(callee.as_str(), "require" | "EVAL" | "EVALFILE") {
@@ -128,6 +153,7 @@ pub(crate) fn begin_body_core_names(
     Some(ClosedBegin {
         core: names,
         imported: imported_names,
+        unit_vars,
     })
 }
 
@@ -161,6 +187,44 @@ impl<'ast> Visit<'ast> for Escapes {
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
+        if !self.found {
+            walk_expr(self, expr);
+        }
+    }
+}
+
+/// Whether `body` makes a closure (a block, a pointy block, an anonymous
+/// routine, a WhateverCode) anywhere.
+// Cost: O(n), n = size of `body`.
+fn makes_closure(body: &[Stmt]) -> bool {
+    let mut finder = ClosureFinder { found: false };
+    for stmt in body {
+        finder.visit_stmt(stmt);
+    }
+    finder.found
+}
+
+struct ClosureFinder {
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for ClosureFinder {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        self.found |= matches!(stmt, Stmt::SubDecl { .. });
+        if !self.found {
+            walk_stmt(self, stmt);
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        self.found |= matches!(
+            expr,
+            Expr::Block(_)
+                | Expr::AnonSub { .. }
+                | Expr::AnonSubParams { .. }
+                | Expr::Lambda { .. }
+                | Expr::WhateverCurry(..)
+        );
         if !self.found {
             walk_expr(self, expr);
         }

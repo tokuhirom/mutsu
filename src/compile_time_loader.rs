@@ -80,8 +80,11 @@ pub(crate) enum LoadOutcome {
 /// What the loader did with a unit-level `BEGIN` the parser finished
 /// (ADR-17558 slice 5).
 pub(crate) enum BeginOutcome {
-    /// The phaser ran now; the unit's prologue must not run it again.
-    Ran,
+    /// The phaser ran now; the unit's prologue must not run it again. It
+    /// left these values in the unit's top-level variables it reached (by
+    /// the compiler's name), which the prologue writes into them at its
+    /// position (ADR-17558 §7.17).
+    Ran(Vec<(String, crate::value::Value)>),
     /// The loader did not take it (no loader, a parse that is not the
     /// program's, a body that reads or names something of the unit); it runs
     /// in the unit's BEGIN prologue as before.
@@ -89,6 +92,19 @@ pub(crate) enum BeginOutcome {
     /// The phaser died: the unit's compile fails at the `BEGIN` with this
     /// error.
     Failed(RuntimeError),
+}
+
+/// What of the unit being parsed a parse-time `BEGIN` may reach besides core
+/// names (ADR-17558 §7.16, §7.17).
+pub(crate) struct UnitAtParse<'a> {
+    /// The unit's top-level `use` statements ahead of the `BEGIN` that loaded
+    /// at parse time (and `use Test`), in source order: a `BEGIN` that calls a
+    /// routine one of them imports runs after that import.
+    pub(crate) uses: &'a [crate::ast::Stmt],
+    /// The unit's plain top-level `my` variables declared ahead of the
+    /// `BEGIN` (by the compiler's name), each with the value an earlier
+    /// parse-time `BEGIN` left in it, or `None` while none has.
+    pub(crate) vars: &'a [(String, Option<crate::value::Value>)],
 }
 
 /// One routine a loaded module exports to a `use`: its name (sigil-less,
@@ -144,11 +160,9 @@ pub(crate) trait CompileTimeLoader {
 
     /// Run `begin`, a statement-form `BEGIN` phaser of the unit's top level
     /// that the parser just finished, now, when running it ahead of the
-    /// unit's frame is unobservable (ADR-17558 slice 5). `uses` are the
-    /// unit's top-level `use` statements ahead of it that loaded at parse
-    /// time, in source order: a `BEGIN` that calls a routine one of them
-    /// imports runs after that import.
-    fn run_begin(&mut self, begin: &crate::ast::Stmt, uses: &[crate::ast::Stmt]) -> BeginOutcome;
+    /// unit's frame is unobservable (ADR-17558 slice 5), given what of the
+    /// unit it may reach (`unit`).
+    fn run_begin(&mut self, begin: &crate::ast::Stmt, unit: &UnitAtParse<'_>) -> BeginOutcome;
 
     /// The installation stamp of a `multi` candidate the parser just finished
     /// at the program's top level: rakudo installs a candidate when the parser
@@ -250,8 +264,8 @@ pub(crate) fn slang_activation(
 
 /// Ask this thread's current loader to run a finished unit-level `BEGIN`.
 // Cost: O(1) when there is no loader; the phaser's analysis and run otherwise.
-pub(crate) fn run_begin(begin: &crate::ast::Stmt, uses: &[crate::ast::Stmt]) -> BeginOutcome {
-    with_loader(|loader| loader.run_begin(begin, uses)).unwrap_or(BeginOutcome::NotTaken)
+pub(crate) fn run_begin(begin: &crate::ast::Stmt, unit: &UnitAtParse<'_>) -> BeginOutcome {
+    with_loader(|loader| loader.run_begin(begin, unit)).unwrap_or(BeginOutcome::NotTaken)
 }
 
 /// Ask this thread's current loader for the installation stamp of a `multi`

@@ -336,6 +336,7 @@ pub(crate) fn reset_user_subs() {
     UNIT_BEGIN_SEEN.with(|seen| seen.set(false));
     begin_at_parse::UNIT_PROLOGUE_EFFECT_SEEN.with(|seen| seen.set(false));
     begin_at_parse::UNIT_PARSE_TIME_USES.with(|uses| uses.borrow_mut().clear());
+    begin_at_parse::UNIT_VARS.with(|vars| vars.borrow_mut().clear());
     EXPORTHOW_ERRORS.with(|e| e.borrow_mut().clear());
     super::slang_modes::reset_slang_modes();
     super::slang_hooks::reset_hooks();
