@@ -57,7 +57,8 @@ use precedence::ternary;
 use whatever::fat_arrow_curries;
 pub(crate) use whatever::{
     contains_whatever, contains_xx_with_bare_whatever, is_frozen_whatever, is_whatever,
-    is_whatever_operand, operator_call_operands, should_wrap_whatevercode,
+    is_whatever_operand, operator_call_operands, prime_before_non_currying,
+    should_wrap_whatevercode,
 };
 
 // Re-exports for WhateverCode-adjacent AST shaping that stays in the parser

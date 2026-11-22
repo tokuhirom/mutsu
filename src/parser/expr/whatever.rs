@@ -43,6 +43,31 @@ pub(crate) fn is_whatever_operand(expr: &Expr) -> bool {
         )
 }
 
+/// The pseudo-methods that never prime: on `*` they answer for the Whatever
+/// itself (`*.WHAT` is `(Whatever)`, `*.REPR` is `P6opaque`), and after a
+/// priming chain they answer for the finished WhateverCode (`*.abs.WHAT` is
+/// `(WhateverCode)`). `.WHICH` and `.WHY` DO prime (`*.WHICH` is a
+/// WhateverCode); verified against rakudo (#18514).
+// Cost: O(1).
+pub(crate) fn is_non_currying_method(name: &str) -> bool {
+    matches!(
+        name,
+        "WHAT" | "WHO" | "HOW" | "WHERE" | "DEFINITE" | "VAR" | "REPR"
+    )
+}
+
+/// The target of a non-currying pseudo-method call `.name`: a priming chain
+/// before it (`*.abs` in `*.abs.WHAT`) is finished into its WhateverCode
+/// first, so the pseudo-method applies to that code object (#18514).
+// Cost: O(n), n = the size of `target` (the Whatever scan).
+pub(crate) fn prime_before_non_currying(target: Expr, name: &str) -> Expr {
+    if is_non_currying_method(name) && should_wrap_whatevercode(&target) {
+        Expr::curry(target)
+    } else {
+        target
+    }
+}
+
 pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
     // An operand that IS a `*` / `**` does not curry: it is the Whatever value
     // itself. `is_whatever_operand` looks through parenthesization, so `(**)` is
@@ -323,13 +348,10 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         Expr::PostfixOp { expr, .. } => contains_whatever(expr) || is_wrapped_whatevercode(expr),
         // Non-currying pseudo-methods evaluate immediately on Whatever AND on
         // an already-built WhateverCode: `*.WHAT` is `(Whatever)` and
-        // `(* + 1).WHAT` is `(WhateverCode)`. Rakudo's list is exactly these
-        // six — `.WHICH` and `.WHY` DO curry (`*.WHICH` is a WhateverCode).
+        // `(* + 1).WHAT` is `(WhateverCode)` (see [`is_non_currying_method`]).
         Expr::MethodCall { target, name, .. }
-            if matches!(
-                name.resolve().as_str(),
-                "WHAT" | "WHO" | "HOW" | "WHERE" | "DEFINITE" | "VAR"
-            ) && (is_whatever_operand(target) || is_wrapped_whatevercode(target)) =>
+            if is_non_currying_method(name.resolve().as_str())
+                && (is_whatever_operand(target) || is_wrapped_whatevercode(target)) =>
         {
             false
         }

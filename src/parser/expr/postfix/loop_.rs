@@ -1626,7 +1626,10 @@ fn postfix_expr_loop_from<'a>(
                 }
                 // No-arg method call
                 let mut method_expr = Expr::MethodCall {
-                    target: Box::new(expr),
+                    target: Box::new(crate::parser::expr::prime_before_non_currying(
+                        expr,
+                        name.resolve().as_str(),
+                    )),
                     name,
                     args: Vec::new(),
                     modifier,
