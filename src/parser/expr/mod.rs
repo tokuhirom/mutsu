@@ -301,7 +301,22 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
 /// The parse entry is the list-infix layer ([`list_infix_top`](crate::parser::expr::precedence::list_infix_top)), which is the
 /// precedence tier just below the word-logicals.
 pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, Expr> {
-    let (rest, mut expr) = precedence::list_infix_top(input, operators::ExprMode::Full)?;
+    expression_no_word_logical_feeds(input, true)
+}
+
+/// [`expression_no_word_logical`] without the feed operators either: one
+/// argument of a parenthesized argument list, rakudo's `EXPR('e=')` (#18628).
+// Cost: O(n), n = length of the expression.
+pub(in crate::parser) fn arglist_item_expr(input: &str) -> PResult<'_, Expr> {
+    expression_no_word_logical_feeds(input, false)
+}
+
+fn expression_no_word_logical_feeds(input: &str, allow_feed: bool) -> PResult<'_, Expr> {
+    let (rest, mut expr) = if allow_feed {
+        precedence::list_infix_top(input, operators::ExprMode::Full)?
+    } else {
+        precedence::list_infix_top_no_feed(input, operators::ExprMode::Full)?
+    };
     let (r, _) = ws(rest)?;
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r = &r[2..];

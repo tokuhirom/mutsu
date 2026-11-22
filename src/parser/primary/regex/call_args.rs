@@ -96,22 +96,26 @@ pub(in crate::parser) fn sigilless_item_assign_arg(input: &str) -> Option<(&str,
 
 /// One argument of a parenthesized argument list. Rakudo's `arglist` is
 /// `EXPR('e=')`: everything down to the list infixes, but not the loose
-/// word-logicals (`and`/`or`/`xor`/`andthen`/`orelse`/`notandthen`), which
-/// therefore end the argument (#18140). An argument the list-infix-level
+/// word-logicals (`and`/`or`/`xor`/`andthen`/`orelse`/`notandthen`, #18140)
+/// or the feeds (`==>`/`<==`/`==>>`/`<<==`, #18628), which therefore end the
+/// argument. An argument the list-infix-level
 /// parse cannot read at all is read as a full expression, as before.
 // Cost: O(n), n = length of the argument.
 pub(in crate::parser) fn paren_arg_expr(input: &str) -> PResult<'_, Expr> {
-    crate::parser::expr::expression_no_word_logical(input).or_else(|_| expression(input))
+    crate::parser::expr::arglist_item_expr(input).or_else(|_| expression(input))
 }
 
-/// A loose word-logical right after an argument of a parenthesized argument
-/// list can be neither part of the argument nor followed by the closing `)`:
+/// A loose word-logical or a feed right after an argument of a parenthesized
+/// argument list can be neither part of the argument nor followed by the closing `)`:
 /// rakudo's "Unable to parse expression in argument list; couldn't find final
 /// ')'" (`X::Comp::FailGoal`). `rest` is the input after the argument and its
 /// whitespace.
 // Cost: O(1).
 pub(in crate::parser) fn reject_loose_infix_after_arg(rest: &str) -> Result<(), PError> {
-    if crate::parser::expr::starts_with_loose_word_logical(rest) {
+    let feed = ["==>>", "<<==", "==>", "<=="]
+        .iter()
+        .any(|op| rest.starts_with(op));
+    if feed || crate::parser::expr::starts_with_loose_word_logical(rest) {
         return Err(crate::parser::primary::container::fail_goal_error_at(
             "argument list",
             "')'",

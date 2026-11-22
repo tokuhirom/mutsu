@@ -74,7 +74,7 @@ pub(crate) use list_infix::{attach_trailing_adverbs, sequence_expr, sequence_onl
 pub(crate) use list_infix_loop::{
     parse_list_infix_loop, parse_list_infix_loop_no_feed, parse_list_infix_loop_with_operand,
 };
-pub(crate) use list_infix_top::{item_expr, list_infix_top};
+pub(crate) use list_infix_top::{item_expr, list_infix_top, list_infix_top_no_feed};
 pub(crate) use logic::{
     assign_not_expr_mode, or_expr_mode, or_expr_no_assign_mode, word_logical_tail,
 };
