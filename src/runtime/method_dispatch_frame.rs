@@ -315,6 +315,7 @@ impl Interpreter {
                 arg_sources: None,
                 in_wrapper: false,
                 lazy_tail: None,
+                exhausted_falls_through: false,
             })
         }
     }
@@ -336,6 +337,7 @@ impl Interpreter {
             arg_sources: None,
             in_wrapper: false,
             lazy_tail: None,
+            exhausted_falls_through: false,
         }
     }
 }

@@ -278,6 +278,7 @@ impl Interpreter {
                 arg_sources,
                 in_wrapper: true,
                 lazy_tail: None,
+                exhausted_falls_through: false,
             });
     }
 
