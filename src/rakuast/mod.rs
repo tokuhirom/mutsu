@@ -2080,7 +2080,17 @@ fn parse_unit_ast(
     if let Some(previous) = previous_file {
         crate::parser::set_parser_source_file(previous);
     }
-    let (mut stmts, _finish) = parsed?;
+    // A parse failure is reported against this string's unit -- its name and
+    // its text for the `------>` excerpt -- not the calling file (#18870).
+    let (mut stmts, _finish) = parsed.map_err(|mut e| {
+        if let Some(file) = file
+            && e.code().is_some_and(|c| c.is_parse())
+            && e.source_text().is_none()
+        {
+            e.set_source_file_text(file.to_string(), source.to_string());
+        }
+        e
+    })?;
     let unit_docs = crate::parser::decl_doc::take_unit_docs();
     // Rakudo's `.AST` raises the compile errors running the code does
     // (ADR-15760 Amendment 1, slice 1c): a type or term used before its
