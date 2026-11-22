@@ -128,7 +128,12 @@ pub(crate) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
 /// not a plain name (or no field at all) is left alone.
 // Cost: O(k), k = number of parts of the name.
 pub(super) fn with_leading_empty(fields: &mut [RakuAstField]) {
-    let Some(field) = fields.iter_mut().find(|f| f.name == Some("name")) else {
+    // The `name` field, or a lone positional one (`Type::Simple`'s name).
+    let at = fields
+        .iter()
+        .position(|f| f.name == Some("name"))
+        .or_else(|| (fields.len() == 1 && fields[0].name.is_none()).then_some(0));
+    let Some(field) = at.map(|at| &mut fields[at]) else {
         return;
     };
     let RakuAstFieldValue::Node(value) = &field.value else {
