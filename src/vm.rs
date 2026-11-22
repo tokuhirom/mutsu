@@ -419,6 +419,7 @@ mod vm_assign_expr_lane;
 mod vm_attribute_meta_lane;
 mod vm_attribute_meta_row;
 mod vm_bind_decl_lane;
+mod vm_chained_slice_bind;
 mod vm_code_var_infix_lane;
 mod vm_decl_lane;
 mod vm_hash_element_cell;
