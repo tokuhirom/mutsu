@@ -608,6 +608,13 @@ impl Interpreter {
             (ValueView::Str(_), ValueView::Instance { .. }) if right.is_match_instance() => {
                 right.truthy()
             }
+            // `Date.ACCEPTS` / `DateTime.ACCEPTS`, for those classes and their
+            // subclasses (#18818).
+            (ValueView::Instance { .. }, ValueView::Instance { .. })
+                if let Some(accepted) = self.dateish_accepts(left, right) =>
+            {
+                accepted
+            }
             (
                 ValueView::Instance {
                     class_name: left_class,

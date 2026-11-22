@@ -38,8 +38,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Str", Handler::Interp(smartmatch)),
     row!("List", Handler::Interp(smartmatch)),
     row!("Map", Handler::Interp(smartmatch)),
-    row!("Date", Handler::Interp(smartmatch)),
-    row!("DateTime", Handler::Interp(smartmatch)),
+    row!("Date", Handler::Interp(dateish)),
+    row!("DateTime", Handler::Interp(dateish)),
     row!("Seq", Handler::Interp(smartmatch)),
     row!("IO::Path", Handler::Interp(smartmatch)),
     row!("Bool", Handler::Narrow(bool_accepts)),
@@ -71,6 +71,22 @@ fn smartmatch(
         return Some(Ok(Value::truth(pure)));
     }
     Some(interp.try_smart_match(&args[0], target).map(Value::truth))
+}
+
+/// `Date.ACCEPTS` / `DateTime.ACCEPTS`, for an instance of those classes or
+/// of a subclass (`Interpreter::dateish_accepts`, #18818); any other topic
+/// than an instance is the smartmatch's.
+// Cost: the receiver's MRO walk, O(m).
+fn dateish(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if let Some(accepted) = interp.dateish_accepts(args[0].descalarize(), target.descalarize()) {
+        return Some(Ok(Value::truth(accepted)));
+    }
+    smartmatch(interp, target, args, named)
 }
 
 /// `$topic ~~ $matcher` as the operator decides it for a matcher with no

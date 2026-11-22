@@ -375,6 +375,22 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 "Date" | "DateTime" | "Duration" | "Instant"
             ) =>
         {
+            // `DateTime.ACCEPTS` is `==`: the same instant, whatever the time
+            // zone (#18818).
+            if lc == "DateTime"
+                && let (
+                    ValueView::Instance { attributes: la, .. },
+                    ValueView::Instance { attributes: ra, .. },
+                ) = (left.view(), right.view())
+            {
+                use crate::value::temporal_core::{datetime_attrs, datetime_to_posix};
+                let (y, mo, d, h, mi, s, tz) = datetime_attrs(&la.as_map());
+                let (ry, rmo, rd, rh, rmi, rs, rtz) = datetime_attrs(&ra.as_map());
+                return Some(
+                    datetime_to_posix(y, mo, d, h, mi, s, tz)
+                        == datetime_to_posix(ry, rmo, rd, rh, rmi, rs, rtz),
+                );
+            }
             Some(left.eqv(right))
         }
 
@@ -811,6 +827,16 @@ impl Interpreter {
             && crate::builtins::method_table::is_user_real_instance(self, right)
         {
             return self.smart_match_into(left, right, err);
+        }
+        // A `Date`/`DateTime` matcher (or one of a subclass, which has its
+        // parent's `ACCEPTS`) compares by value; the pure arms read a subclass
+        // instance by identity (#18818).
+        if !right_has_user_accepts
+            && matches!(left.view(), ValueView::Instance { .. })
+            && matches!(right.view(), ValueView::Instance { .. })
+            && let Some(accepted) = self.dateish_accepts(left, right)
+        {
+            return accepted;
         }
         if right_has_user_accepts && !matches!(left.view(), ValueView::Junction { .. }) {
             match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
