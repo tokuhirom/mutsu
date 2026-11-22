@@ -34,6 +34,11 @@ is ~("xxa" ~~ / :my $n; { $n = "x" } <$n>+ a/), 'xxa', 'the assertion can be qua
     is G.parse("abbc")<x>.Str, 'abb', "a rule's parameter as <\$p>";
 }
 
-throws-like { "ab" ~~ / :my $n; { $n = 'a { 42 }' } <$n> / },
-    Exception, message => /'Prohibited regex interpolation'/,
-    'a code block in the Str value is refused without MONKEY-SEE-NO-EVAL';
+# `use Test` imports rakudo's `&MONKEY-SEE-NO-EVAL` (#18740), so the refusal
+# needs the pragma switched off again.
+{
+    no MONKEY-SEE-NO-EVAL;
+    throws-like { "ab" ~~ / :my $n; { $n = 'a { 42 }' } <$n> / },
+        Exception, message => /'Prohibited regex interpolation'/,
+        'a code block in the Str value is refused without MONKEY-SEE-NO-EVAL';
+}
