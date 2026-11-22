@@ -444,6 +444,13 @@ impl Interpreter {
         if !self.is_var_dynamic(name) {
             return Err(crate::runtime::utils::caller_not_dynamic_error(name));
         }
+        if name == "_" && depth == 1 {
+            // `$CALLER::_ = v` / `$CALLER::_++`: the caller's topic, which
+            // the return-time writeback deliberately skips (each routine has
+            // its own `$_`), and which is not the callee's own `$_` either.
+            self.write_caller_topic(value);
+            return Ok(());
+        }
         let idx = stack_len - depth;
         self.caller_env_stack[idx].insert(name.to_string(), value.clone());
         // Also update current env if the variable exists there
@@ -483,20 +490,26 @@ impl Interpreter {
             )));
         }
         if name == "_" {
-            // The topic is per-frame, so a general runtime-name write would
-            // replay the callee's topic through every intervening frame. Write
-            // directly into this call frame's saved caller env instead; the
-            // caller-var drain below updates its authoritative local slot once
-            // when this frame returns.
-            if let Some(frame) = self.call_frames.last_mut() {
-                frame.saved_env.insert(name.to_string(), value);
-                self.record_caller_var_writeback(name);
-            }
+            self.write_caller_topic(value);
         } else {
             self.env_mut().insert(name.to_string(), value);
             self.record_runtime_name_write(name);
         }
         Ok(())
+    }
+
+    /// Write `value` into the calling routine's topic `$_`. The topic is
+    /// per-frame, so a general runtime-name write would replay the callee's
+    /// topic through every intervening frame; this writes directly into the
+    /// current call frame's saved caller env instead, and the caller-var drain
+    /// updates the caller's authoritative local slot once when this frame
+    /// returns.
+    // Cost: O(1).
+    fn write_caller_topic(&mut self, value: Value) {
+        if let Some(frame) = self.call_frames.last_mut() {
+            frame.saved_env.insert("_".to_string(), value);
+            self.record_caller_var_writeback("_");
+        }
     }
 
     /// Record a by-name env write to a caller-frame lexical (retain-on-miss list).
