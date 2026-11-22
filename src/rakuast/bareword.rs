@@ -856,7 +856,10 @@ fn call_name(name: &str) -> RakuAstNode {
         } else {
             RakuAstClass::CallNameWithoutParentheses
         },
-        fields: vec![node_field(Some("name"), name_from_identifier(name))],
+        fields: vec![node_field(
+            Some("name"),
+            super::name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name)),
+        )],
     }
 }
 

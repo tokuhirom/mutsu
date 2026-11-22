@@ -2065,7 +2065,9 @@ pub(super) fn term_declaration(
     if let Some(type_name) = decl.type_constraint {
         fields.push(node_field(Some("type"), build_type_node(names, type_name)?));
     }
-    fields.push(node_field(Some("name"), name_from_identifier(decl.name)));
+    let name =
+        name_parts::operator_name(decl.name).unwrap_or_else(|| name_from_identifier(decl.name));
+    fields.push(node_field(Some("name"), name));
     fields.push(node_field(
         Some("initializer"),
         match decl.call_assign {
@@ -2969,7 +2971,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // a valid Raku name term (`A::B`). Rakudo represents it as an
         // argument-less Call::Name, including when it is later used as a
         // method-call operand; the failed lookup remains catchable at runtime.
-        Expr::BareWord(name) if name_parts::is_qualified_identifier(name) => {
+        Expr::BareWord(name) if name_parts::is_qualified_term(name) => {
             let mut node = call_name(names, name, &[], false)?;
             node.fields.push(super::declared_routines::bareword_field());
             Ok(node)
