@@ -142,7 +142,10 @@ raises no panic (docs/security.md: allocations sized by untrusted input need a b
 
 ## Amendment 2026-11-22: S1 replays per `BEGIN` expression, checked against its inputs (Proposed)
 
-- **Status**: Proposed (S1 implementation, #18012)
+- **Status**: Accepted (2026-11-22, by the maintainer). Conditions on the S1 implementation PR: it
+  shows that no dispatch path can bypass the code watch (a ratchet or a structural guarantee, not a
+  convention), and its body carries a warm-versus-cold output comparison (replay off and on) over a
+  broad set of module-heavy distributions besides the standard parity set.
 
 §2.3 marks a whole entry replay-unsafe when any effect cannot be logged. S1 records at a finer
 grain: each value-position `BEGIN` of a module mainline (`BeginOnceExpr`) is its own record. A
