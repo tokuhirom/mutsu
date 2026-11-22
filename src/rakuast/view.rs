@@ -6184,6 +6184,9 @@ fn colonpair_value_node(
     let ValueView::Str(key) = value.view() else {
         return Err(unsupported("colonpair value key"));
     };
+    if let Some(pair) = super::colon_pairs::sections_pair(names, &key, right)? {
+        return Ok(pair);
+    }
     let value = match right.as_ref() {
         // `:a<x y>` keeps the raw word text as one word-quote.
         Expr::Literal(_) | Expr::ArrayLiteral(_) if !parenthesize => match angle_key_text(right) {

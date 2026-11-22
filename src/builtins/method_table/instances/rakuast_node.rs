@@ -1012,6 +1012,19 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                 &node.origin,
             )])
         }
+        // `proto sub f { * }`: the body visits an empty, unplaced
+        // `StatementList`, as Rakudo's does.
+        RakuAstClass::OnlyStar => Some(vec![rakuast(
+            RakuAstClass::StatementList,
+            Vec::new(),
+            &Default::default(),
+        )]),
+        // `Rat()`: a coercion without a written constraint visits the implicit
+        // `Type::Setting(Any)` its `.constraint` answers, as Rakudo's does.
+        RakuAstClass::TypeCoercion if node_value("constraint").is_none() => Some(vec![
+            node_value("base-type")?,
+            crate::rakuast::node_accessor(node, "constraint")?,
+        ]),
         RakuAstClass::ParameterTargetVar => Some(vec![
             node_value("declaration")
                 .or_else(|| crate::rakuast::annotated_target_declaration(node))

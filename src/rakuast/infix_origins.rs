@@ -55,6 +55,12 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::list_origins::apply_list_infix(node)
         }
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
+        // `say Rat()` / `Int(Str)` as a term: its base type and constraint.
+        RakuAstClass::TypeCoercion => {
+            if let Some((from, to)) = byte_range(node) {
+                super::type_origins::coercion(node, SrcSpan::new(from, to))
+            }
+        }
         RakuAstClass::VarPackage => super::indirect_name_origins::package_variable(node),
         RakuAstClass::VarNamedCapture => super::match_vars::named_capture_origins(node),
         // `HyperWhatever:D` as a term: the inner `Type::Simple` spans all of
