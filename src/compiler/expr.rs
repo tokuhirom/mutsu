@@ -954,6 +954,23 @@ impl Compiler {
                     sugar: kind.method() == "list",
                 });
             }
+            // `MY.WHO`, `LEXICAL.WHO`: a lexical pseudo-package's stash is the
+            // pseudo-stash of this site (`MY::`), read where the pad is live.
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: None,
+                ..
+            } if args.is_empty()
+                && name == "WHO"
+                && matches!(target.as_ref(), Expr::BareWord(p) if matches!(p.as_str(), "MY" | "LEXICAL" | "OUTER")) =>
+            {
+                let Expr::BareWord(package) = target.as_ref() else {
+                    unreachable!("guarded above");
+                };
+                self.compile_expr(&Expr::PseudoStash(format!("{package}::")));
+            }
             // An explicit `.list` call consumes a `Seq` (raku: `$s.list; $s.List`
             // throws `X::Seq::Consumed`), while the `@$s` / `@($s)` contextualizer
             // (parsed with `sugar: true`) re-reads one. Both reach the VM as the
