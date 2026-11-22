@@ -1025,8 +1025,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Err(crate::parser::stmt::class::null_regex_error());
     }
     // Bare /pattern/
-    if input.starts_with('/') {
-        let r = &input[1..];
+    if let Some(r) = input.strip_prefix('/') {
         match scan_to_delim(r, '/', '/', false) {
             Some((pattern, rest)) if !pattern.is_empty() => {
                 validate_regex_pattern_or_perror(pattern)?;
