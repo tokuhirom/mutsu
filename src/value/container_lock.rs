@@ -120,7 +120,13 @@ thread_local! {
     /// module docs: at most one per thread is what makes the scheme
     /// deadlock-free without a re-entrant mutex.
     static HOLDS_STRUCT_LOCK: Cell<bool> = const { Cell::new(false) };
+    /// The stripe indices this thread's guard holds (`NO_STRIPE` for none),
+    /// so a caller nested inside a guard can ask whether it already covers a
+    /// key ([`ContainerStructGuard::held_covers`]).
+    static HELD_STRIPES: Cell<(usize, usize)> = const { Cell::new((NO_STRIPE, NO_STRIPE)) };
 }
+
+const NO_STRIPE: usize = usize::MAX;
 
 /// Held for the duration of an aliased container's structural mutation.
 ///
@@ -243,6 +249,7 @@ impl ContainerStructGuard {
         };
         let first = lock(ia.min(ib));
         let second = lock(ia.max(ib));
+        HELD_STRIPES.with(|held| held.set((ia, ib)));
         Some(Self {
             _guard: first,
             _node_guard: Some(second),
@@ -282,6 +289,7 @@ impl ContainerStructGuard {
         let guard = stripe_for(addr)
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        HELD_STRIPES.with(|held| held.set((stripe_index(addr), NO_STRIPE)));
         Some(Self {
             _guard: guard,
             _node_guard: None,
@@ -289,9 +297,28 @@ impl ContainerStructGuard {
     }
 }
 
+impl ContainerStructGuard {
+    /// Whether the guard this thread already holds covers every key in
+    /// `addrs`: each one hashes to a stripe the guard holds, so this thread
+    /// already excludes every other reader and writer keyed on it. For a
+    /// caller nested inside a guarded region, where [`Self::acquire_for`]
+    /// returns `None` because the thread holds one already. `false` when this
+    /// thread holds none.
+    // Cost: O(k), k = keys.
+    pub(crate) fn held_covers(addrs: &[usize]) -> bool {
+        let (a, b) = HELD_STRIPES.with(Cell::get);
+        a != NO_STRIPE
+            && addrs.iter().all(|&addr| {
+                let i = stripe_index(addr);
+                i == a || i == b
+            })
+    }
+}
+
 impl Drop for ContainerStructGuard {
     fn drop(&mut self) {
         HOLDS_STRUCT_LOCK.with(|held| held.set(false));
+        HELD_STRIPES.with(|held| held.set((NO_STRIPE, NO_STRIPE)));
     }
 }
 
