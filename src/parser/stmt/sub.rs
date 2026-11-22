@@ -11,6 +11,7 @@ use super::super::add_parse_warning;
 use super::{block_inner, ident, keyword, parse_raku_ident, routine_block};
 
 mod export_trait;
+mod install_order;
 mod op_name;
 mod outer_slurpy;
 mod param_list;

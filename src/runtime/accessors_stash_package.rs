@@ -282,6 +282,7 @@ impl Interpreter {
             .module
             .module_toplevel
             .enum_keys
+            .read()
             .get("GLOBAL")
             .into_iter()
             .flat_map(|keys| keys.iter())

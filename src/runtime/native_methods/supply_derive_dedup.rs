@@ -1,4 +1,5 @@
-//! `Supply.unique` / `Supply.squish` over an on-demand source.
+//! `Supply.unique` / `Supply.squish` over an on-demand source, and
+//! `Supply.repeated` (the values `unique` drops) over a live one.
 //!
 //! Rakudo defines both as a new supply that taps its source
 //! (`supply { whenever self -> \val { ... emit val } }`), keeping the keys it
@@ -159,5 +160,20 @@ impl Interpreter {
             if squish { "squish" } else { "unique" },
             dedup_callable(as_fn, with_fn, expires),
         )
+    }
+
+    /// The derived per-tap Supply for `source.repeated(:as, :with)` over a
+    /// live source: the values `unique` would drop (ADR-18443).
+    // Cost: O(1).
+    pub(in crate::runtime) fn make_on_demand_repeated_supply(
+        source: Value,
+        as_fn: Option<Value>,
+        with_fn: Option<Value>,
+    ) -> Value {
+        Self::mark_live_recipe(Self::make_on_demand_derived_supply_named(
+            source,
+            "repeated",
+            dedup_callable(as_fn, with_fn, None),
+        ))
     }
 }

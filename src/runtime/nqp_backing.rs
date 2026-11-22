@@ -3,15 +3,16 @@
 
 use super::nqp_ops_list::iteration_buffer_items_key;
 use crate::runtime::{Interpreter, RuntimeError};
-use crate::value::{ArrayData, ArrayKind, NqpElemKind, Value, ValueView};
+use crate::value::{ArrayData, ArrayKind, NqpElemKind, UniCodes, Value, ValueView};
 
 /// The array a list-ish nqp value is backed by, as a `Value` that shares the
 /// target's `Gc` node — so an in-place write through it is visible to every
 /// other holder of the original.
 ///
-/// A plain array answers for itself. A `Uni` answers with its codepoint array
-/// — rakudo's `Uni` is a `uint32` VMArray and nqp code indexes, consumes and
-/// splices one as exactly that. An `IterationBuffer` answers with its element
+/// A plain array answers for itself. A `Uni` answers `None`: its codepoints
+/// are a packed `uint32` store ([`crate::value::UniCodes`]), reached through
+/// [`with_uni_codes`] / [`with_uni_codes_mut`], the way a Buf's bytes are
+/// reached through `value_buf`. An `IterationBuffer` answers with its element
 /// array, vivified when absent: `nqp::create(IterationBuffer)` runs `CREATE`,
 /// which by definition installs no attributes, so the buffer nqp code then
 /// pushes onto has no storage yet. A Buf/Blob answers `None` — its elements
@@ -20,7 +21,6 @@ use crate::value::{ArrayData, ArrayKind, NqpElemKind, Value, ValueView};
 pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
     match v.view() {
         ValueView::Array(..) => Some(v.clone()),
-        ValueView::Uni(uni) => Some(uni.codes.clone()),
         ValueView::Instance {
             class_name,
             attributes,
@@ -46,8 +46,8 @@ pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
     }
 }
 
-/// [`nqp_backing_array`] handed to `f` by reference: a plain array and a
-/// `Uni` lend their own node, so the common case pays no refcount pair for a
+/// [`nqp_backing_array`] handed to `f` by reference: a plain array lends its
+/// own node, so the common case pays no refcount pair for a
 /// read or an in-place edit (ADR-0116 D2.2: that clone and its drop were
 /// ~1.9 M instructions per 100 JSON::Fast records). An `IterationBuffer`
 /// still goes through the owned form, which may vivify its storage.
@@ -55,7 +55,7 @@ pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
 pub(crate) fn with_nqp_backing_array<R>(v: &Value, f: impl FnOnce(&Value) -> R) -> Option<R> {
     match v.view() {
         ValueView::Array(..) => Some(f(v)),
-        ValueView::Uni(uni) => Some(f(&uni.codes)),
+        ValueView::Uni(_) => None,
         // An attribute a lexical was bound to (`my $its := $!its`) reads back
         // as the shared cell around the buffer; the ops work on the buffer.
         ValueView::ContainerRef(..) => with_nqp_backing_array(&v.deref_container(), f),
@@ -63,16 +63,13 @@ pub(crate) fn with_nqp_backing_array<R>(v: &Value, f: impl FnOnce(&Value) -> R) 
     }
 }
 
-/// The storage of a plain list, or of a `Uni`'s codepoint list, handed to `f`
-/// for an in-place edit. `None` for anything else (an `IterationBuffer`, a
-/// Buf/Blob, a non-list), which the caller sends down the general path.
+/// The storage of a plain list, handed to `f` for an in-place edit. `None` for
+/// anything else (a `Uni`, an `IterationBuffer`, a Buf/Blob, a non-list),
+/// which the caller sends down its own path.
 ///
-/// These two are the only shapes TRIR's per-character list ops meet in
-/// practice (JSON::Fast's `unjsonify-string` shifts every codepoint off one
-/// `Uni` and pushes it onto another), and neither can be a Buf, so this skips
-/// [`push_elem`]'s Buf probe and [`Interpreter::nqp_with_elems_mut`]'s closure
-/// layers. The edit is the same one those make: same node, same
-/// `ArrayData` method.
+/// It skips [`push_elem`]'s Buf probe and
+/// [`Interpreter::nqp_with_elems_mut`]'s closure layers. The edit is the same
+/// one those make: same node, same `ArrayData` method.
 // Cost: O(1) plus f.
 #[inline]
 pub(crate) fn with_list_data_mut<R>(
@@ -86,13 +83,55 @@ pub(crate) fn with_list_data_mut<R>(
         // re-enters the interpreter, so no other borrow into the node is
         // live across it.
         ValueView::Array(items, _) => Some(f(unsafe { crate::value::gc_contents_mut(&items) })),
-        ValueView::Uni(uni) => match uni.codes.view() {
-            // SAFETY: as above.
-            ValueView::Array(items, _) => Some(f(unsafe { crate::value::gc_contents_mut(&items) })),
-            _ => None,
-        },
         _ => None,
     }
+}
+
+/// A `Uni`'s codepoint store, read in place. `None` for anything else. A
+/// `Uni` bound into a container (`my $codes := ...`) reads through it.
+// Cost: O(1) plus f.
+#[inline]
+pub(crate) fn with_uni_codes<R>(v: &Value, f: impl FnOnce(&UniCodes) -> R) -> Option<R> {
+    match v.view() {
+        ValueView::Uni(uni) => Some(f(&uni.codes)),
+        ValueView::ContainerRef(..) => with_uni_codes(&v.deref_container(), f),
+        _ => None,
+    }
+}
+
+/// A `Uni`'s codepoint store, handed to `f` for an in-place edit, visible to
+/// every holder of the `Uni` (they share the store's `Gc` node). `None` for
+/// anything else.
+// Cost: O(1) plus f.
+#[inline]
+pub(crate) fn with_uni_codes_mut<R>(v: &Value, f: impl FnOnce(&mut UniCodes) -> R) -> Option<R> {
+    match v.view() {
+        // SAFETY: audited aliased in-place container write (see
+        // value::aliased_mut and docs/gc-contents-mut-inventory.md) -- every
+        // caller's `f` is a pure codepoint edit (push/shift/set/splice) that
+        // never re-enters the interpreter, so no other borrow into the node is
+        // live across it. A program racing two threads on one `Uni` without
+        // synchronization may corrupt that `Uni`, as on rakudo; the store holds
+        // plain integers, so no `Value` can be torn.
+        ValueView::Uni(uni) => Some(f(unsafe { crate::value::gc_contents_mut(&uni.codes) })),
+        ValueView::ContainerRef(..) => with_uni_codes_mut(&v.deref_container(), f),
+        _ => None,
+    }
+}
+
+/// The `uint32` a `Uni` stores for an integer element: the low 32 bits, as a
+/// MoarVM `uint32` VMArray slot keeps them.
+// Cost: O(1).
+#[inline]
+pub(crate) fn uni_code_of(i: i64) -> u32 {
+    i as u32
+}
+
+/// The element `nqp::` code reads back from a `Uni` slot.
+// Cost: O(1).
+#[inline]
+pub(crate) fn uni_code_value(code: u32) -> Value {
+    Value::int(i64::from(code))
 }
 
 /// Push a value onto an nqp list / native array in place. Returns the
@@ -111,6 +150,11 @@ pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, R
             std::slice::from_ref(&val),
             end,
         );
+        return Ok(val);
+    }
+    if with_uni_codes_mut(target, |codes| codes.push(uni_code_of(crate::runtime::to_int(&val))))
+        .is_some()
+    {
         return Ok(val);
     }
     Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
@@ -262,6 +306,11 @@ pub(crate) fn bind_elem(
     reject_high_level_array(target)?;
     let len = Interpreter::nqp_elems_len_of(target).unwrap_or(0);
     let i = resolve_index(idx, len)?;
+    if with_uni_codes_mut(target, |codes| codes.set(i, uni_code_of(crate::runtime::to_int(&val))))
+        .is_some()
+    {
+        return Ok(val);
+    }
     if let Some((_, attrs)) = crate::value::value_buf::buf_target(target)
         && crate::value::value_buf::set_buf_elem(&attrs, i, &val).is_some()
     {
@@ -308,6 +357,11 @@ pub(crate) fn atpos_i(target: &Value, idx: i64) -> Result<i64, RuntimeError> {
         return Ok(items.get(idx as usize).map_or(0, |e| {
             e.as_int().unwrap_or_else(|| crate::runtime::to_int(e))
         }));
+    }
+    if idx >= 0
+        && let Some(code) = with_uni_codes(target, |codes| codes.get(idx as usize))
+    {
+        return Ok(code.map_or(0, i64::from));
     }
     Ok(elem_at(target, idx)?.map_or(0, |e| crate::runtime::to_int(&e)))
 }

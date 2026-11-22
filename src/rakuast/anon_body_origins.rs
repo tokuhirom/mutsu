@@ -19,6 +19,7 @@ pub(super) fn place(node: &mut RakuAstNode, span: SrcSpan) {
     {
         return;
     }
+    empty_signature(node, span);
     let Some(body) = super::infix_origins::child(node, "body") else {
         return;
     };
@@ -169,4 +170,31 @@ fn bare_statement(statement: &mut RakuAstNode) {
         to = to.max(end);
     }
     super::origin::set_span(statement, SrcSpan::new(from, to));
+}
+
+/// `method () { }`: an empty written signature sits at its `)`.
+// Cost: O(n), n = length of the routine's text up to its `)`.
+fn empty_signature(node: &mut RakuAstNode, span: SrcSpan) {
+    let keyword = match node.class {
+        RakuAstClass::Sub => "sub",
+        RakuAstClass::Method => "method",
+        _ => "submethod",
+    };
+    if super::infix_origins::child(node, "signature").is_some_and(|s| !s.fields.is_empty()) {
+        return;
+    }
+    let from = span.from as usize;
+    let Some(at) = super::unit_source::with_text(span, |text| {
+        let rest = text.strip_prefix(keyword)?;
+        let open = rest.trim_start().strip_prefix('(')?;
+        let close = open.trim_start();
+        close
+            .starts_with(')')
+            .then(|| from + text.len() - close.len())
+    }) else {
+        return;
+    };
+    let at = SrcSpan::new(at, at);
+    super::empty_fields::set_span(node, "signature", at);
+    super::infix_origins::with_child(node, "signature", |s| super::origin::set_span(s, at));
 }

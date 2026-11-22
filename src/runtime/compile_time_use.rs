@@ -199,6 +199,12 @@ impl CompileTimeLoader for Interpreter {
     fn run_begin(&mut self, begin: &Stmt) -> crate::compile_time_loader::BeginOutcome {
         self.run_parse_time_begin(begin)
     }
+
+    // Cost: O(1).
+    fn reserve_decl_order(&mut self) -> Option<u64> {
+        crate::runtime::compile_time_begin::is_program_parse()
+            .then(crate::runtime::resolution::next_decl_order)
+    }
 }
 
 impl Interpreter {
@@ -349,6 +355,19 @@ thread_local! {
 
 /// Run `parse`, a `Str.AST` parse, with [`PARSE_FOR_AST`] set.
 // Cost: O(1) besides `parse`.
+/// The installation stamp the parse reserved for a candidate of the program's
+/// top level, among its declaration's traits
+/// (`compile_time_loader::PARSE_DECL_ORDER_TRAIT`, ADR-17558 slice 5b).
+// Cost: O(t), t = the declaration's traits.
+pub(crate) fn parse_decl_order(custom_traits: &[(String, Option<crate::opcode::DeclTraitArg>)]) -> Option<u64> {
+    custom_traits.iter().find_map(|(t, arg)| {
+        (t == crate::compile_time_loader::PARSE_DECL_ORDER_TRAIT)
+            .then(|| arg.as_ref()?.literal()?.as_int())
+            .flatten()
+            .and_then(|order| u64::try_from(order).ok())
+    })
+}
+
 pub(crate) fn parsing_for_ast<T>(parse: impl FnOnce() -> T) -> T {
     let saved = PARSE_FOR_AST.with(|flag| flag.replace(true));
     let result = parse();

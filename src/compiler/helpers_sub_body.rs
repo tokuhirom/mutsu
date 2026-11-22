@@ -1601,6 +1601,7 @@ impl Compiler {
         for param in Self::non_term_param_names(params, param_defs) {
             sub_compiler.declare_param(param);
         }
+        Self::force_param_chunk_captures(&mut sub_compiler, param_defs);
         // A WhateverCode is a compiler-generated callable, not a source lexical
         // scope. Its `my` declarations therefore use captured slots belonging to
         // the surrounding source block.

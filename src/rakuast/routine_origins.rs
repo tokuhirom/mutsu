@@ -42,6 +42,26 @@ pub(super) fn apply(node: &mut RakuAstNode, spans: Option<&RoutineSpans>, params
 /// (which has no [`RoutineSpans`]), each `Parameter` given the origin the
 /// parser recorded for it.
 // Cost: O(p), p = parameters.
+/// `role P[$x, *@t]`: the parameters of a role's parameterization are
+/// placed as a routine's are, and the signature runs from the first to the
+/// end of the last.
+// Cost: O(p), p = parameters.
+pub(super) fn role_parameterization(signature: &mut RakuAstNode, params: &[ParamDef]) {
+    parameters(signature, params);
+    if let (Some(first), Some(last)) = (params.first(), params.last())
+        && first.spans.param.is_some()
+        && last.spans.param.is_some()
+    {
+        super::origin::set_span(
+            signature,
+            crate::ast::SrcSpan::new(
+                first.spans.param.from as usize,
+                last.spans.param.to as usize,
+            ),
+        );
+    }
+}
+
 pub(super) fn anon_signature(
     names: &crate::scope::NameScope,
     params: &[ParamDef],

@@ -1764,6 +1764,17 @@ impl Interpreter {
         // dispatch, and the post-dispatch FALLBACK absorb in
         // `exec_call_method_mut_op` keeps handling genuinely-unknown methods.
         if modifier.is_none() && target.is_nil() {
+            if let Some(result) = self.nil_own_row(method, &args) {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmut",
+                    "nil-own-row",
+                );
+                self.stack.push(result?);
+                return Ok(());
+            }
+            if let Some(err) = Self::nil_refused_call(method, &args) {
+                return Err(err);
+            }
             match crate::vm::vm_call_method_ops::nil_predispatch_verdict(method, &args) {
                 Some(crate::vm::vm_call_method_ops::NilPredispatchVerdict::Error(err)) => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(

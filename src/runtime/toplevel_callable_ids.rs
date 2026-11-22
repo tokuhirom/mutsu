@@ -54,7 +54,7 @@ pub(crate) struct ModuleToplevelDepth {
 /// The per-interpreter state of the module-top-level side tables (ADR-0084 §2):
 /// the tables themselves and, while a module's mainline runs, the depths it
 /// started at.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(crate) struct ModuleToplevel {
     /// Registration clone ids of routines a loaded module's mainline declared
     /// at its top level, keyed by their `__mutsu_callable_id::` marker symbol
@@ -68,9 +68,12 @@ pub(crate) struct ModuleToplevel {
     /// `runtime::toplevel_markers`).
     pub(crate) constant_markers: std::sync::Arc<crate::runtime::PackageKeyed<()>>,
     /// Bare enum keys a loaded module's mainline declared at its top level,
-    /// keyed by the declaring package (`GLOBAL` for a package-less module
-    /// file; `runtime::enum_bare_names`).
-    pub(crate) enum_keys: std::sync::Arc<crate::runtime::PackageKeyed<Value>>,
+    /// or an `our` enum declared below a top level, keyed by the declaring
+    /// package (`GLOBAL` for a package-less module file;
+    /// `runtime::enum_bare_names`). Package symbols are world state, one per
+    /// program, shared live by every thread (ADR-17216 §3.7): an enum
+    /// declared on a worker is seen on the main thread.
+    pub(crate) enum_keys: super::world_cell::WorldCell<crate::runtime::PackageKeyed<Value>>,
     /// The depths the executing module mainline started at, while one runs.
     /// See [`Interpreter::run_module_mainline`].
     pub(crate) depth: Option<ModuleToplevelDepth>,
@@ -82,15 +85,16 @@ pub(crate) struct ModuleToplevel {
 }
 
 impl ModuleToplevel {
-    /// A spawned thread's copy: it shares the tables copy-on-write (#7796)
-    /// but is not itself running a module mainline.
-    // Cost: O(1), four `Arc` bumps.
+    /// A spawned thread's copy: it shares the tables copy-on-write (#7796),
+    /// the world ones live (ADR-17216), but is not itself running a module
+    /// mainline.
+    // Cost: O(1), five `Arc` bumps.
     pub(crate) fn for_thread(&self) -> Self {
         Self {
             callable_ids: self.callable_ids.clone(),
             package_symbols: self.package_symbols.clone(),
             constant_markers: self.constant_markers.clone(),
-            enum_keys: self.enum_keys.clone(),
+            enum_keys: self.enum_keys.share(),
             depth: None,
             program_depth: None,
         }

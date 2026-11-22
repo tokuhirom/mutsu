@@ -20,7 +20,10 @@ use crate::value::{Value, ValueView};
 // Cost: O(f + n), f = fields of `node`, n = length of the source text read.
 pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
-        RakuAstClass::ApplyInfix => apply_infix(node),
+        RakuAstClass::ApplyInfix => {
+            apply_infix(node);
+            super::decl_compound_origins::left_call(node);
+        }
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => call_name(names, node),
         RakuAstClass::VarDeclarationSimple => {
             initializer(names, node);
@@ -82,7 +85,9 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::operator_origins::derive(node);
         }
         RakuAstClass::ApplyPostfix => {
+            super::indirect_name_origins::package_operand(node);
             super::list_origins::postcircumfix(node);
+            super::hyper_subscript_origins::place(node);
             super::operator_origins::derive(node);
             super::quoted_method_origins::segments(names, node);
             super::attribute_call_origins::meta_item(node);
@@ -118,7 +123,9 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         _ => {
             super::expr_block_origins::phaser_statement(names, node);
-            super::operator_origins::derive(node)
+            super::operator_origins::derive(node);
+            super::prefix_operand_origins::place(names, node);
+            super::hash_colonpair_origins::composer_value(names, node);
         }
     }
 }
@@ -201,6 +208,7 @@ pub(super) fn child_at(node: &RakuAstNode, index: usize) -> Option<&RakuAstNode>
 // Cost: O(n), n = length of the source between the operands.
 fn apply_infix(node: &mut RakuAstNode) {
     leading_variable(node);
+    super::decl_compound_origins::leading_declaration(node);
     super::lone_term_origins::variable_before_operator(node);
     let left = child(node, "left").and_then(byte_range);
     let right = child(node, "right").and_then(byte_range);
@@ -380,7 +388,9 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
-    if super::indirect_name_origins::call(node, SrcSpan::new(from, to)) {
+    if super::indirect_name_origins::call(node, SrcSpan::new(from, to))
+        || super::indirect_name_origins::bare_call(node, SrcSpan::new(from, to))
+    {
         return;
     }
     let Some(name) = child(node, "name")

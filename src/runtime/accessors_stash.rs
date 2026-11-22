@@ -970,6 +970,12 @@ impl Interpreter {
                 || self.is_role(name)
                 || (self.registry().enum_types.contains_key(name)
                     && !self.is_my_scoped_package_item(name))
+                // An `our` subset is a package symbol like a class (ADR-17216:
+                // one declared by `EVAL` on another thread, or in a routine
+                // that has returned, is still found). A `my subset` also files
+                // its bare name, but always next to its declaration-site key
+                // (`Name\0<id>`, ADR-0047), which rules it out here.
+                || self.is_package_scoped_subset(name)
                 // A qualified `package`/`module` a module's mainline declared
                 // is not bound in the frame env (ADR-0084 §7.6); its kind
                 // record is the persistent one.
@@ -1009,7 +1015,12 @@ impl Interpreter {
             || (name_is_qualified
                 && (self.has_package_members(first)
                     || self.has_class(first)
-                    || self.is_role(first)))
+                    || self.is_role(first)
+                    // `E::key` of an enum whose frame binding is gone (declared
+                    // in a returned routine, or on another thread): the enum's
+                    // stash lists its keys.
+                    || (self.registry().enum_types.contains_key(first)
+                        && !self.is_my_scoped_package_item(first))))
         {
             Value::package(Symbol::intern(first))
         } else {

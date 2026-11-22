@@ -694,8 +694,14 @@ impl Compiler {
                         // boxes the named local into a shared `ContainerRef` cell.
                         // Consumers that decontainerize (`@arr = (...)`, param
                         // binding, single-scalar push) deref the cell to its value.
-                        let dollar_scalar = Self::scalar_container_alias_name(elem).is_some();
-                        if let Some(name) = Self::scalar_container_alias_name(elem)
+                        // Parentheses do not decontainerize: `(($x), 2)`
+                        // holds `$x` too (#18230).
+                        let mut alias_elem = elem;
+                        while let Expr::Grouped(inner) = alias_elem {
+                            alias_elem = inner;
+                        }
+                        let dollar_scalar = Self::scalar_container_alias_name(alias_elem).is_some();
+                        if let Some(name) = Self::scalar_container_alias_name(alias_elem)
                             .map(str::to_string)
                             // A SIGILLESS lexical (`\c`, `my \y := ...`) names the
                             // same kind of storage a `$`-sigiled one does, but the
@@ -711,7 +717,13 @@ impl Compiler {
                             // same call worked. Crane reaches this on every
                             // `Crane::In.in(container, @path) = $value` inside a
                             // `\container` routine.
-                            .or_else(|| c.sigilless_local_container_name(elem))
+                            .or_else(|| c.sigilless_local_container_name(alias_elem))
+                            // ...and so does a `my $x = v` declaration among
+                            // the elements (`(my $s = 0; $s = 5; 1)`): its
+                            // value is the declared Scalar (#18230).
+                            .or_else(|| {
+                                c.scalar_decl_container_name(alias_elem).map(str::to_string)
+                            })
                             && !c.suppress_list_var_alias
                         {
                             c.emit_wrap_var_ref(&name);

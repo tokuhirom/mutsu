@@ -75,3 +75,39 @@ pub(super) fn after_prefix(node: &mut RakuAstNode) {
         super::origin::set_span(statement, SrcSpan::new(start, to))
     });
 }
+
+/// `sink $i = 5` / `try $i = 5`: the unplaced expression of the
+/// `Statement::Expression` a statement prefix holds runs from after the
+/// prefix's keyword and its blanks to the end of the prefix, and its parts
+/// are derived from that range.
+// Cost: O(n), n = length of the prefix's text, plus the derivation.
+pub(super) fn prefixed_expression(node: &mut RakuAstNode) {
+    let Some(statement) = child_at(node, 0) else {
+        return;
+    };
+    if statement.class != RakuAstClass::StatementExpression
+        || statement.origin.0.is_some()
+        || statement.fields.len() != 1
+        || child_at(statement, 0).is_none_or(|e| e.origin.0.is_some())
+    {
+        return;
+    }
+    let Some((from, to)) = byte_range(node) else {
+        return;
+    };
+    let Some(start) = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let keyword = text.find(|c: char| !c.is_alphanumeric())?;
+        let rest = &text[keyword..];
+        let after = rest.trim_start();
+        (keyword > 0 && after.len() < rest.len() && !after.is_empty()).then(|| to - after.len())
+    }) else {
+        return;
+    };
+    let span = SrcSpan::new(start, to);
+    with_child_at(node, 0, |statement| {
+        with_child_at(statement, 0, |expression| {
+            super::origin::set_span(expression, span);
+            super::infix_origins::derive(&crate::scope::NameScope::default(), expression);
+        });
+    });
+}

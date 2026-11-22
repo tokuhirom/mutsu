@@ -541,6 +541,11 @@ impl Interpreter {
                 // this way), and an object `nqp::list` with null. An
                 // `IterationBuffer` resizes its element array the same way
                 // (ParaSeq's `nqp::setelems($output, 0)` empties one).
+                if crate::runtime::nqp_backing::with_uni_codes_mut(&target, |codes| codes.resize(n))
+                    .is_some()
+                {
+                    return Some(Ok(target.clone()));
+                }
                 let backing = crate::runtime::nqp_backing::nqp_backing_array(&target);
                 if let Some(ValueView::Array(items, _)) = backing.as_ref().map(Value::view) {
                     crate::runtime::nqp_backing::setelems_items(&target, &items, n);

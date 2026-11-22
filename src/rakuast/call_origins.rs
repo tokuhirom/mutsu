@@ -124,6 +124,7 @@ pub(super) fn postfix_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         operand_end = past_parens(span, operand_from, operand_end);
     }
     super::call_term_origins::place(node, operand_end as usize, span);
+    super::call_term_origins::place_term_as_method(node, operand_end as usize, span);
     // `@a>>.name`: the `MetaPostfix::Hyper` runs from the `>>` to the end and
     // holds the call, which starts at its name.
     if super::infix_origins::child(node, "postfix")

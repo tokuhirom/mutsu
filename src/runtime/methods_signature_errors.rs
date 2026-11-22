@@ -397,9 +397,12 @@ pub(crate) fn make_builtin_method_no_match_error(
     method_name: &str,
     profile: &str,
 ) -> RuntimeError {
+    // `Nil` is undefined: rakudo reports `Str(Nil:U: Int:D)`.
     let concrete = !matches!(
         target.view(),
-        crate::value::ValueView::Package(_) | crate::value::ValueView::ParametricRole { .. }
+        crate::value::ValueView::Package(_)
+            | crate::value::ValueView::ParametricRole { .. }
+            | crate::value::ValueView::Nil
     );
     make_multi_no_match_error_detailed(
         method_name,

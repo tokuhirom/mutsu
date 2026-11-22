@@ -2242,10 +2242,7 @@ fn lower_signature_value(
         Some(f) => Some(simple_type_name(names, node, child_node(&f.value)?)?),
         None => None,
     };
-    let info = crate::value::signature::param_defs_to_sig_info(&defs, returns);
-    Ok(Expr::Literal(
-        crate::value::signature::make_signature_value(info, None),
-    ))
+    Ok(crate::parser::signature_literal_expr(defs, returns))
 }
 
 pub(super) fn lower_signature_parameters(

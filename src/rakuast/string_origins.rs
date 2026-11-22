@@ -177,7 +177,9 @@ fn escaped(text: &str, at: usize) -> bool {
 // Cost: O(n), n = end - cursor.
 fn written_start(next: &RakuAstNode, cursor: usize, end: usize) -> Option<usize> {
     let needle = match next.class {
-        class if super::string_variable_origins::is_variable(class) => leaf_text(next)?,
+        class if super::string_variable_origins::is_variable(class) => {
+            super::string_variable_origins::written(next)?
+        }
         RakuAstClass::Block => "{".to_string(),
         RakuAstClass::ApplyPostfix => leaf_text(interpolated_variable(next)?)?,
         RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {

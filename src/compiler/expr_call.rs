@@ -55,6 +55,42 @@ impl Compiler {
         }
     }
 
+    /// The variable an expression-position `my $x = v` declares, when the
+    /// declaration's value is that variable's Scalar container: a plain,
+    /// named, non-constant, non-native `$` scalar assigned (not bound) by `my`. A
+    /// statement list `(my $s = 0; $s = 5; 1)` holds `$s` itself, so the
+    /// later write shows through the first element (#18230).
+    pub(super) fn scalar_decl_container_name<'e>(&self, expr: &'e Expr) -> Option<&'e str> {
+        let Expr::DoStmt(stmt) = expr else {
+            return None;
+        };
+        match stmt.as_ref() {
+            Stmt::VarDecl {
+                name,
+                anonymous: false,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                constant: None,
+                bind: None,
+                type_constraint,
+                custom_traits,
+                ..
+            } if custom_traits.is_empty()
+                // A native (`my int $x`) has no Scalar to hold.
+                && type_constraint
+                    .as_deref()
+                    .is_none_or(|tc| !self.is_native_type_constraint(tc))
+                && !name.starts_with(['@', '%', '&', '!', '.', '*', '?'])
+                && !name.contains("::")
+                && !crate::with_desugar::is_tmp_name(name) =>
+            {
+                Some(name)
+            }
+            _ => None,
+        }
+    }
+
     /// ADR-0067, the E6 producer: does this `__mutsu_assign_method_lvalue` call
     /// have an INVOCANT that must arrive as the attribute's container rather
     /// than as a copy of its value?

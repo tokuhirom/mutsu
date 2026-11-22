@@ -393,10 +393,11 @@ thread_local! {
         RefCell::new(HashMap::new());
     /// Whether the unit being parsed has, before the parse position, a
     /// compile-time effect mutsu still performs after the parse: a `BEGIN`
-    /// phaser, or a `multi`/`proto` declaration (whose candidates rank by when
-    /// they were installed). Until those happen at parse time too (ADR-17558
-    /// §7.1), a `use` after one is left to the BEGIN-time prologue, so the
-    /// module does not run ahead of what was written before it.
+    /// phaser that did not run at parse time, a `proto`, or a `multi` the
+    /// parse could not stamp with its installation order (candidates rank by
+    /// it; `sub::install_order`). Until those happen at parse time too
+    /// (ADR-17558 §7.1), a `use` after one is left to the BEGIN-time prologue,
+    /// so the module does not run ahead of what was written before it.
     static UNIT_BEGIN_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -412,6 +413,14 @@ pub(in crate::parser) fn in_nested_scope() -> bool {
 // Cost: O(1).
 pub(in crate::parser) fn note_unit_compile_time_effect() {
     UNIT_BEGIN_SEEN.with(|seen| seen.set(true));
+    begin_at_parse::UNIT_PROLOGUE_EFFECT_SEEN.with(|seen| seen.set(true));
+}
+
+/// Note that the unit has, here, an effect the BEGIN-time prologue still
+/// performs, which a later closed `BEGIN` must not overtake (ADR-17558
+/// §7.12), without holding back a later `use` (§7.6).
+// Cost: O(1).
+pub(in crate::parser) fn note_unit_prologue_effect() {
     begin_at_parse::UNIT_PROLOGUE_EFFECT_SEEN.with(|seen| seen.set(true));
 }
 

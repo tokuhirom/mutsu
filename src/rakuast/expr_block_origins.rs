@@ -85,6 +85,7 @@ fn bare_block(node: &mut RakuAstNode) {
 fn statement_operand(node: &mut RakuAstNode) {
     super::lone_term_origins::prefixed_modified_statement(node);
     super::control_statement_origins::after_prefix(node);
+    super::control_statement_origins::prefixed_expression(node);
     with_child_at(node, 0, |statement| {
         if statement.class != RakuAstClass::StatementExpression || statement.origin.0.is_some() {
             return;
