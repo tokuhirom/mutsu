@@ -25,18 +25,35 @@ pub(super) fn place(node: &mut RakuAstNode) {
         RakuAstClass::PostcircumfixLiteralHashIndex => ('<', '>'),
         _ => return,
     };
-    if postfix.origin.0.is_some() || child(node, "operand").is_none_or(|o| o.origin.0.is_some()) {
+    // A curried `*` (`*.[0]`, `*{}`) has no origin in Rakudo.
+    if postfix.origin.0.is_some()
+        || child(node, "operand").is_none_or(|o| {
+            o.origin.0.is_some() || o.class == RakuAstClass::WhateverCodeArgument
+        })
+    {
         return;
     }
-    let Some(end) = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+    let Some(span) = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let opened = opening(text, open, close)?;
         let head = &text[..opened];
         let head = head.strip_suffix('.').unwrap_or(head);
-        (!head.is_empty() && !head.ends_with(char::is_whitespace)).then(|| from + head.len())
+        if head.is_empty() || head.ends_with(char::is_whitespace) {
+            return None;
+        }
+        // `('a', 'b' ... *).[^10]`: parentheses around the operand are no
+        // node of their own, so its range is inside them.
+        if let Some(after) = head.strip_prefix('(')
+            && super::subst_origins::closing(after, '(', ')') == Some(after.len() - 1)
+        {
+            let inner = &after[..after.len() - 1];
+            let lead = inner.len() - inner.trim_start().len();
+            let inside = inner.trim();
+            return Some(SrcSpan::new(from + 1 + lead, from + 1 + lead + inside.len()));
+        }
+        Some(SrcSpan::new(from, from + head.len()))
     }) else {
         return;
     };
-    let span = SrcSpan::new(from, end);
     with_child(node, "operand", |operand| {
         super::origin::set_span(operand, span);
         super::origin::named_term(operand, span);
