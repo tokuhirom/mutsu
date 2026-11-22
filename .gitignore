@@ -111,3 +111,9 @@ __pycache__/
 
 # Scratch files an IO test leaves in the working directory if run from an old checkout
 /tmp-io-out-buffer-*.txt
+
+# Stray files some roast/t runs leave in the working directory (a test that
+# writes to "-" or "x" relative to cwd); they were committed by accident twice
+/-
+/x
+/roast/-
