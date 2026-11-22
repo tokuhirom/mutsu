@@ -165,7 +165,9 @@ fn clauses(text: &str, base: usize) -> Vec<Clause> {
             },
             None => 0,
         };
-        if name.is_empty() || name.ends_with(':') || text[name_to + brackets..].starts_with(['[', '<'])
+        if name.is_empty()
+            || name.ends_with(':')
+            || text[name_to + brackets..].starts_with(['[', '<'])
         {
             break;
         }

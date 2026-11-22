@@ -54,7 +54,10 @@ pub(super) fn role_parameterization(signature: &mut RakuAstNode, params: &[Param
     {
         super::origin::set_span(
             signature,
-            crate::ast::SrcSpan::new(first.spans.param.from as usize, last.spans.param.to as usize),
+            crate::ast::SrcSpan::new(
+                first.spans.param.from as usize,
+                last.spans.param.to as usize,
+            ),
         );
     }
 }

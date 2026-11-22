@@ -285,8 +285,7 @@ pub(super) fn package_operand(node: &mut RakuAstNode) {
     let Some((last, simple)) = parts.split_last() else {
         return;
     };
-    if !matches!(last.view(), ValueView::RakuAst(p) if p.class == RakuAstClass::NamePartEmptyEdge)
-    {
+    if !matches!(last.view(), ValueView::RakuAst(p) if p.class == RakuAstClass::NamePartEmptyEdge) {
         return;
     }
     let Some(words) = simple
