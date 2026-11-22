@@ -77,21 +77,23 @@ Concretely:
 
 ## Current assumptions
 
-- The whitelist stands at **1435 / 1455** (2026-11-22, `wc -l roast-whitelist.txt` against
-  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **20** files not whitelisted (18
+- The whitelist stands at **1436 / 1455** (2026-11-22, `wc -l roast-whitelist.txt` against
+  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **19** files not whitelisted (17
   excluding roast's own Perl 5 tooling tests `t/fudge.t` and `t/fudgeandrun.t`), down from 28
   on 2026-10-14. The re-measure found no non-whitelisted file that now passes;
-  `S05-metasyntax/angle-brackets.t` reached the whitelist right after (#18740).
+  `S05-metasyntax/angle-brackets.t` (#18740) and `S05-mass/rx.t` reached the whitelist right
+  after.
 - **"No oracle" was partly wrong.** The raku column below runs the *unfudged* files. Run through
   roast's own fudger (`cd roast && perl fudge rakudo <file> out.t`, then raku with
   `-Ipackages/Test-Helpers/lib`), rakudo passes `S05-metasyntax/angle-brackets.t` 93/95 (now
-  whitelisted), `S02-names/pseudo-6d.t` 156/159 and `6.c/S02-names/pseudo-6c.t` 158/161: those
-  are reachable targets (#18742). Check a SORRY file this way before calling it "no oracle".
+  whitelisted), `S05-mass/rx.t` 754/756 (now whitelisted), `S02-names/pseudo-6d.t` 156/159,
+  `6.c/S02-names/pseudo-6c.t` 158/161 (#18742) and `6.c/APPENDICES/A03-older-specs/01-misc.t`
+  9/9: those are reachable targets. Check a SORRY file this way before calling it "no oracle".
 - **The 2026-10-14 regressions are all fixed** (#13469-#13474, #13468 are closed, and their
   files reached the whitelist). `S05-mass/rx.t` then regressed on a new cause: the RakuAST
   finalizer refused regex literals that use an adverb with a value (`:i(1)`, `:1i`, `:s(0)`),
-  `:!` on a quantifier, `|&`, or an Nd-digit backref `$٠` (#18713, fixed: the file runs all
-  756 subtests again, 14 failing).
+  `:!` on a quantifier, `|&`, or an Nd-digit backref `$٠` (#18713). That and the file's other
+  gaps (#18736-#18738, `"$0"` in a regex string) are fixed, and it is whitelisted.
 - **Full-suite run** (`scripts/roast-history.sh`, HISTORY.tsv row of 2026-11-22): 1267 / 1288
   files pass, 194545 / 195248 subtests. The four whitelisted files it reported as failing are
   environment-only: `S16-filehandles/filetest.t`, `S16-io/eof.t` and `S32-io/IO-Socket-Async.t`
@@ -139,7 +141,6 @@ unless noted. Both rows were unchanged by the 2026-11-22 re-measure.
 | No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 (2026-10-14, unchanged) | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
 | No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 (aborts: `Dynamic variable $*OS not found`) | 0/8 (aborts too, `$*OS`; same on v2026.09) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
 | Non-goal | `S05-capture/hash.t` | rejected (matches raku) | SORRY (removed) | Hash captures in regexes `%<name>=(...)` are removed/reserved in the current spec. mutsu also gives a compile error, matching raku = **no implementation needed** |
-| Non-goal | `S05-mass/rx.t` | runs all 756, 14 failing (2026-11-22, after #18713; it failed to compile before) | SORRY (`::` NYI) | rakudo itself cannot compile it: `::` backtracking control NYI (the `::`/`:::`/`<commit>` subtests are `#?rakudo skip`/`todo`). #18713 made the refused regex literals compile and run (`:i(N)`/`:Ni`/`:s(N)`, `*:!`/`**:?`, a leading `&`, Nd-digit `$٠` and `**۳`). Remaining: 127-134 `"$0"` inside a regex string (raku fails these too), 270/271 `\Q` → `X::Obsolete` and 752 `//` → `X::Syntax::Regex::NullRegex` (#18738), 330/351 `\x[21,21]`/`\o[41,41]` (#18737), 654 `/ "{ $_ }" /` (#18738) |
 | Non-goal | `S05-nonstrings/basic.t` | 0/5 (compile error: `Undeclared name: Antelope`) | SORRY (removed) | Regex matching against non-strings (streams/arrays) = early Perl 6 spec. Removed from the language while Rakudo never implemented it |
 | Non-goal | `S06-advanced/caller.t` | aborts at 3/22 (1, 3 fail) | SORRY | Stale test, over-stated plan (22 planned vs effectively 19 assertions). Confirmed unpassable (#3975). Now stops at line 30: `Placeholder variable '@_' may not be used here because the surrounding block does not take a signature` (a Perl-5-style `@_` in a sub with an explicit signature — raku rejects it at compile time too) |
 | Non-goal | `S06-advanced/return_function.t` | 0/4 (runs, all fail) | SORRY | Expects the old Pair-flattening behavior. rakudo also rejects it at compile time. Outside spectest.data |
@@ -160,10 +161,6 @@ completed fix history lives in `news/`.
   (`::<$x> := $y`); `X::NoSuchSymbol` exception type; `is dynamic` trait for CALLERS visibility;
   `CORE::v6c/v6d/v6e` namespaces. Note: raku itself fails to parse this test due to `$?` twigil
   constants.
-- **`S05-mass/rx.t`** — since #18713 the file compiles and runs all 756 subtests; 14 fail
-  (see its row). The per-token ratchet (`:`) core is fixed (commits to the atom's
-  highest-priority match; leading null `||`/`|` alternatives ignored). `::` / `:::` /
-  `<commit>` group/rule cut semantics are unimplemented, but rakudo skips those subtests too.
 - **`S06-advanced/caller.t`** — unpassable on the plan count alone: `plan 22` but only 19
   assertions exist (the trailing "WRITEME: label tests" were never written). The 4 failing
   assertions are **stale old-Rakudo expectations that mutsu correctly diverges from** — do NOT
@@ -178,11 +175,9 @@ completed fix history lives in `news/`.
 *diagnoses* have been wrong before (see `my-6c.t` in [news/2026-07.md](../news/2026-07.md),
 where "needs lexical hoisting" was simply false).
 
-1. **`S05-mass/rx.t`'s remaining regex gaps** — #18737 (`\x[21,21]` multi-codepoint escapes),
-   #18738 (`\Q`/`//` exception types, `"{ $_ }"` in a regex). #18713 (the compile-time
-   refusal that killed the whole file) and #18736 (a backreference in a repeated group) are
-   fixed. The
-   file stays non-goal (rakudo SORRYs on `::`), but each of these is a general regex bug.
+1. **`6.c/APPENDICES/A03-older-specs/01-misc.t`** — rakudo passes the fudged file 9/9.
+   `Cool.subst-mutate` is fixed in its own PR (its subtest then reaches `:nd{2;}`); next are a Callable
+   `:nth` (#18790) and `Pair.freeze` keeping the Pair's object identity (`.WHICH`).
 2. **`6.c/S02-names/pseudo-6c.t` — the stash road** (aborts at 56/161 on `::($our)::A43`; the
    earlier per-subtest split is in its inventory row). `CALLERS::`, `OUR::` and inline-block
    `CALLER::`/`CALLERS::` are done; the biggest remaining cluster is the `::($x)::('$y')`
