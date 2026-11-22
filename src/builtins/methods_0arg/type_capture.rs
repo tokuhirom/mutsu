@@ -56,7 +56,11 @@ pub(crate) fn builtin_kind(name: &str) -> Option<TypeCapture> {
 /// at the class `decided_by` (`got` itself, or the ancestor that declares the
 /// refusing `Capture`).
 // Cost: O(1) (O(m) to build an error message, m = its chars).
-pub(crate) fn answer(kind: TypeCapture, got: &str, decided_by: &str) -> Result<Value, RuntimeError> {
+pub(crate) fn answer(
+    kind: TypeCapture,
+    got: &str,
+    decided_by: &str,
+) -> Result<Value, RuntimeError> {
     match kind {
         TypeCapture::Empty => Ok(Value::capture(Vec::new(), ValueMap::default())),
         TypeCapture::Attributes => Err(RuntimeError::new(format!(
