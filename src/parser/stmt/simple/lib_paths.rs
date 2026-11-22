@@ -48,6 +48,26 @@ pub fn set_parser_source_file(path: Option<String>) -> Option<String> {
     SOURCE_FILE.with(|p| std::mem::replace(&mut *p.borrow_mut(), path))
 }
 
+/// Mark the compilation unit about to be parsed as a module (or not), and
+/// return the previous mark so the caller can restore it; module parses nest
+/// like [`set_parser_source_file`].
+///
+/// Rakudo reports a module's compile-time worries once, when it precompiles
+/// the module, and never on a later load; mutsu replays a module's parse
+/// warnings on every load. A worry that can come in the hundreds for an
+/// ordinary module (a "Missing declarand" per `#=`-documented enum value) is
+/// therefore reported for the program's own units only.
+// Cost: O(1).
+pub fn set_parser_module_unit(module: bool) -> bool {
+    MODULE_UNIT.with(|m| std::mem::replace(&mut *m.borrow_mut(), module))
+}
+
+/// Whether the compilation unit being parsed is a module.
+// Cost: O(1).
+pub(crate) fn parser_module_unit() -> bool {
+    MODULE_UNIT.with(|m| *m.borrow())
+}
+
 /// The file `$?FILE` folds to for the compilation unit being parsed, if known.
 pub(crate) fn parser_source_file() -> Option<String> {
     SOURCE_FILE.with(|p| p.borrow().clone())
