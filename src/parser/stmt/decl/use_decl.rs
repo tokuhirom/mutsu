@@ -34,9 +34,8 @@ pub(crate) fn leading_version_pragma_end(source: &str) -> usize {
 /// `X::Language::TooLate`: a `use v6...` that is not the unit's first
 /// statement.
 fn too_late_to_switch_version() -> PError {
-    let message =
-        "Too late to switch language version. Must be used as the very first statement."
-            .to_string();
+    let message = "Too late to switch language version. Must be used as the very first statement."
+        .to_string();
     let ex = Value::make_instance(
         Symbol::intern("X::Language::TooLate"),
         std::collections::HashMap::from([("message".to_string(), Value::str(message.clone()))]),
