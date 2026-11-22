@@ -6,9 +6,12 @@
 #   raku scripts/builtin-exception-attrs.raku > src/runtime/builtin_exception_attrs.tsv
 #
 # One row per attribute that construction binds (an accessor or `is built`):
-# `Class<TAB>sigil<TAB>name<TAB>public<TAB>default`, where `public` is 1 when
-# the attribute has an accessor and `default` is the type object an unset
-# scalar holds (`Any`, `Mu`, `Bool`, `Nil`), empty for an `@`/`%` attribute.
+# `Class<TAB>sigil<TAB>name<TAB>public<TAB>default<TAB>build`, where `public`
+# is 1 when the attribute has an accessor, `default` is the type object an
+# unset scalar holds (`Any`, `Mu`, `Bool`, `Nil`), empty for an `@`/`%`
+# attribute, and `build` is a literal initializer (`has $.what = 'symbol'`)
+# as `Str:<text>` or `Bool:True`/`Bool:False`, empty when there is none or it
+# is computed (a block).
 # Private bookkeeping attributes (`Exception`'s `$!ex`/`$!bt`, a cached
 # `$!message`) are not listed: no named argument reaches them, and `.raku`
 # does not show them.
@@ -33,7 +36,17 @@ sub emit(\type) {
         my $default = $sigil eq '$' && nqp::iscont(container)
           ?? container.VAR.default.^name
           !! '';
-        say (type.^name, $sigil, $name, +$attr.has_accessor, $default).join("\t");
+        my $b = $attr.build;
+        my $build = do given $b {
+            when Code { '' }
+            when Bool:D { 'Bool:' ~ $b.Str }
+            when Str:D {
+                die "unencodable initializer {$b.raku}" if $b ~~ /<[\t\n\\]>/;
+                'Str:' ~ $b
+            }
+            default { '' }
+        };
+        say (type.^name, $sigil, $name, +$attr.has_accessor, $default, $build).join("\t");
     }
 }
 

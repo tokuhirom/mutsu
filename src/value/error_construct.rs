@@ -274,6 +274,11 @@ impl RuntimeError {
             .unwrap_or((self.untyped_exception_class(), self.message.as_ref()));
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str_from(text));
+        // An `X::AdHoc`'s message IS its payload in rakudo; the class declares
+        // `$.payload` (#18654), so its accessor reads that slot.
+        if class_name == "X::AdHoc" {
+            attrs.insert("payload".to_string(), Value::str_from(text));
+        }
         // `X::Syntax::Missing`'s message IS `Missing {what}` in rakudo, so the
         // attribute the roast tests match on (`what => 'block'`,
         // `what => '"while" or "until"'`) can be derived from it rather than

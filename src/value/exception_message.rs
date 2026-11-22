@@ -50,8 +50,7 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
         "X::Undeclared" => {
             let what = attr_str_or(attrs, "what", "Variable");
             let symbol = attr_str(attrs, "symbol");
-            let items = attrs
-                .get("suggestions")
+            let items = defined_attr(attrs, "suggestions")
                 .map(suggestion_list)
                 .unwrap_or_default();
             Some(undeclared_message(&what, &symbol, &items))
@@ -130,7 +129,7 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
             let got = attr_str(attrs, "got");
             let range = attr_str(attrs, "range");
             let mut msg = format!("{} out of range. Is: {}, should be in {}", what, got, range);
-            if let Some(comment) = attrs.get("comment") {
+            if let Some(comment) = defined_attr(attrs, "comment") {
                 let c = comment.to_string_value();
                 if !c.is_empty() {
                     msg.push_str(&format!("; {}", c));
@@ -193,7 +192,7 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
             ))
         }
         "X::Assignment::RO" => {
-            if let Some(val) = attrs.get("value") {
+            if let Some(val) = defined_attr(attrs, "value") {
                 let type_name = value_type_label(val);
                 let val_str = val.to_string_value();
                 Some(format!(
@@ -291,18 +290,31 @@ fn promise_status(attrs: &AttrMap) -> String {
     attr_str_or(attrs, "status", "Planned")
 }
 
-/// Extract a string attribute, defaulting to "" if absent.
-fn attr_str(attrs: &AttrMap, key: &str) -> String {
+/// An attribute's value when it is defined. A built-in exception declares its
+/// attributes, so construction seeds an unset one with its type object
+/// (`Any`, `Mu`) or `Nil`; the formatters read that as absent, as Rakudo's
+/// test `.defined` (#18654).
+// Cost: O(1).
+pub(crate) fn defined_attr<'a>(attrs: &'a AttrMap, key: &str) -> Option<&'a Value> {
     attrs
         .get(key)
+        .filter(|v| !matches!(v.view(), ValueView::Nil | ValueView::Package(_)))
+}
+
+/// Extract a string attribute, defaulting to "" if absent or undefined (a
+/// type object stringifies to "" in Rakudo).
+// Cost: O(s), s = the attribute's string length.
+fn attr_str(attrs: &AttrMap, key: &str) -> String {
+    defined_attr(attrs, key)
         .map(|v| v.to_string_value())
         .unwrap_or_default()
 }
 
-/// Extract a string attribute with a custom default.
+/// Extract a string attribute with a custom default for an absent or
+/// undefined one.
+// Cost: O(s), s = the attribute's string length.
 fn attr_str_or(attrs: &AttrMap, key: &str, default: &str) -> String {
-    attrs
-        .get(key)
+    defined_attr(attrs, key)
         .map(|v| v.to_string_value())
         .unwrap_or_else(|| default.to_string())
 }

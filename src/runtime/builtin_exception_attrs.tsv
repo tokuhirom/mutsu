@@ -1,2097 +1,2097 @@
-X::AdHoc	$	payload	1	Nil
-X::Adverb	$	what	1	Any
-X::Adverb	$	source	1	Any
-X::Adverb	@	unexpected	1	
-X::Adverb	@	nogo	1	
-X::Anon::Augment	$	package-kind	1	Any
-X::Anon::Augment	$	pos	1	Any
-X::Anon::Augment	$	filename	1	Any
-X::Anon::Augment	$	line	1	Any
-X::Anon::Augment	$	directive-filename	1	Any
-X::Anon::Augment	$	column	1	Any
-X::Anon::Augment	@	modules	1	
-X::Anon::Augment	$	is-compile-time	1	Any
-X::Anon::Augment	$	pre	1	Any
-X::Anon::Augment	$	post	1	Any
-X::Anon::Augment	@	highexpect	1	
-X::Anon::Multi	$	multiness	1	Any
-X::Anon::Multi	$	routine-type	1	Any
-X::Anon::Multi	$	pos	1	Any
-X::Anon::Multi	$	filename	1	Any
-X::Anon::Multi	$	line	1	Any
-X::Anon::Multi	$	directive-filename	1	Any
-X::Anon::Multi	$	column	1	Any
-X::Anon::Multi	@	modules	1	
-X::Anon::Multi	$	is-compile-time	1	Any
-X::Anon::Multi	$	pre	1	Any
-X::Anon::Multi	$	post	1	Any
-X::Anon::Multi	@	highexpect	1	
-X::ArrayShapeMismatch	$	action	1	Any
-X::ArrayShapeMismatch	$	target-shape	1	Any
-X::ArrayShapeMismatch	$	source-shape	1	Any
-X::Assignment::RO	$	value	1	Mu
-X::Assignment::RO::Comp	$	variable	1	Any
-X::Assignment::RO::Comp	$	pos	1	Any
-X::Assignment::RO::Comp	$	filename	1	Any
-X::Assignment::RO::Comp	$	line	1	Any
-X::Assignment::RO::Comp	$	directive-filename	1	Any
-X::Assignment::RO::Comp	$	column	1	Any
-X::Assignment::RO::Comp	@	modules	1	
-X::Assignment::RO::Comp	$	is-compile-time	1	Any
-X::Assignment::RO::Comp	$	pre	1	Any
-X::Assignment::RO::Comp	$	post	1	Any
-X::Assignment::RO::Comp	@	highexpect	1	
-X::Assignment::ToShaped	$	shape	1	Any
-X::Attribute::NoPackage	$	name	1	Any
-X::Attribute::NoPackage	$	pos	1	Any
-X::Attribute::NoPackage	$	filename	1	Any
-X::Attribute::NoPackage	$	line	1	Any
-X::Attribute::NoPackage	$	directive-filename	1	Any
-X::Attribute::NoPackage	$	column	1	Any
-X::Attribute::NoPackage	@	modules	1	
-X::Attribute::NoPackage	$	is-compile-time	1	Any
-X::Attribute::NoPackage	$	pre	1	Any
-X::Attribute::NoPackage	$	post	1	Any
-X::Attribute::NoPackage	@	highexpect	1	
-X::Attribute::Package	$	package-kind	1	Any
-X::Attribute::Package	$	name	1	Any
-X::Attribute::Package	$	pos	1	Any
-X::Attribute::Package	$	filename	1	Any
-X::Attribute::Package	$	line	1	Any
-X::Attribute::Package	$	directive-filename	1	Any
-X::Attribute::Package	$	column	1	Any
-X::Attribute::Package	@	modules	1	
-X::Attribute::Package	$	is-compile-time	1	Any
-X::Attribute::Package	$	pre	1	Any
-X::Attribute::Package	$	post	1	Any
-X::Attribute::Package	@	highexpect	1	
-X::Attribute::Required	$	name	1	Any
-X::Attribute::Required	$	why	1	Any
-X::Attribute::Scope::Package	$	scope	1	Any
-X::Attribute::Scope::Package	$	allowed	1	Any
-X::Attribute::Scope::Package	$	disallowed	1	Any
-X::Attribute::Scope::Package	$	pos	1	Any
-X::Attribute::Scope::Package	$	filename	1	Any
-X::Attribute::Scope::Package	$	line	1	Any
-X::Attribute::Scope::Package	$	directive-filename	1	Any
-X::Attribute::Scope::Package	$	column	1	Any
-X::Attribute::Scope::Package	@	modules	1	
-X::Attribute::Scope::Package	$	is-compile-time	1	Any
-X::Attribute::Scope::Package	$	pre	1	Any
-X::Attribute::Scope::Package	$	post	1	Any
-X::Attribute::Scope::Package	@	highexpect	1	
-X::Attribute::Undeclared	$	package-kind	1	Any
-X::Attribute::Undeclared	$	package-name	1	Any
-X::Augment::NoSuchType	$	package-kind	1	Any
-X::Augment::NoSuchType	$	package	1	Any
-X::Augment::NoSuchType	$	pos	1	Any
-X::Augment::NoSuchType	$	filename	1	Any
-X::Augment::NoSuchType	$	line	1	Any
-X::Augment::NoSuchType	$	directive-filename	1	Any
-X::Augment::NoSuchType	$	column	1	Any
-X::Augment::NoSuchType	@	modules	1	
-X::Augment::NoSuchType	$	is-compile-time	1	Any
-X::Augment::NoSuchType	$	pre	1	Any
-X::Augment::NoSuchType	$	post	1	Any
-X::Augment::NoSuchType	@	highexpect	1	
-X::Backslash::NonVariableDollar	$	pos	1	Any
-X::Backslash::NonVariableDollar	$	filename	1	Any
-X::Backslash::NonVariableDollar	$	line	1	Any
-X::Backslash::NonVariableDollar	$	directive-filename	1	Any
-X::Backslash::NonVariableDollar	$	column	1	Any
-X::Backslash::NonVariableDollar	@	modules	1	
-X::Backslash::NonVariableDollar	$	is-compile-time	1	Any
-X::Backslash::NonVariableDollar	$	pre	1	Any
-X::Backslash::NonVariableDollar	$	post	1	Any
-X::Backslash::NonVariableDollar	@	highexpect	1	
-X::Backslash::UnrecognizedSequence	$	sequence	1	Any
-X::Backslash::UnrecognizedSequence	$	suggestion	1	Any
-X::Backslash::UnrecognizedSequence	$	pos	1	Any
-X::Backslash::UnrecognizedSequence	$	filename	1	Any
-X::Backslash::UnrecognizedSequence	$	line	1	Any
-X::Backslash::UnrecognizedSequence	$	directive-filename	1	Any
-X::Backslash::UnrecognizedSequence	$	column	1	Any
-X::Backslash::UnrecognizedSequence	@	modules	1	
-X::Backslash::UnrecognizedSequence	$	is-compile-time	1	Any
-X::Backslash::UnrecognizedSequence	$	pre	1	Any
-X::Backslash::UnrecognizedSequence	$	post	1	Any
-X::Backslash::UnrecognizedSequence	@	highexpect	1	
-X::Bind	$	target	1	Any
-X::Bind::NativeType	$	name	1	Any
-X::Bind::NativeType	$	pos	1	Any
-X::Bind::NativeType	$	filename	1	Any
-X::Bind::NativeType	$	line	1	Any
-X::Bind::NativeType	$	directive-filename	1	Any
-X::Bind::NativeType	$	column	1	Any
-X::Bind::NativeType	@	modules	1	
-X::Bind::NativeType	$	is-compile-time	1	Any
-X::Bind::NativeType	$	pre	1	Any
-X::Bind::NativeType	$	post	1	Any
-X::Bind::NativeType	@	highexpect	1	
-X::Bind::Rebind	$	is-type	1	Any
-X::Bind::Slice	$	type	1	Any
-X::Buf::AsStr	$	object	1	Any
-X::Buf::AsStr	$	method	1	Any
-X::Buf::Pack	$	directive	1	Any
-X::Buf::Pack::NonASCII	$	char	1	Any
-X::Cannot::Capture	$	what	1	Any
-X::Cannot::Empty	$	action	1	Any
-X::Cannot::Empty	$	what	1	Any
-X::Cannot::Lazy	$	action	1	Any
-X::Cannot::Lazy	$	what	1	Any
-X::Cannot::Map	$	what	1	Any
-X::Cannot::Map	$	using	1	Any
-X::Cannot::Map	$	suggestion	1	Any
-X::Cannot::New	$	class	1	Mu
-X::Channel::ReceiveOnClosed	$	channel	1	Any
-X::Channel::SendOnClosed	$	channel	1	Any
-X::Coerce	$	target-type	1	Mu
-X::Coerce	$	from-type	1	Mu
-X::Coerce::Impossible	$	hint	1	Any
-X::Coerce::Role	$	exception	0	Mu
-X::Comp::AdHoc	$	pos	1	Any
-X::Comp::AdHoc	$	filename	1	Any
-X::Comp::AdHoc	$	line	1	Any
-X::Comp::AdHoc	$	directive-filename	1	Any
-X::Comp::AdHoc	$	column	1	Any
-X::Comp::AdHoc	@	modules	1	
-X::Comp::AdHoc	$	is-compile-time	1	Any
-X::Comp::AdHoc	$	pre	1	Any
-X::Comp::AdHoc	$	post	1	Any
-X::Comp::AdHoc	@	highexpect	1	
-X::Comp::BeginTime	$	use-case	1	str
-X::Comp::BeginTime	$	exception	1	Any
-X::Comp::BeginTime	$	pos	1	Any
-X::Comp::BeginTime	$	filename	1	Any
-X::Comp::BeginTime	$	line	1	Any
-X::Comp::BeginTime	$	directive-filename	1	Any
-X::Comp::BeginTime	$	column	1	Any
-X::Comp::BeginTime	@	modules	1	
-X::Comp::BeginTime	$	is-compile-time	1	Any
-X::Comp::BeginTime	$	pre	1	Any
-X::Comp::BeginTime	$	post	1	Any
-X::Comp::BeginTime	@	highexpect	1	
-X::Comp::FailGoal	$	dba	1	Any
-X::Comp::FailGoal	$	goal	1	Any
-X::Comp::FailGoal	$	line-real	1	Any
-X::Comp::FailGoal	$	filename-real	1	Any
-X::Comp::FailGoal	$	pos	1	Any
-X::Comp::FailGoal	$	filename	1	Any
-X::Comp::FailGoal	$	line	1	Any
-X::Comp::FailGoal	$	directive-filename	1	Any
-X::Comp::FailGoal	$	column	1	Any
-X::Comp::FailGoal	@	modules	1	
-X::Comp::FailGoal	$	is-compile-time	1	Any
-X::Comp::FailGoal	$	pre	1	Any
-X::Comp::FailGoal	$	post	1	Any
-X::Comp::FailGoal	@	highexpect	1	
-X::Comp::Group	$	panic	1	Any
-X::Comp::Group	@	sorrows	1	
-X::Comp::Group	@	worries	1	
-X::Comp::NYI	$	pos	1	Any
-X::Comp::NYI	$	filename	1	Any
-X::Comp::NYI	$	line	1	Any
-X::Comp::NYI	$	directive-filename	1	Any
-X::Comp::NYI	$	column	1	Any
-X::Comp::NYI	@	modules	1	
-X::Comp::NYI	$	is-compile-time	1	Any
-X::Comp::NYI	$	pre	1	Any
-X::Comp::NYI	$	post	1	Any
-X::Comp::NYI	@	highexpect	1	
-X::Comp::Trait::Invalid	$	pos	1	Any
-X::Comp::Trait::Invalid	$	filename	1	Any
-X::Comp::Trait::Invalid	$	line	1	Any
-X::Comp::Trait::Invalid	$	directive-filename	1	Any
-X::Comp::Trait::Invalid	$	column	1	Any
-X::Comp::Trait::Invalid	@	modules	1	
-X::Comp::Trait::Invalid	$	is-compile-time	1	Any
-X::Comp::Trait::Invalid	$	pre	1	Any
-X::Comp::Trait::Invalid	$	post	1	Any
-X::Comp::Trait::Invalid	@	highexpect	1	
-X::Comp::Trait::NotOnNative	$	pos	1	Any
-X::Comp::Trait::NotOnNative	$	filename	1	Any
-X::Comp::Trait::NotOnNative	$	line	1	Any
-X::Comp::Trait::NotOnNative	$	directive-filename	1	Any
-X::Comp::Trait::NotOnNative	$	column	1	Any
-X::Comp::Trait::NotOnNative	@	modules	1	
-X::Comp::Trait::NotOnNative	$	is-compile-time	1	Any
-X::Comp::Trait::NotOnNative	$	pre	1	Any
-X::Comp::Trait::NotOnNative	$	post	1	Any
-X::Comp::Trait::NotOnNative	@	highexpect	1	
-X::Comp::Trait::Scope	$	pos	1	Any
-X::Comp::Trait::Scope	$	filename	1	Any
-X::Comp::Trait::Scope	$	line	1	Any
-X::Comp::Trait::Scope	$	directive-filename	1	Any
-X::Comp::Trait::Scope	$	column	1	Any
-X::Comp::Trait::Scope	@	modules	1	
-X::Comp::Trait::Scope	$	is-compile-time	1	Any
-X::Comp::Trait::Scope	$	pre	1	Any
-X::Comp::Trait::Scope	$	post	1	Any
-X::Comp::Trait::Scope	@	highexpect	1	
-X::Comp::Trait::Unknown	$	pos	1	Any
-X::Comp::Trait::Unknown	$	filename	1	Any
-X::Comp::Trait::Unknown	$	line	1	Any
-X::Comp::Trait::Unknown	$	directive-filename	1	Any
-X::Comp::Trait::Unknown	$	column	1	Any
-X::Comp::Trait::Unknown	@	modules	1	
-X::Comp::Trait::Unknown	$	is-compile-time	1	Any
-X::Comp::Trait::Unknown	$	pre	1	Any
-X::Comp::Trait::Unknown	$	post	1	Any
-X::Comp::Trait::Unknown	@	highexpect	1	
-X::Comp::TypeCheck	$	pos	1	Any
-X::Comp::TypeCheck	$	filename	1	Any
-X::Comp::TypeCheck	$	line	1	Any
-X::Comp::TypeCheck	$	directive-filename	1	Any
-X::Comp::TypeCheck	$	column	1	Any
-X::Comp::TypeCheck	@	modules	1	
-X::Comp::TypeCheck	$	is-compile-time	1	Any
-X::Comp::TypeCheck	$	pre	1	Any
-X::Comp::TypeCheck	$	post	1	Any
-X::Comp::TypeCheck	@	highexpect	1	
-X::Comp::WheneverOutOfScope	$	pos	1	Any
-X::Comp::WheneverOutOfScope	$	filename	1	Any
-X::Comp::WheneverOutOfScope	$	line	1	Any
-X::Comp::WheneverOutOfScope	$	directive-filename	1	Any
-X::Comp::WheneverOutOfScope	$	column	1	Any
-X::Comp::WheneverOutOfScope	@	modules	1	
-X::Comp::WheneverOutOfScope	$	is-compile-time	1	Any
-X::Comp::WheneverOutOfScope	$	pre	1	Any
-X::Comp::WheneverOutOfScope	$	post	1	Any
-X::Comp::WheneverOutOfScope	@	highexpect	1	
-X::CompUnit::UnsatisfiedDependency	$	specification	1	CompUnit::DependencySpecification
-X::Composition::NotComposable	$	target-name	1	Any
-X::Composition::NotComposable	$	composer	1	Any
-X::Composition::NotComposable	$	pos	1	Any
-X::Composition::NotComposable	$	filename	1	Any
-X::Composition::NotComposable	$	line	1	Any
-X::Composition::NotComposable	$	directive-filename	1	Any
-X::Composition::NotComposable	$	column	1	Any
-X::Composition::NotComposable	@	modules	1	
-X::Composition::NotComposable	$	is-compile-time	1	Any
-X::Composition::NotComposable	$	pre	1	Any
-X::Composition::NotComposable	$	post	1	Any
-X::Composition::NotComposable	@	highexpect	1	
-X::Constructor::BadType	$	type	1	Mu
-X::Constructor::Positional	$	type	1	Any
-X::ControlFlow	$	illegal	1	Any
-X::ControlFlow	$	enclosing	1	Any
-X::ControlFlow	$	backtrace	1	Any
-X::ControlFlow::Return	$	out-of-dynamic-scope	1	Bool
-X::DateTime::InvalidDeltaUnit	$	unit	1	Any
-X::Declaration::OurScopeInRole	$	declaration	1	Any
-X::Declaration::OurScopeInRole	$	pos	1	Any
-X::Declaration::OurScopeInRole	$	filename	1	Any
-X::Declaration::OurScopeInRole	$	line	1	Any
-X::Declaration::OurScopeInRole	$	directive-filename	1	Any
-X::Declaration::OurScopeInRole	$	column	1	Any
-X::Declaration::OurScopeInRole	@	modules	1	
-X::Declaration::OurScopeInRole	$	is-compile-time	1	Any
-X::Declaration::OurScopeInRole	$	pre	1	Any
-X::Declaration::OurScopeInRole	$	post	1	Any
-X::Declaration::OurScopeInRole	@	highexpect	1	
-X::Declaration::Scope	$	scope	1	Any
-X::Declaration::Scope	$	declaration	1	Any
-X::Declaration::Scope	$	pos	1	Any
-X::Declaration::Scope	$	filename	1	Any
-X::Declaration::Scope	$	line	1	Any
-X::Declaration::Scope	$	directive-filename	1	Any
-X::Declaration::Scope	$	column	1	Any
-X::Declaration::Scope	@	modules	1	
-X::Declaration::Scope	$	is-compile-time	1	Any
-X::Declaration::Scope	$	pre	1	Any
-X::Declaration::Scope	$	post	1	Any
-X::Declaration::Scope	@	highexpect	1	
-X::Delete	$	target	1	Any
-X::Does::TypeObject	$	type	1	Mu
-X::Does::TypeObject	%	nameds	1	
-X::Dynamic::NotFound	$	name	1	Any
-X::Dynamic::Package	$	symbol	1	Any
-X::Dynamic::Package	$	pos	1	Any
-X::Dynamic::Package	$	filename	1	Any
-X::Dynamic::Package	$	line	1	Any
-X::Dynamic::Package	$	directive-filename	1	Any
-X::Dynamic::Package	$	column	1	Any
-X::Dynamic::Package	@	modules	1	
-X::Dynamic::Package	$	is-compile-time	1	Any
-X::Dynamic::Package	$	pre	1	Any
-X::Dynamic::Package	$	post	1	Any
-X::Dynamic::Package	@	highexpect	1	
-X::Dynamic::Postdeclaration	$	symbol	1	Any
-X::Dynamic::Postdeclaration	$	pos	1	Any
-X::Dynamic::Postdeclaration	$	filename	1	Any
-X::Dynamic::Postdeclaration	$	line	1	Any
-X::Dynamic::Postdeclaration	$	directive-filename	1	Any
-X::Dynamic::Postdeclaration	$	column	1	Any
-X::Dynamic::Postdeclaration	@	modules	1	
-X::Dynamic::Postdeclaration	$	is-compile-time	1	Any
-X::Dynamic::Postdeclaration	$	pre	1	Any
-X::Dynamic::Postdeclaration	$	post	1	Any
-X::Dynamic::Postdeclaration	@	highexpect	1	
-X::EXPORTHOW::Conflict	$	declarator	1	Any
-X::EXPORTHOW::Conflict	$	directive	1	Any
-X::EXPORTHOW::Conflict	$	pos	1	Any
-X::EXPORTHOW::Conflict	$	filename	1	Any
-X::EXPORTHOW::Conflict	$	line	1	Any
-X::EXPORTHOW::Conflict	$	directive-filename	1	Any
-X::EXPORTHOW::Conflict	$	column	1	Any
-X::EXPORTHOW::Conflict	@	modules	1	
-X::EXPORTHOW::Conflict	$	is-compile-time	1	Any
-X::EXPORTHOW::Conflict	$	pre	1	Any
-X::EXPORTHOW::Conflict	$	post	1	Any
-X::EXPORTHOW::Conflict	@	highexpect	1	
-X::EXPORTHOW::InvalidDirective	$	directive	1	Any
-X::EXPORTHOW::InvalidDirective	$	pos	1	Any
-X::EXPORTHOW::InvalidDirective	$	filename	1	Any
-X::EXPORTHOW::InvalidDirective	$	line	1	Any
-X::EXPORTHOW::InvalidDirective	$	directive-filename	1	Any
-X::EXPORTHOW::InvalidDirective	$	column	1	Any
-X::EXPORTHOW::InvalidDirective	@	modules	1	
-X::EXPORTHOW::InvalidDirective	$	is-compile-time	1	Any
-X::EXPORTHOW::InvalidDirective	$	pre	1	Any
-X::EXPORTHOW::InvalidDirective	$	post	1	Any
-X::EXPORTHOW::InvalidDirective	@	highexpect	1	
-X::EXPORTHOW::NothingToSupersede	$	declarator	1	Any
-X::EXPORTHOW::NothingToSupersede	$	pos	1	Any
-X::EXPORTHOW::NothingToSupersede	$	filename	1	Any
-X::EXPORTHOW::NothingToSupersede	$	line	1	Any
-X::EXPORTHOW::NothingToSupersede	$	directive-filename	1	Any
-X::EXPORTHOW::NothingToSupersede	$	column	1	Any
-X::EXPORTHOW::NothingToSupersede	@	modules	1	
-X::EXPORTHOW::NothingToSupersede	$	is-compile-time	1	Any
-X::EXPORTHOW::NothingToSupersede	$	pre	1	Any
-X::EXPORTHOW::NothingToSupersede	$	post	1	Any
-X::EXPORTHOW::NothingToSupersede	@	highexpect	1	
-X::Encoding::AlreadyRegistered	$	name	1	Any
-X::Encoding::Unknown	$	name	1	Any
-X::Enum::NoValue	$	type	1	Mu
-X::Enum::NoValue	$	value	1	Any
-X::Eval::NoSuchLang	$	lang	1	Any
-X::Exhausted	$	what	1	Any
-X::Exhausted	$	reason	1	Any
-X::Experimental	$	feature	1	Any
-X::Experimental	$	use	1	Any
-X::Experimental	$	pos	1	Any
-X::Experimental	$	filename	1	Any
-X::Experimental	$	line	1	Any
-X::Experimental	$	directive-filename	1	Any
-X::Experimental	$	column	1	Any
-X::Experimental	@	modules	1	
-X::Experimental	$	is-compile-time	1	Any
-X::Experimental	$	pre	1	Any
-X::Experimental	$	post	1	Any
-X::Experimental	@	highexpect	1	
-X::Export::NameClash	$	symbol	1	Any
-X::Export::NameClash	$	pos	1	Any
-X::Export::NameClash	$	filename	1	Any
-X::Export::NameClash	$	line	1	Any
-X::Export::NameClash	$	directive-filename	1	Any
-X::Export::NameClash	$	column	1	Any
-X::Export::NameClash	@	modules	1	
-X::Export::NameClash	$	is-compile-time	1	Any
-X::Export::NameClash	$	pre	1	Any
-X::Export::NameClash	$	post	1	Any
-X::Export::NameClash	@	highexpect	1	
-X::Hash::Store::OddNumber	$	found	1	Any
-X::Hash::Store::OddNumber	$	last	1	Mu
-X::HyperOp::Infinite	&	operator	1	
-X::HyperOp::Infinite	$	side	1	Any
-X::HyperOp::NonDWIM	&	operator	1	
-X::HyperOp::NonDWIM	$	left-elems	1	Any
-X::HyperOp::NonDWIM	$	right-elems	1	Any
-X::HyperOp::NonDWIM	$	recursing	1	Any
-X::IO::BinaryAndEncoding	$	os-error	1	Any
-X::IO::BinaryAndEncoding	$	error-code	1	Any
-X::IO::BinaryMode	$	trying	1	Any
-X::IO::BinaryMode	$	os-error	1	Any
-X::IO::BinaryMode	$	error-code	1	Any
-X::IO::Chdir	$	path	1	Any
-X::IO::Chdir	$	os-error	1	Any
-X::IO::Chdir	$	error-code	1	Any
-X::IO::Chmod	$	path	1	Any
-X::IO::Chmod	$	mode	1	Any
-X::IO::Chmod	$	os-error	1	Any
-X::IO::Chmod	$	error-code	1	Any
-X::IO::Chown	$	path	1	Any
-X::IO::Chown	$	uid	1	Any
-X::IO::Chown	$	gid	1	Any
-X::IO::Chown	$	os-error	1	Any
-X::IO::Chown	$	error-code	1	Any
-X::IO::Closed	$	trying	1	Any
-X::IO::Closed	$	os-error	1	Any
-X::IO::Closed	$	error-code	1	Any
-X::IO::Copy	$	from	1	Any
-X::IO::Copy	$	to	1	Any
-X::IO::Copy	$	os-error	1	Any
-X::IO::Copy	$	error-code	1	Any
-X::IO::Cwd	$	os-error	1	Any
-X::IO::Cwd	$	error-code	1	Any
-X::IO::Dir	$	path	1	Any
-X::IO::Dir	$	os-error	1	Any
-X::IO::Dir	$	error-code	1	Any
-X::IO::Directory	$	path	1	Any
-X::IO::Directory	$	trying	1	Any
-X::IO::Directory	$	use	1	Any
-X::IO::Directory	$	os-error	1	Any
-X::IO::Directory	$	error-code	1	Any
-X::IO::DoesNotExist	$	path	1	Any
-X::IO::DoesNotExist	$	trying	1	Any
-X::IO::DoesNotExist	$	os-error	1	Any
-X::IO::DoesNotExist	$	error-code	1	Any
-X::IO::Flush	$	os-error	1	Any
-X::IO::Flush	$	error-code	1	Any
-X::IO::Link	$	target	1	Any
-X::IO::Link	$	name	1	Any
-X::IO::Link	$	os-error	1	Any
-X::IO::Link	$	error-code	1	Any
-X::IO::Lock	$	lock-type	1	Any
-X::IO::Lock	$	os-error	1	Any
-X::IO::Lock	$	error-code	1	Any
-X::IO::Mkdir	$	path	1	Any
-X::IO::Mkdir	$	mode	1	Any
-X::IO::Mkdir	$	os-error	1	Any
-X::IO::Mkdir	$	error-code	1	Any
-X::IO::Move	$	from	1	Any
-X::IO::Move	$	to	1	Any
-X::IO::Move	$	os-error	1	Any
-X::IO::Move	$	error-code	1	Any
-X::IO::NotAChild	$	path	1	Any
-X::IO::NotAChild	$	child	1	Any
-X::IO::NotAChild	$	os-error	1	Any
-X::IO::NotAChild	$	error-code	1	Any
-X::IO::NotAFile	$	path	1	Any
-X::IO::NotAFile	$	trying	1	Any
-X::IO::NotAFile	$	os-error	1	Any
-X::IO::NotAFile	$	error-code	1	Any
-X::IO::Null	$	os-error	1	Any
-X::IO::Null	$	error-code	1	Any
-X::IO::Rename	$	from	1	Any
-X::IO::Rename	$	to	1	Any
-X::IO::Rename	$	os-error	1	Any
-X::IO::Rename	$	error-code	1	Any
-X::IO::Resolve	$	path	1	Any
-X::IO::Resolve	$	reason	1	Any
-X::IO::Resolve	$	os-error	1	Any
-X::IO::Resolve	$	error-code	1	Any
-X::IO::Rmdir	$	path	1	Any
-X::IO::Rmdir	$	os-error	1	Any
-X::IO::Rmdir	$	error-code	1	Any
-X::IO::Symlink	$	target	1	Any
-X::IO::Symlink	$	name	1	Any
-X::IO::Symlink	$	os-error	1	Any
-X::IO::Symlink	$	error-code	1	Any
-X::IO::Unknown	$	trying	1	Any
-X::IO::Unknown	$	os-error	1	Any
-X::IO::Unknown	$	error-code	1	Any
-X::IO::Unlink	$	path	1	Any
-X::IO::Unlink	$	os-error	1	Any
-X::IO::Unlink	$	error-code	1	Any
-X::IllegalDimensionInShape	$	dim	1	Any
-X::IllegalOnFixedDimensionArray	$	operation	1	Any
-X::Immutable	$	typename	1	Any
-X::Immutable	$	method	1	Any
-X::Import::MissingSymbols	$	from	1	Any
-X::Import::MissingSymbols	@	missing	1	
-X::Import::NoSuchTag	$	source-package	1	Any
-X::Import::NoSuchTag	$	tag	1	Any
-X::Import::OnlystarProto	@	symbols	1	
-X::Import::OnlystarProto	$	source-package-name	1	Any
-X::Import::OnlystarProto	$	pos	1	Any
-X::Import::OnlystarProto	$	filename	1	Any
-X::Import::OnlystarProto	$	line	1	Any
-X::Import::OnlystarProto	$	directive-filename	1	Any
-X::Import::OnlystarProto	$	column	1	Any
-X::Import::OnlystarProto	@	modules	1	
-X::Import::OnlystarProto	$	is-compile-time	1	Any
-X::Import::OnlystarProto	$	pre	1	Any
-X::Import::OnlystarProto	$	post	1	Any
-X::Import::OnlystarProto	@	highexpect	1	
-X::Import::Positional	$	source-package	1	Any
-X::Import::Redeclaration	@	symbols	1	
-X::Import::Redeclaration	$	source-package-name	1	Any
-X::Import::Redeclaration	$	pos	1	Any
-X::Import::Redeclaration	$	filename	1	Any
-X::Import::Redeclaration	$	line	1	Any
-X::Import::Redeclaration	$	directive-filename	1	Any
-X::Import::Redeclaration	$	column	1	Any
-X::Import::Redeclaration	@	modules	1	
-X::Import::Redeclaration	$	is-compile-time	1	Any
-X::Import::Redeclaration	$	pre	1	Any
-X::Import::Redeclaration	$	post	1	Any
-X::Import::Redeclaration	@	highexpect	1	
-X::Inheritance::NotComposed	$	child-name	1	Any
-X::Inheritance::NotComposed	$	parent-name	1	Any
-X::Inheritance::SelfInherit	$	name	1	Any
-X::Inheritance::UnknownParent	$	child	1	Any
-X::Inheritance::UnknownParent	$	parent	1	Any
-X::Inheritance::UnknownParent	@	suggestions	1	
-X::Inheritance::Unsupported	$	child-typename	1	Any
-X::Inheritance::Unsupported	$	parent	1	Any
-X::Inheritance::Unsupported	$	pos	1	Any
-X::Inheritance::Unsupported	$	filename	1	Any
-X::Inheritance::Unsupported	$	line	1	Any
-X::Inheritance::Unsupported	$	directive-filename	1	Any
-X::Inheritance::Unsupported	$	column	1	Any
-X::Inheritance::Unsupported	@	modules	1	
-X::Inheritance::Unsupported	$	is-compile-time	1	Any
-X::Inheritance::Unsupported	$	pre	1	Any
-X::Inheritance::Unsupported	$	post	1	Any
-X::Inheritance::Unsupported	@	highexpect	1	
-X::Invalid::ComputedValue	$	method	1	Any
-X::Invalid::ComputedValue	$	name	1	Any
-X::Invalid::ComputedValue	$	value	1	Any
-X::Invalid::ComputedValue	$	reason	1	Any
-X::Invalid::Value	$	method	1	Any
-X::Invalid::Value	$	name	1	Any
-X::Invalid::Value	$	value	1	Any
-X::InvalidCodepoint	$	code	1	Any
-X::InvalidType	$	typename	1	Any
-X::InvalidType	@	suggestions	1	
-X::InvalidType	$	pos	1	Any
-X::InvalidType	$	filename	1	Any
-X::InvalidType	$	line	1	Any
-X::InvalidType	$	directive-filename	1	Any
-X::InvalidType	$	column	1	Any
-X::InvalidType	@	modules	1	
-X::InvalidType	$	is-compile-time	1	Any
-X::InvalidType	$	pre	1	Any
-X::InvalidType	$	post	1	Any
-X::InvalidType	@	highexpect	1	
-X::InvalidTypeSmiley	$	name	1	Any
-X::InvalidTypeSmiley	$	pos	1	Any
-X::InvalidTypeSmiley	$	filename	1	Any
-X::InvalidTypeSmiley	$	line	1	Any
-X::InvalidTypeSmiley	$	directive-filename	1	Any
-X::InvalidTypeSmiley	$	column	1	Any
-X::InvalidTypeSmiley	@	modules	1	
-X::InvalidTypeSmiley	$	is-compile-time	1	Any
-X::InvalidTypeSmiley	$	pre	1	Any
-X::InvalidTypeSmiley	$	post	1	Any
-X::InvalidTypeSmiley	@	highexpect	1	
-X::Ism::Unknown	$	name	1	Any
-X::Item	$	aggregate	1	Any
-X::Item	$	index	1	Any
-X::Language::IncompatRevisions	$	type-a	1	Mu
-X::Language::IncompatRevisions	$	type-b	1	Mu
-X::Language::ModRequired	$	version	1	Any
-X::Language::ModRequired	$	modifier	1	Any
-X::Language::Unsupported	$	version	1	Any
-X::LibEmpty	$	pos	1	Any
-X::LibEmpty	$	filename	1	Any
-X::LibEmpty	$	line	1	Any
-X::LibEmpty	$	directive-filename	1	Any
-X::LibEmpty	$	column	1	Any
-X::LibEmpty	@	modules	1	
-X::LibEmpty	$	is-compile-time	1	Any
-X::LibEmpty	$	pre	1	Any
-X::LibEmpty	$	post	1	Any
-X::LibEmpty	@	highexpect	1	
-X::LibNone	$	pos	1	Any
-X::LibNone	$	filename	1	Any
-X::LibNone	$	line	1	Any
-X::LibNone	$	directive-filename	1	Any
-X::LibNone	$	column	1	Any
-X::LibNone	@	modules	1	
-X::LibNone	$	is-compile-time	1	Any
-X::LibNone	$	pre	1	Any
-X::LibNone	$	post	1	Any
-X::LibNone	@	highexpect	1	
-X::Localizer::NoContainer	$	localizer	1	Any
-X::Make::MatchRequired	$	got	0	Nil
-X::Match::Bool	$	type	1	Any
-X::Method::Duplicate	$	method-type	1	Any
-X::Method::Duplicate	$	method	1	Any
-X::Method::Duplicate	$	typename	1	Any
-X::Method::InvalidQualifier	$	method	1	Any
-X::Method::InvalidQualifier	$	invocant	1	Any
-X::Method::InvalidQualifier	$	qualifier-type	1	Any
-X::Method::NotFound	$	invocant	1	Mu
-X::Method::NotFound	$	method	1	Any
-X::Method::NotFound	$	typename	1	Any
-X::Method::NotFound	$	private	1	Bool
-X::Method::NotFound	$	addendum	1	Any
-X::Method::NotFound	$	in-class-call	1	Any
-X::Method::NotFound	$	containerized	1	Any
-X::Method::Private::Permission	$	method	1	Any
-X::Method::Private::Permission	$	source-package	1	Any
-X::Method::Private::Permission	$	calling-package	1	Any
-X::Method::Private::Permission	$	pos	1	Any
-X::Method::Private::Permission	$	filename	1	Any
-X::Method::Private::Permission	$	line	1	Any
-X::Method::Private::Permission	$	directive-filename	1	Any
-X::Method::Private::Permission	$	column	1	Any
-X::Method::Private::Permission	@	modules	1	
-X::Method::Private::Permission	$	is-compile-time	1	Any
-X::Method::Private::Permission	$	pre	1	Any
-X::Method::Private::Permission	$	post	1	Any
-X::Method::Private::Permission	@	highexpect	1	
-X::Method::Private::Unqualified	$	method	1	Any
-X::Method::Private::Unqualified	$	pos	1	Any
-X::Method::Private::Unqualified	$	filename	1	Any
-X::Method::Private::Unqualified	$	line	1	Any
-X::Method::Private::Unqualified	$	directive-filename	1	Any
-X::Method::Private::Unqualified	$	column	1	Any
-X::Method::Private::Unqualified	@	modules	1	
-X::Method::Private::Unqualified	$	is-compile-time	1	Any
-X::Method::Private::Unqualified	$	pre	1	Any
-X::Method::Private::Unqualified	$	post	1	Any
-X::Method::Private::Unqualified	@	highexpect	1	
-X::Mixin::NotComposable	$	target	1	Any
-X::Mixin::NotComposable	$	rolish	1	Any
-X::Multi::Ambiguous	$	dispatcher	1	Any
-X::Multi::Ambiguous	@	ambiguous	1	
-X::Multi::Ambiguous	$	capture	1	Any
-X::Multi::NoMatch	$	dispatcher	1	Any
-X::Multi::NoMatch	$	capture	1	Any
-X::MultipleTypeSmiley	$	pos	1	Any
-X::MultipleTypeSmiley	$	filename	1	Any
-X::MultipleTypeSmiley	$	line	1	Any
-X::MultipleTypeSmiley	$	directive-filename	1	Any
-X::MultipleTypeSmiley	$	column	1	Any
-X::MultipleTypeSmiley	@	modules	1	
-X::MultipleTypeSmiley	$	is-compile-time	1	Any
-X::MultipleTypeSmiley	$	pre	1	Any
-X::MultipleTypeSmiley	$	post	1	Any
-X::MultipleTypeSmiley	@	highexpect	1	
-X::MustBeParametric	$	type	1	Any
-X::NQP::NotFound	$	op	1	Any
-X::NYI	$	feature	1	Any
-X::NYI	$	did-you-mean	1	Any
-X::NYI	$	workaround	1	Any
-X::NYI::Available	@	available	1	
-X::NYI::BigInt	$	op	1	Any
-X::NYI::BigInt	$	big	1	Any
-X::NYI::BigInt	$	side	1	Any
-X::NoCoreRevision	$	lang-rev	1	Any
-X::NoDispatcher	$	redispatcher	1	Any
-X::NoSuchSymbol	$	symbol	1	Any
-X::NoZeroArgMeaning	$	name	1	Any
-X::Nominalizable::NoKind	$	nominalizable	1	Mu
-X::Nominalizable::NoWrappee	%	kinds	1	
-X::Nominalizable::NoWrappee	$	nominalizable	1	Mu
-X::NotEnoughDimensions	$	operation	1	Any
-X::NotEnoughDimensions	$	got-dimensions	1	Any
-X::NotEnoughDimensions	$	needed-dimensions	1	Any
-X::NotEnoughDimensions	$	aggregate	1	Any
-X::NotFoundInRepository	$	file	1	Any
-X::NotFoundInRepository	@	repos	1	
-X::NotParametric	$	type	1	Any
-X::NotSingleGrapheme	$	characters	1	Any
-X::Numeric::CannotConvert	$	target	1	Any
-X::Numeric::CannotConvert	$	reason	1	Any
-X::Numeric::CannotConvert	$	source	1	Any
-X::Numeric::Confused	$	num	1	Any
-X::Numeric::Confused	$	base	1	Any
-X::Numeric::DivideByZero	$	using	1	Any
-X::Numeric::DivideByZero	$	details	1	Any
-X::Numeric::DivideByZero	$	numerator	1	Any
-X::Numeric::Uninitialized	$	type	1	Numeric
-X::Obsolete	$	old	1	Any
-X::Obsolete	$	replacement	1	Any
-X::Obsolete	$	when	1	Any
-X::Obsolete	$	pos	1	Any
-X::Obsolete	$	filename	1	Any
-X::Obsolete	$	line	1	Any
-X::Obsolete	$	directive-filename	1	Any
-X::Obsolete	$	column	1	Any
-X::Obsolete	@	modules	1	
-X::Obsolete	$	is-compile-time	1	Any
-X::Obsolete	$	pre	1	Any
-X::Obsolete	$	post	1	Any
-X::Obsolete	@	highexpect	1	
-X::OutOfRange	$	what	1	Any
-X::OutOfRange	$	got	1	Any
-X::OutOfRange	$	range	1	Any
-X::OutOfRange	$	comment	1	Any
-X::Package::SameNameAsEnclosing	$	kind	1	Any
-X::Package::SameNameAsEnclosing	$	enclosing-kind	1	Any
-X::Package::SameNameAsEnclosing	$	name	1	Any
-X::Package::SameNameAsEnclosing	$	pos	1	Any
-X::Package::SameNameAsEnclosing	$	filename	1	Any
-X::Package::SameNameAsEnclosing	$	line	1	Any
-X::Package::SameNameAsEnclosing	$	directive-filename	1	Any
-X::Package::SameNameAsEnclosing	$	column	1	Any
-X::Package::SameNameAsEnclosing	@	modules	1	
-X::Package::SameNameAsEnclosing	$	is-compile-time	1	Any
-X::Package::SameNameAsEnclosing	$	pre	1	Any
-X::Package::SameNameAsEnclosing	$	post	1	Any
-X::Package::SameNameAsEnclosing	@	highexpect	1	
-X::Package::Stubbed	@	packages	1	
-X::Package::Stubbed	$	pos	1	Any
-X::Package::Stubbed	$	filename	1	Any
-X::Package::Stubbed	$	line	1	Any
-X::Package::Stubbed	$	directive-filename	1	Any
-X::Package::Stubbed	$	column	1	Any
-X::Package::Stubbed	@	modules	1	
-X::Package::Stubbed	$	is-compile-time	1	Any
-X::Package::Stubbed	$	pre	1	Any
-X::Package::Stubbed	$	post	1	Any
-X::Package::Stubbed	@	highexpect	1	
-X::Package::UseLib	$	what	1	Any
-X::Package::UseLib	$	pos	1	Any
-X::Package::UseLib	$	filename	1	Any
-X::Package::UseLib	$	line	1	Any
-X::Package::UseLib	$	directive-filename	1	Any
-X::Package::UseLib	$	column	1	Any
-X::Package::UseLib	@	modules	1	
-X::Package::UseLib	$	is-compile-time	1	Any
-X::Package::UseLib	$	pre	1	Any
-X::Package::UseLib	$	post	1	Any
-X::Package::UseLib	@	highexpect	1	
-X::Parameter::AfterDefault	$	type	1	Any
-X::Parameter::AfterDefault	$	modifier	1	Any
-X::Parameter::AfterDefault	$	default	1	Any
-X::Parameter::AfterDefault	$	pos	1	Any
-X::Parameter::AfterDefault	$	filename	1	Any
-X::Parameter::AfterDefault	$	line	1	Any
-X::Parameter::AfterDefault	$	directive-filename	1	Any
-X::Parameter::AfterDefault	$	column	1	Any
-X::Parameter::AfterDefault	@	modules	1	
-X::Parameter::AfterDefault	$	is-compile-time	1	Any
-X::Parameter::AfterDefault	$	pre	1	Any
-X::Parameter::AfterDefault	$	post	1	Any
-X::Parameter::AfterDefault	@	highexpect	1	
-X::Parameter::BadType	$	type	1	Mu
-X::Parameter::BadType	$	pos	1	Any
-X::Parameter::BadType	$	filename	1	Any
-X::Parameter::BadType	$	line	1	Any
-X::Parameter::BadType	$	directive-filename	1	Any
-X::Parameter::BadType	$	column	1	Any
-X::Parameter::BadType	@	modules	1	
-X::Parameter::BadType	$	is-compile-time	1	Any
-X::Parameter::BadType	$	pre	1	Any
-X::Parameter::BadType	$	post	1	Any
-X::Parameter::BadType	@	highexpect	1	
-X::Parameter::Default	$	how	1	Any
-X::Parameter::Default	$	parameter	1	Any
-X::Parameter::Default	$	pos	1	Any
-X::Parameter::Default	$	filename	1	Any
-X::Parameter::Default	$	line	1	Any
-X::Parameter::Default	$	directive-filename	1	Any
-X::Parameter::Default	$	column	1	Any
-X::Parameter::Default	@	modules	1	
-X::Parameter::Default	$	is-compile-time	1	Any
-X::Parameter::Default	$	pre	1	Any
-X::Parameter::Default	$	post	1	Any
-X::Parameter::Default	@	highexpect	1	
-X::Parameter::Default::TypeCheck	$	what	1	Any
-X::Parameter::Default::TypeCheck	$	got	1	Nil
-X::Parameter::Default::TypeCheck	$	expected	1	Nil
-X::Parameter::Default::TypeCheck	$	pos	1	Any
-X::Parameter::Default::TypeCheck	$	filename	1	Any
-X::Parameter::Default::TypeCheck	$	line	1	Any
-X::Parameter::Default::TypeCheck	$	directive-filename	1	Any
-X::Parameter::Default::TypeCheck	$	column	1	Any
-X::Parameter::Default::TypeCheck	@	modules	1	
-X::Parameter::Default::TypeCheck	$	is-compile-time	1	Any
-X::Parameter::Default::TypeCheck	$	pre	1	Any
-X::Parameter::Default::TypeCheck	$	post	1	Any
-X::Parameter::Default::TypeCheck	@	highexpect	1	
-X::Parameter::InvalidConcreteness	$	expected	1	Any
-X::Parameter::InvalidConcreteness	$	got	1	Any
-X::Parameter::InvalidConcreteness	$	routine	1	Any
-X::Parameter::InvalidConcreteness	$	param	1	Any
-X::Parameter::InvalidConcreteness	$	should-be-concrete	1	Bool
-X::Parameter::InvalidConcreteness	$	param-is-invocant	1	Bool
-X::Parameter::InvalidType	$	typename	1	Any
-X::Parameter::InvalidType	@	suggestions	1	
-X::Parameter::InvalidType	$	pos	1	Any
-X::Parameter::InvalidType	$	filename	1	Any
-X::Parameter::InvalidType	$	line	1	Any
-X::Parameter::InvalidType	$	directive-filename	1	Any
-X::Parameter::InvalidType	$	column	1	Any
-X::Parameter::InvalidType	@	modules	1	
-X::Parameter::InvalidType	$	is-compile-time	1	Any
-X::Parameter::InvalidType	$	pre	1	Any
-X::Parameter::InvalidType	$	post	1	Any
-X::Parameter::InvalidType	@	highexpect	1	
-X::Parameter::MultipleTypeConstraints	$	parameter	1	Any
-X::Parameter::MultipleTypeConstraints	$	pos	1	Any
-X::Parameter::MultipleTypeConstraints	$	filename	1	Any
-X::Parameter::MultipleTypeConstraints	$	line	1	Any
-X::Parameter::MultipleTypeConstraints	$	directive-filename	1	Any
-X::Parameter::MultipleTypeConstraints	$	column	1	Any
-X::Parameter::MultipleTypeConstraints	@	modules	1	
-X::Parameter::MultipleTypeConstraints	$	is-compile-time	1	Any
-X::Parameter::MultipleTypeConstraints	$	pre	1	Any
-X::Parameter::MultipleTypeConstraints	$	post	1	Any
-X::Parameter::MultipleTypeConstraints	@	highexpect	1	
-X::Parameter::Placeholder	$	type	1	Any
-X::Parameter::Placeholder	$	parameter	1	Any
-X::Parameter::Placeholder	$	right	1	Any
-X::Parameter::Placeholder	$	pos	1	Any
-X::Parameter::Placeholder	$	filename	1	Any
-X::Parameter::Placeholder	$	line	1	Any
-X::Parameter::Placeholder	$	directive-filename	1	Any
-X::Parameter::Placeholder	$	column	1	Any
-X::Parameter::Placeholder	@	modules	1	
-X::Parameter::Placeholder	$	is-compile-time	1	Any
-X::Parameter::Placeholder	$	pre	1	Any
-X::Parameter::Placeholder	$	post	1	Any
-X::Parameter::Placeholder	@	highexpect	1	
-X::Parameter::RW	$	got	1	Any
-X::Parameter::RW	$	symbol	1	Any
-X::Parameter::Twigil	$	parameter	1	Any
-X::Parameter::Twigil	$	twigil	1	Any
-X::Parameter::Twigil	$	pos	1	Any
-X::Parameter::Twigil	$	filename	1	Any
-X::Parameter::Twigil	$	line	1	Any
-X::Parameter::Twigil	$	directive-filename	1	Any
-X::Parameter::Twigil	$	column	1	Any
-X::Parameter::Twigil	@	modules	1	
-X::Parameter::Twigil	$	is-compile-time	1	Any
-X::Parameter::Twigil	$	pre	1	Any
-X::Parameter::Twigil	$	post	1	Any
-X::Parameter::Twigil	@	highexpect	1	
-X::Parameter::TypedSlurpy	$	kind	1	Any
-X::Parameter::TypedSlurpy	$	pos	1	Any
-X::Parameter::TypedSlurpy	$	filename	1	Any
-X::Parameter::TypedSlurpy	$	line	1	Any
-X::Parameter::TypedSlurpy	$	directive-filename	1	Any
-X::Parameter::TypedSlurpy	$	column	1	Any
-X::Parameter::TypedSlurpy	@	modules	1	
-X::Parameter::TypedSlurpy	$	is-compile-time	1	Any
-X::Parameter::TypedSlurpy	$	pre	1	Any
-X::Parameter::TypedSlurpy	$	post	1	Any
-X::Parameter::TypedSlurpy	@	highexpect	1	
-X::Parameter::WrongOrder	$	misplaced	1	Any
-X::Parameter::WrongOrder	$	parameter	1	Any
-X::Parameter::WrongOrder	$	after	1	Any
-X::Parameter::WrongOrder	$	pos	1	Any
-X::Parameter::WrongOrder	$	filename	1	Any
-X::Parameter::WrongOrder	$	line	1	Any
-X::Parameter::WrongOrder	$	directive-filename	1	Any
-X::Parameter::WrongOrder	$	column	1	Any
-X::Parameter::WrongOrder	@	modules	1	
-X::Parameter::WrongOrder	$	is-compile-time	1	Any
-X::Parameter::WrongOrder	$	pre	1	Any
-X::Parameter::WrongOrder	$	post	1	Any
-X::Parameter::WrongOrder	@	highexpect	1	
-X::Phaser::Multiple	$	block	1	Any
-X::Phaser::Multiple	$	pos	1	Any
-X::Phaser::Multiple	$	filename	1	Any
-X::Phaser::Multiple	$	line	1	Any
-X::Phaser::Multiple	$	directive-filename	1	Any
-X::Phaser::Multiple	$	column	1	Any
-X::Phaser::Multiple	@	modules	1	
-X::Phaser::Multiple	$	is-compile-time	1	Any
-X::Phaser::Multiple	$	pre	1	Any
-X::Phaser::Multiple	$	post	1	Any
-X::Phaser::Multiple	@	highexpect	1	
-X::Phaser::PrePost	$	phaser	1	Any
-X::Phaser::PrePost	$	condition	1	Any
-X::PhaserExceptions	@	exceptions	1	
-X::Placeholder::Block	$	placeholder	1	Any
-X::Placeholder::Block	$	pos	1	Any
-X::Placeholder::Block	$	filename	1	Any
-X::Placeholder::Block	$	line	1	Any
-X::Placeholder::Block	$	directive-filename	1	Any
-X::Placeholder::Block	$	column	1	Any
-X::Placeholder::Block	@	modules	1	
-X::Placeholder::Block	$	is-compile-time	1	Any
-X::Placeholder::Block	$	pre	1	Any
-X::Placeholder::Block	$	post	1	Any
-X::Placeholder::Block	@	highexpect	1	
-X::Placeholder::NonPlaceholder	$	variable_name	1	Any
-X::Placeholder::NonPlaceholder	$	placeholder	1	Any
-X::Placeholder::NonPlaceholder	$	decl	1	Any
-X::Placeholder::NonPlaceholder	$	pos	1	Any
-X::Placeholder::NonPlaceholder	$	filename	1	Any
-X::Placeholder::NonPlaceholder	$	line	1	Any
-X::Placeholder::NonPlaceholder	$	directive-filename	1	Any
-X::Placeholder::NonPlaceholder	$	column	1	Any
-X::Placeholder::NonPlaceholder	@	modules	1	
-X::Placeholder::NonPlaceholder	$	is-compile-time	1	Any
-X::Placeholder::NonPlaceholder	$	pre	1	Any
-X::Placeholder::NonPlaceholder	$	post	1	Any
-X::Placeholder::NonPlaceholder	@	highexpect	1	
-X::PoisonedAlias	$	alias	1	str
-X::PoisonedAlias	$	package-type	1	str
-X::PoisonedAlias	$	package-name	1	str
-X::PoisonedAlias	$	pos	1	Any
-X::PoisonedAlias	$	filename	1	Any
-X::PoisonedAlias	$	line	1	Any
-X::PoisonedAlias	$	directive-filename	1	Any
-X::PoisonedAlias	$	column	1	Any
-X::PoisonedAlias	@	modules	1	
-X::PoisonedAlias	$	is-compile-time	1	Any
-X::PoisonedAlias	$	pre	1	Any
-X::PoisonedAlias	$	post	1	Any
-X::PoisonedAlias	@	highexpect	1	
-X::Pragma::CannotPrecomp	$	what	1	Any
-X::Pragma::CannotWhat	$	what	1	Any
-X::Pragma::CannotWhat	$	name	1	Any
-X::Pragma::MustOneOf	$	name	1	Any
-X::Pragma::MustOneOf	$	alternatives	1	Any
-X::Pragma::NoArgs	$	name	1	Any
-X::Pragma::OnlyOne	$	name	1	Any
-X::Pragma::Unknown	$	name	1	Any
-X::Pragma::UnknownArg	$	name	1	Any
-X::Pragma::UnknownArg	$	arg	1	Any
-X::Proc::Async::AlreadyStarted	$	proc	1	Proc::Async
-X::Proc::Async::BindOrUse	$	handle	1	Any
-X::Proc::Async::BindOrUse	$	use	1	Any
-X::Proc::Async::BindOrUse	$	proc	1	Proc::Async
-X::Proc::Async::CharsOrBytes	$	handle	1	Any
-X::Proc::Async::CharsOrBytes	$	proc	1	Proc::Async
-X::Proc::Async::MissingColsRows	$	proc	1	Proc::Async
-X::Proc::Async::MustBeStarted	$	method	1	Any
-X::Proc::Async::MustBeStarted	$	proc	1	Proc::Async
-X::Proc::Async::OpenForWriting	$	method	1	Any
-X::Proc::Async::OpenForWriting	$	proc	1	Proc::Async
-X::Proc::Async::SupplyOrStd	$	proc	1	Proc::Async
-X::Proc::Async::TapBeforeSpawn	$	handle	1	Any
-X::Proc::Async::TapBeforeSpawn	$	proc	1	Proc::Async
-X::Proc::Unsuccessful	$	proc	1	Any
-X::Promise::CauseOnlyValidOnBroken	$	promise	1	Any
-X::Promise::CauseOnlyValidOnBroken	$	status	1	Any
-X::Promise::Combinator	$	combinator	1	Any
-X::Promise::Resolved	$	promise	1	Any
-X::Promise::Vowed	$	promise	1	Any
-X::PseudoPackage::InDeclaration	$	pseudo-package	1	Any
-X::PseudoPackage::InDeclaration	$	action	1	Any
-X::PseudoPackage::InDeclaration	$	pos	1	Any
-X::PseudoPackage::InDeclaration	$	filename	1	Any
-X::PseudoPackage::InDeclaration	$	line	1	Any
-X::PseudoPackage::InDeclaration	$	directive-filename	1	Any
-X::PseudoPackage::InDeclaration	$	column	1	Any
-X::PseudoPackage::InDeclaration	@	modules	1	
-X::PseudoPackage::InDeclaration	$	is-compile-time	1	Any
-X::PseudoPackage::InDeclaration	$	pre	1	Any
-X::PseudoPackage::InDeclaration	$	post	1	Any
-X::PseudoPackage::InDeclaration	@	highexpect	1	
-X::QuoteWords::Missing::Closer	$	opener	1	Any
-X::QuoteWords::Missing::Closer	$	closer	1	Any
-X::QuoteWords::Missing::Closer	$	pos	1	Any
-X::QuoteWords::Missing::Closer	$	filename	1	Any
-X::QuoteWords::Missing::Closer	$	line	1	Any
-X::QuoteWords::Missing::Closer	$	directive-filename	1	Any
-X::QuoteWords::Missing::Closer	$	column	1	Any
-X::QuoteWords::Missing::Closer	@	modules	1	
-X::QuoteWords::Missing::Closer	$	is-compile-time	1	Any
-X::QuoteWords::Missing::Closer	$	pre	1	Any
-X::QuoteWords::Missing::Closer	$	post	1	Any
-X::QuoteWords::Missing::Closer	@	highexpect	1	
-X::REPL::InvalidEnvironment	$	reason	1	Any
-X::Range::CannotIterate	$	min	1	Any
-X::Range::Incomparable	$	topic	1	Any
-X::Range::Incomparable	$	endpoint	1	Any
-X::Range::Incomparable	$	what-endpoint	1	Any
-X::Range::InvalidArg	$	got	1	Nil
-X::Range::Rand::InvalidEndpoints	$	min	1	Any
-X::Range::Rand::InvalidEndpoints	$	max	1	Any
-X::Redeclaration	$	symbol	1	Any
-X::Redeclaration	$	postfix	1	Any
-X::Redeclaration	$	what	1	Any
-X::Redeclaration	$	pos	1	Any
-X::Redeclaration	$	filename	1	Any
-X::Redeclaration	$	line	1	Any
-X::Redeclaration	$	directive-filename	1	Any
-X::Redeclaration	$	column	1	Any
-X::Redeclaration	@	modules	1	
-X::Redeclaration	$	is-compile-time	1	Any
-X::Redeclaration	$	pre	1	Any
-X::Redeclaration	$	post	1	Any
-X::Redeclaration	@	highexpect	1	
-X::Redeclaration::Multi	$	symbol	1	Any
-X::Redeclaration::Multi	@	ambiguous	1	
-X::Redeclaration::Multi	$	pos	1	Any
-X::Redeclaration::Multi	$	filename	1	Any
-X::Redeclaration::Multi	$	line	1	Any
-X::Redeclaration::Multi	$	directive-filename	1	Any
-X::Redeclaration::Multi	$	column	1	Any
-X::Redeclaration::Multi	@	modules	1	
-X::Redeclaration::Multi	$	is-compile-time	1	Any
-X::Redeclaration::Multi	$	pre	1	Any
-X::Redeclaration::Multi	$	post	1	Any
-X::Redeclaration::Multi	@	highexpect	1	
-X::Redeclaration::Outer	$	symbol	1	Any
-X::Redeclaration::Outer	$	pos	1	Any
-X::Redeclaration::Outer	$	filename	1	Any
-X::Redeclaration::Outer	$	line	1	Any
-X::Redeclaration::Outer	$	directive-filename	1	Any
-X::Redeclaration::Outer	$	column	1	Any
-X::Redeclaration::Outer	@	modules	1	
-X::Redeclaration::Outer	$	is-compile-time	1	Any
-X::Redeclaration::Outer	$	pre	1	Any
-X::Redeclaration::Outer	$	post	1	Any
-X::Redeclaration::Outer	@	highexpect	1	
-X::Role::Attribute::Conflicts	$	from1	1	Mu
-X::Role::Attribute::Conflicts	$	from2	1	Mu
-X::Role::Attribute::Conflicts	$	attribute	1	Attribute
-X::Role::Attribute::Conflicts	$	target	1	Mu
-X::Role::Attribute::Exists	$	attribute	1	Attribute
-X::Role::Attribute::Exists	$	target	1	Mu
-X::Role::BodyReturn	$	role	1	Mu
-X::Role::BodyReturn	$	expected	1	Str
-X::Role::BodyReturn	$	got	1	Str
-X::Role::Group::Documenting	$	role-name	1	Any
-X::Role::Initialization	$	role	1	Mu
-X::Role::Instantiation	$	role	1	Any
-X::Role::Instantiation	$	exception	0	Mu
-X::Role::Parametric::NoSuchCandidate	$	role	1	Mu
-X::Role::Parametric::NoSuchCandidate	$	hint	1	Any
-X::Role::Unimplemented::Multi	$	method	1	Mu
-X::Role::Unimplemented::Multi	$	target	1	Mu
-X::Role::Unresolved	$	method	1	Mu
-X::Role::Unresolved	$	target	1	Mu
-X::SecurityPolicy::Eval	$	payload	1	Any
-X::Seq::Consumed	$	kind	1	Any
-X::Sequence::Deduction	$	from	1	Any
-X::Sequence::Endpoint	$	from	1	Any
-X::Sequence::Endpoint	$	endpoint	1	Any
-X::Set::Coerce	$	thing	1	Any
-X::Signature::NameClash	$	name	1	Any
-X::Signature::NameClash	$	pos	1	Any
-X::Signature::NameClash	$	filename	1	Any
-X::Signature::NameClash	$	line	1	Any
-X::Signature::NameClash	$	directive-filename	1	Any
-X::Signature::NameClash	$	column	1	Any
-X::Signature::NameClash	@	modules	1	
-X::Signature::NameClash	$	is-compile-time	1	Any
-X::Signature::NameClash	$	pre	1	Any
-X::Signature::NameClash	$	post	1	Any
-X::Signature::NameClash	@	highexpect	1	
-X::Signature::Placeholder	$	placeholder	1	Any
-X::Signature::Placeholder	$	pos	1	Any
-X::Signature::Placeholder	$	filename	1	Any
-X::Signature::Placeholder	$	line	1	Any
-X::Signature::Placeholder	$	directive-filename	1	Any
-X::Signature::Placeholder	$	column	1	Any
-X::Signature::Placeholder	@	modules	1	
-X::Signature::Placeholder	$	is-compile-time	1	Any
-X::Signature::Placeholder	$	pre	1	Any
-X::Signature::Placeholder	$	post	1	Any
-X::Signature::Placeholder	@	highexpect	1	
-X::Str::InvalidCharName	$	name	1	Any
-X::Str::Match::x	$	got	1	Nil
-X::Str::Numeric	$	source	1	Any
-X::Str::Numeric	$	pos	1	Any
-X::Str::Numeric	$	reason	1	Any
-X::Str::Sprintf::Directives::BadType	$	type	1	str
-X::Str::Sprintf::Directives::BadType	$	directive	1	str
-X::Str::Sprintf::Directives::BadType	$	expected	1	str
-X::Str::Sprintf::Directives::BadType	$	format	1	str
-X::Str::Sprintf::Directives::BadType	$	value	1	Mu
-X::Str::Sprintf::Directives::Count	$	args-used	1	int
-X::Str::Sprintf::Directives::Count	$	args-have	1	int
-X::Str::Sprintf::Directives::Count	$	format	1	str
-X::Str::Sprintf::Directives::Unsupported	$	directive	1	str
-X::Str::Sprintf::Directives::Unsupported	$	sequence	1	str
-X::Str::Subst::Adverb	$	name	1	Any
-X::Str::Subst::Adverb	$	got	1	Any
-X::Str::Trans::IllegalKey	$	key	1	Any
-X::Str::Trans::InvalidArg	$	got	1	Nil
-X::StubCode	$	message	1	Any
-X::Subscript::Negative	$	index	1	Any
-X::Subscript::Negative	$	type	1	Any
-X::Supply::Combinator	$	combinator	1	Any
-X::Symbol::Kind	$	symbol	1	Any
-X::Symbol::Kind	$	package	1	Any
-X::Symbol::Kind	$	kind	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	category	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	needs	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	pos	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	filename	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	line	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	directive-filename	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	column	1	Any
-X::Syntax::AddCategorical::TooFewParts	@	modules	1	
-X::Syntax::AddCategorical::TooFewParts	$	is-compile-time	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	pre	1	Any
-X::Syntax::AddCategorical::TooFewParts	$	post	1	Any
-X::Syntax::AddCategorical::TooFewParts	@	highexpect	1	
-X::Syntax::AddCategorical::TooManyParts	$	category	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	needs	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	pos	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	filename	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	line	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	directive-filename	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	column	1	Any
-X::Syntax::AddCategorical::TooManyParts	@	modules	1	
-X::Syntax::AddCategorical::TooManyParts	$	is-compile-time	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	pre	1	Any
-X::Syntax::AddCategorical::TooManyParts	$	post	1	Any
-X::Syntax::AddCategorical::TooManyParts	@	highexpect	1	
-X::Syntax::Adverb	$	what	1	Any
-X::Syntax::Adverb	$	pos	1	Any
-X::Syntax::Adverb	$	filename	1	Any
-X::Syntax::Adverb	$	line	1	Any
-X::Syntax::Adverb	$	directive-filename	1	Any
-X::Syntax::Adverb	$	column	1	Any
-X::Syntax::Adverb	@	modules	1	
-X::Syntax::Adverb	$	is-compile-time	1	Any
-X::Syntax::Adverb	$	pre	1	Any
-X::Syntax::Adverb	$	post	1	Any
-X::Syntax::Adverb	@	highexpect	1	
-X::Syntax::AmbiguousAdverb	$	adverb	1	Str
-X::Syntax::AmbiguousAdverb	$	pos	1	Any
-X::Syntax::AmbiguousAdverb	$	filename	1	Any
-X::Syntax::AmbiguousAdverb	$	line	1	Any
-X::Syntax::AmbiguousAdverb	$	directive-filename	1	Any
-X::Syntax::AmbiguousAdverb	$	column	1	Any
-X::Syntax::AmbiguousAdverb	@	modules	1	
-X::Syntax::AmbiguousAdverb	$	is-compile-time	1	Any
-X::Syntax::AmbiguousAdverb	$	pre	1	Any
-X::Syntax::AmbiguousAdverb	$	post	1	Any
-X::Syntax::AmbiguousAdverb	@	highexpect	1	
-X::Syntax::Argument::MOPMacro	$	macro	1	Any
-X::Syntax::Argument::MOPMacro	$	pos	1	Any
-X::Syntax::Argument::MOPMacro	$	filename	1	Any
-X::Syntax::Argument::MOPMacro	$	line	1	Any
-X::Syntax::Argument::MOPMacro	$	directive-filename	1	Any
-X::Syntax::Argument::MOPMacro	$	column	1	Any
-X::Syntax::Argument::MOPMacro	@	modules	1	
-X::Syntax::Argument::MOPMacro	$	is-compile-time	1	Any
-X::Syntax::Argument::MOPMacro	$	pre	1	Any
-X::Syntax::Argument::MOPMacro	$	post	1	Any
-X::Syntax::Argument::MOPMacro	@	highexpect	1	
-X::Syntax::Augment::Adverb	$	pos	1	Any
-X::Syntax::Augment::Adverb	$	filename	1	Any
-X::Syntax::Augment::Adverb	$	line	1	Any
-X::Syntax::Augment::Adverb	$	directive-filename	1	Any
-X::Syntax::Augment::Adverb	$	column	1	Any
-X::Syntax::Augment::Adverb	@	modules	1	
-X::Syntax::Augment::Adverb	$	is-compile-time	1	Any
-X::Syntax::Augment::Adverb	$	pre	1	Any
-X::Syntax::Augment::Adverb	$	post	1	Any
-X::Syntax::Augment::Adverb	@	highexpect	1	
-X::Syntax::Augment::Illegal	$	package	1	Any
-X::Syntax::Augment::Illegal	$	pos	1	Any
-X::Syntax::Augment::Illegal	$	filename	1	Any
-X::Syntax::Augment::Illegal	$	line	1	Any
-X::Syntax::Augment::Illegal	$	directive-filename	1	Any
-X::Syntax::Augment::Illegal	$	column	1	Any
-X::Syntax::Augment::Illegal	@	modules	1	
-X::Syntax::Augment::Illegal	$	is-compile-time	1	Any
-X::Syntax::Augment::Illegal	$	pre	1	Any
-X::Syntax::Augment::Illegal	$	post	1	Any
-X::Syntax::Augment::Illegal	@	highexpect	1	
-X::Syntax::Augment::WithoutMonkeyTyping	$	pos	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	$	filename	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	$	line	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	$	directive-filename	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	$	column	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	@	modules	1	
-X::Syntax::Augment::WithoutMonkeyTyping	$	is-compile-time	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	$	pre	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	$	post	1	Any
-X::Syntax::Augment::WithoutMonkeyTyping	@	highexpect	1	
-X::Syntax::BlockGobbled	$	what	1	Any
-X::Syntax::BlockGobbled	$	pos	1	Any
-X::Syntax::BlockGobbled	$	filename	1	Any
-X::Syntax::BlockGobbled	$	line	1	Any
-X::Syntax::BlockGobbled	$	directive-filename	1	Any
-X::Syntax::BlockGobbled	$	column	1	Any
-X::Syntax::BlockGobbled	@	modules	1	
-X::Syntax::BlockGobbled	$	is-compile-time	1	Any
-X::Syntax::BlockGobbled	$	pre	1	Any
-X::Syntax::BlockGobbled	$	post	1	Any
-X::Syntax::BlockGobbled	@	highexpect	1	
-X::Syntax::CannotMeta	$	meta	1	Any
-X::Syntax::CannotMeta	$	operator	1	Any
-X::Syntax::CannotMeta	$	reason	1	Any
-X::Syntax::CannotMeta	$	dba	1	Any
-X::Syntax::CannotMeta	$	pos	1	Any
-X::Syntax::CannotMeta	$	filename	1	Any
-X::Syntax::CannotMeta	$	line	1	Any
-X::Syntax::CannotMeta	$	directive-filename	1	Any
-X::Syntax::CannotMeta	$	column	1	Any
-X::Syntax::CannotMeta	@	modules	1	
-X::Syntax::CannotMeta	$	is-compile-time	1	Any
-X::Syntax::CannotMeta	$	pre	1	Any
-X::Syntax::CannotMeta	$	post	1	Any
-X::Syntax::CannotMeta	@	highexpect	1	
-X::Syntax::Coercer::TooComplex	$	pos	1	Any
-X::Syntax::Coercer::TooComplex	$	filename	1	Any
-X::Syntax::Coercer::TooComplex	$	line	1	Any
-X::Syntax::Coercer::TooComplex	$	directive-filename	1	Any
-X::Syntax::Coercer::TooComplex	$	column	1	Any
-X::Syntax::Coercer::TooComplex	@	modules	1	
-X::Syntax::Coercer::TooComplex	$	is-compile-time	1	Any
-X::Syntax::Coercer::TooComplex	$	pre	1	Any
-X::Syntax::Coercer::TooComplex	$	post	1	Any
-X::Syntax::Coercer::TooComplex	@	highexpect	1	
-X::Syntax::Comment::Embedded	$	pos	1	Any
-X::Syntax::Comment::Embedded	$	filename	1	Any
-X::Syntax::Comment::Embedded	$	line	1	Any
-X::Syntax::Comment::Embedded	$	directive-filename	1	Any
-X::Syntax::Comment::Embedded	$	column	1	Any
-X::Syntax::Comment::Embedded	@	modules	1	
-X::Syntax::Comment::Embedded	$	is-compile-time	1	Any
-X::Syntax::Comment::Embedded	$	pre	1	Any
-X::Syntax::Comment::Embedded	$	post	1	Any
-X::Syntax::Comment::Embedded	@	highexpect	1	
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	operator	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	pos	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	filename	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	line	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	directive-filename	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	column	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	@	modules	1	
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	is-compile-time	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	pre	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	post	1	Any
-X::Syntax::ConditionalOperator::PrecedenceTooLoose	@	highexpect	1	
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	pos	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	filename	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	line	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	directive-filename	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	column	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	@	modules	1	
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	is-compile-time	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	pre	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	$	post	1	Any
-X::Syntax::ConditionalOperator::SecondPartGobbled	@	highexpect	1	
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	second-part	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	pos	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	filename	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	line	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	directive-filename	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	column	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	@	modules	1	
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	is-compile-time	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	pre	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	$	post	1	Any
-X::Syntax::ConditionalOperator::SecondPartInvalid	@	highexpect	1	
-X::Syntax::Confused	$	reason	1	Any
-X::Syntax::Confused	$	pos	1	Any
-X::Syntax::Confused	$	filename	1	Any
-X::Syntax::Confused	$	line	1	Any
-X::Syntax::Confused	$	directive-filename	1	Any
-X::Syntax::Confused	$	column	1	Any
-X::Syntax::Confused	@	modules	1	
-X::Syntax::Confused	$	is-compile-time	1	Any
-X::Syntax::Confused	$	pre	1	Any
-X::Syntax::Confused	$	post	1	Any
-X::Syntax::Confused	@	highexpect	1	
-X::Syntax::Doc::Declarator::MissingDeclarand	$	position	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	$	pos	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	$	filename	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	$	line	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	$	directive-filename	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	$	column	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	@	modules	1	
-X::Syntax::Doc::Declarator::MissingDeclarand	$	is-compile-time	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	$	pre	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	$	post	1	Any
-X::Syntax::Doc::Declarator::MissingDeclarand	@	highexpect	1	
-X::Syntax::DuplicatedPrefix	$	prefixes	1	Any
-X::Syntax::DuplicatedPrefix	$	pos	1	Any
-X::Syntax::DuplicatedPrefix	$	filename	1	Any
-X::Syntax::DuplicatedPrefix	$	line	1	Any
-X::Syntax::DuplicatedPrefix	$	directive-filename	1	Any
-X::Syntax::DuplicatedPrefix	$	column	1	Any
-X::Syntax::DuplicatedPrefix	@	modules	1	
-X::Syntax::DuplicatedPrefix	$	is-compile-time	1	Any
-X::Syntax::DuplicatedPrefix	$	pre	1	Any
-X::Syntax::DuplicatedPrefix	$	post	1	Any
-X::Syntax::DuplicatedPrefix	@	highexpect	1	
-X::Syntax::Extension::Category	$	category	1	Any
-X::Syntax::Extension::Category	$	pos	1	Any
-X::Syntax::Extension::Category	$	filename	1	Any
-X::Syntax::Extension::Category	$	line	1	Any
-X::Syntax::Extension::Category	$	directive-filename	1	Any
-X::Syntax::Extension::Category	$	column	1	Any
-X::Syntax::Extension::Category	@	modules	1	
-X::Syntax::Extension::Category	$	is-compile-time	1	Any
-X::Syntax::Extension::Category	$	pre	1	Any
-X::Syntax::Extension::Category	$	post	1	Any
-X::Syntax::Extension::Category	@	highexpect	1	
-X::Syntax::Extension::Null	$	pos	1	Any
-X::Syntax::Extension::Null	$	filename	1	Any
-X::Syntax::Extension::Null	$	line	1	Any
-X::Syntax::Extension::Null	$	directive-filename	1	Any
-X::Syntax::Extension::Null	$	column	1	Any
-X::Syntax::Extension::Null	@	modules	1	
-X::Syntax::Extension::Null	$	is-compile-time	1	Any
-X::Syntax::Extension::Null	$	pre	1	Any
-X::Syntax::Extension::Null	$	post	1	Any
-X::Syntax::Extension::Null	@	highexpect	1	
-X::Syntax::Extension::SpecialForm	$	category	1	Any
-X::Syntax::Extension::SpecialForm	$	opname	1	Any
-X::Syntax::Extension::SpecialForm	$	hint	1	Any
-X::Syntax::Extension::SpecialForm	$	pos	1	Any
-X::Syntax::Extension::SpecialForm	$	filename	1	Any
-X::Syntax::Extension::SpecialForm	$	line	1	Any
-X::Syntax::Extension::SpecialForm	$	directive-filename	1	Any
-X::Syntax::Extension::SpecialForm	$	column	1	Any
-X::Syntax::Extension::SpecialForm	@	modules	1	
-X::Syntax::Extension::SpecialForm	$	is-compile-time	1	Any
-X::Syntax::Extension::SpecialForm	$	pre	1	Any
-X::Syntax::Extension::SpecialForm	$	post	1	Any
-X::Syntax::Extension::SpecialForm	@	highexpect	1	
-X::Syntax::Extension::TooComplex	$	name	1	Any
-X::Syntax::Extension::TooComplex	$	pos	1	Any
-X::Syntax::Extension::TooComplex	$	filename	1	Any
-X::Syntax::Extension::TooComplex	$	line	1	Any
-X::Syntax::Extension::TooComplex	$	directive-filename	1	Any
-X::Syntax::Extension::TooComplex	$	column	1	Any
-X::Syntax::Extension::TooComplex	@	modules	1	
-X::Syntax::Extension::TooComplex	$	is-compile-time	1	Any
-X::Syntax::Extension::TooComplex	$	pre	1	Any
-X::Syntax::Extension::TooComplex	$	post	1	Any
-X::Syntax::Extension::TooComplex	@	highexpect	1	
-X::Syntax::Heredoc::AmbiguousName	$	symbol	1	Any
-X::Syntax::Heredoc::AmbiguousName	$	pos	1	Any
-X::Syntax::Heredoc::AmbiguousName	$	filename	1	Any
-X::Syntax::Heredoc::AmbiguousName	$	line	1	Any
-X::Syntax::Heredoc::AmbiguousName	$	directive-filename	1	Any
-X::Syntax::Heredoc::AmbiguousName	$	column	1	Any
-X::Syntax::Heredoc::AmbiguousName	@	modules	1	
-X::Syntax::Heredoc::AmbiguousName	$	is-compile-time	1	Any
-X::Syntax::Heredoc::AmbiguousName	$	pre	1	Any
-X::Syntax::Heredoc::AmbiguousName	$	post	1	Any
-X::Syntax::Heredoc::AmbiguousName	@	highexpect	1	
-X::Syntax::InfixInTermPosition	$	infix	1	Any
-X::Syntax::InfixInTermPosition	$	pos	1	Any
-X::Syntax::InfixInTermPosition	$	filename	1	Any
-X::Syntax::InfixInTermPosition	$	line	1	Any
-X::Syntax::InfixInTermPosition	$	directive-filename	1	Any
-X::Syntax::InfixInTermPosition	$	column	1	Any
-X::Syntax::InfixInTermPosition	@	modules	1	
-X::Syntax::InfixInTermPosition	$	is-compile-time	1	Any
-X::Syntax::InfixInTermPosition	$	pre	1	Any
-X::Syntax::InfixInTermPosition	$	post	1	Any
-X::Syntax::InfixInTermPosition	@	highexpect	1	
-X::Syntax::KeywordAsFunction	$	word	1	Any
-X::Syntax::KeywordAsFunction	$	needparens	1	Any
-X::Syntax::KeywordAsFunction	$	pos	1	Any
-X::Syntax::KeywordAsFunction	$	filename	1	Any
-X::Syntax::KeywordAsFunction	$	line	1	Any
-X::Syntax::KeywordAsFunction	$	directive-filename	1	Any
-X::Syntax::KeywordAsFunction	$	column	1	Any
-X::Syntax::KeywordAsFunction	@	modules	1	
-X::Syntax::KeywordAsFunction	$	is-compile-time	1	Any
-X::Syntax::KeywordAsFunction	$	pre	1	Any
-X::Syntax::KeywordAsFunction	$	post	1	Any
-X::Syntax::KeywordAsFunction	@	highexpect	1	
-X::Syntax::Malformed	$	what	1	Any
-X::Syntax::Malformed	$	pos	1	Any
-X::Syntax::Malformed	$	filename	1	Any
-X::Syntax::Malformed	$	line	1	Any
-X::Syntax::Malformed	$	directive-filename	1	Any
-X::Syntax::Malformed	$	column	1	Any
-X::Syntax::Malformed	@	modules	1	
-X::Syntax::Malformed	$	is-compile-time	1	Any
-X::Syntax::Malformed	$	pre	1	Any
-X::Syntax::Malformed	$	post	1	Any
-X::Syntax::Malformed	@	highexpect	1	
-X::Syntax::Malformed::Elsif	$	what	1	Any
-X::Syntax::Malformed::Elsif	$	pos	1	Any
-X::Syntax::Malformed::Elsif	$	filename	1	Any
-X::Syntax::Malformed::Elsif	$	line	1	Any
-X::Syntax::Malformed::Elsif	$	directive-filename	1	Any
-X::Syntax::Malformed::Elsif	$	column	1	Any
-X::Syntax::Malformed::Elsif	@	modules	1	
-X::Syntax::Malformed::Elsif	$	is-compile-time	1	Any
-X::Syntax::Malformed::Elsif	$	pre	1	Any
-X::Syntax::Malformed::Elsif	$	post	1	Any
-X::Syntax::Malformed::Elsif	@	highexpect	1	
-X::Syntax::Missing	$	what	1	Any
-X::Syntax::Missing	$	pos	1	Any
-X::Syntax::Missing	$	filename	1	Any
-X::Syntax::Missing	$	line	1	Any
-X::Syntax::Missing	$	directive-filename	1	Any
-X::Syntax::Missing	$	column	1	Any
-X::Syntax::Missing	@	modules	1	
-X::Syntax::Missing	$	is-compile-time	1	Any
-X::Syntax::Missing	$	pre	1	Any
-X::Syntax::Missing	$	post	1	Any
-X::Syntax::Missing	@	highexpect	1	
-X::Syntax::Name::Null	$	pos	1	Any
-X::Syntax::Name::Null	$	filename	1	Any
-X::Syntax::Name::Null	$	line	1	Any
-X::Syntax::Name::Null	$	directive-filename	1	Any
-X::Syntax::Name::Null	$	column	1	Any
-X::Syntax::Name::Null	@	modules	1	
-X::Syntax::Name::Null	$	is-compile-time	1	Any
-X::Syntax::Name::Null	$	pre	1	Any
-X::Syntax::Name::Null	$	post	1	Any
-X::Syntax::Name::Null	@	highexpect	1	
-X::Syntax::NegatedPair	$	key	1	Any
-X::Syntax::NegatedPair	$	pos	1	Any
-X::Syntax::NegatedPair	$	filename	1	Any
-X::Syntax::NegatedPair	$	line	1	Any
-X::Syntax::NegatedPair	$	directive-filename	1	Any
-X::Syntax::NegatedPair	$	column	1	Any
-X::Syntax::NegatedPair	@	modules	1	
-X::Syntax::NegatedPair	$	is-compile-time	1	Any
-X::Syntax::NegatedPair	$	pre	1	Any
-X::Syntax::NegatedPair	$	post	1	Any
-X::Syntax::NegatedPair	@	highexpect	1	
-X::Syntax::NoSelf	$	variable	1	Any
-X::Syntax::NoSelf	$	pos	1	Any
-X::Syntax::NoSelf	$	filename	1	Any
-X::Syntax::NoSelf	$	line	1	Any
-X::Syntax::NoSelf	$	directive-filename	1	Any
-X::Syntax::NoSelf	$	column	1	Any
-X::Syntax::NoSelf	@	modules	1	
-X::Syntax::NoSelf	$	is-compile-time	1	Any
-X::Syntax::NoSelf	$	pre	1	Any
-X::Syntax::NoSelf	$	post	1	Any
-X::Syntax::NoSelf	@	highexpect	1	
-X::Syntax::NonAssociative	$	left	1	Any
-X::Syntax::NonAssociative	$	right	1	Any
-X::Syntax::NonAssociative	$	pos	1	Any
-X::Syntax::NonAssociative	$	filename	1	Any
-X::Syntax::NonAssociative	$	line	1	Any
-X::Syntax::NonAssociative	$	directive-filename	1	Any
-X::Syntax::NonAssociative	$	column	1	Any
-X::Syntax::NonAssociative	@	modules	1	
-X::Syntax::NonAssociative	$	is-compile-time	1	Any
-X::Syntax::NonAssociative	$	pre	1	Any
-X::Syntax::NonAssociative	$	post	1	Any
-X::Syntax::NonAssociative	@	highexpect	1	
-X::Syntax::Number::IllegalDecimal	$	pos	1	Any
-X::Syntax::Number::IllegalDecimal	$	filename	1	Any
-X::Syntax::Number::IllegalDecimal	$	line	1	Any
-X::Syntax::Number::IllegalDecimal	$	directive-filename	1	Any
-X::Syntax::Number::IllegalDecimal	$	column	1	Any
-X::Syntax::Number::IllegalDecimal	@	modules	1	
-X::Syntax::Number::IllegalDecimal	$	is-compile-time	1	Any
-X::Syntax::Number::IllegalDecimal	$	pre	1	Any
-X::Syntax::Number::IllegalDecimal	$	post	1	Any
-X::Syntax::Number::IllegalDecimal	@	highexpect	1	
-X::Syntax::Number::LiteralType	$	varname	1	Any
-X::Syntax::Number::LiteralType	$	vartype	1	Any
-X::Syntax::Number::LiteralType	$	value	1	Any
-X::Syntax::Number::LiteralType	$	valuetype	1	Any
-X::Syntax::Number::LiteralType	$	suggestiontype	1	Any
-X::Syntax::Number::LiteralType	$	native	1	Any
-X::Syntax::Number::LiteralType	$	pos	1	Any
-X::Syntax::Number::LiteralType	$	filename	1	Any
-X::Syntax::Number::LiteralType	$	line	1	Any
-X::Syntax::Number::LiteralType	$	directive-filename	1	Any
-X::Syntax::Number::LiteralType	$	column	1	Any
-X::Syntax::Number::LiteralType	@	modules	1	
-X::Syntax::Number::LiteralType	$	is-compile-time	1	Any
-X::Syntax::Number::LiteralType	$	pre	1	Any
-X::Syntax::Number::LiteralType	$	post	1	Any
-X::Syntax::Number::LiteralType	@	highexpect	1	
-X::Syntax::Number::RadixOutOfRange	$	radix	1	Any
-X::Syntax::Number::RadixOutOfRange	$	pos	1	Any
-X::Syntax::Number::RadixOutOfRange	$	filename	1	Any
-X::Syntax::Number::RadixOutOfRange	$	line	1	Any
-X::Syntax::Number::RadixOutOfRange	$	directive-filename	1	Any
-X::Syntax::Number::RadixOutOfRange	$	column	1	Any
-X::Syntax::Number::RadixOutOfRange	@	modules	1	
-X::Syntax::Number::RadixOutOfRange	$	is-compile-time	1	Any
-X::Syntax::Number::RadixOutOfRange	$	pre	1	Any
-X::Syntax::Number::RadixOutOfRange	$	post	1	Any
-X::Syntax::Number::RadixOutOfRange	@	highexpect	1	
-X::Syntax::P5	$	pos	1	Any
-X::Syntax::P5	$	filename	1	Any
-X::Syntax::P5	$	line	1	Any
-X::Syntax::P5	$	directive-filename	1	Any
-X::Syntax::P5	$	column	1	Any
-X::Syntax::P5	@	modules	1	
-X::Syntax::P5	$	is-compile-time	1	Any
-X::Syntax::P5	$	pre	1	Any
-X::Syntax::P5	$	post	1	Any
-X::Syntax::P5	@	highexpect	1	
-X::Syntax::ParentAsHash	$	type	1	Any
-X::Syntax::ParentAsHash	$	parent	1	Any
-X::Syntax::ParentAsHash	$	what	1	Any
-X::Syntax::ParentAsHash	$	pos	1	Any
-X::Syntax::ParentAsHash	$	filename	1	Any
-X::Syntax::ParentAsHash	$	line	1	Any
-X::Syntax::ParentAsHash	$	directive-filename	1	Any
-X::Syntax::ParentAsHash	$	column	1	Any
-X::Syntax::ParentAsHash	@	modules	1	
-X::Syntax::ParentAsHash	$	is-compile-time	1	Any
-X::Syntax::ParentAsHash	$	pre	1	Any
-X::Syntax::ParentAsHash	$	post	1	Any
-X::Syntax::ParentAsHash	@	highexpect	1	
-X::Syntax::Perl5Var	$	name	1	Any
-X::Syntax::Perl5Var	$	identifier-name	1	Any
-X::Syntax::Perl5Var	$	pos	1	Any
-X::Syntax::Perl5Var	$	filename	1	Any
-X::Syntax::Perl5Var	$	line	1	Any
-X::Syntax::Perl5Var	$	directive-filename	1	Any
-X::Syntax::Perl5Var	$	column	1	Any
-X::Syntax::Perl5Var	@	modules	1	
-X::Syntax::Perl5Var	$	is-compile-time	1	Any
-X::Syntax::Perl5Var	$	pre	1	Any
-X::Syntax::Perl5Var	$	post	1	Any
-X::Syntax::Perl5Var	@	highexpect	1	
-X::Syntax::Pod::BeginWithDirective	$	directive	1	Any
-X::Syntax::Pod::BeginWithDirective	$	for	1	Any
-X::Syntax::Pod::BeginWithDirective	$	pos	1	Any
-X::Syntax::Pod::BeginWithDirective	$	filename	1	Any
-X::Syntax::Pod::BeginWithDirective	$	line	1	Any
-X::Syntax::Pod::BeginWithDirective	$	directive-filename	1	Any
-X::Syntax::Pod::BeginWithDirective	$	column	1	Any
-X::Syntax::Pod::BeginWithDirective	@	modules	1	
-X::Syntax::Pod::BeginWithDirective	$	is-compile-time	1	Any
-X::Syntax::Pod::BeginWithDirective	$	pre	1	Any
-X::Syntax::Pod::BeginWithDirective	$	post	1	Any
-X::Syntax::Pod::BeginWithDirective	@	highexpect	1	
-X::Syntax::Pod::BeginWithoutEnd	$	type	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	spaces	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	instead	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	pos	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	filename	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	line	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	directive-filename	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	column	1	Any
-X::Syntax::Pod::BeginWithoutEnd	@	modules	1	
-X::Syntax::Pod::BeginWithoutEnd	$	is-compile-time	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	pre	1	Any
-X::Syntax::Pod::BeginWithoutEnd	$	post	1	Any
-X::Syntax::Pod::BeginWithoutEnd	@	highexpect	1	
-X::Syntax::Pod::BeginWithoutIdentifier	$	pos	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	$	filename	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	$	line	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	$	directive-filename	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	$	column	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	@	modules	1	
-X::Syntax::Pod::BeginWithoutIdentifier	$	is-compile-time	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	$	pre	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	$	post	1	Any
-X::Syntax::Pod::BeginWithoutIdentifier	@	highexpect	1	
-X::Syntax::Pod::DeclaratorLeading	$	pos	1	Any
-X::Syntax::Pod::DeclaratorLeading	$	filename	1	Any
-X::Syntax::Pod::DeclaratorLeading	$	line	1	Any
-X::Syntax::Pod::DeclaratorLeading	$	directive-filename	1	Any
-X::Syntax::Pod::DeclaratorLeading	$	column	1	Any
-X::Syntax::Pod::DeclaratorLeading	@	modules	1	
-X::Syntax::Pod::DeclaratorLeading	$	is-compile-time	1	Any
-X::Syntax::Pod::DeclaratorLeading	$	pre	1	Any
-X::Syntax::Pod::DeclaratorLeading	$	post	1	Any
-X::Syntax::Pod::DeclaratorLeading	@	highexpect	1	
-X::Syntax::Pod::DeclaratorTrailing	$	pos	1	Any
-X::Syntax::Pod::DeclaratorTrailing	$	filename	1	Any
-X::Syntax::Pod::DeclaratorTrailing	$	line	1	Any
-X::Syntax::Pod::DeclaratorTrailing	$	directive-filename	1	Any
-X::Syntax::Pod::DeclaratorTrailing	$	column	1	Any
-X::Syntax::Pod::DeclaratorTrailing	@	modules	1	
-X::Syntax::Pod::DeclaratorTrailing	$	is-compile-time	1	Any
-X::Syntax::Pod::DeclaratorTrailing	$	pre	1	Any
-X::Syntax::Pod::DeclaratorTrailing	$	post	1	Any
-X::Syntax::Pod::DeclaratorTrailing	@	highexpect	1	
-X::Syntax::Pod::DirectiveWithLevel	$	directive	1	Any
-X::Syntax::Pod::DirectiveWithLevel	$	level	1	Any
-X::Syntax::Regex::Adverb	$	adverb	1	Any
-X::Syntax::Regex::Adverb	$	construct	1	Any
-X::Syntax::Regex::Adverb	$	pos	1	Any
-X::Syntax::Regex::Adverb	$	filename	1	Any
-X::Syntax::Regex::Adverb	$	line	1	Any
-X::Syntax::Regex::Adverb	$	directive-filename	1	Any
-X::Syntax::Regex::Adverb	$	column	1	Any
-X::Syntax::Regex::Adverb	@	modules	1	
-X::Syntax::Regex::Adverb	$	is-compile-time	1	Any
-X::Syntax::Regex::Adverb	$	pre	1	Any
-X::Syntax::Regex::Adverb	$	post	1	Any
-X::Syntax::Regex::Adverb	@	highexpect	1	
-X::Syntax::Regex::Alias::LongName	$	pos	1	Any
-X::Syntax::Regex::Alias::LongName	$	filename	1	Any
-X::Syntax::Regex::Alias::LongName	$	line	1	Any
-X::Syntax::Regex::Alias::LongName	$	directive-filename	1	Any
-X::Syntax::Regex::Alias::LongName	$	column	1	Any
-X::Syntax::Regex::Alias::LongName	@	modules	1	
-X::Syntax::Regex::Alias::LongName	$	is-compile-time	1	Any
-X::Syntax::Regex::Alias::LongName	$	pre	1	Any
-X::Syntax::Regex::Alias::LongName	$	post	1	Any
-X::Syntax::Regex::Alias::LongName	@	highexpect	1	
-X::Syntax::Regex::InsignificantWhitespace	$	pos	1	Any
-X::Syntax::Regex::InsignificantWhitespace	$	filename	1	Any
-X::Syntax::Regex::InsignificantWhitespace	$	line	1	Any
-X::Syntax::Regex::InsignificantWhitespace	$	directive-filename	1	Any
-X::Syntax::Regex::InsignificantWhitespace	$	column	1	Any
-X::Syntax::Regex::InsignificantWhitespace	@	modules	1	
-X::Syntax::Regex::InsignificantWhitespace	$	is-compile-time	1	Any
-X::Syntax::Regex::InsignificantWhitespace	$	pre	1	Any
-X::Syntax::Regex::InsignificantWhitespace	$	post	1	Any
-X::Syntax::Regex::InsignificantWhitespace	@	highexpect	1	
-X::Syntax::Regex::MalformedRange	$	pos	1	Any
-X::Syntax::Regex::MalformedRange	$	filename	1	Any
-X::Syntax::Regex::MalformedRange	$	line	1	Any
-X::Syntax::Regex::MalformedRange	$	directive-filename	1	Any
-X::Syntax::Regex::MalformedRange	$	column	1	Any
-X::Syntax::Regex::MalformedRange	@	modules	1	
-X::Syntax::Regex::MalformedRange	$	is-compile-time	1	Any
-X::Syntax::Regex::MalformedRange	$	pre	1	Any
-X::Syntax::Regex::MalformedRange	$	post	1	Any
-X::Syntax::Regex::MalformedRange	@	highexpect	1	
-X::Syntax::Regex::NonQuantifiable	$	pos	1	Any
-X::Syntax::Regex::NonQuantifiable	$	filename	1	Any
-X::Syntax::Regex::NonQuantifiable	$	line	1	Any
-X::Syntax::Regex::NonQuantifiable	$	directive-filename	1	Any
-X::Syntax::Regex::NonQuantifiable	$	column	1	Any
-X::Syntax::Regex::NonQuantifiable	@	modules	1	
-X::Syntax::Regex::NonQuantifiable	$	is-compile-time	1	Any
-X::Syntax::Regex::NonQuantifiable	$	pre	1	Any
-X::Syntax::Regex::NonQuantifiable	$	post	1	Any
-X::Syntax::Regex::NonQuantifiable	@	highexpect	1	
-X::Syntax::Regex::NullRegex	$	pos	1	Any
-X::Syntax::Regex::NullRegex	$	filename	1	Any
-X::Syntax::Regex::NullRegex	$	line	1	Any
-X::Syntax::Regex::NullRegex	$	directive-filename	1	Any
-X::Syntax::Regex::NullRegex	$	column	1	Any
-X::Syntax::Regex::NullRegex	@	modules	1	
-X::Syntax::Regex::NullRegex	$	is-compile-time	1	Any
-X::Syntax::Regex::NullRegex	$	pre	1	Any
-X::Syntax::Regex::NullRegex	$	post	1	Any
-X::Syntax::Regex::NullRegex	@	highexpect	1	
-X::Syntax::Regex::QuantifierValue	$	inf	1	Any
-X::Syntax::Regex::QuantifierValue	$	non-numeric	1	Any
-X::Syntax::Regex::QuantifierValue	$	non-numeric-range	1	Any
-X::Syntax::Regex::QuantifierValue	$	empty-range	1	Any
-X::Syntax::Regex::QuantifierValue	$	pos	1	Any
-X::Syntax::Regex::QuantifierValue	$	filename	1	Any
-X::Syntax::Regex::QuantifierValue	$	line	1	Any
-X::Syntax::Regex::QuantifierValue	$	directive-filename	1	Any
-X::Syntax::Regex::QuantifierValue	$	column	1	Any
-X::Syntax::Regex::QuantifierValue	@	modules	1	
-X::Syntax::Regex::QuantifierValue	$	is-compile-time	1	Any
-X::Syntax::Regex::QuantifierValue	$	pre	1	Any
-X::Syntax::Regex::QuantifierValue	$	post	1	Any
-X::Syntax::Regex::QuantifierValue	@	highexpect	1	
-X::Syntax::Regex::SolitaryBacktrackControl	$	pos	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	$	filename	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	$	line	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	$	directive-filename	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	$	column	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	@	modules	1	
-X::Syntax::Regex::SolitaryBacktrackControl	$	is-compile-time	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	$	pre	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	$	post	1	Any
-X::Syntax::Regex::SolitaryBacktrackControl	@	highexpect	1	
-X::Syntax::Regex::SolitaryModifier	@	modifiers	1	
-X::Syntax::Regex::SolitaryModifier	$	branch	1	Bool
-X::Syntax::Regex::SolitaryQuantifier	$	pos	1	Any
-X::Syntax::Regex::SolitaryQuantifier	$	filename	1	Any
-X::Syntax::Regex::SolitaryQuantifier	$	line	1	Any
-X::Syntax::Regex::SolitaryQuantifier	$	directive-filename	1	Any
-X::Syntax::Regex::SolitaryQuantifier	$	column	1	Any
-X::Syntax::Regex::SolitaryQuantifier	@	modules	1	
-X::Syntax::Regex::SolitaryQuantifier	$	is-compile-time	1	Any
-X::Syntax::Regex::SolitaryQuantifier	$	pre	1	Any
-X::Syntax::Regex::SolitaryQuantifier	$	post	1	Any
-X::Syntax::Regex::SolitaryQuantifier	@	highexpect	1	
-X::Syntax::Regex::SpacesInBareRange	$	pos	1	Any
-X::Syntax::Regex::SpacesInBareRange	$	filename	1	Any
-X::Syntax::Regex::SpacesInBareRange	$	line	1	Any
-X::Syntax::Regex::SpacesInBareRange	$	directive-filename	1	Any
-X::Syntax::Regex::SpacesInBareRange	$	column	1	Any
-X::Syntax::Regex::SpacesInBareRange	@	modules	1	
-X::Syntax::Regex::SpacesInBareRange	$	is-compile-time	1	Any
-X::Syntax::Regex::SpacesInBareRange	$	pre	1	Any
-X::Syntax::Regex::SpacesInBareRange	$	post	1	Any
-X::Syntax::Regex::SpacesInBareRange	@	highexpect	1	
-X::Syntax::Regex::UnrecognizedBoundary	$	boundary	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	$	pos	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	$	filename	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	$	line	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	$	directive-filename	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	$	column	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	@	modules	1	
-X::Syntax::Regex::UnrecognizedBoundary	$	is-compile-time	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	$	pre	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	$	post	1	Any
-X::Syntax::Regex::UnrecognizedBoundary	@	highexpect	1	
-X::Syntax::Regex::UnrecognizedMetachar	$	metachar	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	$	pos	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	$	filename	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	$	line	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	$	directive-filename	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	$	column	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	@	modules	1	
-X::Syntax::Regex::UnrecognizedMetachar	$	is-compile-time	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	$	pre	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	$	post	1	Any
-X::Syntax::Regex::UnrecognizedMetachar	@	highexpect	1	
-X::Syntax::Regex::UnrecognizedModifier	$	modifier	1	Any
-X::Syntax::Regex::UnrecognizedModifier	$	pos	1	Any
-X::Syntax::Regex::UnrecognizedModifier	$	filename	1	Any
-X::Syntax::Regex::UnrecognizedModifier	$	line	1	Any
-X::Syntax::Regex::UnrecognizedModifier	$	directive-filename	1	Any
-X::Syntax::Regex::UnrecognizedModifier	$	column	1	Any
-X::Syntax::Regex::UnrecognizedModifier	@	modules	1	
-X::Syntax::Regex::UnrecognizedModifier	$	is-compile-time	1	Any
-X::Syntax::Regex::UnrecognizedModifier	$	pre	1	Any
-X::Syntax::Regex::UnrecognizedModifier	$	post	1	Any
-X::Syntax::Regex::UnrecognizedModifier	@	highexpect	1	
-X::Syntax::Regex::Unspace	$	char	1	Any
-X::Syntax::Regex::Unspace	$	pos	1	Any
-X::Syntax::Regex::Unspace	$	filename	1	Any
-X::Syntax::Regex::Unspace	$	line	1	Any
-X::Syntax::Regex::Unspace	$	directive-filename	1	Any
-X::Syntax::Regex::Unspace	$	column	1	Any
-X::Syntax::Regex::Unspace	@	modules	1	
-X::Syntax::Regex::Unspace	$	is-compile-time	1	Any
-X::Syntax::Regex::Unspace	$	pre	1	Any
-X::Syntax::Regex::Unspace	$	post	1	Any
-X::Syntax::Regex::Unspace	@	highexpect	1	
-X::Syntax::Regex::Unterminated	$	pos	1	Any
-X::Syntax::Regex::Unterminated	$	filename	1	Any
-X::Syntax::Regex::Unterminated	$	line	1	Any
-X::Syntax::Regex::Unterminated	$	directive-filename	1	Any
-X::Syntax::Regex::Unterminated	$	column	1	Any
-X::Syntax::Regex::Unterminated	@	modules	1	
-X::Syntax::Regex::Unterminated	$	is-compile-time	1	Any
-X::Syntax::Regex::Unterminated	$	pre	1	Any
-X::Syntax::Regex::Unterminated	$	post	1	Any
-X::Syntax::Regex::Unterminated	@	highexpect	1	
-X::Syntax::Reserved	$	reserved	1	Any
-X::Syntax::Reserved	$	instead	1	Any
-X::Syntax::Reserved	$	pos	1	Any
-X::Syntax::Reserved	$	filename	1	Any
-X::Syntax::Reserved	$	line	1	Any
-X::Syntax::Reserved	$	directive-filename	1	Any
-X::Syntax::Reserved	$	column	1	Any
-X::Syntax::Reserved	@	modules	1	
-X::Syntax::Reserved	$	is-compile-time	1	Any
-X::Syntax::Reserved	$	pre	1	Any
-X::Syntax::Reserved	$	post	1	Any
-X::Syntax::Reserved	@	highexpect	1	
-X::Syntax::Self::WithoutObject	$	pos	1	Any
-X::Syntax::Self::WithoutObject	$	filename	1	Any
-X::Syntax::Self::WithoutObject	$	line	1	Any
-X::Syntax::Self::WithoutObject	$	directive-filename	1	Any
-X::Syntax::Self::WithoutObject	$	column	1	Any
-X::Syntax::Self::WithoutObject	@	modules	1	
-X::Syntax::Self::WithoutObject	$	is-compile-time	1	Any
-X::Syntax::Self::WithoutObject	$	pre	1	Any
-X::Syntax::Self::WithoutObject	$	post	1	Any
-X::Syntax::Self::WithoutObject	@	highexpect	1	
-X::Syntax::Signature::InvocantMarker	$	pos	1	Any
-X::Syntax::Signature::InvocantMarker	$	filename	1	Any
-X::Syntax::Signature::InvocantMarker	$	line	1	Any
-X::Syntax::Signature::InvocantMarker	$	directive-filename	1	Any
-X::Syntax::Signature::InvocantMarker	$	column	1	Any
-X::Syntax::Signature::InvocantMarker	@	modules	1	
-X::Syntax::Signature::InvocantMarker	$	is-compile-time	1	Any
-X::Syntax::Signature::InvocantMarker	$	pre	1	Any
-X::Syntax::Signature::InvocantMarker	$	post	1	Any
-X::Syntax::Signature::InvocantMarker	@	highexpect	1	
-X::Syntax::Signature::InvocantNotAllowed	$	pos	1	Any
-X::Syntax::Signature::InvocantNotAllowed	$	filename	1	Any
-X::Syntax::Signature::InvocantNotAllowed	$	line	1	Any
-X::Syntax::Signature::InvocantNotAllowed	$	directive-filename	1	Any
-X::Syntax::Signature::InvocantNotAllowed	$	column	1	Any
-X::Syntax::Signature::InvocantNotAllowed	@	modules	1	
-X::Syntax::Signature::InvocantNotAllowed	$	is-compile-time	1	Any
-X::Syntax::Signature::InvocantNotAllowed	$	pre	1	Any
-X::Syntax::Signature::InvocantNotAllowed	$	post	1	Any
-X::Syntax::Signature::InvocantNotAllowed	@	highexpect	1	
-X::Syntax::Term::MissingInitializer	$	pos	1	Any
-X::Syntax::Term::MissingInitializer	$	filename	1	Any
-X::Syntax::Term::MissingInitializer	$	line	1	Any
-X::Syntax::Term::MissingInitializer	$	directive-filename	1	Any
-X::Syntax::Term::MissingInitializer	$	column	1	Any
-X::Syntax::Term::MissingInitializer	@	modules	1	
-X::Syntax::Term::MissingInitializer	$	is-compile-time	1	Any
-X::Syntax::Term::MissingInitializer	$	pre	1	Any
-X::Syntax::Term::MissingInitializer	$	post	1	Any
-X::Syntax::Term::MissingInitializer	@	highexpect	1	
-X::Syntax::Type::Adverb	$	adverb	1	Any
-X::Syntax::Type::Adverb	$	pos	1	Any
-X::Syntax::Type::Adverb	$	filename	1	Any
-X::Syntax::Type::Adverb	$	line	1	Any
-X::Syntax::Type::Adverb	$	directive-filename	1	Any
-X::Syntax::Type::Adverb	$	column	1	Any
-X::Syntax::Type::Adverb	@	modules	1	
-X::Syntax::Type::Adverb	$	is-compile-time	1	Any
-X::Syntax::Type::Adverb	$	pre	1	Any
-X::Syntax::Type::Adverb	$	post	1	Any
-X::Syntax::Type::Adverb	@	highexpect	1	
-X::Syntax::UnlessElse	$	keyword	1	Any
-X::Syntax::UnlessElse	$	pos	1	Any
-X::Syntax::UnlessElse	$	filename	1	Any
-X::Syntax::UnlessElse	$	line	1	Any
-X::Syntax::UnlessElse	$	directive-filename	1	Any
-X::Syntax::UnlessElse	$	column	1	Any
-X::Syntax::UnlessElse	@	modules	1	
-X::Syntax::UnlessElse	$	is-compile-time	1	Any
-X::Syntax::UnlessElse	$	pre	1	Any
-X::Syntax::UnlessElse	$	post	1	Any
-X::Syntax::UnlessElse	@	highexpect	1	
-X::Syntax::Variable::BadType	$	type	1	Mu
-X::Syntax::Variable::BadType	$	pos	1	Any
-X::Syntax::Variable::BadType	$	filename	1	Any
-X::Syntax::Variable::BadType	$	line	1	Any
-X::Syntax::Variable::BadType	$	directive-filename	1	Any
-X::Syntax::Variable::BadType	$	column	1	Any
-X::Syntax::Variable::BadType	@	modules	1	
-X::Syntax::Variable::BadType	$	is-compile-time	1	Any
-X::Syntax::Variable::BadType	$	pre	1	Any
-X::Syntax::Variable::BadType	$	post	1	Any
-X::Syntax::Variable::BadType	@	highexpect	1	
-X::Syntax::Variable::ConflictingTypes	$	outer	1	Mu
-X::Syntax::Variable::ConflictingTypes	$	inner	1	Mu
-X::Syntax::Variable::ConflictingTypes	$	pos	1	Any
-X::Syntax::Variable::ConflictingTypes	$	filename	1	Any
-X::Syntax::Variable::ConflictingTypes	$	line	1	Any
-X::Syntax::Variable::ConflictingTypes	$	directive-filename	1	Any
-X::Syntax::Variable::ConflictingTypes	$	column	1	Any
-X::Syntax::Variable::ConflictingTypes	@	modules	1	
-X::Syntax::Variable::ConflictingTypes	$	is-compile-time	1	Any
-X::Syntax::Variable::ConflictingTypes	$	pre	1	Any
-X::Syntax::Variable::ConflictingTypes	$	post	1	Any
-X::Syntax::Variable::ConflictingTypes	@	highexpect	1	
-X::Syntax::Variable::IndirectDeclaration	$	pos	1	Any
-X::Syntax::Variable::IndirectDeclaration	$	filename	1	Any
-X::Syntax::Variable::IndirectDeclaration	$	line	1	Any
-X::Syntax::Variable::IndirectDeclaration	$	directive-filename	1	Any
-X::Syntax::Variable::IndirectDeclaration	$	column	1	Any
-X::Syntax::Variable::IndirectDeclaration	@	modules	1	
-X::Syntax::Variable::IndirectDeclaration	$	is-compile-time	1	Any
-X::Syntax::Variable::IndirectDeclaration	$	pre	1	Any
-X::Syntax::Variable::IndirectDeclaration	$	post	1	Any
-X::Syntax::Variable::IndirectDeclaration	@	highexpect	1	
-X::Syntax::Variable::Initializer	$	name	1	Any
-X::Syntax::Variable::Initializer	$	pos	1	Any
-X::Syntax::Variable::Initializer	$	filename	1	Any
-X::Syntax::Variable::Initializer	$	line	1	Any
-X::Syntax::Variable::Initializer	$	directive-filename	1	Any
-X::Syntax::Variable::Initializer	$	column	1	Any
-X::Syntax::Variable::Initializer	@	modules	1	
-X::Syntax::Variable::Initializer	$	is-compile-time	1	Any
-X::Syntax::Variable::Initializer	$	pre	1	Any
-X::Syntax::Variable::Initializer	$	post	1	Any
-X::Syntax::Variable::Initializer	@	highexpect	1	
-X::Syntax::Variable::Match	$	pos	1	Any
-X::Syntax::Variable::Match	$	filename	1	Any
-X::Syntax::Variable::Match	$	line	1	Any
-X::Syntax::Variable::Match	$	directive-filename	1	Any
-X::Syntax::Variable::Match	$	column	1	Any
-X::Syntax::Variable::Match	@	modules	1	
-X::Syntax::Variable::Match	$	is-compile-time	1	Any
-X::Syntax::Variable::Match	$	pre	1	Any
-X::Syntax::Variable::Match	$	post	1	Any
-X::Syntax::Variable::Match	@	highexpect	1	
-X::Syntax::Variable::MissingInitializer	$	what	1	Any
-X::Syntax::Variable::MissingInitializer	$	type	1	Any
-X::Syntax::Variable::MissingInitializer	$	implicit	1	Any
-X::Syntax::Variable::MissingInitializer	$	maybe	1	Any
-X::Syntax::Variable::MissingInitializer	$	pos	1	Any
-X::Syntax::Variable::MissingInitializer	$	filename	1	Any
-X::Syntax::Variable::MissingInitializer	$	line	1	Any
-X::Syntax::Variable::MissingInitializer	$	directive-filename	1	Any
-X::Syntax::Variable::MissingInitializer	$	column	1	Any
-X::Syntax::Variable::MissingInitializer	@	modules	1	
-X::Syntax::Variable::MissingInitializer	$	is-compile-time	1	Any
-X::Syntax::Variable::MissingInitializer	$	pre	1	Any
-X::Syntax::Variable::MissingInitializer	$	post	1	Any
-X::Syntax::Variable::MissingInitializer	@	highexpect	1	
-X::Syntax::Variable::Numeric	$	what	1	Any
-X::Syntax::Variable::Numeric	$	pos	1	Any
-X::Syntax::Variable::Numeric	$	filename	1	Any
-X::Syntax::Variable::Numeric	$	line	1	Any
-X::Syntax::Variable::Numeric	$	directive-filename	1	Any
-X::Syntax::Variable::Numeric	$	column	1	Any
-X::Syntax::Variable::Numeric	@	modules	1	
-X::Syntax::Variable::Numeric	$	is-compile-time	1	Any
-X::Syntax::Variable::Numeric	$	pre	1	Any
-X::Syntax::Variable::Numeric	$	post	1	Any
-X::Syntax::Variable::Numeric	@	highexpect	1	
-X::Syntax::Variable::SignatureAssignment	$	pos	1	Any
-X::Syntax::Variable::SignatureAssignment	$	filename	1	Any
-X::Syntax::Variable::SignatureAssignment	$	line	1	Any
-X::Syntax::Variable::SignatureAssignment	$	directive-filename	1	Any
-X::Syntax::Variable::SignatureAssignment	$	column	1	Any
-X::Syntax::Variable::SignatureAssignment	@	modules	1	
-X::Syntax::Variable::SignatureAssignment	$	is-compile-time	1	Any
-X::Syntax::Variable::SignatureAssignment	$	pre	1	Any
-X::Syntax::Variable::SignatureAssignment	$	post	1	Any
-X::Syntax::Variable::SignatureAssignment	@	highexpect	1	
-X::Syntax::Variable::SignatureWithoutInitializer	$	pos	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	$	filename	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	$	line	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	$	directive-filename	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	$	column	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	@	modules	1	
-X::Syntax::Variable::SignatureWithoutInitializer	$	is-compile-time	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	$	pre	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	$	post	1	Any
-X::Syntax::Variable::SignatureWithoutInitializer	@	highexpect	1	
-X::Syntax::Variable::Twigil	$	what	1	Any
-X::Syntax::Variable::Twigil	$	name	1	Any
-X::Syntax::Variable::Twigil	$	twigil	1	Any
-X::Syntax::Variable::Twigil	$	scope	1	Any
-X::Syntax::Variable::Twigil	$	additional	1	Any
-X::Syntax::Variable::Twigil	$	pos	1	Any
-X::Syntax::Variable::Twigil	$	filename	1	Any
-X::Syntax::Variable::Twigil	$	line	1	Any
-X::Syntax::Variable::Twigil	$	directive-filename	1	Any
-X::Syntax::Variable::Twigil	$	column	1	Any
-X::Syntax::Variable::Twigil	@	modules	1	
-X::Syntax::Variable::Twigil	$	is-compile-time	1	Any
-X::Syntax::Variable::Twigil	$	pre	1	Any
-X::Syntax::Variable::Twigil	$	post	1	Any
-X::Syntax::Variable::Twigil	@	highexpect	1	
-X::Syntax::VirtualCall	$	call	1	Any
-X::Syntax::VirtualCall	$	pos	1	Any
-X::Syntax::VirtualCall	$	filename	1	Any
-X::Syntax::VirtualCall	$	line	1	Any
-X::Syntax::VirtualCall	$	directive-filename	1	Any
-X::Syntax::VirtualCall	$	column	1	Any
-X::Syntax::VirtualCall	@	modules	1	
-X::Syntax::VirtualCall	$	is-compile-time	1	Any
-X::Syntax::VirtualCall	$	pre	1	Any
-X::Syntax::VirtualCall	$	post	1	Any
-X::Syntax::VirtualCall	@	highexpect	1	
-X::Syntax::WithoutElse	$	keyword	1	Any
-X::Syntax::WithoutElse	$	pos	1	Any
-X::Syntax::WithoutElse	$	filename	1	Any
-X::Syntax::WithoutElse	$	line	1	Any
-X::Syntax::WithoutElse	$	directive-filename	1	Any
-X::Syntax::WithoutElse	$	column	1	Any
-X::Syntax::WithoutElse	@	modules	1	
-X::Syntax::WithoutElse	$	is-compile-time	1	Any
-X::Syntax::WithoutElse	$	pre	1	Any
-X::Syntax::WithoutElse	$	post	1	Any
-X::Syntax::WithoutElse	@	highexpect	1	
-X::Temporal::InvalidFormat	$	invalid-str	1	Any
-X::Temporal::InvalidFormat	$	target	1	Any
-X::Temporal::InvalidFormat	$	format	1	Any
-X::TooLateForREPR	$	type	1	Any
-X::TooManyDimensions	$	operation	1	Any
-X::TooManyDimensions	$	got-dimensions	1	Any
-X::TooManyDimensions	$	needed-dimensions	1	Any
-X::TooManyDimensions	$	aggregate	1	Any
-X::Trait::Invalid	$	name	1	Any
-X::Trait::Invalid	$	reason	1	Any
-X::Trait::Invalid	$	type	1	Any
-X::Trait::Invalid	$	subtype	1	Any
-X::Trait::Invalid	$	declaring	1	Any
-X::Trait::NotOnNative	$	native	1	Any
-X::Trait::NotOnNative	$	type	1	Any
-X::Trait::NotOnNative	$	subtype	1	Any
-X::Trait::NotOnNative	$	declaring	1	Any
-X::Trait::Scope	$	scope	1	Any
-X::Trait::Scope	$	supported	1	Any
-X::Trait::Scope	$	type	1	Any
-X::Trait::Scope	$	subtype	1	Any
-X::Trait::Scope	$	declaring	1	Any
-X::Trait::Unknown	$	type	1	Any
-X::Trait::Unknown	$	subtype	1	Any
-X::Trait::Unknown	$	declaring	1	Any
-X::TypeCheck	$	operation	1	Any
-X::TypeCheck	$	got	0	Nil
-X::TypeCheck	$	expected	0	Nil
-X::TypeCheck::Argument	$	protoguilt	1	Any
-X::TypeCheck::Argument	@	arguments	1	
-X::TypeCheck::Argument	$	objname	1	Any
-X::TypeCheck::Argument	$	signature	1	Any
-X::TypeCheck::Assignment	$	desc	1	Mu
-X::TypeCheck::Assignment	$	symbol	1	Any
-X::TypeCheck::Attribute::Default	$	name	1	str
-X::TypeCheck::Attribute::Default	$	pos	1	Any
-X::TypeCheck::Attribute::Default	$	filename	1	Any
-X::TypeCheck::Attribute::Default	$	line	1	Any
-X::TypeCheck::Attribute::Default	$	directive-filename	1	Any
-X::TypeCheck::Attribute::Default	$	column	1	Any
-X::TypeCheck::Attribute::Default	@	modules	1	
-X::TypeCheck::Attribute::Default	$	is-compile-time	1	Any
-X::TypeCheck::Attribute::Default	$	pre	1	Any
-X::TypeCheck::Attribute::Default	$	post	1	Any
-X::TypeCheck::Attribute::Default	@	highexpect	1	
-X::TypeCheck::Binding	$	symbol	1	Any
-X::TypeCheck::Binding::Parameter	$	parameter	1	Parameter
-X::TypeCheck::Binding::Parameter	$	constraint	1	Bool
-X::TypeCheck::Binding::Parameter	$	what	1	Str
-X::TypeCheck::Binding::Parameter	$	omitted	1	Bool
-X::TypeCheck::Splice	$	action	1	Any
-X::TypeCheck::Splice	$	pos	1	Any
-X::TypeCheck::Splice	$	filename	1	Any
-X::TypeCheck::Splice	$	line	1	Any
-X::TypeCheck::Splice	$	directive-filename	1	Any
-X::TypeCheck::Splice	$	column	1	Any
-X::TypeCheck::Splice	@	modules	1	
-X::TypeCheck::Splice	$	is-compile-time	1	Any
-X::TypeCheck::Splice	$	pre	1	Any
-X::TypeCheck::Splice	$	post	1	Any
-X::TypeCheck::Splice	@	highexpect	1	
-X::Undeclared	$	what	1	Any
-X::Undeclared	$	symbol	1	Any
-X::Undeclared	@	suggestions	1	
-X::Undeclared	$	pos	1	Any
-X::Undeclared	$	filename	1	Any
-X::Undeclared	$	line	1	Any
-X::Undeclared	$	directive-filename	1	Any
-X::Undeclared	$	column	1	Any
-X::Undeclared	@	modules	1	
-X::Undeclared	$	is-compile-time	1	Any
-X::Undeclared	$	pre	1	Any
-X::Undeclared	$	post	1	Any
-X::Undeclared	@	highexpect	1	
-X::Undeclared::Symbols	%	post_types	1	
-X::Undeclared::Symbols	%	unk_types	1	
-X::Undeclared::Symbols	%	unk_routines	1	
-X::Undeclared::Symbols	%	routine_suggestion	1	
-X::Undeclared::Symbols	%	type_suggestion	1	
-X::Undeclared::Symbols	$	pos	1	Any
-X::Undeclared::Symbols	$	filename	1	Any
-X::Undeclared::Symbols	$	line	1	Any
-X::Undeclared::Symbols	$	directive-filename	1	Any
-X::Undeclared::Symbols	$	column	1	Any
-X::Undeclared::Symbols	@	modules	1	
-X::Undeclared::Symbols	$	is-compile-time	1	Any
-X::Undeclared::Symbols	$	pre	1	Any
-X::Undeclared::Symbols	$	post	1	Any
-X::Undeclared::Symbols	@	highexpect	1	
-X::UnitScope::Invalid	$	what	1	Any
-X::UnitScope::Invalid	$	where	1	Any
-X::UnitScope::Invalid	$	suggestion	1	Str
-X::UnitScope::Invalid	$	pos	1	Any
-X::UnitScope::Invalid	$	filename	1	Any
-X::UnitScope::Invalid	$	line	1	Any
-X::UnitScope::Invalid	$	directive-filename	1	Any
-X::UnitScope::Invalid	$	column	1	Any
-X::UnitScope::Invalid	@	modules	1	
-X::UnitScope::Invalid	$	is-compile-time	1	Any
-X::UnitScope::Invalid	$	pre	1	Any
-X::UnitScope::Invalid	$	post	1	Any
-X::UnitScope::Invalid	@	highexpect	1	
-X::UnitScope::MustHaveUnit	$	what	1	Any
-X::UnitScope::MustHaveUnit	$	pos	1	Any
-X::UnitScope::MustHaveUnit	$	filename	1	Any
-X::UnitScope::MustHaveUnit	$	line	1	Any
-X::UnitScope::MustHaveUnit	$	directive-filename	1	Any
-X::UnitScope::MustHaveUnit	$	column	1	Any
-X::UnitScope::MustHaveUnit	@	modules	1	
-X::UnitScope::MustHaveUnit	$	is-compile-time	1	Any
-X::UnitScope::MustHaveUnit	$	pre	1	Any
-X::UnitScope::MustHaveUnit	$	post	1	Any
-X::UnitScope::MustHaveUnit	@	highexpect	1	
-X::UnitScope::TooLate	$	what	1	Any
-X::UnitScope::TooLate	$	pos	1	Any
-X::UnitScope::TooLate	$	filename	1	Any
-X::UnitScope::TooLate	$	line	1	Any
-X::UnitScope::TooLate	$	directive-filename	1	Any
-X::UnitScope::TooLate	$	column	1	Any
-X::UnitScope::TooLate	@	modules	1	
-X::UnitScope::TooLate	$	is-compile-time	1	Any
-X::UnitScope::TooLate	$	pre	1	Any
-X::UnitScope::TooLate	$	post	1	Any
-X::UnitScope::TooLate	@	highexpect	1	
-X::Useless::Declaration	$	name	1	Any
-X::Useless::Declaration	$	where	1	Any
-X::Useless::Declaration	$	pos	1	Any
-X::Useless::Declaration	$	filename	1	Any
-X::Useless::Declaration	$	line	1	Any
-X::Useless::Declaration	$	directive-filename	1	Any
-X::Useless::Declaration	$	column	1	Any
-X::Useless::Declaration	@	modules	1	
-X::Useless::Declaration	$	is-compile-time	1	Any
-X::Useless::Declaration	$	pre	1	Any
-X::Useless::Declaration	$	post	1	Any
-X::Useless::Declaration	@	highexpect	1	
-X::Value::Dynamic	$	what	1	Any
-X::Value::Dynamic	$	pos	1	Any
-X::Value::Dynamic	$	filename	1	Any
-X::Value::Dynamic	$	line	1	Any
-X::Value::Dynamic	$	directive-filename	1	Any
-X::Value::Dynamic	$	column	1	Any
-X::Value::Dynamic	@	modules	1	
-X::Value::Dynamic	$	is-compile-time	1	Any
-X::Value::Dynamic	$	pre	1	Any
-X::Value::Dynamic	$	post	1	Any
-X::Value::Dynamic	@	highexpect	1	
-X::Whatever::ShortCircuit	$	what	1	Any
-X::Whatever::ShortCircuit	$	operator	1	Any
-X::Worry::P5::LeadingZero	$	value	1	Any
-X::Worry::Precedence::Range	$	action	1	Any
-CX::Warn	$	message	1	Any
+X::AdHoc	$	payload	1	Nil	Str:Unexplained error
+X::Adverb	$	what	1	Any	
+X::Adverb	$	source	1	Any	
+X::Adverb	@	unexpected	1		
+X::Adverb	@	nogo	1		
+X::Anon::Augment	$	package-kind	1	Any	
+X::Anon::Augment	$	pos	1	Any	
+X::Anon::Augment	$	filename	1	Any	
+X::Anon::Augment	$	line	1	Any	
+X::Anon::Augment	$	directive-filename	1	Any	
+X::Anon::Augment	$	column	1	Any	
+X::Anon::Augment	@	modules	1		
+X::Anon::Augment	$	is-compile-time	1	Any	Bool:False
+X::Anon::Augment	$	pre	1	Any	
+X::Anon::Augment	$	post	1	Any	
+X::Anon::Augment	@	highexpect	1		
+X::Anon::Multi	$	multiness	1	Any	
+X::Anon::Multi	$	routine-type	1	Any	Str:routine
+X::Anon::Multi	$	pos	1	Any	
+X::Anon::Multi	$	filename	1	Any	
+X::Anon::Multi	$	line	1	Any	
+X::Anon::Multi	$	directive-filename	1	Any	
+X::Anon::Multi	$	column	1	Any	
+X::Anon::Multi	@	modules	1		
+X::Anon::Multi	$	is-compile-time	1	Any	Bool:False
+X::Anon::Multi	$	pre	1	Any	
+X::Anon::Multi	$	post	1	Any	
+X::Anon::Multi	@	highexpect	1		
+X::ArrayShapeMismatch	$	action	1	Any	Str:assign
+X::ArrayShapeMismatch	$	target-shape	1	Any	
+X::ArrayShapeMismatch	$	source-shape	1	Any	
+X::Assignment::RO	$	value	1	Mu	
+X::Assignment::RO::Comp	$	variable	1	Any	
+X::Assignment::RO::Comp	$	pos	1	Any	
+X::Assignment::RO::Comp	$	filename	1	Any	
+X::Assignment::RO::Comp	$	line	1	Any	
+X::Assignment::RO::Comp	$	directive-filename	1	Any	
+X::Assignment::RO::Comp	$	column	1	Any	
+X::Assignment::RO::Comp	@	modules	1		
+X::Assignment::RO::Comp	$	is-compile-time	1	Any	Bool:False
+X::Assignment::RO::Comp	$	pre	1	Any	
+X::Assignment::RO::Comp	$	post	1	Any	
+X::Assignment::RO::Comp	@	highexpect	1		
+X::Assignment::ToShaped	$	shape	1	Any	
+X::Attribute::NoPackage	$	name	1	Any	
+X::Attribute::NoPackage	$	pos	1	Any	
+X::Attribute::NoPackage	$	filename	1	Any	
+X::Attribute::NoPackage	$	line	1	Any	
+X::Attribute::NoPackage	$	directive-filename	1	Any	
+X::Attribute::NoPackage	$	column	1	Any	
+X::Attribute::NoPackage	@	modules	1		
+X::Attribute::NoPackage	$	is-compile-time	1	Any	Bool:False
+X::Attribute::NoPackage	$	pre	1	Any	
+X::Attribute::NoPackage	$	post	1	Any	
+X::Attribute::NoPackage	@	highexpect	1		
+X::Attribute::Package	$	package-kind	1	Any	
+X::Attribute::Package	$	name	1	Any	
+X::Attribute::Package	$	pos	1	Any	
+X::Attribute::Package	$	filename	1	Any	
+X::Attribute::Package	$	line	1	Any	
+X::Attribute::Package	$	directive-filename	1	Any	
+X::Attribute::Package	$	column	1	Any	
+X::Attribute::Package	@	modules	1		
+X::Attribute::Package	$	is-compile-time	1	Any	Bool:False
+X::Attribute::Package	$	pre	1	Any	
+X::Attribute::Package	$	post	1	Any	
+X::Attribute::Package	@	highexpect	1		
+X::Attribute::Required	$	name	1	Any	
+X::Attribute::Required	$	why	1	Any	
+X::Attribute::Scope::Package	$	scope	1	Any	
+X::Attribute::Scope::Package	$	allowed	1	Any	
+X::Attribute::Scope::Package	$	disallowed	1	Any	
+X::Attribute::Scope::Package	$	pos	1	Any	
+X::Attribute::Scope::Package	$	filename	1	Any	
+X::Attribute::Scope::Package	$	line	1	Any	
+X::Attribute::Scope::Package	$	directive-filename	1	Any	
+X::Attribute::Scope::Package	$	column	1	Any	
+X::Attribute::Scope::Package	@	modules	1		
+X::Attribute::Scope::Package	$	is-compile-time	1	Any	Bool:False
+X::Attribute::Scope::Package	$	pre	1	Any	
+X::Attribute::Scope::Package	$	post	1	Any	
+X::Attribute::Scope::Package	@	highexpect	1		
+X::Attribute::Undeclared	$	package-kind	1	Any	
+X::Attribute::Undeclared	$	package-name	1	Any	
+X::Augment::NoSuchType	$	package-kind	1	Any	
+X::Augment::NoSuchType	$	package	1	Any	
+X::Augment::NoSuchType	$	pos	1	Any	
+X::Augment::NoSuchType	$	filename	1	Any	
+X::Augment::NoSuchType	$	line	1	Any	
+X::Augment::NoSuchType	$	directive-filename	1	Any	
+X::Augment::NoSuchType	$	column	1	Any	
+X::Augment::NoSuchType	@	modules	1		
+X::Augment::NoSuchType	$	is-compile-time	1	Any	Bool:False
+X::Augment::NoSuchType	$	pre	1	Any	
+X::Augment::NoSuchType	$	post	1	Any	
+X::Augment::NoSuchType	@	highexpect	1		
+X::Backslash::NonVariableDollar	$	pos	1	Any	
+X::Backslash::NonVariableDollar	$	filename	1	Any	
+X::Backslash::NonVariableDollar	$	line	1	Any	
+X::Backslash::NonVariableDollar	$	directive-filename	1	Any	
+X::Backslash::NonVariableDollar	$	column	1	Any	
+X::Backslash::NonVariableDollar	@	modules	1		
+X::Backslash::NonVariableDollar	$	is-compile-time	1	Any	Bool:False
+X::Backslash::NonVariableDollar	$	pre	1	Any	
+X::Backslash::NonVariableDollar	$	post	1	Any	
+X::Backslash::NonVariableDollar	@	highexpect	1		
+X::Backslash::UnrecognizedSequence	$	sequence	1	Any	
+X::Backslash::UnrecognizedSequence	$	suggestion	1	Any	
+X::Backslash::UnrecognizedSequence	$	pos	1	Any	
+X::Backslash::UnrecognizedSequence	$	filename	1	Any	
+X::Backslash::UnrecognizedSequence	$	line	1	Any	
+X::Backslash::UnrecognizedSequence	$	directive-filename	1	Any	
+X::Backslash::UnrecognizedSequence	$	column	1	Any	
+X::Backslash::UnrecognizedSequence	@	modules	1		
+X::Backslash::UnrecognizedSequence	$	is-compile-time	1	Any	Bool:False
+X::Backslash::UnrecognizedSequence	$	pre	1	Any	
+X::Backslash::UnrecognizedSequence	$	post	1	Any	
+X::Backslash::UnrecognizedSequence	@	highexpect	1		
+X::Bind	$	target	1	Any	
+X::Bind::NativeType	$	name	1	Any	
+X::Bind::NativeType	$	pos	1	Any	
+X::Bind::NativeType	$	filename	1	Any	
+X::Bind::NativeType	$	line	1	Any	
+X::Bind::NativeType	$	directive-filename	1	Any	
+X::Bind::NativeType	$	column	1	Any	
+X::Bind::NativeType	@	modules	1		
+X::Bind::NativeType	$	is-compile-time	1	Any	Bool:False
+X::Bind::NativeType	$	pre	1	Any	
+X::Bind::NativeType	$	post	1	Any	
+X::Bind::NativeType	@	highexpect	1		
+X::Bind::Rebind	$	is-type	1	Any	
+X::Bind::Slice	$	type	1	Any	
+X::Buf::AsStr	$	object	1	Any	
+X::Buf::AsStr	$	method	1	Any	
+X::Buf::Pack	$	directive	1	Any	
+X::Buf::Pack::NonASCII	$	char	1	Any	
+X::Cannot::Capture	$	what	1	Any	
+X::Cannot::Empty	$	action	1	Any	
+X::Cannot::Empty	$	what	1	Any	
+X::Cannot::Lazy	$	action	1	Any	
+X::Cannot::Lazy	$	what	1	Any	
+X::Cannot::Map	$	what	1	Any	Str:(<unknown type>)
+X::Cannot::Map	$	using	1	Any	Str:(<an unknown expression>)
+X::Cannot::Map	$	suggestion	1	Any	
+X::Cannot::New	$	class	1	Mu	
+X::Channel::ReceiveOnClosed	$	channel	1	Any	
+X::Channel::SendOnClosed	$	channel	1	Any	
+X::Coerce	$	target-type	1	Mu	
+X::Coerce	$	from-type	1	Mu	
+X::Coerce::Impossible	$	hint	1	Any	
+X::Coerce::Role	$	exception	0	Mu	
+X::Comp::AdHoc	$	pos	1	Any	
+X::Comp::AdHoc	$	filename	1	Any	
+X::Comp::AdHoc	$	line	1	Any	
+X::Comp::AdHoc	$	directive-filename	1	Any	
+X::Comp::AdHoc	$	column	1	Any	
+X::Comp::AdHoc	@	modules	1		
+X::Comp::AdHoc	$	is-compile-time	1	Any	Bool:False
+X::Comp::AdHoc	$	pre	1	Any	
+X::Comp::AdHoc	$	post	1	Any	
+X::Comp::AdHoc	@	highexpect	1		
+X::Comp::BeginTime	$	use-case	1	str	
+X::Comp::BeginTime	$	exception	1	Any	
+X::Comp::BeginTime	$	pos	1	Any	
+X::Comp::BeginTime	$	filename	1	Any	
+X::Comp::BeginTime	$	line	1	Any	
+X::Comp::BeginTime	$	directive-filename	1	Any	
+X::Comp::BeginTime	$	column	1	Any	
+X::Comp::BeginTime	@	modules	1		
+X::Comp::BeginTime	$	is-compile-time	1	Any	Bool:False
+X::Comp::BeginTime	$	pre	1	Any	
+X::Comp::BeginTime	$	post	1	Any	
+X::Comp::BeginTime	@	highexpect	1		
+X::Comp::FailGoal	$	dba	1	Any	
+X::Comp::FailGoal	$	goal	1	Any	
+X::Comp::FailGoal	$	line-real	1	Any	
+X::Comp::FailGoal	$	filename-real	1	Any	
+X::Comp::FailGoal	$	pos	1	Any	
+X::Comp::FailGoal	$	filename	1	Any	
+X::Comp::FailGoal	$	line	1	Any	
+X::Comp::FailGoal	$	directive-filename	1	Any	
+X::Comp::FailGoal	$	column	1	Any	
+X::Comp::FailGoal	@	modules	1		
+X::Comp::FailGoal	$	is-compile-time	1	Any	Bool:False
+X::Comp::FailGoal	$	pre	1	Any	
+X::Comp::FailGoal	$	post	1	Any	
+X::Comp::FailGoal	@	highexpect	1		
+X::Comp::Group	$	panic	1	Any	
+X::Comp::Group	@	sorrows	1		
+X::Comp::Group	@	worries	1		
+X::Comp::NYI	$	pos	1	Any	
+X::Comp::NYI	$	filename	1	Any	
+X::Comp::NYI	$	line	1	Any	
+X::Comp::NYI	$	directive-filename	1	Any	
+X::Comp::NYI	$	column	1	Any	
+X::Comp::NYI	@	modules	1		
+X::Comp::NYI	$	is-compile-time	1	Any	Bool:False
+X::Comp::NYI	$	pre	1	Any	
+X::Comp::NYI	$	post	1	Any	
+X::Comp::NYI	@	highexpect	1		
+X::Comp::Trait::Invalid	$	pos	1	Any	
+X::Comp::Trait::Invalid	$	filename	1	Any	
+X::Comp::Trait::Invalid	$	line	1	Any	
+X::Comp::Trait::Invalid	$	directive-filename	1	Any	
+X::Comp::Trait::Invalid	$	column	1	Any	
+X::Comp::Trait::Invalid	@	modules	1		
+X::Comp::Trait::Invalid	$	is-compile-time	1	Any	Bool:False
+X::Comp::Trait::Invalid	$	pre	1	Any	
+X::Comp::Trait::Invalid	$	post	1	Any	
+X::Comp::Trait::Invalid	@	highexpect	1		
+X::Comp::Trait::NotOnNative	$	pos	1	Any	
+X::Comp::Trait::NotOnNative	$	filename	1	Any	
+X::Comp::Trait::NotOnNative	$	line	1	Any	
+X::Comp::Trait::NotOnNative	$	directive-filename	1	Any	
+X::Comp::Trait::NotOnNative	$	column	1	Any	
+X::Comp::Trait::NotOnNative	@	modules	1		
+X::Comp::Trait::NotOnNative	$	is-compile-time	1	Any	Bool:False
+X::Comp::Trait::NotOnNative	$	pre	1	Any	
+X::Comp::Trait::NotOnNative	$	post	1	Any	
+X::Comp::Trait::NotOnNative	@	highexpect	1		
+X::Comp::Trait::Scope	$	pos	1	Any	
+X::Comp::Trait::Scope	$	filename	1	Any	
+X::Comp::Trait::Scope	$	line	1	Any	
+X::Comp::Trait::Scope	$	directive-filename	1	Any	
+X::Comp::Trait::Scope	$	column	1	Any	
+X::Comp::Trait::Scope	@	modules	1		
+X::Comp::Trait::Scope	$	is-compile-time	1	Any	Bool:False
+X::Comp::Trait::Scope	$	pre	1	Any	
+X::Comp::Trait::Scope	$	post	1	Any	
+X::Comp::Trait::Scope	@	highexpect	1		
+X::Comp::Trait::Unknown	$	pos	1	Any	
+X::Comp::Trait::Unknown	$	filename	1	Any	
+X::Comp::Trait::Unknown	$	line	1	Any	
+X::Comp::Trait::Unknown	$	directive-filename	1	Any	
+X::Comp::Trait::Unknown	$	column	1	Any	
+X::Comp::Trait::Unknown	@	modules	1		
+X::Comp::Trait::Unknown	$	is-compile-time	1	Any	Bool:False
+X::Comp::Trait::Unknown	$	pre	1	Any	
+X::Comp::Trait::Unknown	$	post	1	Any	
+X::Comp::Trait::Unknown	@	highexpect	1		
+X::Comp::TypeCheck	$	pos	1	Any	
+X::Comp::TypeCheck	$	filename	1	Any	
+X::Comp::TypeCheck	$	line	1	Any	
+X::Comp::TypeCheck	$	directive-filename	1	Any	
+X::Comp::TypeCheck	$	column	1	Any	
+X::Comp::TypeCheck	@	modules	1		
+X::Comp::TypeCheck	$	is-compile-time	1	Any	Bool:False
+X::Comp::TypeCheck	$	pre	1	Any	
+X::Comp::TypeCheck	$	post	1	Any	
+X::Comp::TypeCheck	@	highexpect	1		
+X::Comp::WheneverOutOfScope	$	pos	1	Any	
+X::Comp::WheneverOutOfScope	$	filename	1	Any	
+X::Comp::WheneverOutOfScope	$	line	1	Any	
+X::Comp::WheneverOutOfScope	$	directive-filename	1	Any	
+X::Comp::WheneverOutOfScope	$	column	1	Any	
+X::Comp::WheneverOutOfScope	@	modules	1		
+X::Comp::WheneverOutOfScope	$	is-compile-time	1	Any	Bool:False
+X::Comp::WheneverOutOfScope	$	pre	1	Any	
+X::Comp::WheneverOutOfScope	$	post	1	Any	
+X::Comp::WheneverOutOfScope	@	highexpect	1		
+X::CompUnit::UnsatisfiedDependency	$	specification	1	CompUnit::DependencySpecification	
+X::Composition::NotComposable	$	target-name	1	Any	
+X::Composition::NotComposable	$	composer	1	Any	
+X::Composition::NotComposable	$	pos	1	Any	
+X::Composition::NotComposable	$	filename	1	Any	
+X::Composition::NotComposable	$	line	1	Any	
+X::Composition::NotComposable	$	directive-filename	1	Any	
+X::Composition::NotComposable	$	column	1	Any	
+X::Composition::NotComposable	@	modules	1		
+X::Composition::NotComposable	$	is-compile-time	1	Any	Bool:False
+X::Composition::NotComposable	$	pre	1	Any	
+X::Composition::NotComposable	$	post	1	Any	
+X::Composition::NotComposable	@	highexpect	1		
+X::Constructor::BadType	$	type	1	Mu	
+X::Constructor::Positional	$	type	1	Any	
+X::ControlFlow	$	illegal	1	Any	
+X::ControlFlow	$	enclosing	1	Any	
+X::ControlFlow	$	backtrace	1	Any	
+X::ControlFlow::Return	$	out-of-dynamic-scope	1	Bool	
+X::DateTime::InvalidDeltaUnit	$	unit	1	Any	
+X::Declaration::OurScopeInRole	$	declaration	1	Any	
+X::Declaration::OurScopeInRole	$	pos	1	Any	
+X::Declaration::OurScopeInRole	$	filename	1	Any	
+X::Declaration::OurScopeInRole	$	line	1	Any	
+X::Declaration::OurScopeInRole	$	directive-filename	1	Any	
+X::Declaration::OurScopeInRole	$	column	1	Any	
+X::Declaration::OurScopeInRole	@	modules	1		
+X::Declaration::OurScopeInRole	$	is-compile-time	1	Any	Bool:False
+X::Declaration::OurScopeInRole	$	pre	1	Any	
+X::Declaration::OurScopeInRole	$	post	1	Any	
+X::Declaration::OurScopeInRole	@	highexpect	1		
+X::Declaration::Scope	$	scope	1	Any	
+X::Declaration::Scope	$	declaration	1	Any	
+X::Declaration::Scope	$	pos	1	Any	
+X::Declaration::Scope	$	filename	1	Any	
+X::Declaration::Scope	$	line	1	Any	
+X::Declaration::Scope	$	directive-filename	1	Any	
+X::Declaration::Scope	$	column	1	Any	
+X::Declaration::Scope	@	modules	1		
+X::Declaration::Scope	$	is-compile-time	1	Any	Bool:False
+X::Declaration::Scope	$	pre	1	Any	
+X::Declaration::Scope	$	post	1	Any	
+X::Declaration::Scope	@	highexpect	1		
+X::Delete	$	target	1	Any	
+X::Does::TypeObject	$	type	1	Mu	
+X::Does::TypeObject	%	nameds	1		
+X::Dynamic::NotFound	$	name	1	Any	
+X::Dynamic::Package	$	symbol	1	Any	
+X::Dynamic::Package	$	pos	1	Any	
+X::Dynamic::Package	$	filename	1	Any	
+X::Dynamic::Package	$	line	1	Any	
+X::Dynamic::Package	$	directive-filename	1	Any	
+X::Dynamic::Package	$	column	1	Any	
+X::Dynamic::Package	@	modules	1		
+X::Dynamic::Package	$	is-compile-time	1	Any	Bool:False
+X::Dynamic::Package	$	pre	1	Any	
+X::Dynamic::Package	$	post	1	Any	
+X::Dynamic::Package	@	highexpect	1		
+X::Dynamic::Postdeclaration	$	symbol	1	Any	
+X::Dynamic::Postdeclaration	$	pos	1	Any	
+X::Dynamic::Postdeclaration	$	filename	1	Any	
+X::Dynamic::Postdeclaration	$	line	1	Any	
+X::Dynamic::Postdeclaration	$	directive-filename	1	Any	
+X::Dynamic::Postdeclaration	$	column	1	Any	
+X::Dynamic::Postdeclaration	@	modules	1		
+X::Dynamic::Postdeclaration	$	is-compile-time	1	Any	Bool:False
+X::Dynamic::Postdeclaration	$	pre	1	Any	
+X::Dynamic::Postdeclaration	$	post	1	Any	
+X::Dynamic::Postdeclaration	@	highexpect	1		
+X::EXPORTHOW::Conflict	$	declarator	1	Any	
+X::EXPORTHOW::Conflict	$	directive	1	Any	
+X::EXPORTHOW::Conflict	$	pos	1	Any	
+X::EXPORTHOW::Conflict	$	filename	1	Any	
+X::EXPORTHOW::Conflict	$	line	1	Any	
+X::EXPORTHOW::Conflict	$	directive-filename	1	Any	
+X::EXPORTHOW::Conflict	$	column	1	Any	
+X::EXPORTHOW::Conflict	@	modules	1		
+X::EXPORTHOW::Conflict	$	is-compile-time	1	Any	Bool:False
+X::EXPORTHOW::Conflict	$	pre	1	Any	
+X::EXPORTHOW::Conflict	$	post	1	Any	
+X::EXPORTHOW::Conflict	@	highexpect	1		
+X::EXPORTHOW::InvalidDirective	$	directive	1	Any	
+X::EXPORTHOW::InvalidDirective	$	pos	1	Any	
+X::EXPORTHOW::InvalidDirective	$	filename	1	Any	
+X::EXPORTHOW::InvalidDirective	$	line	1	Any	
+X::EXPORTHOW::InvalidDirective	$	directive-filename	1	Any	
+X::EXPORTHOW::InvalidDirective	$	column	1	Any	
+X::EXPORTHOW::InvalidDirective	@	modules	1		
+X::EXPORTHOW::InvalidDirective	$	is-compile-time	1	Any	Bool:False
+X::EXPORTHOW::InvalidDirective	$	pre	1	Any	
+X::EXPORTHOW::InvalidDirective	$	post	1	Any	
+X::EXPORTHOW::InvalidDirective	@	highexpect	1		
+X::EXPORTHOW::NothingToSupersede	$	declarator	1	Any	
+X::EXPORTHOW::NothingToSupersede	$	pos	1	Any	
+X::EXPORTHOW::NothingToSupersede	$	filename	1	Any	
+X::EXPORTHOW::NothingToSupersede	$	line	1	Any	
+X::EXPORTHOW::NothingToSupersede	$	directive-filename	1	Any	
+X::EXPORTHOW::NothingToSupersede	$	column	1	Any	
+X::EXPORTHOW::NothingToSupersede	@	modules	1		
+X::EXPORTHOW::NothingToSupersede	$	is-compile-time	1	Any	Bool:False
+X::EXPORTHOW::NothingToSupersede	$	pre	1	Any	
+X::EXPORTHOW::NothingToSupersede	$	post	1	Any	
+X::EXPORTHOW::NothingToSupersede	@	highexpect	1		
+X::Encoding::AlreadyRegistered	$	name	1	Any	
+X::Encoding::Unknown	$	name	1	Any	
+X::Enum::NoValue	$	type	1	Mu	
+X::Enum::NoValue	$	value	1	Any	
+X::Eval::NoSuchLang	$	lang	1	Any	
+X::Exhausted	$	what	1	Any	
+X::Exhausted	$	reason	1	Any	
+X::Experimental	$	feature	1	Any	
+X::Experimental	$	use	1	Any	
+X::Experimental	$	pos	1	Any	
+X::Experimental	$	filename	1	Any	
+X::Experimental	$	line	1	Any	
+X::Experimental	$	directive-filename	1	Any	
+X::Experimental	$	column	1	Any	
+X::Experimental	@	modules	1		
+X::Experimental	$	is-compile-time	1	Any	Bool:False
+X::Experimental	$	pre	1	Any	
+X::Experimental	$	post	1	Any	
+X::Experimental	@	highexpect	1		
+X::Export::NameClash	$	symbol	1	Any	
+X::Export::NameClash	$	pos	1	Any	
+X::Export::NameClash	$	filename	1	Any	
+X::Export::NameClash	$	line	1	Any	
+X::Export::NameClash	$	directive-filename	1	Any	
+X::Export::NameClash	$	column	1	Any	
+X::Export::NameClash	@	modules	1		
+X::Export::NameClash	$	is-compile-time	1	Any	Bool:False
+X::Export::NameClash	$	pre	1	Any	
+X::Export::NameClash	$	post	1	Any	
+X::Export::NameClash	@	highexpect	1		
+X::Hash::Store::OddNumber	$	found	1	Any	
+X::Hash::Store::OddNumber	$	last	1	Mu	
+X::HyperOp::Infinite	&	operator	1		
+X::HyperOp::Infinite	$	side	1	Any	
+X::HyperOp::NonDWIM	&	operator	1		
+X::HyperOp::NonDWIM	$	left-elems	1	Any	
+X::HyperOp::NonDWIM	$	right-elems	1	Any	
+X::HyperOp::NonDWIM	$	recursing	1	Any	
+X::IO::BinaryAndEncoding	$	os-error	1	Any	
+X::IO::BinaryAndEncoding	$	error-code	1	Any	
+X::IO::BinaryMode	$	trying	1	Any	
+X::IO::BinaryMode	$	os-error	1	Any	
+X::IO::BinaryMode	$	error-code	1	Any	
+X::IO::Chdir	$	path	1	Any	
+X::IO::Chdir	$	os-error	1	Any	
+X::IO::Chdir	$	error-code	1	Any	
+X::IO::Chmod	$	path	1	Any	
+X::IO::Chmod	$	mode	1	Any	
+X::IO::Chmod	$	os-error	1	Any	
+X::IO::Chmod	$	error-code	1	Any	
+X::IO::Chown	$	path	1	Any	
+X::IO::Chown	$	uid	1	Any	
+X::IO::Chown	$	gid	1	Any	
+X::IO::Chown	$	os-error	1	Any	
+X::IO::Chown	$	error-code	1	Any	
+X::IO::Closed	$	trying	1	Any	
+X::IO::Closed	$	os-error	1	Any	
+X::IO::Closed	$	error-code	1	Any	
+X::IO::Copy	$	from	1	Any	
+X::IO::Copy	$	to	1	Any	
+X::IO::Copy	$	os-error	1	Any	
+X::IO::Copy	$	error-code	1	Any	
+X::IO::Cwd	$	os-error	1	Any	
+X::IO::Cwd	$	error-code	1	Any	
+X::IO::Dir	$	path	1	Any	
+X::IO::Dir	$	os-error	1	Any	
+X::IO::Dir	$	error-code	1	Any	
+X::IO::Directory	$	path	1	Any	
+X::IO::Directory	$	trying	1	Any	
+X::IO::Directory	$	use	1	Any	
+X::IO::Directory	$	os-error	1	Any	
+X::IO::Directory	$	error-code	1	Any	
+X::IO::DoesNotExist	$	path	1	Any	
+X::IO::DoesNotExist	$	trying	1	Any	
+X::IO::DoesNotExist	$	os-error	1	Any	
+X::IO::DoesNotExist	$	error-code	1	Any	
+X::IO::Flush	$	os-error	1	Any	
+X::IO::Flush	$	error-code	1	Any	
+X::IO::Link	$	target	1	Any	
+X::IO::Link	$	name	1	Any	
+X::IO::Link	$	os-error	1	Any	
+X::IO::Link	$	error-code	1	Any	
+X::IO::Lock	$	lock-type	1	Any	
+X::IO::Lock	$	os-error	1	Any	
+X::IO::Lock	$	error-code	1	Any	
+X::IO::Mkdir	$	path	1	Any	
+X::IO::Mkdir	$	mode	1	Any	
+X::IO::Mkdir	$	os-error	1	Any	
+X::IO::Mkdir	$	error-code	1	Any	
+X::IO::Move	$	from	1	Any	
+X::IO::Move	$	to	1	Any	
+X::IO::Move	$	os-error	1	Any	
+X::IO::Move	$	error-code	1	Any	
+X::IO::NotAChild	$	path	1	Any	
+X::IO::NotAChild	$	child	1	Any	
+X::IO::NotAChild	$	os-error	1	Any	
+X::IO::NotAChild	$	error-code	1	Any	
+X::IO::NotAFile	$	path	1	Any	
+X::IO::NotAFile	$	trying	1	Any	
+X::IO::NotAFile	$	os-error	1	Any	
+X::IO::NotAFile	$	error-code	1	Any	
+X::IO::Null	$	os-error	1	Any	
+X::IO::Null	$	error-code	1	Any	
+X::IO::Rename	$	from	1	Any	
+X::IO::Rename	$	to	1	Any	
+X::IO::Rename	$	os-error	1	Any	
+X::IO::Rename	$	error-code	1	Any	
+X::IO::Resolve	$	path	1	Any	
+X::IO::Resolve	$	reason	1	Any	
+X::IO::Resolve	$	os-error	1	Any	
+X::IO::Resolve	$	error-code	1	Any	
+X::IO::Rmdir	$	path	1	Any	
+X::IO::Rmdir	$	os-error	1	Any	
+X::IO::Rmdir	$	error-code	1	Any	
+X::IO::Symlink	$	target	1	Any	
+X::IO::Symlink	$	name	1	Any	
+X::IO::Symlink	$	os-error	1	Any	
+X::IO::Symlink	$	error-code	1	Any	
+X::IO::Unknown	$	trying	1	Any	
+X::IO::Unknown	$	os-error	1	Any	
+X::IO::Unknown	$	error-code	1	Any	
+X::IO::Unlink	$	path	1	Any	
+X::IO::Unlink	$	os-error	1	Any	
+X::IO::Unlink	$	error-code	1	Any	
+X::IllegalDimensionInShape	$	dim	1	Any	
+X::IllegalOnFixedDimensionArray	$	operation	1	Any	
+X::Immutable	$	typename	1	Any	
+X::Immutable	$	method	1	Any	
+X::Import::MissingSymbols	$	from	1	Any	
+X::Import::MissingSymbols	@	missing	1		
+X::Import::NoSuchTag	$	source-package	1	Any	
+X::Import::NoSuchTag	$	tag	1	Any	
+X::Import::OnlystarProto	@	symbols	1		
+X::Import::OnlystarProto	$	source-package-name	1	Any	
+X::Import::OnlystarProto	$	pos	1	Any	
+X::Import::OnlystarProto	$	filename	1	Any	
+X::Import::OnlystarProto	$	line	1	Any	
+X::Import::OnlystarProto	$	directive-filename	1	Any	
+X::Import::OnlystarProto	$	column	1	Any	
+X::Import::OnlystarProto	@	modules	1		
+X::Import::OnlystarProto	$	is-compile-time	1	Any	Bool:False
+X::Import::OnlystarProto	$	pre	1	Any	
+X::Import::OnlystarProto	$	post	1	Any	
+X::Import::OnlystarProto	@	highexpect	1		
+X::Import::Positional	$	source-package	1	Any	
+X::Import::Redeclaration	@	symbols	1		
+X::Import::Redeclaration	$	source-package-name	1	Any	
+X::Import::Redeclaration	$	pos	1	Any	
+X::Import::Redeclaration	$	filename	1	Any	
+X::Import::Redeclaration	$	line	1	Any	
+X::Import::Redeclaration	$	directive-filename	1	Any	
+X::Import::Redeclaration	$	column	1	Any	
+X::Import::Redeclaration	@	modules	1		
+X::Import::Redeclaration	$	is-compile-time	1	Any	Bool:False
+X::Import::Redeclaration	$	pre	1	Any	
+X::Import::Redeclaration	$	post	1	Any	
+X::Import::Redeclaration	@	highexpect	1		
+X::Inheritance::NotComposed	$	child-name	1	Any	
+X::Inheritance::NotComposed	$	parent-name	1	Any	
+X::Inheritance::SelfInherit	$	name	1	Any	
+X::Inheritance::UnknownParent	$	child	1	Any	
+X::Inheritance::UnknownParent	$	parent	1	Any	
+X::Inheritance::UnknownParent	@	suggestions	1		
+X::Inheritance::Unsupported	$	child-typename	1	Any	
+X::Inheritance::Unsupported	$	parent	1	Any	
+X::Inheritance::Unsupported	$	pos	1	Any	
+X::Inheritance::Unsupported	$	filename	1	Any	
+X::Inheritance::Unsupported	$	line	1	Any	
+X::Inheritance::Unsupported	$	directive-filename	1	Any	
+X::Inheritance::Unsupported	$	column	1	Any	
+X::Inheritance::Unsupported	@	modules	1		
+X::Inheritance::Unsupported	$	is-compile-time	1	Any	Bool:False
+X::Inheritance::Unsupported	$	pre	1	Any	
+X::Inheritance::Unsupported	$	post	1	Any	
+X::Inheritance::Unsupported	@	highexpect	1		
+X::Invalid::ComputedValue	$	method	1	Any	
+X::Invalid::ComputedValue	$	name	1	Any	
+X::Invalid::ComputedValue	$	value	1	Any	
+X::Invalid::ComputedValue	$	reason	1	Any	
+X::Invalid::Value	$	method	1	Any	
+X::Invalid::Value	$	name	1	Any	
+X::Invalid::Value	$	value	1	Any	
+X::InvalidCodepoint	$	code	1	Any	
+X::InvalidType	$	typename	1	Any	
+X::InvalidType	@	suggestions	1		
+X::InvalidType	$	pos	1	Any	
+X::InvalidType	$	filename	1	Any	
+X::InvalidType	$	line	1	Any	
+X::InvalidType	$	directive-filename	1	Any	
+X::InvalidType	$	column	1	Any	
+X::InvalidType	@	modules	1		
+X::InvalidType	$	is-compile-time	1	Any	Bool:False
+X::InvalidType	$	pre	1	Any	
+X::InvalidType	$	post	1	Any	
+X::InvalidType	@	highexpect	1		
+X::InvalidTypeSmiley	$	name	1	Any	
+X::InvalidTypeSmiley	$	pos	1	Any	
+X::InvalidTypeSmiley	$	filename	1	Any	
+X::InvalidTypeSmiley	$	line	1	Any	
+X::InvalidTypeSmiley	$	directive-filename	1	Any	
+X::InvalidTypeSmiley	$	column	1	Any	
+X::InvalidTypeSmiley	@	modules	1		
+X::InvalidTypeSmiley	$	is-compile-time	1	Any	Bool:False
+X::InvalidTypeSmiley	$	pre	1	Any	
+X::InvalidTypeSmiley	$	post	1	Any	
+X::InvalidTypeSmiley	@	highexpect	1		
+X::Ism::Unknown	$	name	1	Any	
+X::Item	$	aggregate	1	Any	
+X::Item	$	index	1	Any	
+X::Language::IncompatRevisions	$	type-a	1	Mu	
+X::Language::IncompatRevisions	$	type-b	1	Mu	
+X::Language::ModRequired	$	version	1	Any	
+X::Language::ModRequired	$	modifier	1	Any	
+X::Language::Unsupported	$	version	1	Any	
+X::LibEmpty	$	pos	1	Any	
+X::LibEmpty	$	filename	1	Any	
+X::LibEmpty	$	line	1	Any	
+X::LibEmpty	$	directive-filename	1	Any	
+X::LibEmpty	$	column	1	Any	
+X::LibEmpty	@	modules	1		
+X::LibEmpty	$	is-compile-time	1	Any	Bool:False
+X::LibEmpty	$	pre	1	Any	
+X::LibEmpty	$	post	1	Any	
+X::LibEmpty	@	highexpect	1		
+X::LibNone	$	pos	1	Any	
+X::LibNone	$	filename	1	Any	
+X::LibNone	$	line	1	Any	
+X::LibNone	$	directive-filename	1	Any	
+X::LibNone	$	column	1	Any	
+X::LibNone	@	modules	1		
+X::LibNone	$	is-compile-time	1	Any	Bool:False
+X::LibNone	$	pre	1	Any	
+X::LibNone	$	post	1	Any	
+X::LibNone	@	highexpect	1		
+X::Localizer::NoContainer	$	localizer	1	Any	
+X::Make::MatchRequired	$	got	0	Nil	
+X::Match::Bool	$	type	1	Any	
+X::Method::Duplicate	$	method-type	1	Any	
+X::Method::Duplicate	$	method	1	Any	
+X::Method::Duplicate	$	typename	1	Any	
+X::Method::InvalidQualifier	$	method	1	Any	
+X::Method::InvalidQualifier	$	invocant	1	Any	
+X::Method::InvalidQualifier	$	qualifier-type	1	Any	
+X::Method::NotFound	$	invocant	1	Mu	
+X::Method::NotFound	$	method	1	Any	
+X::Method::NotFound	$	typename	1	Any	
+X::Method::NotFound	$	private	1	Bool	
+X::Method::NotFound	$	addendum	1	Any	
+X::Method::NotFound	$	in-class-call	1	Any	
+X::Method::NotFound	$	containerized	1	Any	
+X::Method::Private::Permission	$	method	1	Any	
+X::Method::Private::Permission	$	source-package	1	Any	
+X::Method::Private::Permission	$	calling-package	1	Any	
+X::Method::Private::Permission	$	pos	1	Any	
+X::Method::Private::Permission	$	filename	1	Any	
+X::Method::Private::Permission	$	line	1	Any	
+X::Method::Private::Permission	$	directive-filename	1	Any	
+X::Method::Private::Permission	$	column	1	Any	
+X::Method::Private::Permission	@	modules	1		
+X::Method::Private::Permission	$	is-compile-time	1	Any	Bool:False
+X::Method::Private::Permission	$	pre	1	Any	
+X::Method::Private::Permission	$	post	1	Any	
+X::Method::Private::Permission	@	highexpect	1		
+X::Method::Private::Unqualified	$	method	1	Any	
+X::Method::Private::Unqualified	$	pos	1	Any	
+X::Method::Private::Unqualified	$	filename	1	Any	
+X::Method::Private::Unqualified	$	line	1	Any	
+X::Method::Private::Unqualified	$	directive-filename	1	Any	
+X::Method::Private::Unqualified	$	column	1	Any	
+X::Method::Private::Unqualified	@	modules	1		
+X::Method::Private::Unqualified	$	is-compile-time	1	Any	Bool:False
+X::Method::Private::Unqualified	$	pre	1	Any	
+X::Method::Private::Unqualified	$	post	1	Any	
+X::Method::Private::Unqualified	@	highexpect	1		
+X::Mixin::NotComposable	$	target	1	Any	
+X::Mixin::NotComposable	$	rolish	1	Any	
+X::Multi::Ambiguous	$	dispatcher	1	Any	
+X::Multi::Ambiguous	@	ambiguous	1		
+X::Multi::Ambiguous	$	capture	1	Any	
+X::Multi::NoMatch	$	dispatcher	1	Any	
+X::Multi::NoMatch	$	capture	1	Any	
+X::MultipleTypeSmiley	$	pos	1	Any	
+X::MultipleTypeSmiley	$	filename	1	Any	
+X::MultipleTypeSmiley	$	line	1	Any	
+X::MultipleTypeSmiley	$	directive-filename	1	Any	
+X::MultipleTypeSmiley	$	column	1	Any	
+X::MultipleTypeSmiley	@	modules	1		
+X::MultipleTypeSmiley	$	is-compile-time	1	Any	Bool:False
+X::MultipleTypeSmiley	$	pre	1	Any	
+X::MultipleTypeSmiley	$	post	1	Any	
+X::MultipleTypeSmiley	@	highexpect	1		
+X::MustBeParametric	$	type	1	Any	
+X::NQP::NotFound	$	op	1	Any	
+X::NYI	$	feature	1	Any	
+X::NYI	$	did-you-mean	1	Any	
+X::NYI	$	workaround	1	Any	
+X::NYI::Available	@	available	1		
+X::NYI::BigInt	$	op	1	Any	
+X::NYI::BigInt	$	big	1	Any	
+X::NYI::BigInt	$	side	1	Any	Str:right
+X::NoCoreRevision	$	lang-rev	1	Any	
+X::NoDispatcher	$	redispatcher	1	Any	
+X::NoSuchSymbol	$	symbol	1	Any	
+X::NoZeroArgMeaning	$	name	1	Any	
+X::Nominalizable::NoKind	$	nominalizable	1	Mu	
+X::Nominalizable::NoWrappee	%	kinds	1		
+X::Nominalizable::NoWrappee	$	nominalizable	1	Mu	
+X::NotEnoughDimensions	$	operation	1	Any	
+X::NotEnoughDimensions	$	got-dimensions	1	Any	
+X::NotEnoughDimensions	$	needed-dimensions	1	Any	
+X::NotEnoughDimensions	$	aggregate	1	Any	Str:array
+X::NotFoundInRepository	$	file	1	Any	
+X::NotFoundInRepository	@	repos	1		
+X::NotParametric	$	type	1	Any	
+X::NotSingleGrapheme	$	characters	1	Any	
+X::Numeric::CannotConvert	$	target	1	Any	
+X::Numeric::CannotConvert	$	reason	1	Any	
+X::Numeric::CannotConvert	$	source	1	Any	
+X::Numeric::Confused	$	num	1	Any	
+X::Numeric::Confused	$	base	1	Any	
+X::Numeric::DivideByZero	$	using	1	Any	
+X::Numeric::DivideByZero	$	details	1	Any	
+X::Numeric::DivideByZero	$	numerator	1	Any	
+X::Numeric::Uninitialized	$	type	1	Numeric	
+X::Obsolete	$	old	1	Any	
+X::Obsolete	$	replacement	1	Any	
+X::Obsolete	$	when	1	Any	Str:in Raku
+X::Obsolete	$	pos	1	Any	
+X::Obsolete	$	filename	1	Any	
+X::Obsolete	$	line	1	Any	
+X::Obsolete	$	directive-filename	1	Any	
+X::Obsolete	$	column	1	Any	
+X::Obsolete	@	modules	1		
+X::Obsolete	$	is-compile-time	1	Any	Bool:False
+X::Obsolete	$	pre	1	Any	
+X::Obsolete	$	post	1	Any	
+X::Obsolete	@	highexpect	1		
+X::OutOfRange	$	what	1	Any	Str:Argument
+X::OutOfRange	$	got	1	Any	Str:<unknown>
+X::OutOfRange	$	range	1	Any	Str:<unknown>
+X::OutOfRange	$	comment	1	Any	
+X::Package::SameNameAsEnclosing	$	kind	1	Any	
+X::Package::SameNameAsEnclosing	$	enclosing-kind	1	Any	
+X::Package::SameNameAsEnclosing	$	name	1	Any	
+X::Package::SameNameAsEnclosing	$	pos	1	Any	
+X::Package::SameNameAsEnclosing	$	filename	1	Any	
+X::Package::SameNameAsEnclosing	$	line	1	Any	
+X::Package::SameNameAsEnclosing	$	directive-filename	1	Any	
+X::Package::SameNameAsEnclosing	$	column	1	Any	
+X::Package::SameNameAsEnclosing	@	modules	1		
+X::Package::SameNameAsEnclosing	$	is-compile-time	1	Any	Bool:False
+X::Package::SameNameAsEnclosing	$	pre	1	Any	
+X::Package::SameNameAsEnclosing	$	post	1	Any	
+X::Package::SameNameAsEnclosing	@	highexpect	1		
+X::Package::Stubbed	@	packages	1		
+X::Package::Stubbed	$	pos	1	Any	
+X::Package::Stubbed	$	filename	1	Any	
+X::Package::Stubbed	$	line	1	Any	
+X::Package::Stubbed	$	directive-filename	1	Any	
+X::Package::Stubbed	$	column	1	Any	
+X::Package::Stubbed	@	modules	1		
+X::Package::Stubbed	$	is-compile-time	1	Any	Bool:False
+X::Package::Stubbed	$	pre	1	Any	
+X::Package::Stubbed	$	post	1	Any	
+X::Package::Stubbed	@	highexpect	1		
+X::Package::UseLib	$	what	1	Any	
+X::Package::UseLib	$	pos	1	Any	
+X::Package::UseLib	$	filename	1	Any	
+X::Package::UseLib	$	line	1	Any	
+X::Package::UseLib	$	directive-filename	1	Any	
+X::Package::UseLib	$	column	1	Any	
+X::Package::UseLib	@	modules	1		
+X::Package::UseLib	$	is-compile-time	1	Any	Bool:False
+X::Package::UseLib	$	pre	1	Any	
+X::Package::UseLib	$	post	1	Any	
+X::Package::UseLib	@	highexpect	1		
+X::Parameter::AfterDefault	$	type	1	Any	
+X::Parameter::AfterDefault	$	modifier	1	Any	
+X::Parameter::AfterDefault	$	default	1	Any	
+X::Parameter::AfterDefault	$	pos	1	Any	
+X::Parameter::AfterDefault	$	filename	1	Any	
+X::Parameter::AfterDefault	$	line	1	Any	
+X::Parameter::AfterDefault	$	directive-filename	1	Any	
+X::Parameter::AfterDefault	$	column	1	Any	
+X::Parameter::AfterDefault	@	modules	1		
+X::Parameter::AfterDefault	$	is-compile-time	1	Any	Bool:False
+X::Parameter::AfterDefault	$	pre	1	Any	
+X::Parameter::AfterDefault	$	post	1	Any	
+X::Parameter::AfterDefault	@	highexpect	1		
+X::Parameter::BadType	$	type	1	Mu	
+X::Parameter::BadType	$	pos	1	Any	
+X::Parameter::BadType	$	filename	1	Any	
+X::Parameter::BadType	$	line	1	Any	
+X::Parameter::BadType	$	directive-filename	1	Any	
+X::Parameter::BadType	$	column	1	Any	
+X::Parameter::BadType	@	modules	1		
+X::Parameter::BadType	$	is-compile-time	1	Any	Bool:False
+X::Parameter::BadType	$	pre	1	Any	
+X::Parameter::BadType	$	post	1	Any	
+X::Parameter::BadType	@	highexpect	1		
+X::Parameter::Default	$	how	1	Any	
+X::Parameter::Default	$	parameter	1	Any	
+X::Parameter::Default	$	pos	1	Any	
+X::Parameter::Default	$	filename	1	Any	
+X::Parameter::Default	$	line	1	Any	
+X::Parameter::Default	$	directive-filename	1	Any	
+X::Parameter::Default	$	column	1	Any	
+X::Parameter::Default	@	modules	1		
+X::Parameter::Default	$	is-compile-time	1	Any	Bool:False
+X::Parameter::Default	$	pre	1	Any	
+X::Parameter::Default	$	post	1	Any	
+X::Parameter::Default	@	highexpect	1		
+X::Parameter::Default::TypeCheck	$	what	1	Any	Str:parameter
+X::Parameter::Default::TypeCheck	$	got	1	Nil	
+X::Parameter::Default::TypeCheck	$	expected	1	Nil	
+X::Parameter::Default::TypeCheck	$	pos	1	Any	
+X::Parameter::Default::TypeCheck	$	filename	1	Any	
+X::Parameter::Default::TypeCheck	$	line	1	Any	
+X::Parameter::Default::TypeCheck	$	directive-filename	1	Any	
+X::Parameter::Default::TypeCheck	$	column	1	Any	
+X::Parameter::Default::TypeCheck	@	modules	1		
+X::Parameter::Default::TypeCheck	$	is-compile-time	1	Any	Bool:False
+X::Parameter::Default::TypeCheck	$	pre	1	Any	
+X::Parameter::Default::TypeCheck	$	post	1	Any	
+X::Parameter::Default::TypeCheck	@	highexpect	1		
+X::Parameter::InvalidConcreteness	$	expected	1	Any	
+X::Parameter::InvalidConcreteness	$	got	1	Any	
+X::Parameter::InvalidConcreteness	$	routine	1	Any	
+X::Parameter::InvalidConcreteness	$	param	1	Any	
+X::Parameter::InvalidConcreteness	$	should-be-concrete	1	Bool	
+X::Parameter::InvalidConcreteness	$	param-is-invocant	1	Bool	
+X::Parameter::InvalidType	$	typename	1	Any	
+X::Parameter::InvalidType	@	suggestions	1		
+X::Parameter::InvalidType	$	pos	1	Any	
+X::Parameter::InvalidType	$	filename	1	Any	
+X::Parameter::InvalidType	$	line	1	Any	
+X::Parameter::InvalidType	$	directive-filename	1	Any	
+X::Parameter::InvalidType	$	column	1	Any	
+X::Parameter::InvalidType	@	modules	1		
+X::Parameter::InvalidType	$	is-compile-time	1	Any	Bool:False
+X::Parameter::InvalidType	$	pre	1	Any	
+X::Parameter::InvalidType	$	post	1	Any	
+X::Parameter::InvalidType	@	highexpect	1		
+X::Parameter::MultipleTypeConstraints	$	parameter	1	Any	
+X::Parameter::MultipleTypeConstraints	$	pos	1	Any	
+X::Parameter::MultipleTypeConstraints	$	filename	1	Any	
+X::Parameter::MultipleTypeConstraints	$	line	1	Any	
+X::Parameter::MultipleTypeConstraints	$	directive-filename	1	Any	
+X::Parameter::MultipleTypeConstraints	$	column	1	Any	
+X::Parameter::MultipleTypeConstraints	@	modules	1		
+X::Parameter::MultipleTypeConstraints	$	is-compile-time	1	Any	Bool:False
+X::Parameter::MultipleTypeConstraints	$	pre	1	Any	
+X::Parameter::MultipleTypeConstraints	$	post	1	Any	
+X::Parameter::MultipleTypeConstraints	@	highexpect	1		
+X::Parameter::Placeholder	$	type	1	Any	
+X::Parameter::Placeholder	$	parameter	1	Any	
+X::Parameter::Placeholder	$	right	1	Any	
+X::Parameter::Placeholder	$	pos	1	Any	
+X::Parameter::Placeholder	$	filename	1	Any	
+X::Parameter::Placeholder	$	line	1	Any	
+X::Parameter::Placeholder	$	directive-filename	1	Any	
+X::Parameter::Placeholder	$	column	1	Any	
+X::Parameter::Placeholder	@	modules	1		
+X::Parameter::Placeholder	$	is-compile-time	1	Any	Bool:False
+X::Parameter::Placeholder	$	pre	1	Any	
+X::Parameter::Placeholder	$	post	1	Any	
+X::Parameter::Placeholder	@	highexpect	1		
+X::Parameter::RW	$	got	1	Any	
+X::Parameter::RW	$	symbol	1	Any	
+X::Parameter::Twigil	$	parameter	1	Any	
+X::Parameter::Twigil	$	twigil	1	Any	
+X::Parameter::Twigil	$	pos	1	Any	
+X::Parameter::Twigil	$	filename	1	Any	
+X::Parameter::Twigil	$	line	1	Any	
+X::Parameter::Twigil	$	directive-filename	1	Any	
+X::Parameter::Twigil	$	column	1	Any	
+X::Parameter::Twigil	@	modules	1		
+X::Parameter::Twigil	$	is-compile-time	1	Any	Bool:False
+X::Parameter::Twigil	$	pre	1	Any	
+X::Parameter::Twigil	$	post	1	Any	
+X::Parameter::Twigil	@	highexpect	1		
+X::Parameter::TypedSlurpy	$	kind	1	Any	
+X::Parameter::TypedSlurpy	$	pos	1	Any	
+X::Parameter::TypedSlurpy	$	filename	1	Any	
+X::Parameter::TypedSlurpy	$	line	1	Any	
+X::Parameter::TypedSlurpy	$	directive-filename	1	Any	
+X::Parameter::TypedSlurpy	$	column	1	Any	
+X::Parameter::TypedSlurpy	@	modules	1		
+X::Parameter::TypedSlurpy	$	is-compile-time	1	Any	Bool:False
+X::Parameter::TypedSlurpy	$	pre	1	Any	
+X::Parameter::TypedSlurpy	$	post	1	Any	
+X::Parameter::TypedSlurpy	@	highexpect	1		
+X::Parameter::WrongOrder	$	misplaced	1	Any	
+X::Parameter::WrongOrder	$	parameter	1	Any	
+X::Parameter::WrongOrder	$	after	1	Any	
+X::Parameter::WrongOrder	$	pos	1	Any	
+X::Parameter::WrongOrder	$	filename	1	Any	
+X::Parameter::WrongOrder	$	line	1	Any	
+X::Parameter::WrongOrder	$	directive-filename	1	Any	
+X::Parameter::WrongOrder	$	column	1	Any	
+X::Parameter::WrongOrder	@	modules	1		
+X::Parameter::WrongOrder	$	is-compile-time	1	Any	Bool:False
+X::Parameter::WrongOrder	$	pre	1	Any	
+X::Parameter::WrongOrder	$	post	1	Any	
+X::Parameter::WrongOrder	@	highexpect	1		
+X::Phaser::Multiple	$	block	1	Any	
+X::Phaser::Multiple	$	pos	1	Any	
+X::Phaser::Multiple	$	filename	1	Any	
+X::Phaser::Multiple	$	line	1	Any	
+X::Phaser::Multiple	$	directive-filename	1	Any	
+X::Phaser::Multiple	$	column	1	Any	
+X::Phaser::Multiple	@	modules	1		
+X::Phaser::Multiple	$	is-compile-time	1	Any	Bool:False
+X::Phaser::Multiple	$	pre	1	Any	
+X::Phaser::Multiple	$	post	1	Any	
+X::Phaser::Multiple	@	highexpect	1		
+X::Phaser::PrePost	$	phaser	1	Any	Str:PRE
+X::Phaser::PrePost	$	condition	1	Any	
+X::PhaserExceptions	@	exceptions	1		
+X::Placeholder::Block	$	placeholder	1	Any	
+X::Placeholder::Block	$	pos	1	Any	
+X::Placeholder::Block	$	filename	1	Any	
+X::Placeholder::Block	$	line	1	Any	
+X::Placeholder::Block	$	directive-filename	1	Any	
+X::Placeholder::Block	$	column	1	Any	
+X::Placeholder::Block	@	modules	1		
+X::Placeholder::Block	$	is-compile-time	1	Any	Bool:False
+X::Placeholder::Block	$	pre	1	Any	
+X::Placeholder::Block	$	post	1	Any	
+X::Placeholder::Block	@	highexpect	1		
+X::Placeholder::NonPlaceholder	$	variable_name	1	Any	
+X::Placeholder::NonPlaceholder	$	placeholder	1	Any	
+X::Placeholder::NonPlaceholder	$	decl	1	Any	
+X::Placeholder::NonPlaceholder	$	pos	1	Any	
+X::Placeholder::NonPlaceholder	$	filename	1	Any	
+X::Placeholder::NonPlaceholder	$	line	1	Any	
+X::Placeholder::NonPlaceholder	$	directive-filename	1	Any	
+X::Placeholder::NonPlaceholder	$	column	1	Any	
+X::Placeholder::NonPlaceholder	@	modules	1		
+X::Placeholder::NonPlaceholder	$	is-compile-time	1	Any	Bool:False
+X::Placeholder::NonPlaceholder	$	pre	1	Any	
+X::Placeholder::NonPlaceholder	$	post	1	Any	
+X::Placeholder::NonPlaceholder	@	highexpect	1		
+X::PoisonedAlias	$	alias	1	str	
+X::PoisonedAlias	$	package-type	1	str	Str:package
+X::PoisonedAlias	$	package-name	1	str	
+X::PoisonedAlias	$	pos	1	Any	
+X::PoisonedAlias	$	filename	1	Any	
+X::PoisonedAlias	$	line	1	Any	
+X::PoisonedAlias	$	directive-filename	1	Any	
+X::PoisonedAlias	$	column	1	Any	
+X::PoisonedAlias	@	modules	1		
+X::PoisonedAlias	$	is-compile-time	1	Any	Bool:False
+X::PoisonedAlias	$	pre	1	Any	
+X::PoisonedAlias	$	post	1	Any	
+X::PoisonedAlias	@	highexpect	1		
+X::Pragma::CannotPrecomp	$	what	1	Any	Str:This compilation unit
+X::Pragma::CannotWhat	$	what	1	Any	
+X::Pragma::CannotWhat	$	name	1	Any	
+X::Pragma::MustOneOf	$	name	1	Any	
+X::Pragma::MustOneOf	$	alternatives	1	Any	
+X::Pragma::NoArgs	$	name	1	Any	
+X::Pragma::OnlyOne	$	name	1	Any	
+X::Pragma::Unknown	$	name	1	Any	
+X::Pragma::UnknownArg	$	name	1	Any	
+X::Pragma::UnknownArg	$	arg	1	Any	
+X::Proc::Async::AlreadyStarted	$	proc	1	Proc::Async	
+X::Proc::Async::BindOrUse	$	handle	1	Any	
+X::Proc::Async::BindOrUse	$	use	1	Any	
+X::Proc::Async::BindOrUse	$	proc	1	Proc::Async	
+X::Proc::Async::CharsOrBytes	$	handle	1	Any	
+X::Proc::Async::CharsOrBytes	$	proc	1	Proc::Async	
+X::Proc::Async::MissingColsRows	$	proc	1	Proc::Async	
+X::Proc::Async::MustBeStarted	$	method	1	Any	
+X::Proc::Async::MustBeStarted	$	proc	1	Proc::Async	
+X::Proc::Async::OpenForWriting	$	method	1	Any	
+X::Proc::Async::OpenForWriting	$	proc	1	Proc::Async	
+X::Proc::Async::SupplyOrStd	$	proc	1	Proc::Async	
+X::Proc::Async::TapBeforeSpawn	$	handle	1	Any	
+X::Proc::Async::TapBeforeSpawn	$	proc	1	Proc::Async	
+X::Proc::Unsuccessful	$	proc	1	Any	
+X::Promise::CauseOnlyValidOnBroken	$	promise	1	Any	
+X::Promise::CauseOnlyValidOnBroken	$	status	1	Any	
+X::Promise::Combinator	$	combinator	1	Any	
+X::Promise::Resolved	$	promise	1	Any	
+X::Promise::Vowed	$	promise	1	Any	
+X::PseudoPackage::InDeclaration	$	pseudo-package	1	Any	
+X::PseudoPackage::InDeclaration	$	action	1	Any	
+X::PseudoPackage::InDeclaration	$	pos	1	Any	
+X::PseudoPackage::InDeclaration	$	filename	1	Any	
+X::PseudoPackage::InDeclaration	$	line	1	Any	
+X::PseudoPackage::InDeclaration	$	directive-filename	1	Any	
+X::PseudoPackage::InDeclaration	$	column	1	Any	
+X::PseudoPackage::InDeclaration	@	modules	1		
+X::PseudoPackage::InDeclaration	$	is-compile-time	1	Any	Bool:False
+X::PseudoPackage::InDeclaration	$	pre	1	Any	
+X::PseudoPackage::InDeclaration	$	post	1	Any	
+X::PseudoPackage::InDeclaration	@	highexpect	1		
+X::QuoteWords::Missing::Closer	$	opener	1	Any	
+X::QuoteWords::Missing::Closer	$	closer	1	Any	
+X::QuoteWords::Missing::Closer	$	pos	1	Any	
+X::QuoteWords::Missing::Closer	$	filename	1	Any	
+X::QuoteWords::Missing::Closer	$	line	1	Any	
+X::QuoteWords::Missing::Closer	$	directive-filename	1	Any	
+X::QuoteWords::Missing::Closer	$	column	1	Any	
+X::QuoteWords::Missing::Closer	@	modules	1		
+X::QuoteWords::Missing::Closer	$	is-compile-time	1	Any	Bool:False
+X::QuoteWords::Missing::Closer	$	pre	1	Any	
+X::QuoteWords::Missing::Closer	$	post	1	Any	
+X::QuoteWords::Missing::Closer	@	highexpect	1		
+X::REPL::InvalidEnvironment	$	reason	1	Any	
+X::Range::CannotIterate	$	min	1	Any	
+X::Range::Incomparable	$	topic	1	Any	
+X::Range::Incomparable	$	endpoint	1	Any	
+X::Range::Incomparable	$	what-endpoint	1	Any	
+X::Range::InvalidArg	$	got	1	Nil	
+X::Range::Rand::InvalidEndpoints	$	min	1	Any	
+X::Range::Rand::InvalidEndpoints	$	max	1	Any	
+X::Redeclaration	$	symbol	1	Any	
+X::Redeclaration	$	postfix	1	Any	Str:
+X::Redeclaration	$	what	1	Any	Str:symbol
+X::Redeclaration	$	pos	1	Any	
+X::Redeclaration	$	filename	1	Any	
+X::Redeclaration	$	line	1	Any	
+X::Redeclaration	$	directive-filename	1	Any	
+X::Redeclaration	$	column	1	Any	
+X::Redeclaration	@	modules	1		
+X::Redeclaration	$	is-compile-time	1	Any	Bool:False
+X::Redeclaration	$	pre	1	Any	
+X::Redeclaration	$	post	1	Any	
+X::Redeclaration	@	highexpect	1		
+X::Redeclaration::Multi	$	symbol	1	Any	
+X::Redeclaration::Multi	@	ambiguous	1		
+X::Redeclaration::Multi	$	pos	1	Any	
+X::Redeclaration::Multi	$	filename	1	Any	
+X::Redeclaration::Multi	$	line	1	Any	
+X::Redeclaration::Multi	$	directive-filename	1	Any	
+X::Redeclaration::Multi	$	column	1	Any	
+X::Redeclaration::Multi	@	modules	1		
+X::Redeclaration::Multi	$	is-compile-time	1	Any	Bool:False
+X::Redeclaration::Multi	$	pre	1	Any	
+X::Redeclaration::Multi	$	post	1	Any	
+X::Redeclaration::Multi	@	highexpect	1		
+X::Redeclaration::Outer	$	symbol	1	Any	
+X::Redeclaration::Outer	$	pos	1	Any	
+X::Redeclaration::Outer	$	filename	1	Any	
+X::Redeclaration::Outer	$	line	1	Any	
+X::Redeclaration::Outer	$	directive-filename	1	Any	
+X::Redeclaration::Outer	$	column	1	Any	
+X::Redeclaration::Outer	@	modules	1		
+X::Redeclaration::Outer	$	is-compile-time	1	Any	Bool:False
+X::Redeclaration::Outer	$	pre	1	Any	
+X::Redeclaration::Outer	$	post	1	Any	
+X::Redeclaration::Outer	@	highexpect	1		
+X::Role::Attribute::Conflicts	$	from1	1	Mu	
+X::Role::Attribute::Conflicts	$	from2	1	Mu	
+X::Role::Attribute::Conflicts	$	attribute	1	Attribute	
+X::Role::Attribute::Conflicts	$	target	1	Mu	
+X::Role::Attribute::Exists	$	attribute	1	Attribute	
+X::Role::Attribute::Exists	$	target	1	Mu	
+X::Role::BodyReturn	$	role	1	Mu	
+X::Role::BodyReturn	$	expected	1	Str	
+X::Role::BodyReturn	$	got	1	Str	
+X::Role::Group::Documenting	$	role-name	1	Any	
+X::Role::Initialization	$	role	1	Mu	
+X::Role::Instantiation	$	role	1	Any	
+X::Role::Instantiation	$	exception	0	Mu	
+X::Role::Parametric::NoSuchCandidate	$	role	1	Mu	
+X::Role::Parametric::NoSuchCandidate	$	hint	1	Any	
+X::Role::Unimplemented::Multi	$	method	1	Mu	
+X::Role::Unimplemented::Multi	$	target	1	Mu	
+X::Role::Unresolved	$	method	1	Mu	
+X::Role::Unresolved	$	target	1	Mu	
+X::SecurityPolicy::Eval	$	payload	1	Any	Str:EVAL is a very dangerous function!!!
+X::Seq::Consumed	$	kind	1	Any	
+X::Sequence::Deduction	$	from	1	Any	
+X::Sequence::Endpoint	$	from	1	Any	
+X::Sequence::Endpoint	$	endpoint	1	Any	
+X::Set::Coerce	$	thing	1	Any	
+X::Signature::NameClash	$	name	1	Any	
+X::Signature::NameClash	$	pos	1	Any	
+X::Signature::NameClash	$	filename	1	Any	
+X::Signature::NameClash	$	line	1	Any	
+X::Signature::NameClash	$	directive-filename	1	Any	
+X::Signature::NameClash	$	column	1	Any	
+X::Signature::NameClash	@	modules	1		
+X::Signature::NameClash	$	is-compile-time	1	Any	Bool:False
+X::Signature::NameClash	$	pre	1	Any	
+X::Signature::NameClash	$	post	1	Any	
+X::Signature::NameClash	@	highexpect	1		
+X::Signature::Placeholder	$	placeholder	1	Any	
+X::Signature::Placeholder	$	pos	1	Any	
+X::Signature::Placeholder	$	filename	1	Any	
+X::Signature::Placeholder	$	line	1	Any	
+X::Signature::Placeholder	$	directive-filename	1	Any	
+X::Signature::Placeholder	$	column	1	Any	
+X::Signature::Placeholder	@	modules	1		
+X::Signature::Placeholder	$	is-compile-time	1	Any	Bool:False
+X::Signature::Placeholder	$	pre	1	Any	
+X::Signature::Placeholder	$	post	1	Any	
+X::Signature::Placeholder	@	highexpect	1		
+X::Str::InvalidCharName	$	name	1	Any	
+X::Str::Match::x	$	got	1	Nil	
+X::Str::Numeric	$	source	1	Any	
+X::Str::Numeric	$	pos	1	Any	
+X::Str::Numeric	$	reason	1	Any	
+X::Str::Sprintf::Directives::BadType	$	type	1	str	
+X::Str::Sprintf::Directives::BadType	$	directive	1	str	
+X::Str::Sprintf::Directives::BadType	$	expected	1	str	
+X::Str::Sprintf::Directives::BadType	$	format	1	str	
+X::Str::Sprintf::Directives::BadType	$	value	1	Mu	
+X::Str::Sprintf::Directives::Count	$	args-used	1	int	
+X::Str::Sprintf::Directives::Count	$	args-have	1	int	
+X::Str::Sprintf::Directives::Count	$	format	1	str	
+X::Str::Sprintf::Directives::Unsupported	$	directive	1	str	
+X::Str::Sprintf::Directives::Unsupported	$	sequence	1	str	
+X::Str::Subst::Adverb	$	name	1	Any	
+X::Str::Subst::Adverb	$	got	1	Any	
+X::Str::Trans::IllegalKey	$	key	1	Any	
+X::Str::Trans::InvalidArg	$	got	1	Nil	
+X::StubCode	$	message	1	Any	Str:Stub code executed
+X::Subscript::Negative	$	index	1	Any	
+X::Subscript::Negative	$	type	1	Any	
+X::Supply::Combinator	$	combinator	1	Any	
+X::Symbol::Kind	$	symbol	1	Any	
+X::Symbol::Kind	$	package	1	Any	
+X::Symbol::Kind	$	kind	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	category	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	needs	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	pos	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	filename	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	line	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	directive-filename	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	column	1	Any	
+X::Syntax::AddCategorical::TooFewParts	@	modules	1		
+X::Syntax::AddCategorical::TooFewParts	$	is-compile-time	1	Any	Bool:False
+X::Syntax::AddCategorical::TooFewParts	$	pre	1	Any	
+X::Syntax::AddCategorical::TooFewParts	$	post	1	Any	
+X::Syntax::AddCategorical::TooFewParts	@	highexpect	1		
+X::Syntax::AddCategorical::TooManyParts	$	category	1	Any	
+X::Syntax::AddCategorical::TooManyParts	$	needs	1	Any	
+X::Syntax::AddCategorical::TooManyParts	$	pos	1	Any	
+X::Syntax::AddCategorical::TooManyParts	$	filename	1	Any	
+X::Syntax::AddCategorical::TooManyParts	$	line	1	Any	
+X::Syntax::AddCategorical::TooManyParts	$	directive-filename	1	Any	
+X::Syntax::AddCategorical::TooManyParts	$	column	1	Any	
+X::Syntax::AddCategorical::TooManyParts	@	modules	1		
+X::Syntax::AddCategorical::TooManyParts	$	is-compile-time	1	Any	Bool:False
+X::Syntax::AddCategorical::TooManyParts	$	pre	1	Any	
+X::Syntax::AddCategorical::TooManyParts	$	post	1	Any	
+X::Syntax::AddCategorical::TooManyParts	@	highexpect	1		
+X::Syntax::Adverb	$	what	1	Any	
+X::Syntax::Adverb	$	pos	1	Any	
+X::Syntax::Adverb	$	filename	1	Any	
+X::Syntax::Adverb	$	line	1	Any	
+X::Syntax::Adverb	$	directive-filename	1	Any	
+X::Syntax::Adverb	$	column	1	Any	
+X::Syntax::Adverb	@	modules	1		
+X::Syntax::Adverb	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Adverb	$	pre	1	Any	
+X::Syntax::Adverb	$	post	1	Any	
+X::Syntax::Adverb	@	highexpect	1		
+X::Syntax::AmbiguousAdverb	$	adverb	1	Str	
+X::Syntax::AmbiguousAdverb	$	pos	1	Any	
+X::Syntax::AmbiguousAdverb	$	filename	1	Any	
+X::Syntax::AmbiguousAdverb	$	line	1	Any	
+X::Syntax::AmbiguousAdverb	$	directive-filename	1	Any	
+X::Syntax::AmbiguousAdverb	$	column	1	Any	
+X::Syntax::AmbiguousAdverb	@	modules	1		
+X::Syntax::AmbiguousAdverb	$	is-compile-time	1	Any	Bool:False
+X::Syntax::AmbiguousAdverb	$	pre	1	Any	
+X::Syntax::AmbiguousAdverb	$	post	1	Any	
+X::Syntax::AmbiguousAdverb	@	highexpect	1		
+X::Syntax::Argument::MOPMacro	$	macro	1	Any	
+X::Syntax::Argument::MOPMacro	$	pos	1	Any	
+X::Syntax::Argument::MOPMacro	$	filename	1	Any	
+X::Syntax::Argument::MOPMacro	$	line	1	Any	
+X::Syntax::Argument::MOPMacro	$	directive-filename	1	Any	
+X::Syntax::Argument::MOPMacro	$	column	1	Any	
+X::Syntax::Argument::MOPMacro	@	modules	1		
+X::Syntax::Argument::MOPMacro	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Argument::MOPMacro	$	pre	1	Any	
+X::Syntax::Argument::MOPMacro	$	post	1	Any	
+X::Syntax::Argument::MOPMacro	@	highexpect	1		
+X::Syntax::Augment::Adverb	$	pos	1	Any	
+X::Syntax::Augment::Adverb	$	filename	1	Any	
+X::Syntax::Augment::Adverb	$	line	1	Any	
+X::Syntax::Augment::Adverb	$	directive-filename	1	Any	
+X::Syntax::Augment::Adverb	$	column	1	Any	
+X::Syntax::Augment::Adverb	@	modules	1		
+X::Syntax::Augment::Adverb	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Augment::Adverb	$	pre	1	Any	
+X::Syntax::Augment::Adverb	$	post	1	Any	
+X::Syntax::Augment::Adverb	@	highexpect	1		
+X::Syntax::Augment::Illegal	$	package	1	Any	
+X::Syntax::Augment::Illegal	$	pos	1	Any	
+X::Syntax::Augment::Illegal	$	filename	1	Any	
+X::Syntax::Augment::Illegal	$	line	1	Any	
+X::Syntax::Augment::Illegal	$	directive-filename	1	Any	
+X::Syntax::Augment::Illegal	$	column	1	Any	
+X::Syntax::Augment::Illegal	@	modules	1		
+X::Syntax::Augment::Illegal	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Augment::Illegal	$	pre	1	Any	
+X::Syntax::Augment::Illegal	$	post	1	Any	
+X::Syntax::Augment::Illegal	@	highexpect	1		
+X::Syntax::Augment::WithoutMonkeyTyping	$	pos	1	Any	
+X::Syntax::Augment::WithoutMonkeyTyping	$	filename	1	Any	
+X::Syntax::Augment::WithoutMonkeyTyping	$	line	1	Any	
+X::Syntax::Augment::WithoutMonkeyTyping	$	directive-filename	1	Any	
+X::Syntax::Augment::WithoutMonkeyTyping	$	column	1	Any	
+X::Syntax::Augment::WithoutMonkeyTyping	@	modules	1		
+X::Syntax::Augment::WithoutMonkeyTyping	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Augment::WithoutMonkeyTyping	$	pre	1	Any	
+X::Syntax::Augment::WithoutMonkeyTyping	$	post	1	Any	
+X::Syntax::Augment::WithoutMonkeyTyping	@	highexpect	1		
+X::Syntax::BlockGobbled	$	what	1	Any	
+X::Syntax::BlockGobbled	$	pos	1	Any	
+X::Syntax::BlockGobbled	$	filename	1	Any	
+X::Syntax::BlockGobbled	$	line	1	Any	
+X::Syntax::BlockGobbled	$	directive-filename	1	Any	
+X::Syntax::BlockGobbled	$	column	1	Any	
+X::Syntax::BlockGobbled	@	modules	1		
+X::Syntax::BlockGobbled	$	is-compile-time	1	Any	Bool:False
+X::Syntax::BlockGobbled	$	pre	1	Any	
+X::Syntax::BlockGobbled	$	post	1	Any	
+X::Syntax::BlockGobbled	@	highexpect	1		
+X::Syntax::CannotMeta	$	meta	1	Any	
+X::Syntax::CannotMeta	$	operator	1	Any	
+X::Syntax::CannotMeta	$	reason	1	Any	
+X::Syntax::CannotMeta	$	dba	1	Any	
+X::Syntax::CannotMeta	$	pos	1	Any	
+X::Syntax::CannotMeta	$	filename	1	Any	
+X::Syntax::CannotMeta	$	line	1	Any	
+X::Syntax::CannotMeta	$	directive-filename	1	Any	
+X::Syntax::CannotMeta	$	column	1	Any	
+X::Syntax::CannotMeta	@	modules	1		
+X::Syntax::CannotMeta	$	is-compile-time	1	Any	Bool:False
+X::Syntax::CannotMeta	$	pre	1	Any	
+X::Syntax::CannotMeta	$	post	1	Any	
+X::Syntax::CannotMeta	@	highexpect	1		
+X::Syntax::Coercer::TooComplex	$	pos	1	Any	
+X::Syntax::Coercer::TooComplex	$	filename	1	Any	
+X::Syntax::Coercer::TooComplex	$	line	1	Any	
+X::Syntax::Coercer::TooComplex	$	directive-filename	1	Any	
+X::Syntax::Coercer::TooComplex	$	column	1	Any	
+X::Syntax::Coercer::TooComplex	@	modules	1		
+X::Syntax::Coercer::TooComplex	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Coercer::TooComplex	$	pre	1	Any	
+X::Syntax::Coercer::TooComplex	$	post	1	Any	
+X::Syntax::Coercer::TooComplex	@	highexpect	1		
+X::Syntax::Comment::Embedded	$	pos	1	Any	
+X::Syntax::Comment::Embedded	$	filename	1	Any	
+X::Syntax::Comment::Embedded	$	line	1	Any	
+X::Syntax::Comment::Embedded	$	directive-filename	1	Any	
+X::Syntax::Comment::Embedded	$	column	1	Any	
+X::Syntax::Comment::Embedded	@	modules	1		
+X::Syntax::Comment::Embedded	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Comment::Embedded	$	pre	1	Any	
+X::Syntax::Comment::Embedded	$	post	1	Any	
+X::Syntax::Comment::Embedded	@	highexpect	1		
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	operator	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	pos	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	filename	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	line	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	directive-filename	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	column	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	@	modules	1		
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	is-compile-time	1	Any	Bool:False
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	pre	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	$	post	1	Any	
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	@	highexpect	1		
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	pos	1	Any	
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	filename	1	Any	
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	line	1	Any	
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	directive-filename	1	Any	
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	column	1	Any	
+X::Syntax::ConditionalOperator::SecondPartGobbled	@	modules	1		
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	is-compile-time	1	Any	Bool:False
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	pre	1	Any	
+X::Syntax::ConditionalOperator::SecondPartGobbled	$	post	1	Any	
+X::Syntax::ConditionalOperator::SecondPartGobbled	@	highexpect	1		
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	second-part	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	pos	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	filename	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	line	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	directive-filename	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	column	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	@	modules	1		
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	is-compile-time	1	Any	Bool:False
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	pre	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	$	post	1	Any	
+X::Syntax::ConditionalOperator::SecondPartInvalid	@	highexpect	1		
+X::Syntax::Confused	$	reason	1	Any	Str:Confused
+X::Syntax::Confused	$	pos	1	Any	
+X::Syntax::Confused	$	filename	1	Any	
+X::Syntax::Confused	$	line	1	Any	
+X::Syntax::Confused	$	directive-filename	1	Any	
+X::Syntax::Confused	$	column	1	Any	
+X::Syntax::Confused	@	modules	1		
+X::Syntax::Confused	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Confused	$	pre	1	Any	
+X::Syntax::Confused	$	post	1	Any	
+X::Syntax::Confused	@	highexpect	1		
+X::Syntax::Doc::Declarator::MissingDeclarand	$	position	1	Any	Str:trailing
+X::Syntax::Doc::Declarator::MissingDeclarand	$	pos	1	Any	
+X::Syntax::Doc::Declarator::MissingDeclarand	$	filename	1	Any	
+X::Syntax::Doc::Declarator::MissingDeclarand	$	line	1	Any	
+X::Syntax::Doc::Declarator::MissingDeclarand	$	directive-filename	1	Any	
+X::Syntax::Doc::Declarator::MissingDeclarand	$	column	1	Any	
+X::Syntax::Doc::Declarator::MissingDeclarand	@	modules	1		
+X::Syntax::Doc::Declarator::MissingDeclarand	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Doc::Declarator::MissingDeclarand	$	pre	1	Any	
+X::Syntax::Doc::Declarator::MissingDeclarand	$	post	1	Any	
+X::Syntax::Doc::Declarator::MissingDeclarand	@	highexpect	1		
+X::Syntax::DuplicatedPrefix	$	prefixes	1	Any	
+X::Syntax::DuplicatedPrefix	$	pos	1	Any	
+X::Syntax::DuplicatedPrefix	$	filename	1	Any	
+X::Syntax::DuplicatedPrefix	$	line	1	Any	
+X::Syntax::DuplicatedPrefix	$	directive-filename	1	Any	
+X::Syntax::DuplicatedPrefix	$	column	1	Any	
+X::Syntax::DuplicatedPrefix	@	modules	1		
+X::Syntax::DuplicatedPrefix	$	is-compile-time	1	Any	Bool:False
+X::Syntax::DuplicatedPrefix	$	pre	1	Any	
+X::Syntax::DuplicatedPrefix	$	post	1	Any	
+X::Syntax::DuplicatedPrefix	@	highexpect	1		
+X::Syntax::Extension::Category	$	category	1	Any	
+X::Syntax::Extension::Category	$	pos	1	Any	
+X::Syntax::Extension::Category	$	filename	1	Any	
+X::Syntax::Extension::Category	$	line	1	Any	
+X::Syntax::Extension::Category	$	directive-filename	1	Any	
+X::Syntax::Extension::Category	$	column	1	Any	
+X::Syntax::Extension::Category	@	modules	1		
+X::Syntax::Extension::Category	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Extension::Category	$	pre	1	Any	
+X::Syntax::Extension::Category	$	post	1	Any	
+X::Syntax::Extension::Category	@	highexpect	1		
+X::Syntax::Extension::Null	$	pos	1	Any	
+X::Syntax::Extension::Null	$	filename	1	Any	
+X::Syntax::Extension::Null	$	line	1	Any	
+X::Syntax::Extension::Null	$	directive-filename	1	Any	
+X::Syntax::Extension::Null	$	column	1	Any	
+X::Syntax::Extension::Null	@	modules	1		
+X::Syntax::Extension::Null	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Extension::Null	$	pre	1	Any	
+X::Syntax::Extension::Null	$	post	1	Any	
+X::Syntax::Extension::Null	@	highexpect	1		
+X::Syntax::Extension::SpecialForm	$	category	1	Any	
+X::Syntax::Extension::SpecialForm	$	opname	1	Any	
+X::Syntax::Extension::SpecialForm	$	hint	1	Any	
+X::Syntax::Extension::SpecialForm	$	pos	1	Any	
+X::Syntax::Extension::SpecialForm	$	filename	1	Any	
+X::Syntax::Extension::SpecialForm	$	line	1	Any	
+X::Syntax::Extension::SpecialForm	$	directive-filename	1	Any	
+X::Syntax::Extension::SpecialForm	$	column	1	Any	
+X::Syntax::Extension::SpecialForm	@	modules	1		
+X::Syntax::Extension::SpecialForm	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Extension::SpecialForm	$	pre	1	Any	
+X::Syntax::Extension::SpecialForm	$	post	1	Any	
+X::Syntax::Extension::SpecialForm	@	highexpect	1		
+X::Syntax::Extension::TooComplex	$	name	1	Any	
+X::Syntax::Extension::TooComplex	$	pos	1	Any	
+X::Syntax::Extension::TooComplex	$	filename	1	Any	
+X::Syntax::Extension::TooComplex	$	line	1	Any	
+X::Syntax::Extension::TooComplex	$	directive-filename	1	Any	
+X::Syntax::Extension::TooComplex	$	column	1	Any	
+X::Syntax::Extension::TooComplex	@	modules	1		
+X::Syntax::Extension::TooComplex	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Extension::TooComplex	$	pre	1	Any	
+X::Syntax::Extension::TooComplex	$	post	1	Any	
+X::Syntax::Extension::TooComplex	@	highexpect	1		
+X::Syntax::Heredoc::AmbiguousName	$	symbol	1	Any	
+X::Syntax::Heredoc::AmbiguousName	$	pos	1	Any	
+X::Syntax::Heredoc::AmbiguousName	$	filename	1	Any	
+X::Syntax::Heredoc::AmbiguousName	$	line	1	Any	
+X::Syntax::Heredoc::AmbiguousName	$	directive-filename	1	Any	
+X::Syntax::Heredoc::AmbiguousName	$	column	1	Any	
+X::Syntax::Heredoc::AmbiguousName	@	modules	1		
+X::Syntax::Heredoc::AmbiguousName	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Heredoc::AmbiguousName	$	pre	1	Any	
+X::Syntax::Heredoc::AmbiguousName	$	post	1	Any	
+X::Syntax::Heredoc::AmbiguousName	@	highexpect	1		
+X::Syntax::InfixInTermPosition	$	infix	1	Any	
+X::Syntax::InfixInTermPosition	$	pos	1	Any	
+X::Syntax::InfixInTermPosition	$	filename	1	Any	
+X::Syntax::InfixInTermPosition	$	line	1	Any	
+X::Syntax::InfixInTermPosition	$	directive-filename	1	Any	
+X::Syntax::InfixInTermPosition	$	column	1	Any	
+X::Syntax::InfixInTermPosition	@	modules	1		
+X::Syntax::InfixInTermPosition	$	is-compile-time	1	Any	Bool:False
+X::Syntax::InfixInTermPosition	$	pre	1	Any	
+X::Syntax::InfixInTermPosition	$	post	1	Any	
+X::Syntax::InfixInTermPosition	@	highexpect	1		
+X::Syntax::KeywordAsFunction	$	word	1	Any	
+X::Syntax::KeywordAsFunction	$	needparens	1	Any	
+X::Syntax::KeywordAsFunction	$	pos	1	Any	
+X::Syntax::KeywordAsFunction	$	filename	1	Any	
+X::Syntax::KeywordAsFunction	$	line	1	Any	
+X::Syntax::KeywordAsFunction	$	directive-filename	1	Any	
+X::Syntax::KeywordAsFunction	$	column	1	Any	
+X::Syntax::KeywordAsFunction	@	modules	1		
+X::Syntax::KeywordAsFunction	$	is-compile-time	1	Any	Bool:False
+X::Syntax::KeywordAsFunction	$	pre	1	Any	
+X::Syntax::KeywordAsFunction	$	post	1	Any	
+X::Syntax::KeywordAsFunction	@	highexpect	1		
+X::Syntax::Malformed	$	what	1	Any	
+X::Syntax::Malformed	$	pos	1	Any	
+X::Syntax::Malformed	$	filename	1	Any	
+X::Syntax::Malformed	$	line	1	Any	
+X::Syntax::Malformed	$	directive-filename	1	Any	
+X::Syntax::Malformed	$	column	1	Any	
+X::Syntax::Malformed	@	modules	1		
+X::Syntax::Malformed	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Malformed	$	pre	1	Any	
+X::Syntax::Malformed	$	post	1	Any	
+X::Syntax::Malformed	@	highexpect	1		
+X::Syntax::Malformed::Elsif	$	what	1	Any	Str:else if
+X::Syntax::Malformed::Elsif	$	pos	1	Any	
+X::Syntax::Malformed::Elsif	$	filename	1	Any	
+X::Syntax::Malformed::Elsif	$	line	1	Any	
+X::Syntax::Malformed::Elsif	$	directive-filename	1	Any	
+X::Syntax::Malformed::Elsif	$	column	1	Any	
+X::Syntax::Malformed::Elsif	@	modules	1		
+X::Syntax::Malformed::Elsif	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Malformed::Elsif	$	pre	1	Any	
+X::Syntax::Malformed::Elsif	$	post	1	Any	
+X::Syntax::Malformed::Elsif	@	highexpect	1		
+X::Syntax::Missing	$	what	1	Any	
+X::Syntax::Missing	$	pos	1	Any	
+X::Syntax::Missing	$	filename	1	Any	
+X::Syntax::Missing	$	line	1	Any	
+X::Syntax::Missing	$	directive-filename	1	Any	
+X::Syntax::Missing	$	column	1	Any	
+X::Syntax::Missing	@	modules	1		
+X::Syntax::Missing	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Missing	$	pre	1	Any	
+X::Syntax::Missing	$	post	1	Any	
+X::Syntax::Missing	@	highexpect	1		
+X::Syntax::Name::Null	$	pos	1	Any	
+X::Syntax::Name::Null	$	filename	1	Any	
+X::Syntax::Name::Null	$	line	1	Any	
+X::Syntax::Name::Null	$	directive-filename	1	Any	
+X::Syntax::Name::Null	$	column	1	Any	
+X::Syntax::Name::Null	@	modules	1		
+X::Syntax::Name::Null	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Name::Null	$	pre	1	Any	
+X::Syntax::Name::Null	$	post	1	Any	
+X::Syntax::Name::Null	@	highexpect	1		
+X::Syntax::NegatedPair	$	key	1	Any	
+X::Syntax::NegatedPair	$	pos	1	Any	
+X::Syntax::NegatedPair	$	filename	1	Any	
+X::Syntax::NegatedPair	$	line	1	Any	
+X::Syntax::NegatedPair	$	directive-filename	1	Any	
+X::Syntax::NegatedPair	$	column	1	Any	
+X::Syntax::NegatedPair	@	modules	1		
+X::Syntax::NegatedPair	$	is-compile-time	1	Any	Bool:False
+X::Syntax::NegatedPair	$	pre	1	Any	
+X::Syntax::NegatedPair	$	post	1	Any	
+X::Syntax::NegatedPair	@	highexpect	1		
+X::Syntax::NoSelf	$	variable	1	Any	
+X::Syntax::NoSelf	$	pos	1	Any	
+X::Syntax::NoSelf	$	filename	1	Any	
+X::Syntax::NoSelf	$	line	1	Any	
+X::Syntax::NoSelf	$	directive-filename	1	Any	
+X::Syntax::NoSelf	$	column	1	Any	
+X::Syntax::NoSelf	@	modules	1		
+X::Syntax::NoSelf	$	is-compile-time	1	Any	Bool:False
+X::Syntax::NoSelf	$	pre	1	Any	
+X::Syntax::NoSelf	$	post	1	Any	
+X::Syntax::NoSelf	@	highexpect	1		
+X::Syntax::NonAssociative	$	left	1	Any	
+X::Syntax::NonAssociative	$	right	1	Any	
+X::Syntax::NonAssociative	$	pos	1	Any	
+X::Syntax::NonAssociative	$	filename	1	Any	
+X::Syntax::NonAssociative	$	line	1	Any	
+X::Syntax::NonAssociative	$	directive-filename	1	Any	
+X::Syntax::NonAssociative	$	column	1	Any	
+X::Syntax::NonAssociative	@	modules	1		
+X::Syntax::NonAssociative	$	is-compile-time	1	Any	Bool:False
+X::Syntax::NonAssociative	$	pre	1	Any	
+X::Syntax::NonAssociative	$	post	1	Any	
+X::Syntax::NonAssociative	@	highexpect	1		
+X::Syntax::Number::IllegalDecimal	$	pos	1	Any	
+X::Syntax::Number::IllegalDecimal	$	filename	1	Any	
+X::Syntax::Number::IllegalDecimal	$	line	1	Any	
+X::Syntax::Number::IllegalDecimal	$	directive-filename	1	Any	
+X::Syntax::Number::IllegalDecimal	$	column	1	Any	
+X::Syntax::Number::IllegalDecimal	@	modules	1		
+X::Syntax::Number::IllegalDecimal	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Number::IllegalDecimal	$	pre	1	Any	
+X::Syntax::Number::IllegalDecimal	$	post	1	Any	
+X::Syntax::Number::IllegalDecimal	@	highexpect	1		
+X::Syntax::Number::LiteralType	$	varname	1	Any	
+X::Syntax::Number::LiteralType	$	vartype	1	Any	
+X::Syntax::Number::LiteralType	$	value	1	Any	
+X::Syntax::Number::LiteralType	$	valuetype	1	Any	
+X::Syntax::Number::LiteralType	$	suggestiontype	1	Any	
+X::Syntax::Number::LiteralType	$	native	1	Any	
+X::Syntax::Number::LiteralType	$	pos	1	Any	
+X::Syntax::Number::LiteralType	$	filename	1	Any	
+X::Syntax::Number::LiteralType	$	line	1	Any	
+X::Syntax::Number::LiteralType	$	directive-filename	1	Any	
+X::Syntax::Number::LiteralType	$	column	1	Any	
+X::Syntax::Number::LiteralType	@	modules	1		
+X::Syntax::Number::LiteralType	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Number::LiteralType	$	pre	1	Any	
+X::Syntax::Number::LiteralType	$	post	1	Any	
+X::Syntax::Number::LiteralType	@	highexpect	1		
+X::Syntax::Number::RadixOutOfRange	$	radix	1	Any	
+X::Syntax::Number::RadixOutOfRange	$	pos	1	Any	
+X::Syntax::Number::RadixOutOfRange	$	filename	1	Any	
+X::Syntax::Number::RadixOutOfRange	$	line	1	Any	
+X::Syntax::Number::RadixOutOfRange	$	directive-filename	1	Any	
+X::Syntax::Number::RadixOutOfRange	$	column	1	Any	
+X::Syntax::Number::RadixOutOfRange	@	modules	1		
+X::Syntax::Number::RadixOutOfRange	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Number::RadixOutOfRange	$	pre	1	Any	
+X::Syntax::Number::RadixOutOfRange	$	post	1	Any	
+X::Syntax::Number::RadixOutOfRange	@	highexpect	1		
+X::Syntax::P5	$	pos	1	Any	
+X::Syntax::P5	$	filename	1	Any	
+X::Syntax::P5	$	line	1	Any	
+X::Syntax::P5	$	directive-filename	1	Any	
+X::Syntax::P5	$	column	1	Any	
+X::Syntax::P5	@	modules	1		
+X::Syntax::P5	$	is-compile-time	1	Any	Bool:False
+X::Syntax::P5	$	pre	1	Any	
+X::Syntax::P5	$	post	1	Any	
+X::Syntax::P5	@	highexpect	1		
+X::Syntax::ParentAsHash	$	type	1	Any	
+X::Syntax::ParentAsHash	$	parent	1	Any	
+X::Syntax::ParentAsHash	$	what	1	Any	
+X::Syntax::ParentAsHash	$	pos	1	Any	
+X::Syntax::ParentAsHash	$	filename	1	Any	
+X::Syntax::ParentAsHash	$	line	1	Any	
+X::Syntax::ParentAsHash	$	directive-filename	1	Any	
+X::Syntax::ParentAsHash	$	column	1	Any	
+X::Syntax::ParentAsHash	@	modules	1		
+X::Syntax::ParentAsHash	$	is-compile-time	1	Any	Bool:False
+X::Syntax::ParentAsHash	$	pre	1	Any	
+X::Syntax::ParentAsHash	$	post	1	Any	
+X::Syntax::ParentAsHash	@	highexpect	1		
+X::Syntax::Perl5Var	$	name	1	Any	
+X::Syntax::Perl5Var	$	identifier-name	1	Any	
+X::Syntax::Perl5Var	$	pos	1	Any	
+X::Syntax::Perl5Var	$	filename	1	Any	
+X::Syntax::Perl5Var	$	line	1	Any	
+X::Syntax::Perl5Var	$	directive-filename	1	Any	
+X::Syntax::Perl5Var	$	column	1	Any	
+X::Syntax::Perl5Var	@	modules	1		
+X::Syntax::Perl5Var	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Perl5Var	$	pre	1	Any	
+X::Syntax::Perl5Var	$	post	1	Any	
+X::Syntax::Perl5Var	@	highexpect	1		
+X::Syntax::Pod::BeginWithDirective	$	directive	1	Any	
+X::Syntax::Pod::BeginWithDirective	$	for	1	Any	Str:begin
+X::Syntax::Pod::BeginWithDirective	$	pos	1	Any	
+X::Syntax::Pod::BeginWithDirective	$	filename	1	Any	
+X::Syntax::Pod::BeginWithDirective	$	line	1	Any	
+X::Syntax::Pod::BeginWithDirective	$	directive-filename	1	Any	
+X::Syntax::Pod::BeginWithDirective	$	column	1	Any	
+X::Syntax::Pod::BeginWithDirective	@	modules	1		
+X::Syntax::Pod::BeginWithDirective	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Pod::BeginWithDirective	$	pre	1	Any	
+X::Syntax::Pod::BeginWithDirective	$	post	1	Any	
+X::Syntax::Pod::BeginWithDirective	@	highexpect	1		
+X::Syntax::Pod::BeginWithoutEnd	$	type	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	spaces	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	instead	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	pos	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	filename	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	line	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	directive-filename	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	column	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	@	modules	1		
+X::Syntax::Pod::BeginWithoutEnd	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Pod::BeginWithoutEnd	$	pre	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	$	post	1	Any	
+X::Syntax::Pod::BeginWithoutEnd	@	highexpect	1		
+X::Syntax::Pod::BeginWithoutIdentifier	$	pos	1	Any	
+X::Syntax::Pod::BeginWithoutIdentifier	$	filename	1	Any	
+X::Syntax::Pod::BeginWithoutIdentifier	$	line	1	Any	
+X::Syntax::Pod::BeginWithoutIdentifier	$	directive-filename	1	Any	
+X::Syntax::Pod::BeginWithoutIdentifier	$	column	1	Any	
+X::Syntax::Pod::BeginWithoutIdentifier	@	modules	1		
+X::Syntax::Pod::BeginWithoutIdentifier	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Pod::BeginWithoutIdentifier	$	pre	1	Any	
+X::Syntax::Pod::BeginWithoutIdentifier	$	post	1	Any	
+X::Syntax::Pod::BeginWithoutIdentifier	@	highexpect	1		
+X::Syntax::Pod::DeclaratorLeading	$	pos	1	Any	
+X::Syntax::Pod::DeclaratorLeading	$	filename	1	Any	
+X::Syntax::Pod::DeclaratorLeading	$	line	1	Any	
+X::Syntax::Pod::DeclaratorLeading	$	directive-filename	1	Any	
+X::Syntax::Pod::DeclaratorLeading	$	column	1	Any	
+X::Syntax::Pod::DeclaratorLeading	@	modules	1		
+X::Syntax::Pod::DeclaratorLeading	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Pod::DeclaratorLeading	$	pre	1	Any	
+X::Syntax::Pod::DeclaratorLeading	$	post	1	Any	
+X::Syntax::Pod::DeclaratorLeading	@	highexpect	1		
+X::Syntax::Pod::DeclaratorTrailing	$	pos	1	Any	
+X::Syntax::Pod::DeclaratorTrailing	$	filename	1	Any	
+X::Syntax::Pod::DeclaratorTrailing	$	line	1	Any	
+X::Syntax::Pod::DeclaratorTrailing	$	directive-filename	1	Any	
+X::Syntax::Pod::DeclaratorTrailing	$	column	1	Any	
+X::Syntax::Pod::DeclaratorTrailing	@	modules	1		
+X::Syntax::Pod::DeclaratorTrailing	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Pod::DeclaratorTrailing	$	pre	1	Any	
+X::Syntax::Pod::DeclaratorTrailing	$	post	1	Any	
+X::Syntax::Pod::DeclaratorTrailing	@	highexpect	1		
+X::Syntax::Pod::DirectiveWithLevel	$	directive	1	Any	
+X::Syntax::Pod::DirectiveWithLevel	$	level	1	Any	
+X::Syntax::Regex::Adverb	$	adverb	1	Any	
+X::Syntax::Regex::Adverb	$	construct	1	Any	
+X::Syntax::Regex::Adverb	$	pos	1	Any	
+X::Syntax::Regex::Adverb	$	filename	1	Any	
+X::Syntax::Regex::Adverb	$	line	1	Any	
+X::Syntax::Regex::Adverb	$	directive-filename	1	Any	
+X::Syntax::Regex::Adverb	$	column	1	Any	
+X::Syntax::Regex::Adverb	@	modules	1		
+X::Syntax::Regex::Adverb	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::Adverb	$	pre	1	Any	
+X::Syntax::Regex::Adverb	$	post	1	Any	
+X::Syntax::Regex::Adverb	@	highexpect	1		
+X::Syntax::Regex::Alias::LongName	$	pos	1	Any	
+X::Syntax::Regex::Alias::LongName	$	filename	1	Any	
+X::Syntax::Regex::Alias::LongName	$	line	1	Any	
+X::Syntax::Regex::Alias::LongName	$	directive-filename	1	Any	
+X::Syntax::Regex::Alias::LongName	$	column	1	Any	
+X::Syntax::Regex::Alias::LongName	@	modules	1		
+X::Syntax::Regex::Alias::LongName	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::Alias::LongName	$	pre	1	Any	
+X::Syntax::Regex::Alias::LongName	$	post	1	Any	
+X::Syntax::Regex::Alias::LongName	@	highexpect	1		
+X::Syntax::Regex::InsignificantWhitespace	$	pos	1	Any	
+X::Syntax::Regex::InsignificantWhitespace	$	filename	1	Any	
+X::Syntax::Regex::InsignificantWhitespace	$	line	1	Any	
+X::Syntax::Regex::InsignificantWhitespace	$	directive-filename	1	Any	
+X::Syntax::Regex::InsignificantWhitespace	$	column	1	Any	
+X::Syntax::Regex::InsignificantWhitespace	@	modules	1		
+X::Syntax::Regex::InsignificantWhitespace	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::InsignificantWhitespace	$	pre	1	Any	
+X::Syntax::Regex::InsignificantWhitespace	$	post	1	Any	
+X::Syntax::Regex::InsignificantWhitespace	@	highexpect	1		
+X::Syntax::Regex::MalformedRange	$	pos	1	Any	
+X::Syntax::Regex::MalformedRange	$	filename	1	Any	
+X::Syntax::Regex::MalformedRange	$	line	1	Any	
+X::Syntax::Regex::MalformedRange	$	directive-filename	1	Any	
+X::Syntax::Regex::MalformedRange	$	column	1	Any	
+X::Syntax::Regex::MalformedRange	@	modules	1		
+X::Syntax::Regex::MalformedRange	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::MalformedRange	$	pre	1	Any	
+X::Syntax::Regex::MalformedRange	$	post	1	Any	
+X::Syntax::Regex::MalformedRange	@	highexpect	1		
+X::Syntax::Regex::NonQuantifiable	$	pos	1	Any	
+X::Syntax::Regex::NonQuantifiable	$	filename	1	Any	
+X::Syntax::Regex::NonQuantifiable	$	line	1	Any	
+X::Syntax::Regex::NonQuantifiable	$	directive-filename	1	Any	
+X::Syntax::Regex::NonQuantifiable	$	column	1	Any	
+X::Syntax::Regex::NonQuantifiable	@	modules	1		
+X::Syntax::Regex::NonQuantifiable	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::NonQuantifiable	$	pre	1	Any	
+X::Syntax::Regex::NonQuantifiable	$	post	1	Any	
+X::Syntax::Regex::NonQuantifiable	@	highexpect	1		
+X::Syntax::Regex::NullRegex	$	pos	1	Any	
+X::Syntax::Regex::NullRegex	$	filename	1	Any	
+X::Syntax::Regex::NullRegex	$	line	1	Any	
+X::Syntax::Regex::NullRegex	$	directive-filename	1	Any	
+X::Syntax::Regex::NullRegex	$	column	1	Any	
+X::Syntax::Regex::NullRegex	@	modules	1		
+X::Syntax::Regex::NullRegex	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::NullRegex	$	pre	1	Any	
+X::Syntax::Regex::NullRegex	$	post	1	Any	
+X::Syntax::Regex::NullRegex	@	highexpect	1		
+X::Syntax::Regex::QuantifierValue	$	inf	1	Any	
+X::Syntax::Regex::QuantifierValue	$	non-numeric	1	Any	
+X::Syntax::Regex::QuantifierValue	$	non-numeric-range	1	Any	
+X::Syntax::Regex::QuantifierValue	$	empty-range	1	Any	
+X::Syntax::Regex::QuantifierValue	$	pos	1	Any	
+X::Syntax::Regex::QuantifierValue	$	filename	1	Any	
+X::Syntax::Regex::QuantifierValue	$	line	1	Any	
+X::Syntax::Regex::QuantifierValue	$	directive-filename	1	Any	
+X::Syntax::Regex::QuantifierValue	$	column	1	Any	
+X::Syntax::Regex::QuantifierValue	@	modules	1		
+X::Syntax::Regex::QuantifierValue	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::QuantifierValue	$	pre	1	Any	
+X::Syntax::Regex::QuantifierValue	$	post	1	Any	
+X::Syntax::Regex::QuantifierValue	@	highexpect	1		
+X::Syntax::Regex::SolitaryBacktrackControl	$	pos	1	Any	
+X::Syntax::Regex::SolitaryBacktrackControl	$	filename	1	Any	
+X::Syntax::Regex::SolitaryBacktrackControl	$	line	1	Any	
+X::Syntax::Regex::SolitaryBacktrackControl	$	directive-filename	1	Any	
+X::Syntax::Regex::SolitaryBacktrackControl	$	column	1	Any	
+X::Syntax::Regex::SolitaryBacktrackControl	@	modules	1		
+X::Syntax::Regex::SolitaryBacktrackControl	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::SolitaryBacktrackControl	$	pre	1	Any	
+X::Syntax::Regex::SolitaryBacktrackControl	$	post	1	Any	
+X::Syntax::Regex::SolitaryBacktrackControl	@	highexpect	1		
+X::Syntax::Regex::SolitaryModifier	@	modifiers	1		
+X::Syntax::Regex::SolitaryModifier	$	branch	1	Bool	
+X::Syntax::Regex::SolitaryQuantifier	$	pos	1	Any	
+X::Syntax::Regex::SolitaryQuantifier	$	filename	1	Any	
+X::Syntax::Regex::SolitaryQuantifier	$	line	1	Any	
+X::Syntax::Regex::SolitaryQuantifier	$	directive-filename	1	Any	
+X::Syntax::Regex::SolitaryQuantifier	$	column	1	Any	
+X::Syntax::Regex::SolitaryQuantifier	@	modules	1		
+X::Syntax::Regex::SolitaryQuantifier	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::SolitaryQuantifier	$	pre	1	Any	
+X::Syntax::Regex::SolitaryQuantifier	$	post	1	Any	
+X::Syntax::Regex::SolitaryQuantifier	@	highexpect	1		
+X::Syntax::Regex::SpacesInBareRange	$	pos	1	Any	
+X::Syntax::Regex::SpacesInBareRange	$	filename	1	Any	
+X::Syntax::Regex::SpacesInBareRange	$	line	1	Any	
+X::Syntax::Regex::SpacesInBareRange	$	directive-filename	1	Any	
+X::Syntax::Regex::SpacesInBareRange	$	column	1	Any	
+X::Syntax::Regex::SpacesInBareRange	@	modules	1		
+X::Syntax::Regex::SpacesInBareRange	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::SpacesInBareRange	$	pre	1	Any	
+X::Syntax::Regex::SpacesInBareRange	$	post	1	Any	
+X::Syntax::Regex::SpacesInBareRange	@	highexpect	1		
+X::Syntax::Regex::UnrecognizedBoundary	$	boundary	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	$	pos	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	$	filename	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	$	line	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	$	directive-filename	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	$	column	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	@	modules	1		
+X::Syntax::Regex::UnrecognizedBoundary	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::UnrecognizedBoundary	$	pre	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	$	post	1	Any	
+X::Syntax::Regex::UnrecognizedBoundary	@	highexpect	1		
+X::Syntax::Regex::UnrecognizedMetachar	$	metachar	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	$	pos	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	$	filename	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	$	line	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	$	directive-filename	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	$	column	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	@	modules	1		
+X::Syntax::Regex::UnrecognizedMetachar	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::UnrecognizedMetachar	$	pre	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	$	post	1	Any	
+X::Syntax::Regex::UnrecognizedMetachar	@	highexpect	1		
+X::Syntax::Regex::UnrecognizedModifier	$	modifier	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	$	pos	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	$	filename	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	$	line	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	$	directive-filename	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	$	column	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	@	modules	1		
+X::Syntax::Regex::UnrecognizedModifier	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::UnrecognizedModifier	$	pre	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	$	post	1	Any	
+X::Syntax::Regex::UnrecognizedModifier	@	highexpect	1		
+X::Syntax::Regex::Unspace	$	char	1	Any	
+X::Syntax::Regex::Unspace	$	pos	1	Any	
+X::Syntax::Regex::Unspace	$	filename	1	Any	
+X::Syntax::Regex::Unspace	$	line	1	Any	
+X::Syntax::Regex::Unspace	$	directive-filename	1	Any	
+X::Syntax::Regex::Unspace	$	column	1	Any	
+X::Syntax::Regex::Unspace	@	modules	1		
+X::Syntax::Regex::Unspace	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::Unspace	$	pre	1	Any	
+X::Syntax::Regex::Unspace	$	post	1	Any	
+X::Syntax::Regex::Unspace	@	highexpect	1		
+X::Syntax::Regex::Unterminated	$	pos	1	Any	
+X::Syntax::Regex::Unterminated	$	filename	1	Any	
+X::Syntax::Regex::Unterminated	$	line	1	Any	
+X::Syntax::Regex::Unterminated	$	directive-filename	1	Any	
+X::Syntax::Regex::Unterminated	$	column	1	Any	
+X::Syntax::Regex::Unterminated	@	modules	1		
+X::Syntax::Regex::Unterminated	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Regex::Unterminated	$	pre	1	Any	
+X::Syntax::Regex::Unterminated	$	post	1	Any	
+X::Syntax::Regex::Unterminated	@	highexpect	1		
+X::Syntax::Reserved	$	reserved	1	Any	
+X::Syntax::Reserved	$	instead	1	Any	Str:
+X::Syntax::Reserved	$	pos	1	Any	
+X::Syntax::Reserved	$	filename	1	Any	
+X::Syntax::Reserved	$	line	1	Any	
+X::Syntax::Reserved	$	directive-filename	1	Any	
+X::Syntax::Reserved	$	column	1	Any	
+X::Syntax::Reserved	@	modules	1		
+X::Syntax::Reserved	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Reserved	$	pre	1	Any	
+X::Syntax::Reserved	$	post	1	Any	
+X::Syntax::Reserved	@	highexpect	1		
+X::Syntax::Self::WithoutObject	$	pos	1	Any	
+X::Syntax::Self::WithoutObject	$	filename	1	Any	
+X::Syntax::Self::WithoutObject	$	line	1	Any	
+X::Syntax::Self::WithoutObject	$	directive-filename	1	Any	
+X::Syntax::Self::WithoutObject	$	column	1	Any	
+X::Syntax::Self::WithoutObject	@	modules	1		
+X::Syntax::Self::WithoutObject	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Self::WithoutObject	$	pre	1	Any	
+X::Syntax::Self::WithoutObject	$	post	1	Any	
+X::Syntax::Self::WithoutObject	@	highexpect	1		
+X::Syntax::Signature::InvocantMarker	$	pos	1	Any	
+X::Syntax::Signature::InvocantMarker	$	filename	1	Any	
+X::Syntax::Signature::InvocantMarker	$	line	1	Any	
+X::Syntax::Signature::InvocantMarker	$	directive-filename	1	Any	
+X::Syntax::Signature::InvocantMarker	$	column	1	Any	
+X::Syntax::Signature::InvocantMarker	@	modules	1		
+X::Syntax::Signature::InvocantMarker	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Signature::InvocantMarker	$	pre	1	Any	
+X::Syntax::Signature::InvocantMarker	$	post	1	Any	
+X::Syntax::Signature::InvocantMarker	@	highexpect	1		
+X::Syntax::Signature::InvocantNotAllowed	$	pos	1	Any	
+X::Syntax::Signature::InvocantNotAllowed	$	filename	1	Any	
+X::Syntax::Signature::InvocantNotAllowed	$	line	1	Any	
+X::Syntax::Signature::InvocantNotAllowed	$	directive-filename	1	Any	
+X::Syntax::Signature::InvocantNotAllowed	$	column	1	Any	
+X::Syntax::Signature::InvocantNotAllowed	@	modules	1		
+X::Syntax::Signature::InvocantNotAllowed	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Signature::InvocantNotAllowed	$	pre	1	Any	
+X::Syntax::Signature::InvocantNotAllowed	$	post	1	Any	
+X::Syntax::Signature::InvocantNotAllowed	@	highexpect	1		
+X::Syntax::Term::MissingInitializer	$	pos	1	Any	
+X::Syntax::Term::MissingInitializer	$	filename	1	Any	
+X::Syntax::Term::MissingInitializer	$	line	1	Any	
+X::Syntax::Term::MissingInitializer	$	directive-filename	1	Any	
+X::Syntax::Term::MissingInitializer	$	column	1	Any	
+X::Syntax::Term::MissingInitializer	@	modules	1		
+X::Syntax::Term::MissingInitializer	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Term::MissingInitializer	$	pre	1	Any	
+X::Syntax::Term::MissingInitializer	$	post	1	Any	
+X::Syntax::Term::MissingInitializer	@	highexpect	1		
+X::Syntax::Type::Adverb	$	adverb	1	Any	
+X::Syntax::Type::Adverb	$	pos	1	Any	
+X::Syntax::Type::Adverb	$	filename	1	Any	
+X::Syntax::Type::Adverb	$	line	1	Any	
+X::Syntax::Type::Adverb	$	directive-filename	1	Any	
+X::Syntax::Type::Adverb	$	column	1	Any	
+X::Syntax::Type::Adverb	@	modules	1		
+X::Syntax::Type::Adverb	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Type::Adverb	$	pre	1	Any	
+X::Syntax::Type::Adverb	$	post	1	Any	
+X::Syntax::Type::Adverb	@	highexpect	1		
+X::Syntax::UnlessElse	$	keyword	1	Any	
+X::Syntax::UnlessElse	$	pos	1	Any	
+X::Syntax::UnlessElse	$	filename	1	Any	
+X::Syntax::UnlessElse	$	line	1	Any	
+X::Syntax::UnlessElse	$	directive-filename	1	Any	
+X::Syntax::UnlessElse	$	column	1	Any	
+X::Syntax::UnlessElse	@	modules	1		
+X::Syntax::UnlessElse	$	is-compile-time	1	Any	Bool:False
+X::Syntax::UnlessElse	$	pre	1	Any	
+X::Syntax::UnlessElse	$	post	1	Any	
+X::Syntax::UnlessElse	@	highexpect	1		
+X::Syntax::Variable::BadType	$	type	1	Mu	
+X::Syntax::Variable::BadType	$	pos	1	Any	
+X::Syntax::Variable::BadType	$	filename	1	Any	
+X::Syntax::Variable::BadType	$	line	1	Any	
+X::Syntax::Variable::BadType	$	directive-filename	1	Any	
+X::Syntax::Variable::BadType	$	column	1	Any	
+X::Syntax::Variable::BadType	@	modules	1		
+X::Syntax::Variable::BadType	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::BadType	$	pre	1	Any	
+X::Syntax::Variable::BadType	$	post	1	Any	
+X::Syntax::Variable::BadType	@	highexpect	1		
+X::Syntax::Variable::ConflictingTypes	$	outer	1	Mu	
+X::Syntax::Variable::ConflictingTypes	$	inner	1	Mu	
+X::Syntax::Variable::ConflictingTypes	$	pos	1	Any	
+X::Syntax::Variable::ConflictingTypes	$	filename	1	Any	
+X::Syntax::Variable::ConflictingTypes	$	line	1	Any	
+X::Syntax::Variable::ConflictingTypes	$	directive-filename	1	Any	
+X::Syntax::Variable::ConflictingTypes	$	column	1	Any	
+X::Syntax::Variable::ConflictingTypes	@	modules	1		
+X::Syntax::Variable::ConflictingTypes	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::ConflictingTypes	$	pre	1	Any	
+X::Syntax::Variable::ConflictingTypes	$	post	1	Any	
+X::Syntax::Variable::ConflictingTypes	@	highexpect	1		
+X::Syntax::Variable::IndirectDeclaration	$	pos	1	Any	
+X::Syntax::Variable::IndirectDeclaration	$	filename	1	Any	
+X::Syntax::Variable::IndirectDeclaration	$	line	1	Any	
+X::Syntax::Variable::IndirectDeclaration	$	directive-filename	1	Any	
+X::Syntax::Variable::IndirectDeclaration	$	column	1	Any	
+X::Syntax::Variable::IndirectDeclaration	@	modules	1		
+X::Syntax::Variable::IndirectDeclaration	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::IndirectDeclaration	$	pre	1	Any	
+X::Syntax::Variable::IndirectDeclaration	$	post	1	Any	
+X::Syntax::Variable::IndirectDeclaration	@	highexpect	1		
+X::Syntax::Variable::Initializer	$	name	1	Any	Str:<anon>
+X::Syntax::Variable::Initializer	$	pos	1	Any	
+X::Syntax::Variable::Initializer	$	filename	1	Any	
+X::Syntax::Variable::Initializer	$	line	1	Any	
+X::Syntax::Variable::Initializer	$	directive-filename	1	Any	
+X::Syntax::Variable::Initializer	$	column	1	Any	
+X::Syntax::Variable::Initializer	@	modules	1		
+X::Syntax::Variable::Initializer	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::Initializer	$	pre	1	Any	
+X::Syntax::Variable::Initializer	$	post	1	Any	
+X::Syntax::Variable::Initializer	@	highexpect	1		
+X::Syntax::Variable::Match	$	pos	1	Any	
+X::Syntax::Variable::Match	$	filename	1	Any	
+X::Syntax::Variable::Match	$	line	1	Any	
+X::Syntax::Variable::Match	$	directive-filename	1	Any	
+X::Syntax::Variable::Match	$	column	1	Any	
+X::Syntax::Variable::Match	@	modules	1		
+X::Syntax::Variable::Match	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::Match	$	pre	1	Any	
+X::Syntax::Variable::Match	$	post	1	Any	
+X::Syntax::Variable::Match	@	highexpect	1		
+X::Syntax::Variable::MissingInitializer	$	what	1	Any	
+X::Syntax::Variable::MissingInitializer	$	type	1	Any	
+X::Syntax::Variable::MissingInitializer	$	implicit	1	Any	
+X::Syntax::Variable::MissingInitializer	$	maybe	1	Any	
+X::Syntax::Variable::MissingInitializer	$	pos	1	Any	
+X::Syntax::Variable::MissingInitializer	$	filename	1	Any	
+X::Syntax::Variable::MissingInitializer	$	line	1	Any	
+X::Syntax::Variable::MissingInitializer	$	directive-filename	1	Any	
+X::Syntax::Variable::MissingInitializer	$	column	1	Any	
+X::Syntax::Variable::MissingInitializer	@	modules	1		
+X::Syntax::Variable::MissingInitializer	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::MissingInitializer	$	pre	1	Any	
+X::Syntax::Variable::MissingInitializer	$	post	1	Any	
+X::Syntax::Variable::MissingInitializer	@	highexpect	1		
+X::Syntax::Variable::Numeric	$	what	1	Any	Str:variable
+X::Syntax::Variable::Numeric	$	pos	1	Any	
+X::Syntax::Variable::Numeric	$	filename	1	Any	
+X::Syntax::Variable::Numeric	$	line	1	Any	
+X::Syntax::Variable::Numeric	$	directive-filename	1	Any	
+X::Syntax::Variable::Numeric	$	column	1	Any	
+X::Syntax::Variable::Numeric	@	modules	1		
+X::Syntax::Variable::Numeric	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::Numeric	$	pre	1	Any	
+X::Syntax::Variable::Numeric	$	post	1	Any	
+X::Syntax::Variable::Numeric	@	highexpect	1		
+X::Syntax::Variable::SignatureAssignment	$	pos	1	Any	
+X::Syntax::Variable::SignatureAssignment	$	filename	1	Any	
+X::Syntax::Variable::SignatureAssignment	$	line	1	Any	
+X::Syntax::Variable::SignatureAssignment	$	directive-filename	1	Any	
+X::Syntax::Variable::SignatureAssignment	$	column	1	Any	
+X::Syntax::Variable::SignatureAssignment	@	modules	1		
+X::Syntax::Variable::SignatureAssignment	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::SignatureAssignment	$	pre	1	Any	
+X::Syntax::Variable::SignatureAssignment	$	post	1	Any	
+X::Syntax::Variable::SignatureAssignment	@	highexpect	1		
+X::Syntax::Variable::SignatureWithoutInitializer	$	pos	1	Any	
+X::Syntax::Variable::SignatureWithoutInitializer	$	filename	1	Any	
+X::Syntax::Variable::SignatureWithoutInitializer	$	line	1	Any	
+X::Syntax::Variable::SignatureWithoutInitializer	$	directive-filename	1	Any	
+X::Syntax::Variable::SignatureWithoutInitializer	$	column	1	Any	
+X::Syntax::Variable::SignatureWithoutInitializer	@	modules	1		
+X::Syntax::Variable::SignatureWithoutInitializer	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::SignatureWithoutInitializer	$	pre	1	Any	
+X::Syntax::Variable::SignatureWithoutInitializer	$	post	1	Any	
+X::Syntax::Variable::SignatureWithoutInitializer	@	highexpect	1		
+X::Syntax::Variable::Twigil	$	what	1	Any	Str:variable
+X::Syntax::Variable::Twigil	$	name	1	Any	
+X::Syntax::Variable::Twigil	$	twigil	1	Any	
+X::Syntax::Variable::Twigil	$	scope	1	Any	
+X::Syntax::Variable::Twigil	$	additional	1	Any	Str:
+X::Syntax::Variable::Twigil	$	pos	1	Any	
+X::Syntax::Variable::Twigil	$	filename	1	Any	
+X::Syntax::Variable::Twigil	$	line	1	Any	
+X::Syntax::Variable::Twigil	$	directive-filename	1	Any	
+X::Syntax::Variable::Twigil	$	column	1	Any	
+X::Syntax::Variable::Twigil	@	modules	1		
+X::Syntax::Variable::Twigil	$	is-compile-time	1	Any	Bool:False
+X::Syntax::Variable::Twigil	$	pre	1	Any	
+X::Syntax::Variable::Twigil	$	post	1	Any	
+X::Syntax::Variable::Twigil	@	highexpect	1		
+X::Syntax::VirtualCall	$	call	1	Any	
+X::Syntax::VirtualCall	$	pos	1	Any	
+X::Syntax::VirtualCall	$	filename	1	Any	
+X::Syntax::VirtualCall	$	line	1	Any	
+X::Syntax::VirtualCall	$	directive-filename	1	Any	
+X::Syntax::VirtualCall	$	column	1	Any	
+X::Syntax::VirtualCall	@	modules	1		
+X::Syntax::VirtualCall	$	is-compile-time	1	Any	Bool:False
+X::Syntax::VirtualCall	$	pre	1	Any	
+X::Syntax::VirtualCall	$	post	1	Any	
+X::Syntax::VirtualCall	@	highexpect	1		
+X::Syntax::WithoutElse	$	keyword	1	Any	
+X::Syntax::WithoutElse	$	pos	1	Any	
+X::Syntax::WithoutElse	$	filename	1	Any	
+X::Syntax::WithoutElse	$	line	1	Any	
+X::Syntax::WithoutElse	$	directive-filename	1	Any	
+X::Syntax::WithoutElse	$	column	1	Any	
+X::Syntax::WithoutElse	@	modules	1		
+X::Syntax::WithoutElse	$	is-compile-time	1	Any	Bool:False
+X::Syntax::WithoutElse	$	pre	1	Any	
+X::Syntax::WithoutElse	$	post	1	Any	
+X::Syntax::WithoutElse	@	highexpect	1		
+X::Temporal::InvalidFormat	$	invalid-str	1	Any	
+X::Temporal::InvalidFormat	$	target	1	Any	Str:Date
+X::Temporal::InvalidFormat	$	format	1	Any	
+X::TooLateForREPR	$	type	1	Any	
+X::TooManyDimensions	$	operation	1	Any	
+X::TooManyDimensions	$	got-dimensions	1	Any	
+X::TooManyDimensions	$	needed-dimensions	1	Any	
+X::TooManyDimensions	$	aggregate	1	Any	Str:array
+X::Trait::Invalid	$	name	1	Any	
+X::Trait::Invalid	$	reason	1	Any	
+X::Trait::Invalid	$	type	1	Any	
+X::Trait::Invalid	$	subtype	1	Any	
+X::Trait::Invalid	$	declaring	1	Any	
+X::Trait::NotOnNative	$	native	1	Any	
+X::Trait::NotOnNative	$	type	1	Any	
+X::Trait::NotOnNative	$	subtype	1	Any	
+X::Trait::NotOnNative	$	declaring	1	Any	
+X::Trait::Scope	$	scope	1	Any	
+X::Trait::Scope	$	supported	1	Any	
+X::Trait::Scope	$	type	1	Any	
+X::Trait::Scope	$	subtype	1	Any	
+X::Trait::Scope	$	declaring	1	Any	
+X::Trait::Unknown	$	type	1	Any	
+X::Trait::Unknown	$	subtype	1	Any	
+X::Trait::Unknown	$	declaring	1	Any	
+X::TypeCheck	$	operation	1	Any	
+X::TypeCheck	$	got	0	Nil	
+X::TypeCheck	$	expected	0	Nil	
+X::TypeCheck::Argument	$	protoguilt	1	Any	
+X::TypeCheck::Argument	@	arguments	1		
+X::TypeCheck::Argument	$	objname	1	Any	
+X::TypeCheck::Argument	$	signature	1	Any	
+X::TypeCheck::Assignment	$	desc	1	Mu	
+X::TypeCheck::Assignment	$	symbol	1	Any	
+X::TypeCheck::Attribute::Default	$	name	1	str	
+X::TypeCheck::Attribute::Default	$	pos	1	Any	
+X::TypeCheck::Attribute::Default	$	filename	1	Any	
+X::TypeCheck::Attribute::Default	$	line	1	Any	
+X::TypeCheck::Attribute::Default	$	directive-filename	1	Any	
+X::TypeCheck::Attribute::Default	$	column	1	Any	
+X::TypeCheck::Attribute::Default	@	modules	1		
+X::TypeCheck::Attribute::Default	$	is-compile-time	1	Any	Bool:False
+X::TypeCheck::Attribute::Default	$	pre	1	Any	
+X::TypeCheck::Attribute::Default	$	post	1	Any	
+X::TypeCheck::Attribute::Default	@	highexpect	1		
+X::TypeCheck::Binding	$	symbol	1	Any	
+X::TypeCheck::Binding::Parameter	$	parameter	1	Parameter	
+X::TypeCheck::Binding::Parameter	$	constraint	1	Bool	
+X::TypeCheck::Binding::Parameter	$	what	1	Str	
+X::TypeCheck::Binding::Parameter	$	omitted	1	Bool	
+X::TypeCheck::Splice	$	action	1	Any	
+X::TypeCheck::Splice	$	pos	1	Any	
+X::TypeCheck::Splice	$	filename	1	Any	
+X::TypeCheck::Splice	$	line	1	Any	
+X::TypeCheck::Splice	$	directive-filename	1	Any	
+X::TypeCheck::Splice	$	column	1	Any	
+X::TypeCheck::Splice	@	modules	1		
+X::TypeCheck::Splice	$	is-compile-time	1	Any	Bool:False
+X::TypeCheck::Splice	$	pre	1	Any	
+X::TypeCheck::Splice	$	post	1	Any	
+X::TypeCheck::Splice	@	highexpect	1		
+X::Undeclared	$	what	1	Any	Str:Variable
+X::Undeclared	$	symbol	1	Any	
+X::Undeclared	@	suggestions	1		
+X::Undeclared	$	pos	1	Any	
+X::Undeclared	$	filename	1	Any	
+X::Undeclared	$	line	1	Any	
+X::Undeclared	$	directive-filename	1	Any	
+X::Undeclared	$	column	1	Any	
+X::Undeclared	@	modules	1		
+X::Undeclared	$	is-compile-time	1	Any	Bool:False
+X::Undeclared	$	pre	1	Any	
+X::Undeclared	$	post	1	Any	
+X::Undeclared	@	highexpect	1		
+X::Undeclared::Symbols	%	post_types	1		
+X::Undeclared::Symbols	%	unk_types	1		
+X::Undeclared::Symbols	%	unk_routines	1		
+X::Undeclared::Symbols	%	routine_suggestion	1		
+X::Undeclared::Symbols	%	type_suggestion	1		
+X::Undeclared::Symbols	$	pos	1	Any	
+X::Undeclared::Symbols	$	filename	1	Any	
+X::Undeclared::Symbols	$	line	1	Any	
+X::Undeclared::Symbols	$	directive-filename	1	Any	
+X::Undeclared::Symbols	$	column	1	Any	
+X::Undeclared::Symbols	@	modules	1		
+X::Undeclared::Symbols	$	is-compile-time	1	Any	Bool:False
+X::Undeclared::Symbols	$	pre	1	Any	
+X::Undeclared::Symbols	$	post	1	Any	
+X::Undeclared::Symbols	@	highexpect	1		
+X::UnitScope::Invalid	$	what	1	Any	
+X::UnitScope::Invalid	$	where	1	Any	
+X::UnitScope::Invalid	$	suggestion	1	Str	Str:Please use the block form.
+X::UnitScope::Invalid	$	pos	1	Any	
+X::UnitScope::Invalid	$	filename	1	Any	
+X::UnitScope::Invalid	$	line	1	Any	
+X::UnitScope::Invalid	$	directive-filename	1	Any	
+X::UnitScope::Invalid	$	column	1	Any	
+X::UnitScope::Invalid	@	modules	1		
+X::UnitScope::Invalid	$	is-compile-time	1	Any	Bool:False
+X::UnitScope::Invalid	$	pre	1	Any	
+X::UnitScope::Invalid	$	post	1	Any	
+X::UnitScope::Invalid	@	highexpect	1		
+X::UnitScope::MustHaveUnit	$	what	1	Any	
+X::UnitScope::MustHaveUnit	$	pos	1	Any	
+X::UnitScope::MustHaveUnit	$	filename	1	Any	
+X::UnitScope::MustHaveUnit	$	line	1	Any	
+X::UnitScope::MustHaveUnit	$	directive-filename	1	Any	
+X::UnitScope::MustHaveUnit	$	column	1	Any	
+X::UnitScope::MustHaveUnit	@	modules	1		
+X::UnitScope::MustHaveUnit	$	is-compile-time	1	Any	Bool:False
+X::UnitScope::MustHaveUnit	$	pre	1	Any	
+X::UnitScope::MustHaveUnit	$	post	1	Any	
+X::UnitScope::MustHaveUnit	@	highexpect	1		
+X::UnitScope::TooLate	$	what	1	Any	
+X::UnitScope::TooLate	$	pos	1	Any	
+X::UnitScope::TooLate	$	filename	1	Any	
+X::UnitScope::TooLate	$	line	1	Any	
+X::UnitScope::TooLate	$	directive-filename	1	Any	
+X::UnitScope::TooLate	$	column	1	Any	
+X::UnitScope::TooLate	@	modules	1		
+X::UnitScope::TooLate	$	is-compile-time	1	Any	Bool:False
+X::UnitScope::TooLate	$	pre	1	Any	
+X::UnitScope::TooLate	$	post	1	Any	
+X::UnitScope::TooLate	@	highexpect	1		
+X::Useless::Declaration	$	name	1	Any	
+X::Useless::Declaration	$	where	1	Any	
+X::Useless::Declaration	$	pos	1	Any	
+X::Useless::Declaration	$	filename	1	Any	
+X::Useless::Declaration	$	line	1	Any	
+X::Useless::Declaration	$	directive-filename	1	Any	
+X::Useless::Declaration	$	column	1	Any	
+X::Useless::Declaration	@	modules	1		
+X::Useless::Declaration	$	is-compile-time	1	Any	Bool:False
+X::Useless::Declaration	$	pre	1	Any	
+X::Useless::Declaration	$	post	1	Any	
+X::Useless::Declaration	@	highexpect	1		
+X::Value::Dynamic	$	what	1	Any	
+X::Value::Dynamic	$	pos	1	Any	
+X::Value::Dynamic	$	filename	1	Any	
+X::Value::Dynamic	$	line	1	Any	
+X::Value::Dynamic	$	directive-filename	1	Any	
+X::Value::Dynamic	$	column	1	Any	
+X::Value::Dynamic	@	modules	1		
+X::Value::Dynamic	$	is-compile-time	1	Any	Bool:False
+X::Value::Dynamic	$	pre	1	Any	
+X::Value::Dynamic	$	post	1	Any	
+X::Value::Dynamic	@	highexpect	1		
+X::Whatever::ShortCircuit	$	what	1	Any	
+X::Whatever::ShortCircuit	$	operator	1	Any	
+X::Worry::P5::LeadingZero	$	value	1	Any	
+X::Worry::Precedence::Range	$	action	1	Any	
+CX::Warn	$	message	1	Any	
