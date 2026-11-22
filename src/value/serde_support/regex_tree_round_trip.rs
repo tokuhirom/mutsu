@@ -51,5 +51,9 @@ fn an_adverbed_regex_keeps_its_source_tree() {
 
 #[test]
 fn a_regex_without_a_tree_stays_without_one() {
-    assert!(round_trip(&Value::regex("x".to_string())).regex_source_tree().is_none());
+    assert!(
+        round_trip(&Value::regex("x".to_string()))
+            .regex_source_tree()
+            .is_none()
+    );
 }

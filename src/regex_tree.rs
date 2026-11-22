@@ -49,7 +49,9 @@ pub(crate) struct RegexTree {
 /// no runtime type), so the slot holds them type-erased; the runtime's
 /// `regex_value_memo` module is the only writer and reader.
 #[derive(Default)]
-pub(crate) struct ExecMemo(std::sync::Mutex<Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>>);
+pub(crate) struct ExecMemo(
+    std::sync::Mutex<Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>>,
+);
 
 impl ExecMemo {
     /// The stored facts, when some were stored.
