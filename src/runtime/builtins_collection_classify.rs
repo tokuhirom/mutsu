@@ -471,7 +471,7 @@ impl Interpreter {
                 }
                 if let Some(new_value) = updated {
                     if has_proxy {
-                        let _ = self.assign_proxy_lvalue(into_target_raw.unwrap(), new_value)?;
+                        self.store_proxy_lvalue(&into_target_raw.unwrap(), new_value)?;
                     } else if let Some(ref vname) = into_varname {
                         // ADR-0039 slice 2: `:into(%h)` mutates the CALLER's
                         // hash, so the rebuilt buckets must be written through

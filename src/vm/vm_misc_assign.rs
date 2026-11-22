@@ -796,9 +796,10 @@ impl Interpreter {
                 } else {
                     val.clone()
                 };
-                // The expression's value is the Proxy container, read through
-                // FETCH, not the right-hand side.
-                let fetched = loan_env!(self, assign_proxy_lvalue(proxy_val, stored))?;
+                // The expression's value is the Proxy container, FETCHed when
+                // something reads it, not the right-hand side (#18337).
+                loan_env!(self, store_proxy_lvalue(&proxy_val, stored))?;
+                let fetched = proxy_val;
                 // A Proxy STORE (e.g. `$r := substr-rw($str, ...); $r = v`) mutates
                 // the referent caller lexical (`$str`) by name in env. The STORE
                 // records the referent on the retain-on-miss writeback list

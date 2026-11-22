@@ -59,7 +59,9 @@ impl Interpreter {
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let proxy_val = self.locals[idx].clone();
-            loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
+            // STORE only: the value pushed below is the container, FETCHed
+            // when something reads it (#18337).
+            loan_env!(self, store_proxy_lvalue(&proxy_val, val.clone()))?;
             // A Proxy STORE wrote the referent caller lexical by name. For
             // substr-rw/subbuf-rw/undefine the STORE recorded the referent precisely
             // (`record_caller_var_writeback`); drain it here so the slot refreshes
