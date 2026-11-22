@@ -15,7 +15,12 @@ impl Interpreter {
         {
             return false;
         }
-        !self.class_mro(type_name).iter().any(|c| c == "Any")
+        // A built-in class registered at start-up (`Exception`, `X::AdHoc`)
+        // carries a truncated MRO that stops before `Any, Mu`: only a chain
+        // that reaches `Mu` without `Any` is outside `Any` (the rule
+        // `Registry::compute_class_mro` applies too).
+        let mro = self.class_mro(type_name);
+        mro.iter().any(|c| c == "Mu") && !mro.iter().any(|c| c == "Any")
     }
 
     /// A sized Blob/Buf constraint checks the buffer's type, never its contents.

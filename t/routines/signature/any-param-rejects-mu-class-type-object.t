@@ -4,7 +4,7 @@ use Test;
 # `Any` parameter, an untyped parameter, an `Any` variable and an `Any` multi
 # candidate reject it, as `~~ Any` already did (#18804).
 
-plan 11;
+plan 15;
 
 class M is Mu {}
 class C {}
@@ -31,3 +31,12 @@ multi mm(Any $x) { 'any' }
 multi mm(Mu $x)  { 'mu' }
 is mm($t), 'mu',  'M dispatches to the Mu candidate';
 is mm(C),  'any', 'an ordinary class dispatches to the Any candidate';
+
+class N is M {}
+nok N ~~ Any, 'a subclass of a Mu-only class is no Any either';
+my $n = N;
+throws-like { f($n) }, X::TypeCheck::Binding, 'an untyped parameter rejects the subclass';
+
+# A built-in class's type object is still an Any.
+ok X::TypeCheck::Binding ~~ Any, 'a core exception type object ~~ Any';
+is f(X::AdHoc), 'ok', 'an untyped parameter takes a core exception type object';
