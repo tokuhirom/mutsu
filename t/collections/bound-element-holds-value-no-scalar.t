@@ -5,7 +5,7 @@ use Test;
 # #18566): it reads and iterates as the object, `.VAR` answers the object's
 # type, and `=` to the element dies instead of reassigning the source.
 
-plan 24;
+plan 27;
 
 # `%h<k> := @s`, one level.
 {
@@ -74,4 +74,16 @@ plan 24;
     is %h<x>.VAR.^name, 'Scalar', 'an element bound to a $ variable is its Scalar';
     %h<x> = 5;
     is $x, 5, 'and writes through';
+}
+
+# A ternary RHS binds what its arm yields: an anonymous `my $` stays a Scalar.
+{
+    my %e;
+    my $c = True;
+    %e<x> := $c ?? my $ !! [];
+    is %e<x>.VAR.^name, 'Scalar', 'a ternary arm keeps an anonymous Scalar';
+    %e<x> = 5;
+    is %e<x>, 5, 'and it is writable';
+    %e<y> := !$c ?? my $ !! [];
+    is %e<y>.VAR.^name, 'Array', 'the other arm binds its Array';
 }

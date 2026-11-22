@@ -1688,6 +1688,24 @@ impl Compiler {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::DeitemizeForBind);
             }
+            // `%h<k> := $c ?? my $ !! []`: each arm is the bound thing, so
+            // each is compiled as a bind value of its own and keeps its
+            // container (an anonymous `my $` stays a writable Scalar) instead
+            // of the ternary decontainerizing it (#18566).
+            Expr::IndexBindValue(rhs) if let Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } = rhs.as_ref() =>
+            {
+                self.compile_expr(cond);
+                let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+                self.compile_expr(&Expr::IndexBindValue(then_expr.clone()));
+                let jump_end = self.code.emit(OpCode::Jump(0));
+                self.code.patch_jump(jump_else);
+                self.compile_expr(&Expr::IndexBindValue(else_expr.clone()));
+                self.code.patch_jump(jump_end);
+            }
             Expr::IndexBindValue(rhs) => {
                 // The VM takes the bound value and its source variables; the
                 // sources derive from the RHS.
