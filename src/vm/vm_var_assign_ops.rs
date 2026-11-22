@@ -1203,28 +1203,12 @@ impl Interpreter {
         // in-place container writer does; under the mutex alone a concurrent
         // `@a[$i]` read indexed the freed buffer (#18651). Taken before the
         // mutex, in the order every stripe-and-mutex holder uses.
-        let mut _structure = if plain_store {
+        let _structure = if plain_store {
             None
         } else {
             crate::value::container_lock::ContainerStructGuard::acquire_for_celled(&value_cell)
         };
         let mut inner = value_cell.lock().unwrap();
-        // A plain store that replaces a container drops the cell's reference to
-        // its node. An element store reached through this cell (`$alias[$i]`
-        // with `$alias := $holder`) writes that node under the cell's stripe,
-        // not under the cell's mutex, so releasing the node here without the
-        // stripe freed it under the writer (#18667). Only a cell that holds a
-        // container pays for the stripe; the mutex is dropped first to keep the
-        // stripe-then-mutex order every holder uses.
-        if _structure.is_none()
-            && crate::value::container_lock::multi_mutator_threads_live()
-            && crate::value::container_lock::container_node_addr(&inner).is_some()
-        {
-            drop(inner);
-            _structure =
-                crate::value::container_lock::ContainerStructGuard::acquire_for_celled(&value_cell);
-            inner = value_cell.lock().unwrap();
-        }
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
                 if !plain_store
