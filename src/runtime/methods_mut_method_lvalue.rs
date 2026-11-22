@@ -1842,6 +1842,19 @@ impl Interpreter {
                 method
             )));
         }
+        // A private scalar a parent and a child both declare is stored once per
+        // declaring class (`Owner\0x`, ADR-0121): the store goes to the copy
+        // of the class that declares the method (#18558). When that copy
+        // cannot be named, run the method and write through the container
+        // its `$!x` tail hands back, below.
+        let owner_key = match &rw_attr_target {
+            Some((attr_name, '$')) if method_args.is_empty() => {
+                self.rw_method_owner_attr_key(&target, &class_name.resolve(), method, attr_name)?
+            }
+            _ => None,
+        };
+        let rw_attr_target = rw_attr_target.filter(|_| !matches!(owner_key, Some(None)));
+        let (owner_key, owner_class) = owner_key.flatten().unzip();
         if let Some((attr_name, attr_sigil)) = rw_attr_target {
             // An attribute bound to a `Proxy` (`$!a := Proxy.new(...)`) is the
             // container the method hands back: assigning stores through it.
@@ -1849,7 +1862,7 @@ impl Interpreter {
                 && method_args.is_empty()
                 && let Some(proxy) = {
                     let map = attributes.as_map();
-                    map.get(attr_name.as_str())
+                    map.get(owner_key.as_deref().unwrap_or(attr_name.as_str()))
                         .or_else(|| map.get(format!("{attr_name}!").as_str()))
                         .map(|held| match held.view() {
                             ValueView::ContainerRef(cell) => cell.load(),
@@ -1871,8 +1884,11 @@ impl Interpreter {
             // An `is rw` method whose body is a bare `$!attr` IS that
             // attribute's accessor, so its store obeys the same type constraint
             // the generated accessor enforces.
-            let value =
-                self.check_attr_store_type(&class_name.resolve(), &attr_name, attr_sigil, value)?;
+            // A per-owner copy is typed by its own declaration.
+            let decl_class = owner_class
+                .clone()
+                .unwrap_or_else(|| class_name.resolve());
+            let value = self.check_attr_store_type(&decl_class, &attr_name, attr_sigil, value)?;
             let mut updated = attributes.to_map();
             // The method body's own sigil (e.g. a bare `%!h`) is authoritative;
             // fall back to the class's declared sigil for this attribute only
@@ -1917,7 +1933,7 @@ impl Interpreter {
             // the generated accessor: `is default(...)`, else the declared type
             // object, else `Any`.
             assigned_value = self.attr_store_nil_default(
-                &class_name.resolve(),
+                &decl_class,
                 &attr_name,
                 attr_sigil,
                 assigned_value,
@@ -1946,17 +1962,18 @@ impl Interpreter {
             {
                 return Ok(assigned_value);
             }
+            let store_key = owner_key.as_deref().unwrap_or(attr_name.as_str());
             if attr_sigil == '$'
                 && !updated
-                    .get(attr_name.as_str())
+                    .get(store_key)
                     .is_some_and(Value::container_ref_is_itemized)
             {
                 // A raw method exposes the attribute's current Scalar. A
                 // bound attribute shares that cell with its source variable,
                 // so assignment must store through it rather than replace it.
-                updated.insert_through(attr_name.as_str(), assigned_value.clone());
+                updated.insert_through(store_key, assigned_value.clone());
             } else {
-                updated.insert(attr_name, assigned_value.clone());
+                updated.insert(store_key.to_string(), assigned_value.clone());
             }
             // The instance's attribute cell is shared by every handle to it,
             // so the store commits into it whether or not the invocant was a
