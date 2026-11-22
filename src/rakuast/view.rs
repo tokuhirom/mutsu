@@ -2410,19 +2410,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::SourceIdentifier => written_identifier(names, &spelled.expr),
             // `::Array`: the name starts with its empty edge.
             Spelling::LeadingColons => {
-                let mut node = view_expr(names, &spelled.expr)?;
-                if matches!(
-                    node.class,
-                    RakuAstClass::TypeSimple | RakuAstClass::TermName
-                ) {
-                    name_parts::with_leading_empty(&mut node.fields);
-                } else if node.class == RakuAstClass::TypeDefinedness {
-                    // `::Int:D`: the smiley's base type.
-                    super::infix_origins::with_child(&mut node, "base-type", |base| {
-                        name_parts::with_leading_empty(&mut base.fields)
-                    });
-                }
-                Ok(node)
+                Ok(name_parts::leading_colons(view_expr(names, &spelled.expr)?))
             }
             Spelling::ArraySections(sections) => {
                 let fields = sections

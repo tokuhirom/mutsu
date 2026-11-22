@@ -160,6 +160,22 @@ pub(super) fn with_leading_empty(fields: &mut [RakuAstField]) {
     field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(name_from_parts(parts))));
 }
 
+/// `::Array`, `::Int:D`: the view of a type term written after a leading
+/// `::`, its name (or its smiley's base type's) starting with the empty edge.
+// Cost: O(k), k = number of parts of the name.
+pub(super) fn leading_colons(mut node: RakuAstNode) -> RakuAstNode {
+    match node.class {
+        RakuAstClass::TypeSimple | RakuAstClass::TermName => with_leading_empty(&mut node.fields),
+        RakuAstClass::TypeDefinedness => {
+            super::infix_origins::with_child(&mut node, "base-type", |base| {
+                with_leading_empty(&mut base.fields)
+            })
+        }
+        _ => {}
+    }
+    node
+}
+
 /// Whether a `RakuAST::Name` starts with the empty edge (`::Foo`).
 pub(super) fn has_leading_empty(node: &RakuAstNode) -> bool {
     matches!(
