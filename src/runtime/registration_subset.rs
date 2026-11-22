@@ -56,6 +56,15 @@ impl Interpreter {
             }
             pred.clone()
         });
+        // Whether the spelling is taken by a package (`our`) subset, which a
+        // `my subset` of the same name must not overwrite (#18217).
+        let shadows_package_subset = is_my
+            && decl_id != 0
+            && self
+                .registry()
+                .subsets
+                .get(name)
+                .is_some_and(|existing| !existing.lexical);
         // Drop any cached compiled predicate for this name so a redeclaration
         // recompiles against the new predicate (see `subset_predicate_cache`).
         self.types.subset_predicate_cache.remove(name);
@@ -86,6 +95,7 @@ impl Interpreter {
             predicate_int_compare,
             predicate_closure,
             refinement,
+            lexical: is_my && decl_id != 0,
         });
         // The qualified name is the subset's *identity* (raku reports `Foo::RM`
         // from `.^name` and in every type-check message), so the short name is
@@ -204,13 +214,15 @@ impl Interpreter {
             self.register_lexical_class(name.to_string());
             // A `my subset` is reached through its storage name, which the
             // declaring scope binds its spelling to just below. It files the
-            // bare key only when no other subset holds it: overwriting an
-            // outer `subset S` left every check by that spelling answering
-            // the block's subset after the block (#18217).
-            self.registry_mut()
-                .subsets
-                .entry(name.to_string())
-                .or_insert(def);
+            // bare key unless a package subset holds it: overwriting an outer
+            // `subset S` left every check by that spelling answering the
+            // block's subset after the block (#18217). Another scope's `my
+            // subset` of the name is replaced, so the key is this
+            // declaration's, as the routine-local record below expects
+            // (`hide_dynamic_callers_local_subs`, #16099).
+            if !shadows_package_subset {
+                self.registry_mut().subsets.insert(name.to_string(), def);
+            }
         } else {
             self.registry_mut().subsets.insert(name.to_string(), def);
         }

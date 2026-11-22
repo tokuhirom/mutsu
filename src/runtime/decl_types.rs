@@ -183,6 +183,11 @@ pub(crate) struct SubsetDef {
     /// Unlike `predicate_closure` its presence does not change how the type
     /// check runs. `None` for a subset with no `where` clause.
     pub(crate) refinement: Option<Value>,
+    /// A `my subset` with a declaration-site identity (ADR-0047): its bare
+    /// registry key stands in for whichever scope declared it last, so a
+    /// later `my subset` of the name may take the key, while a package
+    /// subset's may not (#18217, #16099).
+    pub(crate) lexical: bool,
 }
 
 #[derive(Debug, Clone)]
