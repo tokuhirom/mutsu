@@ -259,7 +259,11 @@ impl Interpreter {
         ) {
             return Some(err);
         }
-        let got = args.iter().filter(|arg| !arg.is_string_pair_value()).count() + 1;
+        let got = args
+            .iter()
+            .filter(|arg| !arg.is_string_pair_value())
+            .count()
+            + 1;
         Some(RuntimeError::new(
             crate::runtime::types::arity_message::too_many_positionals(1, 1, got),
         ))
