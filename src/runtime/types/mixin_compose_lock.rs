@@ -5,8 +5,8 @@
 //! declaration first, then the role's methods, submethods and HOW. A second
 //! thread that asked for the same type in between found the class already
 //! registered, took it as composed, and dispatched on a class that did not
-//! have the role's methods yet ("No such method 'mark' for invocant of type
-//! 'Conc::Maker[Any]+{Marker}'", about 1 run in 60 of
+//! have the role's methods yet (`No such method 'mark' for invocant of type
+//! 'Conc::Maker[Any]+{Marker}'`, about 1 run in 60 of
 //! `t/concurrency/thread-lock/role-pun-shared-across-threads.t`).
 //!
 //! `ensure_mixin_class_with_args` holds this lock from its "is it already
