@@ -574,6 +574,7 @@ impl Interpreter {
         // A cache hit skips the parse, which is where a unit's mention of a
         // deferral builtin is noted (`parser::parse_program`); note it here.
         crate::opcode::note_dispatcher_mention(&code);
+        crate::static_outer_latch::note_mention(&code);
         let precomp_eligible = self.module_precomp_eligible(&code)
             && unit.is_none_or(super::module_bytecode::ModuleUnit::may_use_cache);
         let parse_session = unit.map(super::module_bytecode::ModuleUnit::parse_session);
@@ -1086,6 +1087,7 @@ impl Interpreter {
                 // A hit skips the parse, which is where a unit's mention of a
                 // deferral builtin is noted (`parser::parse_program`).
                 crate::opcode::note_dispatcher_mention(&source_text);
+                crate::static_outer_latch::note_mention(&source_text);
                 self.replay_parse_effects(&source_path, &entry.effects);
                 let ast = super::module_load_facts::ModuleAst::encoded(
                     entry.ast.clone(),

@@ -33,6 +33,7 @@ impl Env {
                     activation,
                     capture_first,
                     capture_names,
+                    ..
                 }) = current.inner.static_link()
                 {
                     if let Some(value) = activation.as_ref().and_then(|capture| capture.get(&key)) {

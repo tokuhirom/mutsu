@@ -40,11 +40,12 @@ impl Interpreter {
         let index = self.caller_env_stack.len().checked_sub(depth)?;
         let env = self.caller_env_stack.get(index)?;
         let key = format!("{sigil}{rest}");
-        let scopes = env.enclosing_scopes();
         let found = if unit {
-            scopes.last().and_then(|scope| scope.get(&key))
+            env.unit_scope().and_then(|scope| scope.get(&key))
         } else {
-            scopes.iter().find_map(|scope| scope.get(&key))
+            env.enclosing_scopes()
+                .iter()
+                .find_map(|scope| scope.get(&key))
         };
         Some(found.unwrap_or(Value::NIL))
     }

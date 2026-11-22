@@ -216,6 +216,7 @@ impl Interpreter {
             compiled_routine_keys,
             free_var_decl_slots,
             hoist_seed_slots,
+            static_view_slots: _,
             own_scope_decl_slots,
             lexsub_free_aliases: _,
             multi,

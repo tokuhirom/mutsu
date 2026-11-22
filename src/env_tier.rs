@@ -117,6 +117,12 @@ pub(crate) struct Tier {
     /// frame resolves those names there first, past its callers and the
     /// per-name routine stores (ADR-12529 phase 3, #12692).
     activation_capture: bool,
+    /// On a reflective closure's capture: it was taken in an `EVAL`'d unit's
+    /// mainline, so the capture is that unit's outermost scope -- `UNIT::` of
+    /// a frame running the closure answers from it, and the closure's frame
+    /// links capture-first rather than to the live program scope (ADR-12529
+    /// amendment A1 (c), #18787).
+    eval_unit_capture: bool,
     /// On a frame root marked `outer_is_unit` (`Env::mark_outer_is_unit`):
     /// the plain user lexicals the program scope binds that are not visible
     /// to the running code -- those of mainline blocks that do not enclose it
@@ -157,6 +163,7 @@ impl Clone for Tier {
             program_scope_capture: self.program_scope_capture,
             program_scope_block_names: self.program_scope_block_names.clone(),
             activation_capture: self.activation_capture,
+            eval_unit_capture: self.eval_unit_capture,
             unit_hidden: self.unit_hidden.clone(),
         }
     }
@@ -277,6 +284,7 @@ impl Tier {
             program_scope_capture: false,
             program_scope_block_names: None,
             activation_capture: false,
+            eval_unit_capture: false,
             unit_hidden: None,
         }
     }
@@ -320,6 +328,19 @@ impl Tier {
     // Cost: O(1).
     pub(crate) fn mark_activation_capture(&mut self) {
         self.activation_capture = true;
+    }
+
+    /// See the `eval_unit_capture` field.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_eval_unit_capture(&self) -> bool {
+        self.eval_unit_capture
+    }
+
+    /// Mark this tier as a closure capture taken in an `EVAL`'d unit's mainline.
+    // Cost: O(1).
+    pub(crate) fn mark_eval_unit_capture(&mut self) {
+        self.eval_unit_capture = true;
     }
 
     /// This tier's frame-root static link, if it has one.

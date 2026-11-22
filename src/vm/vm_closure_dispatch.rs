@@ -575,9 +575,12 @@ impl Interpreter {
         // (#12692) links the same way, its capture (that activation's cells)
         // first wherever it was taken.
         let activation_capture = data.env.is_activation_capture();
+        // Created in an `EVAL`'d unit's mainline: the capture is that unit's
+        // outermost scope, ahead of the program scope (ADR-12529 A1 (c)).
+        let eval_unit = data.env.is_eval_unit_capture();
         if cc.static_name_lookup || activation_capture {
             let program_scope = data.env.is_program_scope_capture();
-            let capture_first = activation_capture || !program_scope;
+            let capture_first = activation_capture || eval_unit || !program_scope;
             // Created at program scope inside a nested block: that block's
             // lexicals still answer from the capture (#13595).
             let capture_names = (program_scope && !capture_first)
@@ -587,6 +590,7 @@ impl Interpreter {
                 capture_first,
                 activation_capture,
                 capture_names,
+                eval_unit,
             );
         } else {
             // Every other closure resolves a lexical through its capture and

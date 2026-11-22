@@ -159,6 +159,7 @@ mod vm_lexsub_free_cache;
 mod vm_light_aggregate_params;
 mod vm_module_own_type;
 mod vm_sequence_role_delegate;
+mod vm_static_view_call;
 use vm_frame_lexical::FrameLexicalCallSite;
 pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget};
 pub(crate) use vm_helpers_lazy_adaptor::{is_infinite_operand, is_unbounded_operand};

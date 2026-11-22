@@ -1220,7 +1220,12 @@ impl Interpreter {
             // Only a closure that names lexicals by string reads them through
             // its capture ahead of its callers; a `gather`/`whenever` body
             // runs against the live env and keeps the plain copy.
-            let at_program_scope = cc.static_name_lookup && !self.env().chain_has_frame_root();
+            // Created in an `EVAL`'d unit's mainline: the capture stands for
+            // that unit's outermost scope, which the program scope does not
+            // hold (ADR-12529 A1 (c), #18787).
+            let eval_unit = cc.static_name_lookup && cc.eval_mainline_closure;
+            let at_program_scope =
+                cc.static_name_lookup && !eval_unit && !self.env().chain_has_frame_root();
             // At program scope too: the closure's frame links to the live
             // program scope, but on another thread (`start { EVAL ... }`)
             // that scope is the worker's env copy, so only a shared cell
@@ -1289,8 +1294,14 @@ impl Interpreter {
             // Drop the closure's own params/locals (e.g. a WhateverCode's `_`
             // topic param) so a stale enclosing `for`/map topic is not inherited
             // and later leaked back to the caller.
+            // An `EVAL`'d unit's capture is that unit's outermost scope, which
+            // `CALLER::UNIT::` reads from the closure's frame: a plain lexical
+            // the closure redeclares stays the unit's binding there (the frame
+            // shadows it by its own tiers).
             for name in &cc.locals {
-                if !cc.free_var_syms.iter().any(|s| s.with_str(|x| x == name)) {
+                if !cc.free_var_syms.iter().any(|s| s.with_str(|x| x == name))
+                    && !(eval_unit && crate::env::is_plain_user_lexical(name))
+                {
                     flat.remove_sym(Symbol::intern(name));
                 }
             }
@@ -1310,7 +1321,9 @@ impl Interpreter {
             // Taken while the program scope itself runs: the closure's frame
             // links to the live program scope when it is called (ADR-12529),
             // so its scalars need no cells.
-            if at_program_scope {
+            if eval_unit {
+                flat.mark_eval_unit_capture();
+            } else if at_program_scope {
                 flat.mark_program_scope_capture();
                 if let Some(names) = block_names {
                     flat.set_program_scope_block_names(names);
@@ -1352,7 +1365,9 @@ impl Interpreter {
                 None => self.env().filtered_flat_capture(&keep, probe),
             };
         self.finish_closure_capture(code, cc, &mut env);
-        if cc.static_name_lookup && !self.env().chain_has_frame_root() {
+        if cc.static_name_lookup && cc.eval_mainline_closure {
+            env.mark_eval_unit_capture();
+        } else if cc.static_name_lookup && !self.env().chain_has_frame_root() {
             env.mark_program_scope_capture();
         } else if self.env().runs_in_activation_frame() {
             // Created in a sub frame linked to its declaring activation
