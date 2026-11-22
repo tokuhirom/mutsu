@@ -459,6 +459,24 @@ impl Interpreter {
                     fields.join(", ")
                 ))));
             }
+            // `tr///`'s `StrDistance` has no class declaration to read its
+            // public attributes from either: `before` and `after` are all of it.
+            "StrDistance" if matches!(method, "raku" | "gist") => {
+                let attrs = attributes.as_map();
+                let fields: Vec<String> = ["before", "after"]
+                    .iter()
+                    .filter_map(|k| {
+                        attrs.get(*k).map(|a| {
+                            let a = crate::builtins::methods_0arg::raku_repr::raku_value(a);
+                            format!("{k} => {a}")
+                        })
+                    })
+                    .collect();
+                return Some(Ok(Value::str(format!(
+                    "StrDistance.new({})",
+                    fields.join(", ")
+                ))));
+            }
             "Backtrace::Frame" => {
                 let attr_map = attributes.as_map();
                 let file_value = attr_map
