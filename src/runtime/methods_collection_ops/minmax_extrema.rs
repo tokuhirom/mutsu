@@ -207,7 +207,6 @@ impl Interpreter {
         } else {
             Vec::new()
         };
-        let want_max = method == "max";
 
         let build_supply = |vals: Vec<Value>| {
             let mut attrs = HashMap::new();

@@ -4,7 +4,6 @@ use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
-use crate::grapheme_break::UnicodeSegmentation;
 
 impl Interpreter {
     pub(super) fn native_supply(

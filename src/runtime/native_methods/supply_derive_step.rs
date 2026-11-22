@@ -23,7 +23,7 @@ pub(in crate::runtime) fn is_step_mode(mode: &str) -> bool {
 
 /// The batch sizes of a `rotor`: its cycle of `elems => gap` specs, or the
 /// counts `n, n + 1, ...` of a lone endless range (`rotor(1..*)`).
-enum RotorCycle {
+pub(super) enum RotorCycle {
     Specs { specs: Vec<(i64, i64)>, next: usize },
     Counting(i64),
 }
@@ -112,7 +112,12 @@ fn rotor_cycle(args: &[Value]) -> Result<(Vec<Value>, bool), String> {
     while let Some(arg) = pending.pop_front() {
         match arg.view() {
             ValueView::Pair(key, value) if key == "partial" => partial = value.truthy(),
-            ValueView::Array(items, ..) | ValueView::Seq(items) => {
+            ValueView::Array(items, ..) => {
+                for item in items.iter().rev() {
+                    pending.push_front(item.clone());
+                }
+            }
+            ValueView::Seq(items) => {
                 for item in items.iter().rev() {
                     pending.push_front(item.clone());
                 }
@@ -432,8 +437,8 @@ impl Interpreter {
                 let mut merged = std::mem::take(carry);
                 merged.push_str(&normalized);
                 // The last grapheme may still combine with the next chunk.
-                use unicode_segmentation::UnicodeSegmentation;
-                let Some((last_start, _)) = merged.grapheme_indices(true).next_back() else {
+                use crate::grapheme_break::UnicodeSegmentation;
+                let Some((last_start, _)) = merged.grapheme_indices(true).last() else {
                     return Ok(Vec::new());
                 };
                 *carry = merged[last_start..].to_string();
@@ -466,5 +471,15 @@ impl Interpreter {
         }
         out.extend(step_finish(state));
         Ok(out)
+    }
+
+    /// A stage's callable (or its own check) died: quit the stage, as
+    /// `map`'s does (#18473), and report it stopped.
+    // Cost: O(1) plus the downstream quit.
+    pub(super) fn buffer_stage_quit(&mut self, id: u64, err: RuntimeError, emitter: &Value) -> Result<bool, RuntimeError> {
+        super::supply_derive_buffer::buffer_retire(id);
+        let reason = Self::supply_stage_quit_reason(err)?;
+        self.call_method_with_values(emitter.clone(), "quit", vec![reason])?;
+        Ok(true)
     }
 }

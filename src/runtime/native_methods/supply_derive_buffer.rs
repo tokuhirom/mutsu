@@ -489,14 +489,4 @@ impl Interpreter {
         }
         Ok(false)
     }
-
-    /// A stage's callable (or its own check) died: quit the stage, as
-    /// `map`'s does (#18473), and report it stopped.
-    // Cost: O(1) plus the downstream quit.
-    fn buffer_stage_quit(&mut self, id: u64, err: RuntimeError, emitter: &Value) -> Result<bool, RuntimeError> {
-        buffer_retire(id);
-        let reason = Self::supply_stage_quit_reason(err)?;
-        self.call_method_with_values(emitter.clone(), "quit", vec![reason])?;
-        Ok(true)
-    }
 }
