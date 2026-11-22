@@ -44,6 +44,10 @@ impl Interpreter {
         ) || sub_data.env.get("__mutsu_lookup_class").is_some()
             || sub_data.param_defs.iter().any(|pd| pd.is_invocant);
         let takes_positional_invocant = !is_method_code;
+        // A multi candidate keeps a method's own invocant parameter: its type
+        // and smiley (`(::T Mu:U:)` vs `(Mu:D:)`) take part in choosing the
+        // candidate, where a single method has nothing to choose between.
+        let keep_invocant = multi && is_method_code;
         let filtered_param_defs: Vec<ParamDef> = if takes_positional_invocant {
             let mut defs: Vec<ParamDef> = sub_data.param_defs.to_vec();
             // Code with a names-only signature (a one-parameter pointy
@@ -69,6 +73,8 @@ impl Interpreter {
                 first.is_invocant = true;
             }
             defs
+        } else if keep_invocant {
+            sub_data.param_defs.to_vec()
         } else {
             sub_data
                 .param_defs
@@ -82,7 +88,7 @@ impl Interpreter {
         // params like any invocant, but the body refers to it by name,
         // so prepend a `SELF := self` binding and let the dispatch
         // recompile the adjusted body on demand.
-        let named_invocant: Option<String> = (!takes_positional_invocant)
+        let named_invocant: Option<String> = (!takes_positional_invocant && !keep_invocant)
             .then(|| {
                 sub_data
                     .param_defs
@@ -184,7 +190,7 @@ impl Interpreter {
             .filter(|pd| pd.is_invocant)
             .map(|pd| pd.name.as_str())
             .collect();
-        let filtered_params: Vec<String> = if takes_positional_invocant {
+        let filtered_params: Vec<String> = if takes_positional_invocant || keep_invocant {
             sub_data.params.to_vec()
         } else {
             sub_data
