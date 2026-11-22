@@ -482,7 +482,7 @@ fn every_variant_roundtrips_losslessly() {
             global: true,
             exhaustive: false,
             overlap: false,
-            repeat: Some(2),
+            repeat: Some(Value::int(2)),
             nth: None,
             pos: false,
             pos_value: None,
