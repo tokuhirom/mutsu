@@ -331,6 +331,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::thunk::is_marker(field)
                 || node.class == RakuAstClass::ParameterTargetVar
                     && field.name == Some("declaration")
+                || super::enum_implicit_traits::is_hidden(node, field)
                 || super::signature_decl_traits::is_hidden(node, field)
                 || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
                 || node.class == RakuAstClass::Parameter && field.name == Some("array-shape")
