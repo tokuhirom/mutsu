@@ -15,8 +15,8 @@
 //! is not walked: only the terms that share the target's `EXPR` can move the
 //! sigil.
 
-use super::{ContextKind, Expr};
-use crate::ast_visit::Visit;
+use super::{ContextKind, Expr, SubstThunk};
+use crate::ast_visit::{Visit, VisitMut};
 use std::cell::Cell;
 
 /// The sigil an expression's variable terms have left so far: `$*LEFTSIGIL`.
@@ -34,11 +34,63 @@ thread_local! {
     static INHERITED: Cell<Option<(usize, LeftSigil)>> = const { Cell::new(None) };
 }
 
+/// Mark the `=` of every `s[...] = …` in `expr`'s own expression, which
+/// starts at `at`, as an item assignment when the sigil is `$` there (#18446):
+/// rakudo's substitution reads `$*LEFTSIGIL` as `infix:<=>` does, so
+/// `$s ~~ s[a] = 1` is `Assignment.new(:item)` and a lone `s[a] = 1` is not.
+/// A substitution in an expression of its own is marked by that
+/// expression's parse.
+// Cost: O(n), n = size of the part of `expr` that shares its expression, plus
+// the size of `expr` when it holds such a substitution.
+pub(crate) fn mark_substitutions(at: &str, expr: &mut Expr) {
+    let sigil = match INHERITED.get() {
+        Some((ptr, sigil)) if ptr == at.as_ptr() as usize => sigil,
+        _ => LeftSigil::Unset,
+    };
+    let mut reader = Reader {
+        sigil,
+        marks: Some(Vec::new()),
+    };
+    reader.visit_expr(expr);
+    let marks = reader.marks.unwrap_or_default();
+    if !marks.is_empty() {
+        Marker { marks }.visit_expr_mut(expr);
+    }
+}
+
+/// Sets the `item` flag of the thunks [`Reader`] found, by address.
+struct Marker {
+    marks: Vec<(usize, bool)>,
+}
+
+impl VisitMut for Marker {
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        if self.marks.is_empty() {
+            return;
+        }
+        if let Expr::Subst {
+            replacement_thunk: Some(thunk),
+            ..
+        }
+        | Expr::NonDestructiveSubst {
+            replacement_thunk: Some(thunk),
+            ..
+        } = expr
+        {
+            let addr = &**thunk as *const SubstThunk as usize;
+            if let Some(at) = self.marks.iter().position(|(a, _)| *a == addr) {
+                thunk.item = self.marks.swap_remove(at).1;
+            }
+        }
+        crate::ast_visit::walk_expr_mut(self, expr);
+    }
+}
+
 /// The sigil after `expr` has been read with `sigil` already left by what
 /// precedes it.
 // Cost: O(n), n = size of the part of `expr` that shares its expression.
 pub(crate) fn after(sigil: LeftSigil, expr: &Expr) -> LeftSigil {
-    let mut reader = Reader { sigil };
+    let mut reader = Reader { sigil, marks: None };
     reader.visit_expr(expr);
     reader.sigil
 }
@@ -75,13 +127,19 @@ pub(crate) fn assignment_is_item(at: Option<&str>, target: &Expr) -> bool {
         (Some(at), Some((ptr, sigil))) if ptr == at.as_ptr() as usize => sigil,
         _ => LeftSigil::Unset,
     };
-    let mut reader = Reader { sigil };
+    let mut reader = Reader {
+        sigil,
+        marks: None,
+    };
     reader.visit_expr(target);
     reader.sigil == LeftSigil::Scalar
 }
 
 struct Reader {
     sigil: LeftSigil,
+    /// The `s[...] = …` thunks met, by address, with whether the sigil was
+    /// `$` there; `None` when nobody asked.
+    marks: Option<Vec<(usize, bool)>>,
 }
 
 impl Reader {
@@ -104,6 +162,8 @@ enum Step<'a> {
     Operands(Operands<'a>),
     /// An assignment: clears the sigil, then reads its source.
     Assign(&'a Expr),
+    /// An `s[...] = …` term: its `=` reads the sigil.
+    SubstAssign(&'a SubstThunk),
     /// A construct that opens an expression of its own, or is no variable term.
     Skip,
 }
@@ -147,6 +207,14 @@ fn step(expr: &Expr) -> Step<'_> {
         Expr::WhateverCurry(inner, ..) | Expr::DeitemizeForBind(inner) => {
             Step::Operands(Operands::One(inner))
         }
+        Expr::Subst {
+            replacement_thunk: Some(thunk),
+            ..
+        }
+        | Expr::NonDestructiveSubst {
+            replacement_thunk: Some(thunk),
+            ..
+        } if thunk.infix.is_none() => Step::SubstAssign(thunk),
         Expr::Ast(node) => match node.as_ref() {
             super::parsed::ParsedExpr::Assign(assign) => Step::Assign(&assign.source),
             super::parsed::ParsedExpr::SubscriptAdverbs(adverbs) => {
@@ -179,6 +247,12 @@ impl<'ast> Visit<'ast> for Reader {
             Step::Assign(source) => {
                 self.sigil = LeftSigil::Unset;
                 self.visit_expr(source);
+            }
+            Step::SubstAssign(thunk) => {
+                let item = self.sigil == LeftSigil::Scalar;
+                if let Some(marks) = &mut self.marks {
+                    marks.push((thunk as *const SubstThunk as usize, item));
+                }
             }
             Step::Skip => {}
         }
