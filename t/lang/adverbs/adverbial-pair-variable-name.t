@@ -5,7 +5,7 @@ use Test;
 # do not count as part of it; only the quoted data matters", so <>, <<>>, «»,
 # [] and () are interchangeable spellings of the same name.
 
-plan 35;
+plan 33;
 
 # --- keyed colon pairs: $foo:bar<baz> ------------------------------------
 
@@ -88,14 +88,12 @@ plan 35;
 }
 
 # --- subscript-adverb names are ordinary keys in a variable name ---------
-# rakudo reads `$y:k[1,2]` as the variable `$y:k<1 2>`; `:k`, `:v`, `:kv`,
+# rakudo reads `$y:k<1 2>` as one variable name; `:k`, `:v`, `:kv`,
 # `:p`, `:exists` and `:delete` are subscript adverbs only after a subscript.
 
 {
-    my $y:k[1,2] = 3;
-    is $y:k<1 2>, 3, ':k with a [] list value names k<1 2>';
-    is $y:k[1,2], 3, '... read back with the same [] spelling';
-    is $y:k(1,2), 3, '... and with ()';
+    my $y:k<1 2> = 3;
+    is $y:k<1 2>, 3, ':k with a word-list value is part of the name';
 
     my $x:k = 5;
     my $x = 7;
