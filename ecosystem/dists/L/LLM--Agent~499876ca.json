@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 2.54,
+        "secs": 1.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 6.46,
+        "secs": 3.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,20 +71,19 @@
         "nok": 0,
         "ok": 9,
         "plan": 21,
-        "secs": 4.38,
+        "secs": 2.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.73,
+        "secs": 1.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +93,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 5.84,
+        "secs": 3.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,11 +103,11 @@
       "cmp": "no_baseline",
       "path": "t/03-loop-basic.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t03-2-1795305132' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t03-2-1795360241' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 5.77,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -118,11 +117,11 @@
       "cmp": "no_baseline",
       "path": "t/04-loop-tools.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t04-2-1795305149' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t04-2-1795360251' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 18,
-        "secs": 5.61,
+        "secs": 3.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -132,11 +131,11 @@
       "cmp": "no_baseline",
       "path": "t/05-loop-retry.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t05-2-1795305163' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t05-2-1795360262' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 3.5,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -146,11 +145,11 @@
       "cmp": "no_baseline",
       "path": "t/06-loop-cancel.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t06-2-1795305175' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t06-2-1795360270' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 3.69,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -160,11 +159,11 @@
       "cmp": "no_baseline",
       "path": "t/07-session.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t07-2-1795305187' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t07-2-1795360277' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 4.35,
+        "secs": 2.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -174,11 +173,11 @@
       "cmp": "no_baseline",
       "path": "t/08-session-resume.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t08-2-1795305218' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t08-2-1795360298' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 25,
-        "secs": 23.04,
+        "secs": 15.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -190,7 +189,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 2.38,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -200,7 +199,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 6.31,
+        "secs": 3.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -210,11 +209,11 @@
       "cmp": "no_baseline",
       "path": "t/10-prompt.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-prompt-2-2170534351' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-prompt-2-2531496650' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 7,
         "plan": 15,
-        "secs": 2.68,
+        "secs": 2.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -224,11 +223,11 @@
       "cmp": "no_baseline",
       "path": "t/11-integration.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t11-2-1795305252' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t11-2-1795360319' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 5.54,
+        "secs": 2.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -242,7 +241,7 @@
         "nok": 1,
         "ok": 2,
         "plan": 5,
-        "secs": 184.95,
+        "secs": 185.3,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -256,7 +255,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 8,
-        "secs": 2.52,
+        "secs": 1.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -266,11 +265,11 @@
       "cmp": "no_baseline",
       "path": "t/14-request-budget.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t14-2-1795305770' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t14-2-1795360826' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 28,
-        "secs": 7.17,
+        "secs": 4.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -280,11 +279,11 @@
       "cmp": "no_baseline",
       "path": "t/15-artifacts.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t15-2-1795305786' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t15-2-1795360837' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 3.38,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -298,7 +297,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 4.49,
+        "secs": 2.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -308,11 +307,11 @@
       "cmp": "no_baseline",
       "path": "t/17-tool-envelopes.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t17-2-1795305811' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t17-2-1795360852' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 4.37,
+        "secs": 2.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -322,11 +321,11 @@
       "cmp": "no_baseline",
       "path": "t/18-tool-dispatch.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t18-2-1795305824' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t18-2-1795360859' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 14,
-        "secs": 5.64,
+        "secs": 3.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -336,11 +335,11 @@
       "cmp": "no_baseline",
       "path": "t/19-events-v2.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t19-2-1795305838' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t19-2-1795360868' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 4.23,
+        "secs": 2.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -350,11 +349,11 @@
       "cmp": "no_baseline",
       "path": "t/20-run-context.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t20-2-1795305850' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t20-2-1795360874' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 2.92,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -364,11 +363,11 @@
       "cmp": "no_baseline",
       "path": "t/21-subagents.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t21-2-1795305863' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t21-2-1795360883' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 28,
-        "secs": 7.76,
+        "secs": 5.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -378,11 +377,11 @@
       "cmp": "no_baseline",
       "path": "t/22-concurrency-groups.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t22-2-1795305883' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t22-2-1795360895' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 4.93,
+        "secs": 2.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -392,11 +391,11 @@
       "cmp": "no_baseline",
       "path": "t/23-steering.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t23-2-1795305897' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t23-2-1795360904' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 4.74,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -410,7 +409,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 17,
-        "secs": 6.75,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -420,11 +419,11 @@
       "cmp": "no_baseline",
       "path": "t/25-observation-aging.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t25-2-1795305929' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t25-2-1795360921' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 5.21,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -438,7 +437,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 4.26,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -448,11 +447,11 @@
       "cmp": "no_baseline",
       "path": "t/27-usage-clip.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t27-2-1795305955' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t27-2-1795360937' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 4.35,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -462,11 +461,11 @@
       "cmp": "no_baseline",
       "path": "t/28-question-channel.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t28-2-1795305969' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t28-2-1795360946' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 6.92,
+        "secs": 4.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -478,7 +477,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.03,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -488,7 +487,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 4.0,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -498,11 +497,11 @@
       "cmp": "no_baseline",
       "path": "t/30-background-tasks.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t30-2-1795305993' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t30-2-1795360961' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 6.23,
+        "secs": 3.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -512,11 +511,11 @@
       "cmp": "no_baseline",
       "path": "t/31-tool-round-handoff.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t31-2-1795306012' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t31-2-1795360971' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 5.64,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -526,11 +525,11 @@
       "cmp": "no_baseline",
       "path": "t/32-revival.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t32-2-1795306023' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t32-2-1795360980' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 85,
-        "secs": 4.08,
+        "secs": 3.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -540,11 +539,11 @@
       "cmp": "no_baseline",
       "path": "t/33-empty-completion.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t33-2-1795306037' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t33-2-1795360989' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 5.02,
+        "secs": 3.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -558,7 +557,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.87,
+        "secs": 3.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -568,11 +567,11 @@
       "cmp": "no_baseline",
       "path": "t/35-retrieval-handoff.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t35-2-1795306067' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t35-2-1795361010' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 3.73,
+        "secs": 3.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -586,7 +585,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 65.92,
+        "secs": 44.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -596,11 +595,11 @@
       "cmp": "no_baseline",
       "path": "t/37-schema-routing.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t37-2-1795306179' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t37-2-1795361086' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 30,
-        "secs": 6.11,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -612,7 +611,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.69,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -622,7 +621,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.18,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -632,11 +631,11 @@
       "cmp": "no_baseline",
       "path": "t/39-lock-snapshots.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t39-2-1795306197' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t39-2-1795361099' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 3.76,
+        "secs": 2.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -646,11 +645,11 @@
       "cmp": "no_baseline",
       "path": "t/40-steer-releases-wait.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/llm-agent-t40-2-1795306209' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/llm-agent-t40-2-1795361107' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 5.98,
+        "secs": 3.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -679,10 +678,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-21",
+    "date": "2026-11-22",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a462be76",
+    "mutsu_commit": "43567926",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -695,10 +694,10 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 51,
-    "baseline_files": 4,
-    "mutsu_assertions": 51,
-    "parity_files": 4,
+    "baseline_assertions": 73,
+    "baseline_files": 5,
+    "mutsu_assertions": 73,
+    "parity_files": 5,
     "regressed_files": 0
   },
   "version": "0.6.3"

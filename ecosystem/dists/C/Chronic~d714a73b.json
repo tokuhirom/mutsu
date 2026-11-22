@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.11,
+        "secs": 0.1,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.51,
+        "secs": 0.4,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.06,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,29 +46,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.46,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 26,
+        "first_failure": "default comparison works (the other way round",
+        "nok": 11,
+        "ok": 15,
         "plan": 26,
-        "secs": 0.16,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/020-basic.t",
       "raku": {
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.03,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +81,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.12,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +91,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.02,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +103,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.2,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +113,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.81,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +125,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.08,
+        "secs": 6.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +135,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.59,
+        "secs": 6.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,10 +147,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-21",
+    "date": "2026-11-22",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a462be76",
+    "mutsu_commit": "43567926",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -160,13 +161,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/HR/CHRONIC/4931e79d9032c59f67167223d59afca26dcce912.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 86,
     "baseline_files": 6,
-    "mutsu_assertions": 86,
-    "parity_files": 6,
-    "regressed_files": 0
+    "mutsu_assertions": 75,
+    "parity_files": 5,
+    "regressed_files": 1
   },
   "version": "0.0.14"
 }
