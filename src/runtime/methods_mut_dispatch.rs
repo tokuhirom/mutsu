@@ -393,11 +393,24 @@ impl Interpreter {
             // default (HashData/ArrayData) so it survives raw-parameter binding
             // and list construction, where the by-name `var_default` lookup
             // (the variable's original name) no longer resolves.
+            // A name `:=`-bound to another container (`my $y := $typed`)
+            // reports that container's descriptor when it has no declaration
+            // of its own (#18764).
+            let bound_cell = self.env.get(target_var).and_then(|v| match v.view() {
+                ValueView::ContainerRef(cell) => Some(cell.clone()),
+                _ => None,
+            });
+            let bound_of = bound_cell
+                .as_ref()
+                .and_then(crate::value::lookup_container_constraint);
             let default_val = if let Some(def) = Self::value_carried_default(&target) {
                 def
             } else if let Some(def) = self.var_default(target_var) {
                 def.clone()
-            } else if let Some(tc) = self.var_type_constraint(target_var) {
+            } else if let Some(def) = bound_cell.as_ref().and_then(|c| c.default_value()) {
+                def
+            } else if let Some(tc) = self.var_type_constraint(target_var).or_else(|| bound_of.clone())
+            {
                 Value::package(Symbol::intern(&tc))
             } else if matches!(target_var, "$/" | "$!" | "/" | "!") {
                 // The match/error special vars default to Nil, not Any
@@ -418,8 +431,9 @@ impl Interpreter {
                 "__mutsu_var_value".to_string(),
                 self.var_meta_contained_snapshot(target_var, &target),
             );
-            // Add .of: type constraint of the variable (Mu for unconstrained)
-            let of_val = if let Some(tc) = self.var_type_constraint(target_var) {
+            // Add .of: type constraint of the variable, else that of the cell
+            // it is `:=`-bound to (`my $y := $typed`; #18764), Mu otherwise.
+            let of_val = if let Some(tc) = self.var_type_constraint(target_var).or(bound_of) {
                 Value::package(Symbol::intern(&tc))
             } else {
                 Value::package(Symbol::intern("Mu"))
