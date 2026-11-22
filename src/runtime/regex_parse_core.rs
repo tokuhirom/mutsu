@@ -2767,6 +2767,17 @@ impl Interpreter {
                                     RegexAtom::Literal('X')
                                 }
                             }
+                            'Q' => {
+                                // Perl 5's `\Q…\E` quotemeta — X::Obsolete, as rakudo
+                                // reports it.
+                                PENDING_REGEX_ERROR.with(|e| {
+                                    *e.borrow_mut() = Some(RuntimeError::obsolete(
+                                        "\\Q as quotemeta",
+                                        "quotes or literal variable match",
+                                    ));
+                                });
+                                return None;
+                            }
                             'b' => {
                                 // Bare \b is obsolete Perl 5 syntax — reject with X::Obsolete
                                 PENDING_REGEX_ERROR.with(|e| {

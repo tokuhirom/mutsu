@@ -199,7 +199,10 @@ pub(crate) fn body_wants_thunk(body: &str) -> bool {
             match chars.get(i + 1) {
                 Some('/' | '<' | '\u{00A2}') => return false,
                 Some(d) if d.is_ascii_digit() => return false,
-                Some('_') => {
+                // `@_` / `%_` are a block's own arguments, which the thunk
+                // (a block) would bind; `$_` is the topic the regex runs under,
+                // which the thunk is called with (`match_qq_interp_result`).
+                Some('_') if c != '$' => {
                     let next = chars.get(i + 2);
                     if !next.is_some_and(|n| n.is_alphanumeric() || matches!(n, '_' | '-')) {
                         return false;
@@ -307,7 +310,11 @@ mod tests {
         assert!(!body_wants_thunk("$0"));
         assert!(!body_wants_thunk("x $<a>"));
         assert!(!body_wants_thunk("x $/"));
-        assert!(!body_wants_thunk("x $_"));
+        // `$_` is the topic the regex runs under, which the thunk is called
+        // with; `@_` would name the block's own arguments.
+        assert!(body_wants_thunk("x $_"));
+        assert!(body_wants_thunk("x { $_ }"));
+        assert!(!body_wants_thunk("x @_"));
         assert!(body_wants_thunk("x $_foo"));
         assert!(body_wants_thunk("x @a.join(\",\")"));
         assert!(!body_wants_thunk("plain \\$x"));
