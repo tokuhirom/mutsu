@@ -1516,10 +1516,12 @@ impl Interpreter {
                 // A block terminates once: a `whenever` source that quit it
                 // already (`forward_quit_to_supply_emitter`) wins over a later
                 // die of the body.
-                let first_terminal = close_supplier_id.is_none_or(
-                    crate::runtime::native_methods::supplier_mark_block_terminated,
-                );
-                if let Some(quit_reason) = on_demand_quit.filter(|_| first_terminal) {
+                let on_demand_quit = on_demand_quit.filter(|_| {
+                    close_supplier_id.is_none_or(
+                        crate::runtime::native_methods::supplier_mark_block_terminated,
+                    )
+                });
+                if let Some(quit_reason) = on_demand_quit {
                     if let Some(quit_fn) = quit_cb {
                         self.call_supply_quit_handler(quit_fn, quit_reason)?;
                         // Dispatching the quit callback clears
