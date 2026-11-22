@@ -13,6 +13,8 @@ use crate::builtins::methods_narg::buf::{
     buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like, make_buf_from_int_items,
     read_byte_offset, read_f32_endian, read_f32_ne, read_f64_endian, read_f64_ne, read_int_value,
 };
+use crate::symbol::Symbol;
+use crate::value::value_buf::{buf_len, buf_slice};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// What a `read-*` method reads: an integer of `size` bytes, or a float.
@@ -315,14 +317,15 @@ fn subbuf_length(arg: &Value, rest: usize) -> Option<i64> {
 /// `subbuf($range)`, `subbuf($from)` and `subbuf($from, $length)`: a buffer of
 /// the same class over part of the elements, the `Callable` bounds already
 /// called ([`subbuf_in`]).
-// Cost: O(e), e = elements (the elements are copied out of the storage).
+// Cost: O(t), t = elements taken (copied as storage bytes).
 fn subbuf(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if !is_buf_like(target) {
         return None;
     }
-    let items = buf_get_int_items(target)?;
-    let class = buf_class_name(target);
-    let len = items.len();
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    let len = buf_len(&attributes)?;
     let first = args.first()?;
     let (from, want) = match (first.view(), args.get(1)) {
         (ValueView::Int(from), None) => (from, None),
@@ -361,6 +364,11 @@ fn subbuf(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>>
         }
         Some(want) => (want as usize).min(len - from),
     };
+    let class = buf_class_name(target);
+    if let Some(slice) = buf_slice(Symbol::intern(&class), &attributes, from, take) {
+        return Some(Ok(slice));
+    }
+    let items = buf_get_int_items(target)?;
     Some(Ok(make_buf_from_int_items(
         &class,
         &items[from..from + take],
