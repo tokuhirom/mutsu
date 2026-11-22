@@ -256,7 +256,7 @@ fn export_sub(
     }
     let unit = attr(target, "unit-name")?.map(|v| v.to_string_value())?;
     // The hook the unit's body declared, kept by the load.
-    let hooks = interp.module.world.module_export_hooks.get(&unit).cloned();
+    let hooks = interp.module.world.module_export_hooks.read().get(&unit).cloned();
     Some(Ok(match hooks.as_deref() {
         None | Some([]) => Value::NIL,
         Some([hook]) => interp.sub_value_from_function_def((**hook).clone()),

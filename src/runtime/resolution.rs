@@ -190,7 +190,7 @@ impl Interpreter {
         // resolve `MOD::foo`. This fires only for genuinely-hidden owned exports,
         // so an unrelated `Foo::bar` in a sibling package block is never
         // spuriously resolved.
-        if !self.module.world.module_owned_exports.is_empty() {
+        if !self.module.world.module_owned_exports.read().is_empty() {
             if let Some(def) = self.resolve_hidden_owned_export(&cur_pkg, name) {
                 return Some(def);
             }
@@ -215,7 +215,7 @@ impl Interpreter {
         loop {
             if self
                 .module
-                .world.module_owned_exports
+                .world.module_owned_exports.read()
                 .get(probe)
                 .is_some_and(|owned| owned.contains_key(name))
                 && let Some(def) = dispatch_key::qualified_lookup(probe, name)

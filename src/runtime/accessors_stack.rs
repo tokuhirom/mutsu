@@ -597,8 +597,8 @@ impl Interpreter {
         // `EVAL_UNIT_PARENTS` lock. On `benchmarks/bench-fib.raku`, which
         // declares no module and no `EVAL`, that dead work was 4.9% of the run
         // (#7788).
-        if self.module.world.unit_module_packages.is_empty()
-            && self.module.world.module_source_packages.is_empty()
+        if self.module.world.unit_module_packages.read().is_empty()
+            && self.module.world.module_source_packages.read().is_empty()
         {
             return None;
         }
@@ -643,7 +643,7 @@ impl Interpreter {
     fn lexical_package_walk(&self, def_file: Option<Symbol>, start: Symbol) -> Option<Symbol> {
         let mut unit = start;
         loop {
-            if let Some(package) = self.module.world.unit_module_packages.get(&unit) {
+            if let Some(package) = self.module.world.unit_module_packages.read().get(&unit) {
                 return Some(*package);
             }
             let Some(parent) = crate::runtime::eval_unit_parent(unit) else {
@@ -651,7 +651,7 @@ impl Interpreter {
             };
             unit = parent;
         }
-        def_file.and_then(|file| self.module.world.module_source_packages.get(&file).copied())
+        def_file.and_then(|file| self.module.world.module_source_packages.read().get(&file).copied())
     }
 
     /// The fixture record of the innermost routine frame that has one: the

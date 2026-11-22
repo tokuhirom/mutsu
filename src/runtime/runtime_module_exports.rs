@@ -207,7 +207,7 @@ impl Interpreter {
             };
             std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                 .insert(installed_key, def);
-            crate::runtime::cow_table_mut(&mut self.module.world.module_registered_functions)
+            crate::runtime::cow_table_mut(&mut self.module.world.module_registered_functions.write_guard())
                 .insert(installed_key);
             installed.push(installed_key);
         }
@@ -456,7 +456,7 @@ impl Interpreter {
             };
             std::sync::Arc::make_mut(&mut self.routines_mut().our_scoped_functions)
                 .insert(installed_key, def);
-            crate::runtime::cow_table_mut(&mut self.module.world.module_registered_functions)
+            crate::runtime::cow_table_mut(&mut self.module.world.module_registered_functions.write_guard())
                 .insert(installed_key);
             installed.push(installed_key);
         }
@@ -598,7 +598,8 @@ impl Interpreter {
             // installed them; it has no notion of a key being reassigned to a
             // different owner, and a later import reusing the exact same
             // `GLOBAL::` key must not inherit the stale protection (#8798).
-            let table = crate::runtime::cow_table_mut(&mut self.module.world.module_registered_functions);
+            let mut module_registered_functions_w = self.module.world.module_registered_functions.write_guard();
+            let table = crate::runtime::cow_table_mut(&mut module_registered_functions_w);
             for key in &removed_keys {
                 table.remove(key);
             }
@@ -608,7 +609,7 @@ impl Interpreter {
     }
 
     pub(crate) fn record_exported_sub_value(&mut self, package: String, name: String, val: Value) {
-        crate::runtime::cow_table_mut(&mut self.module.world.exported_sub_values)
+        crate::runtime::cow_table_mut(&mut self.module.world.exported_sub_values.write_guard())
             .entry(package)
             .or_default()
             .insert(name, val);
@@ -627,7 +628,7 @@ impl Interpreter {
         let Some(owner) = self.module.module_load_stack.last().cloned() else {
             return;
         };
-        crate::runtime::cow_table_mut(&mut self.module.world.exported_token_defs)
+        crate::runtime::cow_table_mut(&mut self.module.world.exported_token_defs.write_guard())
             .entry(owner)
             .or_default()
             .insert(name.to_string(), defs);
@@ -645,7 +646,7 @@ impl Interpreter {
             keys.push(owner);
         }
         for key in keys {
-            crate::runtime::cow_table_mut(&mut self.module.world.exported_scalar_vars)
+            crate::runtime::cow_table_mut(&mut self.module.world.exported_scalar_vars.write_guard())
                 .entry(key)
                 .or_default()
                 .insert(name.to_string());
@@ -664,7 +665,8 @@ impl Interpreter {
         }
         let mirror_name = name.clone();
         let mirror_tags = tags.clone();
-        let entry = crate::runtime::cow_table_mut(&mut self.module.world.exported_vars)
+        let mut exported_vars_w = self.module.world.exported_vars.write_guard();
+        let entry = crate::runtime::cow_table_mut(&mut exported_vars_w)
             .entry(package)
             .or_default()
             .entry(name)
@@ -677,7 +679,8 @@ impl Interpreter {
         // module name, just as exported subs are mirrored above, so a tagged
         // `our &alias is export(:tag)` is visible to a later `use Module :tag`.
         if let Some(unit_mod) = self.declared_unit_module_here().cloned() {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.world.exported_vars)
+            let mut exported_vars_w = self.module.world.exported_vars.write_guard();
+            let mirror = crate::runtime::cow_table_mut(&mut exported_vars_w)
                 .entry(unit_mod)
                 .or_default()
                 .entry(mirror_name.clone())
@@ -693,7 +696,8 @@ impl Interpreter {
         if self.declared_unit_module_here().is_some()
             && let Some(module) = self.module.module_load_stack.last().cloned()
         {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.world.exported_vars)
+            let mut exported_vars_w = self.module.world.exported_vars.write_guard();
+            let mirror = crate::runtime::cow_table_mut(&mut exported_vars_w)
                 .entry(module)
                 .or_default()
                 .entry(mirror_name.clone())
@@ -708,7 +712,7 @@ impl Interpreter {
         // is loading as well, allowing `use Module :tag` to import it and to
         // expose it through the importing lexical pseudo-stash.
         if let Some(owner) = self.module.module_load_stack.last().cloned() {
-            let mirror = crate::runtime::cow_table_mut(&mut self.module.world.exported_vars)
+            let mirror = crate::runtime::cow_table_mut(&mut self.module.world.exported_vars.write_guard())
                 .entry(owner)
                 .or_default()
                 .entry(mirror_name)
@@ -727,12 +731,12 @@ impl Interpreter {
         let table = self.module.module_toplevel.enum_keys.read();
         let declared = self
             .module
-            .world.module_declared_unit_packages
+            .world.module_declared_unit_packages.read()
             .get(&crate::symbol::Symbol::intern(module))
             .map(|pkg| pkg.as_str().to_string());
         let block = self
             .module
-            .world.module_block_packages
+            .world.module_block_packages.read()
             .get(&crate::symbol::Symbol::intern(module))
             .map(|pkg| pkg.as_str().to_string());
         [Some(module.to_string()), declared, block, Some("GLOBAL".to_string())]
@@ -779,7 +783,7 @@ impl Interpreter {
     pub(crate) fn exported_var_value(&self, module: &str, name: &str) -> Option<Value> {
         if let Some(owner) = self
             .module
-            .world.reexported_var_owners
+            .world.reexported_var_owners.read()
             .get(&(module.to_string(), name.to_string()))
         {
             return self.exported_var_value(owner, name);
@@ -818,7 +822,7 @@ impl Interpreter {
                 .or(our_value.as_ref())
                 .or_else(|| {
                     self.module
-                        .world.module_scope_lexicals
+                        .world.module_scope_lexicals.read()
                         .get(module)
                         .and_then(|e| e.get(name))
                 })
@@ -860,7 +864,7 @@ impl Interpreter {
             .or_else(|| {
                 let declared = self
                     .module
-                    .world.module_declared_unit_packages
+                    .world.module_declared_unit_packages.read()
                     .get(&crate::symbol::Symbol::intern(module))?;
                 let key =
                     crate::qualified::qualified(*declared, crate::symbol::Symbol::intern(name));
@@ -922,7 +926,7 @@ impl Interpreter {
             // re-import must recover the same code value from that table.
             .or_else(|| {
                 self.module
-                    .world.module_scope_lexicals
+                    .world.module_scope_lexicals.read()
                     .get(module)
                     .and_then(|entries| entries.get(name).or_else(|| entries.get(bare)))
                     .cloned()
@@ -944,13 +948,13 @@ impl Interpreter {
 
         let subs = self
             .module
-            .world.exported_subs
+            .world.exported_subs.read()
             .get(module)
             .cloned()
             .unwrap_or_default();
         let vars = self
             .module
-            .world.exported_vars
+            .world.exported_vars.read()
             .get(module)
             .cloned()
             .unwrap_or_default();
@@ -962,7 +966,7 @@ impl Interpreter {
         // and report X::Import::NoSuchTag correctly.
         let unit_global_subs: rustc_hash::FxHashMap<String, rustc_hash::FxHashSet<String>> = self
             .module
-            .world.unit_module_exported_subs
+            .world.unit_module_exported_subs.read()
             .get(module)
             .cloned()
             .unwrap_or_default();
@@ -973,7 +977,7 @@ impl Interpreter {
         // tagged exports by renaming them to `MOD::name`) can re-import them.
         let owned_subs: rustc_hash::FxHashMap<String, rustc_hash::FxHashSet<String>> = self
             .module
-            .world.module_owned_exports
+            .world.module_owned_exports.read()
             .get(module)
             .cloned()
             .unwrap_or_default();
@@ -1517,7 +1521,7 @@ impl Interpreter {
             // both resolve.
             if let Some(defs) = self
                 .module
-                .world.exported_token_defs
+                .world.exported_token_defs.read()
                 .get(module)
                 .and_then(|m| m.get(&name))
                 .cloned()
@@ -1533,7 +1537,7 @@ impl Interpreter {
             // binding so `&name ~~ Role` works after import.
             if let Some(val) = self
                 .module
-                .world.exported_sub_values
+                .world.exported_sub_values.read()
                 .get(module)
                 .and_then(|m| m.get(&name))
                 .cloned()
@@ -1687,7 +1691,7 @@ impl Interpreter {
     /// Load a module without importing its exports (Raku `need` keyword).
     pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         let is_nested_need = !self.module.module_load_stack.is_empty();
-        if self.module.world.loaded_modules.contains(module) {
+        if self.module.world.loaded_modules.read().contains(module) {
             self.replay_module_visibility_grant(module);
             return Ok(());
         }
@@ -1727,14 +1731,14 @@ impl Interpreter {
             let class_names: Vec<String> = self.registry().classes.keys().cloned().collect();
             for class_name in &class_names {
                 if !class_snapshot.contains(class_name) {
-                    crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes)
+                    crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes.write_guard())
                         .insert(class_name.clone());
                     if let Some((_, short)) = crate::qualified::split_qualified(
                         crate::qualified::known_symbol(class_name),
                     )
                     .map(|(head, tail)| (head.as_str(), tail.as_str()))
                     {
-                        crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes)
+                        crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes.write_guard())
                             .insert(short.to_string());
                     }
                 }
@@ -1768,17 +1772,17 @@ impl Interpreter {
                     continue;
                 }
                 if is_nested_need || key_short != short_name {
-                    crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes)
+                    crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes.write_guard())
                         .insert(key_s.clone());
-                    crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes)
+                    crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes.write_guard())
                         .insert(key_short.to_string());
                 }
             }
             if is_nested_need {
-                crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes)
+                crate::runtime::cow_table_mut(&mut self.module.world.need_hidden_classes.write_guard())
                     .insert(short_name);
             }
-            crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules)
+            crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules.write_guard())
                 .insert(module.to_string());
         }
         result

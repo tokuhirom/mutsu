@@ -41,7 +41,7 @@ impl Interpreter {
     // Cost: O(n + s) on the first ask, n = source bytes scanned for Pod, s =
     // symbols under the unit's `EXPORT` package; O(1) after.
     pub(crate) fn loaded_unit_pad(&mut self, name: &str) -> Value {
-        if let Some(pad) = self.module.world.loaded_unit_pads.get(name) {
+        if let Some(pad) = self.module.world.loaded_unit_pads.read().get(name) {
             return pad.clone();
         }
         let mut pad = ValueMap::default();
@@ -64,9 +64,9 @@ impl Interpreter {
         }
         let pad = Self::lexical_pad_value(pad);
         // A unit still loading may yet add to its `EXPORT` package or Pod.
-        if self.module.world.loaded_modules.contains(name) {
+        if self.module.world.loaded_modules.write_guard().contains(name) {
             self.module
-                .world.loaded_unit_pads
+                .world.loaded_unit_pads.read()
                 .insert(name.to_string(), pad.clone());
         }
         pad

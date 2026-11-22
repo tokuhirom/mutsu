@@ -784,7 +784,7 @@ impl Interpreter {
                     .and_then(|package| {
                         self.module
                             .world
-                            .module_scope_lexicals
+                            .module_scope_lexicals.read()
                             .get(package.as_str())
                     })
                     .and_then(|lexicals| {

@@ -28,13 +28,13 @@ impl Interpreter {
             .captured_unit
             .or_else(|| {
                 self.module
-                    .world.class_declaring_units
+                    .world.class_declaring_units.read()
                     .get(package.as_str())
                     .copied()
             })
             .or_else(|| {
                 self.module
-                    .world.class_declaring_units
+                    .world.class_declaring_units.read()
                     .get(fallback_class)
                     .copied()
             });
