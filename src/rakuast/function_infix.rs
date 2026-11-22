@@ -15,7 +15,7 @@ use crate::value::{RuntimeError, ValueView};
 /// The `ApplyInfix(left, FunctionInfix(term), right)` the call `expr` was
 /// written as.
 // Cost: O(n), n = size of the operands.
-pub(super) fn view(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view_spelled(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let Expr::CallOn { target, args } = expr else {
         return Err(super::view::unsupported("a function infix that is no call"));
     };
