@@ -355,8 +355,11 @@ impl Value {
         if matches!(value.view(), ValueView::ContainerRef(_)) {
             return value;
         }
-        Value::container_ref_bound_itemized(Gc::new(crate::value::ContainerCell::new_readonly(
-            value,
+        // A plain (not itemized) holder: the element has no Scalar, so an
+        // aggregate reads and iterates as itself (`%h<a> := [1, 2]` is
+        // `[1, 2]`, not `$[1, 2]`, #18566).
+        Value::container_ref(Gc::new(crate::value::ContainerCell::new_readonly(
+            value.descalarize().clone(),
         )))
     }
 
