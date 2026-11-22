@@ -21,10 +21,11 @@ impl Interpreter {
     /// Declare `role`'s (named `role_name`) plain body `sub`s again in
     /// `class`'s package, closed
     /// over `class`'s statics for the names in `declared` (the body's
-    /// lexicals). Only a plain, non-exported `sub` without custom traits is
-    /// re-declared: a `multi` or exported one belongs to the role (it is
-    /// registered once, at declaration), and running a trait again would
-    /// apply it twice (#13645). When the class declares a `sub` of one of
+    /// lexicals). Only a plain, non-exported `sub` is re-declared: a `multi`
+    /// or exported one belongs to the role (it is registered once, at
+    /// declaration). A `sub` with custom traits is re-declared only when its
+    /// traits did not wrap it or rebind its body (`role_body_sub_reclosable`),
+    /// and its traits are not run again (#13645, #18721). When the class declares a `sub` of one of
     /// the names itself, the subs go into the role's composition scope in
     /// `class` instead (`role_composition_scope`), where the composed role
     /// methods run; the class's own methods keep calling the class's (#14177).
@@ -59,7 +60,11 @@ impl Interpreter {
                     name_expr: None,
                     custom_traits,
                     ..
-                } if custom_traits.is_empty() => Some((op, *name)),
+                } if custom_traits.is_empty()
+                    || self.role_body_sub_reclosable(role_name, &name.resolve()) =>
+                {
+                    Some((op, *name))
+                }
                 _ => None,
             })
             .collect();
