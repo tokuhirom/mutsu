@@ -26,6 +26,13 @@ pub(crate) use super::package_syntax::check_pseudo_package_in_decl;
 pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("unit", input).ok_or_else(|| PError::expected("unit statement"))?;
     let (rest, _) = ws1(rest)?;
+    // A unit-scoped declarator after the unit has already declared a package
+    // (`role R { }; unit module M;`) is too late (#18588).
+    if super::super::simple::package_declared()
+        && let Ok((_, what)) = ident(rest)
+    {
+        return Err(super::package_syntax::unit_scope_too_late(&what, rest));
+    }
     // unit class Name;
     // unit class Name is Parent does Role;
     //
