@@ -3,7 +3,9 @@
 
 use super::TrOp;
 use crate::runtime::Interpreter;
-use crate::runtime::nqp_backing::{uni_code_of, with_list_data_mut, with_uni_codes, with_uni_codes_mut};
+use crate::runtime::nqp_backing::{
+    uni_code_of, with_list_data_mut, with_uni_codes, with_uni_codes_mut,
+};
 use crate::runtime::to_int;
 use crate::value::{RuntimeError, Value};
 
