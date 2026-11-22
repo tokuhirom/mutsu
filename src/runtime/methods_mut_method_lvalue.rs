@@ -62,37 +62,6 @@ impl Interpreter {
             })
     }
 
-    /// `Pair.freeze`: decontainerize the pair's value (severing any
-    /// Scalar-container alias to an outer variable), mark the fresh cell
-    /// read-only, rebind the pair variable, and return the value. After this a
-    /// `$pair.value = X` raises `X::Assignment::RO`. Deprecated as of 6.d, but
-    /// still specified (Pair.rakudoc).
-    pub(crate) fn pair_freeze(&mut self, target: &Value, target_name: &str) -> Value {
-        let current = match target.view() {
-            ValueView::Pair(_, v) => v.clone(),
-            ValueView::ValuePair(_, v) => v.clone(),
-            _ => return target.clone(),
-        };
-        let deref = current.deref_container();
-        // Preserve a typed container's `of`-constraint across the freeze, so a
-        // later (rejected) assignment still reports the right type.
-        let constraint = match current.view() {
-            ValueView::ContainerRef(old) => crate::value::lookup_container_constraint(&old),
-            _ => None,
-        };
-        let frozen_value =
-            crate::value::make_frozen_container(deref.clone(), constraint.as_deref());
-        let new_pair = match target.view() {
-            ValueView::Pair(k, _) => Value::pair(k.clone(), frozen_value),
-            ValueView::ValuePair(k, _) => Value::value_pair(k.clone(), frozen_value),
-            _ => return deref,
-        };
-        if !target_name.is_empty() {
-            self.env.insert_through(target_name.to_string(), new_pair);
-        }
-        deref
-    }
-
     /// Write `value` into element `idx` of the array `target` for an
     /// rw-method lvalue (`@a.head = v`, `@a.tail ~= 'x'`, `@a.first(…) = v`).
     ///

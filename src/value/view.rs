@@ -298,6 +298,7 @@ impl Value {
             key: PairKey::Value(key),
             value: val,
             source: Some(source),
+            which_id: Default::default(),
         })))
     }
 
@@ -1105,6 +1106,37 @@ impl Value {
             }
             _ => None,
         }
+    }
+
+    /// The object identity of a Pair / ValuePair, for the `.WHICH` of a Pair
+    /// that holds a container. `None` for any other value.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn pair_which_id(&self) -> Option<u64> {
+        self.0.pair_which_id()
+    }
+
+    /// `Pair.freeze`: replace the pair's value, in the Pair object every
+    /// holder shares, by a read-only container of its decontainerized value,
+    /// and answer that value. An alias to an outer variable is severed (a
+    /// later write to the variable no longer shows through), a typed
+    /// container keeps its constraint, and the Pair keeps its identity, as
+    /// rakudo's `freeze` binds `$!value` of the same object. A non-Pair is
+    /// answered unchanged.
+    // Cost: O(1).
+    pub(crate) fn freeze_pair(&self) -> Value {
+        let current = match self.view() {
+            ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => v.clone(),
+            _ => return self.clone(),
+        };
+        let deref = current.deref_container();
+        let constraint = match current.view() {
+            ValueView::ContainerRef(old) => crate::value::lookup_container_constraint(&old),
+            _ => None,
+        };
+        let frozen = crate::value::make_frozen_container(deref.clone(), constraint.as_deref());
+        self.with_pair_inplace(|data| data.value = frozen);
+        deref
     }
 
     /// Run `f` on the shared Pair payload in place.

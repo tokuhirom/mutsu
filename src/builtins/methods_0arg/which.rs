@@ -376,6 +376,13 @@ pub(crate) fn which_of(target: &Value) -> Value {
         ValueView::Pair(_, _) | ValueView::ValuePair(_, _) if is_value_type => {
             runtime::utils::value_which_key(target)
         }
+        // A Pair holding a container (or a reference type) is identified by
+        // the Pair object itself, as rakudo's `ObjAt`: stable across reads
+        // and across `.freeze`, distinct for a `.clone`.
+        ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => format!(
+            "Pair|{}",
+            crate::value::which_id::shown(target.pair_which_id().unwrap_or_default())
+        ),
         // Never-reused ids, for the same reason as the Array/Hash arms
         // above: `Promise.new.WHICH eq Promise.new.WHICH` was `True`
         // whenever the second temporary landed on the first's freed

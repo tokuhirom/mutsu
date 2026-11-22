@@ -117,6 +117,24 @@ impl NanBox {
         Some(f(data))
     }
 
+    /// The object identity of a Pair / ValuePair (minted on first use), or
+    /// `None` for any other value.
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn pair_which_id(&self) -> Option<u64> {
+        let bits = self.0.get();
+        if !matches!(
+            classify(bits),
+            Classified::Kind(Kind::Pair | Kind::ValuePair)
+        ) {
+            return None;
+        }
+        // SAFETY: both Pair kinds carry a Gc<PairData>; the word owns a strong
+        // reference for the whole call, and `WhichId` is read atomically.
+        let p = unsafe { peek_gc::<PairData>(bits) };
+        Some(p.which_id.get())
+    }
+
     /// True iff this is a big-integer-backed rational tagged as a FatRat.
     #[inline]
     pub(in crate::value) fn is_bigfatrat(&self) -> bool {

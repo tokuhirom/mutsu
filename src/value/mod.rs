@@ -2771,6 +2771,10 @@ pub(crate) struct PairData {
     pub(crate) key: PairKey,
     pub(crate) value: Value,
     pub(crate) source: Option<String>,
+    /// The Pair object's own identity, for the `.WHICH` of a Pair that holds
+    /// a container (whose identity is the object, not its content). See
+    /// [`which_id::WhichId`].
+    pub(crate) which_id: which_id::WhichId,
 }
 
 /// The `Value` representation (3b-1 step A). Private to `crate::value` — this
@@ -3228,6 +3232,7 @@ impl Value {
             key: PairKey::String(key),
             value: val,
             source: None,
+            which_id: Default::default(),
         })))
     }
     #[inline]
@@ -3236,6 +3241,7 @@ impl Value {
             key: PairKey::Value(key),
             value: val,
             source: None,
+            which_id: Default::default(),
         })))
     }
     #[inline]
