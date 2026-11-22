@@ -130,8 +130,13 @@ impl Interpreter {
         let right_root = self.resolve_alias_root(right_name);
 
         let result = if left_root == right_root {
-            // Same binding root → same container.
-            true
+            // Same binding root → same container -- unless the root is only
+            // the same NAME: a shadowing inner `my $a` is spelled like the
+            // outer `$a` an alias `$b := $a` names, yet is another container
+            // (#18807). The `:=` bind pairs are slot-keyed, so when either
+            // operand is bound through one they tell the two apart.
+            left_name == right_name
+                || !self.bound_slots_differ(left_slot, right_slot)
         } else {
             // Different binding roots. For most types, this means different
             // containers → False. But singleton/unboxed types like Package
@@ -190,6 +195,34 @@ impl Interpreter {
             }
         };
         self.stack.push(Value::truth(result));
+    }
+
+    /// Whether the recorded `:=` bind pairs (`local_bind_pairs`, source slot →
+    /// target slot) prove two local slots to be different containers: at least
+    /// one of them is bound through a pair, and following the pairs back to
+    /// their sources ends at different slots. `false` (no proof) when a slot is
+    /// unknown or neither is bound, so the caller's by-name answer stands.
+    // Cost: O(p²), p = recorded bind pairs (a handful at most).
+    fn bound_slots_differ(&self, left_slot: u32, right_slot: u32) -> bool {
+        if left_slot == crate::opcode::NO_LOCAL_SLOT
+            || right_slot == crate::opcode::NO_LOCAL_SLOT
+            || self.local_bind_pairs.is_empty()
+        {
+            return false;
+        }
+        let pairs = &self.local_bind_pairs;
+        let source_root = |mut slot: usize| {
+            for _ in 0..=pairs.len() {
+                match pairs.iter().find(|&&(_, target)| target == slot) {
+                    Some(&(source, _)) if source != slot => slot = source,
+                    _ => break,
+                }
+            }
+            slot
+        };
+        let (left, right) = (left_slot as usize, right_slot as usize);
+        let (left_root, right_root) = (source_root(left), source_root(right));
+        (left_root != left || right_root != right) && left_root != right_root
     }
 
     /// [`Self::name_denotes_scalar_container`] for a `$` variable, or
