@@ -2617,9 +2617,9 @@ fn construct_class(
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
         if let Some(colonpairs) = colonpairs {
-            return Ok(Some(Value::rakuast(Box::new(name_parts::name_with_colonpairs(
-                parts, colonpairs,
-            )))));
+            return Ok(Some(Value::rakuast(Box::new(
+                name_parts::name_with_colonpairs(parts, colonpairs),
+            ))));
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
