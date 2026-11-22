@@ -49,7 +49,8 @@ fn params_eqv(a: &[SigParam], b: &[SigParam]) -> bool {
 /// it never matches.
 // Cost: O(s), s = parameters of their sub-signatures.
 fn param_eqv(a: &SigParam, b: &SigParam) -> bool {
-    if normalized_type(a.type_constraint.as_deref()) != normalized_type(b.type_constraint.as_deref())
+    if normalized_type(a.type_constraint.as_deref())
+        != normalized_type(b.type_constraint.as_deref())
     {
         return false;
     }
@@ -80,7 +81,21 @@ fn param_eqv(a: &SigParam, b: &SigParam) -> bool {
 
 /// The flags Rakudo's `$!flags` carries for a parameter.
 // Cost: O(1).
-fn flags(p: &SigParam) -> (char, bool, bool, bool, bool, bool, bool, bool, bool, bool, bool) {
+fn flags(
+    p: &SigParam,
+) -> (
+    char,
+    bool,
+    bool,
+    bool,
+    bool,
+    bool,
+    bool,
+    bool,
+    bool,
+    bool,
+    bool,
+) {
     (
         p.sigil,
         p.named,
