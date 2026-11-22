@@ -335,6 +335,33 @@ impl Compiler {
         true
     }
 
+    /// A bare word behind two or more pseudo-packages (`CORE::UNIT::True`,
+    /// `OUTER::OUTER::…::True`) names the symbol the pseudo-package chain
+    /// finds: `CORE::UNIT::<True>`. However far the chain reaches past the
+    /// outermost scope or caller, the read misses quietly instead of dying
+    /// ("no guts spillage", roast pseudo-6e). Emits that read and returns
+    /// true for such a spelling.
+    // Cost: O(s) at compile time, s = `::` segments of `name`.
+    pub(crate) fn emit_pseudo_chain_bareword(&mut self, name: &str) -> bool {
+        let Some((prefix, last)) = name.rsplit_once("::") else {
+            return false;
+        };
+        let mut segments = prefix.split("::");
+        let all_pseudo = segments
+            .clone()
+            .all(crate::runtime::Interpreter::is_pseudo_package_name);
+        if last.is_empty() || !all_pseudo || segments.nth(1).is_none() {
+            return false;
+        }
+        self.compile_expr(&Expr::Index {
+            target: Box::new(Expr::PseudoStash(format!("{prefix}::"))),
+            index: Box::new(Expr::Literal(Value::str(last.to_string()))),
+            is_positional: false,
+            spelling: Default::default(),
+        });
+        true
+    }
+
     /// Emit `CORE::<key>`: the setting's entry under `key` (a `&name`
     /// routine), or Nil.
     // Cost: one keyed pseudo-stash read.

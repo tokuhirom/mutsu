@@ -651,6 +651,53 @@ impl Interpreter {
         entries
     }
 
+    /// The client of the running code: the code that called into it, as
+    /// `CLIENT::` names it. `own_file` is the running code's own unit. A
+    /// light call pushes no routine frame, so the frames of that unit, the
+    /// running routine's included when it has one, are skipped by their
+    /// declaring file; the first frame declared elsewhere is the client, and
+    /// its unit's language revision is what `CORE-SETTING-REV` reports. With
+    /// no such frame the client is the mainline (`GLOBAL`, the revision of
+    /// the file that made the outermost call). Returns the client's package
+    /// and revision letter.
+    // TODO: rakudo tells the client by package, not by file, and sees a
+    // `.map` block's own context, which pushes no frame here (#18845).
+    // Cost: O(f), f = routine frames, plus one revision-table probe.
+    pub(crate) fn client_frame(&self, own_file: Option<Symbol>) -> (Symbol, char) {
+        let frames: &[crate::runtime::RoutineFrame] = &self.routine_stack;
+        let revision_of = |file: Option<Symbol>| {
+            file.and_then(crate::parser::unit_revisions::unit_language_revision)
+                .and_then(|version| {
+                    version.as_str().strip_prefix("6.").and_then(|r| r.chars().next())
+                })
+        };
+        let declared_in = |frame: &crate::runtime::RoutineFrame| frame.def_file.or(frame.file);
+        match frames
+            .iter()
+            .rev()
+            .find(|frame| own_file.is_none_or(|own| declared_in(frame) != Some(own)))
+        {
+            Some(client) => (
+                client.package,
+                revision_of(declared_in(client)).unwrap_or_else(|| self.running_revision_letter()),
+            ),
+            None => (
+                crate::symbol::wk::global_package(),
+                revision_of(frames.first().and_then(|frame| frame.file).or(own_file))
+                    .unwrap_or_else(|| self.running_revision_letter()),
+            ),
+        }
+    }
+
+    /// The letter of the language revision the running code is under.
+    // Cost: O(1).
+    fn running_revision_letter(&self) -> char {
+        ['e', 'd', 'c']
+            .into_iter()
+            .find(|r| crate::parser::current_language_version_starts_with(&format!("6.{r}")))
+            .unwrap_or('d')
+    }
+
     /// The `GLOBAL::<$x> = ...` stores of the dynamic chain, keyed as the
     /// `$*x` they are a 6.e fallback for: such a store keeps the qualified
     /// spelling in the scope that ran it, which may be any frame of the chain.

@@ -267,6 +267,27 @@ impl Interpreter {
         }
         // `CALLERS::OUTERS::<&name>`: a routine in the lexical scope around a
         // calling *routine* (declared in its file or imported by its unit).
+        // `CLIENT::LEXICAL::<CORE-SETTING-REV>` / `CLIENT::CORE::<…>` /
+        // `CLIENT::LEXICAL::<$?PACKAGE>`: the language revision and package of
+        // the code that called into this routine's package (`client_frame`).
+        // TODO: any other `CLIENT::` key needs the client frame's whole pad,
+        // which the caller-scope walk (`caller_scope(depth)`, #17733) is to give.
+        if name.starts_with("CLIENT::")
+            && let ValueView::Str(key_str) = key.deref_container().view()
+            && matches!(key_str.as_str(), "CORE-SETTING-REV" | "$?PACKAGE")
+        {
+            let (package, revision) = self.client_frame(code.source_file);
+            let value = if key_str.as_str() == "$?PACKAGE" {
+                Value::package(package)
+            } else {
+                Value::str(revision.to_string())
+            };
+            let mut entries: ValueMap = ValueMap::default();
+            entries.insert(key_str.to_string(), value);
+            let stash = self.pseudo_stash_hash(entries);
+            self.stack.push(stash);
+            return Ok(());
+        }
         if name == "CALLERS::OUTERS::"
             && let ValueView::Str(key_str) = key.deref_container().view()
             && let Some(routine) = key_str.strip_prefix('&')
