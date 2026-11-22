@@ -505,6 +505,10 @@ fn rows_are_declared_by_rakudo() {
         // Likewise a `HyperSeq` / `RaceSeq` renders its configuration through
         // `Mu.raku`; mutsu's sequence holds it outside any attribute (#18690).
         .filter(|row| !(matches!(row.owner, "HyperSeq" | "RaceSeq") && row.name == "raku"))
+        // `HyperConfiguration.new` is rakudo's `Mu.new` over its two
+        // attributes, which mutsu's runtime-minted class does not declare
+        // (#18709).
+        .filter(|row| !(row.owner == "HyperConfiguration" && row.name == "new"))
         // Roast pins `$!.pending` (`S04-exceptions/pending.t`), which Rakudo
         // does not declare (ADR-11276 §9.161).
         .filter(|row| !(row.owner == "Any" && row.name == "pending"))
