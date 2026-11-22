@@ -13,6 +13,7 @@ mod hyper_concat;
 mod hyper_spelling;
 mod infix_term;
 mod meta_bracket;
+mod reverse_assoc;
 mod set_ops;
 
 // Re-exports preserving original pub(super) visibility
