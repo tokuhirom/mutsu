@@ -249,6 +249,7 @@ pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_
 mod colon_pairs;
 mod constant_decl;
 mod loop_step;
+pub(crate) mod method_initializer;
 mod role;
 mod role_header;
 mod role_implicit;
@@ -299,7 +300,6 @@ mod use_origins;
 mod use_stmt;
 mod user_postfix;
 mod user_prefix;
-pub(crate) mod method_initializer;
 pub(crate) mod visit_order;
 mod will_build_origins;
 mod zip_chain;

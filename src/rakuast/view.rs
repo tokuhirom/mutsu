@@ -2007,7 +2007,8 @@ pub(super) fn var_declaration(
                 Value::rakuast(Box::new(copy))
             }
         };
-        fields.insert(traits_at, super::attribute_decl::will_build_field(value, init));
+        let will_build = super::attribute_decl::will_build_field(value, init);
+        fields.insert(traits_at, will_build);
     }
     Ok(RakuAstNode {
         origin: Default::default(),

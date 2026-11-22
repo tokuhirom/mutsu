@@ -89,7 +89,10 @@ pub(super) fn will_build_value(value: Value, call: bool) -> Value {
         let args = plain(RakuAstClass::ArgList, vec![node_field(None, node.clone())]);
         plain(
             RakuAstClass::CallName,
-            vec![node_field(Some("name"), name), node_field(Some("args"), args)],
+            vec![
+                node_field(Some("name"), name),
+                node_field(Some("args"), args),
+            ],
         )
     };
     thunk(Some(super::view::statement_expression(expression)))
@@ -126,7 +129,9 @@ pub(crate) fn is_thunked(node: &RakuAstNode) -> bool {
 fn class_accessor(node: &RakuAstNode) -> Option<Value> {
     let package = node.origin.3.as_ref()?;
     let scope = super::decl_origins::leaf(node, "scope");
-    if node.class != RakuAstClass::VarDeclarationSimple || scope.as_deref() != Some("our") && scope.is_some() {
+    if node.class != RakuAstClass::VarDeclarationSimple
+        || scope.as_deref() != Some("our") && scope.is_some()
+    {
         return None;
     }
     let desigil = super::infix_origins::child(node, "desigilname")
@@ -144,7 +149,10 @@ fn class_accessor(node: &RakuAstNode) -> Option<Value> {
         RakuAstClass::MethodClassAccessor,
         vec![
             node_field(Some("name"), super::view::name_from_identifier(&desigil)),
-            node_field(Some("body"), plain(RakuAstClass::Blockoid, vec![node_field(None, list)])),
+            node_field(
+                Some("body"),
+                plain(RakuAstClass::Blockoid, vec![node_field(None, list)]),
+            ),
         ],
     );
     accessor.origin.3 = Some(package.clone());
@@ -213,9 +221,9 @@ pub(super) fn with_thunk_expression(node: &mut RakuAstNode, f: impl FnOnce(&mut 
     let RakuAstFieldValue::List(traits) = &mut field.value else {
         return;
     };
-    let Some(value) = traits.iter_mut().find(|v| {
-        matches!(v.view(), ValueView::RakuAst(t) if t.class == RakuAstClass::TraitWillBuild)
-    }) else {
+    let Some(value) = traits.iter_mut().find(
+        |v| matches!(v.view(), ValueView::RakuAst(t) if t.class == RakuAstClass::TraitWillBuild),
+    ) else {
         return;
     };
     let ValueView::RakuAst(trait_node) = value.view() else {

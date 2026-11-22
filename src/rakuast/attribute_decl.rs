@@ -383,7 +383,9 @@ pub(super) fn will_build_field(
         class: RakuAstClass::TraitWillBuild,
         fields: vec![RakuAstField {
             name: None,
-            value: RakuAstFieldValue::Node(super::method_initializer::will_build_value(value, call)),
+            value: RakuAstFieldValue::Node(super::method_initializer::will_build_value(
+                value, call,
+            )),
         }],
     };
     RakuAstField {
