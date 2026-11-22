@@ -17,8 +17,15 @@ impl Interpreter {
         let ValueView::Hash(map) = target.view() else {
             return None;
         };
+        // A bound `Proxy` is the element's container itself (`%h<k> := $p`
+        // reflects as `Proxy`); the ordinary read already answers that.
         map.get(key.as_str())
-            .filter(|v| v.is_container_ref())
+            .filter(|v| match v.view() {
+                ValueView::ContainerRef(cell) => {
+                    !matches!(cell.load().view(), ValueView::Proxy { .. })
+                }
+                _ => false,
+            })
             .cloned()
     }
 }
