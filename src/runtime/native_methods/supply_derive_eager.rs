@@ -1,9 +1,10 @@
-//! `stable`, `throttle` and `migrate` over a live source, one instance per tap
-//! (ADR-18443, #18579).
+//! `stable`, `delayed`, `throttle` and `migrate` over a live source, one
+//! instance per tap (ADR-18443, #18579); `stable` and `delayed` over a finite
+//! source too (#18696, #18615).
 //!
-//! Both stages already have a live implementation that runs over a
-//! Supplier-backed supply: `stable` debounces on a worker thread, `migrate`
-//! switches between inner supplies. Rakudo builds each per tap
+//! Each stage already has a live implementation that runs over a
+//! Supplier-backed supply: `stable` debounces and `delayed` delays on a
+//! worker thread, `migrate` switches between inner supplies. Rakudo builds each per tap
 //! (`supply { whenever self { ... } }`), so the derived Supply here is a
 //! recipe (mode `eager-stage`) whose tap instantiates its source for that tap
 //! alone, builds the stage over that instance, and forwards what the stage
@@ -48,13 +49,17 @@ impl Interpreter {
             ),
             _ => (String::new(), Vec::new()),
         };
-        // `delayed` listens on a fresh supplier first, and the source is fed
+        // `delayed` / `stable` listen on a fresh supplier first, and the source is fed
         // into it only once the stage's own tap is in place: a finite source
         // emits everything (and `done`) while it is tapped (#18696).
-        if name == "delayed" {
+        if matches!(name.as_str(), "delayed" | "stable") {
             let sid = super::next_supplier_id();
             let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);
-            let stage = self.delayed_live_supply(sid, seconds);
+            let stage = if name == "delayed" {
+                self.delayed_live_supply(sid, seconds)
+            } else {
+                self.stable_live_supply(sid, seconds)
+            };
             return Ok((stage, Vec::new(), Some(StageFeed { source, sid })));
         }
         let instance = self.instantiate_live_recipe(&source, false)?;
@@ -66,10 +71,6 @@ impl Interpreter {
             return Ok((instance.clone(), Vec::new(), None));
         };
         let stage = match name.as_str() {
-            "stable" => {
-                let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);
-                self.stable_live_supply(sid, seconds)
-            }
             "throttle" => self.throttle_live_supply(sid, &args),
             _ => self.native_supply(&attrs, &name, args)?,
         };
