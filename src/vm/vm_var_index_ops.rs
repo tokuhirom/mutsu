@@ -989,8 +989,11 @@ impl Interpreter {
         // refilling it in place; read under its stripe, as the positional
         // twin does (ADR-0068, #18651). One relaxed load until a second
         // mutator thread exists.
-        let _structure =
-            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target);
+        let _structure = if crate::value::container_lock::multi_mutator_threads_live() {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
+        } else {
+            None
+        };
         let entry = items.get(key.as_str())?;
         match entry.view() {
             ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
@@ -1925,13 +1928,12 @@ impl Interpreter {
         // another thread can rehash or refill in place (#18651); an object
         // hash keys through `.WHICH`, which can be user code, so it is not
         // held across that.
-        let stripe_read_target = match target.view() {
-            ValueView::Array(..) => true,
-            ValueView::Hash(items) => items.key_type.is_none() && !items.has_typed_keys(),
-            _ => false,
-        };
         let _read = if crate::value::container_lock::multi_mutator_threads_live()
-            && stripe_read_target
+            && match target.view() {
+                ValueView::Array(..) => true,
+                ValueView::Hash(items) => items.key_type.is_none() && !items.has_typed_keys(),
+                _ => false,
+            }
         {
             if Self::index_needs_target_elems(&index) {
                 if let Some(copy) = crate::value::container_read::shared_snapshot(&target) {
