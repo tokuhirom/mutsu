@@ -186,6 +186,14 @@ impl SupplyOp {
                 | SupplyOp::Live
                 | SupplyOp::Serialize
                 | SupplyOp::Sanitize
+                | SupplyOp::Skip
+                | SupplyOp::Min
+                | SupplyOp::Max
+                | SupplyOp::Minmax
+                | SupplyOp::Rotor
+                | SupplyOp::Encode
+                | SupplyOp::Decode
+                | SupplyOp::Repeated
         )
     }
 }
@@ -237,6 +245,14 @@ impl Interpreter {
                 "collect",
                 Value::array(params),
             )));
+        }
+        // A per-value combinator (`skip`, `min`, `rotor`, `repeated`, ...)
+        // over a live source is a per-tap recipe with its own state
+        // (ADR-18443, #18579).
+        if Self::stage_is_live_recipe(&attributes.as_map())
+            && let Some(recipe) = self.per_value_recipe(target, op.name(), &args)
+        {
+            return Some(recipe);
         }
         // `$a.merge($b)` / `.zip` / `.zip-latest` over a live source is a
         // per-tap recipe over the invocant and the arguments (ADR-18443).

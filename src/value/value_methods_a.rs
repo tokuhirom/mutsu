@@ -629,11 +629,7 @@ impl Value {
     }
     /// Create a Uni value directly from its codepoints — the stored form.
     pub fn uni_from_codepoints(form: String, codes: impl IntoIterator<Item = u32>) -> Self {
-        let items: Vec<Value> = codes.into_iter().map(|c| Value::int(c as i64)).collect();
-        Value::Uni(Box::new(UniData {
-            form,
-            codes: Value::real_array(items),
-        }))
+        Value::Uni(Box::new(UniData::new(form, codes.into_iter().collect())))
     }
     /// Create a CustomTypeInstance value (boxed payload).
     pub fn custom_type_instance(

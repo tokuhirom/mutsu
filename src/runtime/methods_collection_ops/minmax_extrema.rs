@@ -207,7 +207,6 @@ impl Interpreter {
         } else {
             Vec::new()
         };
-        let want_max = method == "max";
 
         let build_supply = |vals: Vec<Value>| {
             let mut attrs = HashMap::new();
@@ -230,67 +229,9 @@ impl Interpreter {
             return Ok(build_supply(Vec::new()));
         }
 
-        let Some(compare_or_key_fn) = compare_or_key_fn else {
-            let mut emitted = Vec::new();
-            let mut best = values[0].clone();
-            emitted.push(best.clone());
-            for item in values.iter().skip(1) {
-                let cmp = compare_values(item, &best);
-                let is_better = if want_max { cmp > 0 } else { cmp < 0 };
-                if is_better {
-                    best = item.clone();
-                    emitted.push(item.clone());
-                }
-            }
-            return Ok(build_supply(emitted));
-        };
-
-        let is_binary_comparator =
-            matches!(compare_or_key_fn.view(), ValueView::Sub(data) if data.params.len() >= 2);
-        let mut emitted = Vec::new();
-        let mut best = values[0].clone();
-        emitted.push(best.clone());
-
-        if is_binary_comparator {
-            for item in values.into_iter().skip(1) {
-                let cmp_val = self.call_sub_value(
-                    compare_or_key_fn.clone(),
-                    vec![item.clone(), best.clone()])?;
-                let cmp = match cmp_val.view() {
-                    ValueView::Enum {
-                        enum_type, value, ..
-                    } if enum_type == "Order" => value.as_i64(),
-                    _ => {
-                        let n = cmp_val.to_f64();
-                        if n > 0.0 {
-                            1
-                        } else if n < 0.0 {
-                            -1
-                        } else {
-                            0
-                        }
-                    }
-                };
-                let is_better = if want_max { cmp > 0 } else { cmp < 0 };
-                if is_better {
-                    best = item.clone();
-                    emitted.push(item);
-                }
-            }
-        } else {
-            let mut best_key = self.call_sub_value(compare_or_key_fn.clone(), vec![best])?;
-            for item in values.into_iter().skip(1) {
-                let key =
-                    self.call_sub_value(compare_or_key_fn.clone(), vec![item.clone()])?;
-                let cmp = compare_values(&key, &best_key);
-                let is_better = if want_max { cmp > 0 } else { cmp < 0 };
-                if is_better {
-                    best_key = key;
-                    emitted.push(item);
-                }
-            }
-        }
-
+        // The running extremes are the per-tap state machine's, folded over
+        // the values (#18579).
+        let emitted = self.step_fold(method, args.to_vec(), values)?;
         Ok(build_supply(emitted))
     }
 }

@@ -1060,6 +1060,11 @@ impl Interpreter {
                         results.push(own?);
                     } else if !skip_native
                         && item.is_nil()
+                        && let Some(err) = Self::nil_refused_call(&method, &item_args)
+                    {
+                        return Err(err);
+                    } else if !skip_native
+                        && item.is_nil()
                         && crate::vm::vm_call_method_ops::nil_absorbs_method(&method)
                     {
                         // Raku's `Nil.FALLBACK` yields Nil for any method Nil does
@@ -1460,6 +1465,12 @@ impl Interpreter {
                     && let Some(own) = self.nil_own_row(method, args)
                 {
                     return Ok((own?, item.clone()));
+                }
+                if !skip_native
+                    && item.is_nil()
+                    && let Some(err) = Self::nil_refused_call(method, args)
+                {
+                    return Err(err);
                 }
                 if !skip_native
                     && item.is_nil()

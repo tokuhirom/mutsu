@@ -12,7 +12,9 @@
 //! A candidate that gets no stamp (a module's compile, an `EVAL`, a nested
 //! scope, a package body, a shape the RakuAST finalization rebuilds) keeps the
 //! transitional rule of ADR-17558 §7.6: a `use` after it loads in the
-//! BEGIN-time prologue, after the candidate is registered.
+//! BEGIN-time prologue, after the candidate is registered. So does a `proto`
+//! in those places; one at the program's top level ranks nothing and needs no
+//! stamp, so it holds no `use` back (§7.14).
 
 use crate::ast::{Expr, Stmt};
 use crate::parser::parse_result::PResult;
@@ -38,6 +40,19 @@ pub(super) fn note_multi_installed(parsed: PResult<'_, Stmt>) -> PResult<'_, Stm
     // waits for the prologue, as before (ADR-17558 §7.12).
     crate::parser::stmt::simple::note_unit_prologue_effect();
     Ok((rest, stmt))
+}
+
+/// Note a `proto` declaration the parser has reached (see the module docs).
+// Cost: O(1).
+pub(crate) fn note_proto_installed() {
+    let installs_at_parse = !crate::parser::stmt::simple::in_nested_scope()
+        && crate::parser::stmt::simple::statement_package().is_none()
+        && !crate::parser::in_fragment_parse()
+        && crate::compile_time_loader::installs_at_parse();
+    if !installs_at_parse {
+        crate::parser::stmt::simple::note_unit_compile_time_effect();
+    }
+    crate::parser::stmt::simple::note_unit_prologue_effect();
 }
 
 /// Whether `stmt` is a candidate of the unit's top level outside any package

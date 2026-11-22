@@ -3,7 +3,7 @@ use Test;
 use lib 'roast/packages/Test-Helpers';
 use Test::Util;
 
-plan 7;
+plan 9;
 
 # rakudo installs a `multi` candidate when the parser reaches it, so one the
 # program declares before `use M` ranks before the candidates M exports, and one
@@ -89,3 +89,24 @@ $code = q:to/END/;
     END
 is out-of($code), "X::Multi::Ambiguous\n",
     'equal candidates of the program and the module stay ambiguous';
+
+# A program `proto` holds no `use` back either: an only-star proto of the
+# program takes the module's candidates beside its own.
+$code = q:to/END/;
+    proto po-greet(|) {*}
+    multi po-greet(Str $x) { say "unit greet Str" }
+    use PoBare;
+    say 1 +;
+    END
+is out-of($code), "PoBare loaded\n",
+    'a module after a program proto loads while the use is parsed';
+
+$code = q:to/END/;
+    proto po-greet(|) {*}
+    multi po-greet(Str $x) { say "unit greet Str" }
+    use PoBare;
+    po-greet(1); po-greet("a");
+    say &po-greet.candidates.map(*.signature.raku);
+    END
+is out-of($code), "PoBare loaded\nmodule greet Int\nunit greet Str\n(:(Str \$x) :(Int \$x))\n",
+    'the import extends the family of a program proto';

@@ -842,7 +842,6 @@ impl Interpreter {
             // ranked deferral expansion and the dispatch frame are not built
             // for it (`matched_deferral_candidates` was ~10 interns and a
             // candidate walk per CArray access, #16215).
-            let native_base = !light && base_class.is_none();
             let base_remaining: Vec<super::DeferralEntry> = if light {
                 Vec::new()
             } else if let Some(bc) = &base_class {
@@ -904,7 +903,13 @@ impl Interpreter {
             } else {
                 base_remaining
             };
-            let pushed_base_dispatch = !base_remaining.is_empty() || native_base;
+            // The frame is pushed even when no base candidate follows: an empty
+            // frame is the role method's own dispatch boundary, so its
+            // `callsame`/`nextsame` answer `Nil` instead of reaching (and
+            // consuming) an enclosing method's deferral candidates (#18363). A
+            // `light` body cannot defer, so it needs no frame.
+            let pushed_base_dispatch = !light;
+            let base_remaining_empty = base_remaining.is_empty();
             if pushed_base_dispatch {
                 let rw_params =
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
@@ -922,6 +927,7 @@ impl Interpreter {
                         arg_sources: None,
                         in_wrapper: false,
                         lazy_tail: None,
+                        exhausted_falls_through: base_remaining_empty,
                     });
             }
             let invocant = self
