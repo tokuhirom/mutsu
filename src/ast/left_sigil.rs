@@ -127,10 +127,7 @@ pub(crate) fn assignment_is_item(at: Option<&str>, target: &Expr) -> bool {
         (Some(at), Some((ptr, sigil))) if ptr == at.as_ptr() as usize => sigil,
         _ => LeftSigil::Unset,
     };
-    let mut reader = Reader {
-        sigil,
-        marks: None,
-    };
+    let mut reader = Reader { sigil, marks: None };
     reader.visit_expr(target);
     reader.sigil == LeftSigil::Scalar
 }
