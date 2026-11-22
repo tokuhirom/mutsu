@@ -23,7 +23,9 @@
 //! * **Resolution** is a function of the registry for a non-`multi` method
 //!   (`resolve_method_cached` serves it from a `(class, method)` memo). A
 //!   `multi` winner can depend on argument values (a `where` candidate), so a
-//!   multi is never planned.
+//!   multi is planned only when no candidate of its family can
+//!   (`multi_dispatch_type_cacheable`): its winner is then a function of the
+//!   argument type keys, which the lane key holds (ADR-15737 D1b).
 //! * **The accessor and wrap probes** (`winning_class_scoped_accessor`,
 //!   `resolve_user_method_or_accessor_sym`, `check_method_wrap_chain`) read
 //!   the registry only.
@@ -301,10 +303,25 @@ impl Interpreter {
         // probe: a native array's retyped answer, `.new` on a built-in
         // instance, and a private call's own dispatch arm.
         let method = method_sym.as_str();
+        // A multi is planned only when its family's winner is a function of the
+        // argument type keys the lane key holds (no `where`, literal, subset,
+        // smiley or `is rw` candidate; `multi_dispatch_type_cacheable`), which
+        // is also the condition under which the dispatch tail memoizes its
+        // resolution (ADR-15737 D1b).
+        let multi_unplannable = def.is_multi
+            && match target.view() {
+                ValueView::Instance { class_name, .. } => !self.multi_dispatch_type_cacheable(
+                    class_name,
+                    method_sym,
+                    class_name.as_str(),
+                    method,
+                ),
+                _ => true,
+            };
         if method == "new"
             || method.starts_with('!')
             || crate::builtins::method_table::native_array_result::retypes(method)
-            || def.is_multi
+            || multi_unplannable
             || def.deprecated_message.is_some()
             // A `does` target binds through the argument's container by a
             // path the fast binder does not take. A parameter that may alias
