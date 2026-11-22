@@ -1738,6 +1738,35 @@ impl Interpreter {
                 })
                 .map(|(name, _)| name.clone())
                 .collect();
+            // A `unit` compunit's own file-scope `my class`/`my role` stays
+            // lexically visible to its routines after the body's short binding
+            // goes: record it in the unit's bucket under its type-only key, so
+            // a routine resolves it ahead of a same-named type the importer
+            // binds (`Interpreter::module_own_type_shadowing_global`, #18677).
+            if let Some(unit) = unit_name.as_deref() {
+                let own_lexical_types: Vec<(String, Value)> = leaked_packages
+                    .iter()
+                    .filter_map(|name| {
+                        let value = module_scope_names.get(name)?;
+                        let ValueView::Package(target) = value.view() else {
+                            return None;
+                        };
+                        (Self::package_is_owned_by(&target.resolve(), module)
+                            && self.is_my_scoped_package_item(&target.resolve()))
+                        .then(|| {
+                            (
+                                crate::runtime::term_names::lexical_type_key(name),
+                                value.clone(),
+                            )
+                        })
+                    })
+                    .collect();
+                for (key, value) in own_lexical_types {
+                    self.unit_lexicals_write(|t| {
+                        t.entry(unit.to_string()).or_default().insert(key, value);
+                    });
+                }
+            }
             for name in &leaked_packages {
                 self.env.remove(name);
             }
