@@ -1096,7 +1096,11 @@ impl Interpreter {
         // gain: validation runs once per regex literal at compile time (20
         // times over the whole profiled document, against 10,958 match-mode
         // parses).
-        if mode != RegexParseMode::Match {
+        // A qq atom's fallback reads the atom as text: not this text's tree
+        // (`in_regex_qq_fallback_parse`), so it is neither looked up nor kept.
+        if mode != RegexParseMode::Match
+            || super::regex_qq_array_interp::in_regex_qq_fallback_parse()
+        {
             return self.parse_regex_structural(interpolated, mode);
         }
         let tok_gen =

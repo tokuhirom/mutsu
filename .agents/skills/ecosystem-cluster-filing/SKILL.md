@@ -38,8 +38,10 @@ each one, `search_issues` (or `gh issue list --search`) for `"eco-cluster: <id>"
 - The body is the output of `scripts/ecosystem-tickets.py --issue <id>`.
 - Keep the body's `eco-cluster: <id>` line: it doubles as the link the ecosystem dashboard
   (`scripts/ecosystem-dashboard.py`) reads, expanding to every distribution in the cluster.
-- Label it `todo:ticket`, or `todo:deep` if the cluster plainly needs design, **and always
-  `ecosystem`**.
+- Label it `todo:ticket`, or `todo:deep` if the cluster plainly needs design, **and
+  `ecosystem`**: a ledger cluster is by construction a set of dist files that fail against raku.
+  If the cluster turns out to be slowness only (the files pass, just slower), it is a plain
+  `todo:perf` issue without `ecosystem` (`docs/issue-workflow.md`).
 - Check the body first: any third-party text it quotes must sit inside code blocks.
 
 File **at most three issues per run**, so that one bad night cannot flood the tracker. Report the

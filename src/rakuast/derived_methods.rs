@@ -249,8 +249,11 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             field(node, "constraint")
                 .unwrap_or_else(|| Value::rakuast(Box::new(super::view::type_setting_any()))),
         ),
-        // The declaration without the compiler's attachments: the node itself.
-        (TypeEnum, "clean-clone") => Some(Value::rakuast(Box::new(node.clone()))),
+        // The declaration without the compiler's attachments: the node
+        // without its implicit `Enumeration` traits.
+        (TypeEnum, "clean-clone") => Some(Value::rakuast(Box::new(
+            super::enum_implicit_traits::clean_clone(node),
+        ))),
         (CallMetaMethod | CallQuotedMethod, "args") => Some(
             field(node, "args")
                 .unwrap_or_else(|| super::empty_fields::empty_node(node, "args", ArgList)),

@@ -120,6 +120,8 @@ mod declarator_docs;
 pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
     declarator_docs::docs_of(node)
 }
+mod also_origins;
+mod also_rw;
 mod anon_body_origins;
 pub(crate) mod apply_queries;
 pub(crate) mod arg_invocant;
@@ -145,6 +147,7 @@ mod topic_postfix;
 mod topic_subscript_origins;
 pub(crate) use doc_str::legacy_row_text;
 mod dynamic_method;
+mod enum_implicit_traits;
 mod enum_term;
 mod expr_block_origins;
 mod feed_op;
@@ -295,6 +298,7 @@ mod use_stmt;
 mod user_postfix;
 mod user_prefix;
 pub(crate) mod visit_order;
+mod will_build_origins;
 mod zip_chain;
 pub(crate) use user_prefix::user_prefix_overrides_core;
 mod var_decl_constructor;

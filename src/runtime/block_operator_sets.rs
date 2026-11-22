@@ -58,6 +58,88 @@ impl Interpreter {
         let dispatcher = Self::with_proto_shadowing_core(Self::with_builtin_operator_fallback(
             dispatcher,
         ));
+        self.install_block_operator(id, name, dispatcher);
+    }
+
+    /// Bind the family of the operator the running block declares the
+    /// `multi` candidate `def` of in the block's operator set `id` (#18617).
+    /// A block's `multi` adds to the candidates in scope around the block, so
+    /// the family is the block's own candidates so far plus those of the
+    /// enclosing scopes: the innermost enclosing block that binds the family,
+    /// else the registry's (the unit's own and its top-level imports). A call
+    /// none of them accepts falls back to the built-in.
+    // Cost: O(f log f) for the registry scan, f = registered functions, plus
+    // O(e + c), e = the running frame's env (the dispatcher captures it), c =
+    // the family's candidates.
+    pub(crate) fn bind_block_operator_candidate(
+        &mut self,
+        id: Symbol,
+        def: std::sync::Arc<FunctionDef>,
+    ) {
+        let name = def.name;
+        // Each run of the block declares its candidates again (and the hoist
+        // pass ahead of the in-sequence one): the latest derivation of a
+        // candidate replaces the earlier one.
+        let fingerprint = def.body_fingerprint();
+        let mut own: Vec<std::sync::Arc<FunctionDef>> = self
+            .module
+            .lexical_imports
+            .read()
+            .families
+            .get(&id)
+            .and_then(|families| families.get(&name).cloned())
+            .unwrap_or_default();
+        own.retain(|d| d.body_fingerprint() != fingerprint);
+        own.push(def);
+        let enclosing = self
+            .active_lexical_import_chain()
+            .into_iter()
+            .filter(|set| *set != id)
+            .find_map(|set| {
+                self.module
+                    .lexical_imports
+                    .read()
+                    .families
+                    .get(&set)
+                    .and_then(|families| families.get(&name).cloned())
+            });
+        let mut defs = enclosing.unwrap_or_else(|| {
+            self.operator_family_defs(&self.current_package(), &name.resolve())
+        });
+        for d in &own {
+            if !defs.iter().any(|e| std::sync::Arc::ptr_eq(e, d)) {
+                defs.push(std::sync::Arc::clone(d));
+            }
+        }
+        defs.sort_by_key(|d| d.decl_order);
+        let dispatcher = self.sub_value_from_multi_candidates(&name.resolve(), defs.clone());
+        self.note_lexical_operator_candidate_defs(&dispatcher, &defs);
+        let dispatcher = Self::with_builtin_operator_fallback(dispatcher);
+        self.module.lexical_imports.write(|tables| {
+            tables.families.entry(id).or_default().insert(name, own);
+        });
+        self.install_block_operator(id, name, dispatcher);
+    }
+
+    /// The registered candidates of the operator family `name` visible from
+    /// `package`, in declaration order.
+    // Cost: O(f log f), f = registered functions.
+    pub(crate) fn operator_family_defs(
+        &self,
+        package: &str,
+        name: &str,
+    ) -> Vec<std::sync::Arc<FunctionDef>> {
+        self.routine_candidate_defs(package, name)
+            .into_iter()
+            .filter(|(_, is_multi)| *is_multi)
+            .map(|(def, _)| def)
+            .collect()
+    }
+
+    /// Bind `dispatcher` as the operator `name` in the block operator set
+    /// `id`, and record the set in the block's open import region.
+    // Cost: O(b), b = bindings of the set (it is copied on write).
+    fn install_block_operator(&mut self, id: Symbol, name: Symbol, dispatcher: Value) {
         super::lexical_operator_import_flag::note_operator_import();
         self.module.lexical_imports.write(|tables| {
             let mut set = tables

@@ -915,6 +915,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     node,
                 ))));
             }
+            also_statements.extend(super::also_rw::statement(marks.rw_also));
             let traits = header_trait_values(
                 names,
                 body,
@@ -922,7 +923,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     parents: &header_parents,
                     does_parents,
                     hidden_parents,
-                    is_rw: *class_is_rw,
+                    is_rw: *class_is_rw && !marks.rw_also,
                     is_hidden: *is_hidden,
                     custom_traits,
                 },
@@ -1060,6 +1061,11 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 });
             }
             fields.push(node_field(Some("term"), term));
+            fields.extend(super::enum_implicit_traits::field(
+                base_type.as_deref(),
+                variants,
+                variant_form,
+            ));
             Ok(Some(statement_expression(RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::TypeEnum,
@@ -2481,9 +2487,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::ParenthesizedDeclaratorAdverb => {
                 parenthesized_expression(names, &spelled.expr)
             }
-            Spelling::BracketTraitArgument | Spelling::ParenSections(_) | Spelling::WrittenNil => {
-                view_expr(names, &spelled.expr)
-            }
+            Spelling::BracketTraitArgument
+            | Spelling::AttributeCallAssign
+            | Spelling::ParenSections(_)
+            | Spelling::WrittenNil => view_expr(names, &spelled.expr),
             Spelling::Heredoc { stop, body } => heredoc_node(names, &spelled.expr, stop, *body),
             Spelling::EmptyStatement => Ok(super::spelled_nodes::statement_empty()),
             Spelling::HyperMetaMethod => {
@@ -6179,6 +6186,9 @@ fn colonpair_value_node(
     let ValueView::Str(key) = value.view() else {
         return Err(unsupported("colonpair value key"));
     };
+    if let Some(pair) = super::colon_pairs::sections_pair(names, &key, right)? {
+        return Ok(pair);
+    }
     let value = match right.as_ref() {
         // `:a<x y>` keeps the raw word text as one word-quote.
         Expr::Literal(_) | Expr::ArrayLiteral(_) if !parenthesize => match angle_key_text(right) {

@@ -181,6 +181,11 @@ impl Compiler {
             .lexical_type_shadows
             .extend(self.lexical_types_in_scope.iter().cloned());
         method_compiler.lexical_types_in_scope = self.lexical_types_in_scope.clone();
+        // A block-declared lexical type -- the method's own class included --
+        // is read by its type-only key, as from a closure body (#17711): the
+        // bare key is also a same-named scalar's (`my $R; my class R { method
+        // r { $R } }`), which the declaration-time capture must keep (#18327).
+        self.inherit_block_lexical_types(&mut method_compiler);
         if let Some(name) = lexical_type_name {
             method_compiler.seed_lexical_type_name(name);
         }

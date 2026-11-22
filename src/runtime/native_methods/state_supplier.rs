@@ -741,6 +741,18 @@ pub(in crate::runtime) fn register_supplier_forward_tap(
 /// Switch the migrate tap to a new inner supply: close the forward tap on the
 /// previously-active inner supply (if any), register a fresh forward tap on the
 /// new inner supply, and remember it on the migrate state.
+/// The inner supplier a `migrate` tap currently forwards, if any.
+// Cost: O(1).
+pub(in crate::runtime) fn migrate_current_inner(master_sid: u64, tap_index: usize) -> Option<u64> {
+    let map = supplier_subscriptions_map().lock().ok()?;
+    map.get(&master_sid)?
+        .taps
+        .get(tap_index)?
+        .migrate_state
+        .as_ref()?
+        .current_inner_supplier_id
+}
+
 pub(in crate::runtime) fn migrate_switch_inner(
     master_sid: u64,
     tap_index: usize,

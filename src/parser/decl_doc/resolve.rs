@@ -20,19 +20,53 @@ fn enclosing(
         .map(|(s, site)| (*s, site))
 }
 
+/// The declaration a trailing `#=` at `at` documents, if any: the one that
+/// started last before it among those whose extent (or the whitespace after
+/// it) it lies in, provided rakudo's line rule ([`super::lines`]) still lets
+/// it reach that far. `last_line` holds, per declaration, the start line of
+/// the last `#=` it took.
+fn trailing_owner(
+    t: &Table,
+    at: usize,
+    comment: &Comment,
+    last_line: &mut HashMap<usize, i64>,
+) -> Option<usize> {
+    let (owner, site) = t
+        .sites
+        .range(..at)
+        .rev()
+        .find(|(_, site)| at < site.claim_end)?;
+    if let Some(base) = site.lines.base_line(at) {
+        let anchor = last_line.get(owner).map_or(base, |&l| l.max(base));
+        if comment.line > anchor + 1 {
+            return None;
+        }
+        last_line.insert(*owner, comment.line);
+    }
+    Some(*owner)
+}
+
 /// Hand every comment to the declaration it documents (see the module docs).
+/// A trailing `#=` that documents nothing gets rakudo's "Missing declarand"
+/// worry, reported on the line the comment ends on -- in the program's own
+/// units only, see `set_parser_module_unit`.
 fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
     let mut leading: HashMap<usize, Vec<&Comment>> = HashMap::new();
     let mut trailing: HashMap<usize, Vec<&Comment>> = HashMap::new();
     // Where each owner's comments start and end.
     let mut spans: HashMap<usize, (usize, usize)> = HashMap::new();
+    let mut last_line: HashMap<usize, i64> = HashMap::new();
     for (&at, comment) in &t.comments {
         let owner = if comment.trailing {
-            t.sites
-                .range(..at)
-                .rev()
-                .find(|(_, site)| at < site.claim_end)
-                .map(|(s, _)| *s)
+            let owner = trailing_owner(t, at, comment, &mut last_line);
+            if owner.is_none() && !crate::parser::stmt::simple::parser_module_unit() {
+                crate::parser::add_parse_warning(
+                    "Potential difficulties:\n    Missing declarand for trailing declarator doc"
+                        .to_string(),
+                    comment.end_line,
+                );
+            }
+            owner
         } else {
             t.sites.range(comment.next_token..).next().map(|(s, _)| *s)
         };

@@ -64,6 +64,10 @@ pub(super) fn enum_term_node(
         EnumVariantForm::WrittenQuoteWords(text) => written_quote_words(names, text),
         EnumVariantForm::PairList => pair_list_term(names, variants),
         EnumVariantForm::WrittenPairs(forms) => written_pairs_term(names, variants, forms),
+        EnumVariantForm::Lone(form) => match variants {
+            [(name, value)] => Ok(parenthesized(written_pair(names, name, value, *form)?)),
+            _ => Err(super::view::unsupported("a lone enum element")),
+        },
         EnumVariantForm::Computed => match variants {
             [(name, Some(body))] if name == DYNAMIC => computed_term(names, body),
             _ => Err(super::view::unsupported("enum with a computed body")),
@@ -332,22 +336,7 @@ fn written_pairs_term(
         .iter()
         .zip(forms)
         .map(|((name, value), form)| {
-            let item = match (value, form) {
-                (None, crate::ast::BinaryForm::Infix) => {
-                    return Ok(Value::rakuast(Box::new(quoted_string(Value::str(
-                        name.clone(),
-                    )))));
-                }
-                (Some(value), form) => (value.clone(), *form),
-                (None, form) => (Expr::Literal(Value::TRUE), *form),
-            };
-            let pair = Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str(name.clone()))),
-                op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(item.0),
-                form: item.1,
-            };
-            view_expr(names, &pair).map(|n| Value::rakuast(Box::new(n)))
+            written_pair(names, name, value, *form).map(|n| Value::rakuast(Box::new(n)))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let list = RakuAstNode {
@@ -362,6 +351,31 @@ fn written_pairs_term(
         ],
     };
     Ok(parenthesized(list))
+}
+
+/// One element of a parenthesized body as written: a bare `'name'`, or the
+/// pair in its `form` (`a => 3`, `:a(3)`, `:a`).
+// Cost: O(n), n = size of the value's view.
+fn written_pair(
+    names: &NameScope,
+    name: &str,
+    value: &Option<Expr>,
+    form: crate::ast::BinaryForm,
+) -> Result<RakuAstNode, RuntimeError> {
+    let value = match (value, form) {
+        (None, crate::ast::BinaryForm::Infix) => {
+            return Ok(quoted_string(Value::str(name.to_string())));
+        }
+        (Some(value), _) => value.clone(),
+        (None, _) => Expr::Literal(Value::TRUE),
+    };
+    let pair = Expr::Binary {
+        left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+        op: crate::token_kind::TokenKind::FatArrow,
+        right: Box::new(value),
+        form,
+    };
+    view_expr(names, &pair)
 }
 
 /// The variants and spelling of an enum's `term` (the lowering direction).

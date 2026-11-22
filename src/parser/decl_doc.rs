@@ -33,7 +33,11 @@
 //! Recording is switched off for a unit whose source contains no `#|`/`#=`
 //! at all, so an ordinary parse pays one substring search.
 
+mod lines;
 mod resolve;
+mod site;
+
+use site::stmt_ident;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -57,6 +61,9 @@ struct Comment {
     /// The source offset just past the comment's text (its line break left
     /// out).
     end: usize,
+    /// The lines the comment starts and ends on.
+    line: i64,
+    end_line: i64,
 }
 
 /// What a declaration is, as far as naming its documentation needs.
@@ -104,6 +111,8 @@ struct Site {
     /// documents it.
     claim_end: usize,
     ident: SiteIdent,
+    /// Where a `#=` may still sit, by line (see [`lines::SiteLines`]).
+    lines: lines::SiteLines,
 }
 
 struct Table {
@@ -222,6 +231,7 @@ pub(in crate::parser) fn note_comment(input: &str, after: &str, block: bool) -> 
     };
     let written = &input[..input.len() - after.len()];
     let end = at + written.trim_end().len();
+    let (line, end_line) = lines::comment_lines(input, written);
     with_table(|t| {
         if let std::collections::btree_map::Entry::Vacant(slot) = t.comments.entry(at) {
             slot.insert(Comment {
@@ -230,6 +240,8 @@ pub(in crate::parser) fn note_comment(input: &str, after: &str, block: bool) -> 
                 raw,
                 next_token: usize::MAX,
                 end,
+                line,
+                end_line,
             });
             if !trailing {
                 t.pending_leading.push(at);
@@ -293,6 +305,7 @@ fn attach_claiming(
     } else {
         e
     };
+    let lines = lines::SiteLines::of(start, end, &ident, extends_to_eof);
     with_table(|t| {
         let e = if extends_to_eof { t.len } else { e };
         t.sites.insert(
@@ -301,62 +314,10 @@ fn attach_claiming(
                 end: e,
                 claim_end: claim.max(e),
                 ident,
+                lines,
             },
         );
     });
-}
-
-/// What a statement declares, if it is a documentable declaration.
-fn stmt_ident(stmt: &Stmt) -> Option<(SiteIdent, bool)> {
-    let routine = |name: &crate::symbol::Symbol, callable, multi, proto| SiteIdent::Routine {
-        name: name.resolve(),
-        callable,
-        multi,
-        proto,
-    };
-    let package = |name: &crate::symbol::Symbol, container, is_role| SiteIdent::Package {
-        name: name.resolve(),
-        container,
-        is_role,
-    };
-    let ident = match stmt {
-        Stmt::SubDecl { name, multi, .. } => routine(name, None, *multi, false),
-        Stmt::ProtoDecl {
-            name, is_method, ..
-        } => routine(name, is_method.then_some("Method"), false, true),
-        Stmt::MethodDecl {
-            name,
-            multi,
-            is_submethod,
-            ..
-        } => routine(
-            name,
-            Some(if *is_submethod { "Submethod" } else { "Method" }),
-            *multi,
-            false,
-        ),
-        Stmt::TokenDecl { name, .. } | Stmt::RuleDecl { name, .. } => SiteIdent::GrammarRule {
-            name: name.resolve(),
-        },
-        Stmt::ClassDecl { name, .. } => package(name, true, false),
-        Stmt::RoleDecl { name, .. } => package(name, true, true),
-        Stmt::Package { name, is_unit, .. } => return Some((package(name, true, false), *is_unit)),
-        Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => package(name, false, false),
-        Stmt::HasDecl { name, sigil, .. } => SiteIdent::Attr {
-            sigiled: format!("{sigil}!{}", name.resolve()),
-        },
-        Stmt::VarDecl { .. } => SiteIdent::Variable,
-        // A declaration a `.AST` parse keeps as written (its header, a binding).
-        Stmt::Ast(node) => return node.inner_stmt().and_then(stmt_ident),
-        _ => return None,
-    };
-    let named = match &ident {
-        SiteIdent::Package { name, .. }
-        | SiteIdent::Routine { name, .. }
-        | SiteIdent::GrammarRule { name } => !name.is_empty(),
-        _ => true,
-    };
-    named.then_some((ident, false))
 }
 
 /// A statement parsed from `start` to `end`: record it if it is a declaration.
@@ -440,7 +401,7 @@ pub(in crate::parser) fn attach_param(start: &str, end: &str, param: &ParamDef) 
         param.default.is_some() || param.where_constraint.is_some() || !param.traits.is_empty();
     // The parameter parser hands back its input past the trailing whitespace,
     // so a `#=` there sits inside `start..end`; cut the extent where it starts.
-    let end = trailing_doc_start(start, end).unwrap_or(end);
+    let end = lines::trailing_doc_start(start, end).unwrap_or(end);
     // The `,` must come before the comment: `$a = 1 #= doc\n, $b` documents
     // the routine.
     let after_comma = end.trim_start().starts_with(',');
@@ -452,26 +413,6 @@ pub(in crate::parser) fn attach_param(start: &str, end: &str, param: &ParamDef) 
         false,
         claims_trailing,
     );
-}
-
-/// The first `#=` comment inside `start..end` that only whitespace (and
-/// further comments) follows up to `end`, as a suffix of `start`. Only
-/// comments `ws` actually recorded count, so a `#` inside a string default
-/// cannot be mistaken for one.
-fn trailing_doc_start<'a>(start: &'a str, end: &str) -> Option<&'a str> {
-    let (s, e) = (source_offset(start)?, source_offset(end)?);
-    // Collected first: `ws` below records the comments it skips in the table.
-    let candidates: Vec<usize> = with_table(|t| {
-        t.comments
-            .range(s..e)
-            .filter(|(_, comment)| comment.trailing)
-            .map(|(&at, _)| at)
-            .collect()
-    })?;
-    candidates
-        .into_iter()
-        .map(|at| &start[at - s..])
-        .find(|from| ws(from).is_ok_and(|(r, _)| r.len() == end.len()))
 }
 
 /// Name every documented declaration of the unit being parsed and publish

@@ -362,6 +362,7 @@ pub(super) fn lower_also(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, 
                     (name, args)
                 }
                 Err(_) => match positional_leaf(named_child(t, "name")?)?.view() {
+                    ValueView::Str(s) if s.as_str() == "rw" => return Ok(super::also_rw::lower()),
                     ValueView::Str(s) if !matches!(s.as_str(), "rw" | "hidden") => {
                         (Symbol::intern(s.as_str()), None)
                     }

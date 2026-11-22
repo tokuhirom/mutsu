@@ -139,3 +139,43 @@ raises no panic (docs/security.md: allocations sized by untrusted input need a b
   MagickWand corpus.
 - Whether S3 should instead extend ADR-12026's load facts. This is decided at S3, once S1-S2
   have shown how large the deltas are.
+
+## Amendment 2026-11-22: S1 replays per `BEGIN` expression, checked against its inputs (Proposed)
+
+- **Status**: Accepted (2026-11-22, by the maintainer). Conditions on the S1 implementation PR: it
+  shows that no dispatch path can bypass the code watch (a ratchet or a structural guarantee, not a
+  convention), and its body carries a warm-versus-cold output comparison (replay off and on) over a
+  broad set of module-heavy distributions besides the standard parity set.
+
+§2.3 marks a whole entry replay-unsafe when any effect cannot be logged. S1 records at a finer
+grain: each value-position `BEGIN` of a module mainline (`BeginOnceExpr`) is its own record. A
+body that cannot be proven replay-safe keeps running on every load. The other bodies of the
+same mainline still replay. The prologue-lifted `BEGIN`s of ADR-0134 are outside S1 and keep
+running, as today.
+
+A body is recorded only when all four of these hold:
+
+1. **Static scan.** Every opcode is on an allow-list. Methods and `nqp::` ops are admitted
+   only by name, and only when their built-in form computes a value. The scan admits no
+   declaration, no closure, no read of a global, package or dynamic variable, and no output.
+2. **Code watch.** No other compiled code runs while the body runs. Every dispatch loop and
+   the JIT entry build their polls with `DispatchPolls::enter(code)`, which is the only
+   constructor. While a body is recorded, that constructor reports the code it is given.
+   TRIR routine entry reports too.
+3. **Faithful values.** The value and the changed unit lexicals decode back to exactly what
+   they are. They share no container with each other or with any lexical that outlives the
+   body.
+4. **Inputs.** The log keeps the encoding of every unit lexical the body reads or writes, as it
+   was before the body ran. A replay compares these first. If they differ, the body runs
+   instead. This happens when an earlier `BEGIN` that is not replayed sets one of those
+   lexicals differently on another load.
+
+Conditions 1 and 2 leave the body no input other than its code, its constants and the lexicals
+of condition 4. Its result is therefore a function of those, and the per-expression grain
+stays complete by construction, as §2.3 requires.
+
+One recording run cannot store a complete log: a mainline that reaches a `BEGIN` which already
+ran during the module's own compile. That run stores no log at all. The next load runs the
+mainline without compiling anything, so it records the whole log.
+
+`MUTSU_BEGIN_REPLAY=0` turns S1 off.

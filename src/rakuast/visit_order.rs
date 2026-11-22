@@ -6,20 +6,35 @@ use super::{RakuAstClass, RakuAstField, RakuAstNode};
 /// Move the fields of `node` that Rakudo visits out of their listed order:
 /// a declaration visits its initializer before its `shape` (`my @a[3] =
 /// 1,2,3`), a substitution its pattern before its `infix` (`s[a] = b`), an
-/// enum its term before its `of` type (`our Str enum E <a>`), a constant
+/// enum its term before its `of` type and traits (`our Str enum E <a>`), a constant
 /// its initializer before its traits (`constant C is export = 1`), and a
 /// statement its labels after everything else (`L: for @a { }`).
 // Cost: O(f), f = fields of `node`.
 pub(crate) fn reorder(node: &RakuAstNode, fields: &mut Vec<&RakuAstField>) {
+    // `has R $.r .= new`: Rakudo visits the call through the attribute's
+    // `Trait::WillBuild`, not its `Initializer::CallAssign`.
+    if super::will_build_origins::is_attribute_call_assign(node) {
+        fields.retain(|f| f.name != Some("initializer"));
+    }
     // `L: for @a { }`: a statement visits its labels last.
     if let Some(at) = fields.iter().position(|f| f.name == Some("labels")) {
         let field = fields.remove(at);
         fields.push(field);
     }
+    // `our Str enum E is export <a>`: an enum visits its term right after its
+    // name, then its `of` type and its traits.
+    if node.class == RakuAstClass::TypeEnum
+        && let Some(term) = fields.iter().position(|f| f.name == Some("term"))
+        && let Some(name) = fields.iter().position(|f| f.name == Some("name"))
+        && name < term
+    {
+        let field = fields.remove(term);
+        fields.insert(name + 1, field);
+        return;
+    }
     let (moved, after) = match node.class {
         RakuAstClass::VarDeclarationSimple => ("shape", "initializer"),
         RakuAstClass::Substitution => ("infix", "pattern"),
-        RakuAstClass::TypeEnum => ("of", "term"),
         RakuAstClass::VarDeclarationConstant => ("traits", "initializer"),
         _ => return,
     };

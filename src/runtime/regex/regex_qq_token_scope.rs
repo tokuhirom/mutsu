@@ -119,12 +119,11 @@ impl Interpreter {
         }
         let mut saved = prior.unwrap_or_default();
         for (key, thunk) in thunks.iter() {
-            let Ok(result) = self.call_sub_value(thunk.clone(), Vec::new()) else {
+            let Some(value) = self.regex_qq_install_value(key, thunk) else {
                 continue;
             };
             saved.push((key.clone(), self.env.get(key).cloned()));
-            self.env
-                .insert(key.clone(), Value::str(result.to_string_value()));
+            self.env.insert(key.clone(), value);
         }
         (!saved.is_empty()).then_some(saved)
     }

@@ -43,8 +43,10 @@ pub(crate) use primary::{
     prepend_does_header,
 };
 pub(crate) use stmt::class::push_also_is_parent;
+pub(crate) use stmt::class::stmt_is_also_is_rw;
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
+pub(crate) use stmt::decl::call_assign_invocant;
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::simple::superseded_declarator;
 pub(crate) use stmt::simple::{
@@ -415,8 +417,8 @@ pub(crate) fn replay_cached_type_names(
     }
 }
 pub use stmt::simple::{
-    clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
-    set_parser_program_path, set_parser_source_file,
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_module_unit,
+    set_parser_preload_modules, set_parser_program_path, set_parser_source_file,
 };
 
 pub(crate) use expr::precedence::{assign_to_target_expr, single_target_list_lvalue_expr};
