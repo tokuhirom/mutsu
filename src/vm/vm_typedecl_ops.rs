@@ -1175,7 +1175,13 @@ impl Interpreter {
                 // gets that hook run when the class composes, as in Rakudo -- once,
                 // at the real declaration, not for a throwaway hoisted shell.
                 if !is_hoisted_shell {
-                    self.drive_role_how_specialize(&storage_name)?;
+                    // A class HOW `compose` override runs first; the roles
+                    // specialize inside its `nextsame` (`mop_compose`), as in
+                    // rakudo, where `ClassHOW.compose` applies the roles
+                    // (#18145).
+                    if !self.class_how_compose_hook(&storage_name) {
+                        self.drive_role_how_specialize(&storage_name)?;
+                    }
                     self.queue_trait_how_compose(&storage_name, how_hook_before);
                 }
 
