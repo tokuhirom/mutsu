@@ -63,6 +63,14 @@ enum SerValue {
         index: usize,
     },
     Regex(String),
+    /// A regex literal with the source tree the parser gave it (#18003).
+    /// Dropping the tree made every match of a regex from a precompiled
+    /// module take the string path, so a warm load matched differently (and
+    /// ~13k instructions per match slower) than a cold one.
+    RegexSourced {
+        pattern: String,
+        source_tree: Box<crate::regex_tree::RegexTree>,
+    },
     /// A grammar `token`/`rule`/`regex` value keeping its verbatim declaration
     /// text (`Regex.gist`) and source tree across the module AST cache.
     RegexDeclared {
@@ -92,6 +100,8 @@ enum SerValue {
         samespace: bool,
         #[serde(default)]
         source_adverbs: Option<Vec<(String, Option<String>)>>,
+        #[serde(default)]
+        source_tree: Option<Box<crate::regex_tree::RegexTree>>,
     },
     Junction {
         kind: SerJunctionKind,
@@ -264,7 +274,13 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             source_tree: v.regex_source_tree().cloned().map(Box::new),
             signature: v.regex_signature().map(|sig| (*sig).clone()),
         }),
-        ValueView::Regex(s) => Ok(SerValue::Regex((**s).clone())),
+        ValueView::Regex(s) => Ok(match v.regex_source_tree() {
+            Some(tree) => SerValue::RegexSourced {
+                pattern: (**s).clone(),
+                source_tree: Box::new(tree.clone()),
+            },
+            None => SerValue::Regex((**s).clone()),
+        }),
         ValueView::RegexWithAdverbs(a) => Ok(SerValue::RegexWithAdverbs {
             pattern: (*a.pattern).clone(),
             global: a.global,
@@ -281,6 +297,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             samecase: a.samecase,
             samespace: a.samespace,
             source_adverbs: a.source_adverbs.as_ref().map(|v| (**v).clone()),
+            source_tree: a.source_tree.as_deref().cloned().map(Box::new),
         }),
         ValueView::Junction { kind, values } => {
             let ser_kind = match kind {
@@ -492,6 +509,10 @@ fn ser_to_value(sv: SerValue) -> Value {
             index,
         }),
         SerValue::Regex(s) => Value::regex(s),
+        SerValue::RegexSourced {
+            pattern,
+            source_tree,
+        } => Value::regex(pattern).with_regex_source_tree(*source_tree),
         SerValue::RegexDeclared {
             pattern,
             declared_source,
@@ -523,6 +544,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             samecase,
             samespace,
             source_adverbs,
+            source_tree,
         } => Value::RegexWithAdverbs(Box::new(crate::value::RegexAdverbs {
             pattern: Arc::new(pattern),
             global,
@@ -543,7 +565,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             // a serialization round-trip and is not part of the wire format.
             captured: None,
             topic: None,
-            source_tree: None,
+            source_tree: source_tree.map(Arc::from),
             id: Default::default(),
             name: Default::default(),
         })),
@@ -741,6 +763,7 @@ impl SerValue {
             | SerValue::Routine { .. }
             | SerValue::Enum { .. }
             | SerValue::Regex(_)
+            | SerValue::RegexSourced { .. }
             | SerValue::RegexDeclared { .. }
             | SerValue::RegexWithAdverbs { .. }
             | SerValue::Version { .. }
@@ -765,6 +788,9 @@ impl<'de> Deserialize<'de> for Value {
         Ok(ser_to_value(sv))
     }
 }
+
+#[cfg(test)]
+mod regex_tree_round_trip;
 
 #[cfg(test)]
 mod tests {
