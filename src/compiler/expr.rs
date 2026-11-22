@@ -191,16 +191,10 @@ impl Compiler {
                 let value = value.with_regex_source_tree(tree.clone());
                 self.compile_match_regex_topic(&value, false);
             }
-            Expr::MatchRegexDynamicAdverbs {
-                value,
-                pos_expr,
-                continue_expr,
-            } => {
-                self.compile_match_regex_dynamic(
-                    value,
-                    pos_expr.as_deref(),
-                    continue_expr.as_deref(),
-                );
+            Expr::MatchRegexDynamicAdverbs { .. } => {
+                let (value, adverbs) =
+                    super::expr_helpers::DynamicMatchAdverbs::of(expr).expect("a dynamic m// match");
+                self.compile_match_regex_dynamic(value, adverbs);
             }
             // `$?LANG` is the language handle the unit is compiled with
             // (`slang_grammar`/`slang_actions`/...), the object `$*LANG` is

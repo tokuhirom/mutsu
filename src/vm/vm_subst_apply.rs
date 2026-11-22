@@ -54,13 +54,11 @@ impl Interpreter {
     /// selection is a single Match rather than a List (a single-index `:nth`,
     /// even under `:g`).
     ///
-    /// Both values go through the resolvers `.match` and `.subst` use: a
-    /// Callable `:nth` (`*-1`, `{2}`) is called once with the match count
-    /// (`resolve_callable_nth`), and the indices come from
-    /// `resolve_nth_value_indices`, which also rejects an index below 1 or
-    /// out of order. `:x` is a count or a Range of counts
-    /// (`parse_match_repeat_bounds`); a value that is neither selects
-    /// nothing, as rakudo's `s:x("z")///` replaces nothing.
+    /// Both values go through the resolvers `.match`, `.subst` and `m//`
+    /// use: `nth_selection` for `:nth` (a Callable is called once with the
+    /// match count; an index below 1 or a list out of order is an error) and
+    /// `match_x_bounds` for `:x`, whose value that is no count or Range of
+    /// counts selects nothing, as rakudo's `s:x("z")///` replaces nothing.
     // Cost: O(r) plus one call of a Callable `:nth`, r = matches.
     pub(super) fn select_substitution_ranges(
         &mut self,
@@ -70,10 +68,10 @@ impl Interpreter {
     ) -> Result<(Vec<(usize, usize)>, bool), RuntimeError> {
         let total = all_matches.len();
         let x_bounds = match x {
-            Some(value) if !Self::is_valid_match_x_arg(value) => return Ok((Vec::new(), false)),
-            Some(value) => match Self::parse_match_repeat_bounds(value) {
+            Some(value) => match Self::match_x_bounds(value) {
                 Some(bounds) => Some(bounds),
-                // An empty Range of counts (`:x(3..1)`) can never be met.
+                // A value that is no count (`:x("z")`) or an empty Range of
+                // counts (`:x(3..1)`) can never be met.
                 None => return Ok((Vec::new(), false)),
             },
             None => None,
@@ -81,21 +79,9 @@ impl Interpreter {
         let mut single = false;
         let mut selected: Vec<(usize, usize)> = match nth {
             Some(spec) => {
-                let resolved = self.resolve_callable_nth(spec, total)?;
-                single = Self::is_single_nth(&resolved)
-                    || matches!(resolved.view(), crate::value::ValueView::Whatever);
-                // A Callable's answer outside the matches selects nothing,
-                // where a literal index below 1 is an error.
-                let from_callable = matches!(spec.view(), crate::value::ValueView::Sub(_));
-                if from_callable && Self::callable_nth_out_of_range(&resolved, total) {
-                    Vec::new()
-                } else {
-                    self.resolve_nth_value_indices(&resolved, total)?
-                        .into_iter()
-                        .filter(|&n| n <= total)
-                        .map(|n| all_matches[n - 1])
-                        .collect()
-                }
+                let (indices, is_single) = self.nth_selection(spec, total)?;
+                single = is_single;
+                indices.into_iter().map(|n| all_matches[n - 1]).collect()
             }
             None => all_matches.to_vec(),
         };

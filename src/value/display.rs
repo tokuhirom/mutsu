@@ -1246,10 +1246,10 @@ impl Value {
                         prefix.push_str(":ov");
                     }
                     if let Some(count) = repeat {
-                        prefix.push_str(&format!(":x({count})"));
+                        prefix.push_str(&format!(":x({})", count.to_string_value()));
                     }
-                    if let Some(raw) = nth {
-                        prefix.push_str(&format!(":nth({raw})"));
+                    if let Some(index) = nth {
+                        prefix.push_str(&format!(":nth({})", index.to_string_value()));
                     }
                     if *samecase {
                         prefix.push_str(":ii");

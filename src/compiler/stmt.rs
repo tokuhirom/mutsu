@@ -167,6 +167,9 @@ impl Compiler {
             Expr::MatchRegex(v) | Expr::Literal(v) => v,
             Expr::RegexLiteral { value, .. } => value,
             Expr::MatchRegexTree { value, .. } => value,
+            // `:x` is evaluated where the match runs, so its presence is in
+            // the expression, not on the value.
+            Expr::MatchRegexDynamicAdverbs { x_expr: Some(_), .. } => return true,
             Expr::MatchRegexDynamicAdverbs { value, .. } => value,
             _ => return false,
         };

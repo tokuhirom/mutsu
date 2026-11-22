@@ -3424,8 +3424,13 @@ pub struct RegexAdverbs {
     pub global: bool,
     pub exhaustive: bool,
     pub overlap: bool,
-    pub repeat: Option<usize>,
-    pub nth: Option<Arc<String>>,
+    /// The `:x` argument's value (a count, a Range of counts or `*`), patched
+    /// in where the match runs (`OpCode::PatchRegexAdverbX`).
+    pub repeat: Option<Value>,
+    /// The `:nth` argument's value (an index, a list, a Range, a Callable or
+    /// a Junction of them), patched in where the match runs
+    /// (`OpCode::PatchRegexAdverbNth`).
+    pub nth: Option<Value>,
     pub pos: bool,
     /// Literal position argument of `:pos(N)` (anchor the match to start
     /// exactly at character offset N). `None` means `:pos` without an explicit

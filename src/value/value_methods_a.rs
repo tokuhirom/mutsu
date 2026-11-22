@@ -277,6 +277,35 @@ impl Value {
         }
     }
 
+    /// Clone a `RegexWithAdverbs` value with its `:nth` argument set to
+    /// `nth`, the value an `m:nth(EXPR)/.../` evaluated where it runs. A
+    /// non-`RegexWithAdverbs` value is returned unchanged.
+    // Cost: O(1) plus the clone of the adverb payload.
+    pub(crate) fn with_regex_nth_value(&self, nth: Value) -> Self {
+        match self.view() {
+            ValueView::RegexWithAdverbs(adverbs) => {
+                let mut adverbs = adverbs.clone();
+                adverbs.nth = Some(nth);
+                Value::regex_with_adverbs(adverbs)
+            }
+            _ => self.clone(),
+        }
+    }
+
+    /// Clone a `RegexWithAdverbs` value with its `:x` argument set to
+    /// `repeat`. See [`Value::with_regex_nth_value`].
+    // Cost: O(1) plus the clone of the adverb payload.
+    pub(crate) fn with_regex_repeat_value(&self, repeat: Value) -> Self {
+        match self.view() {
+            ValueView::RegexWithAdverbs(adverbs) => {
+                let mut adverbs = adverbs.clone();
+                adverbs.repeat = Some(repeat);
+                Value::regex_with_adverbs(adverbs)
+            }
+            _ => self.clone(),
+        }
+    }
+
     /// Clone a `RegexWithAdverbs` value with its `:continue(N)` search-from
     /// position replaced by a freshly-evaluated runtime position. See
     /// [`Value::with_regex_pos_value`].

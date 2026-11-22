@@ -34,7 +34,7 @@ use super::call_args::{
 use super::rakuast_adverbs::rakuast_regex_adverbs;
 use super::scan::{scan_to_delim, scan_to_delim_replacement, scan_to_delim_subst_pattern};
 use super::subst::{subst_compound_thunk, try_strip_subst_compound_assign};
-use super::subst_source::subst_expr;
+use super::subst_source::{dynamic_match_expr, subst_expr};
 use super::trans::{TransHead, parse_trans_adverbs, process_trans_escapes};
 
 /// Parse the optional message argument of a stub listop (`...`, `!!!`, `???`).
@@ -981,15 +981,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         tree.match_immediately = true;
                         tree.adverbs = tree_adverbs;
                         let regex_val = regex_val.with_regex_source_tree(tree.clone());
-                        if adverbs.pos_expr.is_some() || adverbs.continue_expr.is_some() {
-                            return Ok((
-                                rest,
-                                Expr::MatchRegexDynamicAdverbs {
-                                    value: regex_val,
-                                    pos_expr: adverbs.pos_expr,
-                                    continue_expr: adverbs.continue_expr,
-                                },
-                            ));
+                        if let Some(dynamic) = dynamic_match_expr(&regex_val, &mut adverbs) {
+                            return Ok((rest, dynamic));
                         }
                         return Ok((
                             rest,
@@ -999,15 +992,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             },
                         ));
                     }
-                    if adverbs.pos_expr.is_some() || adverbs.continue_expr.is_some() {
-                        return Ok((
-                            rest,
-                            Expr::MatchRegexDynamicAdverbs {
-                                value: regex_val,
-                                pos_expr: adverbs.pos_expr,
-                                continue_expr: adverbs.continue_expr,
-                            },
-                        ));
+                    if let Some(dynamic) = dynamic_match_expr(&regex_val, &mut adverbs) {
+                        return Ok((rest, dynamic));
                     }
                     return Ok((rest, Expr::MatchRegex(regex_val)));
                 }

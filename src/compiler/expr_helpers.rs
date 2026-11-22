@@ -1132,8 +1132,7 @@ impl Compiler {
     pub(super) fn compile_match_regex_dynamic(
         &mut self,
         v: &Value,
-        pos_expr: Option<&Expr>,
-        continue_expr: Option<&Expr>,
+        adverbs: DynamicMatchAdverbs<'_>,
     ) {
         let name_idx = self
             .code
@@ -1157,7 +1156,7 @@ impl Compiler {
             rhs_is_bare_topic: false,
             rhs_numeric_literal: false,
         });
-        self.compile_regex_value_with_dynamic_adverbs(v, pos_expr, continue_expr);
+        self.compile_regex_value_with_dynamic_adverbs(v, adverbs);
         self.code.patch_smart_match_rhs_end(sm_idx);
     }
 
@@ -1168,19 +1167,57 @@ impl Compiler {
     pub(super) fn compile_regex_value_with_dynamic_adverbs(
         &mut self,
         v: &Value,
-        pos_expr: Option<&Expr>,
-        continue_expr: Option<&Expr>,
+        adverbs: DynamicMatchAdverbs<'_>,
     ) {
         let idx = self.code.add_constant(v.clone());
         self.code.emit(OpCode::LoadConst(idx));
-        if let Some(e) = pos_expr {
-            self.compile_expr(e);
-            self.code.emit(OpCode::PatchRegexAdverbPos);
+        for (expr, patch) in [
+            (adverbs.pos, OpCode::PatchRegexAdverbPos),
+            (adverbs.continue_, OpCode::PatchRegexAdverbContinue),
+            (adverbs.nth, OpCode::PatchRegexAdverbNth),
+            (adverbs.x, OpCode::PatchRegexAdverbX),
+        ] {
+            if let Some(e) = expr {
+                self.compile_expr(e);
+                self.code.emit(patch);
+            }
         }
-        if let Some(e) = continue_expr {
-            self.compile_expr(e);
-            self.code.emit(OpCode::PatchRegexAdverbContinue);
-        }
+    }
+}
+
+/// The arguments of an `m//` that are evaluated where the match runs (see
+/// `Expr::MatchRegexDynamicAdverbs`), each patched onto the regex value.
+#[derive(Clone, Copy)]
+pub(super) struct DynamicMatchAdverbs<'a> {
+    pub(super) pos: Option<&'a Expr>,
+    pub(super) continue_: Option<&'a Expr>,
+    pub(super) nth: Option<&'a Expr>,
+    pub(super) x: Option<&'a Expr>,
+}
+
+impl<'a> DynamicMatchAdverbs<'a> {
+    /// The arguments of `expr` when it is an `Expr::MatchRegexDynamicAdverbs`.
+    // Cost: O(1).
+    pub(super) fn of(expr: &'a Expr) -> Option<(&'a Value, Self)> {
+        let Expr::MatchRegexDynamicAdverbs {
+            value,
+            pos_expr,
+            continue_expr,
+            nth_expr,
+            x_expr,
+        } = expr
+        else {
+            return None;
+        };
+        Some((
+            value,
+            Self {
+                pos: pos_expr.as_deref(),
+                continue_: continue_expr.as_deref(),
+                nth: nth_expr.as_deref(),
+                x: x_expr.as_deref(),
+            },
+        ))
     }
 }
 

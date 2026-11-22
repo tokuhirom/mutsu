@@ -4667,7 +4667,19 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             } else {
                 regex_execution_value(&tree)?
             };
-            if lowered_adverbs.pos_expr.is_some() || lowered_adverbs.continue_expr.is_some() {
+            // `m:nth(...)` / `m:x(...)` evaluate their argument where the
+            // match runs, as the parser's `m//` does.
+            let (nth_expr, x_expr) = if tree.match_immediately && !is_rx_literal {
+                crate::parser::match_adverb_exprs(&tree.adverbs)
+                    .ok_or_else(|| unsupported(node))?
+            } else {
+                (None, None)
+            };
+            if lowered_adverbs.pos_expr.is_some()
+                || lowered_adverbs.continue_expr.is_some()
+                || nth_expr.is_some()
+                || x_expr.is_some()
+            {
                 if !tree.match_immediately {
                     return Err(unsupported(node));
                 }
@@ -4675,6 +4687,8 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
                     value,
                     pos_expr: lowered_adverbs.pos_expr,
                     continue_expr: lowered_adverbs.continue_expr,
+                    nth_expr,
+                    x_expr,
                 })
             } else if tree.match_immediately {
                 Ok(Expr::MatchRegexTree { value, tree })

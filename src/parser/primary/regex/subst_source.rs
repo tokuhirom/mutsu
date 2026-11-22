@@ -36,7 +36,7 @@ pub(crate) struct SubstFlags {
 /// nearly always parses; one that does not is kept as its text, which the
 /// substitution then rejects as an `:nth`/`:x` value it cannot use.
 // Cost: O(|raw|).
-fn adverb_argument_expr(raw: &str) -> Box<Expr> {
+pub(crate) fn adverb_argument_expr(raw: &str) -> Box<Expr> {
     Box::new(
         parse_adverb_argument(raw).unwrap_or_else(|| Expr::Literal(Value::str(raw.to_string()))),
     )
@@ -205,6 +205,50 @@ pub(crate) fn regex_execution_value(body: String, adverbs: &[RegexAdverb]) -> Op
         build_regex_with_adverbs(pattern, &parsed)
     } else {
         Value::regex(pattern)
+    })
+}
+
+/// The `:nth` and `:x` arguments among a match's written `adverbs`, as the
+/// expressions an `m//` evaluates where it runs (see
+/// `Expr::MatchRegexDynamicAdverbs`). `None` for an adverb list the parser
+/// does not take.
+// Cost: O(a), a = size of the adverbs.
+#[allow(clippy::type_complexity)]
+pub(crate) fn match_adverb_exprs(
+    adverbs: &[RegexAdverb],
+) -> Option<(Option<Box<Expr>>, Option<Box<Expr>>)> {
+    let written = written_adverbs(adverbs);
+    let (rest, parsed) = parse_match_adverbs(&written, "m").ok()?;
+    if !rest.is_empty() {
+        return None;
+    }
+    Some((
+        parsed.nth.as_deref().map(adverb_argument_expr),
+        parsed.repeat.as_deref().map(adverb_argument_expr),
+    ))
+}
+
+/// The `m//` expression for `value` when `adverbs` carry an argument that is
+/// evaluated where the match runs: a non-literal `:pos`/`:continue`, or any
+/// `:nth`/`:x`. `None` when the value alone is the whole match. Takes the
+/// dynamic expressions out of `adverbs`.
+// Cost: O(|nth| + |x|).
+pub(super) fn dynamic_match_expr(value: &Value, adverbs: &mut MatchAdverbs) -> Option<Expr> {
+    let nth_expr = adverbs.nth.as_deref().map(adverb_argument_expr);
+    let x_expr = adverbs.repeat.as_deref().map(adverb_argument_expr);
+    if adverbs.pos_expr.is_none()
+        && adverbs.continue_expr.is_none()
+        && nth_expr.is_none()
+        && x_expr.is_none()
+    {
+        return None;
+    }
+    Some(Expr::MatchRegexDynamicAdverbs {
+        value: value.clone(),
+        pos_expr: adverbs.pos_expr.take(),
+        continue_expr: adverbs.continue_expr.take(),
+        nth_expr,
+        x_expr,
     })
 }
 

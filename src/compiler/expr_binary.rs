@@ -684,16 +684,10 @@ impl Compiler {
                     Expr::MatchRegex(v) | Expr::MatchRegexTree { value: v, .. } => {
                         self.compile_match_regex_rhs_value(v);
                     }
-                    Expr::MatchRegexDynamicAdverbs {
-                        value,
-                        pos_expr,
-                        continue_expr,
-                    } => {
-                        self.compile_regex_value_with_dynamic_adverbs(
-                            value,
-                            pos_expr.as_deref(),
-                            continue_expr.as_deref(),
-                        );
+                    Expr::MatchRegexDynamicAdverbs { .. } => {
+                        let (value, adverbs) = super::expr_helpers::DynamicMatchAdverbs::of(right)
+                            .expect("a dynamic m// match");
+                        self.compile_regex_value_with_dynamic_adverbs(value, adverbs);
                     }
                     // The RHS is consumed by the match, never the value the
                     // expression yields, so it is not an escaping position

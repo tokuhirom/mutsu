@@ -63,17 +63,19 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         Expr::WhateverArg | Expr::HyperWhatever => {}
         Expr::RegexLiteral { .. } => {}
         Expr::MatchRegexTree { .. } => {}
-        // The dynamic `:pos`/`:continue` argument is a value position, same
+        // A dynamic `:pos`/`:continue`/`:nth`/`:x` argument is a value position, same
         // as any other adverb-argument slot (e.g. array-literal items above).
         Expr::MatchRegexDynamicAdverbs {
             pos_expr,
             continue_expr,
+            nth_expr,
+            x_expr,
             ..
         } => {
-            if let Some(e) = pos_expr {
-                mark_value_leaf(e);
-            }
-            if let Some(e) = continue_expr {
+            for e in [pos_expr, continue_expr, nth_expr, x_expr]
+                .into_iter()
+                .flatten()
+            {
                 mark_value_leaf(e);
             }
         }

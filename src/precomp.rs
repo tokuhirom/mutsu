@@ -161,7 +161,10 @@ pub(crate) fn interpreter_version() -> String {
     // 69: `Stmt::TempMethodAssign`'s value became optional and it gained
     // `is_let` (#18392).
     // 70: `CompiledSubDeclPlan` gained `block_operator_set` (#17771).
-    const CACHE_FORMAT_VERSION: u32 = 70;
+    // 71: `Expr::Subst` / `NonDestructiveSubst` `nth`/`x` became expressions
+    // (#18816); `Expr::MatchRegexDynamicAdverbs` gained `nth_expr`/`x_expr`,
+    // and `SerValue::RegexWithAdverbs` lost `repeat`/`nth` (#18833).
+    const CACHE_FORMAT_VERSION: u32 = 71;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

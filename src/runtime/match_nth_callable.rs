@@ -34,6 +34,30 @@ impl Interpreter {
         self.call_sub_value(nth.clone(), args)
     }
 
+    /// The 1-based indices an `:nth` value `nth` selects out of `total`
+    /// matches, ascending and each within `total`, and whether `nth` names a
+    /// single match (an Int, a Num, `*`, or a Callable answering one) rather
+    /// than a list. A Callable answering an index outside the matches selects
+    /// nothing; a literal index below 1 or a list out of order is an error.
+    // Cost: O(r) plus one call of a Callable `nth`, r = indices selected.
+    pub(crate) fn nth_selection(
+        &mut self,
+        nth: &Value,
+        total: usize,
+    ) -> Result<(Vec<usize>, bool), RuntimeError> {
+        let resolved = self.resolve_callable_nth(nth, total)?;
+        let single =
+            Self::is_single_nth(&resolved) || matches!(resolved.view(), ValueView::Whatever);
+        if matches!(nth.view(), ValueView::Sub(_))
+            && Self::callable_nth_out_of_range(&resolved, total)
+        {
+            return Ok((Vec::new(), single));
+        }
+        let mut indices = self.resolve_nth_value_indices(&resolved, total)?;
+        indices.retain(|&n| n <= total);
+        Ok((indices, single))
+    }
+
     /// Whether a Callable's single-index answer `value` falls outside the
     /// `total` matches: such an answer selects nothing (`:nth(*-5)` on two
     /// matches is Nil), where a literal out-of-range index is an error.

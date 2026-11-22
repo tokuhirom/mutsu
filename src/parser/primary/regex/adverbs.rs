@@ -484,13 +484,11 @@ pub(super) fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) 
         global: adverbs.global,
         exhaustive: adverbs.exhaustive,
         overlap: adverbs.overlap,
-        // The `m//` match form keeps `:x` as an exact count; range `:x(1..3)`
-        // support lives in the substitution path (parsed from the AST string).
-        repeat: adverbs
-            .repeat
-            .as_ref()
-            .and_then(|s| s.parse::<usize>().ok()),
-        nth: adverbs.nth.as_ref().map(|s| Arc::new(s.clone())),
+        // `:x` and `:nth` are expressions (`MatchAdverbs::repeat` / `nth` hold
+        // their source): the compiler evaluates them where the match runs and
+        // patches the values on (`Expr::MatchRegexDynamicAdverbs`).
+        repeat: None,
+        nth: None,
         pos: adverbs.pos,
         pos_value: adverbs.pos_value,
         continue_: adverbs.continue_,
