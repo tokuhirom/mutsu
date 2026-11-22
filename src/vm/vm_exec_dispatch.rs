@@ -3441,7 +3441,15 @@ impl Interpreter {
                             .get_sym(name_sym)
                             .cloned()
                             .unwrap_or_else(|| val.clone());
-                        self.bind_self_attr_through_alias(&current_alias, bound);
+                        // A bound plain value leaves the method's own names
+                        // readonly too, as the attribute is (#18365).
+                        if let Some(cell) = self.bind_self_attr_through_alias(&current_alias, bound)
+                        {
+                            self.env_mut().insert_sym(name_sym, cell.clone());
+                            self.set_env_with_main_alias(&current_alias, cell.clone());
+                            self.update_local_if_exists(code, &current_alias, &cell);
+                            self.update_local_if_exists(code, &name, &cell);
+                        }
                     } else {
                         self.write_self_attr_cell(&current_alias, val.clone());
                     }
