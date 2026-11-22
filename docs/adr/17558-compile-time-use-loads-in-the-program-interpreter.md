@@ -568,4 +568,27 @@ ambiguous in either order; a module loaded after a program `multi` prints its
 load-time output before a later syntax error is reported
 (`t/modules/module-multi-before-use-candidate-order.t`).
 
-Remaining for 5b: a `proto` (above), and a `BEGIN` that needs the unit's frame.
+Remaining for 5b: a `proto` (§7.14), and a `BEGIN` that needs the unit's frame.
+
+### 7.14 Slice 5b, `proto` part (2026-11-22)
+
+A `proto` at the top level of the program no longer keeps a later `use` in the
+prologue either. It ranks no candidate, so it needs no stamp
+(`parser::stmt::sub::install_order::note_proto_installed` asks the loader
+whether the unit installs at parse time, `CompileTimeLoader::installs_at_parse`).
+A `proto` anywhere else keeps §7.6's rule, as an unstamped `multi` does.
+
+§7.13 kept the rule for `proto` because one case changed: a program `proto`
+with a body, followed by a `use` of a bare-file module that exports the
+family, dispatched through the module's candidates alone, as rakudo does, while
+the `use` loaded in the prologue. Loaded at parse time, the import extends the
+program's family instead, as it already did for a `unit module`. rakudo's
+result there is not a rule (#18587, closed): when it merges an imported family
+into a dispatcher that has a body, it builds an only-star dispatcher that
+drops the proto's body or the program's own candidates, and `.file` on it dies.
+With an only-star proto, written or generated, rakudo merges both candidate
+lists, and so does mutsu, now in either load order
+(`t/modules/module-multi-before-use-candidate-order.t`).
+
+Remaining for 5b: a `BEGIN` that needs the unit's frame.
+
