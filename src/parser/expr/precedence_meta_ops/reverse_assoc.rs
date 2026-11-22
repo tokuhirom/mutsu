@@ -20,9 +20,9 @@ pub(super) fn right_chain<'a>(
     level: &OpPrecedence,
     operand: fn(&str) -> PResult<'_, Expr>,
 ) -> PResult<'a, Expr> {
-    let (mut rest, first) = operand(input)?;
-    let mut operands = vec![first];
-    let mut ops: Vec<String> = Vec::new();
+    let (mut rest, mut last) = operand(input)?;
+    // Each operand before the last, with the operator after it.
+    let mut pending: Vec<(Expr, String)> = Vec::new();
     loop {
         let (r, _) = ws(rest)?;
         let Some((meta, op, len)) = try_bracket_op_at_level(r, level) else {
@@ -33,13 +33,11 @@ pub(super) fn right_chain<'a>(
         }
         let (r, _) = ws(&r[len..])?;
         let (r, next) = operand(r)?;
-        ops.push(op);
-        operands.push(next);
+        pending.push((std::mem::replace(&mut last, next), op));
         rest = r;
     }
-    let mut acc = operands.pop().expect("one operand");
-    while let Some(op) = ops.pop() {
-        let left = operands.pop().expect("an operand per operator");
+    let mut acc = last;
+    while let Some((left, op)) = pending.pop() {
         acc = reversed(op, left, acc);
     }
     Ok((rest, acc))
