@@ -312,17 +312,18 @@ impl Interpreter {
         // it holds (a FETCH may answer a different type on every call), so
         // the winner would not be a function of the key.
         let multi_unplannable = def.is_multi
-            && (args.iter().any(|a| {
-                a.is_container_ref() || super::vm_call_helpers::bound_proxy(a).is_some()
-            }) || match target.view() {
-                ValueView::Instance { class_name, .. } => !self.multi_dispatch_type_cacheable(
-                    class_name,
-                    method_sym,
-                    class_name.as_str(),
-                    method,
-                ),
-                _ => true,
-            });
+            && (args
+                .iter()
+                .any(|a| a.is_container_ref() || super::vm_call_helpers::bound_proxy(a).is_some())
+                || match target.view() {
+                    ValueView::Instance { class_name, .. } => !self.multi_dispatch_type_cacheable(
+                        class_name,
+                        method_sym,
+                        class_name.as_str(),
+                        method,
+                    ),
+                    _ => true,
+                });
         if method == "new"
             || method.starts_with('!')
             || crate::builtins::method_table::native_array_result::retypes(method)
