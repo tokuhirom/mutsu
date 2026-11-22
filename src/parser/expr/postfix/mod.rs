@@ -15,6 +15,7 @@ mod helpers;
 mod loop_;
 
 // Re-exports preserving original visibility
+pub(in crate::parser::expr) use helpers::colonpair_adverb_follows;
 pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};
 
 pub(crate) use call_method::{ParsedBracketIndex, parse_bracket_indices_inner};
