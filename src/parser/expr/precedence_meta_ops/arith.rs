@@ -80,7 +80,10 @@ pub(crate) fn classify_base_op(op: &str) -> OpPrecedence {
 /// Try to parse a bracket meta-op or bracket infix at a specific precedence level.
 /// Returns Some((meta, op, total_len)) for meta-ops,
 /// or Some(("", op, total_len)) for plain bracket infix.
-pub(super) fn try_bracket_op_at_level(input: &str, level: &OpPrecedence) -> Option<(String, String, usize)> {
+pub(super) fn try_bracket_op_at_level(
+    input: &str,
+    level: &OpPrecedence,
+) -> Option<(String, String, usize)> {
     // Try R[op], Z[op], X[op]
     // Skip Z/X meta-ops — they need list-infix comma handling
     if let Some((meta, op, len)) = parse_meta_op(input)
@@ -421,8 +424,11 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
             && meta == "R"
         {
             let (r, _) = ws(&r[len..])?;
-            let (r, right) =
-                super::reverse_assoc::right_chain(r, &OpPrecedence::Multiplicative, prefix_expr_with_ws_dot)?;
+            let (r, right) = super::reverse_assoc::right_chain(
+                r,
+                &OpPrecedence::Multiplicative,
+                prefix_expr_with_ws_dot,
+            )?;
             left = super::reverse_assoc::attach(left, built_here_before, op, right);
             rest = r;
             continue;
