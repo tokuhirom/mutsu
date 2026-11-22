@@ -31,6 +31,12 @@ pub(super) fn view_var(name: &str) -> Option<RakuAstNode> {
     })
 }
 
+/// `%?RESOURCES`: a bare `Var::Compiler::Resources`, as rakudo parses it.
+// Cost: O(1).
+pub(super) fn view_hash_var(name: &str) -> Option<RakuAstNode> {
+    (name == "?RESOURCES").then(|| node(RakuAstClass::VarCompilerResources, None))
+}
+
 /// The node for a compiler variable the parser folded into `value`, written
 /// as `written` (`$?LINE`, `$?FILE`, `$?TABSTOP`).
 // Cost: O(1).
@@ -84,6 +90,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     Ok(match node.class {
         RakuAstClass::VarCompilerLine | RakuAstClass::VarCompilerFile => Expr::Literal(leaf()?),
         RakuAstClass::VarCompilerDistribution => Expr::Var("?DISTRIBUTION".to_string()),
+        RakuAstClass::VarCompilerResources => Expr::HashVar("?RESOURCES".to_string()),
         _ => {
             let name = leaf()?;
             let ValueView::Str(name) = name.view() else {

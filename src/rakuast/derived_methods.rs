@@ -61,8 +61,9 @@ pub(super) fn names(class: RakuAstClass) -> Vec<&'static str> {
         StubFail | StubDie | StubWarn => &["name"],
         // Rakudo's `Var::Compiler::Routine` is a lexical lookup of
         // `&?ROUTINE`; `Var::Compiler::Distribution` names `$?DISTRIBUTION`
-        // (`Var::Compiler::Block` has no `name`).
-        VarCompilerRoutine | VarCompilerDistribution => &["name"],
+        // and `Var::Compiler::Resources` `%?RESOURCES` (`Var::Compiler::Block`
+        // has no `name`).
+        VarCompilerRoutine | VarCompilerDistribution | VarCompilerResources => &["name"],
         Method | Submethod => &["meta", "declarator"],
         VarDeclarationPlaceholderSlurpyArray | VarDeclarationPlaceholderSlurpyHash => {
             &["lexical-name"]
@@ -263,6 +264,7 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
         (StubWarn, "name") => Some(Value::str_from("???")),
         (VarCompilerRoutine, "name") => Some(Value::str_from("&?ROUTINE")),
         (VarCompilerDistribution, "name") => Some(Value::str_from("$?DISTRIBUTION")),
+        (VarCompilerResources, "name") => Some(Value::str_from("%?RESOURCES")),
         // A `meta` method (`method ^m`) is declared with the caret.
         (Method | Submethod, "meta") => Some(Value::truth(
             field(node, "meta").is_some_and(|v| v.truthy()),
