@@ -16,7 +16,8 @@ use crate::value::{Value, ValueView};
 pub(super) fn is_attribute_call_assign(node: &RakuAstNode) -> bool {
     node.class == RakuAstClass::VarDeclarationSimple
         && super::decl_origins::leaf(node, "scope").is_some_and(|s| s == "has" || s == "HAS")
-        && child(node, "initializer").is_some_and(|i| i.class == RakuAstClass::InitializerCallAssign)
+        && child(node, "initializer")
+            .is_some_and(|i| i.class == RakuAstClass::InitializerCallAssign)
 }
 
 /// Give the `ApplyPostfix` an attribute's `Trait::WillBuild` holds the
@@ -27,7 +28,9 @@ pub(super) fn place(node: &mut RakuAstNode) {
     if !is_attribute_call_assign(node) {
         return;
     }
-    let ty = child(node, "type").filter(|t| t.origin.0.is_some()).cloned();
+    let ty = child(node, "type")
+        .filter(|t| t.origin.0.is_some())
+        .cloned();
     let call = child(node, "initializer")
         .and_then(|i| super::infix_origins::child_at(i, 0))
         .filter(|c| c.origin.0.is_some())
