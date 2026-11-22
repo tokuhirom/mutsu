@@ -309,6 +309,23 @@ fn register_sig_info(id: u64, info: SigInfo) {
     map.insert(id, info);
 }
 
+/// Point the registered signature `id` at `binder`, the closure whose scope
+/// its `ACCEPTS` binds in (#18661). A routine's signature is one object per
+/// declaration, as rakudo's is; rakudo's signature reads the scope of the
+/// closure cloned last, mutsu's the one whose `.signature` was read last.
+// Cost: O(1) under the registry lock.
+pub(crate) fn set_sig_binder(id: u64, binder: Value) {
+    let old = {
+        let mut guard = SIG_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .as_mut()
+            .and_then(|map| map.get_mut(&id))
+            .and_then(|info| info.binder.replace(binder))
+    };
+    // Dropped outside the lock: a Value may run code when it goes.
+    drop(old);
+}
+
 /// Look up SigInfo by Instance ID.
 pub(crate) fn lookup_sig_info(id: u64) -> Option<SigInfo> {
     let guard = SIG_REGISTRY.lock().unwrap();

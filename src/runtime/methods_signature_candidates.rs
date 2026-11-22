@@ -429,19 +429,25 @@ impl Interpreter {
         // reads on the same identity are expected to return a stable object
         // for.
         let is_primed = !data.assumed_positional.is_empty() || !data.assumed_named.is_empty();
-        // An empty routine whose parameters carry code binds a capture for
-        // its signature's `ACCEPTS` (`SigInfo::binder`): that signature
-        // belongs to this closure value, not to every closure of its
-        // declaration, so it is not cached per declaration.
-        let binds_for_accepts = !is_primed
-            && data.body.is_empty()
-            && data.compiled_routine.is_none()
-            && crate::value::signature::params_carry_code(&data.param_defs);
-        let cache_key =
-            (!is_primed && !binds_for_accepts).then(|| Self::sub_signature_cache_key(data));
+        // A routine whose parameters carry code binds a capture for its
+        // signature's `ACCEPTS` (`SigInfo::binder`) in its own scope. A
+        // signature literal (an empty routine) belongs to its closure value,
+        // so it is not cached per declaration; a routine's signature is, and
+        // reads the scope of the closure it was last asked of (#18661).
+        let binds_for_accepts =
+            !is_primed && crate::value::signature::params_carry_code(&data.param_defs);
+        let is_literal = data.body.is_empty() && data.compiled_routine.is_none();
+        let cache_key = (!is_primed && !(binds_for_accepts && is_literal))
+            .then(|| Self::sub_signature_cache_key(data));
         if let Some(key) = &cache_key
             && let Some(cached) = cached_sub_signature(key)
         {
+            if binds_for_accepts && let ValueView::Instance { id, .. } = cached.view() {
+                crate::value::signature::set_sig_binder(
+                    id,
+                    Value::sub_value(crate::gc::Gc::new(data.clone())),
+                );
+            }
             return cached;
         }
         let param_defs =
