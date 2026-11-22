@@ -63,7 +63,12 @@ impl Interpreter {
         // Only a type object: a memoized constant term (a `Regex`, say)
         // takes the general op, whose match may bind `$/`.
         let env_ok = match value.view() {
-            ValueView::Package(sym) => self.env_leaves_type_name_as(name, sym),
+            // A block's lexical type the site saw while the block ran is no
+            // answer once the block has exited (#18217).
+            ValueView::Package(sym) => {
+                self.env_leaves_type_name_as(name, sym)
+                    && self.lexical_memo_still_in_scope(code, name, sym)
+            }
             _ => false,
         };
         (env_ok && self.bare_name_visible_here(name)).then_some(value)

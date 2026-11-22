@@ -192,6 +192,20 @@ impl Compiler {
         if let Some(name) = lexical_type_short_name {
             method_compiler.seed_lexical_type_name(name);
         }
+        // The method's own lexical class, even a file-scope one, is read by
+        // its type-only key too: the declaration-time capture binds that key
+        // to the class, so a caller in another unit resolves it all the same,
+        // and a file-scope `my $R` keeps the bare key (#18673).
+        for name in [lexical_type_name, lexical_type_short_name]
+            .into_iter()
+            .flatten()
+            .filter(|name| !crate::qualified::is_qualified_str(name))
+        {
+            let sym = crate::symbol::Symbol::intern(name);
+            if !method_compiler.enclosing_lexical_types.contains(&sym) {
+                method_compiler.enclosing_lexical_types.push(sym);
+            }
+        }
         // A role method's body sits inside the role's parameter scope, so a
         // role parameter `&f` shadows any outer `sub f` for a bare `f()`.
         // The declaring scopes are handed down for `OUTER::`/`OUTERS::`

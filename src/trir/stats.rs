@@ -17,6 +17,9 @@
 //!   the generic dispatch established (ADR-0112 Step 1), not the generic
 //!   dispatch itself.
 //!
+//! - `lazy-deferred`: an inner TRIR call deferred its routine-stack entry
+//!   (ADR-8673 D1); `lazy-pushed`: an op that observes the stack pushed one.
+//!
 //! In a program where TRIR is doing its job, `completed` is close to
 //! `entries`. A `bails` count of the same order as `entries` means the typed
 //! run is pure overhead.
@@ -28,6 +31,26 @@ static COMPLETED: AtomicU64 = AtomicU64::new(0);
 static BAILS: AtomicU64 = AtomicU64::new(0);
 static BIND_DECLINES: AtomicU64 = AtomicU64::new(0);
 static GEN_LINKS: AtomicU64 = AtomicU64::new(0);
+static LAZY_DEFERRED: AtomicU64 = AtomicU64::new(0);
+static LAZY_PUSHED: AtomicU64 = AtomicU64::new(0);
+
+/// An inner TRIR call deferred its routine-stack entry.
+// Cost: O(1).
+#[inline]
+pub(crate) fn record_lazy_deferred() {
+    if crate::vm::vm_stats::enabled() {
+        LAZY_DEFERRED.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// A deferred routine-stack entry was pushed for an observing op.
+// Cost: O(1).
+#[inline]
+pub(crate) fn record_lazy_pushed() {
+    if crate::vm::vm_stats::enabled() {
+        LAZY_PUSHED.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 /// A `CallGen` site served through its link (`gen_link.rs`) rather than by
 /// the generic dispatch.
@@ -63,11 +86,13 @@ pub(crate) fn record(outcome: TrirEntry) {
 /// The report line, printed with the rest of `MUTSU_VM_STATS`.
 pub(crate) fn report() {
     eprintln!(
-        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={} gen-links={}",
+        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={} gen-links={} lazy-deferred={} lazy-pushed={}",
         ENTRIES.load(Ordering::Relaxed),
         COMPLETED.load(Ordering::Relaxed),
         BAILS.load(Ordering::Relaxed),
         BIND_DECLINES.load(Ordering::Relaxed),
         GEN_LINKS.load(Ordering::Relaxed),
+        LAZY_DEFERRED.load(Ordering::Relaxed),
+        LAZY_PUSHED.load(Ordering::Relaxed),
     );
 }

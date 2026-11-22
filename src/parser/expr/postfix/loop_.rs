@@ -2459,6 +2459,7 @@ fn postfix_expr_loop_from<'a>(
         if matches!(&expr, Expr::Index { .. } | Expr::MultiDimIndex { .. }) {
             let (r_adv, _) = ws(rest)?;
             if let Some((r_after, pairs)) = scan_subscript_adverbs(r_adv) {
+                super::adverb::reject_type_application_adverb(&expr, rest)?;
                 expr = subscript_adverbs_expr(expr, pairs);
                 rest = r_after;
                 continue;

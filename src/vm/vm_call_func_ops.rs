@@ -301,7 +301,7 @@ impl Interpreter {
                 // and it stays properly scoped: the table is consulted for the
                 // running package only, so the name does not leak to a
                 // compunit that never imported it.
-                .or_else(|| self.module_scope_lexical(ampname).cloned())
+                .or_else(|| self.module_scope_lexical(ampname))
                 // A class-body `my &name` is persisted in the owning package's
                 // lexical store. Methods run with that package selected, but
                 // their compiled bare calls still use the ordinary function
@@ -2132,7 +2132,7 @@ impl Interpreter {
         // the importing compunit.
         if target.is_nil()
             && !crate::qualified::is_qualified(code.const_sym(name_idx))
-            && let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned()
+            && let Some(found) = self.module_scope_lexical(&format!("&{name}"))
         {
             target = found.into_deref();
         }

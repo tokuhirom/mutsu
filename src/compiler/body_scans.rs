@@ -245,7 +245,7 @@ pub(super) fn rebinds_topic(stmts: &[Stmt]) -> bool {
 
 /// Finds a plain lexical `my` declared in the scanned branch's own scope — at
 /// statement level or inside an expression (`foo(my $x = 5)`) — or a lexically
-/// scoped type (`my class`, `my package`, `my role`). `state`, `our` and
+/// scoped type (`my class`, `my package`, `my role`, `my subset`). `state`, `our` and
 /// dynamic declarations are not plain lexical shadows.
 #[derive(Default)]
 struct BlockLocalDeclScan {
@@ -283,7 +283,8 @@ impl<'ast> Visit<'ast> for BlockLocalDeclScan {
             | Stmt::RoleDecl {
                 is_lexical: true, ..
             }
-            | Stmt::Package { is_my: true, .. } => self.found = true,
+            | Stmt::Package { is_my: true, .. }
+            | Stmt::SubsetDecl { is_my: true, .. } => self.found = true,
             _ => walk_stmt_own_scope(self, stmt),
         }
     }

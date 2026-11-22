@@ -305,7 +305,7 @@ impl Interpreter {
         // scan first stops the world (`gc::stw`, design §6.1). Placement —
         // entry and backward transfers only, unless the profiler is armed —
         // and its stop-the-world bound: `vm_poll::DispatchPolls`.
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(code);
         let mut poll_due = true;
         // The entry poll is not a loop arrival (`poll_code`'s `arrival`);
         // every later due poll follows a backward transfer.
@@ -322,7 +322,7 @@ impl Interpreter {
                 at_entry = false;
             }
             let op_ip = ip;
-            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns, polls) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
@@ -706,7 +706,7 @@ impl Interpreter {
         // scan first stops the world (`gc::stw`, design §6.1). Placement —
         // entry and backward transfers only, unless the profiler is armed —
         // and its stop-the-world bound: `vm_poll::DispatchPolls`.
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(code);
         let mut poll_due = true;
         // The entry poll is not a loop arrival (`poll_code`'s `arrival`);
         // every later due poll follows a backward transfer.
@@ -723,7 +723,7 @@ impl Interpreter {
                 at_entry = false;
             }
             let op_ip = ip;
-            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns, polls) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
@@ -1021,7 +1021,7 @@ impl Interpreter {
             // An empty body still has to poll: `while $cond {}` repeats through
             // its (unpolled) condition range and this body alone. A profile
             // run needs nothing here: the condition's ops poll one by one.
-            if crate::vm::vm_poll::DispatchPolls::current().due_without_ops(entry_poll) {
+            if crate::vm::vm_poll::DispatchPolls::enter(code).due_without_ops(entry_poll) {
                 crate::vm::vm_poll::poll_code(
                     crate::gc::SafepointKind::Backedge,
                     start as u32,
@@ -1107,7 +1107,7 @@ impl Interpreter {
         // Same poll placement as the outer loop (`vm_poll::DispatchPolls`);
         // `entry_poll` is false for a loop's condition/step range and when
         // resuming mid-range after a native body, whose entry already polled.
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(code);
         let mut poll_due = entry_poll;
         while ip < end {
             if polls.due(poll_due) {
@@ -1120,7 +1120,7 @@ impl Interpreter {
                 );
             }
             let op_ip = ip;
-            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns, polls) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
@@ -1184,7 +1184,7 @@ impl Interpreter {
 
         let mut collected_errors: Vec<RuntimeError> = Vec::new();
         let mut ip = start;
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(code);
         while ip < end {
             match &code.ops[ip] {
                 OpCode::LeaveGuard { next } => {

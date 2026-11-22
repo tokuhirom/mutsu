@@ -86,12 +86,12 @@ impl Interpreter {
         let owned = |declares: &HashMap<String, Vec<(String, String)>>, entry: &(String, String)| {
             declares.values().any(|list| list.contains(entry))
         };
-        found.retain(|entry| !owned(&self.module.world.exporthow_declares, entry));
+        found.retain(|entry| !owned(&self.module.world.exporthow_declares.read(), entry));
         found.dedup();
         if found.is_empty() {
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module.world.exporthow_declares)
+        crate::runtime::cow_table_mut(&mut self.module.world.exporthow_declares.write_guard())
             .entry(module.to_string())
             .or_default()
             .extend(found);
@@ -139,7 +139,8 @@ impl Interpreter {
     // declarators.
     // Cost: O(d), d = the unit's `EXPORTHOW` entries.
     pub(crate) fn exporthow_stash_of_unit(&self, unit: &str) -> Option<Value> {
-        let declares = self.module.world.exporthow_declares.get(unit)?;
+        let exporthow_declares_r = self.module.world.exporthow_declares.read();
+        let declares = exporthow_declares_r.get(unit)?;
         let mut directives: Vec<&str> = Vec::new();
         for (directive, _) in declares {
             if !directives.contains(&directive.as_str()) {
@@ -176,8 +177,9 @@ impl Interpreter {
         };
         let unit = attributes.as_map().get(EXPORTHOW_UNIT_ATTR)?.to_string_value();
         let loading = self.module.module_load_stack.last()?.clone();
-        let declares = self.module.world.exporthow_declares.get(&unit).cloned()?;
-        let mine = crate::runtime::cow_table_mut(&mut self.module.world.exporthow_declares)
+        let declares = self.module.world.exporthow_declares.read().get(&unit).cloned()?;
+        let mut exporthow_declares_w = self.module.world.exporthow_declares.write_guard();
+        let mine = crate::runtime::cow_table_mut(&mut exporthow_declares_w)
             .entry(loading)
             .or_default();
         for declare in declares {

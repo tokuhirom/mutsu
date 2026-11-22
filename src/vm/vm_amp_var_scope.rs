@@ -64,7 +64,7 @@ impl Interpreter {
             return None;
         }
         if let Some(imported) = crate::runtime::dispatch_key::with_amp_name(name, |amp| {
-            self.module_imported_lexical(amp).cloned()
+            self.module_imported_lexical(amp)
         }) {
             return Some(imported.into_deref());
         }
@@ -84,7 +84,7 @@ impl Interpreter {
             return Some(v);
         }
         if let Some(v) = crate::runtime::dispatch_key::with_amp_name(name, |amp| {
-            self.module_imported_lexical(amp).cloned()
+            self.module_imported_lexical(amp)
         }) {
             return Some(v.into_deref());
         }

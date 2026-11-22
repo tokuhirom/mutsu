@@ -166,7 +166,11 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
         }
         ValueView::Package(name) => {
             let resolved = name.resolve();
-            let full = crate::value::user_facing_type_name(&resolved);
+            // A type renamed with `.^set_name` renders under its new name.
+            let full = match crate::value::type_rename_display(&resolved) {
+                Some(renamed) => std::borrow::Cow::Owned(renamed),
+                None => crate::value::user_facing_type_name(&resolved),
+            };
             if method == "gist" {
                 let short =
                     crate::qualified::last_segment(crate::symbol::Symbol::intern(&full)).as_str();

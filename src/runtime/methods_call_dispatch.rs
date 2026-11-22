@@ -8,15 +8,10 @@ impl Interpreter {
     /// Build a `HyperConfiguration` instance carrying `.batch`/`.degree`. A
     /// `None` reports the core default (batch 64; degree = available CPU cores).
     pub(crate) fn make_hyper_configuration(batch: Option<i64>, degree: Option<i64>) -> Value {
-        let default_degree = std::thread::available_parallelism()
-            .map(|n| n.get() as i64)
-            .unwrap_or(4);
+        let (batch, degree) = crate::value::hyper_config::resolve(Some((batch, degree)));
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("batch".to_string(), Value::int(batch.unwrap_or(64)));
-        attrs.insert(
-            "degree".to_string(),
-            Value::int(degree.unwrap_or(default_degree)),
-        );
+        attrs.insert("batch".to_string(), Value::int(batch));
+        attrs.insert("degree".to_string(), Value::int(degree));
         Value::make_instance(crate::symbol::Symbol::intern("HyperConfiguration"), attrs)
     }
 
@@ -1144,8 +1139,9 @@ impl Interpreter {
             // delegate to inner value at the end (handled later in this function)
         }
 
-        // Role type-object method punning
-        if method != "new" {
+        // Role type-object method punning; the names rakudo keeps on `Mu`
+        // are answered by `Mu` below, not by the role.
+        if method != "new" && !crate::runtime::role_type_object_keeps_mu_method(method) {
             if let ValueView::Package(role_name) = target.view() {
                 // A class-level (`my $.x`) role attribute is readable on the role
                 // type object directly (`R.x`), returning its recorded default —

@@ -289,15 +289,48 @@ impl Interpreter {
     /// an embedded `{ ... }` code block as opaque, so a sigil that only appears
     /// inside one — `token part { \w+ { $n++ } }`, the overwhelmingly common
     /// case — does not make the parse value-dependent at all.
+    // Cost: O(1) expected once memoized for the token generation; the first
+    // call per (pkg, name) resolves the candidates and scans their text, O(t),
+    // t = their total length. A grammar's first parse asks it once per
+    // subrule call site for every LTM, prefilter and left-call analysis, ~1k
+    // times on CSS::Module's CSS3 grammar (#17640).
     pub(super) fn rule_body_edges_are_generation_stable(
         &mut self,
         name: &str,
         pkg: Symbol,
     ) -> bool {
-        self.resolve_token_patterns_static_in_pkg(name, pkg)
+        let generation =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        let key = (pkg, Symbol::intern(name));
+        if let Some(hit) = STABLE_EDGES.with(|c| {
+            let c = c.borrow();
+            (c.0 == generation).then(|| c.1.get(&key).copied()).flatten()
+        }) {
+            return hit;
+        }
+        let verdict = self
+            .resolve_token_patterns_static_in_pkg(name, pkg)
             .iter()
-            .all(|(pattern, _, _)| pattern_text_is_static_outside_code_blocks(pattern))
+            .all(|(pattern, _, _)| pattern_text_is_static_outside_code_blocks(pattern));
+        STABLE_EDGES.with(|c| {
+            let mut c = c.borrow_mut();
+            if c.0 != generation {
+                c.0 = generation;
+                c.1.clear();
+            }
+            c.1.insert(key, verdict);
+        });
+        verdict
     }
+}
+
+thread_local! {
+    /// `(pkg, name) -> rule_body_edges_are_generation_stable`'s verdict, keyed
+    /// by the token generation like the other call-graph memos (the answer
+    /// reads only the registered rule bodies' text).
+    #[allow(clippy::type_complexity)]
+    static STABLE_EDGES: std::cell::RefCell<(u64, rustc_hash::FxHashMap<(Symbol, Symbol), bool>)> =
+        std::cell::RefCell::new((0, rustc_hash::FxHashMap::default()));
 }
 
 /// [`Interpreter::rule_body_edges_are_generation_stable`]'s scan: blank out

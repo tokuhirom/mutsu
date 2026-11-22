@@ -65,6 +65,11 @@ const STATE_UNRESOLVED: u8 = 0;
 const STATE_RESOLVED: u8 = 1;
 const STATE_GC: u8 = 2;
 const STATE_PROFILER: u8 = 4;
+/// A BEGIN body is being recorded somewhere in the process (ADR-18012 S1):
+/// every dispatch-loop entry reports its code object to
+/// [`crate::runtime::begin_replay::watch`]. Set and cleared at run time, unlike
+/// the bits above.
+const STATE_CODE_WATCH: u8 = 8;
 
 #[inline(always)]
 fn state() -> u8 {
@@ -85,14 +90,44 @@ fn resolve_state() -> u8 {
     if t.profiler {
         s |= STATE_PROFILER;
     }
-    STATE.store(s, std::sync::atomic::Ordering::Relaxed);
-    s
+    // Only the first resolve stores: a racing one must not drop a
+    // `STATE_CODE_WATCH` bit set in between.
+    match STATE.compare_exchange(
+        STATE_UNRESOLVED,
+        s,
+        std::sync::atomic::Ordering::Relaxed,
+        std::sync::atomic::Ordering::Relaxed,
+    ) {
+        Ok(_) => s,
+        Err(current) => current,
+    }
 }
 
 /// Whether at least one poll consumer is armed.
 ///
 /// This is the single cached gate used by the bytecode dispatch loops. With
 /// both consumers disabled, the loop does not enter [`poll`] at all.
+/// Whether a BEGIN body is being recorded somewhere in the process.
+// Cost: O(1).
+#[inline(always)]
+pub(crate) fn code_watch_on() -> bool {
+    state() & STATE_CODE_WATCH != 0
+}
+
+/// Turn the code-entry report on or off (ADR-18012 S1). The caller serializes
+/// these calls (`begin_replay::watch`).
+// Cost: O(1).
+pub(crate) fn set_code_watch(on: bool) {
+    // Resolve the other bits first: a resolve after this store would
+    // overwrite it.
+    let _ = state();
+    if on {
+        STATE.fetch_or(STATE_CODE_WATCH, std::sync::atomic::Ordering::SeqCst);
+    } else {
+        STATE.fetch_and(!STATE_CODE_WATCH, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 #[inline(always)]
 pub(crate) fn armed() -> bool {
     state() & (STATE_GC | STATE_PROFILER) != 0 || test_profiler_enabled()
@@ -127,6 +162,13 @@ pub(crate) fn armed() -> bool {
 /// (`record_line`) need to see each line transition, and ADR-0106 §D4's
 /// region attribution assumes the gap between a tick and the next poll is
 /// one opcode, so profile runs keep the old placement exactly.
+///
+/// It is also the proof that a loop reported its code to ADR-18012 S1's code
+/// watch: its fields are private, [`DispatchPolls::enter`] is its only
+/// constructor, and both ways to run a code object's ops take one --
+/// `Interpreter::exec_one` (the only caller of the per-op dispatch) and
+/// `vm_jit::call_native` (the only call into native code). So a new dispatch
+/// loop cannot run an op without reporting its code; it does not compile.
 #[derive(Clone, Copy)]
 pub(crate) struct DispatchPolls {
     armed: bool,
@@ -134,8 +176,18 @@ pub(crate) struct DispatchPolls {
 }
 
 impl DispatchPolls {
+    /// The polls of a dispatch loop starting to run `code`.
+    ///
+    /// Every loop that executes a code object's ops takes its polls here, on
+    /// entry, so this is also where a loop reports which code it runs while a
+    /// BEGIN body is recorded (`STATE_CODE_WATCH`): there is no other way to
+    /// build a `DispatchPolls`, so a new loop cannot skip the report.
+    // Cost: O(1) (the same state load `armed` makes, plus a bit test).
     #[inline(always)]
-    pub(crate) fn current() -> Self {
+    pub(crate) fn enter(code: &CompiledCode) -> Self {
+        if state() & STATE_CODE_WATCH != 0 {
+            crate::runtime::begin_replay::watch::note_code_entry(code);
+        }
         DispatchPolls {
             armed: armed(),
             every_op: profiler_armed(),
@@ -267,7 +319,7 @@ impl Interpreter {
             // below; this poll on the same line is not a transition.
             poll_code(SafepointKind::Backedge, op_ip as u32, code, self, false);
         }
-        let r = self.exec_one(code, ip, compiled_fns);
+        let r = self.exec_one(code, ip, compiled_fns, polls);
         if *ip <= op_ip && r.is_ok() && polls.due(true) {
             poll_code(SafepointKind::Backedge, *ip as u32, code, self, true);
         }

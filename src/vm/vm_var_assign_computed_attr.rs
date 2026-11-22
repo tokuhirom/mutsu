@@ -7,9 +7,9 @@ use std::cell::RefCell;
 /// `Owner\0<sigil>bare` (only present for a sigil-colliding attribute) and
 /// `Owner\0bare` (a private attribute declared in both a parent and a child).
 #[derive(Clone, Copy)]
-struct QualifiedAttrKeys {
-    with_sigil: crate::symbol::Symbol,
-    plain: crate::symbol::Symbol,
+pub(super) struct QualifiedAttrKeys {
+    pub(super) with_sigil: crate::symbol::Symbol,
+    pub(super) plain: crate::symbol::Symbol,
 }
 
 thread_local! {
@@ -150,7 +150,7 @@ impl Interpreter {
     /// memoized (see [`QualifiedAttrKeys`]).
     // Cost: O(1) amortized: one hash probe of three interned ids; the first
     // ask per (owner, bare, sigil) interns two strings of O(len) each.
-    fn qualified_attr_keys(
+    pub(super) fn qualified_attr_keys(
         owner: crate::symbol::Symbol,
         bare: crate::symbol::Symbol,
         sigil: char,
@@ -486,6 +486,13 @@ impl Interpreter {
         }
         if let Some(attributes) = inner_cell {
             let map = attributes.as_map();
+            // A role-owned access on an instance reblessed into a mixin type
+            // reads the copy of the level that composed the role.
+            let owner = if is_private {
+                self.private_attr_owner_in(self_val, owner, owner_is_role, bare, sigil, &map)
+            } else {
+                owner
+            };
             if let Some(key) = Self::attr_key_in_map(owner, bare, is_private, sigil, &map) {
                 if let Some((code, idx)) = site {
                     Self::fill_attr_site(code, idx, &map, key, bare, is_private);
@@ -1049,14 +1056,30 @@ impl Interpreter {
     /// (`$x := $var`, compiled as a by-name store): seat the bound container
     /// in `self`'s attribute at bind time, exactly as `$!x := $var` does, so
     /// the instance holds the binding past the method's exit. `twigil` is the
-    /// alias's attribute spelling (`!x`). A bound plain value goes through the
-    /// ordinary write.
+    /// alias's attribute spelling (`!x`). A bound plain value is seated
+    /// readonly, as `$!x := VALUE` leaves it.
     // Cost: O(m) as `with_self_attr`, plus one map write.
-    pub(super) fn bind_self_attr_through_alias(&self, twigil: &str, bound: Value) {
-        if matches!(
+    /// Returns the readonly cell seated for a bound plain value, which the
+    /// caller also stores under the method's own names of the attribute.
+    pub(super) fn bind_self_attr_through_alias(&self, twigil: &str, bound: Value) -> Option<Value> {
+        let is_container = matches!(
             bound.view(),
             ValueView::ContainerRef(_) | ValueView::Proxy { .. }
-        ) && let Some((bare, is_private)) = Self::attr_twigil_base(twigil)
+        );
+        // A bound plain value (`$x := 42`) leaves the attribute without a
+        // container, as `$!x := 42` does: seat it in a readonly binding cell
+        // and mark the attribute bound, so a later `$x = 5` dies (#18365).
+        let seated = if is_container {
+            bound.clone()
+        } else {
+            let kind = crate::runtime::Interpreter::rebound_value_kind(&bound)
+                .unwrap_or(crate::ast::ReadonlyKind::Immutable);
+            Value::container_ref(crate::gc::Gc::new(
+                crate::value::ContainerCell::new_readonly_binding(bound.clone(), kind),
+            ))
+        };
+        let seated_for_names = seated.clone();
+        if let Some((bare, is_private)) = Self::attr_twigil_base(twigil)
             && crate::value::attr_twigil_sigil(twigil).unwrap_or('$') == '$'
             && let Some(self_val) = self.get_env_self()
             && self.seat_attr_binding(
@@ -1064,12 +1087,18 @@ impl Interpreter {
                 None,
                 crate::symbol::Symbol::intern(bare),
                 is_private,
-                bound.clone(),
+                seated,
             )
         {
-            return;
+            if is_container {
+                self.note_bound_private_attr_container(twigil);
+                return None;
+            }
+            self.note_bound_private_attr(twigil, &bound);
+            return Some(seated_for_names);
         }
         self.write_self_attr_cell(twigil, bound);
+        None
     }
 
     /// Mirror the finalized value of the variable named `name` into `self`'s

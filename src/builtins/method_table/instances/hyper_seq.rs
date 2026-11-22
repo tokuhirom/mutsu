@@ -1,5 +1,5 @@
 //! The rows of `HyperSeq` and `RaceSeq` (ADR-11276 §9.137): `hyper`, `race`,
-//! `configuration`, `is-lazy`, `iterator`, `map` and `grep`.
+//! `configuration`, `is-lazy`, `iterator`, `map`, `grep` and `raku`.
 //!
 //! Their bodies were a by-name block in `call_method_with_values`. Both kinds
 //! have an opaque dispatch shape (`DispatchShape::is_opaque`), so every call
@@ -55,6 +55,14 @@ macro_rules! rows {
             },
             MethodRow {
                 owner: $owner,
+                name: "raku",
+                arity: 0,
+                handler: Handler::Interp(raku),
+                flags: OWN,
+                named: &[],
+            },
+            MethodRow {
+                owner: $owner,
                 name: "is-lazy",
                 arity: 0,
                 handler: Handler::Interp(is_lazy),
@@ -89,8 +97,8 @@ macro_rules! rows {
     };
 }
 
-static HYPER: [MethodRow; 7] = rows!("HyperSeq");
-static RACE: [MethodRow; 7] = rows!("RaceSeq");
+static HYPER: [MethodRow; 8] = rows!("HyperSeq");
+static RACE: [MethodRow; 8] = rows!("RaceSeq");
 pub(super) static HYPER_ROWS: &[MethodRow] = &HYPER;
 pub(super) static RACE_ROWS: &[MethodRow] = &RACE;
 
@@ -149,6 +157,22 @@ fn configuration(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> A
         return None;
     }
     Some(i.hyper_seq_configuration(t))
+}
+
+/// `raku`: Rakudo's `Mu.raku` over the configuration, reading no element, so
+/// an infinite (lazy) hyper sequence renders too (#18690).
+// Cost: O(1).
+fn raku(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
+    use crate::value::{HyperKind, ValueView, hyper_config};
+    let rendered = match t.view() {
+        ValueView::LazyList(list) => match list.hyper_kind() {
+            HyperKind::Hyper => hyper_config::seq_raku(true, list.hyper_config()),
+            HyperKind::Race => hyper_config::seq_raku(false, list.hyper_config()),
+            HyperKind::Plain => return None,
+        },
+        _ => crate::value::raku_repr::raku_value(t),
+    };
+    Some(Ok(Value::str(rendered)))
 }
 
 // Cost: O(1).

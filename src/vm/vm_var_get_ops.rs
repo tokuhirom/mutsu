@@ -91,8 +91,8 @@ impl Interpreter {
             .get_sym(crate::runtime::term_names::term_key_sym(Symbol::intern(
                 name,
             )))
-            .or_else(|| self.module_scope_lexical(name))
             .cloned()
+            .or_else(|| self.module_scope_lexical(name))
     }
 
     /// Resolve a bareword term and push it.
@@ -116,9 +116,9 @@ impl Interpreter {
         let qualified = crate::qualified::qualified(package, Symbol::intern(name));
         self.env()
             .get(qualified.as_str())
+            .cloned()
             .or_else(|| self.toplevel_package_symbol(qualified.as_str()))
             .filter(|value| matches!(value.view(), ValueView::Enum { .. }))
-            .cloned()
     }
 
     /// A sigilless binding owned by the active env tier, as opposed to a
@@ -175,7 +175,6 @@ impl Interpreter {
         }
         // An `our constant` of the package: a package symbol (#17720).
         self.toplevel_package_symbol(real)
-            .cloned()
             .or_else(|| self.get_our_var(real))
     }
     /// A bare name whose type is not visible here (a module's not merged here,
@@ -780,13 +779,9 @@ impl Interpreter {
                     .cloned()
             });
             let active_package_term = composed_role_term.or_else(|| {
+                let module_scope_lexicals_r = self.module.world.module_scope_lexicals.read();
                 frame_package
-                    .and_then(|package| {
-                        self.module
-                            .world
-                            .module_scope_lexicals
-                            .get(package.as_str())
-                    })
+                    .and_then(|package| module_scope_lexicals_r.get(package.as_str()))
                     .and_then(|lexicals| {
                         lexicals
                             .get(term_key.as_str())
@@ -845,6 +840,16 @@ impl Interpreter {
             // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
             // resolves `foo` before the `$foo` slot is assigned.
             Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
+        } else if let Some(own) = foreign_unit
+            .then(|| self.module_own_type_shadowing_global(name))
+            .flatten()
+        {
+            // A loaded module's routine names its own package's type -- its
+            // file-scope `my class R`, registered as `M::R` -- before a type of
+            // the same short name the importing program bound in the env it
+            // runs against: the module's declaration is the lexically
+            // visible one (#18677).
+            Value::package(own)
         } else if let Some(module_val) = preferred_module_bareword
             .take()
             .or_else(|| self.running_module_bareword(name))
@@ -976,7 +981,7 @@ impl Interpreter {
             } else {
                 Value::str(name.to_string())
             }
-        } else if let Some(v) = self.toplevel_package_symbol(name).cloned() {
+        } else if let Some(v) = self.toplevel_package_symbol(name) {
             // A module's top-level enum value under a package-qualified name
             // (ADR-0084 §2 group 2): kept off the frame env.
             v
@@ -1316,7 +1321,7 @@ impl Interpreter {
             // `GLOBAL::<Name> := Name` published the symbol to every scope,
             // including code that never imported the module declaring it.
             global_val
-        } else if let Some(module_val) = self.module_scope_lexical(name).cloned() {
+        } else if let Some(module_val) = self.module_scope_lexical(name) {
             // A `constant` (or sigilless declaration) the running routine's own
             // module made in its file scope. A module body executes in the env of
             // whatever frame loaded it, so that binding is gone once the frame is
@@ -1483,10 +1488,10 @@ impl Interpreter {
             && let Some(v) =
                 self.module_imported_lexical(&crate::runtime::enum_bare_names::enum_bare_key(name))
         {
-            return Some(v.clone());
+            return Some(v);
         }
         if let Some(v) = self.module_imported_lexical(name) {
-            return Some(v.clone());
+            return Some(v);
         }
         if let Some(v) = self.running_package_our_var(name) {
             return Some(v);
@@ -1503,7 +1508,7 @@ impl Interpreter {
                 .module_imported_lexical(&key)
                 .or_else(|| self.module_scope_lexical(&key))
             {
-                return Some(v.clone());
+                return Some(v);
             }
         }
         // `module_scope_lexicals` is keyed by BARE name, so it CAN collide with
@@ -1529,7 +1534,7 @@ impl Interpreter {
         {
             return Some(v.clone());
         }
-        self.module_scope_lexical(name).cloned()
+        self.module_scope_lexical(name)
     }
 
     /// The package-qualified `our`-store entry for a bare `name`, looked up
@@ -1604,7 +1609,6 @@ impl Interpreter {
         // symbols, not in the importer's env (#14174).
         let binding = self.type_name_binding(prefix).or_else(|| {
             self.toplevel_package_symbol(prefix)
-                .cloned()
                 .or_else(|| self.get_our_var(prefix))
         });
         let Some(ValueView::Package(pkg)) = binding.as_ref().map(Value::view) else {
@@ -1624,8 +1628,8 @@ impl Interpreter {
         let key = crate::qualified::qualified(pkg_sym, variant_sym).as_str();
         self.env()
             .get(key)
-            .or_else(|| self.toplevel_package_symbol(key))
             .cloned()
+            .or_else(|| self.toplevel_package_symbol(key))
     }
 
     /// Get a variable from an outer lexical scope.

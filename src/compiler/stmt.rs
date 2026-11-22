@@ -5353,6 +5353,19 @@ impl Compiler {
                 // #11078: the role twin of the class arm's env-sync bound.
                 self.note_role_decl_env_sync(idx);
             }
+            Stmt::SubsetDecl {
+                name,
+                is_my: true,
+                decl_id,
+                ..
+            } if *decl_id != 0 => {
+                // A `my subset` binds its spelling in the declaring block's
+                // env like a `my $x`, so a body run in its consumer's frame
+                // (an inlined `.map` callback) takes the binding back on exit
+                // (#18217), as for a `my enum`.
+                self.code.my_declared_sym.insert(*name);
+                self.emit_register_subset(stmt.clone())
+            }
             Stmt::SubsetDecl { .. } => self.emit_register_subset(stmt.clone()),
             Stmt::Whenever {
                 supply,

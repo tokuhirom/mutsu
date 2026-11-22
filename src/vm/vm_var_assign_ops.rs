@@ -1196,6 +1196,18 @@ impl Interpreter {
         } else {
             Self::value_cell_of(arc)
         };
+        // The in-place reassign below overwrites the cell's node with
+        // `gc_contents_mut`, which frees the node's old buffer. A reader of
+        // that node holds the node's ADR-0068 stripe, not the cell's mutex, so
+        // the write must hold the cell's and the node's stripes as every other
+        // in-place container writer does; under the mutex alone a concurrent
+        // `@a[$i]` read indexed the freed buffer (#18651). Taken before the
+        // mutex, in the order every stripe-and-mutex holder uses.
+        let _structure = if plain_store {
+            None
+        } else {
+            crate::value::container_lock::ContainerStructGuard::acquire_for_celled(&value_cell)
+        };
         let mut inner = value_cell.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))

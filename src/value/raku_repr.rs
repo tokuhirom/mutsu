@@ -891,6 +891,14 @@ fn raku_value_node(v: &Value) -> String {
                 result
             }
         }
+        // A hyper / race sequence renders its configuration, not its
+        // elements (#18690).
+        ValueView::HyperSeq(items) => {
+            crate::value::hyper_config::seq_raku(true, items.hyper_config())
+        }
+        ValueView::RaceSeq(items) => {
+            crate::value::hyper_config::seq_raku(false, items.hyper_config())
+        }
         ValueView::Seq(items) => {
             // ADR-0038 S2: a `SeqView::List` handle (what `.cache` on a
             // not-yet-reified Seq returns) is a `List` to Raku, so it renders as

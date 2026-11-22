@@ -125,7 +125,24 @@ pub(in crate::parser) fn reject_loose_infix_after_arg(rest: &str) -> Result<(), 
 /// Semicolons act as list-associative separators: each `;`-delimited group
 /// is collected into an `Array` node, producing one arg per group.
 pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
-    parse_arg_list(input, true)
+    parse_arg_list(input, true, true)
+}
+
+/// [`parse_call_arg_list`] for a short, bounded `input` (a regex subrule
+/// call's argument text, parsed when the rule body is first lowered): the
+/// sequence-argument attempt, which parses the leading arguments once more
+/// before the ordinary parse, is skipped when `input` holds no sequence
+/// operator at all. Every sequence operator spells `...` or `…`, so the
+/// attempt could only have declined. That attempt was two thirds of a
+/// large grammar's argument-list parsing (#17640). The scan is O(n) in
+/// `input`, which is why only a bounded caller may use this.
+// Cost: O(n), n = length of `input`.
+pub(in crate::parser) fn parse_bounded_call_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
+    parse_arg_list(
+        input,
+        true,
+        input.contains("...") || input.contains('\u{2026}'),
+    )
 }
 
 /// The contents of a capture literal `\(...)`: an argument list in every
@@ -133,12 +150,12 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
 /// word-logical stays inside (`\(1 and 2)` is `\(2)`).
 // Cost: O(n), n = length of the list.
 pub(in crate::parser) fn parse_capture_arg_list(input: &str) -> PResult<'_, Vec<Expr>> {
-    parse_arg_list(input, false)
+    parse_arg_list(input, false, true)
 }
 
 /// [`parse_call_arg_list`]; `call` says whether the items end before a loose
 /// word-logical ([`paren_arg_expr`]) or are full expressions.
-fn parse_arg_list(input: &str, call: bool) -> PResult<'_, Vec<Expr>> {
+fn parse_arg_list(input: &str, call: bool, try_sequence: bool) -> PResult<'_, Vec<Expr>> {
     fn arg_expr(input: &str, call: bool) -> PResult<'_, Expr> {
         if call {
             paren_arg_expr(input)
@@ -217,7 +234,8 @@ fn parse_arg_list(input: &str, call: bool) -> PResult<'_, Vec<Expr>> {
     // A sequence operator (`...`/`…`) is looser than comma, so `f(a, b ... limit)`
     // is ONE sequence argument (seed `a, b`), not `a` plus `b ... limit`. Absorb the
     // whole comma level into a single sequence, matching the parenthesized-list parser.
-    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input) {
+    if try_sequence && let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input)
+    {
         let (rest, seq) = result?;
         return Ok((rest, vec![seq]));
     }

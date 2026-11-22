@@ -15,6 +15,9 @@ is-deeply @noop_values, [1, 2, 3], "identity delayed supply preserves emitted va
 my $delayed = $source.delayed(0.01);
 ok $source !=== $delayed, "positive delay returns a derived Supply";
 
+# The values are cued on the scheduler (#18696): wait for `done`.
 my @delayed_values;
-$delayed.tap(-> $value { @delayed_values.push($value) });
+my $done = Promise.new;
+$delayed.tap(-> $value { @delayed_values.push($value) }, done => { $done.keep });
+await $done;
 is-deeply @delayed_values, [1, 2, 3], "delayed supply preserves emitted values";

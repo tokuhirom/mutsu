@@ -592,3 +592,29 @@ lists, and so does mutsu, now in either load order
 
 Remaining for 5b: a `BEGIN` that needs the unit's frame.
 
+### 7.15 Slice 5b: a `BEGIN` that reads dynamic variables (2026-11-22)
+
+§7.12's closed `BEGIN` excluded every free variable, dynamic ones included,
+so the case §7.1 is about (`BEGIN %*ENV<X> = 1; use M;`, a `BEGIN` that
+changes what a later `use` finds) still ran in the prologue, and the `use`
+after it loaded there too. A dynamic variable is looked up at run time along
+the callers and then in PROCESS, and at parse time those are the same as in
+the prologue, with two exceptions, which keep the `BEGIN` in the prologue:
+
+- **The unit's own dynamic variable.** rakudo's `BEGIN` finds a `my $*X`
+  declared ahead of it in the unit, in its static state (`(Any)`). At parse
+  time the unit has no frame to hold it, so a top-level dynamic variable
+  declaration is a prologue effect (`prologue_effects::has_prologue_effect`),
+  and no later `BEGIN` runs at parse time.
+- **The compile-time dynamics** the compile binds for BEGIN-time code
+  (`$*R`, `$*CU`, `$*W`, `$*LANG`): `begin_prologue::nested::closed`'s
+  `COMPILE_TIME_DYNAMICS`.
+
+Any other free dynamic variable no longer makes a `BEGIN` unclosed
+(`t/control/begin-runs-at-parse-time.t`: `%*ENV` written before a `use`, the
+module's load-time output before a later syntax error, as on rakudo).
+
+Remaining for 5b: a `BEGIN` that reads the unit's lexicals or calls its
+routines (it needs the unit frame, or ADR-0134's static cells, during the
+parse), and slice 4b after it.
+
