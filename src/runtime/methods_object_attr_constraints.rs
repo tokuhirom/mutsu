@@ -201,14 +201,23 @@ impl Interpreter {
         class_name: &str,
     ) -> HashMap<String, String> {
         let mut constraints = HashMap::new();
+        // Names a more-derived class already declared: its declaration is the
+        // attribute, typed or not, so a base's same-named type does not
+        // apply (#17994, as `get_attr_type_constraint`).
+        let mut declared: std::collections::HashSet<String> = Default::default();
         let mro = self.class_mro(class_name);
         for owner in mro.iter() {
             let owned: Vec<(String, String)> = match self.registry().classes.get(owner.as_str()) {
-                Some(class_def) => class_def
-                    .attribute_types
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
+                Some(class_def) => {
+                    let owned = class_def
+                        .attribute_types
+                        .iter()
+                        .filter(|(k, _)| !declared.contains(*k))
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    declared.extend(class_def.attributes.iter().map(|a| a.name.clone()));
+                    owned
+                }
                 None => continue,
             };
             for (attr_name, tc) in owned {
