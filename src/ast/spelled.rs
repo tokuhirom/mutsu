@@ -57,6 +57,10 @@ pub(crate) enum Spelling {
     SourceIdentifier,
     /// A labelled bare block, whose execution uses a labelled do-block.
     LabelledBlock,
+    /// `::Array`, `::Foo::Bar`: a type name written after a leading `::`.
+    /// The parser looks the name up without it; RakuAST's `Name` starts with
+    /// a `Name::Part::EmptyEdge`.
+    LeadingColons,
     /// A source label reference whose executable term is a Label value.
     LabelTerm(Box<str>),
     /// Semicolon-separated array composer sections before execution lowering.

@@ -242,7 +242,14 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
             Expr::IndirectTypeLookup(Box::new(Expr::Literal(Value::str(full_name)))),
         ));
     }
-    Ok((r, Expr::BareWord(full_name)))
+    // `::Array`, `::Int:D`: RakuAST keeps the leading `::` as the name's
+    // empty edge.
+    Ok((
+        r,
+        Expr::spelled(Expr::BareWord(full_name), || {
+            crate::ast::spelled::Spelling::LeadingColons
+        }),
+    ))
 }
 
 pub(crate) fn whatever(input: &str) -> PResult<'_, Expr> {
