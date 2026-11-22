@@ -14,18 +14,18 @@
 //! All of these are functions of the tree and the pattern text alone, except
 //! the plan, which also depends on the package the match runs in and on the
 //! token-definition generation (`TOKEN_DEFS_GEN`), exactly the key of the
-//! plan cache it stands in front of. So the facts are stored with the tree
-//! ([`crate::regex_tree::ExecMemo`]) together with the pattern text they were
-//! derived from, and the plan together with its key. A tree that is cloned or
-//! edited starts with an empty memo.
+//! plan cache it stands in front of. So the facts are kept per tree, keyed by
+//! the tree's address (the AST names no runtime type, and a field on the tree
+//! would widen `Expr`, which holds one inline), together with the pattern text
+//! they were derived from, and the plan together with its key.
 
-use std::any::Any;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::regex_tree::RegexTree;
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::RegexPattern;
 use crate::symbol::Symbol;
+use crate::value::Value;
 
 /// The facts of one regex source tree, for the pattern text `pattern`.
 pub(crate) struct RegexValueFacts {
@@ -69,24 +69,66 @@ impl RegexValueFacts {
     }
 }
 
-/// The facts of `tree` for the pattern text `pattern`, computed on first use
-/// and kept with the tree.
+/// How many trees the memo table holds before it starts over. A program that
+/// builds regexes at run time (an `EVAL` in a loop) would otherwise keep every
+/// tree it ever matched alive through the table's `Weak` handles.
+const MEMO_TREES_MAX: usize = 4096;
+
+/// The per-tree table: address → (the tree's allocation, its facts).
+type TreeFactsTable = rustc_hash::FxHashMap<usize, (Weak<RegexTree>, Arc<RegexValueFacts>)>;
+
+thread_local! {
+    /// Facts per source tree, keyed by the tree's address. The `Weak` keeps
+    /// that allocation reserved while the entry exists, so a live tree at the
+    /// same address is the same tree.
+    static TREE_FACTS: std::cell::RefCell<TreeFactsTable> =
+        std::cell::RefCell::new(TreeFactsTable::default());
+}
+
+/// The facts of `tree` (the source tree of `value`) for the pattern text
+/// `pattern`, computed on first use and kept per tree.
 // Cost: O(p) on a hit (the pattern text is compared), p = pattern length;
 // O(p + t) on a miss, t = size of the tree.
-pub(crate) fn regex_value_facts(tree: &RegexTree, pattern: &str) -> Arc<RegexValueFacts> {
-    if let Some(stored) = tree.exec_memo.get()
-        && let Ok(facts) = Arc::downcast::<RegexValueFacts>(stored)
-        && facts.pattern == pattern
-    {
+pub(crate) fn regex_value_facts(
+    value: &Value,
+    tree: &RegexTree,
+    pattern: &str,
+) -> Arc<RegexValueFacts> {
+    let key = std::ptr::from_ref(tree) as usize;
+    let hit = TREE_FACTS.with(|table| {
+        table
+            .borrow()
+            .get(&key)
+            .filter(|(_, facts)| facts.pattern == pattern)
+            .map(|(_, facts)| Arc::clone(facts))
+    });
+    if let Some(facts) = hit {
         return facts;
     }
+    let facts = Arc::new(derive_facts(tree, pattern));
+    if let Some(owner) = value.regex_source_tree_arc()
+        && std::ptr::eq(Arc::as_ptr(&owner), tree)
+    {
+        TREE_FACTS.with(|table| {
+            let mut table = table.borrow_mut();
+            if table.len() >= MEMO_TREES_MAX {
+                table.clear();
+            }
+            table.insert(key, (Arc::downgrade(&owner), Arc::clone(&facts)));
+        });
+    }
+    facts
+}
+
+// Cost: O(p + t), p = pattern length, t = size of the tree.
+fn derive_facts(tree: &RegexTree, pattern: &str) -> RegexValueFacts {
     let interpolation_names = tree.interpolation_names();
     let string_path = tree.holds_extension()
         || Interpreter::parse_anchored_single_subrule(pattern).is_some()
         || (!Interpreter::parse_regex_declarative_prefix(pattern).0.is_empty()
             && tree.declaration_kind.is_none())
         || (tree.contains_anchor() && !interpolation_names.is_empty());
-    let facts = Arc::new(RegexValueFacts {
+    RegexValueFacts {
         pattern: pattern.to_string(),
         string_path,
         contains_array_interpolation: tree.contains_array_interpolation(),
@@ -97,8 +139,5 @@ pub(crate) fn regex_value_facts(tree: &RegexTree, pattern: &str) -> Arc<RegexVal
         parse_plan_is_static: super::regex_late_scalars::scalars_in_pattern(pattern).0.is_empty()
             && crate::runtime::regex_parse::regex_pattern_is_static(pattern),
         plan: Mutex::new(None),
-    });
-    tree.exec_memo
-        .set(Arc::clone(&facts) as Arc<dyn Any + Send + Sync>);
-    facts
+    }
 }

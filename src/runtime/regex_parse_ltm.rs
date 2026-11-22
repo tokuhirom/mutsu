@@ -1701,7 +1701,7 @@ impl Interpreter {
         };
         // What this tree says about itself is decided once per tree
         // (`regex_value_memo`), not on every match.
-        let facts = super::regex::regex_value_memo::regex_value_facts(tree, &pattern);
+        let facts = super::regex::regex_value_memo::regex_value_facts(value, tree, &pattern);
         // Array interpolation is retained in the source tree for RakuAST,
         // but the established parser resolves its elements at match time.
         // Do not cache the resulting execution plan under either the

@@ -477,7 +477,6 @@ pub(super) fn lower_substitution(
         match_immediately: false,
         adverbs: Vec::new(),
         declaration_kind: None,
-        exec_memo: crate::regex_tree::ExecMemo::default(),
     };
     let (pattern, flags) =
         crate::parser::subst_pattern_source(regex.to_source(), &adverbs, samespace)
