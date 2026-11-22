@@ -608,6 +608,13 @@ impl Interpreter {
         crate::parser::clear_parser_lib_paths();
         // Emit any parse warnings (e.g. duplicate traits)
         self.emit_parse_warnings(crate::parser::take_parse_warnings());
+        // A `BEGIN` that ran at parse time called `exit` (ADR-17558 §7.16):
+        // the parse stopped there, and the program ends as an `exit` in its
+        // prologue would end it, running its END phasers.
+        if parse_result.is_err() && self.control.halted {
+            self.finish()?;
+            return Ok(self.output_sink().output.clone());
+        }
         let (mut stmts, finish_content) = parse_result?;
         // The program's own revision, for routines it declares (ADR-17287).
         if let Some(path) = self.io.program_path_sym {

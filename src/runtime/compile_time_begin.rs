@@ -107,6 +107,13 @@ impl Interpreter {
         let (code, compiled_fns) = compiler.compile(&program);
         let result = self.run_top(&code, &compiled_fns);
         drop(suspended);
+        // An `exit` in it ends the process here, before the rest of the unit
+        // is parsed (rakudo: `BEGIN { plan 1; skip-rest; exit }; 1 +;` reports
+        // no syntax error). The parse stops with this error, which the
+        // program's run does not report: it sees the exit and finishes.
+        if self.control.halted {
+            return BeginOutcome::Failed(RuntimeError::new("exit in a parse-time BEGIN"));
+        }
         match result {
             Ok(_) => BeginOutcome::Ran,
             Err(err) => BeginOutcome::Failed(err),
