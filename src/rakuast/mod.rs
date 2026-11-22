@@ -30,6 +30,7 @@ mod attribute_decl;
 mod attribute_group;
 mod bare_prefix;
 mod bareword;
+mod call_name_origins;
 mod call_origins;
 mod callable_context;
 mod capture_term;
