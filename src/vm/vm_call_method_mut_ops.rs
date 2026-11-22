@@ -980,10 +980,7 @@ impl Interpreter {
         // native dispatch can mistake it for an ordinary `Cool` value
         // (`Failure.lines`), `failure_calls.rs`.
         if let Some(result) = self.failure_own_method(&target, method, &args) {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmut",
-                "failure-own",
-            );
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "failure-own");
             self.stack.push(result?);
             return Ok(());
         }
