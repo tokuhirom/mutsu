@@ -26,6 +26,27 @@ pub(crate) struct SubstFlags {
     pub(crate) global: bool,
     pub(crate) nth: Option<Box<Expr>>,
     pub(crate) x: Option<Box<Expr>>,
+    pub(crate) start: Option<Box<crate::ast::SubstStart>>,
+}
+
+/// A substitution's `:c(N)` / `:continue(N)` (a search start) or `:p(N)` /
+/// `:pos(N)` (an anchor) argument, as the expression it evaluates where it
+/// runs (#18892). `:c` wins when both are written.
+// Cost: O(1).
+fn subst_start(adverbs: &MatchAdverbs) -> Option<Box<crate::ast::SubstStart>> {
+    let int = |n: usize| Expr::Literal(Value::int(n as i64));
+    let (expr, anchored) = if let Some(e) = &adverbs.continue_expr {
+        ((**e).clone(), false)
+    } else if let Some(n) = adverbs.continue_value {
+        (int(n), false)
+    } else if let Some(e) = &adverbs.pos_expr {
+        ((**e).clone(), true)
+    } else if let Some(n) = adverbs.pos_value {
+        (int(n), true)
+    } else {
+        return None;
+    };
+    Some(Box::new(crate::ast::SubstStart { expr, anchored }))
 }
 
 /// The `:nth` / `:x` argument `raw` (as the adverb parser keeps it: `"2"` for
@@ -88,6 +109,7 @@ pub(super) fn subst_expr(
         adverbs.nth.as_deref().map(adverb_argument_expr),
         adverbs.repeat.as_deref().map(adverb_argument_expr),
     );
+    let start = subst_start(adverbs);
     if destructive {
         Expr::Subst {
             pattern,
@@ -99,6 +121,7 @@ pub(super) fn subst_expr(
             global,
             nth,
             x,
+            start,
             replacement_thunk: thunk,
             tree,
         }
@@ -113,6 +136,7 @@ pub(super) fn subst_expr(
             global,
             nth,
             x,
+            start,
             replacement_thunk: thunk,
             tree,
         }
@@ -163,6 +187,7 @@ pub(crate) fn subst_pattern_source(
         global: parsed.global,
         nth: parsed.nth.as_deref().map(adverb_argument_expr),
         x: parsed.repeat.as_deref().map(adverb_argument_expr),
+        start: subst_start(&parsed),
     };
     Some((apply_inline_match_adverbs(body, &parsed), flags))
 }

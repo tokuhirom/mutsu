@@ -76,6 +76,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             global: _,
             nth,
             x,
+            start,
             replacement_thunk,
             tree: _,
         }
@@ -89,11 +90,15 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             global: _,
             nth,
             x,
+            start,
             replacement_thunk,
             tree: _,
         } => {
             for e in [nth, x].into_iter().flatten() {
                 v.visit_expr_mut(e);
+            }
+            if let Some(start) = start {
+                v.visit_expr_mut(&mut start.expr);
             }
             if let Some(t) = replacement_thunk {
                 v.visit_expr_mut(&mut t.expr);
