@@ -412,6 +412,39 @@ pub(super) fn apply_method_name(
     super::routine_origins::apply(node, spans, param_defs);
 }
 
+/// `RakuAST::Name.new(@parts, :colonpairs)`: the shape [`operator_name`]
+/// builds, a lone simple part as the category leaf (#18441).
+// Cost: O(p + c), p = parts, c = colonpairs.
+pub(super) fn name_with_colonpairs(parts: Vec<Value>, colonpairs: Vec<Value>) -> RakuAstNode {
+    let lone_simple = match parts.as_slice() {
+        [part] => match part.view() {
+            ValueView::RakuAst(node) if node.class == RakuAstClass::NamePartSimple => {
+                super::infix_origins::leaf_text(node)
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    let head = match lone_simple {
+        Some(category) => super::view::leaf_field(None, Value::str(category)),
+        None => RakuAstField {
+            name: Some("parts"),
+            value: RakuAstFieldValue::List(parts),
+        },
+    };
+    RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::Name,
+        fields: vec![
+            head,
+            RakuAstField {
+                name: Some("colonpairs"),
+                value: RakuAstFieldValue::List(colonpairs),
+            },
+        ],
+    }
+}
+
 fn operator_colonpairs(symbol: &str) -> RakuAstField {
     RakuAstField {
         name: Some("colonpairs"),
