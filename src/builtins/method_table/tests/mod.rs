@@ -502,6 +502,9 @@ fn rows_are_declared_by_rakudo() {
         // mutsu's handle keeps its state elsewhere, so the class renders itself
         // (ADR-11276 §9.162).
         .filter(|row| !(row.owner == "IO::Handle" && row.name == "raku"))
+        // Likewise a `HyperSeq` / `RaceSeq` renders its configuration through
+        // `Mu.raku`; mutsu's sequence holds it outside any attribute (#18690).
+        .filter(|row| !(matches!(row.owner, "HyperSeq" | "RaceSeq") && row.name == "raku"))
         // Roast pins `$!.pending` (`S04-exceptions/pending.t`), which Rakudo
         // does not declare (ADR-11276 §9.161).
         .filter(|row| !(row.owner == "Any" && row.name == "pending"))

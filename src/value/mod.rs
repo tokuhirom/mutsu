@@ -639,6 +639,7 @@ pub(crate) mod gist;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
 pub mod hash_key;
+pub(crate) mod hyper_config;
 pub(crate) mod identity;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;
