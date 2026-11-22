@@ -670,7 +670,7 @@ impl Interpreter {
                 };
                 if let Some(bare) = rest.strip_prefix("GLOBAL::")
                     && bare.starts_with(|c: char| c.is_alphabetic() || c == '_')
-                    && !bare.contains("::")
+                    && !crate::qualified::is_qualified_str(bare)
                 {
                     qualified.push((format!("{sigil}*{bare}"), value.clone()));
                 }
