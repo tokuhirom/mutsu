@@ -367,7 +367,21 @@ impl Interpreter {
         cascade: bool,
     ) -> Result<Value, RuntimeError> {
         if !cascade {
-            return self.get_caller_var(name, depth);
+            // 6.e: a found symbol that is not dynamic is a Failure of
+            // `X::Symbol::NotDynamic` through `CALLERS::` (`CALLER::` still
+            // throws `X::Caller::NotDynamic`).
+            return match self.get_caller_var(name, depth) {
+                Err(err)
+                    if crate::parser::current_language_version_starts_with("6.e")
+                        && err.exception.as_deref().is_some_and(|ex| {
+                            matches!(ex.view(), ValueView::Instance { class_name, .. }
+                                if class_name.as_str() == "X::Caller::NotDynamic")
+                        }) =>
+                {
+                    Ok(Self::symbol_not_dynamic_failure(&format!("${name}")))
+                }
+                found => found,
+            };
         }
         let stack_len = self.caller_env_stack.len();
         if depth == 0 || depth > stack_len {
@@ -635,6 +649,52 @@ impl Interpreter {
             }
         }
         entries
+    }
+
+    /// The `GLOBAL::<$x> = ...` stores of the dynamic chain, keyed as the
+    /// `$*x` they are a 6.e fallback for: such a store keeps the qualified
+    /// spelling in the scope that ran it, which may be any frame of the chain.
+    // Cost: O(f * e), f = caller frames, e = entries of a frame's env chain.
+    pub(crate) fn global_qualified_dynamics(&self) -> Vec<(String, Value)> {
+        let mut qualified: Vec<(String, Value)> = Vec::new();
+        let frames = self
+            .caller_env_stack
+            .iter()
+            .chain(std::iter::once(&self.env));
+        for env in frames {
+            for (key, value) in env.flattened().iter() {
+                let key = key.resolve();
+                let (sigil, rest) = match key.chars().next() {
+                    Some(c @ ('@' | '%')) => (c, &key[1..]),
+                    _ => ('$', key.as_str()),
+                };
+                if let Some(bare) = rest.strip_prefix("GLOBAL::")
+                    && bare.starts_with(|c: char| c.is_alphabetic() || c == '_')
+                    && !bare.contains("::")
+                {
+                    qualified.push((format!("{sigil}*{bare}"), value.clone()));
+                }
+            }
+        }
+        qualified
+    }
+
+    /// Store `value` under the qualified env key `key` (`GLOBAL::x`) in the
+    /// nearest frame of the dynamic chain that holds it, as the store that
+    /// put it there did. Returns whether some frame held it.
+    // Cost: O(f), f = caller frames, one env probe each.
+    pub(crate) fn set_in_holding_frame(&mut self, key: &str, value: Value) -> bool {
+        if self.env.contains_key(key) {
+            self.env.insert(key.to_string(), value);
+            return true;
+        }
+        for env in self.caller_env_stack.iter_mut().rev() {
+            if env.contains_key(key) {
+                env.insert(key.to_string(), value);
+                return true;
+            }
+        }
+        false
     }
 
     /// Look up a variable through $DYNAMIC:: — searches the entire caller stack.

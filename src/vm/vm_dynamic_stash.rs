@@ -143,10 +143,118 @@ impl Interpreter {
     // Cost: as `dynamic_stash_keyed_value`.
     pub(super) fn push_dynamic_stash_for_key(&mut self, code: &CompiledCode, key: &str) {
         let mut entries = ValueMap::default();
-        if let Some(value) = self.dynamic_stash_keyed_value(code, key) {
+        let found = self.dynamic_stash_keyed_value(code, key);
+        let found = if crate::parser::current_language_version_starts_with("6.e") {
+            self.dynamic_stash_6e_value(key, found)
+        } else {
+            found
+        };
+        if let Some(value) = found {
             entries.insert(key.to_string(), value);
         }
-        let stash = self.pseudo_stash_hash(entries);
+        let stash = self.pseudo_stash_hash_without_topic(entries);
         self.stack.push(stash);
+    }
+
+    /// `GLOBAL::<$bare>` (or `@`/`%`), read the way `$GLOBAL::bare` is.
+    // Cost: O(|bare|), one qualified-name read.
+    fn global_variable(&mut self, sigil: char, bare: &str) -> Option<Value> {
+        let name = if sigil == '$' {
+            format!("GLOBAL::{bare}")
+        } else {
+            format!("{sigil}GLOBAL::{bare}")
+        };
+        self.get_env_with_main_alias(&name)
+            .filter(|value| !value.is_nil())
+    }
+
+    /// `GLOBAL`'s variables as the dynamic chain sees them from 6.e on: each
+    /// `$x` / `@x` / `%x` of the stash is a fallback for `$*x` / `@*x` /
+    /// `%*x`, keyed by that twigilled spelling.
+    // Cost: O(g), g = GLOBAL's stash entries (the stash is built whole).
+    pub(super) fn global_scalar_dynamics(&mut self) -> Vec<(String, Value)> {
+        let stash = loan_env!(self, package_stash_value("GLOBAL"));
+        let ValueView::Instance { attributes, .. } = stash.view() else {
+            return Vec::new();
+        };
+        let Some(symbols) = attributes.as_map().get("symbols").cloned() else {
+            return Vec::new();
+        };
+        let ValueView::Hash(map) = symbols.view() else {
+            return Vec::new();
+        };
+        let mut found: Vec<(String, Value)> = map
+            .iter()
+            .filter_map(|(key, value)| {
+                let sigil = key
+                    .chars()
+                    .next()
+                    .filter(|c| matches!(c, '$' | '@' | '%'))?;
+                let bare = &key[1..];
+                bare.starts_with(|c: char| c.is_alphabetic() || c == '_')
+                    .then(|| (format!("{sigil}*{bare}"), value.clone()))
+            })
+            .collect();
+        // The file-scope `our` variables (`GLOBAL::<$x> = ...` among them),
+        // which the `our` store keys by their bare spelling (`x`, `@a`).
+        let globals: Vec<Symbol> = self.our_table().global_names().iter().copied().collect();
+        for name in globals {
+            let key = name.resolve();
+            let (sigil, bare) = match key.chars().next() {
+                Some(c @ ('@' | '%')) => (c, &key[1..]),
+                _ => ('$', key.as_str()),
+            };
+            if !bare.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+                continue;
+            }
+            if let Some(value) = self.get_our_var_sym(name) {
+                found.push((format!("{sigil}*{bare}"), value));
+            }
+        }
+        found.extend(self.global_qualified_dynamics());
+        found
+    }
+
+    /// 6.e's reading of what the dynamic scope binds under `key` (`found`):
+    /// only a dynamic symbol is visible, so a found plain lexical is an
+    /// `X::Symbol::NotDynamic` Failure; and a `$*x` no frame declares is
+    /// `GLOBAL::<$x>` before `PROCESS::<$x>`, as a `$*x` read falls back.
+    // Cost: O(1) for a plain key; a `$*x` key adds one GLOBAL stash probe and
+    // one process-dynamic probe.
+    fn dynamic_stash_6e_value(&mut self, key: &str, found: Option<Value>) -> Option<Value> {
+        let Some(sigil) = key.chars().next().filter(|c| matches!(c, '$' | '@' | '%')) else {
+            return found;
+        };
+        let rest = &key[1..];
+        let Some(bare) = rest.strip_prefix('*') else {
+            // `$_` is no longer dynamic in 6.e; `$/` and `$!` are.
+            let dynamic = rest != "_" && self.is_var_dynamic(if sigil == '$' { rest } else { key });
+            return match found {
+                Some(_) if !dynamic => Some(Self::symbol_not_dynamic_failure(key)),
+                other => other,
+            };
+        };
+        let env_key = if sigil == '$' {
+            format!("*{bare}")
+        } else {
+            format!("{sigil}*{bare}")
+        };
+        let process = self.get_process_dynamic(&env_key);
+        // A frame's own `my $*x` wins; the env's mirror of the process value
+        // is not a frame's.
+        let from_process = match (&found, &process) {
+            (None, _) => true,
+            (Some(value), Some(process)) => {
+                crate::value::identity::values_identical(value, process)
+            }
+            (Some(_), None) => false,
+        };
+        if !from_process {
+            return found;
+        }
+        if let Some(global) = self.global_variable(sigil, bare) {
+            return Some(global);
+        }
+        process.or(found)
     }
 }

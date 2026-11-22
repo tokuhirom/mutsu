@@ -802,6 +802,24 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
+    /// A Failure of `X::Symbol::NotDynamic` for `symbol` (spelled with its
+    /// sigil): 6.e's answer to `DYNAMIC::<$x>` / `CALLERS::<$x>` naming a
+    /// symbol that is found but not dynamic.
+    // Cost: O(|symbol|).
+    pub(crate) fn symbol_not_dynamic_failure(symbol: &str) -> Value {
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert(
+            "message".to_string(),
+            Value::str(format!("Symbol '{symbol}' is not dynamic")),
+        );
+        ex_attrs.insert("symbol".to_string(), Value::str(symbol.to_string()));
+        let exception = Value::make_instance(Symbol::intern("X::Symbol::NotDynamic"), ex_attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::FALSE);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
+
     pub(crate) fn resolve_indirect_type_name(&self, name: &str) -> Value {
         if name.is_empty() {
             return Self::no_such_symbol_failure(name);

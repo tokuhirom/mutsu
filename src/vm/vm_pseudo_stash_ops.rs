@@ -62,8 +62,14 @@ impl Interpreter {
             return Ok(());
         }
         if name == "DYNAMIC::" {
-            let entries = self.dynamic_pseudo_stash_entries();
-            let stash = self.pseudo_stash_hash(entries);
+            let mut entries = self.dynamic_pseudo_stash_entries();
+            // 6.e: a `$*x` falls back to `GLOBAL::<$x>` as well as PROCESS.
+            if crate::parser::current_language_version_starts_with("6.e") {
+                for (key, value) in self.global_scalar_dynamics() {
+                    entries.entry(key).or_insert(value);
+                }
+            }
+            let stash = self.pseudo_stash_hash_without_topic(entries);
             self.stack.push(stash);
             return Ok(());
         }
@@ -599,6 +605,13 @@ impl Interpreter {
         if entries.get("$_").is_none_or(Value::is_nil) {
             entries.insert("$_".to_string(), Value::package(Symbol::intern("Any")));
         }
+        self.pseudo_stash_hash_without_topic(entries)
+    }
+
+    /// [`Self::pseudo_stash_hash`] for a stash that is no lexical pad: the
+    /// dynamic chain (`DYNAMIC::`) lists only what binds dynamically.
+    // Cost: O(n), n = entries.
+    pub(super) fn pseudo_stash_hash_without_topic(&mut self, entries: ValueMap) -> Value {
         let mut data = crate::value::HashData::new(entries);
         // The running code's revision picks the stash's class (ADR-17287
         // keeps the parser's revision that of the running routine's unit).

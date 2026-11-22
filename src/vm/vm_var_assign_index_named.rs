@@ -3760,6 +3760,44 @@ impl Interpreter {
             self.stack.push(stored);
             return Ok(());
         }
+        // `DYNAMIC::<$*x> := v` (6.e): the dynamic chain ends in `GLOBAL`
+        // and then `PROCESS`, so a `$*x` no frame binds is bound where the
+        // chain finds it.
+        // TODO: a frame's own `my $*x` bound through `DYNAMIC::` from a
+        // callee is not reached yet; it still binds the process-level one.
+        if stash_name == "DYNAMIC::" {
+            let raw_key = Self::const_str(code, key_name_idx).to_string();
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            let (sigil, bare) = (&raw_key[..1], &raw_key[2..]);
+            let global = if sigil == "$" {
+                format!("GLOBAL::{bare}")
+            } else {
+                format!("{sigil}GLOBAL::{bare}")
+            };
+            if self
+                .get_env_with_main_alias(&global)
+                .is_some_and(|v| !v.is_nil())
+            {
+                let plain = match Self::split_bind_index_marker(val) {
+                    Ok((bound, _)) => bound,
+                    Err(plain) => plain,
+                };
+                // The store keeps it both in the `our` store and in the env of
+                // the frame that ran it; the stash and `$GLOBAL::x` read both.
+                let in_our = self.get_our_var(&global).is_some();
+                if in_our {
+                    self.set_our_var(global.clone(), plain.clone());
+                }
+                if !loan_env!(self, set_in_holding_frame(&global, plain.clone())) && !in_our {
+                    self.set_env_with_main_alias(&global, plain.clone());
+                }
+                self.stack.push(plain);
+                return Ok(());
+            }
+            let stored = self.store_process_dynamic(&format!("{sigil}{bare}"), val, Some(code))?;
+            self.stack.push(stored);
+            return Ok(());
+        }
         if stash_name == "CALLER::LEXICAL::" {
             let raw_key = Self::const_str(code, key_name_idx);
             let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
