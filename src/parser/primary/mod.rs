@@ -829,7 +829,9 @@ pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
 pub(in crate::parser) use misc::arrow_lambda as arrow_lambda_pub;
 pub(in crate::parser) use misc::{colonpair_expr, parse_block_body, wrap_colonpair_sink_source};
 pub(in crate::parser) use number::wrap_divergent_literal;
-pub(in crate::parser) use regex::{parse_call_arg_list, parse_capture_arg_list};
+pub(in crate::parser) use regex::{
+    parse_bounded_call_arg_list, parse_call_arg_list, parse_capture_arg_list,
+};
 
 /// Note where `expr`, parsed from `input` up to `rest`, was written, for a
 /// parse that keeps origins for the RakuAST conversion (ADR-10723 Stage 2,
@@ -1147,21 +1149,25 @@ mod tests {
 
     #[test]
     fn parse_brace_hash_literal_mixed_pair_and_positional_items() {
+        // `{ a => 1, "b", 2 }`: after the pair, the elements stay where they
+        // were written; the composer pairs them in order, as in Rakudo.
         let (rest, expr) = primary("{ a => 1, \"b\", 2 }").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Hash(pairs, _) => {
-                assert_eq!(pairs.len(), 2);
-                assert_eq!(pairs[0].0, "a");
+            Expr::Contextualizer {
+                kind: crate::ast::ContextKind::HashComposer,
+                inner,
+            } => {
+                let Expr::ArrayLiteral(items) = *inner else {
+                    panic!("expected the composer's elements");
+                };
+                assert_eq!(items.len(), 3);
+                assert!(matches!(&items[0], Expr::Binary { .. }));
                 assert!(
-                    matches!(&pairs[0].1, Some(Expr::Literal(lit)) if matches!(lit.view(), ValueView::Int(1)))
-                );
-                assert_eq!(pairs[1].0, "b");
-                assert!(
-                    matches!(&pairs[1].1, Some(Expr::Literal(lit)) if matches!(lit.view(), ValueView::Int(2)))
+                    matches!(&items[2], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(2)))
                 );
             }
-            _ => panic!("expected hash literal"),
+            _ => panic!("expected hash composer"),
         }
     }
 

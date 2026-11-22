@@ -169,7 +169,7 @@ impl Interpreter {
     pub(crate) fn cur_repo_loaded(&self, prefix: &str) -> Vec<Value> {
         let mut loaded = self
             .module
-            .world.cur_repo
+            .world.cur_repo.read()
             .loaded
             .get(prefix)
             .cloned()
@@ -180,7 +180,8 @@ impl Interpreter {
         let Ok(canonical_prefix) = std::path::Path::new(prefix).canonicalize() else {
             return loaded;
         };
-        let mut names: Vec<&String> = self.module.world.loaded_modules.iter().collect();
+        let loaded_modules_r = self.module.world.loaded_modules.read();
+        let mut names: Vec<&String> = loaded_modules_r.iter().collect();
         names.sort();
         for name in names {
             if loaded.iter().any(|cu| {
@@ -209,7 +210,9 @@ impl Interpreter {
 
     pub(crate) fn cur_repo_loaded_push(&mut self, prefix: &str, compunit: Value) {
         self.module
-            .world.cur_repo
+            .world
+            .cur_repo
+            .write_guard()
             .loaded
             .entry(prefix.to_string())
             .or_default()

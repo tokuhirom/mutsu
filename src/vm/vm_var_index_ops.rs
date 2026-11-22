@@ -985,6 +985,15 @@ impl Interpreter {
         if items.key_type.is_some() || items.has_typed_keys() {
             return None;
         }
+        // Another thread can be inserting into (and rehashing) the table or
+        // refilling it in place; read under its stripe, as the positional
+        // twin does (ADR-0068, #18651). One relaxed load until a second
+        // mutator thread exists.
+        let _structure = if crate::value::container_lock::multi_mutator_threads_live() {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
+        } else {
+            None
+        };
         let entry = items.get(key.as_str())?;
         match entry.view() {
             ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
@@ -1042,13 +1051,20 @@ impl Interpreter {
         }
         // A package stash holds its `our` scalars as the variables' own cells;
         // a bind source or `.VAR` subscript of one keeps the cell, like an
-        // Array element does above (#16920).
+        // Array element does above (#16920), and so does a hash element that
+        // holds a caller's container (`hash_element_cell`).
         if !is_positional
             && self.stack.len() >= 2
             && let Some(cell) = Self::stash_element_cell(
                 &self.stack[self.stack.len() - 2],
                 &self.stack[self.stack.len() - 1],
             )
+            .or_else(|| {
+                Self::hash_element_cell(
+                    &self.stack[self.stack.len() - 2],
+                    &self.stack[self.stack.len() - 1],
+                )
+            })
         {
             let n = self.stack.len();
             self.stack.truncate(n - 2);
@@ -1915,9 +1931,16 @@ impl Interpreter {
         // another thread may be restructuring. They run no user code, so they
         // hold the node's stripe -- except a `WhateverCode` index (`@a[*-1]`,
         // `@a[0, *-2]`), whose closure runs in the arm: that reads a snapshot.
+        // A string-keyed Hash's arms run no user code either and read a table
+        // another thread can rehash or refill in place (#18651); an object
+        // hash keys through `.WHICH`, which can be user code, so it is not
+        // held across that.
         let _read = if crate::value::container_lock::multi_mutator_threads_live()
-            && matches!(target.view(), ValueView::Array(..))
-        {
+            && match target.view() {
+                ValueView::Array(..) => true,
+                ValueView::Hash(items) => items.key_type.is_none() && !items.has_typed_keys(),
+                _ => false,
+            } {
             if Self::index_needs_target_elems(&index) {
                 if let Some(copy) = crate::value::container_read::shared_snapshot(&target) {
                     target = copy;

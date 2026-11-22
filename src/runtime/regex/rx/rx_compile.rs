@@ -78,6 +78,9 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
     if c.nregs > u16::MAX as usize || c.ops.len() > u32::MAX as usize {
         return Err("too-large");
     }
+    let ascii = (0..c.atoms.len())
+        .map(|_| std::sync::OnceLock::new())
+        .collect();
     Ok(RxProgram {
         ops: c.ops,
         atoms: c.atoms,
@@ -91,7 +94,7 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         has_code: c.has_code,
         has_call: c.has_call,
         markless: false,
-        ascii: std::sync::OnceLock::new(),
+        ascii,
         derived: std::sync::Arc::clone(&pattern.derived),
     })
 }

@@ -397,7 +397,8 @@ impl Interpreter {
                     .or_insert_with(|| def.clone());
             }
         }
-        let entry = crate::runtime::cow_table_mut(&mut self.module.world.exported_subs)
+        let mut exported_subs_w = self.module.world.exported_subs.write_guard();
+        let entry = crate::runtime::cow_table_mut(&mut exported_subs_w)
             .entry(outer.to_string())
             .or_default()
             .entry(name.to_string())

@@ -3384,8 +3384,7 @@ impl Compiler {
                 self.code.emit(OpCode::Goto);
             }
             Stmt::Label { name, stmt } => {
-                let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::Label(name_idx));
+                self.emit_label_marker(name);
                 self.compile_stmt(stmt);
             }
             Stmt::Last(label) => {
@@ -5354,6 +5353,19 @@ impl Compiler {
                 // #11078: the role twin of the class arm's env-sync bound.
                 self.note_role_decl_env_sync(idx);
             }
+            Stmt::SubsetDecl {
+                name,
+                is_my: true,
+                decl_id,
+                ..
+            } if *decl_id != 0 => {
+                // A `my subset` binds its spelling in the declaring block's
+                // env like a `my $x`, so a body run in its consumer's frame
+                // (an inlined `.map` callback) takes the binding back on exit
+                // (#18217), as for a `my enum`.
+                self.code.my_declared_sym.insert(*name);
+                self.emit_register_subset(stmt.clone())
+            }
             Stmt::SubsetDecl { .. } => self.emit_register_subset(stmt.clone()),
             Stmt::Whenever {
                 supply,
@@ -5521,6 +5533,8 @@ impl Compiler {
     /// assignment yields the assigned value, and only genuinely valueless
     /// statements fall back to `True` ("completed" success).
     pub(super) fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
+        // `FOO: 42`: a labelled statement's value is its statement's (#18283).
+        let stmt = self.strip_tail_labels(stmt);
         match stmt {
             Stmt::Expr(expr) => {
                 // Tail expression escapes the frame (implicit result).

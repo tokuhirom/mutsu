@@ -195,11 +195,14 @@ impl Interpreter {
                     // per-composition anonymous type object to rename
                     // instead, when the caller wants a scoped rename rather
                     // than a global one.
+                    crate::value::note_type_rename(&resolved, &new_name);
                     self.type_metadata_mut(resolved)
                         .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                 }
                 ValueView::Instance { class_name, .. } => {
-                    self.type_metadata_mut(class_name.resolve())
+                    let resolved = class_name.resolve();
+                    crate::value::note_type_rename(&resolved, &new_name);
+                    self.type_metadata_mut(resolved)
                         .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                 }
                 _ => {}

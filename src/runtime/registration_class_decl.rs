@@ -526,7 +526,7 @@ impl Interpreter {
         // the declaring unit so those evaluations can still see this file's
         // private top-level routines.
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
-        crate::runtime::cow_table_mut(&mut self.module.world.class_declaring_units)
+        crate::runtime::cow_table_mut(&mut self.module.world.class_declaring_units.write_guard())
             .insert(name.to_string(), declaring_unit);
         if !deferred_body_parents.is_empty() && !self.registry().class_how_values.contains_key(name)
         {

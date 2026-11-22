@@ -455,7 +455,12 @@ impl Interpreter {
     /// chunks sees. Any other memo value passes.
     // Cost: O(1) for a non-lexical answer or a bound one; else one unit
     // lexical-type probe.
-    fn lexical_memo_still_in_scope(&self, code: &CompiledCode, name: Symbol, sym: Symbol) -> bool {
+    pub(super) fn lexical_memo_still_in_scope(
+        &self,
+        code: &CompiledCode,
+        name: Symbol,
+        sym: Symbol,
+    ) -> bool {
         if sym == name || !is_lexical_storage_of(sym, name.as_str()) {
             return true;
         }

@@ -158,11 +158,13 @@ impl Interpreter {
         // A private attribute a parent and a child both declare is stored per
         // declaring class (`Owner\0x`): the access's owner -- the method's, or
         // for a closure the method it was made in -- names its copy (#17936).
-        let (owner, _) = self.attr_access_owner(Some((code, 0)));
+        let (owner, owner_is_role) = self.attr_access_owner(Some((code, 0)));
         let current = {
             let map = attributes.as_map();
+            let bare = crate::symbol::Symbol::intern(attr);
+            let owner = self.private_attr_owner_in(&base, owner, owner_is_role, bare, '$', &map);
             let owner_key = owner.and_then(|_| {
-                Self::attr_key_in_map(owner, crate::symbol::Symbol::intern(attr), true, '$', &map)
+                Self::attr_key_in_map(owner, bare, true, '$', &map)
                     .filter(|k| k.as_str().contains('\0'))
             });
             if let Some(owner_key) = owner_key

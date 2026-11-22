@@ -295,8 +295,8 @@ pub(super) fn loop_statement(list: &mut RakuAstNode, inside: SrcSpan) {
     );
 }
 
-/// `(* + *)(3, 4)`: an infix operand of a postfix application written at
-/// `span`, in parentheses the parser did not place, is the text inside them,
+/// `(* + *)(3, 4)`, `(class A { }).new`: an infix or package operand of a
+/// postfix application written at `span`, in parentheses the parser did not place, is the text inside them,
 /// trimmed, and its parts are derived from that range.
 // Cost: O(n), n = length of the parenthesized text.
 pub(super) fn parenthesized_operand(node: &mut RakuAstNode, span: SrcSpan) {
@@ -310,7 +310,16 @@ pub(super) fn parenthesized_operand(node: &mut RakuAstNode, span: SrcSpan) {
     // `(@a[0] = 7).say`: an assigning subscript, whose parentheses Rakudo
     // drops, is placed from a fragment parse of the text inside them.
     let fragment = class == RakuAstClass::ApplyPostfix;
-    if class != RakuAstClass::ApplyInfix && !fragment {
+    // `(class A { }).new`: a package declared in the parentheses.
+    let declared = matches!(
+        class,
+        RakuAstClass::Class
+            | RakuAstClass::Role
+            | RakuAstClass::Grammar
+            | RakuAstClass::Module
+            | RakuAstClass::Package
+    );
+    if class != RakuAstClass::ApplyInfix && !fragment && !declared {
         return;
     }
     let from = span.from as usize;

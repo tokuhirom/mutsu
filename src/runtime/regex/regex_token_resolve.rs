@@ -655,10 +655,12 @@ impl Interpreter {
                 let param_names: Vec<String> = def
                     .param_defs
                     .iter()
-                    .filter(|pd| !pd.name.is_empty() && !pd.slurpy)
+                    // A slurpy `*@x` / `*%h` is baked too: its bound array or
+                    // hash is read as `@x` / `%h` (`param_read_at`, #18670).
+                    .filter(|pd| !pd.name.is_empty())
                     .map(|pd| {
                         pd.name
-                            .trim_start_matches([':', '@', '%', '&', '!', '.'])
+                            .trim_start_matches([':', '@', '%', '&', '!', '.', '*'])
                             .to_string()
                     })
                     .collect();

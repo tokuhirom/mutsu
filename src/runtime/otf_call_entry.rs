@@ -46,12 +46,12 @@ impl Interpreter {
     // searched in (both only while an import scope is open); O(1) otherwise.
     pub(crate) fn otf_unit_private_key(&self, code: &CompiledCode, name: Symbol) -> Option<Symbol> {
         let module = &self.module;
-        if module.world.unit_private_names.is_empty()
-            || !module.world.unit_private_names.contains(&name)
+        if module.world.unit_private_names.read().is_empty()
+            || !module.world.unit_private_names.read().contains(&name)
             || self.lexicals.amp_param_shadowed_names.contains(&name)
             || module.export_amp_override_names.contains(&name)
             || module
-                .world.module_visibility
+                .world.module_visibility.read()
                 .module_routine_providers
                 .contains_key(&name)
             || self.is_main_shadowing_routine(name)
@@ -71,7 +71,7 @@ impl Interpreter {
     // Cost: O(e), e = nesting depth of `EVAL` units (bounded at 64).
     pub(crate) fn otf_entry_unit_for(&self, def: &FunctionDef) -> Result<Option<Symbol>, ()> {
         let name = def.name;
-        if self.module.world.unit_private_names.is_empty() || !self.module.world.unit_private_names.contains(&name)
+        if self.module.world.unit_private_names.read().is_empty() || !self.module.world.unit_private_names.read().contains(&name)
         {
             return Ok(None);
         }

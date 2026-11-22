@@ -8,6 +8,7 @@
 mod accessors;
 mod adverb_origins;
 mod model_methods;
+mod param_default_origins;
 mod positional_fields;
 mod postfix_power;
 mod routine_stub;
@@ -189,6 +190,7 @@ mod initializer_origins;
 mod keyed_hash;
 mod label_context;
 mod label_origins;
+mod list_meta_origins;
 mod list_origins;
 mod listop_origins;
 mod literal_parameter;

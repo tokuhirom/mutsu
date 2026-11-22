@@ -14,12 +14,22 @@ impl Interpreter {
 
     /// An `X::IO::Resolve` Failure carrying the `IO::Path` itself as `path`
     /// and rakudo's message text.
-    fn make_io_resolve_failure(&self, path: Value, message: String) -> Value {
-        self.make_io_failure_with("X::IO::Resolve", path, message)
+    fn make_io_resolve_failure(&self, path: Value, message: String, reason: String) -> Value {
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("reason".to_string(), Value::str(reason));
+        Self::make_io_failure_from("X::IO::Resolve", path, message, ex_attrs)
     }
 
     fn make_io_failure_with(&self, ex_type: &str, path: Value, message: String) -> Value {
-        let mut ex_attrs = HashMap::new();
+        Self::make_io_failure_from(ex_type, path, message, HashMap::new())
+    }
+
+    fn make_io_failure_from(
+        ex_type: &str,
+        path: Value,
+        message: String,
+        mut ex_attrs: HashMap<String, Value>,
+    ) -> Value {
         ex_attrs.insert("message".to_string(), Value::str(message));
         ex_attrs.insert("path".to_string(), path);
         let exception = Value::make_instance(Symbol::intern(ex_type), ex_attrs);
@@ -138,12 +148,15 @@ impl Interpreter {
         let completely = Self::named_bool(args, "completely");
         let resolved = match Self::resolve_io_path(&path_buf, completely, &p) {
             Ok(r) => r,
-            Err(_) => {
-                // rakudo's message renders the `IO::Path` itself with `.raku`.
+            Err(err) => {
+                // rakudo's message renders the `IO::Path` itself with `.raku`,
+                // followed by the reason the walk stopped.
                 let raku = self.io_path_raku(&class_name.resolve(), attributes);
+                let reason = err.message.to_string();
                 return Ok(self.make_io_resolve_failure(
                     Value::make_instance(class_name, attributes.clone()),
-                    format!("Failed to completely resolve {raku}"),
+                    format!("Failed to completely resolve {raku}: {reason}"),
+                    reason,
                 ));
             }
         };

@@ -17,7 +17,7 @@ pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
     };
     // An anonymous `token { ... }` has no name.
     let name = match super::infix_origins::child(node, "name") {
-        Some(name) => leaf_text(name),
+        Some(name) => written_name(name, from, to).or_else(|| leaf_text(name)),
         None => Some(String::new()),
     };
     let Some(name) = name else {
@@ -56,7 +56,10 @@ pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
         ))
     });
     if let Some((name_at, signature, body)) = body {
-        super::infix_origins::with_child(node, "name", |n| super::origin::set_span(n, name_at));
+        super::infix_origins::with_child(node, "name", |n| {
+            super::origin::set_span(n, name_at);
+            super::name_quote_origins::place(n, name_at);
+        });
         if let Some((inner, written)) = signature {
             if written.trim().is_empty() {
                 // `rule r() { }`: the empty signature sits at its `)`.
@@ -71,9 +74,34 @@ pub(super) fn declaration(names: &NameScope, node: &mut RakuAstNode) {
             });
         }
         super::infix_origins::with_child(node, "body", |regex| {
+            // `proto token a {*}`: Rakudo's `OnlyStar` is empty, at the `}`.
+            if regex.class == super::RakuAstClass::OnlyStar {
+                let star = super::unit_source::with_text(body, |t| (t.trim() == "*").then_some(()));
+                if star.is_some() && regex.origin.0.is_none() {
+                    let at = body.to as usize;
+                    super::origin::set_span(regex, SrcSpan::new(at, at));
+                }
+                return;
+            }
             super::regex_origins::walk_body(names, regex, body)
         });
     }
+}
+
+/// `token a:sym<foo>`: the name as written, when its `Name` carries a
+/// colonpair, read from the source after the declarator up to the blank,
+/// `(` or `{` that ends it.
+// Cost: O(n), n = length of the declaration's head.
+fn written_name(name: &RakuAstNode, from: usize, to: usize) -> Option<String> {
+    name.fields.iter().find(|f| f.name == Some("colonpairs"))?;
+    super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let word = ["token", "rule", "regex"]
+            .into_iter()
+            .find_map(|k| text.find(k).map(|at| at + k.len()))?;
+        let rest = text[word..].trim_start();
+        let end = rest.find(|c: char| c.is_whitespace() || c == '(' || c == '{')?;
+        rest[..end].contains(':').then(|| rest[..end].to_string())
+    })
 }
 
 /// Place a regex declaration's `signature`, whose parameters are written

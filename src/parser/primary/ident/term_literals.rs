@@ -711,7 +711,9 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             let (r, body) = parse_block_body(r)?;
             return Ok((r, Expr::Once { body }));
         } else {
-            let (r, expr) = expression_no_sequence(r)?;
+            // The phaser covers the whole comma list, a sequence included
+            // (`(1, once 2 ... 5)` holds `(2 3 4 5)` as one element).
+            let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
             return Ok((
                 r,
                 Expr::spelled(

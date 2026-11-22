@@ -321,8 +321,10 @@ impl Interpreter {
 
     /// `Supply.stable($seconds)` of the live supplier `source_id`: a worker holds
     /// the newest value back until `seconds` pass without another one, then emits
-    /// it into the returned supply. `done` flushes the held value first; a `quit`
-    /// drops it and quits the output.
+    /// it into the returned supply. rakudo cues the held value's emit on the
+    /// scheduler and passes `done` straight through (#18615), so `done` reaches
+    /// the taps at once. Its held value would only arrive after `done`, which
+    /// a done supply does not deliver here, so `done` (like `quit`) drops it.
     // Cost: O(1) per source event; one pooled worker per stable supply.
     pub(in crate::runtime) fn stable_live_supply(&mut self, source_id: u64, seconds: f64) -> Value {
         use crate::value::waker::SinkEvent;
@@ -359,28 +361,19 @@ impl Interpreter {
                         }
                     }
                 }
-                let due = match &pending {
-                    Some((_, deadline)) => {
-                        finished && quit.is_none()
-                            || *deadline <= crate::thread_compat::Instant::now()
-                    }
-                    None => false,
-                };
-                if due && let Some((v, _)) = pending.take() {
-                    supplier_emit(out_supplier_id, v.clone());
-                    let actions = supplier_emit_callbacks(out_supplier_id, &v);
-                    let _ = thread_interp.drive_supplier_emit_actions(out_supplier_id, actions);
+                if !finished {
+                    Self::emit_stable_if_due(&mut thread_interp, out_supplier_id, &mut pending);
                 }
             }
             supplier_sink_unregister(source_id, sink_id);
             if let Some(reason) = quit {
                 supplier_quit(out_supplier_id, reason.clone());
                 let _ = thread_interp.propagate_supplier_quit(out_supplier_id, reason);
-            } else {
-                supplier_done(out_supplier_id);
-                for done_cb in take_supplier_done_callbacks(out_supplier_id) {
-                    let _ = thread_interp.call_sub_value(done_cb, Vec::new());
-                }
+                return;
+            }
+            supplier_done(out_supplier_id);
+            for done_cb in take_supplier_done_callbacks(out_supplier_id) {
+                let _ = thread_interp.call_sub_value(done_cb, Vec::new());
             }
         });
         let mut new_attrs = HashMap::new();
@@ -392,6 +385,23 @@ impl Interpreter {
             Value::int(out_supplier_id as i64),
         );
         Value::make_instance(Symbol::intern("Supply"), new_attrs)
+    }
+
+    /// Emit the value `stable` holds into `out_sid` once its window ended.
+    // Cost: O(t), t = taps of `out_sid`.
+    fn emit_stable_if_due(
+        interp: &mut Interpreter,
+        out_sid: u64,
+        pending: &mut Option<(Value, crate::thread_compat::Instant)>,
+    ) {
+        let due = pending
+            .as_ref()
+            .is_some_and(|(_, deadline)| *deadline <= crate::thread_compat::Instant::now());
+        if due && let Some((v, _)) = pending.take() {
+            supplier_emit(out_sid, v.clone());
+            let actions = supplier_emit_callbacks(out_sid, &v);
+            let _ = interp.drive_supplier_emit_actions(out_sid, actions);
+        }
     }
 
     /// Create a new non-live Supply from a list of values.
@@ -432,18 +442,15 @@ impl Interpreter {
                 }
                 let attrs = attributes.as_map();
                 // A live source is debounced in real time: a value is emitted once
-                // `seconds` pass without a newer one, and `done` flushes the pending
-                // value before it is passed on (Rakudo's `Supply.stable`).
+                // `seconds` pass without a newer one (Rakudo's `Supply.stable`).
                 if let Some(source_id) = supplier_id_from_attrs(&attrs)
                     && attrs.get("live").is_some_and(Value::truthy)
                 {
                     return Ok(self.stable_live_supply(source_id, seconds));
                 }
-                // A materialized (non-live) Supply emits every value at once,
-                // inside the stable window, so only the final value survives.
-                let values = self.supply_get_values(&attrs)?;
-                let out: Vec<Value> = values.last().cloned().into_iter().collect();
-                return Ok(self.make_supply_from_values(out, &attrs));
+                // Any other source is debounced per tap, as it is replayed
+                // into that tap's worker (#18615).
+                return Ok(Self::make_eager_stage_supply(target.clone(), "stable", args.to_vec()));
             }
             self.native_supply(&(attributes).as_map(), method, args.to_vec())
         } else {

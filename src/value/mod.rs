@@ -630,6 +630,7 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
+mod type_rename_display;
 pub(crate) use error_typed::is_nominal_type_object_of;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
@@ -638,6 +639,7 @@ pub(crate) mod gist;
 mod guards;
 /// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
 pub mod hash_key;
+pub(crate) mod hyper_config;
 pub(crate) mod identity;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;
@@ -703,6 +705,7 @@ pub(crate) mod attribute_class;
 pub(crate) mod param_trait_meta;
 pub(crate) mod sig_elem_flags;
 pub(crate) mod signature;
+mod signature_eqv;
 mod signature_smartmatch;
 pub(crate) mod split_lines;
 pub(crate) mod state_scope_reaper;
@@ -833,6 +836,7 @@ pub(crate) use enum_display::{
 pub(crate) use error::LazyBacktraceText;
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlinePayload, CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
+pub(crate) use type_rename_display::{note_type_rename, type_rename_display};
 // SubData is re-exported so callers can destructure Value::Sub(data)
 
 static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);

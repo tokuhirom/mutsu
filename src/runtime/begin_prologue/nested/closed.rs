@@ -13,7 +13,11 @@
 //! The body is *closed* when, compiled on its own ([`Scan`]):
 //!
 //! - it has no free lexical: every variable it reads or writes it declares
-//!   itself (a dynamic variable, `%*ENV`, is looked up by name at run time);
+//!   itself, or is a dynamic variable (`%*ENV`), which is looked up at run
+//!   time along the callers and in PROCESS, the same at parse time as in the
+//!   prologue as long as the unit declares none of that name ahead of the
+//!   `BEGIN` (that declaration is a prologue effect, which keeps the `BEGIN`
+//!   in the prologue) and the compiler does not bind it (`$*R`, `$*CU`);
 //! - every routine it calls is a core one the unit does not redeclare or
 //!   import (a parse-time `use` has not imported yet), and it calls none by a
 //!   qualified name;
@@ -69,8 +73,18 @@ pub(crate) fn begin_body_core_names(body: &[Stmt], bare: bool) -> Option<Vec<Str
         names.push(name.clone());
     }
     let scan = Scan::of(body);
-    if scan.reflective || !scan.free().is_empty() {
+    if scan.reflective {
         return None;
+    }
+    for free in scan.free() {
+        // A dynamic variable is looked up at run time, along the callers and
+        // then in PROCESS, which are the same at parse time as in the
+        // prologue, unless the unit declares it (a prologue effect, which
+        // keeps this `BEGIN` in the prologue) or the compiler binds it.
+        match crate::parser::dynamic_var_key(free.as_str()) {
+            Some(key) if !COMPILE_TIME_DYNAMICS.contains(&key.as_str()) => {}
+            _ => return None,
+        }
     }
     for callee in &scan.callees {
         if !is_core_routine(*callee) || matches!(callee.as_str(), "require" | "EVAL" | "EVALFILE") {
@@ -80,6 +94,11 @@ pub(crate) fn begin_body_core_names(body: &[Stmt], bare: bool) -> Option<Vec<Str
     }
     Some(names)
 }
+
+/// The dynamic variables the compile of the unit binds for its BEGIN-time
+/// code (the resolver, the compunit, the grammar): a `BEGIN` that reads one
+/// needs the compile it belongs to.
+const COMPILE_TIME_DYNAMICS: &[&str] = &["$*R", "$*CU", "$*W", "$*LANG", "%*LANG"];
 
 /// Finds what a `BEGIN` body could declare into, or load for, its unit.
 struct Escapes {

@@ -306,7 +306,7 @@ impl Interpreter {
         let mut run_result = Ok(());
         let mut body_finished = false;
 
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(&cc);
         while ip < cc.ops.len() {
             match self.exec_one_backedge_polled(&cc, &mut ip, run_fns, polls) {
                 Ok(()) => {}

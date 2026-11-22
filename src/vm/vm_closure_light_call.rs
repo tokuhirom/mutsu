@@ -395,10 +395,10 @@ impl Interpreter {
         let frame_caller_code = self.current_code;
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut ip = 0;
-            let polls = crate::vm::vm_poll::DispatchPolls::current();
+            let polls = crate::vm::vm_poll::DispatchPolls::enter(cc);
             while ip < cc.ops.len() {
                 let step = if ip == 0
-                    && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+                    && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns, polls)
                 {
                     ip = cc.ops.len();
                     r

@@ -1746,7 +1746,9 @@ fn render_param(p: &SigParam) -> String {
         if !p.name.is_empty() {
             result.push_str(&p.name);
         }
-        for t in &p.traits {
+        // Raw by construction: rakudo renders no explicit `is raw` on it
+        // (`:(\x is raw).raku` is `:(\x)`).
+        for t in p.traits.iter().filter(|t| *t != "raw") {
             result.push_str(" is ");
             result.push_str(t);
         }
@@ -1831,8 +1833,10 @@ fn render_param(p: &SigParam) -> String {
         result.push_str(" where { ... }");
     }
 
-    // Literal default values render as `= 5`; complex default expressions
-    // are not reconstructed (mutsu has no full deparser).
+    // Rakudo renders a literal default as its value (`= 5`), a type
+    // object as its name (`= Int`) and any other default, which runs as
+    // code, as `= Code.new`. Leaving the default out made the rendering
+    // rebuild a required parameter (`:(@a = [2]).raku.EVAL`).
     if let Some(ref de) = p.default_expr
         && let Expr::Literal(lit) = de.as_ref()
     {
@@ -1844,6 +1848,13 @@ fn render_param(p: &SigParam) -> String {
     {
         // A bare block's synthetic topic parameter defaults to the outer topic.
         result.push_str(" = OUTER::<$_>");
+    } else if let Some(Expr::BareWord(name)) = p.default_expr.as_deref()
+        && name.starts_with(|c: char| c.is_ascii_uppercase())
+    {
+        result.push_str(" = ");
+        result.push_str(name);
+    } else if p.default_expr.is_some() {
+        result.push_str(" = Code.new");
     }
 
     result

@@ -235,9 +235,9 @@ impl Interpreter {
                 if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
                     let owner_unit = self
                         .module
-                        .world.unit_module_packages
+                        .world.unit_module_packages.read()
                         .iter()
-                        .chain(self.module.world.module_source_packages.iter())
+                        .chain(self.module.world.module_source_packages.read().iter())
                         .find(|(_, package)| package.as_str() == pkg)
                         .map(|(unit, _)| *unit);
                     if owner_unit.is_none_or(|unit| unit == running_unit) {

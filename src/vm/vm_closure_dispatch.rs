@@ -1404,7 +1404,7 @@ impl Interpreter {
         // `temp` bindings the body introduced (e.g. `sub f { temp $x = ... }`
         // with no explicit return) instead of leaking them into the caller.
         let mut handled_let_saves = false;
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(cc);
         let frame_caller_code = self.current_code;
         while ip < cc.ops.len() {
             // JIT entry (ADR-0004 J2): same hook as vm_call_named_inner.rs — at
@@ -1415,7 +1415,7 @@ impl Interpreter {
             // paths, so without this hook a closure-shaped hot loop never
             // entered the JIT at all.
             let step = if ip == 0
-                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns, polls)
             {
                 ip = cc.ops.len();
                 r

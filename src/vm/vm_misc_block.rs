@@ -76,8 +76,37 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let cache_key = format!("BEGIN#{site_id}");
         let store = std::sync::Arc::clone(self.once_store());
+        // A precompiled module's own BEGIN may be replayed from its log, or
+        // recorded into it (ADR-18012 S1, `runtime::begin_replay`).
+        let mut recording_wanted = false;
+        match crate::runtime::begin_replay::site_action(code, site_id) {
+            crate::runtime::begin_replay::SiteAction::Replay {
+                value,
+                locals,
+                inputs,
+            } if self.begin_inputs_match(&inputs) => {
+                crate::runtime::begin_replay::trace(&format!("replayed BEGIN {site_id}"));
+                if let crate::runtime::once_store::OnceClaim::Claimed = store.claim(&cache_key) {
+                    store.fulfill(&cache_key, value.clone());
+                }
+                self.bind_replayed_locals(code, locals);
+                self.stack.push(value);
+                *ip = body_end as usize;
+                return Ok(());
+            }
+            crate::runtime::begin_replay::SiteAction::Replay { .. } => {
+                crate::runtime::begin_replay::trace(&format!(
+                    "BEGIN {site_id} runs: its inputs differ from the recorded ones"
+                ));
+            }
+            crate::runtime::begin_replay::SiteAction::Record => recording_wanted = true,
+            crate::runtime::begin_replay::SiteAction::Run => {}
+        }
         match store.claim(&cache_key) {
             crate::runtime::once_store::OnceClaim::Cached(value) => {
+                if recording_wanted {
+                    crate::runtime::begin_replay::note_site_missed(site_id);
+                }
                 self.stack.push(value);
                 *ip = body_end as usize;
                 Ok(())
@@ -92,6 +121,9 @@ impl Interpreter {
                 // `CheckPhaserStart` this does NOT raise `check_phaser_depth`:
                 // whether a throw here should surface as `X::Comp::BeginTime`
                 // is a separate question this opcode has always answered "no".)
+                let recording = recording_wanted
+                    .then(|| self.begin_recording(code, body_start, end))
+                    .flatten();
                 self.begin_time_enter();
                 let ran = self.run_range(code, body_start, end, compiled_fns);
                 self.begin_time_leave();
@@ -102,6 +134,9 @@ impl Interpreter {
                         } else {
                             Value::NIL
                         };
+                        if let Some(recording) = recording {
+                            self.finish_begin_recording(recording, site_id, &value);
+                        }
                         store.fulfill(&cache_key, value.clone());
                         self.stack.push(value);
                         *ip = end;
