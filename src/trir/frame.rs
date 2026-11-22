@@ -49,6 +49,9 @@ pub(crate) struct TrStacks {
     /// Holding the `Arc` keeps its pointer from being reused, so a pointer
     /// match is identity. Dropped when the outermost TRIR frame returns.
     pub(crate) str_memo: StrMemo,
+    /// The routine-stack entries of inner TRIR calls, pushed only once
+    /// something can observe them (ADR-8673 D1, `lazy_frames.rs`).
+    pub(crate) lazy: super::lazy_frames::LazyFrames,
 }
 
 /// See [`TrStacks::str_memo`].
