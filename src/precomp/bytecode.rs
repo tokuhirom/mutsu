@@ -90,6 +90,9 @@ pub(crate) struct CodeEntry {
     pub(crate) ast: Vec<u8>,
     /// The compiled mainline, encoded with [`crate::precomp_codec`].
     pub(crate) payload: Vec<u8>,
+    /// The entry's checksum: what its BEGIN effect log ([`super::begin_log`])
+    /// is bound to.
+    pub(crate) checksum: u64,
 }
 
 /// What [`save_code_entry`] stores.
@@ -145,6 +148,7 @@ pub(crate) fn load_code_entry(source_path: &Path, source: &str) -> Option<CodeEn
         facts: meta.facts,
         ast: ast.to_vec(),
         payload: payload.to_vec(),
+        checksum: meta.payload_checksum,
     })
 }
 
@@ -170,15 +174,17 @@ fn split_section(data: &[u8]) -> Option<(&[u8], &[u8])> {
 }
 
 /// Store the compile of `source_path`'s mainline. Best effort, like the AST
-/// entry: any failure leaves no entry behind.
+/// entry: any failure leaves no entry behind. Answers the stored entry's
+/// checksum, which its BEGIN effect log is bound to.
 // Cost: O(n), n = size of the entry.
-pub(crate) fn save_code_entry(source_path: &Path, source: &str, entry: NewCodeEntry<'_>) {
-    let Some((file, canonical)) = code_file(source_path) else {
-        return;
-    };
-    let Some(mtime_nanos) = source_mtime_nanos(source_path) else {
-        return;
-    };
+pub(crate) fn save_code_entry(
+    source_path: &Path,
+    source: &str,
+    entry: NewCodeEntry<'_>,
+) -> Option<u64> {
+    let (file, canonical) = code_file(source_path)?;
+    let mtime_nanos = source_mtime_nanos(source_path)?;
+    let checksum = payload_checksum(entry.ast, entry.payload);
     let meta = CodeMetadata {
         source_path: canonical,
         mtime_nanos,
@@ -189,11 +195,9 @@ pub(crate) fn save_code_entry(source_path: &Path, source: &str, entry: NewCodeEn
         latches: entry.latches,
         effects: entry.effects.clone(),
         facts: entry.facts.clone(),
-        payload_checksum: payload_checksum(entry.ast, entry.payload),
+        payload_checksum: checksum,
     };
-    let Ok(meta_bytes) = bincode::serde::encode_to_vec(&meta, bincode::config::standard()) else {
-        return;
-    };
+    let meta_bytes = bincode::serde::encode_to_vec(&meta, bincode::config::standard()).ok()?;
     let mut data =
         Vec::with_capacity(12 + meta_bytes.len() + entry.ast.len() + entry.payload.len());
     data.extend_from_slice(CODE_MAGIC);
@@ -202,7 +206,11 @@ pub(crate) fn save_code_entry(source_path: &Path, source: &str, entry: NewCodeEn
     data.extend_from_slice(&(entry.ast.len() as u32).to_le_bytes());
     data.extend_from_slice(entry.ast);
     data.extend_from_slice(entry.payload);
-    if let Err(err) = private_files::write_private(&file, &data) {
-        warn_cache_unavailable(&err);
+    match private_files::write_private(&file, &data) {
+        Ok(()) => Some(checksum),
+        Err(err) => {
+            warn_cache_unavailable(&err);
+            None
+        }
     }
 }

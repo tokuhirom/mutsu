@@ -271,6 +271,7 @@ impl Interpreter {
         code: &CompiledCode,
         compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
+        crate::runtime::begin_replay::watch::note_code_entry(code);
         Self::validate_labels(code)?;
         // Initialize local variable slots
         self.locals.refill_slots(code.locals.len());
@@ -1017,6 +1018,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         entry_poll: bool,
     ) -> Result<(), RuntimeError> {
+        crate::runtime::begin_replay::watch::note_code_entry(code);
         if start >= end {
             // An empty body still has to poll: `while $cond {}` repeats through
             // its (unpolled) condition range and this body alone. A profile

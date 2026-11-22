@@ -133,6 +133,8 @@ struct CachedCompile {
     inputs: crate::compiler::compile_inputs::CompileInputs,
     latches: CompileLatches,
     payload: Vec<u8>,
+    /// The entry's checksum, which its BEGIN effect log is bound to.
+    checksum: u64,
 }
 
 /// What a load knows about its module's mainline when it sets up the slot.
@@ -167,6 +169,7 @@ impl ModuleCodeSlot {
                     inputs: entry.inputs,
                     latches: entry.latches,
                     payload: entry.payload,
+                    checksum: entry.checksum,
                 }),
             ),
             None => match crate::precomp::encode_stmts(parts.ast.stmts()?) {
@@ -209,7 +212,7 @@ fn enabled() -> bool {
 }
 
 // Cost: O(1) after the first call.
-fn trace_enabled() -> bool {
+pub(crate) fn trace_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MUTSU_PRECOMP_TRACE").is_ok_and(|v| v != "0"))
 }
@@ -316,7 +319,8 @@ impl Interpreter {
         &self,
         body: MainlineBody<'_>,
         slot: &ModuleCodeSlot,
-    ) -> Result<(CompiledCode, CompiledFns), RuntimeError> {
+    ) -> Result<(CompiledCode, CompiledFns, Option<crate::runtime::begin_replay::Plan>), RuntimeError>
+    {
         let (mut compiler, compile_unit) = self.module_mainline_compiler();
         // See `compile_module_mainline_uncached`: the tail value is discarded.
         compiler.unit_tail_discards = true;
@@ -358,12 +362,17 @@ impl Interpreter {
             })
             .and_then(|cached| {
                 let decoded = crate::precomp_codec::decode_compiled(&cached.payload).ok()?;
-                Some((cached.latches, decoded))
+                Some((cached.latches, cached.checksum, decoded))
             });
         drop(validation_scans);
+        let mut plan = None;
         let (mut code, mut fns) = match cached {
-            Some((latches, decoded)) => {
+            Some((latches, checksum, decoded)) => {
                 trace(slot, "hit");
+                plan = crate::runtime::begin_replay::Plan::for_entry(
+                    slot.unit.source_path.clone(),
+                    checksum,
+                );
                 crate::opcode::replay_compile_latches(
                     latches.reflective_name_access,
                     latches.non_eval_reflective,
@@ -408,7 +417,7 @@ impl Interpreter {
                         caller_frame_read: crate::opcode::caller_frame_read_possible(),
                         dispatcher: crate::opcode::dispatcher_possible(),
                     };
-                    crate::precomp::bytecode::save_code_entry(
+                    let saved = crate::precomp::bytecode::save_code_entry(
                         &unit.source_path,
                         &unit.source,
                         NewCodeEntry {
@@ -421,6 +430,12 @@ impl Interpreter {
                             payload: &payload,
                         },
                     );
+                    if let Some(checksum) = saved {
+                        plan = crate::runtime::begin_replay::Plan::record(
+                            unit.source_path.clone(),
+                            checksum,
+                        );
+                    }
                 }
                 compiled
             }
@@ -428,7 +443,7 @@ impl Interpreter {
         if let MainlineBody::Split(stmts) = body {
             self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
         }
-        Ok((code, fns))
+        Ok((code, fns, plan))
     }
 
     /// `MUTSU_PRECOMP_VERIFY`: the load facts an entry served must equal the

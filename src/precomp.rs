@@ -64,6 +64,7 @@
 //! `serde::Deserialize`. The `Value` enum uses custom serde that supports
 //! only the subset of variants that can appear in AST literals.
 
+pub(crate) mod begin_log;
 pub(crate) mod bytecode;
 pub(crate) mod private_files;
 

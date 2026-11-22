@@ -66,6 +66,7 @@ mod handler_frame;
 mod cool_routine_forward;
 mod cool_type_object_gate;
 pub(crate) mod json;
+pub(crate) mod begin_replay;
 mod module_bytecode;
 pub(crate) mod module_load_facts;
 pub(crate) mod exporthow_facts;
