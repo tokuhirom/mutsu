@@ -366,6 +366,12 @@ impl Interpreter {
                 i += 1 + consumed;
                 continue;
             }
+            // A `$name` the parse entry points hoisted as a match-time lexical
+            // (`with_match_time_scalars`, #14510) is left in the text below for
+            // the structural parser's `VarInterp`; that is every bound scalar.
+            // What is still spliced here: a `constant` (inlined at compile
+            // time, part of the declarative LTM prefix, as on rakudo), a
+            // `"..."` literal's text, and a name no scope binds.
             if ch == '$' {
                 // `$$` is the end-of-line anchor, not a scalar reference. It has
                 // to be recognised BEFORE the `${…}` branch below: in `/ . $${ … } /`
