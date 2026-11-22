@@ -85,7 +85,14 @@ impl Interpreter {
                 self.module.lexical_import_capture = outer;
             }
         }
-        if let Err(err) = loaded {
+        if let Err(mut err) = loaded {
+            // Every `use` loads at compile time in rakudo, so a module the
+            // repository chain cannot find is a compile error of the `use`'s
+            // unit: `===SORRY!=== Error while compiling`, pointing at its line.
+            if err.is_unsatisfied_dependency() && err.code().is_none() {
+                err.set_code(Some(crate::value::RuntimeErrorCode::ParseGeneric));
+                err.set_line(self.current_source_line().map(|line| line as usize));
+            }
             return Err(self.in_place_use_error(module, err));
         }
         // Shadow-only: confirms the claim above holds; does not affect

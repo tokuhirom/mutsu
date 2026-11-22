@@ -1513,6 +1513,18 @@ impl Interpreter {
                 }),
                 Err(err) => Err(err),
             };
+            // A compile error the body raised for itself (a `use` of a module
+            // nobody can find) is this module's, not the importer's: render it
+            // under the module's file, with a snippet of its own source.
+            let result = result.map_err(|mut err| {
+                if err.code().is_some_and(|code| code.is_parse()) && err.source_file().is_none() {
+                    err.set_source_file_text(
+                        source_path.to_string_lossy().to_string(),
+                        module_source.clone(),
+                    );
+                }
+                err
+            });
             self.exit_readonly_frame(readonly_mark);
             self.module.import_target_package = saved_import_target;
             // The importer's tables come back, but the module's named docs are
