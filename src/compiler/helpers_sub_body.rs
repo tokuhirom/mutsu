@@ -1145,6 +1145,7 @@ impl Compiler {
         for (i, stmt) in body.iter().enumerate() {
             let is_last = i == body.len() - 1;
             if is_last {
+                let stmt = sub_compiler.strip_tail_labels(stmt);
                 match stmt {
                     Stmt::Expr(expr) => {
                         // Tail expression becomes the routine's value (implicit
@@ -1969,6 +1970,7 @@ impl Compiler {
             for (i, stmt) in body.iter().enumerate() {
                 let is_last = i == body.len() - 1;
                 if is_last {
+                    let stmt = self.strip_tail_labels(stmt);
                     match stmt {
                         Stmt::Expr(expr) => {
                             // Tail expression = implicit return -> closure escapes.
