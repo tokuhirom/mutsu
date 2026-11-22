@@ -1,6 +1,6 @@
 # ADR-18752: An in-range element store to a shared array takes no exclusive lock
 
-- **Status**: Proposed (2026-11-22)
+- **Status**: Accepted (2026-11-22, by the maintainer), with conditions (D6 C1-C4: soundness rows for the collector and the pre-latch path, a <= 150 ms prototype gate with a stop rule, D4 only after the second-mutator latch, implementation after the release freeze)
 - Date: 2026-11-22
 - Supersedes: [ADR-0068](0068-cross-thread-container-writes-need-a-synchronized-store.md)'s
   write side for in-range element stores (its exclusion stays for every structural write)
