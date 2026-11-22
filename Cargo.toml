@@ -95,7 +95,7 @@ num-integer = "0.1"
 # KEEP (a): NFC/NFD/NFKC/NFKD normalization, tracking Unicode versions.
 unicode-normalization = "0.1"
 # KEEP (b): REPL line editing (native only).
-rustyline = { version = "18", optional = true }
+rustyline = { version = "19", optional = true }
 # KEEP (b): POSIX calls: signals, processes, file locks, localtime, user/group
 # lookup, uname (native only).
 libc = { version = "0.2", optional = true }
