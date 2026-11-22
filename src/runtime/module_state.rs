@@ -752,7 +752,7 @@ pub(crate) struct ModuleState {
     /// Load-time knowledge about the loaded compunits: which modules are
     /// loaded, what each one exports and registered, and the per-unit
     /// visibility tables (ADR-17216 slice 3; see [`ModuleWorld`]).
-    pub(crate) world: ModuleWorld,
+    pub(crate) world: crate::runtime::world_cell::WorldCell<ModuleWorld>,
 }
 
 /// One memoised `lexical_package_for_frame` answer: the question
@@ -770,7 +770,7 @@ pub(crate) struct LexicalPackageMemo {
 impl ModuleState {
     pub(crate) fn new() -> Self {
         Self {
-            world: ModuleWorld::default(),
+            world: Default::default(),
             imported_operator_names: Default::default(),
             operator_import_units: Default::default(),
             unscoped_import_units: Default::default(),
@@ -857,7 +857,7 @@ impl ModuleState {
     /// and handoff state of an in-flight `use` start empty.
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self {
-            world: self.world.clone(),
+            world: self.world.share(),
             imported_operator_names: self.imported_operator_names.clone(),
             operator_import_units: self.operator_import_units.clone(),
             unscoped_import_units: self.unscoped_import_units.clone(),

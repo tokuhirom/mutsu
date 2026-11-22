@@ -295,7 +295,7 @@ impl Interpreter {
             wanted(name_str)
                 && name_str != "MAIN"
                 && name_str != "EXPORT"
-                && !self.module.world.prelude_sub_names.contains(name)
+                && !self.module.world.read().prelude_sub_names.contains(name)
                 && !self
                     .types
                     .our_scoped_package_items

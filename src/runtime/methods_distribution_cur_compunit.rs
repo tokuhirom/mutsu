@@ -168,8 +168,7 @@ impl Interpreter {
     /// `$repo.loaded`: the CompUnits a repository has loaded, in load order.
     pub(crate) fn cur_repo_loaded(&self, prefix: &str) -> Vec<Value> {
         let mut loaded = self
-            .module
-            .world.cur_repo
+            .module.world.read().cur_repo
             .loaded
             .get(prefix)
             .cloned()
@@ -180,7 +179,7 @@ impl Interpreter {
         let Ok(canonical_prefix) = std::path::Path::new(prefix).canonicalize() else {
             return loaded;
         };
-        let mut names: Vec<&String> = self.module.world.loaded_modules.iter().collect();
+        let mut names: Vec<&String> = self.module.world.read().loaded_modules.iter().collect();
         names.sort();
         for name in names {
             if loaded.iter().any(|cu| {
@@ -208,8 +207,7 @@ impl Interpreter {
     }
 
     pub(crate) fn cur_repo_loaded_push(&mut self, prefix: &str, compunit: Value) {
-        self.module
-            .world.cur_repo
+        self.module.world.write_guard().cur_repo
             .loaded
             .entry(prefix.to_string())
             .or_default()

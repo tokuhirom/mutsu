@@ -960,7 +960,7 @@ impl Interpreter {
                 // import alias. `reinstate_module_functions` needs the distinction
                 // to put it back after a scope rollback — see
                 // `prelude_registered_functions`.
-                crate::runtime::cow_table_mut(&mut self.module.world.prelude_registered_functions)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().prelude_registered_functions)
                     .insert(global_key);
                 // ...and record WHICH compunit this copy was spliced into, before
                 // the idempotence check below can swallow it. The registration is
@@ -969,7 +969,7 @@ impl Interpreter {
                 // `use NativeCall`, so resolution consults this set — see
                 // `prelude_declaring_units` / `prelude_visible_here`.
                 let unit = self.declaring_unit_sym();
-                crate::runtime::cow_table_mut(&mut self.module.world.prelude_declaring_units)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().prelude_declaring_units)
                     .entry(global_key)
                     .or_default()
                     .insert(unit);
@@ -980,7 +980,7 @@ impl Interpreter {
             // every compunit's bodies can reach it. This is about the NAME, so
             // a `multi` prelude needs it too — its candidates live under
             // `GLOBAL::name/N`, but the name they answer to is the same one.
-            crate::runtime::cow_table_mut(&mut self.module.world.prelude_sub_names)
+            crate::runtime::cow_table_mut(&mut self.module.world.write_guard().prelude_sub_names)
                 .insert(Symbol::intern(name));
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
@@ -1967,8 +1967,7 @@ impl Interpreter {
             && self.current_package_is_global_name()
             && let Some(owner) = self.module.module_load_stack.last()
             && let Some(tags) = self
-                .module
-                .world.module_owned_exports
+                .module.world.read().module_owned_exports
                 .get(owner)
                 .and_then(|exports| exports.get(name))
                 .cloned()
@@ -2006,9 +2005,9 @@ impl Interpreter {
                 .copied()
                 .collect();
             for key in keys {
-                crate::runtime::cow_table_mut(&mut self.module.world.prelude_registered_functions)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().prelude_registered_functions)
                     .insert(key);
-                crate::runtime::cow_table_mut(&mut self.module.world.prelude_declaring_units)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().prelude_declaring_units)
                     .entry(key)
                     .or_default()
                     .insert(unit);

@@ -16,14 +16,12 @@ impl Interpreter {
     /// far as the module-load provenance tables know (ADR-11136, #7797).
     // Cost: O(1), three set probes.
     fn is_module_declared_package(&self, name: &str) -> bool {
-        self.module
-            .world.module_visibility
+        self.module.world.read().module_visibility
             .module_declared_types
             .contains(name)
-            || self.module.world.package_declaring_units.contains_key(name)
+            || self.module.world.read().package_declaring_units.contains_key(name)
             || Symbol::lookup(name).is_some_and(|sym| {
-                self.module
-                    .world.module_visibility
+                self.module.world.read().module_visibility
                     .module_name_providers
                     .contains_key(&sym)
             })
@@ -34,15 +32,14 @@ impl Interpreter {
     // Cost: O(t), t = module-declared types + attributed names + declaring-unit
     // entries.
     fn module_merge_tops(&self) -> HashSet<Symbol> {
-        let visibility = &self.module.world.module_visibility;
+        let visibility = &self.module.world.read().module_visibility;
         visibility
             .module_declared_types
             .iter()
             .map(|name| Symbol::intern(name))
             .chain(visibility.module_name_providers.keys().copied())
             .chain(
-                self.module
-                    .world.package_declaring_units
+                self.module.world.read().package_declaring_units
                     .keys()
                     .map(|name| Symbol::intern(name)),
             )
@@ -76,8 +73,7 @@ impl Interpreter {
             crate::qualified::qualified(crate::symbol::wk::global_package(), Symbol::intern(name));
         self.module.imported_routine_aliases.contains(&qualified)
             || Symbol::lookup(name).is_some_and(|sym| {
-                self.module
-                    .world.module_visibility
+                self.module.world.read().module_visibility
                     .module_routine_providers
                     .contains_key(&sym)
             })
@@ -86,8 +82,7 @@ impl Interpreter {
     /// The compunits of the loaded modules.
     // Cost: O(m), m = loaded modules.
     pub(super) fn loaded_module_units(&self) -> HashSet<Symbol> {
-        self.module
-            .world.module_visibility
+        self.module.world.read().module_visibility
             .module_units
             .values()
             .copied()
@@ -144,14 +139,13 @@ impl Interpreter {
     fn program_exports_from_global(&self) -> bool {
         let global = crate::symbol::wk::global_package();
         if self
-            .module
-            .world.exported_vars
+            .module.world.read().exported_vars
             .get("GLOBAL")
             .is_some_and(|vars| !vars.is_empty())
         {
             return true;
         }
-        let Some(subs) = self.module.world.exported_subs.get("GLOBAL") else {
+        let Some(subs) = self.module.world.read().exported_subs.get("GLOBAL") else {
             return false;
         };
         let units = self.loaded_module_units();
@@ -178,12 +172,12 @@ impl Interpreter {
                 tops.push(top);
             }
         };
-        if let Some(owned) = module.with_str(|m| self.module.world.module_owned_types.get(m)) {
+        if let Some(owned) = module.with_str(|m| self.module.world.read().module_owned_types.get(m)) {
             for name in &owned.declared {
                 push(Symbol::intern(name));
             }
         }
-        for (name, provider) in self.module.world.module_visibility.module_name_providers.iter() {
+        for (name, provider) in self.module.world.read().module_visibility.module_name_providers.iter() {
             if *provider == module && !name.with_str(|s| s.starts_with(['$', '@', '%', '&'])) {
                 push(*name);
             }
@@ -226,8 +220,7 @@ impl Interpreter {
     pub(crate) fn modules_merged_in_view(&self) -> Vec<Symbol> {
         let unit = self.executing_unit_sym_for_module_load();
         let mut modules: Vec<Symbol> = self
-            .module
-            .world.module_visibility
+            .module.world.read().module_visibility
             .unit_merged_modules
             .get(&unit)
             .map(|set| set.iter().copied().collect())

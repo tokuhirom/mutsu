@@ -125,8 +125,7 @@ impl Interpreter {
                 // The repository's loaded list outlives the frame a `need`
                 // ran in: the same unit is the same compunit (#14539).
                 if let Some(existing) = self
-                    .module
-                    .world.cur_repo
+                    .module.world.read().cur_repo
                     .loaded
                     .get(&prefix)
                     .and_then(|units| {
@@ -175,7 +174,7 @@ impl Interpreter {
                 let loaded = self.load_module_from_path(&short_name_str, source_path);
                 self.module.precomp_enabled = saved_precomp;
                 let precompiled = loaded?;
-                crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().loaded_modules)
                     .insert(short_name_str.clone());
                 let mut attrs = HashMap::new();
                 attrs.insert("from".to_string(), Value::str_from("Perl6"));

@@ -378,7 +378,7 @@ impl Interpreter {
         // 2. Code-valued `our constant &alias is export(...)` declarations.
         // A term export is recorded under its term key (#9962).
         let term_key = crate::runtime::term_names::term_key(key);
-        if let Some(vars) = self.module.world.exported_vars.get(package_name.as_str())
+        if let Some(vars) = self.module.world.read().exported_vars.get(package_name.as_str())
             && let Some(export_name) = [key, term_key.as_str()]
                 .into_iter()
                 .find(|name| vars.contains_key(*name))
@@ -518,7 +518,7 @@ impl Interpreter {
         }
         // 3. Exported variables of the root.
         let term_key = crate::runtime::term_names::term_key(key);
-        if let Some(vars) = self.module.world.exported_vars.get("GLOBAL")
+        if let Some(vars) = self.module.world.read().exported_vars.get("GLOBAL")
             && let Some(export_name) = [key, term_key.as_str()]
                 .into_iter()
                 .find(|name| vars.contains_key(*name))

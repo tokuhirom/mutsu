@@ -46,7 +46,7 @@ impl CompileTimeLoader for Interpreter {
         // A module loaded already (by an earlier `use`) does not load again,
         // but its `sub EXPORT` runs for this `use` too, now, as rakudo runs it
         // once per `use` statement at compile time.
-        let already_loaded = self.module.world.loaded_modules.contains(bare);
+        let already_loaded = self.module.world.read().loaded_modules.contains(bare);
         if already_loaded
             && (request.activates_slang || !self.module.module_export_defs.contains_key(bare))
         {
@@ -161,8 +161,7 @@ impl CompileTimeLoader for Interpreter {
         // BEGIN-time merge included (#17557), each with what its HOW object
         // builds (slice 3).
         let declarators = self
-            .module
-            .world.exporthow_declares
+            .module.world.read().exporthow_declares
             .get(bare)
             .cloned()
             .unwrap_or_default()
@@ -229,7 +228,7 @@ impl Interpreter {
             return;
         }
         let (bare, _) = Self::split_dist_selectors(request.module);
-        if self.module.world.loaded_modules.contains(bare)
+        if self.module.world.read().loaded_modules.contains(bare)
             || self.control.reserved_module_end_slots.contains_key(bare)
         {
             return;
@@ -323,14 +322,14 @@ impl Interpreter {
             Some(requested) => tags("MANDATORY") || requested.iter().any(|tag| tags(tag)),
         };
         let mut names: Vec<String> = Vec::new();
-        if let Some(subs) = self.module.world.exported_subs.get(module) {
+        if let Some(subs) = self.module.world.read().exported_subs.get(module) {
             names.extend(
                 subs.iter()
                     .filter(|(_, tags)| admits(&|tag| tags.contains(tag)))
                     .map(|(name, _)| name.clone()),
             );
         }
-        if let Some(vars) = self.module.world.exported_vars.get(module) {
+        if let Some(vars) = self.module.world.read().exported_vars.get(module) {
             names.extend(
                 vars.iter()
                     .filter(|(_, tags)| admits(&|tag| tags.contains(tag)))

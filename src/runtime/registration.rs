@@ -819,10 +819,9 @@ impl Interpreter {
         // and then fails to resolve. It is skipped entirely — no key built, no
         // allocation — for the overwhelmingly common case of a program that
         // spliced no prelude at all.
-        let gate = !self.module.world.prelude_registered_functions.is_empty()
+        let gate = !self.module.world.read().prelude_registered_functions.is_empty()
             || !self
-                .module
-                .world.module_visibility
+                .module.world.read().module_visibility
                 .module_routine_providers
                 .is_empty();
         self.bare_name_packages_syms().iter().any(|pkg| {

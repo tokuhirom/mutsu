@@ -612,7 +612,7 @@ impl Interpreter {
         let Some(key) = key else {
             return true;
         };
-        let Some(&declaring_unit) = self.module.world.class_declaring_units.get(&key) else {
+        let Some(&declaring_unit) = self.module.world.read().class_declaring_units.get(&key) else {
             // Roles and enums do not currently record a declaring unit. Keep
             // their existing behavior until they have equivalent provenance.
             return true;
@@ -642,7 +642,7 @@ impl Interpreter {
             }
             // Only the running unit's own declarations: a type another unit
             // declared (a module this one imported) is not in this pad.
-            let Some(&declaring_unit) = self.module.world.class_declaring_units.get(item) else {
+            let Some(&declaring_unit) = self.module.world.read().class_declaring_units.get(item) else {
                 continue;
             };
             if self

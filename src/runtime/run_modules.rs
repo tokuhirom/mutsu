@@ -872,8 +872,7 @@ impl Interpreter {
                 .keys()
                 .any(|k| k.as_str().starts_with(&prefix))
             || Symbol::lookup(module).is_some_and(|module| {
-                self.module
-                    .world.module_visibility
+                self.module.world.read().module_visibility
                     .module_name_providers
                     .iter()
                     .any(|(name, provider)| {
@@ -903,7 +902,7 @@ impl Interpreter {
         // `need` of a unit a `use` (or an earlier `need`) already loaded
         // hands back the same compunit: running its body again redeclares
         // its routines (#14539, CompUnit::Util `load('NativeCall')`).
-        if self.module.world.loaded_modules.contains(module) && self.module_still_registered(module) {
+        if self.module.world.read().loaded_modules.contains(module) && self.module_still_registered(module) {
             return Ok(false);
         }
         let order = self
@@ -940,7 +939,7 @@ impl Interpreter {
                 .filter(|k| crate::qualified::is_qualified_str(k.as_str()))
                 .copied()
                 .collect();
-            crate::runtime::cow_table_mut(&mut self.module.world.module_registered_functions)
+            crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_registered_functions)
                 .extend(module_funcs);
             self.record_module_registered_protos(&proto_keys_before);
         }
@@ -988,7 +987,7 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?,
         };
         crate::runtime::bump_unit_scope_epoch();
-        crate::runtime::cow_table_mut(&mut self.module.world.module_source_packages).insert(
+        crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_source_packages).insert(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
             crate::symbol::Symbol::intern(module),
         );
@@ -1043,7 +1042,7 @@ impl Interpreter {
             self.module.current_distribution_frame_floor = self.routine_stack_len();
             // Record the distribution for the module's package name
             // so OTF compilation can resolve $?DISTRIBUTION later.
-            crate::runtime::cow_table_mut(&mut self.module.world.package_distributions)
+            crate::runtime::cow_table_mut(&mut self.module.world.write_guard().package_distributions)
                 .insert(module.to_string(), dist.clone());
         }
         // Save and restore the language version around module loading.
@@ -1187,7 +1186,7 @@ impl Interpreter {
         let guards = self.guards_for_recorded_calls(facts.recorded_calls.as_ref())?;
         self.preregister_routine_enums(&facts.routine_enums);
         if !facts.exporthow_declares.is_empty() {
-            crate::runtime::cow_table_mut(&mut self.module.world.exporthow_declares)
+            crate::runtime::cow_table_mut(&mut self.module.world.write_guard().exporthow_declares)
                 .insert(module.to_string(), facts.exporthow_declares.clone());
         }
         let code_slot =
@@ -1237,7 +1236,7 @@ impl Interpreter {
                     Vec::new()
                 } else {
                     crate::runtime::cow_table_mut(
-                        &mut self.module.world.module_visibility.unit_package_names,
+                        &mut self.module.world.write_guard().module_visibility.unit_package_names,
                     )
                     .insert(sym);
                     vec![sym]
@@ -1263,7 +1262,7 @@ impl Interpreter {
             // `package_distributions["Foo"]` with B's own distribution).
             let effective_pkg = unit_name.clone().unwrap_or_else(|| "GLOBAL".to_string());
             if effective_pkg != *module {
-                crate::runtime::cow_table_mut(&mut self.module.world.package_distributions)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().package_distributions)
                     .insert(effective_pkg, dist.clone());
             }
         }
@@ -1304,11 +1303,11 @@ impl Interpreter {
             // `unit_module_exported_subs` for tag validation.
             if let Some(name) = unit_name.as_deref() {
                 crate::runtime::bump_unit_scope_epoch();
-                crate::runtime::cow_table_mut(&mut self.module.world.unit_module_packages).insert(
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().unit_module_packages).insert(
                     module_unit_for_loading_stack,
                     crate::symbol::Symbol::intern(name),
                 );
-                crate::runtime::cow_table_mut(&mut self.module.world.module_declared_unit_packages)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_declared_unit_packages)
                     .insert(
                         crate::symbol::Symbol::intern(module),
                         crate::symbol::Symbol::intern(name),
@@ -1321,7 +1320,7 @@ impl Interpreter {
                 && let [only] = facts.block_package_names.as_slice()
                 && only != module
             {
-                crate::runtime::cow_table_mut(&mut self.module.world.module_block_packages).insert(
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_block_packages).insert(
                     crate::symbol::Symbol::intern(module),
                     crate::symbol::Symbol::intern(only),
                 );
@@ -2016,7 +2015,7 @@ impl Interpreter {
                 .map(|(_, def)| def)
                 .collect();
             if !own_hooks.is_empty() {
-                crate::runtime::cow_table_mut(&mut self.module.world.module_export_hooks)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_export_hooks)
                     .insert(module.to_string(), own_hooks);
             }
             let export_result = match result {
@@ -2041,8 +2040,7 @@ impl Interpreter {
             // module's own (`use Mod ()` must not dispatch it).
             let main_exported = (!self.module.loading_without_import
                 && self
-                    .module
-                    .world.exported_subs
+                    .module.world.read().exported_subs
                     .values()
                     .any(|m| m.contains_key("MAIN")))
                 || self.env.get("&MAIN").is_some_and(|v| {
@@ -2112,7 +2110,7 @@ impl Interpreter {
                 granted_packages.insert(qualified);
             }
         }
-        if let Some(owned_types) = self.module.world.module_owned_types.get(module).cloned() {
+        if let Some(owned_types) = self.module.world.read().module_owned_types.get(module).cloned() {
             let own_prefix = format!("{module}::");
             for qualified in owned_types.declared {
                 if let Some((package, _)) =
@@ -2128,7 +2126,7 @@ impl Interpreter {
             }
         }
         {
-            let declaring = crate::runtime::cow_table_mut(&mut self.module.world.package_declaring_units);
+            let declaring = crate::runtime::cow_table_mut(&mut self.module.world.write_guard().package_declaring_units);
             for pkg in &granted_packages {
                 declaring.entry((*pkg).to_string()).or_insert(module_unit);
             }
@@ -2171,7 +2169,7 @@ impl Interpreter {
         // this code, and the packages a module declares are not derivable
         // from its name -- `Acme/Cow.rakumod` declares `unit module Cow;`.
         // See `Interpreter::module_granted_packages`.
-        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.module_granted_packages)
+        crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_visibility.module_granted_packages)
             .entry(module.to_string())
             .or_default()
             .extend(grant);
@@ -2289,7 +2287,7 @@ impl Interpreter {
             let mut owners: Vec<String> = new_types.clone();
             if let Some(dist) = &module_dist {
                 for name in &owners {
-                    crate::runtime::cow_table_mut(&mut self.module.world.package_distributions)
+                    crate::runtime::cow_table_mut(&mut self.module.world.write_guard().package_distributions)
                         .entry(name.clone())
                         .or_insert_with(|| dist.clone());
                 }
@@ -2307,7 +2305,7 @@ impl Interpreter {
                                 .map(|(k, v)| (k.clone(), v.clone())),
                         );
                 }
-                crate::runtime::cow_table_mut(&mut self.module.world.module_scope_lexicals)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_scope_lexicals)
                     .entry(owner.clone())
                     .or_default()
                     .extend(

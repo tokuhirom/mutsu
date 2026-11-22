@@ -202,8 +202,7 @@ impl Interpreter {
             // leaked MAINs.
             self.promote_exported_main_to_global();
             let main_exported = self
-                .module
-                .world.exported_subs
+                .module.world.read().exported_subs
                 .values()
                 .any(|m| m.contains_key("MAIN"));
             Self::remove_leaked_main_routines(
@@ -342,8 +341,7 @@ impl Interpreter {
     /// invisible to dispatch (and dropped as a leak).
     pub(crate) fn promote_exported_main_to_global(&mut self) {
         let pkgs_with_main: Vec<String> = self
-            .module
-            .world.exported_subs
+            .module.world.read().exported_subs
             .iter()
             .filter(|(p, m)| {
                 Symbol::intern(p) != crate::symbol::wk::global_package() && m.contains_key("MAIN")
@@ -450,7 +448,7 @@ impl Interpreter {
                     // its `unit module` declaration; a later nested load must
                     // still resolve that dependency's helpers while its own
                     // body runs.
-                    && !self.module.world.module_registered_functions.contains(k)
+                    && !self.module.world.read().module_registered_functions.contains(k)
             })
             .copied()
             .collect();
@@ -469,8 +467,7 @@ impl Interpreter {
                     !name.is_empty()
                         && Self::is_toplevel_global_routine_key(&format!("GLOBAL::{name}"))
                         && !self
-                            .module
-                            .world.module_registered_functions
+                            .module.world.read().module_registered_functions
                             .contains(&Symbol::intern(&format!("GLOBAL::{name}")))
                 })
             })
@@ -770,8 +767,7 @@ impl Interpreter {
     /// not from an alias in the env.
     // Cost: O(|name|) plus the export-value lookup's few table probes.
     fn required_export_value(&self, module: &str, name: &str) -> Option<Value> {
-        self.module
-            .world.exported_vars
+        self.module.world.read().exported_vars
             .get(module)
             .is_some_and(|vars| vars.contains_key(name))
             .then(|| self.exported_var_value(module, name))
@@ -913,7 +909,7 @@ impl Interpreter {
             }
             self.require_load_from_file(&file, module_name.as_deref())?;
             if let Some(module) = module_name.as_ref() {
-                crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules)
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().loaded_modules)
                     .insert(module.clone());
             }
         } else if let Some(module) = module_name.as_ref() {
@@ -924,9 +920,9 @@ impl Interpreter {
             // has no `Module::`-prefixed routine, yet it is plainly still
             // loaded while its package is known; judging by routines alone
             // re-parsed and re-ran it on every `require` (~14 ms each, #17228).
-            if self.module.world.loaded_modules.contains(module) && !self.module_still_registered(module)
+            if self.module.world.read().loaded_modules.contains(module) && !self.module_still_registered(module)
             {
-                crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules).remove(module);
+                crate::runtime::cow_table_mut(&mut self.module.world.write_guard().loaded_modules).remove(module);
             }
             let saved = std::mem::replace(&mut self.module.require_propagates_missing_module, true);
             // `require` loads the module without importing its exports: only

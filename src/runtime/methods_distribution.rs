@@ -60,12 +60,12 @@ impl Interpreter {
         if let Some(ValueView::Array(syms, _)) = symbols.as_ref().map(Value::view) {
             for sym in syms.iter() {
                 let name = sym.to_string_value();
-                self.module.world.cur_repo.pending_global_symbols.remove(&name);
+                self.module.world.write_guard().cur_repo.pending_global_symbols.remove(&name);
                 if let Some((_, short)) =
                     crate::qualified::split_qualified(crate::qualified::known_symbol(&name))
                         .map(|(head, tail)| (head.as_str(), tail.as_str()))
                 {
-                    self.module.world.cur_repo.pending_global_symbols.remove(short);
+                    self.module.world.write_guard().cur_repo.pending_global_symbols.remove(short);
                 }
             }
         }
@@ -154,8 +154,7 @@ impl Interpreter {
     /// repository loaded.
     pub(crate) fn cur_inst_loaded(&self, prefix: &str) -> Value {
         let loaded = self
-            .module
-            .world.cur_repo
+            .module.world.read().cur_repo
             .loaded
             .get(prefix)
             .cloned()

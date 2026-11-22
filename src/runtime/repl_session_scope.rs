@@ -63,15 +63,14 @@ impl Interpreter {
     // copy-on-write insert the first time a name is recorded.
     pub(crate) fn note_main_unit_type(&mut self, name: Symbol) {
         if self
-            .module
-            .world.module_visibility
+            .module.world.read().module_visibility
             .main_declared_types
             .contains(&name)
             || !self.is_main_lineage(self.executing_unit_sym())
         {
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.main_declared_types)
+        crate::runtime::cow_table_mut(&mut self.module.world.write_guard().module_visibility.main_declared_types)
             .insert(name);
     }
 
@@ -103,8 +102,7 @@ impl Interpreter {
     pub(crate) fn main_type_hidden_in_unit(&self, unit: Symbol, name: Symbol) -> bool {
         !self.repl_compiler.session_units.is_empty()
             && self
-                .module
-                .world.module_visibility
+                .module.world.read().module_visibility
                 .main_declared_types
                 .contains(&name)
             && self.unit_in_repl_session(unit)
@@ -142,8 +140,7 @@ impl Interpreter {
             return None;
         }
         Some(
-            self.module
-                .world.module_visibility
+            self.module.world.read().module_visibility
                 .main_declared_types
                 .iter()
                 .map(|name| name.as_str().to_string())
