@@ -425,8 +425,9 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     index,
                     is_positional,
                     spelling,
-                } if is_bindable_index_target(target.as_ref())
-                    && !is_slice_or_whatever_index(index.as_ref()) =>
+                } if (is_bindable_index_target(target.as_ref())
+                    && !is_slice_or_whatever_index(index.as_ref()))
+                    || is_chained_slice_bind_target(target.as_ref(), index.as_ref()) =>
                 {
                     // Indexed bind RHSs are values too: preserve a compound
                     // `*` expression as WhateverCode instead of evaluating it
@@ -557,6 +558,42 @@ fn is_bindable_index_target(mut target: &Expr) -> bool {
             | Expr::PseudoStash(_)
             | Expr::MethodCall { .. }
     )
+}
+
+/// Whether `target[index] := v` is a chained subscript with a comma-list slice
+/// at some level (`@s[0][0,1] := ...`, `@s[0,1][0] := ...`) on a bindable
+/// root. It parses as an ordinary indexed bind, so the chained store binds
+/// each key or raises `X::Bind` in expression context as it does as a
+/// statement (#18535). A Whatever index stays with the statement handler.
+// Cost: O(d), d = chained subscripts.
+fn is_chained_slice_bind_target(target: &Expr, index: &Expr) -> bool {
+    let is_slice = |index: &Expr| matches!(index, Expr::ArrayLiteral(_));
+    let is_whatever = |index: &Expr| is_slice_or_whatever_index(index) && !is_slice(index);
+    if is_whatever(index) {
+        return false;
+    }
+    let mut found = is_slice(index);
+    let mut level = target;
+    let mut chained = false;
+    while let Expr::Index {
+        target: inner,
+        index,
+        ..
+    } = level
+    {
+        if is_whatever(index) {
+            return false;
+        }
+        chained = true;
+        found |= is_slice(index);
+        level = inner;
+    }
+    chained
+        && found
+        && matches!(
+            level,
+            Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Var(_) | Expr::PseudoStash(_)
+        )
 }
 
 /// Whether a subscript names several elements or a Whatever position: a

@@ -5605,6 +5605,44 @@ impl Interpreter {
             }
         }
 
+        // A `:=` with a slice in the chain (#18535): bind each key of a
+        // last-level slice into a container that takes it, else `X::Bind`.
+        if Self::is_bind_index_value(&raw_val_for_junction) {
+            let root = self.place_env_get_sym(place, var_sym).cloned();
+            match self.classify_chained_slice_bind(
+                root,
+                &indices_val,
+                &positional_flags,
+                &raw_val_for_junction,
+            )? {
+                super::vm_chained_slice_bind::ChainedSliceBind::NotASlice => {}
+                super::vm_chained_slice_bind::ChainedSliceBind::Refused => {
+                    return Err(RuntimeError::bind_lhs());
+                }
+                super::vm_chained_slice_bind::ChainedSliceBind::PerKey(pairs) => {
+                    for (key, bind) in pairs {
+                        // Stack (bottom→top): value, outermost, ..., innermost.
+                        self.stack.push(bind);
+                        self.stack.push(key);
+                        for j in (0..depth - 1).rev() {
+                            self.stack.push(indices_val[j].clone());
+                        }
+                        self.exec_index_assign_deep_nested_op(
+                            code,
+                            name_idx,
+                            depth as u32,
+                            positional_flags_idx,
+                            target_slot,
+                        )?;
+                        self.stack.pop();
+                    }
+                    let (value, _) = Self::unwrap_bind_index_value(raw_val_for_junction);
+                    self.stack.push(value);
+                    return Ok(());
+                }
+            }
+        }
+
         // The walk below keys every level by text, so a positional level's
         // enum value (`@a[B][9] := v`) or Bool must become the `Int` it names
         // first: `"B"` addressed no element and the store fell through to the

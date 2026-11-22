@@ -491,6 +491,7 @@ mod vm_typedecl_ops;
 mod vm_value_binding;
 mod vm_value_helpers;
 mod vm_var_assign_bind_path;
+mod vm_chained_slice_bind;
 mod vm_var_assign_coerce;
 mod vm_var_assign_computed_attr;
 mod vm_var_assign_elem_constraint;

@@ -616,6 +616,18 @@ impl RuntimeError {
         Self::typed("X::IO::Closed", attrs)
     }
 
+    /// X::Bind with no target: a `:=` whose left-hand side cannot be bound
+    /// at all (a slice in a chained subscript, #18535).
+    // Cost: O(1).
+    pub(crate) fn bind_lhs() -> Self {
+        let mut attrs = ValueMap::default();
+        attrs.insert(
+            "message".to_string(),
+            Value::str_from("Cannot use bind operator with this left-hand side"),
+        );
+        Self::typed("X::Bind", attrs)
+    }
+
     /// X::Bind - Cannot bind to a thing
     pub(crate) fn bind(target: &str) -> Self {
         let msg = format!("Cannot bind to {}", target);
