@@ -2206,7 +2206,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     if name == "supply"
         && let Ok((r2, whenever)) = crate::parser::stmt::control::whenever_stmt(r)
     {
-        return Ok((r2, supply_block(vec![whenever])));
+        return Ok((
+            r2,
+            Expr::spelled(supply_block(vec![whenever]), || Spelling::BareStatement),
+        ));
     }
 
     // `supply { ... }` expression: lower to `Supply.on-demand(-> $emitter { ... })`.
@@ -2233,7 +2236,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         {
             return Ok((r_after, supply_block(body.clone())));
         }
-        return Ok((r_after, supply_block(vec![stmt])));
+        return Ok((
+            r_after,
+            Expr::spelled(supply_block(vec![stmt]), || Spelling::BareStatement),
+        ));
     }
 
     // set/bag/mix followed immediately by < (no whitespace) is a parse error
