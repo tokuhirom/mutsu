@@ -255,12 +255,12 @@ impl Interpreter {
             | OpCode::DeleteIndexNamed(..)
             | OpCode::HyperSlice(..)
             | OpCode::Index { .. }
-            | OpCode::IndexUpvalue { .. }
             | OpCode::IndexArgRef(..)
             | OpCode::IndexAutovivifyLazy { .. }
             | OpCode::IndexAutovivifyLazyTerminal { .. }
             | OpCode::IndexInvocantRef { .. }
             | OpCode::IndexTailElem { .. }
+            | OpCode::IndexUpvalue { .. }
             | OpCode::IndexVarRef { .. }
             | OpCode::Last(..)
             | OpCode::LastValue
