@@ -2504,6 +2504,17 @@ impl Compiler {
     /// fall through the slow resolution ladder instead of the cached
     /// compiled-function fast path
     /// (`news/2026-08/nested-sub-in-block-otf-recompile-fixed.md`).
+    /// The package `$?PACKAGE` names in the code being compiled, as a
+    /// symbol for [`CompiledCode::package`](crate::opcode::CompiledCode).
+    // Cost: O(|name|), one intern.
+    pub(crate) fn compile_time_package_sym(&self) -> crate::symbol::Symbol {
+        crate::symbol::Symbol::intern(
+            self.enclosing_package
+                .as_deref()
+                .unwrap_or(&self.current_package),
+        )
+    }
+
     pub(crate) fn runtime_current_package(&self) -> &str {
         if self.current_package.contains("::&") {
             self.enclosing_package

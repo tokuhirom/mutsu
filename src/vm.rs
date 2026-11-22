@@ -246,6 +246,7 @@ mod vm_backtrace_lazy;
 pub(crate) mod vm_bareword_store;
 mod vm_check_read_only;
 pub(crate) mod vm_class_body_static_types;
+mod vm_client_code;
 mod vm_closure_build;
 pub(crate) mod vm_compunit_lexicals;
 mod vm_container_store;

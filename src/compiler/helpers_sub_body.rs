@@ -716,6 +716,7 @@ impl Compiler {
             &mut sub_compiler.code,
             std::mem::take(&mut sub_compiler.compiled_functions),
         );
+        sub_compiler.code.package = Some(sub_compiler.compile_time_package_sym());
         let mut cf = CompiledFunction {
             code: std::sync::Arc::new(sub_compiler.code),
             source_file: None,
@@ -2172,6 +2173,7 @@ impl Compiler {
         }
         // See the twin call in `compile_sub_body` (#10827).
         self.absorb_outer_captures(&sub_compiler.code);
+        sub_compiler.code.package = Some(sub_compiler.compile_time_package_sym());
         sub_compiler.code
     }
 }
