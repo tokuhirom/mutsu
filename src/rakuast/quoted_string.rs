@@ -89,20 +89,8 @@ fn view_processed(
 pub(super) fn word_quote_content(
     node: &RakuAstNode,
 ) -> Result<Option<(bool, bool, String)>, RuntimeError> {
-    if !node.fields.iter().any(|f| f.name == Some("processors")) {
+    let Some((quotewords, val)) = words_processors(node)? else {
         return Ok(None);
-    }
-    let processors = list_field(node, "processors")?;
-    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
-    if processors.is_empty() {
-        return Ok(None);
-    }
-    let (quotewords, val) = match names.as_slice() {
-        ["words", "val"] => (false, true),
-        ["words"] => (false, false),
-        ["quotewords", "val"] => (true, true),
-        ["quotewords"] => (true, false),
-        _ => return Err(unsupported(node)),
     };
     let [segment] = list_field(node, "segments")? else {
         return Err(unsupported(node));
@@ -117,6 +105,27 @@ pub(super) fn word_quote_content(
         ValueView::Str(text) => Ok(Some((quotewords, val, text.to_string()))),
         _ => Err(unsupported(node)),
     }
+}
+
+/// `(quotewords, val)` for a word quote's processors; `None` for a string
+/// without processors.
+// Cost: O(p), p = processors of the node.
+fn words_processors(node: &RakuAstNode) -> Result<Option<(bool, bool)>, RuntimeError> {
+    if !node.fields.iter().any(|f| f.name == Some("processors")) {
+        return Ok(None);
+    }
+    let processors = list_field(node, "processors")?;
+    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
+    if processors.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(match names.as_slice() {
+        ["words", "val"] => (false, true),
+        ["words"] => (false, false),
+        ["quotewords", "val"] => (true, true),
+        ["quotewords"] => (true, false),
+        _ => return Err(unsupported(node)),
+    }))
 }
 
 /// `Some(val)` for a `quotewords` string whose segments are not one literal
@@ -194,6 +203,17 @@ fn lower_contents(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runtime
     let segments = list_field(node, "segments")?;
     if let Some(val) = interpolating_words(node, segments)? {
         return super::word_quote::lower(names, node, val);
+    }
+    // `<a <b c> d>`: literal runs around nested quotes are the text they
+    // spell (#18457).
+    if let Ok(Some((false, val))) = words_processors(node)
+        && let Some(content) = super::nested_words::joined(segments)
+    {
+        return Ok(if val {
+            crate::parser::angle_words_expr(&content)
+        } else {
+            super::word_list::lower_word_quote(false, val, &content)
+        });
     }
     // `qqw/a $x/`: the interpolated string, split into words at run time.
     if node.fields.iter().any(|f| f.name == Some("processors"))
