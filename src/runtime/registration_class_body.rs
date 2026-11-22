@@ -379,7 +379,7 @@ impl Interpreter {
                     .retain(|(class, _, _)| class != cx.name);
             }
             if !cx.per_entry {
-                if !cx.is_hoisted_shell.is_shell() {
+                if !cx.is_hoisted_shell.is_shell() && !self.class_how_compose_hook(cx.name) {
                     self.drive_role_how_specialize(cx.name)?;
                 }
                 self.queue_role_attribute_composes(&mut cx, own_attribute_names);
