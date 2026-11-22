@@ -335,10 +335,12 @@ impl Interpreter {
         )
     }
 
-    /// The lexical `&name` that shadows a registered routine at this call site.
+    /// The lexical `&name` that shadows a registered routine at this call site,
+    /// or the routine a program bound into the setting's stash under `name`.
     /// The sink decision must inspect this same callable after dispatch.
-    // Cost: O(1) for a name absent from the routine index; otherwise bounded
-    // registry and lexical-binding probes.
+    // Cost: O(1) for a name absent from the routine index and from the
+    // CORE-stash binds (one set probe); otherwise bounded registry and
+    // lexical-binding probes.
     pub(crate) fn lexical_amp_override_for_call(
         &mut self,
         code: &CompiledCode,
@@ -346,6 +348,19 @@ impl Interpreter {
     ) -> Option<Value> {
         let name = Self::const_str(code, name_idx);
         let name_sym = code.const_sym(name_idx);
+        // A routine bound into the setting's stash (`&CORE::none := &f`) is
+        // what a call of the name reaches when the program declares no
+        // routine of its own by that name, as with rakudo's one shared CORE
+        // stash (#18779).
+        if self.our_table().core_routine_bound(name_sym)
+            && !code.routine_shadowed_calls.contains(&name_sym)
+            && !self.fn_base_name_registered_sym(name, name_sym)
+            && !self.has_proto_cached_sym(name, name_sym)
+            && !self.has_multi_candidates_cached_sym(name_sym)
+            && let Some(bound) = self.core_stash_routine(name)
+        {
+            return Some(bound);
+        }
         // Only look for an override when there is a package routine to shadow.
         // A nearer `sub name` wins over the outer `&name` (#13855).
         if !self.fn_base_name_registered_sym(name, name_sym)
