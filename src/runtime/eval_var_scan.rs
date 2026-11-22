@@ -24,6 +24,7 @@ use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
 
 mod forward;
+mod suggest;
 mod lowered_decls;
 mod refs;
 use refs::{VarRefs, later_param_in_where};
@@ -208,8 +209,7 @@ impl UndeclaredVars<'_> {
         self.caller_code().is_some_and(|code| code.eval_scope_names.contains(name))
     }
 
-    /// The compiled code of the frame calling `EVAL`, whose scope the EVAL'd
-    /// code sees.
+    /// The compiled code of the frame calling `EVAL`.
     // Cost: O(1).
     fn caller_code(&self) -> Option<&crate::opcode::CompiledCode> {
         // The compunit mode runs at CHECK time, outside any `EVAL` call:
@@ -236,23 +236,6 @@ impl UndeclaredVars<'_> {
         self.scopes.push(HashSet::new());
         f(self);
         self.scopes.pop();
-    }
-
-    /// The names a suggestion may offer: the EVAL'd code's own declarations
-    /// and the lexicals of the scope calling `EVAL`, which the code sees too
-    /// (#18747). Internal names (a leading `_`, `__mutsu_*`) are not offered.
-    // Cost: O(d + c), d = the code's declarations, c = the caller's names.
-    fn all_declared(&self) -> HashSet<String> {
-        let mut names: HashSet<String> = self.scopes.iter().flatten().cloned().collect();
-        if let Some(code) = self.caller_code() {
-            names.extend(
-                code.eval_scope_names
-                    .iter()
-                    .filter(|n| !n.trim_start_matches(['$', '@', '%', '&']).starts_with('_'))
-                    .cloned(),
-            );
-        }
-        names
     }
 
     fn check_var(&mut self, expr: &Expr) {

@@ -5,6 +5,8 @@
 offered only names declared inside the EVAL'd code, so the caller's `$ab` was
 never suggested (#18747).
 
-The candidates for the suggestion now include the lexicals of the scope that
-calls `EVAL` (the calling chunk's `eval_scope_names`), which the EVAL'd code
-can see. Internal names are left out.
+The candidates for the suggestion now include the variables the EVAL'd code
+can see. These are the visible environment, plus the static scopes around the
+`EVAL` call unless `context =>` moved the code to another frame's scope, which
+is what `Test`'s string `throws-like` does. Twigil, package-qualified and
+internal names are left out.
