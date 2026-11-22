@@ -7,6 +7,7 @@
 mod bind_arity;
 mod binding_result;
 mod named;
+mod predeclare;
 mod staged_paths;
 
 use crate::ast::parsed::ParsedStmt;
@@ -203,48 +204,10 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // in binding mode is a read-only COPY in raku too (`my ($a,$b) := ($x,$y);
     // $x = 7` leaves `$a` at its original value).
     let mut stmts = Vec::new();
-    // In a signature declaration the new variables are already in scope on the
-    // RHS and hold their defaults (`my $x = 5; { my ($x, $y) = $x, 2 }` reads
-    // the new `$x`, i.e. `(Any)`), so declare the plain targets before the RHS
-    // runs. The real declarations below then assign into them.
-    if !is_binding && !is_state && !is_our {
-        for dvar in vars {
-            if dvar.literal_value.is_some()
-                || dvar.sigilless
-                || dvar.per_var_type_constraint.is_some()
-                || type_constraint.is_some()
-                || dvar.where_constraint.is_some()
-                || dvar.is_slurpy
-                || dvar.name.starts_with('&')
-            {
-                continue;
-            }
-            let expr = if dvar.name.starts_with('@') {
-                Expr::ArrayLiteral(Vec::new())
-            } else if dvar.name.starts_with('%') {
-                Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
-            } else {
-                Expr::Literal(Value::NIL)
-            };
-            stmts.push(Stmt::VarDecl {
-                marks: Default::default(),
-                anonymous: false,
-                name: dvar.name.clone(),
-                expr,
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                has_initializer: false,
-                constant: None,
-                bind: None,
-                where_constraint: None,
-            });
-        }
-    }
+    // The plain targets are declared before the RHS runs, which already sees
+    // them (`predeclare`); their element step below assigns into them.
+    let predeclared = predeclare::predeclared_names(decl, init);
+    stmts.extend(predeclare::predeclarations(&predeclared));
     if is_binding {
         stmts.push(Stmt::SyntheticBlock(vec![
             crate::ast::var_marks::with_bound_mark(tmp_decl),
@@ -482,7 +445,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         let decl = if binds_element {
             Stmt::SyntheticBlock(vec![crate::ast::var_marks::with_bound_mark(decl)])
         } else {
-            decl
+            predeclare::assign_into_predeclared(decl, &predeclared)
         };
         stmts.push(decl);
         // `is copy` / `is readonly` fall through to the read-only copy: rakudo
