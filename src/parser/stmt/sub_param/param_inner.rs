@@ -1626,10 +1626,13 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     Ok((rest, p))
 }
 
+/// A parameter's trait names and the arguments of the traits that take one.
+type ParamTraits = (Vec<String>, Vec<(String, crate::ast::Expr)>);
+
 /// The `is <trait>` list after a capture parameter (`|c is raw`, `| is raw`),
 /// with the arguments of the traits that take one.
 // Cost: O(t), t = traits.
-fn capture_traits(input: &str) -> PResult<'_, (Vec<String>, Vec<(String, crate::ast::Expr)>)> {
+fn capture_traits(input: &str) -> PResult<'_, ParamTraits> {
     let mut traits = Vec::new();
     let mut trait_args = Vec::new();
     let (mut r, _) = ws(input)?;
