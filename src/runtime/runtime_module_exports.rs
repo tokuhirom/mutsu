@@ -1073,6 +1073,7 @@ impl Interpreter {
                 .extend(tags.iter().cloned());
         }
 
+        let mut monkey_see_no_eval_def: Option<Arc<FunctionDef>> = None;
         for (name, symbol_tags) in merged_subs {
             // MANDATORY exports are always imported regardless of requested tags
             let is_mandatory = symbol_tags.contains("MANDATORY");
@@ -1292,6 +1293,11 @@ impl Interpreter {
             if bodied_proto && let Some(proto) = &proto_def {
                 function_entries.push((Symbol::intern(&target_single), Arc::clone(proto)));
             }
+            if Self::is_monkey_see_no_eval_routine(&name)
+                && let [(_, def)] = function_entries.as_slice()
+            {
+                monkey_see_no_eval_def = Some(Arc::clone(def));
+            }
             // A block-scoped `use` binds a plain routine in the block's lexical
             // import set instead of aliasing it into the registry (ADR-8751
             // stage 1): code written outside the block, called from inside it,
@@ -1501,6 +1507,9 @@ impl Interpreter {
                 self.import_env_insert(&bare_key, val.clone());
                 self.import_env_insert(&qualified_key, val);
             }
+        }
+        if let Some(def) = monkey_see_no_eval_def {
+            self.import_monkey_see_no_eval(&def)?;
         }
         for (name, symbol_tags) in vars {
             let is_mandatory = symbol_tags.contains("MANDATORY");

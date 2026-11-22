@@ -6,6 +6,13 @@
 //! `use` records it in the env of the scope it runs in, which every nested
 //! block and closure of that scope inherits and a `no MONKEY-SEE-NO-EVAL`
 //! inner block overrides.
+//!
+//! In rakudo the pragma *is* a lexical symbol: the regex check calls the
+//! `&MONKEY-SEE-NO-EVAL` visible where the regex is compiled, once, and goes by
+//! its truthiness. That is how `use Test` lifts the check (rakudo's `Test`
+//! exports `sub MONKEY-SEE-NO-EVAL() is export { 1 }`). An imported
+//! `&MONKEY-SEE-NO-EVAL` therefore sets the mark from its return value, called
+//! once when the import binds it.
 
 use super::*;
 use crate::meta_ns::MetaNs;
@@ -29,6 +36,28 @@ impl Interpreter {
             MetaNs::Pragma.key_for_str(PRAGMA),
             if on { Value::TRUE } else { Value::FALSE },
         );
+    }
+
+    /// Whether an imported routine named `name` is the pragma's symbol.
+    // Cost: O(1).
+    pub(crate) fn is_monkey_see_no_eval_routine(name: &str) -> bool {
+        name == PRAGMA
+    }
+
+    /// An import just bound `&MONKEY-SEE-NO-EVAL` (its routine `def`) into the
+    /// importing scope: set the pragma from the routine's answer, as rakudo's
+    /// compile-time call does. The routine is called by its definition, as a
+    /// block-scoped import binds it (ADR-8751), so it answers whether or not
+    /// the import aliased it into the registry.
+    // Cost: O(1) plus one call of the routine.
+    pub(crate) fn import_monkey_see_no_eval(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+    ) -> Result<(), RuntimeError> {
+        let routine = self.sub_value_from_function_def(def.clone());
+        let on = self.call_sub_value(routine, Vec::new())?.truthy();
+        self.set_monkey_see_no_eval(on);
+        Ok(())
     }
 
     /// Whether the scope running now has `MONKEY-SEE-NO-EVAL` in effect: the
