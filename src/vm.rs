@@ -290,6 +290,7 @@ pub(crate) mod vm_hyper_quanthash;
 mod vm_hyper_race_parallel;
 mod vm_hyper_result;
 mod vm_index_concat_append;
+mod vm_index_upvalue;
 mod vm_infix_fallback;
 mod vm_infix_fallback_core;
 mod vm_infix_shape;

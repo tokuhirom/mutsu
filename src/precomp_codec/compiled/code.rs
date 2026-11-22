@@ -23,6 +23,8 @@ impl Encode for CompiledCode {
             constants,
             const_index,
             handler_snapshot: _,
+            // A compile-time scratch list, consumed by `compute_upvalues`.
+            upvalue_index_candidates: _,
             stmt_pool,
             sub_decl_plans,
             class_decl_plans,
@@ -444,6 +446,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             routine_shadowed_calls: Decode::decode(decoder)?,
             lexsub_refs: Decode::decode(decoder)?,
             code_var_upvalue_reads: Decode::decode(decoder)?,
+            upvalue_index_candidates: Vec::new(),
             lexical_subtree: Decode::decode(decoder)?,
             nested_routine_free_reads: Decode::decode(decoder)?,
             bounded_lazy_decl_plans: Decode::decode(decoder)?,

@@ -46,6 +46,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LockResult, MutexGuard, PoisonError};
 
+use super::cell_snapshot;
 use super::container_lock::multi_mutator_threads_live;
 use super::nanbox::payload_free_word;
 use super::{ContainerCell, Value};
@@ -106,7 +107,8 @@ impl CellGuard<'_> {
         // Only the first escape writes the line: an element-store loop
         // escapes the same cell on every iteration.
         if self.published.load(Ordering::Relaxed) != PUB_ESCAPED {
-            self.published.store(PUB_ESCAPED, Ordering::Release);
+            let unlinked = self.published.swap(PUB_ESCAPED, Ordering::AcqRel);
+            cell_snapshot::retire_word(unlinked);
         }
         std::ptr::from_mut::<Value>(&mut self.guard)
     }
@@ -114,6 +116,10 @@ impl CellGuard<'_> {
 
 /// Bring `published` in line with `value`, the slot's content. The caller
 /// holds the slot's mutex.
+///
+/// A payload-free value is published as itself. A snapshot of the array the
+/// slot holds (ADR-18637, `cell_snapshot`) stays while the slot still holds
+/// that node; any other change unlinks it and retires it through the epoch.
 // Cost: O(1).
 #[inline]
 fn sync_published(published: &AtomicU64, value: &Value) {
@@ -124,13 +130,16 @@ fn sync_published(published: &AtomicU64, value: &Value) {
     let bits = value.nanbox_bits();
     let next = if payload_free_word(bits).is_some() {
         bits
+    } else if cell_snapshot::snapshot_matches_slot(current, value) {
+        current
     } else {
         PUB_EMPTY
     };
     // Skipping an unchanged word keeps a reader's slow path (and a cell that
     // holds a container, which is never published) from writing the line.
     if next != current {
-        published.store(next, Ordering::Release);
+        let unlinked = published.swap(next, Ordering::AcqRel);
+        cell_snapshot::retire_word(unlinked);
     }
 }
 
@@ -156,7 +165,7 @@ impl ContainerCell {
     pub fn get_mut(&mut self) -> LockResult<&mut Value> {
         let published = self.published.get_mut();
         if *published != PUB_ESCAPED {
-            *published = PUB_EMPTY;
+            cell_snapshot::free_word_now(std::mem::replace(published, PUB_EMPTY));
         }
         self.slot.get_mut()
     }
@@ -169,6 +178,15 @@ impl ContainerCell {
     #[inline]
     pub(crate) fn published_value(&self) -> Option<Value> {
         payload_free_word(self.published.load(Ordering::Acquire)).map(Value)
+    }
+}
+
+impl Drop for ContainerCell {
+    // Cost: O(n) when a snapshot of n elements is published, else O(1).
+    fn drop(&mut self) {
+        // `&mut self`: no reader holds the cell, so a published snapshot can
+        // be freed at once rather than through the epoch.
+        cell_snapshot::free_word_now(*self.published.get_mut());
     }
 }
 

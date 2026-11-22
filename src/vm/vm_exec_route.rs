@@ -255,6 +255,7 @@ impl Interpreter {
             | OpCode::DeleteIndexNamed(..)
             | OpCode::HyperSlice(..)
             | OpCode::Index { .. }
+            | OpCode::IndexUpvalue { .. }
             | OpCode::IndexArgRef(..)
             | OpCode::IndexAutovivifyLazy { .. }
             | OpCode::IndexAutovivifyLazyTerminal { .. }

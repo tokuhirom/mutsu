@@ -95,6 +95,15 @@ pub(crate) trait Trace: Send + Sync {
     /// collections.
     fn drop_gc_edges(&mut self) {}
 
+    /// Called on the node every time a `&mut` to it is handed out for an
+    /// in-place write ([`gc_contents_mut`], [`Gc::make_mut`]'s in-place path),
+    /// before the write. A node that a lock-free reader validates against a
+    /// version bumps it here (ADR-18637 S1, `ArrayData`); the default does
+    /// nothing.
+    // Cost: O(1).
+    #[inline]
+    fn note_mutable_access(&self) {}
+
     /// Run this node's *value-level* finalizer (Raku `DESTROY` queueing), once
     /// per node death. Decouples language-level finalization from Rust `Drop`:
     /// with GC on, a node's memory drop can be deferred onto the collector
@@ -630,6 +639,7 @@ impl<T: Trace + Clone + 'static> Gc<T> {
             // Fast path: reusing the existing node IS the `strong == 1 ⟹ unique`
             // claim — machine-check the backing `Arc` agrees (Step 4).
             self.verify_unique_for_aliased_mut("Gc::make_mut");
+            self.inner.val().note_mutable_access();
         }
         // Sole live handle. SAFETY: `&mut` from the payload `UnsafeCell` (valid
         // provenance, ADR-0013); see `Gc::get_mut`.
@@ -822,6 +832,8 @@ impl<T: Trace + Clone + 'static> ContainerMakeMut for Gc<T> {
 /// collect safepoint, never concurrently with a live mutation.
 #[allow(clippy::mut_from_ref)]
 pub(crate) unsafe fn gc_contents_mut<T: Trace + 'static>(gc: &Gc<T>) -> &mut T {
+    // Announce the write while only a shared borrow exists (ADR-18637 S1).
+    gc.note_mutable_access();
     // SAFETY: `Gc::as_ptr` projects through the payload `UnsafeCell` (valid
     // interior-mutable provenance); the aliasing contract is delegated to the
     // caller per the docs above.

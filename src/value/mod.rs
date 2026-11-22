@@ -598,6 +598,7 @@ pub(crate) mod ancestor_stack;
 pub(crate) mod array_coerce;
 mod array_data_ops;
 mod array_holes;
+mod array_plain_read;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
@@ -606,8 +607,9 @@ mod bareword_site;
 pub(crate) mod buf_class_names;
 pub(crate) mod call_args;
 pub(crate) mod capture_text;
-pub(crate) mod compare;
 pub(crate) mod cell_publish;
+pub(crate) mod cell_snapshot;
+pub(crate) mod compare;
 pub(crate) mod container_lock;
 pub(crate) mod container_read;
 mod dispatch_shape;
@@ -1080,6 +1082,9 @@ pub struct ContainerCell {
     /// A lock-free copy of `slot` for cross-thread readers, when the value is
     /// a payload-free word (ADR-8069 slice 1, `cell_publish`).
     published: std::sync::atomic::AtomicU64,
+    /// When to publish a snapshot of the array this cell holds (ADR-18637 S3,
+    /// `cell_snapshot`).
+    snapshot_counters: cell_snapshot::SnapshotCounters,
     constraint: Mutex<Option<Box<CellConstraint>>>,
     /// A mutable QuantHash weight is lvalue-like but not an ordinary stored
     /// element: zero removes its key.  Views such as `.values` use this marker
@@ -1179,6 +1184,7 @@ impl ContainerCell {
         Self {
             slot: Mutex::new(value),
             published: std::sync::atomic::AtomicU64::new(cell_publish::PUB_EMPTY),
+            snapshot_counters: cell_snapshot::SnapshotCounters::default(),
             constraint: Mutex::new(None),
             quanthash_weight: Mutex::new(None),
             readonly: std::sync::atomic::AtomicU8::new(0),
@@ -1307,7 +1313,6 @@ impl ContainerCell {
     pub(crate) fn readonly_kind(&self) -> Option<crate::ast::ReadonlyKind> {
         decode_readonly_kind(self.readonly.load(std::sync::atomic::Ordering::Relaxed))
     }
-
 
     /// Record the container's `is default(...)` value (see `default`).
     // Cost: O(1).
@@ -2652,6 +2657,12 @@ pub struct ArrayData {
     /// promotion can leave cells in an unrelated array that must keep plain
     /// replace semantics.
     pub bound_slice: bool,
+    /// The mutation version a published lock-free snapshot of this node is
+    /// validated against (ADR-18637 S1). Unset until a cell first publishes
+    /// a snapshot of this node; from then on every mutable access to the node
+    /// bumps it (`Trace::note_mutable_access`). A copy of the node is a new
+    /// container and starts unset.
+    pub(crate) snapshot_version: std::sync::OnceLock<std::sync::Arc<std::sync::atomic::AtomicU64>>,
 }
 
 /// See [`ArrayData::nqp_elem`]. MoarVM keeps the same distinction as the
