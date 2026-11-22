@@ -44,5 +44,5 @@ impl UndeclaredVars<'_> {
 // Cost: O(|name|).
 fn is_offerable(name: &str) -> bool {
     let bare = name.trim_start_matches(['$', '@', '%', '&']);
-    bare.starts_with(|c: char| c.is_alphabetic()) && !bare.contains("::")
+    bare.starts_with(|c: char| c.is_alphabetic()) && !crate::qualified::is_qualified_str(bare)
 }
