@@ -993,57 +993,10 @@ impl Interpreter {
             )));
         }
 
-        // Validate that all requested tags actually exist in the module's exports.
-        if !tags.is_empty() && !import_all {
-            // Collect all known tags from the module
-            let mut known_tags: HashSet<String> = HashSet::new();
-            known_tags.insert("DEFAULT".to_string());
-            known_tags.insert("ALL".to_string());
-            known_tags.insert("MANDATORY".to_string());
-            for symbol_tags in subs.values() {
-                for tag in symbol_tags {
-                    known_tags.insert(tag.clone());
-                }
-            }
-            for symbol_tags in vars.values() {
-                for tag in symbol_tags {
-                    known_tags.insert(tag.clone());
-                }
-            }
-            for symbol_tags in unit_global_subs.values() {
-                for tag in symbol_tags {
-                    known_tags.insert(tag.clone());
-                }
-            }
-            for symbol_tags in owned_subs.values() {
-                for tag in symbol_tags {
-                    known_tags.insert(tag.clone());
-                }
-            }
-            for tag in &requested {
-                if !known_tags.contains(tag) {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("source-package".to_string(), Value::str(module.to_string()));
-                    attrs.insert("tag".to_string(), Value::str(tag.clone()));
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Error while importing from '{}': no such tag '{}' declared",
-                            module, tag
-                        )),
-                    );
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Import::NoSuchTag"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(format!(
-                        "Error while importing from '{}': no such tag '{}' declared",
-                        module, tag
-                    ));
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
-                }
-            }
+        // Every requested tag must be one the module declares, `:ALL` beside
+        // it or not (`import_tags`).
+        if let Some(tag) = self.unknown_import_tag(module, tags) {
+            return Err(Self::no_such_import_tag(module, &tag));
         }
 
         // Ordinary imports use the runtime package selected by the loading

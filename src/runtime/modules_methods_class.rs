@@ -74,6 +74,7 @@ mod repl_session_scope;
 pub(crate) mod compile_time_begin;
 pub(crate) mod compile_time_slang;
 pub(crate) mod compile_time_use;
+mod import_tags;
 mod module_preload_failure;
 mod pragma_monkey_eval;
 mod pragma_strict;

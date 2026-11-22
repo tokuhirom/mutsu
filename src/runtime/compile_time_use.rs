@@ -136,6 +136,15 @@ impl CompileTimeLoader for Interpreter {
         drop(suspended);
         self.module.lib_paths = saved_lib_paths;
         match result {
+            // An import tag the module does not declare is a compile-time
+            // error, as on rakudo; a module with a `sub EXPORT` hands its
+            // tags to the hook, which the in-position import runs.
+            Ok(()) if !self.module.module_export_defs.contains_key(bare) => {
+                match self.unknown_import_tag(bare, request.tags) {
+                    Some(tag) => LoadOutcome::Failed(Self::no_such_import_tag(bare, &tag)),
+                    None => LoadOutcome::Loaded,
+                }
+            }
             Ok(()) => LoadOutcome::Loaded,
             // A module the chain cannot find now may still be found when the
             // unit runs (a `use lib` the parser could not fold, a repository a
