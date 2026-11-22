@@ -292,7 +292,9 @@ impl Interpreter {
         let positive_window = args.first().is_some_and(|s| s.to_f64() > 0.0);
         let recipe = matches!(source.view(), ValueView::Instance { attributes, .. }
             if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY));
-        if (name == "stable" && positive_window) || (name == "migrate" && recipe) {
+        let live_throttle =
+            name == "throttle" && crate::runtime::supply_throttle_live::throttle_is_live_stage(args);
+        if (name == "stable" && positive_window) || (name == "migrate" && recipe) || live_throttle {
             return Some(Ok(Self::make_eager_stage_supply(source.clone(), name, args.to_vec())));
         }
         if !is_step_mode(name) {

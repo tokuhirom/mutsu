@@ -198,6 +198,7 @@ impl SupplyOp {
                 | SupplyOp::ScheduleOn
                 | SupplyOp::Stable
                 | SupplyOp::Migrate
+                | SupplyOp::Throttle
         )
     }
 }

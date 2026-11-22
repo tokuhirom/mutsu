@@ -1,4 +1,4 @@
-//! `stable` and `migrate` over a live source, one instance per tap
+//! `stable`, `throttle` and `migrate` over a live source, one instance per tap
 //! (ADR-18443, #18579).
 //!
 //! Both stages already have a live implementation that runs over a
@@ -61,6 +61,7 @@ impl Interpreter {
                 let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);
                 self.stable_live_supply(sid, seconds)
             }
+            "throttle" => self.throttle_live_supply(sid, &args),
             _ => self.native_supply(&attrs, &name, args)?,
         };
         // Close the instance's tap on the source, then finish the instance,
