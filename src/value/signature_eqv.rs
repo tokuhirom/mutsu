@@ -57,8 +57,8 @@ fn param_eqv(a: &SigParam, b: &SigParam) -> bool {
     if flags(a) != flags(b) {
         return false;
     }
-    let mut a_traits: Vec<&str> = a.traits.iter().map(String::as_str).collect();
-    let mut b_traits: Vec<&str> = b.traits.iter().map(String::as_str).collect();
+    let mut a_traits = traits(a);
+    let mut b_traits = traits(b);
     a_traits.sort_unstable();
     b_traits.sort_unstable();
     if a_traits != b_traits {
@@ -77,6 +77,18 @@ fn param_eqv(a: &SigParam, b: &SigParam) -> bool {
         (None, None) => a.where_constraint.is_none() && b.where_constraint.is_none(),
         _ => false,
     }
+}
+
+/// A parameter's traits, without the `is raw` a capture (`|c`) or sigilless
+/// (`\x`) parameter has anyway: Rakudo sets the same flag for both forms.
+// Cost: O(t), t = traits.
+fn traits(p: &SigParam) -> Vec<&str> {
+    let implied_raw = p.is_capture || p.sigilless;
+    p.traits
+        .iter()
+        .map(String::as_str)
+        .filter(|t| !(implied_raw && *t == "raw"))
+        .collect()
 }
 
 /// The flags Rakudo's `$!flags` carries for a parameter.

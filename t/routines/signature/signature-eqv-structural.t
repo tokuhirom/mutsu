@@ -3,7 +3,7 @@ use Test;
 # #18679: `Signature eqv Signature` is structural, as Rakudo's `infix:<eqv>`:
 # a positional parameter's name does not count, a named one's does.
 
-plan 20;
+plan 23;
 
 ok :(Int $x) eqv :(Int $y), 'positional names do not count';
 ok :($a, $b) eqv :($c, $d), 'two untyped positionals';
@@ -28,3 +28,11 @@ nok :(**@a) eqv :(*@b), 'a different slurpy kind';
 sub f(Int $a) {}
 sub g(Int $b) {}
 ok &f.signature eqv &g.signature, "routines' signatures";
+
+# A default renders as Rakudo's does, so the rendering rebuilds an equivalent
+# signature: a non-literal default is `= Code.new`.
+is :(@a = [2, 3], :@b = [2, 3]).raku, ':(@a = Code.new, :@b = Code.new)',
+    'a non-literal default renders as Code.new';
+is :($a = Int).raku, ':($a = Int)', 'a type-object default renders as its name';
+my $s = :(@a = [2], %h = {});
+ok $s.raku.EVAL eqv $s, '.raku.EVAL rebuilds an equivalent signature';
