@@ -140,6 +140,18 @@ impl Interpreter {
     /// one ambiguity ADR-0040 slice 3 left: a `LazyList` is the reified form of
     /// BOTH a real `@`-assigned Array (elements ARE containers) and a lazy
     /// `Seq` (elements are the values), and only the sigil tells them apart.
+    /// The value an element bound straight to a value holds: its slot is a
+    /// read-only `Immutable` cell ([`Value::bound_element`]) standing for "no
+    /// container". `None` for any other element.
+    // Cost: O(1).
+    pub(crate) fn bound_value_of_element(element: &Value) -> Option<Value> {
+        let ValueView::ContainerRef(cell) = element.view() else {
+            return None;
+        };
+        (cell.readonly_kind() == Some(crate::ast::ReadonlyKind::Immutable))
+            .then(|| cell.load().descalarize().clone())
+    }
+
     fn element_var_meta(
         &mut self,
         element: Value,
@@ -153,6 +165,16 @@ impl Interpreter {
         // exists and describes itself.
         if matches!(element.view(), ValueView::Proxy { .. }) {
             return Ok(Value::proxy_var_object(element, String::new()));
+        }
+        // An element bound to a value (`%h<a> := [1, 2]`, `@a[0] := 42`) has
+        // no container: rakudo's BIND-KEY/BIND-POS store the value itself, so
+        // `.VAR` is that value (`Array`, `Int`), not a Scalar. mutsu keeps it
+        // in a read-only `Immutable` cell only so that `=` is refused (#18566).
+        if let Some(value) = Self::bound_value_of_element(&element) {
+            if matches!(value.view(), ValueView::Proxy { .. }) {
+                return Ok(Value::proxy_var_object(value, String::new()));
+            }
+            return Ok(value);
         }
         if let Some(c) = container.as_ref() {
             // A producer Seq can be a flat stream whose value cells occur at

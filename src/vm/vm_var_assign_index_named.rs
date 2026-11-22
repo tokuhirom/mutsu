@@ -420,6 +420,7 @@ impl Interpreter {
         name_idx: u32,
         is_positional: bool,
         target_slot: Option<u32>,
+        element_share: bool,
     ) -> Result<(), RuntimeError> {
         let original_var_name = Self::const_str(code, name_idx).to_string();
         let original_var_sym = code.const_sym(name_idx);
@@ -1294,13 +1295,29 @@ impl Interpreter {
                         Some(ValueView::ContainerRef(_))
                     )
             });
+        // An `@`/`%` source (`%h<a> := @s`) binds the aggregate object itself,
+        // not the variable's container: the element reads and iterates as that
+        // Array/Hash, and a later `%h<a> = 4` dies instead of reassigning `@s`
+        // (#18566).
+        // An `=` share (`@aoa[0] = @row`, compiled as a bind with
+        // `element_share`) keeps the shared cell instead.
+        let aggregate_source = bind_mode
+            && !element_share
+            && matches!(bind_sources.as_slice(),
+                [Some(name)] if name.starts_with(['@', '%']) && !name.contains('\0'));
         let val = if bind_mode
             && !idx_is_slice
             && !matches!(idx.view(), ValueView::LazyList(_))
-            && (bind_sources.iter().all(|s| s.is_none()) || readonly_code_source_without_cell)
+            && (bind_sources.iter().all(|s| s.is_none())
+                || readonly_code_source_without_cell
+                || aggregate_source)
             && !matches!(val.view(), ValueView::HashEntryRef { .. })
         {
-            Value::bound_element(val)
+            Value::bound_element(if aggregate_source {
+                val.into_deref()
+            } else {
+                val
+            })
         } else {
             val
         };
@@ -5717,7 +5734,11 @@ impl Interpreter {
         // See the two-level op: a `Pair`'s value takes a whole-container STORE,
         // not an element store, so that one destination wants the raw rvalue.
         let val_unitemized = val.clone();
+        // A `:=` without a source cell binds the object itself: an `@`/`%`
+        // source's aggregate reads and iterates as that Array/Hash, not as an
+        // itemized `$[...]` (#18566). The leaf store makes it read-only.
         let val = if bind_cell.is_some()
+            || is_bind_value
             || matches!(
                 indices_val[0].view(),
                 ValueView::Junction { .. } | ValueView::Array(..)

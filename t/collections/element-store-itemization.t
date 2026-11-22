@@ -695,15 +695,15 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     is %d5.raku, '{:a(${:b("x")})}', 'slice 4: the deferred whole-hash render is unchanged';
 }
 
-# A `:=` through a chain binds the source container: the element renders
-# itemized while the source read directly stays bare, and writes still go
-# through -- the same representation slice 1 chose for `@a.push(@b)`.
+# A `:=` through a chain binds the source aggregate itself, with no Scalar
+# around it (rakudo's BIND-KEY; #18566): the element renders bare, and the
+# shared Array still sees a later push.
 {
     my @s1 = 1, 2;
     my %b1; %b1<a><b> := @s1;
-    is %b1<a><b>.raku, '$[1, 2]', 'slice 4: a two-level bound chain element is itemized';
+    is %b1<a><b>.raku, '[1, 2]', 'slice 4: a two-level bound chain element is the Array itself';
     @s1.push(3);
-    is %b1<a><b>.raku, '$[1, 2, 3]', 'slice 4: the two-level bind still writes through';
+    is %b1<a><b>.raku, '[1, 2, 3]', 'slice 4: the two-level bind still shares the Array';
     is @s1.raku, '[1, 2, 3]', 'slice 4: the bind source read directly stays bare';
     # A 3+-level bind installs a shared `ContainerRef` cell instead of a value,
     # and wrapping THAT in a `Scalar` (slice 1's `@a.push(@b)` shape) breaks the
