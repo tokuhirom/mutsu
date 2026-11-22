@@ -2549,23 +2549,17 @@ impl Interpreter {
                             'x' => {
                                 // \x[HEX] or \xHH hex escape in regex
                                 if chars.peek() == Some(&'[') {
-                                    chars.next(); // skip '['
-                                    let mut hex = String::new();
-                                    while let Some(&ch) = chars.peek() {
-                                        if ch == ']' {
-                                            chars.next();
-                                            break;
-                                        }
-                                        hex.push(ch);
-                                        chars.next();
-                                    }
-                                    if let Some(c) =
-                                        u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
-                                    {
-                                        RegexAtom::Literal(c)
-                                    } else {
+                                    // `\x[21,21]`: a comma-separated list is a run
+                                    // of codepoints, one atom as a quoted string is.
+                                    let Some(codepoints) =
+                                        super::regex_parse_escape::bracketed_codepoints(&mut chars, 16)
+                                    else {
                                         continue;
-                                    }
+                                    };
+                                    super::regex_parse::regex_single_quote_atom(
+                                        codepoints.into_iter().collect(),
+                                        ignore_case,
+                                    )
                                 } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
                                     // \x followed by hex digits without brackets
                                     let mut hex = String::new();
@@ -2586,23 +2580,17 @@ impl Interpreter {
                             'o' => {
                                 // \o[OCT] or \o### octal escape in regex
                                 if chars.peek() == Some(&'[') {
-                                    chars.next(); // skip '['
-                                    let mut oct = String::new();
-                                    while let Some(&ch) = chars.peek() {
-                                        if ch == ']' {
-                                            chars.next();
-                                            break;
-                                        }
-                                        oct.push(ch);
-                                        chars.next();
-                                    }
-                                    if let Some(c) =
-                                        u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
-                                    {
-                                        RegexAtom::Literal(c)
-                                    } else {
+                                    // `\o[41,41]`: a comma-separated list is a run
+                                    // of codepoints, one atom as a quoted string is.
+                                    let Some(codepoints) =
+                                        super::regex_parse_escape::bracketed_codepoints(&mut chars, 8)
+                                    else {
                                         continue;
-                                    }
+                                    };
+                                    super::regex_parse::regex_single_quote_atom(
+                                        codepoints.into_iter().collect(),
+                                        ignore_case,
+                                    )
                                 } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
                                     // \o followed by octal digits without brackets
                                     let mut oct = String::new();

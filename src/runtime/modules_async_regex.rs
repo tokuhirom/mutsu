@@ -35,6 +35,7 @@ mod regex_parse_charclass_alts;
 mod regex_parse_charclass_union;
 mod regex_code_block_scan;
 mod regex_parse_core;
+mod regex_parse_escape;
 mod regex_parse_grapheme;
 mod regex_parse_ltm;
 mod regex_parse_modifier;
