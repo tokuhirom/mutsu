@@ -259,6 +259,13 @@ impl Interpreter {
                         0,
                     ));
                 }
+                // A live source is delayed on a worker, so the emitter does
+                // not wait for the delay (#18608).
+                if let Some(source_id) = supplier_id_from_attrs(attributes)
+                    && attributes.get("live").is_some_and(Value::truthy)
+                {
+                    return Ok(self.delayed_live_supply(source_id, delay_seconds));
+                }
                 let mut new_attrs = attributes.clone();
                 new_attrs.insert("delay_seconds".to_string(), Value::num(delay_seconds));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
