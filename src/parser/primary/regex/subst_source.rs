@@ -41,10 +41,8 @@ fn subst_start(adverbs: &MatchAdverbs) -> Option<Box<crate::ast::SubstStart>> {
         (int(n), false)
     } else if let Some(e) = &adverbs.pos_expr {
         ((**e).clone(), true)
-    } else if let Some(n) = adverbs.pos_value {
-        (int(n), true)
     } else {
-        return None;
+        (int(adverbs.pos_value?), true)
     };
     Some(Box::new(crate::ast::SubstStart { expr, anchored }))
 }
