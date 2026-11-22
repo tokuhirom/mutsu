@@ -471,7 +471,7 @@ impl Interpreter {
         let name = name_sym.as_str();
         if !self.is_positional_light_call_eligible_where(
             &cf,
-            &name,
+            name,
             Self::positional_light_argc(args),
             args,
             None,
@@ -482,7 +482,7 @@ impl Interpreter {
         let empty_fns = crate::opcode::CompiledFns::default();
         let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
         Some(self.call_compiled_function_positional_light_verified(
-            &cf, args, fns, &name, name_sym, None,
+            &cf, args, fns, name, name_sym, None,
         ))
     }
 
