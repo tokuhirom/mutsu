@@ -103,7 +103,11 @@ impl CellGuard<'_> {
     /// [`PUB_ESCAPED`] first, so no reader trusts `published` for it again.
     // Cost: O(1).
     pub(crate) fn escape_slot(mut self) -> *mut Value {
-        self.published.store(PUB_ESCAPED, Ordering::Release);
+        // Only the first escape writes the line: an element-store loop
+        // escapes the same cell on every iteration.
+        if self.published.load(Ordering::Relaxed) != PUB_ESCAPED {
+            self.published.store(PUB_ESCAPED, Ordering::Release);
+        }
         std::ptr::from_mut::<Value>(&mut self.guard)
     }
 }
