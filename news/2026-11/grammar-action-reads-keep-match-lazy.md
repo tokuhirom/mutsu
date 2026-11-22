@@ -11,6 +11,6 @@ each decoded the full view. Each probe now answers a lazy Match from its tag
 or its cursor class, and `$<name>` reads the capture node directly.
 
 A `make ~$/` action dropped from ~33.6k to ~27.9k instructions, and a warm
-YAMLish `load-yaml` of 60 rows from ~159.5M to ~142.6M (−10.6%; Match
-materializations 1,452 → 250 per two parses). On the local box the parse with
+YAMLish `load-yaml` of 60 rows from ~159.5M to ~142.4M (−10.7%; Match
+materializations 4,232 → 250 per two parses). On the local box the parse with
 actions now runs at ~19 ms against rakudo's ~20 ms (#12917).

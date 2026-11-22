@@ -310,9 +310,9 @@ pun/junction/Proxy/Failure guards and the multi-dispatch key. Each now answers
 a lazy Match from its tag or its cursor class.
 
 Per warm `load-yaml` (`profiling`, `MUTSU_JIT=off`, (3−1)/2, paired against
-`main` at 1d3bd4ae): **~159.5M → ~142.6M Ir (−10.6%)**, and Match
-materializations 1,452 → 250 per two parses (the rest are a `.raku`/`.gist`
-guard and a few reads that need the map). Wall clock on this box, mean of 40
+`main` at 1d3bd4ae): **~159.5M → ~142.4M Ir (−10.7%)**, and Match
+materializations 4,232 → 250 per two parses (the rest are method calls that
+take the general dispatch path, which reads the map). Wall clock on this box, mean of 40
 runs: `load-yaml` ~32.5 → ~28.3 ms (rakudo ~25.3 ms); `Grammar.parse` with
 actions ~22.1 → ~19.1 ms, now under rakudo's ~20.4 ms. What is left of the
 gap is `concretize` (~8.6 ms against rakudo's ~4.5 ms), whose cost is the
