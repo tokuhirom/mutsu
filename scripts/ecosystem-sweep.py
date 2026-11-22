@@ -46,6 +46,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ecosystem_common as eco  # noqa: E402
@@ -55,6 +56,7 @@ DATA_DIR = os.path.join(REPO, "ecosystem")
 DISTS_DIR = os.path.join(DATA_DIR, "dists")
 EXCLUDE_LIST = os.path.join(DATA_DIR, "exclude.txt")
 ACCEPTED_LIST = os.path.join(DATA_DIR, "accepted-divergences.toml")
+OVERRIDE_LIST = os.path.join(DATA_DIR, "file-overrides.txt")
 SCHEMA = 1
 HARNESS = 3
 
@@ -73,6 +75,10 @@ TEST_PROBE = 'use Test; plan 1; is MONKEY-SEE-NO-EVAL(), 1, "vendored Test"'
 # worker finished.
 _print_lock = threading.Lock()
 _tally_lock = threading.Lock()
+
+# Every interpreter run takes this gate: shared, so `--jobs N` runs overlap, or
+# alone for a file `ecosystem/file-overrides.txt` marks `alone`.
+_run_gate = eco.RunGate()
 
 
 def log(msg):
@@ -269,13 +275,14 @@ def sweep_dist(name, index, opts, bundled) -> dict:
         blocked = False
         for module in sorted(meta.get("provides") or {}):
             probe = ["-e", f"use {module}; exit 0"]
-            m_rc, m_out = run([opts.mutsu] + libs + probe,
-                              cache_dir=mutsu_cache, **common)
-            # Both interpreters must get the same untimed load warmup. The
-            # old conditional rakudo probe made the first file cold on
-            # rakudo but warm on mutsu whenever mutsu loaded successfully.
-            r_rc, _r_out = run([opts.raku] + libs + probe,
-                               cache_dir=raku_cache, **common)
+            with _run_gate.shared():
+                m_rc, m_out = run([opts.mutsu] + libs + probe,
+                                  cache_dir=mutsu_cache, **common)
+                # Both interpreters must get the same untimed load warmup. The
+                # old conditional rakudo probe made the first file cold on
+                # rakudo but warm on mutsu whenever mutsu loaded successfully.
+                r_rc, _r_out = run([opts.raku] + libs + probe,
+                                   cache_dir=raku_cache, **common)
             if m_rc == 0:
                 record["load"][module] = "ok"
                 continue
@@ -294,19 +301,33 @@ def sweep_dist(name, index, opts, bundled) -> dict:
             tests = tests[:opts.max_files]
         for path in tests:
             rel = os.path.relpath(path, root)
-            # Both sides get the same retry budget. Giving mutsu three chances
-            # at a file the baseline got one is not a fair comparison, even
-            # though the asymmetry would only ever shrink the denominator.
-            raku, raku_flaky = measure([opts.raku] + libs + [path],
-                                       attempts=opts.attempts,
-                                       cache_dir=raku_cache, **common)
-            if raku["verdict"] != "pass":
-                record["files"].append({"path": rel, "raku": raku, "cmp": "no_baseline"})
+            # A known-slow file listed in ecosystem/file-overrides.txt gets a
+            # longer budget or the runner to itself -- on both sides alike.
+            override = getattr(opts, "file_overrides", {}).get((name, rel))
+            file_common = dict(common)
+            if override:
+                file_common["timeout"] = override.budget(opts.timeout)
+            gate = (_run_gate.alone() if override and override.alone
+                    else _run_gate.shared())
+            with gate:
+                # Both sides get the same retry budget. Giving mutsu three
+                # chances at a file the baseline got one is not a fair
+                # comparison, even though the asymmetry would only ever shrink
+                # the denominator.
+                raku, raku_flaky = measure([opts.raku] + libs + [path],
+                                           attempts=opts.attempts,
+                                           cache_dir=raku_cache, **file_common)
+                mutsu = flaky = None
+                if raku["verdict"] == "pass":
+                    mutsu, flaky = measure([opts.mutsu] + libs + [path],
+                                           attempts=opts.attempts,
+                                           cache_dir=mutsu_cache, **file_common)
+            extra = {"override": override.as_record()} if override else {}
+            if mutsu is None:
+                record["files"].append({"path": rel, "raku": raku,
+                                        "cmp": "no_baseline", **extra})
                 continue
-            mutsu, flaky = measure([opts.mutsu] + libs + [path],
-                                   attempts=opts.attempts,
-                                   cache_dir=mutsu_cache, **common)
-            entry = {"path": rel, "raku": raku, "mutsu": mutsu}
+            entry = {"path": rel, "raku": raku, "mutsu": mutsu, **extra}
             if flaky or raku_flaky:
                 entry["flaky"] = True
             entry["cmp"] = grade_file(name, entry, opts.accepted)
@@ -710,6 +731,7 @@ def main():
         ap.error("nothing selected: pass --only / --prefix / --all / --status / --stale")
 
     args = preflight(args)
+    args.file_overrides = eco.load_file_overrides(OVERRIDE_LIST)
     index = eco.load_index(refresh=args.refresh_index)
     os.makedirs(DATA_DIR, exist_ok=True)
     write_index_snapshot(index, args)
@@ -926,6 +948,57 @@ def _self_test() -> int:
         {"cmp": "parity", "raku": passing_side, "mutsu": passing_side}])
     check("an accepted file is out of the denominator",
           totals["baseline_files"] == 1 and status_of(totals) == "green")
+
+    # file-overrides.txt: a listed file gets a longer budget (never a shorter
+    # one) and/or the runner to itself; anything malformed is refused.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "file-overrides.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("# header\n"
+                     "A::B t/slow.t timeout=480 -- slow, #1\n"
+                     "A::B t/timing.t alone -- timing assertion, #2\n"
+                     "C t/x.t timeout=60 alone -- both, #3\n")
+        table = eco.load_file_overrides(path)
+        slow = table[("A::B", "t/slow.t")]
+        check("timeout= raises the budget", slow.budget(120) == 480 and not slow.alone)
+        check("an override never shortens the budget", table[("C", "t/x.t")].budget(120) == 120)
+        check("alone is recorded", table[("A::B", "t/timing.t")].as_record() == {"alone": True})
+        check("an unlisted file has no override", ("A::B", "t/other.t") not in table)
+        for bad in ("A t/x.t timeout=480\n", "A t/x.t -- no option\n",
+                    "A t/x.t timeout=abc -- r\n", "A t/x.t fast -- r\n",
+                    "A t/x.t alone -- r\nA t/x.t alone -- r\n"):
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(bad)
+            try:
+                eco.load_file_overrides(path)
+                refused = False
+            except SystemExit:
+                refused = True
+            check(f"a malformed override is refused: {bad.strip()!r}", refused)
+
+    # RunGate: an `alone` run overlaps no shared run, and shared runs overlap.
+    gate = eco.RunGate()
+    active = {"shared": 0, "alone": 0, "max_shared": 0, "overlap": False}
+    state_lock = threading.Lock()
+
+    def hold(kind, secs):
+        with (gate.alone() if kind == "alone" else gate.shared()):
+            with state_lock:
+                active[kind] += 1
+                active["max_shared"] = max(active["max_shared"], active["shared"])
+                if active["alone"] and (active["shared"] or active["alone"] > 1):
+                    active["overlap"] = True
+            time.sleep(secs)
+            with state_lock:
+                active[kind] -= 1
+    threads = [threading.Thread(target=hold, args=(k, 0.05))
+               for k in ["shared"] * 4 + ["alone"] + ["shared"] * 4 + ["alone"]]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check("an alone run never overlaps another run", not active["overlap"])
+    check("shared runs still overlap", active["max_shared"] > 1)
 
     run = real_run
     print(f"ecosystem-sweep self-test: "
