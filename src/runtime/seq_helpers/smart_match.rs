@@ -888,11 +888,12 @@ impl Interpreter {
             (_, ValueView::RegexWithAdverbs(a)) if a.nth.is_some() => {
                 let nth = a.nth.clone().unwrap_or(Value::NIL);
                 let text = self.regex_match_text(left);
-                self.smart_match_nth(&a.pattern, &nth, &text)
+                let start = self.multi_match_scan_start(&a, &text);
+                self.smart_match_nth(&a.pattern, &nth, &text, start)
             }
             // :c/:continue -- search from $/.to (or 0) onwards (non-anchored)
             (_, ValueView::RegexWithAdverbs(a))
-                if a.continue_ && !a.global && !a.exhaustive && !a.overlap =>
+                if a.continue_ && !a.global && !a.exhaustive && !a.overlap && a.repeat.is_none() =>
             {
                 let pat = &a.pattern;
                 let text = self.regex_match_text(left);
@@ -914,7 +915,7 @@ impl Interpreter {
             // :pos/:p anchored match (non-exhaustive/non-global) -- match at the
             // `:pos(N)` offset, else at the previous match's $/.to (or 0)
             (_, ValueView::RegexWithAdverbs(a))
-                if a.pos && !a.global && !a.exhaustive && !a.overlap =>
+                if a.pos && !a.global && !a.exhaustive && !a.overlap && a.repeat.is_none() =>
             {
                 let pat = &a.pattern;
                 let text = self.regex_match_text(left);
@@ -937,7 +938,8 @@ impl Interpreter {
             {
                 let x = a.repeat.clone().unwrap_or(Value::NIL);
                 let text = self.regex_match_text(left);
-                self.smart_match_x(&a.pattern, &x, &text)
+                let start = self.multi_match_scan_start(&a, &text);
+                self.smart_match_x(&a.pattern, &x, &text, start)
             }
             // :g (global) -- find all non-overlapping matches
             // Cost: `~~ m:g//`: O(n + r log r) plus per-match engine work, n = chars of
@@ -947,10 +949,11 @@ impl Interpreter {
                 let repeat = &a.repeat;
                 let text = self.regex_match_text(left);
                 let pattern = pattern.to_string();
-                let all = self.regex_match_non_overlapping(&pattern, &text);
+                let start = self.multi_match_scan_start(&a, &text);
+                let all = self.regex_match_non_overlapping_from(&pattern, &text, start.from);
                 // Filter to non-overlapping: take longest match at each position,
                 // then skip matches that overlap with already-selected ones
-                let non_overlapping = self.select_non_overlapping_matches(all);
+                let non_overlapping = start.apply(self.select_non_overlapping_matches(all));
                 if non_overlapping.is_empty() {
                     self.clear_multi_match_state();
                     return false;
@@ -983,7 +986,8 @@ impl Interpreter {
                 let pattern = &a.pattern;
                 let text = self.regex_match_text(left);
                 let pattern = pattern.to_string();
-                let all = self.regex_match_all_with_captures(&pattern, &text);
+                let start = self.multi_match_scan_start(&a, &text);
+                let all = self.regex_match_all_with_captures_from(&pattern, &text, start.from);
                 if all.is_empty() {
                     self.clear_multi_match_state();
                     return false;
@@ -1000,7 +1004,11 @@ impl Interpreter {
                         }
                     }
                 }
-                let selected: Vec<_> = best_by_start.into_values().collect();
+                let selected = start.apply(best_by_start.into_values().collect());
+                if selected.is_empty() {
+                    self.clear_multi_match_state();
+                    return false;
+                }
                 self.apply_multi_regex_captures(&selected, &text);
                 true
             }
@@ -1010,7 +1018,8 @@ impl Interpreter {
                 let repeat = &a.repeat;
                 let text = self.regex_match_text(left);
                 let pattern = pattern.to_string();
-                let mut all = self.regex_match_all_with_captures(&pattern, &text);
+                let start = self.multi_match_scan_start(&a, &text);
+                let mut all = self.regex_match_all_with_captures_from(&pattern, &text, start.from);
                 if all.is_empty() {
                     self.clear_multi_match_state();
                     return false;
@@ -1018,6 +1027,11 @@ impl Interpreter {
                 // :exhaustive orders matches by start position ascending and,
                 // at each position, longest first.
                 all.sort_by(|a, b| a.from.cmp(&b.from).then(b.to.cmp(&a.to)));
+                let mut all = start.apply(all);
+                if all.is_empty() {
+                    self.clear_multi_match_state();
+                    return false;
+                }
                 let selected = match repeat.as_ref().map(Self::match_x_bounds) {
                     Some(bounds) => {
                         let earliest = all.iter().map(|c| c.from).min().unwrap_or(0);
