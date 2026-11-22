@@ -12,6 +12,8 @@ mod import_tags;
 mod installed_repo;
 mod loaded_facts;
 mod nested_imports;
+#[cfg(test)]
+mod scan_context_tests;
 mod scanned_exports;
 mod source_scan;
 
