@@ -289,7 +289,7 @@ impl Interpreter {
             let old = Self::normalize_incdec_source(fetched);
             let new = self.incdec_step(k, &old)?;
             let new = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new);
-            loan_env!(self, assign_proxy_lvalue(raw_val, new.clone()))?;
+            loan_env!(self, store_proxy_lvalue(&raw_val, new.clone()))?;
             self.stack.push(k.result(old, new));
             return Ok(());
         }

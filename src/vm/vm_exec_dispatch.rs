@@ -2918,7 +2918,8 @@ impl Interpreter {
                             return Err(RuntimeError::readonly_variable());
                         }
                         let val = if assigned_nil { Value::NIL } else { val };
-                        loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
+                        // A statement-form store: STORE only, no FETCH (#18337).
+                        loan_env!(self, store_proxy_lvalue(&proxy_val, val))?;
                         // The STORE wrote a caller lexical by name (a Proxy in the
                         // process stash, `PROCESS::<$P> := Proxy.new(...)`): drain the
                         // recorded names so the owner's slot refreshes, as the other

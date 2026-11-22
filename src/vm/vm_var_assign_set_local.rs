@@ -3445,7 +3445,8 @@ impl Interpreter {
                 return Err(RuntimeError::readonly_variable());
             }
             let proxy_val = self.locals[idx].clone();
-            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
+            // `SetLocal` pushes nothing: STORE only, no FETCH (#18337).
+            loan_env!(self, store_proxy_lvalue(&proxy_val, val))?;
             // A Proxy STORE wrote the referent caller lexical by name; drain the
             // precise retain-on-miss writeback it recorded instead of the blanket
             // env→locals pull.
