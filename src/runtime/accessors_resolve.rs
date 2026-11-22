@@ -663,6 +663,32 @@ impl Interpreter {
     /// routine of that name would be hidden by (a `sub abs`, a `multi
     /// infix:<eqv>`).
     // Cost: O(1) hashed probes.
+    /// `&SETTING::name` in an `EVAL` and `&CALLER::SETTING::name` from a frame
+    /// an `EVAL` compiled: an `EVAL`'s setting is the lexical scope it runs
+    /// in (rakudo compiles the snippet against that scope), so the routine is
+    /// the one that scope sees, a lexical `sub` shadowing the core one.
+    /// `None` for any other name, which resolves as usual.
+    // Cost: O(d) for the memoized segments, d = segments of `name`; a hit costs
+    // the plain lookup of `bare` (or the caller-pad walk for `CALLER::`).
+    fn eval_setting_routine(&self, name: &str, bare: &str) -> Option<Value> {
+        let segments = crate::qualified::segments(crate::qualified::known_symbol(name));
+        let (_, pseudo) = segments.split_last()?;
+        let is_eval_unit = |unit| crate::runtime::eval_unit_parent(unit).is_some();
+        match pseudo {
+            [setting] if setting.as_str() == "SETTING" && is_eval_unit(self.current_unit) => {
+                Some(self.resolve_code_var(bare))
+            }
+            [caller, setting]
+                if caller.as_str() == "CALLER"
+                    && setting.as_str() == "SETTING"
+                    && is_eval_unit(self.caller_frame_unit()) =>
+            {
+                self.get_callers_var(&format!("&{bare}"), 1, true).ok()
+            }
+            _ => None,
+        }
+    }
+
     /// The routine a program bound into the setting's stash under `name`
     /// (`&CORE::name := &f` or `CORE::<&name> := &f`), kept in the package
     /// store under `&CORE::name`.
@@ -708,6 +734,9 @@ impl Interpreter {
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);
         let has_packages = bare_name != name;
+        if has_packages && let Some(found) = self.eval_setting_routine(name, bare_name) {
+            return found;
+        }
         // GLOBAL::/OUR:: are package namespaces that do NOT contain CORE symbols,
         // unlike the lexical/core pseudo-packages (CORE, SETTING, MY, OUTER, ...).
         // A builtin name qualified through them is undefined (roast pseudo-6c:
