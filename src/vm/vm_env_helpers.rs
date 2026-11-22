@@ -842,11 +842,8 @@ impl Interpreter {
     // Cost: O(1); the common case (no EVAL unit running) is one field test.
     pub(super) fn eval_unit_declaring_key(&self) -> Option<std::sync::Arc<str>> {
         let key = self.module.eval_unit_capture_key.as_ref()?;
-        (self.at_eval_unit_top_level()
-            && !self.module_load_active()
-            && !self.is_thread_clone()
-            && self.current_package_sym() == crate::symbol::wk::global_package())
-        .then(|| key.clone())
+        (self.at_eval_unit_top_level() && !self.module_load_active() && !self.is_thread_clone())
+            .then(|| key.clone())
     }
 
     /// The `unit_lexicals` bucket the running routine's own captured free
@@ -873,9 +870,10 @@ impl Interpreter {
             return None;
         }
         let frame = self.routine_stack().last()?;
-        if frame.is_block || frame.package != crate::symbol::wk::global_package() {
+        if frame.is_block {
             return None;
         }
+        let in_package = frame.package != crate::symbol::wk::global_package();
         // The running body's bucket: a same-named routine that captured
         // nothing (a routine-nested `sub acc`) has none (#13613). A frame that
         // does not record its body takes the latest registration's.
@@ -889,6 +887,12 @@ impl Interpreter {
             owners.iter().find(|owner| owner.runs_code(frame.code))?
         }
         .bucket;
+        // A routine of a package captures through a bucket only when an EVAL
+        // unit declared it (#17944): the program's own packages keep their
+        // lexicals in the package store.
+        if in_package && !key.starts_with(crate::runtime::EVAL_UNIT_CAPTURE_PREFIX) {
+            return None;
+        }
         // A snapshot of the world table (ADR-17216 §2.5, #18136).
         let cells = std::cell::Ref::filter_map(self.lexicals.unit_lexicals.read(), |table| {
             table.get(key).filter(|cells| !cells.is_empty())

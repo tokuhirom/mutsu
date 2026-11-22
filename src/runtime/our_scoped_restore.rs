@@ -81,3 +81,24 @@ impl Interpreter {
         keep
     }
 }
+
+/// The routines an EVAL restore to `functions` keeps of those the EVAL added
+/// (in `current`, absent from `functions`): a routine's
+/// `Pkg::EXPORT::<tag>::name` alias is a symbol of the package's EXPORT
+/// stash, not a lexical of the EVAL unit, so `M::EXPORT::DEFAULT::<&g>` still
+/// answers after an EVAL'd `unit module M` (#17944). The registry's
+/// transition memo does not name these keys (`install_export_aliases` writes
+/// them directly), so the table is scanned.
+// Cost: O(R · k), R = routine-registry entries, k = segments of a key; run
+// once per EVAL.
+pub(crate) fn export_stash_entries(
+    current: &FunctionTable,
+    functions: &FunctionTable,
+) -> Vec<(Symbol, Arc<FunctionDef>)> {
+    current
+        .iter()
+        .filter(|(key, _)| !functions.contains_key(key))
+        .filter(|(key, _)| key.as_str().split("::").any(|segment| segment == "EXPORT"))
+        .map(|(key, def)| (*key, def.clone()))
+        .collect()
+}

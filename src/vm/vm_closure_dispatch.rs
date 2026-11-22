@@ -835,12 +835,17 @@ impl Interpreter {
             // `running_package_candidates` skip straight past the callee's own
             // module and anchor bareword/constant resolution on whatever
             // named routine happened to be calling it (#8905).
-            self.push_routine_with_location(
+            // The body's address tells same-named routines apart, as a
+            // by-name call records it (`RoutineFrame::code`, #17944).
+            self.push_routine_with_visibility(
                 data.package,
                 data.name,
                 call_line,
                 call_file,
                 def_file,
+                false,
+                cc as *const CompiledCode as usize,
+                false,
             );
             // An anonymous `sub` has no registry entry to resolve its id
             // from, so stamp it on the frame: `return_target_is_live` must be

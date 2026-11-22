@@ -257,6 +257,7 @@ mod vm_dynamic_stash;
 mod vm_element_producers;
 mod vm_env_helpers;
 mod vm_eval_capture_cells;
+mod vm_eval_unit_package_capture;
 mod vm_exec_dispatch;
 mod vm_exec_route;
 pub(crate) mod vm_flipflop_ops;
