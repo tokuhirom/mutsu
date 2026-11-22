@@ -552,14 +552,24 @@ impl Interpreter {
             keys.push(target_sym);
         }
         let mut removed_keys: Vec<Symbol> = Vec::new();
-        // The block's own declarations are not the enclosing family.
+        // The block's own declarations are not the enclosing family. Nor, at
+        // the top level, are the importer's own candidates: they are in the
+        // `use`'s own scope, which an import extends rather than replaces
+        // (rakudo: `multi f(Str) {}; use M;` dispatches over both). They are
+        // registered before the import when the module was loaded at parse
+        // time (ADR-17558), with nothing hiding them during the import.
         keys.retain(|key| {
-            visible_before.is_none_or(|before| {
-                self.routines()
-                    .functions
-                    .get(key)
-                    .is_some_and(|def| def.decl_order < before)
-            })
+            let registry = self.routines();
+            let Some(def) = registry.functions.get(key) else {
+                return false;
+            };
+            match visible_before {
+                Some(before) => def.decl_order < before,
+                None => {
+                    self.unit_of_source_sym(def.source_file.as_deref().map(Symbol::intern))
+                        != importer
+                }
+            }
         });
         for key in keys {
             let removed = self.routines_mut().functions_mut().remove(&key);
