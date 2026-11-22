@@ -61,7 +61,22 @@ fn note_unit_var(stmt: &Stmt) {
         [b'@' | b'%', c, ..] | [c, ..] => c.is_ascii_alphabetic() || *c == b'_',
         [] => false,
     };
-    if !plain_name || !custom_traits.is_empty() || *marks != crate::ast::var_marks::VarMarks::default() {
+    let plain_marks = !(marks.shaped
+        || marks.implicit_value_type
+        || marks.type_from_trait
+        || marks.type_from_of
+        || marks.name_colonpairs.is_some()
+        || marks.dynamic_argument.is_some()
+        || marks.pointy_copy
+        || marks.pointy_native_param
+        || marks.pointy_param
+        || marks.signature_element
+        || marks.sigilless_decl
+        || marks.begin_static
+        || marks.begin_static_definite
+        || marks.static_bind_half
+        || marks.bound);
+    if !plain_name || !custom_traits.is_empty() || !plain_marks {
         return;
     }
     UNIT_VARS.with(|vars| {
