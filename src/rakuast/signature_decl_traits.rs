@@ -215,3 +215,26 @@ pub(super) fn place(
         }
     });
 }
+
+/// Give a parameter's `Trait::Is` nodes their ranges and their names'.
+// Cost: O(t), t = traits.
+pub(super) fn param_traits(param: &mut RakuAstNode, traits: &[(SrcSpan, SrcSpan)]) {
+    if traits.is_empty() {
+        return;
+    }
+    let Some(field) = param.fields.iter_mut().find(|f| f.name == Some("traits")) else {
+        return;
+    };
+    let RakuAstFieldValue::List(nodes) = &mut field.value else {
+        return;
+    };
+    for (value, &(whole, name)) in nodes.iter_mut().zip(traits) {
+        let ValueView::RakuAst(node) = value.view() else {
+            continue;
+        };
+        let mut node = RakuAstNode::clone(node);
+        super::origin::set_span(&mut node, whole);
+        super::infix_origins::with_child(&mut node, "name", |n| super::origin::set_span(n, name));
+        *value = Value::rakuast(Box::new(node));
+    }
+}
