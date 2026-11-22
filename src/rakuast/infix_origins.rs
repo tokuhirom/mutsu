@@ -85,6 +85,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::operator_origins::derive(node);
         }
         RakuAstClass::ApplyPostfix => {
+            super::indirect_name_origins::package_operand(node);
             super::list_origins::postcircumfix(node);
             super::hyper_subscript_origins::place(node);
             super::operator_origins::derive(node);
@@ -124,6 +125,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::expr_block_origins::phaser_statement(names, node);
             super::operator_origins::derive(node);
             super::prefix_operand_origins::place(names, node);
+            super::hash_colonpair_origins::composer_value(names, node);
         }
     }
 }
