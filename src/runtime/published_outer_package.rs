@@ -40,8 +40,9 @@ impl Interpreter {
             return;
         }
         {
-            let table =
-                crate::runtime::cow_table_mut(&mut self.module.world.published_outer_packages);
+            let mut published_outer_packages_w =
+                self.module.world.published_outer_packages.write_guard();
+            let table = crate::runtime::cow_table_mut(&mut published_outer_packages_w);
             let list = table.entry(module.clone().unwrap_or_default()).or_default();
             if !list.contains(&entry) {
                 list.push(entry.clone());
@@ -62,7 +63,7 @@ impl Interpreter {
     // Cost: O(n + m + p), n = length of `qualified`, m and p as in
     // [`Self::is_published_outer_package`]; O(1) when nothing was published.
     pub(crate) fn published_head_type(&self, qualified: &str) -> Option<String> {
-        if self.module.world.published_outer_packages.is_empty() {
+        if self.module.world.published_outer_packages.read().is_empty() {
             return None;
         }
         use crate::qualified::{package_ancestors, package_parent, qualified_text};
@@ -86,6 +87,7 @@ impl Interpreter {
         self.module
             .world
             .published_outer_packages
+            .read()
             .values()
             .any(|list| list.iter().any(|(s, t)| s == short && t == target))
     }
@@ -98,6 +100,7 @@ impl Interpreter {
             .module
             .world
             .published_outer_packages
+            .read()
             .get(module)
             .cloned()
         else {

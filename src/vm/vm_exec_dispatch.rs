@@ -716,7 +716,7 @@ impl Interpreter {
                         // frame loaded it, so that binding dies with the frame (a
                         // `require` inside a method); `module_scope_lexicals` keeps it
                         // attached to the module. Last resort, after every live store.
-                        .or_else(|| self.module_scope_lexical(name).cloned())
+                        .or_else(|| self.module_scope_lexical(name))
                         // A `PROCESS::<$name> := ...` install that ran in a frame
                         // which has since exited: `env`'s parent chain no longer
                         // has it, but `process_dynamics` outlives every frame
@@ -1003,7 +1003,7 @@ impl Interpreter {
                     })
                     // A file-scope `my @a` of the running routine's own module
                     // (see `module_scope_lexicals`; keys keep the `@` sigil).
-                    .or_else(|| self.module_scope_lexical(name).cloned())
+                    .or_else(|| self.module_scope_lexical(name))
                     // A nested class method can close over a class-body array
                     // declared by an enclosing package (`class Outer { my @a;
                     // class Inner { method m { @a } } }`). Walk package
@@ -1192,7 +1192,7 @@ impl Interpreter {
                     // belongs to (see `module_scope_lexicals`; the table keys
                     // keep the `%` sigil). Last resort, after every live store —
                     // mirrors the scalar fallback in `GetGlobal`.
-                    .or_else(|| self.module_scope_lexical(name).cloned())
+                    .or_else(|| self.module_scope_lexical(name))
                     // Nested classes inherit enclosing package-body container
                     // lexicals; mirror the array read's package-chain fallback.
                     .or_else(|| self.package_chain_var_fallback(code.const_sym(*name_idx)))

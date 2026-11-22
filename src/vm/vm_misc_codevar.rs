@@ -226,7 +226,7 @@ impl Interpreter {
         // routine of the importing compunit needs it too, not just `f()`.
         if val.is_nil()
             && !name_is_qualified
-            && let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned()
+            && let Some(found) = self.module_scope_lexical(&format!("&{name}"))
         {
             val = found.into_deref();
         }

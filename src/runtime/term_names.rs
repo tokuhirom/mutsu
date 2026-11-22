@@ -68,8 +68,8 @@ impl Interpreter {
             // routine call -- a class attribute's default -- finds it there.
             self.unit_lexical_slot(key, Some(key_sym))
                 .map(|v| v.deref_container())
-                .or_else(|| self.module_imported_lexical(key).cloned())
-                .or_else(|| self.module_scope_lexical(key).cloned())
+                .or_else(|| self.module_imported_lexical(key))
+                .or_else(|| self.module_scope_lexical(key))
                 // A package block's own `my constant`, kept for its routines in
                 // `package_lexicals` once the block has exited.
                 .or_else(|| self.package_chain_var_fallback(key_sym))

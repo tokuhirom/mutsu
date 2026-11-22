@@ -64,14 +64,14 @@ impl Interpreter {
     pub(crate) fn note_main_unit_type(&mut self, name: Symbol) {
         if self
             .module
-            .world.module_visibility
+            .world.module_visibility.read()
             .main_declared_types
             .contains(&name)
             || !self.is_main_lineage(self.executing_unit_sym())
         {
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.main_declared_types)
+        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.write_guard().main_declared_types)
             .insert(name);
     }
 
@@ -104,7 +104,7 @@ impl Interpreter {
         !self.repl_compiler.session_units.is_empty()
             && self
                 .module
-                .world.module_visibility
+                .world.module_visibility.read()
                 .main_declared_types
                 .contains(&name)
             && self.unit_in_repl_session(unit)
@@ -143,7 +143,7 @@ impl Interpreter {
         }
         Some(
             self.module
-                .world.module_visibility
+                .world.module_visibility.read()
                 .main_declared_types
                 .iter()
                 .map(|name| name.as_str().to_string())
