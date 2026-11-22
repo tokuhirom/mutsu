@@ -1871,15 +1871,15 @@ impl Interpreter {
                         let mut look = chars.clone();
                         let first = look.next();
                         first.is_some_and(|ch| ch.is_alphabetic() || ch == '_')
-                            || (first == Some('*')
+                            || (matches!(first, Some('*' | '^'))
                                 && look.next().is_some_and(|n| n.is_alphabetic() || n == '_'))
                     }
                 {
                     let mut probe = chars.clone();
                     let mut var_name = String::new();
-                    // `$*dyn`: the twigil is part of the name.
-                    if probe.peek() == Some(&'*') {
-                        var_name.push('*');
+                    // `$*dyn`, `$^a`: the twigil is part of the name.
+                    if let Some(&twigil @ ('*' | '^')) = probe.peek() {
+                        var_name.push(twigil);
                         probe.next();
                     }
                     while let Some(&ch) = probe.peek() {
@@ -1888,7 +1888,18 @@ impl Interpreter {
                             after.next();
                             after.peek().is_some_and(|n| n.is_alphabetic() || *n == '_')
                         };
-                        if ch.is_alphanumeric() || ch == '_' || kebab {
+                        // `$Pkg::v`: a package-qualified scalar.
+                        let qualified = ch == ':' && {
+                            let mut after = probe.clone();
+                            after.next();
+                            after.next() == Some(':')
+                                && after.peek().is_some_and(|n| n.is_alphabetic() || *n == '_')
+                        };
+                        if qualified {
+                            var_name.push_str("::");
+                            probe.next();
+                            probe.next();
+                        } else if ch.is_alphanumeric() || ch == '_' || kebab {
                             var_name.push(ch);
                             probe.next();
                         } else {

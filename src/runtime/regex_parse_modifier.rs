@@ -504,7 +504,13 @@ impl Interpreter {
                     // atom instead of pre-substituting an outer-scope value here.
                     if is_regex_local(&name, &declared_my_vars) {
                         out.extend(chars[i..j].iter());
-                        i = j;
+                        // `$foo=ATOM` is an alias to the variable: the atom
+                        // is dropped (#14628).
+                        i = if quotes.inside_double(&chars, i) {
+                            j
+                        } else {
+                            super::regex_variable_alias::variable_alias_end(&chars, j).unwrap_or(j)
+                        };
                         continue;
                     }
                     // A `<$re>` reference re-resolving `$re`'s OWN
