@@ -1,4 +1,4 @@
-mod attribute_core_traits;
+pub(crate) mod attribute_core_traits;
 mod attribute_identity;
 mod builtin_method_wrap;
 mod class_methods_loader;

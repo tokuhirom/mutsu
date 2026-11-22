@@ -263,12 +263,11 @@ multi sub trait_mod:<returns>(Routine:D \r, Mu:U \type) is export {
 /// nested inside the OUTER `is default-value` dispatch) is reported as that
 /// outer trait being unknown instead.
 ///
-/// `__mutsu_attribute_set_default` relays the value to
-/// `Interpreter::trait_mod_default_writeback`, which
-/// `apply_class_body_attribute_traits` drains right after dispatching an
-/// attribute's own custom traits and folds into the attribute's compiled
-/// default — exactly as if `is default(...)` had been written on the `has`
-/// line itself.
+/// `__mutsu_attribute_set_default` records the value on the attribute
+/// meta-object (`attribute_core_traits::record_core_default`); the
+/// declaration site reads it back after the attribute's own custom traits ran
+/// and folds it into the attribute's compiled default, exactly as if `is
+/// default(...)` had been written on the `has` line itself.
 pub(super) const TRAIT_MOD_IS_DEFAULT_PRELUDE: &str = r#"
 multi sub trait_mod:<is>(Attribute:D $attr, :$default!) is export {
     __mutsu_attribute_set_default($attr, $default);

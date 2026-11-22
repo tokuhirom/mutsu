@@ -28,7 +28,6 @@ static_call_args
 subset_where_fail
 test_pending_callsite_line
 trait_mod_attr_writeback_value
-trait_mod_default_writeback
 trait_mod_writeback_key
 trait_mod_writeback_value
 type_meta_key_cache

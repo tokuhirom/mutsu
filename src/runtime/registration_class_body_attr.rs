@@ -553,7 +553,6 @@ impl Interpreter {
             .insert(cx.name.to_string(), cx.class_def.clone().into());
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(cx.name));
-        self.trait_mod_default_writeback = None;
         let core_effects = match self.apply_attribute_traits(
             decl,
             attr_name,
@@ -568,9 +567,10 @@ impl Interpreter {
             }
         };
         self.check_definite_attribute_initialized(cx, decl, attr_name)?;
-        // A custom trait that re-dispatched to CORE's `:rw` / `:built`
-        // candidates changes the attribute as if the trait were written on the
-        // `has` line; republish so the accessor is regenerated.
+        // A custom trait that re-dispatched to CORE's `:rw` / `:built` /
+        // `:default` candidates changes the attribute as if the trait were
+        // written on the `has` line; republish so the accessor (and `.new`'s
+        // default) is regenerated.
         if !core_effects.is_empty() {
             let class_def = &mut cx.class_def;
             core_effects.fold_into(
@@ -583,23 +583,6 @@ impl Interpreter {
                 .insert(cx.name.to_string(), cx.class_def.clone().into());
             self.registry_mut()
                 .sync_accessor_entries(Symbol::intern(cx.name));
-        }
-        // A custom attribute trait may have re-dispatched to CORE's own
-        // `trait_mod:<is>(Attribute, :$default!)` candidate on this same
-        // attribute (see `TRAIT_MOD_IS_DEFAULT_PRELUDE`'s doc comment) — fold
-        // the value it relayed into the attribute's compiled default, exactly
-        // as `is default(...)` written directly on the `has` line would.
-        if let Some(default_val) = self.trait_mod_default_writeback.take()
-            && let Some(a) = cx
-                .class_def
-                .attributes
-                .iter_mut()
-                .find(|a| a.name == attr_name)
-        {
-            a.default = Some(crate::opcode::DeclTraitArg::Literal(default_val));
-            self.registry_mut()
-                .classes
-                .insert(cx.name.to_string(), cx.class_def.clone().into());
         }
         Ok(())
     }

@@ -262,7 +262,6 @@ impl Interpreter {
         }
         visit_opt(visitor, &self.trait_mod_writeback_value);
         visit_opt(visitor, &self.trait_mod_attr_writeback_value);
-        visit_opt(visitor, &self.trait_mod_default_writeback);
         for value in self.our_table().values() {
             visitor.visit_value(value);
         }

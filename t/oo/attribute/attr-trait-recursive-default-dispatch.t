@@ -1,6 +1,6 @@
 use Test;
 
-plan 3;
+plan 5;
 
 # A distribution's own custom attribute trait may re-dispatch to CORE's own
 # `trait_mod:<is>(Attribute, :$default!)` candidate as an ordinary function
@@ -36,5 +36,14 @@ my $r2 = Rocket.new(message => 'Falcon');
 is $r2.message, 'Falcon', 'explicit value overrides the runtime-set default';
 
 is Rocket.^attributes.first(*.name eq '$!message').default-value, 'Hello World', 'the custom trait state is still reachable';
+
+# The same re-dispatch from an attribute a role declares: the default is folded
+# when the role's attributes are composed into the class.
+role HasPayload {
+    has Str $.payload is default-value("from the role");
+}
+class Capsule does HasPayload {}
+is Capsule.new.payload, 'from the role', "a role attribute's runtime-dispatched default applies";
+is Capsule.new(payload => 'x').payload, 'x', "an explicit value overrides a role attribute's runtime-set default";
 
 # vim: expandtab shiftwidth=4
