@@ -1542,8 +1542,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // (so `quietly my $x = ...` leaks `$x`, matching Raku). A block form
             // `quietly { ... }` arrives as an AnonSub and is handled there too.
             // The prefix covers the whole comma list (`say quietly 1, 2`);
-            // `quietly(...)` written without a blank covers only its parentheses.
-            let (r, expr) = if rest.starts_with('(') {
+            // `quietly { ... }` (a block) and `quietly(...)` written without a
+            // blank cover only their braces or parentheses.
+            let (r, expr) = if rest.starts_with('(') || r.starts_with('{') {
                 expression(r)?
             } else {
                 crate::parser::stmt::assign::parse_comma_or_expr(r)?
