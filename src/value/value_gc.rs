@@ -543,7 +543,7 @@ impl Trace for super::ContainerCell {
     /// a cell that is busy simply takes the conservative answer.
     // Cost: O(1).
     fn currently_acyclic(&self) -> bool {
-        let Ok(inner) = self.value.try_lock() else {
+        let Ok(inner) = self.slot.try_lock() else {
             return false;
         };
         if !super::nanbox::word_is_refcount_free(inner.nanbox_bits()) {

@@ -607,6 +607,7 @@ pub(crate) mod buf_class_names;
 pub(crate) mod call_args;
 pub(crate) mod capture_text;
 pub(crate) mod compare;
+pub(crate) mod cell_publish;
 pub(crate) mod container_lock;
 pub(crate) mod container_read;
 mod dispatch_shape;
@@ -1072,7 +1073,13 @@ pub(crate) struct InstanceAttrs {
 /// typed scalar's `of` travel through aliases and survive lexical shadowing.
 #[derive(Debug)]
 pub struct ContainerCell {
-    value: Mutex<Value>,
+    /// The held value: the writers' authority. Only reached through
+    /// [`ContainerCell::lock`] / [`ContainerCell::get_mut`], which keep
+    /// `published` in step with it (ADR-8069, `cell_publish`).
+    slot: Mutex<Value>,
+    /// A lock-free copy of `slot` for cross-thread readers, when the value is
+    /// a payload-free word (ADR-8069 slice 1, `cell_publish`).
+    published: std::sync::atomic::AtomicU64,
     constraint: Mutex<Option<Box<CellConstraint>>>,
     /// A mutable QuantHash weight is lvalue-like but not an ordinary stored
     /// element: zero removes its key.  Views such as `.values` use this marker
@@ -1170,7 +1177,8 @@ pub struct CellWhere {
 impl ContainerCell {
     pub fn new(value: Value) -> Self {
         Self {
-            value: Mutex::new(value),
+            slot: Mutex::new(value),
+            published: std::sync::atomic::AtomicU64::new(cell_publish::PUB_EMPTY),
             constraint: Mutex::new(None),
             quanthash_weight: Mutex::new(None),
             readonly: std::sync::atomic::AtomicU8::new(0),
@@ -1300,13 +1308,6 @@ impl ContainerCell {
         decode_readonly_kind(self.readonly.load(std::sync::atomic::Ordering::Relaxed))
     }
 
-    pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, Value>> {
-        self.value.lock()
-    }
-
-    pub fn get_mut(&mut self) -> std::sync::LockResult<&mut Value> {
-        self.value.get_mut()
-    }
 
     /// Record the container's `is default(...)` value (see `default`).
     // Cost: O(1).

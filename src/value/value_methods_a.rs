@@ -1191,6 +1191,15 @@ impl Value {
     pub fn with_deref<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
         match self.view() {
             ValueView::ContainerRef(arc) => {
+                // ADR-8069: a published payload-free word is read with one
+                // atomic load and no lock (see `value::cell_publish`).
+                if let Some(inner) = arc.published_value() {
+                    return if self.container_ref_is_itemized() {
+                        f(&inner.itemize_for_element_store())
+                    } else {
+                        f(&inner)
+                    };
+                }
                 // ADR-0068: the cell's own `Mutex` does not exclude the element
                 // store, which derives a raw pointer into this same slot and
                 // then mutates it with the lock released. Without this a
@@ -1225,6 +1234,9 @@ impl Value {
             ValueView::ContainerView(arc) => {
                 // Explicit `.VAR` views expose the cell itself and do not carry
                 // the holder-local itemization flavour.
+                if let Some(inner) = arc.published_value() {
+                    return f(&inner);
+                }
                 let _cross_thread =
                     crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
                 f(&arc.lock().unwrap())
@@ -1265,6 +1277,13 @@ impl Value {
     fn with_deref_single<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
         match self.view() {
             ValueView::ContainerRef(arc) => {
+                if let Some(inner) = arc.published_value() {
+                    return if self.container_ref_is_itemized() {
+                        f(&inner.itemize_for_element_store())
+                    } else {
+                        f(&inner)
+                    };
+                }
                 let _cross_thread =
                     crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
                 let inner = arc.lock().unwrap_or_else(|e| e.into_inner());
@@ -1329,7 +1348,11 @@ impl Value {
             // The common read: the cell holds a value, not another cell. It is
             // read through the borrowed `arc`, without the `Gc` clone (and its
             // drop) the walk below needs only to follow a chain.
-            let first = {
+            let first = if let Some(published) = arc.published_value() {
+                // ADR-8069: a payload-free word is never a cell, so this is
+                // the end of the chain.
+                published
+            } else {
                 let _cross_thread =
                     crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
                 // A poisoned cell still holds its value: read it, as the
