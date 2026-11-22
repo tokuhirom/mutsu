@@ -1018,10 +1018,18 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         }
     }
 
-    // `//` in term position is an empty regex, which rakudo rejects as
-    // X::Syntax::Regex::NullRegex (`"a" ~~ //`). (As an infix it is `//`,
-    // defined-or, which never reaches a term parser.)
-    if input.starts_with("//") {
+    // `//` with nothing after it that could be a right operand is an empty
+    // regex, which rakudo rejects as X::Syntax::Regex::NullRegex (`"a" ~~ //`,
+    // `EVAL '//'`). Followed by a term it may still be the defined-or infix,
+    // which a caller trying a term first reaches by backtracking
+    // (`END { … } // ""`), so that case declines as before.
+    if let Some(after) = input.strip_prefix("//")
+        && after
+            .trim_start()
+            .chars()
+            .next()
+            .is_none_or(|c| matches!(c, ';' | '}' | ')' | ']' | ','))
+    {
         return Err(crate::parser::stmt::class::null_regex_error());
     }
     // Bare /pattern/
