@@ -105,8 +105,8 @@ fn the_owner_chain_follows_the_value_kind() {
         Some(&["SetHash"][..])
     );
     // A `Str`'s rows decline or refuse a receiver with no binding; a `Range`
-    // refuses the mutators it declares; a scalar with no mutator of its own
-    // is `Any`'s, whose rows end every chain.
+    // refuses the mutators it declares; a number is `Cool`'s (`subst-mutate`,
+    // `substr-rw`), then `Any`'s, whose rows end every chain.
     assert_eq!(
         mut_owners_of(&sample(DispatchShape::Str)),
         Some(&["Str"][..])
@@ -115,6 +115,9 @@ fn the_owner_chain_follows_the_value_kind() {
         mut_owners_of(&sample(DispatchShape::Range)),
         Some(&["Range"][..])
     );
-    assert_eq!(mut_owners_of(&sample(DispatchShape::Int)), Some(&[][..]));
+    assert_eq!(
+        mut_owners_of(&sample(DispatchShape::Int)),
+        Some(&["Cool"][..])
+    );
     assert_eq!(mut_owners_of(&sample(DispatchShape::Pair)), None);
 }
