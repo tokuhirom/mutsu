@@ -289,6 +289,10 @@ impl Interpreter {
             // the lookup just misses and yields Nil.
             return Ok(Value::NIL);
         }
+        // `CALLER::OUTER::x` / `CALLER::UNIT::x`: the caller's lexical scopes.
+        if let Some(found) = self.caller_lexical_chain_var(name, depth) {
+            return Ok(found);
+        }
         let env = &self.caller_env_stack[stack_len - depth];
         // A sigil-less key is looked up as a term (a constant's term key,
         // #9962) first, then as itself (a lexical type), #17846.
