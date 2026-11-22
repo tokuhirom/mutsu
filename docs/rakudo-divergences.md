@@ -156,6 +156,34 @@ different point, a bug that roast `S32-exceptions/misc.t` carries as
 - Refs: [docs/doc-diff-backlog.md](doc-diff-backlog.md),
   news/2026-09/doc-diff-sweep-2026-09-27-117-issues.md.
 
+### B6. `CALLERS::` / `DYNAMIC::` follow 6.e
+
+```raku
+sub c { say CALLERS::<bar> }; sub d { constant bar = 5; c() }; d();
+```
+
+- raku (default 6.d): `5`. A non-dynamic `my` variable reads as
+  `(LoweredAwayLexical)`. Under `use v6.e.PREVIEW`, rakudo dies with "Cannot
+  access 'bar' through CALLERS, because it is not declared as dynamic".
+- mutsu: dies `X::Caller::NotDynamic` in every language version.
+- Reason: rakudo's 6.d and 6.e answers differ. mutsu follows 6.e, which roast
+  `S02-names/pseudo-6e.t` specifies.
+- Refs: [#17846](https://github.com/tokuhirom/mutsu/issues/17846),
+  [#17892](https://github.com/tokuhirom/mutsu/pull/17892).
+
+### B7. Deleting the last element shortens the array
+
+```raku
+my @g = 1, 2; @g.DELETE-POS(1); say @g; say @g.elems;
+```
+
+- raku: `[1 (Any)]`, then `2`. The `:delete` adverb form also leaves 2 elements
+  (rakudo 2026.07).
+- mutsu: `[1]`, then `1`.
+- Reason: roast `S32-array/delete-adverb.t` (whitelisted) requires a trailing
+  delete to shorten the array.
+- Refs: [#10985](https://github.com/tokuhirom/mutsu/issues/10985).
+
 ## C. Rakudo artefacts and quirks mutsu does not copy
 
 ### C1. A block's operator `multi` sees the scope's outer lexicals
@@ -209,6 +237,13 @@ say "after-wrap=", use-small(1), ",", use-small(2);
 - Refs: [#18732](https://github.com/tokuhirom/mutsu/pull/18732),
   [#8673](https://github.com/tokuhirom/mutsu/issues/8673),
   `t/vm/codegen/adr8673-trir-inline.t`.
+
+The same rule covers a grammar token. If a program parses once, then wraps the
+token (`G.^find_method('word').wrap(...)`) and parses again, rakudo's second
+parse ignores the wrapper (`True / True / 0` in the issue's repro), while mutsu
+runs it (`True / True / 3`). `Type/Routine.rakudoc` says `.wrap` "in-place
+modifies the routine", which makes rakudo's answer an optimisation artefact
+([#9189](https://github.com/tokuhirom/mutsu/issues/9189)).
 
 ### C3. `Supply.stable` drops a value still pending at `done`
 
@@ -313,6 +348,23 @@ role Weird { method w { 1 } }; enum Flags does Weird (A => 1, B => 2); say Flags
 | `--profile-kind` and friends without `--profile` | value ignored | validated | [docs/profiler.md](profiler.md) |
 | An unknown production handler in slang actions | silently never called | a hard error | [ADR-13220](adr/13220-slang-actions-role-helper-methods.md) |
 | Bag/Mix set operators (`∪`, `∩`, `∖`, …) on huge weights | BigInt weights | saturate at `i64` (assignment and coercion keep BigInt) | news/2026-06.md |
+| `CORE::uc("x")` | the internal "Cannot find method 'is_dispatcher' on object of type BOOTCode" | the pseudo-stash error "No such method 'CALL-ME' for invocant of type 'Nil'" | [#13162](https://github.com/tokuhirom/mutsu/issues/13162), [#17852](https://github.com/tokuhirom/mutsu/pull/17852) |
+| A backtrace's bottom `<unit>` frame (`try two()` on line 3, `say $!.backtrace.list.tail.line` on line 4) | `4`: the line is read lazily | `3`, the line of the call | [#16770](https://github.com/tokuhirom/mutsu/issues/16770) |
+| `try { my Int $x = "a" }; $!.raku` | "No such method 'raku' for invocant of type 'ContainerDescriptor'" | `X::TypeCheck::Assignment.new(symbol => "\$x", got => "a", expected => Int)` | [#16654](https://github.com/tokuhirom/mutsu/issues/16654) |
+| A role-body `my regex` in a module file that interpolates a role lexical | "Cannot resolve caller INTERPOLATE_ASSERTION" | works | [#12600](https://github.com/tokuhirom/mutsu/issues/12600) |
+| `class C { method m { has $!g //= 5; $!g } }; say C.new.m` | "Cannot modify an immutable Nil value" | `5` | [#13329](https://github.com/tokuhirom/mutsu/pull/13329), `t/oo/method/has-decl-nested-in-method.t` |
+| `sub a { CALLER::LEXICAL::<$_> }; for 1 { say a().raku }` | `Any` | `1` | [#15552](https://github.com/tokuhirom/mutsu/pull/15552) |
+| `(1+1i, 2+2i ... 5+5i)` | `…, <3+2i>, <4+2i>, <5+2i>` (Complex step-deduction quirk) | `…, <3+3i>, <4+4i>, <5+5i>` | [#17012](https://github.com/tokuhirom/mutsu/pull/17012) |
+| `multi s(*%m, *@a) {"m-a"}; multi s(*@a) {"a"}`, then `s(1)` and `s()` | `a`, then `m-a` (declaration-order quirk) | `X::Multi::Ambiguous` for both | [#10817](https://github.com/tokuhirom/mutsu/pull/10817) |
+| `(1,2).rotor` | an internal "Cannot resolve caller infix:«<»()" | "Cannot resolve caller rotor(List:D: )" | [#17914](https://github.com/tokuhirom/mutsu/pull/17914) |
+| `splice`'s `X::Multi::NoMatch` candidate list | shows `is revision-gated("6.e")` | does not | [#17914](https://github.com/tokuhirom/mutsu/pull/17914) |
+| An aliased `<foo=?after x>` | a non-empty match | zero-width | [#9137](https://github.com/tokuhirom/mutsu/pull/9137) |
+| `my $x := subbuf-rw($b, 0, 1); $x = Buf.new(9); say $x` on `Buf.new(1,2,3)` | `Buf:0x<01>` (a quirk of its Proxy) | `Buf:0x<09>` | [#10798](https://github.com/tokuhirom/mutsu/pull/10798) |
+| RakuAST of `True` after `my \True = 42` | still a `Term::Enum` | not mirrored | [#18567](https://github.com/tokuhirom/mutsu/pull/18567) |
+| RakuAST Pod: a configured block right after another block | comes first in the statement list | source order; roast `S26-documentation/04-code.t` differs for this chain of quirks | [#14880](https://github.com/tokuhirom/mutsu/issues/14880), [#18354](https://github.com/tokuhirom/mutsu/pull/18354), [#18360](https://github.com/tokuhirom/mutsu/pull/18360) |
+| `buf32.new(0x11223344, 0x55667788).read-ubits(0, 8)` and the other wide-buffer bit offsets | `0x11223344` (leaked MoarVM pointer arithmetic) | not mirrored | [#6816](https://github.com/tokuhirom/mutsu/pull/6816), news/2026-08/wide-buffer-bit-accessor-divergence-left-unfixed.md |
+| A routine that runs while a block-scoped `use` is live and executes on the caller's env | does not see the imported names | may see them (only widens visibility) | [ADR-11136](adr/11136-module-global-merge-is-lexical-to-the-importing-scope.md) §4 |
+| `GLOBAL::OuterCls` for a class a module merged lexically | not resolvable | resolvable, as mutsu's `GLOBAL` is the shared store (only widens visibility) | ADR-11136 §4 |
 
 ### C9. Temporary: module `BEGIN`s run on every load
 
@@ -323,6 +375,57 @@ when that lands.
 - Refs: [ADR-0134](adr/0134-begin-time-prologue.md),
   [ADR-11756](adr/11756-compiled-bytecode-precompilation.md),
   [#18012](https://github.com/tokuhirom/mutsu/issues/18012).
+
+### C10. A custom `ClassHOW` subclass keeps role state per instance
+
+```raku
+class H is Metamodel::ClassHOW does Metamodel::DefaultParent { }
+H.new.set_default_parent_type(Int); say H.new.has_default_parent_type;
+```
+
+- raku: `1`. The second `H.new` appears to share the first one's role state.
+- mutsu: `0`. Each instance has its own attributes, which is the documented
+  role semantics.
+- Reason: this is probably an artefact of how rakudo's `Metamodel::ClassHOW.new`
+  answers. It was recorded as an accepted divergence on 2026-11-03.
+- Refs: [#16239](https://github.com/tokuhirom/mutsu/issues/16239) (item 2),
+  [#16246](https://github.com/tokuhirom/mutsu/pull/16246).
+
+### C11. An imported `proto` / `multi` merges with the program's
+
+Module `MP2` exports `proto greet(|) { say "M proto"; {*} }` and
+`multi greet(Int $x)`:
+
+```raku
+multi greet(Str $x) {}; use MP2; say &greet.candidates; say &greet.file;
+```
+
+- raku: `(Int)` only, then `.file` dies ("concatenate requires a concrete
+  string, but got null"). When either side's proto has a body, rakudo builds an
+  only-star dispatcher with no `file`. That drops either the program's
+  candidates or the proto body. With a program-side proto, rakudo gives a
+  compile error instead ("Calling greet(Str) will never work with (Int $x)").
+- mutsu: `(Str) (Int)` and the program's file. The candidate lists merge, and
+  the proto body is kept.
+- Reason: there is no rakudo behaviour here worth reproducing. mutsu's merge is
+  the consistent form of rakudo's only-star rule (closed as not planned,
+  2026-11-22).
+- Refs: [#18587](https://github.com/tokuhirom/mutsu/issues/18587).
+
+### C12. `.^methods` leaves out rakudo's internal hooks
+
+`Map.^methods` lists 54 methods on rakudo and 41 on mutsu, and `Pair.^methods`
+lists 30 and 25 (2026-10-21). The names mutsu does not list are:
+
+- `FLATTENABLE_*`, `POPULATE`, `PUSH_FROM_MAP`, `STORE_AT_KEY`;
+- `store-odd-number`, `IterationBuffer`, `TEMP-LET-*`, `GRAB_ONE`;
+- `reification-target`, `INSTANTIATE-GENERIC`, `from-slurpy*`, `set-shape`,
+  `is-generic`;
+- `Pair.abs-value` and `Pair.add-value`.
+
+- Reason: these are rakudo-internal hooks with no user-observable contract, so
+  they stay unlisted by design.
+- Refs: [#13494](https://github.com/tokuhirom/mutsu/issues/13494).
 
 ## D. Implementation identity
 
@@ -366,6 +469,47 @@ load.
   [#17566](https://github.com/tokuhirom/mutsu/issues/17566),
   [#16898](https://github.com/tokuhirom/mutsu/issues/16898).
 
+### D4. Rakudo-specific internals are not provided
+
+- The `MoarVM::` namespace is not provided (user decisions 2026-10-23 and
+  2026-10-31; `ecosystem/README.md`, `ecosystem/exclude.txt`,
+  [#13511](https://github.com/tokuhirom/mutsu/issues/13511),
+  [#12609](https://github.com/tokuhirom/mutsu/issues/12609),
+  [#8733](https://github.com/tokuhirom/mutsu/issues/8733)).
+- rakudo's hidden, deprecated, undocumented core `from-json` is not added.
+  `sub f() { start from-json("x").list }` compiles on rakudo and is
+  `Undeclared routine: from-json` on mutsu
+  ([#15808](https://github.com/tokuhirom/mutsu/issues/15808)).
+- Rakudo-Type-Introspection is not supported (user decision 2026-11-08, which
+  replaced the 2026-11-03 decision to implement all of it). The revision-gated
+  `CORE::v6c` / `v6d` / `v6e` namespaces, `CORE::v6c::PseudoStash` and
+  `.^is-implementation-detail` are not provided
+  ([#15616](https://github.com/tokuhirom/mutsu/issues/15616)).
+- `Rakudo::Version` gates on `$*RAKU.compiler.name eq 'rakudo'`, so it does not
+  work on mutsu (D1, [#8945](https://github.com/tokuhirom/mutsu/issues/8945)).
+
+### D5. RakuAST trees omit nodes rakudo's BEGIN-time machinery adds
+
+`visit-children` does not reproduce three compile-time shapes:
+
+- `$.a` is not `Var::Attribute::Public` over an `ApplyPostfix` chain.
+- A method has no implicit `self` / `%_` `Signature`.
+- An attribute default is a `Trait::WillBuild`, where rakudo has a
+  `Method::Initializer`.
+
+- Reason: out of scope (decision 2026-10-31). Reproducing them would mean
+  generating compile-time artefacts that nothing consumes.
+- Refs: [#14820](https://github.com/tokuhirom/mutsu/issues/14820) (rows 6, 7
+  and 9).
+
+### D6. `zprintf` is a mutsu extension
+
+mutsu has a `zprintf` routine, and rakudo has neither the routine nor a method.
+The routine stays, with its own tests. It has no method form.
+
+- Refs: [ADR-11276](adr/11276-built-in-methods-are-handler-rows.md),
+  `t/oo/method/zprintf-no-method.t`.
+
 ## E. Ecosystem test files graded `accepted`
 
 Each of these files fails on mutsu only because of a divergence above, or
@@ -383,7 +527,7 @@ failure shapes are in `ecosystem/accepted-divergences.toml`
 | DSL::Shared `t/Array-of-regexes-matches` | rakudo mixes `Match::CachedCompiledRegex` into an interpolated `Str` in place, changing its `.WHICH` | [#9746](https://github.com/tokuhirom/mutsu/issues/9746) |
 | Jupyter::Chatbook / Jupyter::Kernel `t/05-autocomplete` | surrogates in a `Str` (B1) | [#14416](https://github.com/tokuhirom/mutsu/issues/14416) |
 | Linux::NFTables `t/02-oo` | libnftables double free in `DESTROY`; rakudo passes only because MoarVM never collects the object before exit | [#17834](https://github.com/tokuhirom/mutsu/issues/17834) |
-| MCP::Server `t/21-elicitation-dispatch` | cold-pool task order (D3) | [#17724](https://github.com/tokuhirom/mutsu/issues/17724) |
+| MCP::Server `t/21-elicitation-dispatch` | cold-pool task order (D3) | [#17724](https://github.com/tokuhirom/mutsu/issues/17724), [#14684](https://github.com/tokuhirom/mutsu/issues/14684) |
 | NativeHelpers::Blob `t/02-cstruct` | `$*VM.name` is not `moar` (D1) | [#12829](https://github.com/tokuhirom/mutsu/issues/12829) |
 | Object::Delayed `t/02-basic` | thread-timing race (D3) | [#16898](https://github.com/tokuhirom/mutsu/issues/16898) |
 | ParaSeq `t/08-grep`, `t/20-unique` | a race in ParaSeq 0.2.7 itself | [#17723](https://github.com/tokuhirom/mutsu/issues/17723) |
