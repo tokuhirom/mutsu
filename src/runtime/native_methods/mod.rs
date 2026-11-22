@@ -36,6 +36,7 @@ mod supply_derive;
 mod supply_derive_dedup;
 mod supply_derive_buffer;
 mod supply_derive_classify;
+pub(in crate::runtime) mod supply_derive_step;
 mod supply_derive_multi;
 mod supply_quit_forwarder;
 mod system;

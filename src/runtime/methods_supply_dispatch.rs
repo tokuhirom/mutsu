@@ -451,7 +451,7 @@ impl Interpreter {
 
     /// Handle Supply instance .skip method
     pub(super) fn dispatch_supply_skip(
-        &self,
+        &mut self,
         attributes: &AttrMap,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -472,9 +472,11 @@ impl Interpreter {
             }
         };
         let values = match attributes.get("values").map(Value::view) {
-            Some(ValueView::Array(items, ..)) => items.iter().skip(n).cloned().collect::<Vec<_>>(),
+            Some(ValueView::Array(items, ..)) => items.to_vec(),
             _ => Vec::new(),
         };
+        // The per-tap state machine's count, folded over the values (#18579).
+        let values = self.step_fold("skip", vec![Value::int(n as i64)], values)?;
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(values));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));

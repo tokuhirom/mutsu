@@ -321,7 +321,8 @@ impl Interpreter {
             // front of an nqp list / native array in place, returning the
             // list. The typed forms convert the value first, as `push_*` does.
             // Cost: O(1) amortized on a list (ArrayData's head offset doubles as front slack, #9121)
-            // and on a Buf (BufBytes keeps front slack the same way, #9191).
+            // and on a Buf (BufBytes keeps front slack the same way, #9191); on a Uni O(1)
+            // after a shift, else O(e), e = codepoints.
             "unshift" | "unshift_i" | "unshift_n" | "unshift_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -338,6 +339,12 @@ impl Interpreter {
                         // `push_elem` uses; no borrow into the node is live.
                         let data = unsafe { crate::value::gc_contents_mut(&items) };
                         data.insert(0, val);
+                        Ok(target)
+                    }
+                    // A `Uni` is a `uint32` VMArray in rakudo.
+                    ValueView::Uni(_) => {
+                        let code = crate::runtime::nqp_backing::uni_code_of(crate::runtime::to_int(&val));
+                        crate::runtime::nqp_backing::with_uni_codes_mut(&target, |c| c.unshift(code));
                         Ok(target)
                     }
                     ValueView::Instance { .. } => {

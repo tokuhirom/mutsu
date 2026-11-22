@@ -53,6 +53,14 @@ pub(super) fn refill_codes(
     target: &Value,
 ) -> Result<(), RuntimeError> {
     let codes = normalized(op, text, mode)?;
+    // A `Uni` target (`nqp::create(NFD)`, JSON::Fast's string scanner) takes
+    // the codepoints straight into its packed store.
+    // Codepoints ARE the result here. str-prim: allow
+    if super::nqp_backing::with_uni_codes_mut(target, |store| store.replace(codes.chars().map(u32::from)))
+        .is_some()
+    {
+        return Ok(());
+    }
     Interpreter::nqp_with_elems_mut(op, target, |elems| {
         elems.clear();
         // Codepoints ARE the result here. str-prim: allow
@@ -65,6 +73,19 @@ pub(super) fn refill_codes(
 /// form it was asked for).
 // Cost: O(e), e = elems of `codes` (array copied, string built).
 pub(super) fn codes_to_string(op: &str, codes: &Value) -> Result<String, RuntimeError> {
+    // A `Uni` is read in place: its store is already `uint32` codepoints.
+    if let Some(out) = super::nqp_backing::with_uni_codes(codes, |store| {
+        let mut out = String::with_capacity(store.len());
+        for &code in store.as_slice() {
+            match char::from_u32(code) {
+                Some(ch) => out.push(ch),
+                None => return Err(not_a_codepoint(op, &code.to_string())),
+            }
+        }
+        Ok(out)
+    }) {
+        return out;
+    }
     let Some(elems) = Interpreter::nqp_elems_of(codes) else {
         return Err(RuntimeError::new(format!(
             "nqp::{op}: expected an array of codepoints"
@@ -77,15 +98,15 @@ pub(super) fn codes_to_string(op: &str, codes: &Value) -> Result<String, Runtime
             .and_then(char::from_u32)
         {
             Some(ch) => out.push(ch),
-            None => {
-                return Err(RuntimeError::new(format!(
-                    "nqp::{op}: {} is not a codepoint",
-                    v.to_string_value()
-                )));
-            }
+            None => return Err(not_a_codepoint(op, &v.to_string_value())),
         }
     }
     Ok(out)
+}
+
+// Cost: O(n), n = length of the message.
+fn not_a_codepoint(op: &str, what: &str) -> RuntimeError {
+    RuntimeError::new(format!("nqp::{op}: {what} is not a codepoint"))
 }
 
 /// `nqp::escape`: NQP's string-literal escaping. A backslash, a double
