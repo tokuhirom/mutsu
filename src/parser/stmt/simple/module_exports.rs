@@ -865,6 +865,10 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // inside a `package Foo { ... }` body would leave the rest of the body
     // composing its declarations against an empty path.
     let saved_package_path = PACKAGE_PATH.with(|p| p.borrow().clone());
+    // ... and whether the importer has declared a package yet: the scanned
+    // module's own `class` must not make the importer's later `unit class`
+    // too late (#18767).
+    let saved_package_declared = PACKAGE_DECLARED.with(|d| *d.borrow());
     // Save the language version — parsing the module may change it via `use v6.*`
     let saved_language_version = current_language_version();
     // The EXPORTHOW::DECLARE keyword table is unit-scoped state the nested
@@ -983,6 +987,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     PACKAGE_PATH.with(|p| {
         *p.borrow_mut() = saved_package_path;
     });
+    PACKAGE_DECLARED.with(|d| *d.borrow_mut() = saved_package_declared);
     set_current_language_version(&saved_language_version);
     restore_declare_keywords(saved_declare_keywords);
     super::restore_slang_modes(saved_slang_modes);
