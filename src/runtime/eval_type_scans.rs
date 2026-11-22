@@ -253,7 +253,14 @@ impl<'ast> Visit<'ast> for UseLibDirs<'_> {
 /// unit's declared types, with the enclosing type captures in scope.
 pub(super) struct SubParamTypes<'a> {
     pub(super) interp: &'a Interpreter,
-    pub(super) declared: &'a DeclaredTypes,
+    /// The unit being checked, whose declared types (its `use`d modules'
+    /// included) are collected on first need.
+    pub(super) unit: &'a [Stmt],
+    /// [`Interpreter::eval_declared_types`] of `unit`. Collecting it reads the
+    /// source of every `use`d module, so it waits for the first routine that
+    /// actually names a type: a unit whose routines constrain nothing (or that
+    /// has none) never pays for it (#12026).
+    pub(super) declared: std::cell::OnceCell<DeclaredTypes>,
     pub(super) captures: Captures,
     pub(super) error: Option<RuntimeError>,
 }
@@ -269,8 +276,14 @@ impl SubParamTypes<'_> {
         else {
             return Ok(());
         };
+        // Neither validation reads the declared types without a type to check.
+        if return_type.is_none() && param_defs.iter().all(|p| p.type_constraint.is_none()) {
+            return Ok(());
+        }
         let in_scope: HashSet<String> = self.captures.names.iter().cloned().collect();
-        let d = self.declared;
+        let d = self
+            .declared
+            .get_or_init(|| self.interp.eval_declared_types(self.unit));
         self.interp.validate_param_type_constraints(
             param_defs,
             &d.types,

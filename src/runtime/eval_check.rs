@@ -257,15 +257,16 @@ impl Interpreter {
 
     /// Reject sub parameter types that name a type unknown to this compilation
     /// unit (e.g. `sub yoink(Junctoin $barf)`) -> X::Parameter::InvalidType.
-    // Cost: O(n + m), as `eval_declared_types`, plus one validation per sub.
+    // Cost: O(n) plus one validation per sub, n = size of the unit's AST; plus
+    // O(m), as `eval_declared_types`, once, if some routine names a type.
     pub(crate) fn check_eval_param_type_constraints(
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let declared = self.eval_declared_types(stmts);
         let checker = SubParamTypes {
             interp: self,
-            declared: &declared,
+            unit: stmts,
+            declared: std::cell::OnceCell::new(),
             captures: Captures::default(),
             error: None,
         };
