@@ -23,7 +23,7 @@ use crate::value::{RuntimeError, Value};
 /// name computed at run time (`$::($p)::A::x`, `::($p)::A`, `::($p)`); any
 /// other target is handed back with the value.
 // Cost: O(1).
-pub(crate) fn indirect_symbol_bind(target: Expr, value: Expr) -> Result<Expr, (Expr, Expr)> {
+pub(crate) fn indirect_symbol_bind(target: Expr, value: Expr) -> Result<Expr, Box<(Expr, Expr)>> {
     let (sigil, expr) = match target {
         Expr::SymbolicDeref { sigil, expr } => (sigil, expr),
         Expr::IndirectTypeLookup(expr) => (String::new(), expr),
@@ -55,7 +55,7 @@ pub(crate) fn indirect_symbol_bind(target: Expr, value: Expr) -> Result<Expr, (E
                 form: Default::default(),
             }),
         ),
-        other => return Err((other, value)),
+        other => return Err(Box::new((other, value))),
     };
     Ok(Expr::IndirectSymbolBind {
         sigil,
@@ -128,7 +128,8 @@ pub(super) fn is_target(node: &RakuAstNode) -> bool {
 pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let target = lower_expr(names, named_child(node, "left")?)?;
     let value = lower_expr(names, named_child(node, "right")?)?;
-    indirect_symbol_bind(target, value).map_err(|(target, _)| {
+    indirect_symbol_bind(target, value).map_err(|pair| {
+        let target = &pair.0;
         RuntimeError::new(format!(
             "RakuAST: a run-time name bind lowered to an unexpected target: {target:?}"
         ))

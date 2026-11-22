@@ -536,7 +536,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             })
         } else {
             indirect_symbol_bind(expr, rhs).map_or_else(
-                |(expr, rhs)| Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]),
+                |pair| Stmt::Block(vec![Stmt::Expr(pair.0), Stmt::Expr(pair.1)]),
                 Stmt::Expr,
             )
         };
