@@ -41,6 +41,20 @@ pub(crate) fn indirect_symbol_bind(target: Expr, value: Expr) -> Result<Expr, (E
                 form: Default::default(),
             }),
         ),
+        // `&::($p)::f` names the routine `&f` of package `$p`.
+        Expr::IndirectCodeLookup {
+            package,
+            name,
+            caller: false,
+        } => (
+            "&".to_string(),
+            Box::new(Expr::Binary {
+                left: package,
+                op: crate::token_kind::TokenKind::Tilde,
+                right: Box::new(Expr::Literal(Value::str(format!("::{name}")))),
+                form: Default::default(),
+            }),
+        ),
         other => return Err((other, value)),
     };
     Ok(Expr::IndirectSymbolBind {
