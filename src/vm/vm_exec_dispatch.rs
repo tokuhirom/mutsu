@@ -7623,6 +7623,12 @@ impl Interpreter {
                 self.exec_indirect_type_lookup_store_op(code)?;
                 *ip += 1;
             }
+            // Cost: O(n + s), n = chars of the name (split and interned), s = the
+            // package-stash publish (hashed `our`/env stores).
+            OpCode::IndirectSymbolBind(sigil_idx) => {
+                self.exec_indirect_symbol_bind_op(code, *sigil_idx)?;
+                *ip += 1;
+            }
             // Cost: O(1) (hashed state-store probe); an `@`/`%` initializer is copied, O(e), as in Rakudo.
             OpCode::StateVarInit(slot, key_idx) => {
                 // ADR-0040's store boundary, Proxy half: a `state $s = $p`

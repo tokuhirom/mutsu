@@ -1812,6 +1812,14 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::IndirectTypeLookupStore);
             }
+            Expr::IndirectSymbolBind { sigil, expr, value } => {
+                // The value is a bind's (`OUR::<$x> := v` marks it the same
+                // way), so the target shares the source's container.
+                self.compile_expr(&Expr::IndexBindValue(value.clone()));
+                self.compile_expr(expr);
+                let sigil_idx = self.code.add_constant(Value::str(sigil.clone()));
+                self.code.emit(OpCode::IndirectSymbolBind(sigil_idx));
+            }
             Expr::ControlFlow {
                 kind,
                 label: _,

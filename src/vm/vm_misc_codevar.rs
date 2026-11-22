@@ -583,6 +583,11 @@ impl Interpreter {
             }
         }
         let lookup_name = Self::sigiled_name(&sigil, &name);
+        // `$::('OUR')::A::x` is `$OUR::A::x`: a name in the current package's
+        // own stash, keyed as the literal spelling keys it.
+        let lookup_name = self
+            .our_pseudo_var_key(&lookup_name)
+            .unwrap_or(lookup_name);
         let val = self
             .get_env_with_main_alias(&lookup_name)
             .unwrap_or(Value::NIL);
