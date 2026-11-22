@@ -133,6 +133,10 @@ pub(crate) enum Spelling {
     /// written package. The parser concatenates `"PKG::" ~ EXPR`; RakuAST
     /// keeps the package parts and the key expression apart.
     PackageIndirect { package: Box<str>, key: Box<Expr> },
+    /// `::($a)::($b)`: a symbolic name of dynamic parts, which the parser runs
+    /// as the lookup of `$a ~ "::" ~ $b`; RakuAST keeps each part an
+    /// expression of one `Name`.
+    IndirectParts(Vec<Expr>),
     /// A bare Whatever operand of `o` is expanded to a closure for execution;
     /// the public RakuAST keeps the written composition and Whatever argument.
     CompositionWhatever(Box<Expr>),
@@ -452,4 +456,33 @@ mod tests {
         assert!(matches!(expr, Expr::Spelled(_)));
         assert!(matches!(expr.peel_parens(), Expr::ArrayLiteral(items) if items.len() == 2));
     }
+}
+
+/// `::(A)::(B)...` as the parser runs it: the symbolic lookup of
+/// `A ~ "::" ~ B ...`, spelled with its parts.
+// Cost: O(p), p = parts.
+pub(crate) fn indirect_parts_lookup(parts: Vec<Expr>) -> Expr {
+    let mut iter = parts.iter().cloned();
+    let mut joined = iter
+        .next()
+        .unwrap_or(Expr::Literal(crate::value::Value::str(String::new())));
+    for part in iter {
+        let sep = Expr::Binary {
+            left: Box::new(joined),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(Expr::Literal(crate::value::Value::str("::".to_string()))),
+            form: Default::default(),
+        };
+        joined = Expr::Binary {
+            left: Box::new(sep),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(part),
+            form: Default::default(),
+        };
+    }
+    let lookup = Expr::SymbolicDeref {
+        sigil: String::new(),
+        expr: Box::new(joined),
+    };
+    Expr::spelled(lookup, || Spelling::IndirectParts(parts))
 }

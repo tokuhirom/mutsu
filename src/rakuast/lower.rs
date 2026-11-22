@@ -4976,6 +4976,12 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             }
             Ok(Expr::Literal(value))
         }
+        // `::($a)::($b)`: a symbolic name of dynamic parts.
+        RakuAstClass::TermName
+            if let Some(lookup) = super::symbolic_deref::lower_indirect_parts(names, node) =>
+        {
+            lookup
+        }
         // `MY::(EXPR)` / `GLOBAL::(EXPR)`: a package-qualified symbolic lookup.
         RakuAstClass::TermName | RakuAstClass::CallName
             if let Some(lookup) = super::symbolic_deref::lower_package_indirect(names, node) =>
