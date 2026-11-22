@@ -152,8 +152,20 @@ impl Interpreter {
                 // discarded (a `{ ... }` block in it would have run anyway).
                 self.regex_match_non_overlapping(&pat, &text)
             };
+            // A Callable `:nth` stands for its answer from here on, so a
+            // single-index answer yields a single Match.
+            if let Some(nth_val) = nth_arg.take() {
+                let callable = matches!(nth_val.view(), ValueView::Sub(_));
+                let resolved = self.resolve_callable_nth(&nth_val, selected.len())?;
+                if callable && Self::callable_nth_out_of_range(&resolved, selected.len()) {
+                    selected.clear();
+                }
+                nth_arg = Some(resolved);
+            }
             // Apply :nth filtering before :x bounds
-            if let Some(ref nth_val) = nth_arg {
+            if let Some(ref nth_val) = nth_arg
+                && !selected.is_empty()
+            {
                 let indices = self.resolve_nth_value_indices(nth_val, selected.len())?;
                 selected = indices
                     .into_iter()
@@ -508,12 +520,9 @@ impl Interpreter {
             // `:nth(*-1)` is the second-to-last match. An out-of-range result
             // selects nothing (rather than erroring like a literal `:nth(0)`).
             ValueView::Sub(_) => {
-                let result = self.call_sub_value(
-                    val.clone(),
-                    vec![Value::int(total_matches as i64)])?;
-                let i = Self::value_to_nth_int(&result)?;
-                if i >= 1 && (i as usize) <= total_matches {
-                    indices.push(i as usize);
+                let result = self.resolve_callable_nth(val, total_matches)?;
+                if !Self::callable_nth_out_of_range(&result, total_matches) {
+                    return self.resolve_nth_value_indices(&result, total_matches);
                 }
             }
             _ => {

@@ -3,6 +3,7 @@ pub(crate) use methods_introspect::embedded_container_type_name;
 mod methods_io_dispatch;
 mod flat_iterable_instances;
 mod methods_list_view_default;
+mod match_nth_callable;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
 mod methods_mixin_clone;

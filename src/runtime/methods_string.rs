@@ -48,7 +48,9 @@ impl Interpreter {
     /// `.match(:nth(...))` already uses. A small bounded Range stays on the
     /// eager path, where its literal length also decides `result_is_list`.
     pub(super) fn is_deferred_nth_value(value: &Value) -> bool {
-        if matches!(value.view(), ValueView::Whatever) || Self::is_whatever_code_value(value) {
+        // Any Callable (`*-1`, a block `{2}`) is called once the match count
+        // is known (`resolve_callable_nth`).
+        if matches!(value.view(), ValueView::Whatever | ValueView::Sub(_)) {
             return true;
         }
         Self::deferred_nth_range_end(value).is_some()
