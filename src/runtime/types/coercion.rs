@@ -242,6 +242,21 @@ impl Interpreter {
         {
             return Ok(value);
         }
+        // A `Bool` already is an `Int` (and `Numeric`, `Real`, `Cool`), and an
+        // allomorph (`IntStr`, a `Mixin` view) already is both of its types:
+        // `Int(Bool)` given `True` and `Str(Int)` given `<1>` bind the value
+        // unchanged, as rakudo does, where `coerce_value` below would rebuild
+        // a plain `Int` / `Str` from it (#18856). `Bool(Mu)` given a Bool
+        // answers without the type check.
+        match value.view() {
+            ValueView::Bool(_) if base_target == "Bool" => return Ok(value),
+            ValueView::Bool(_) | ValueView::Mixin(..)
+                if self.type_matches_value(base_target, &value) =>
+            {
+                return Ok(value);
+            }
+            _ => {}
+        }
         // An Instance that already satisfies the target type needs no coercion
         // (e.g. re-coercing an IO::Path for an `IO(Cool)` constraint, which the
         // declaration path can trigger on an already-coerced value). Returning it
