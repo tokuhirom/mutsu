@@ -326,7 +326,10 @@ fn quanthash(interp: &mut Interpreter, target: &Value, name: &str) -> Answer {
     if !target.is_failure_handled() {
         return Some(Err(explode(target)));
     }
-    interp.try_native_quanthash_construct_for_package(Symbol::intern(name), &[target.clone()])
+    interp.try_native_quanthash_construct_for_package(
+        Symbol::intern(name),
+        std::slice::from_ref(target),
+    )
 }
 
 /// The answer of `Failure`'s own method `method` for `target`, run with the
