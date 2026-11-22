@@ -92,7 +92,9 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// Whether `target` is a `Failure` instance.
 // Cost: O(1).
 pub(crate) fn is_failure(target: &Value) -> bool {
-    matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+    // Tag-probed: `view()` of a lazy Match would materialize it (#12917).
+    !target.is_lazy_match_value()
+        && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
 }
 
 /// The answer of the pure row for `method` on a `Failure`, or `None` when

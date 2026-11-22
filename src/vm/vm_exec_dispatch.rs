@@ -4545,9 +4545,14 @@ impl Interpreter {
             // Rakudo: O(1) -- see #9252.
             OpCode::ContainerizePair => {
                 let val = self.stack.pop().unwrap();
-                let containerized = match val.view() {
-                    ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
-                    _ => val,
+                // Tag-probed: `view()` of a non-Pair (a lazy Match from
+                // `$<key>.ast => ...`) would materialize it (#12917).
+                let containerized = if val.is_any_pair_value()
+                    && let ValueView::Pair(k, v) = val.view()
+                {
+                    Value::value_pair(Value::str(k.clone()), v.clone())
+                } else {
+                    val
                 };
                 self.stack.push(containerized);
                 *ip += 1;

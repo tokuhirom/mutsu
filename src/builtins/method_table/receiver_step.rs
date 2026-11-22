@@ -59,6 +59,11 @@ fn observes_container(method: &str) -> bool {
 // Cost: O(1) tag probes for a receiver in no such state; O(e) to build a
 // hash-like receiver's pairs (e = entries) or a Match's positional list.
 pub(crate) fn step(target: &Value, method: &str, argc: usize) -> Option<Step> {
+    // A lazy Match is no container: only [`claims`]' methods step it, and a
+    // `view()` here would materialize it on every native method call (#12917).
+    if target.is_lazy_match_value() && !claims(target, method) {
+        return None;
+    }
     match target.view() {
         ValueView::Scalar(inner) => {
             if method == "VAR" {
@@ -327,6 +332,9 @@ pub(crate) enum MixinStep {
 // adds the wrapped value's own cost.
 pub(crate) fn mixin_step(target: &Value, method_sym: Symbol) -> Option<MixinStep> {
     use crate::builtins::methods_0arg::{native_method_0arg, raku_repr};
+    if !target.is_mixin_value() {
+        return None;
+    }
     let ValueView::Mixin(inner, mixins) = target.view() else {
         return None;
     };

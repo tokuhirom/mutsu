@@ -29,6 +29,7 @@ mod eval_in_unrelated_routine_no_env_copy;
 mod flaky_retry;
 mod gc_parallel_interpreters;
 mod gc_stress;
+mod grammar_action_reads_keep_match_lazy;
 mod issue_7228;
 mod jit_diff;
 mod lazy_match_no_eager_materialization;

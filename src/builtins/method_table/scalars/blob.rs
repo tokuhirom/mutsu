@@ -119,6 +119,11 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
 // Cost: O(1): a compare against the alias names and two prefixes, then one
 // relaxed load (a hash lookup once any user buffer class exists).
 pub(crate) fn user_buffer_receiver(target: &Value) -> Option<super::super::Receiver> {
+    // A lazy Match is no buffer, and its `view()` would materialize it on
+    // every native method call (#12917).
+    if target.is_lazy_match_value() {
+        return None;
+    }
     let (name, type_object) = match target.view() {
         ValueView::Instance { class_name, .. } => (class_name.as_str(), false),
         ValueView::Package(name) => (name.as_str(), true),

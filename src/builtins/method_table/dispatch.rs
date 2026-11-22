@@ -468,6 +468,13 @@ fn dispatch(
                 return Some((Err(refusal), false));
             }
         },
+        // A lazy Match (a regex match or a grammar cursor) reads as a `Match`,
+        // decided on its tag: the probes below `view()` it, which would
+        // materialize every capture of each node an action reads (#12917).
+        None if target.is_lazy_match_value() => (
+            target,
+            super::resolve(Receiver::instance(DispatchShape::Match), method, arity)?,
+        ),
         // A type object with no shape of its own whose instances have one
         // (`UInt`, the one built-in subset, is an `Int`; `IO::Path::Unix` is an
         // `IO::Path`) is refused by the rows its instances reach.

@@ -13,11 +13,21 @@ impl Interpreter {
         if self.native_base_bypass_hit(target, method_sym) {
             return false;
         }
+        // The receiver's class when it is an instance. A lazy Match is one of
+        // its cursor class (`type_name`), asked on its tag: `view()` would
+        // materialize every capture on each native call (#12917).
+        let inst_class: Option<&'static str> = if target.is_lazy_match_value() {
+            Some(type_name)
+        } else if let ValueView::Instance { class_name, .. } = target.view() {
+            Some(class_name.as_str())
+        } else {
+            None
+        };
         // A `handles <clone>` forwarder is a method of the user class, and
         // the method resolver must see it before the inherited `Mu.clone` row.
         if method_sym.as_str() == "clone"
-            && let ValueView::Instance { class_name, .. } = target.view()
-            && self.has_user_method_of(class_name, method_sym)
+            && let Some(class_name) = inst_class
+            && self.has_user_method_sym(class_name, method_sym)
         {
             return true;
         }
@@ -28,12 +38,12 @@ impl Interpreter {
         // type name here is `Any`, so the chain is looked up by its class; the
         // answer is not cached, but it costs one bool while nothing is wrapped.
         if self.registry().has_any_method_wrap_chains()
-            && let ValueView::Instance { class_name, .. } = target.view()
+            && let Some(class_name) = inst_class
             // A built-in instance whose class inherits the method (`NFD.list`
             // is `Uni.list`) is wrapped through the class the wrap landed on.
             && self
                 .registry()
-                .builtin_method_wrap_chain_along_mro(class_name.as_str(), method_sym.as_str())
+                .builtin_method_wrap_chain_along_mro(class_name, method_sym.as_str())
                 .is_some()
         {
             return true;
@@ -42,9 +52,9 @@ impl Interpreter {
         // names it `IO::CatHandle+{R}`): a method the role declares takes the
         // call from the built-in row, and its `callsame` reaches the row
         // (#17754).
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.as_str().contains("+{")
-            && self.has_user_method_sym(class_name.as_str(), method_sym)
+        if let Some(class_name) = inst_class
+            && class_name.contains("+{")
+            && self.has_user_method_sym(class_name, method_sym)
         {
             return true;
         }

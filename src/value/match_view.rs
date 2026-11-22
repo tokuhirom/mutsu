@@ -431,6 +431,9 @@ impl Value {
     ///
     /// Cost: O(1) average, one probe of the named-capture map.
     pub(crate) fn match_named_capture(&self, key: &str) -> Value {
+        if let Some(v) = self.match_lazy_named_capture(key) {
+            return v;
+        }
         match self.match_named().as_ref().map(Value::view) {
             Some(ValueView::Hash(named)) => named.get(key).cloned().unwrap_or(Value::NIL),
             _ => Value::NIL,

@@ -29,6 +29,38 @@ impl Value {
         )
     }
 
+    /// The class a lazy Match is an instance of (`Match`, or the grammar for
+    /// a parse cursor), read from its node without materializing it; `None`
+    /// for any other value.
+    // Cost: O(1).
+    pub(crate) fn match_lazy_class_sym(&self) -> Option<Symbol> {
+        self.0.as_match_node().map(|node| node.cursor_class())
+    }
+
+    /// The named capture `key` of an unforced lazy Match, as its `.hash`
+    /// presents the slot (`Nil` when there is none), read from the capture
+    /// node without materializing the Match: `$<key>` in grammar-action code
+    /// reads one per action (#12917). `None` for an eager or forced Match.
+    // Cost: O(k), k = the node's named capture slots (a short list).
+    pub(crate) fn match_lazy_named_capture(&self, key: &str) -> Option<Value> {
+        let node = self.0.as_match_node()?;
+        if node.forced().is_some() {
+            return None;
+        }
+        // A name never interned was never captured. The silent-action marker
+        // keys are not user-visible names, so a `$<key>` cannot reach them.
+        let Some(sym) = Symbol::lookup(key) else {
+            return Some(Value::NIL);
+        };
+        if sym.starts_with(SILENT_ACTION_MARKER_PREFIX) {
+            return Some(Value::NIL);
+        }
+        Some(match node.cap.kids().named.get(&sym) {
+            Some(slot) => Value::named_slot_value(slot, &node.target),
+            None => Value::NIL,
+        })
+    }
+
     /// The `:sym<...>` variant of an unforced lazy Match's node, as the walk
     /// node would report it; `None` for an eager or forced Match.
     // Cost: O(1).

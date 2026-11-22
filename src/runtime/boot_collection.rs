@@ -209,8 +209,11 @@ pub(crate) fn is_boot_collection_invocant(target: &Value) -> bool {
     target.is_vm_collection()
         || target.is_iteration_buffer_view()
         || (target.is_package_value() && boot_type_object_name(target).is_some())
-        || matches!(target.view(), ValueView::Instance { class_name, .. }
-            if is_boot_object_class(class_name.as_str()))
+        // Tag-probed: `view()` of a lazy Match (never a boot object) would
+        // materialize it.
+        || (!target.is_lazy_match_value()
+            && matches!(target.view(), ValueView::Instance { class_name, .. }
+                if is_boot_object_class(class_name.as_str())))
 }
 
 impl Interpreter {

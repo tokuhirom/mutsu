@@ -291,3 +291,29 @@ argument is still ~16k Ir against rakudo's ~3k), which is the env campaign's
 .parse("key1")` is ~550k Ir: ~170k for its two `{ make ... }` blocks, ~110k for
 the grammar's `.new`, ~70k re-casefolding `:i` literals per attempt, ~70k
 re-collecting token definitions).
+
+### Action reads keep the Match lazy (2026-11-22)
+
+With the bench row at ~1.23-1.41x, a per-region timing on this box put the
+parse *with* actions at ~22 ms against rakudo's ~20 ms, although the parse
+without actions was ~6 ms against ~11 ms. A `make ~$/` action cost ~33.6k Ir
+per call against ~22.8k for `make 1`: the `prefix:<~>` coercion probed its
+operand with `view()` for the Buf, code and nested-Seq cases, and `view()` of
+a lazy Match builds its whole attribute map (`MatchNode::materialize_map`,
+~3k Ir plus a dozen allocations). Once one probe was tag-gated the next
+`view()` on the path materialized the same node instead, so the fix is every
+probe a grammar action's `$/` reaches: `~$/`, `$<name>` (now read from the
+capture node, `match_lazy_named_capture`), the native method table's receiver
+probes (`user_buffer_receiver`, the shapeless-type and payload checks, the
+user-override lever), `$/.values`, a hyper call's env write-back sweep, the
+pun/junction/Proxy/Failure guards and the multi-dispatch key. Each now answers
+a lazy Match from its tag or its cursor class.
+
+Per warm `load-yaml` (`profiling`, `MUTSU_JIT=off`, (3−1)/2, paired against
+`main` at 1d3bd4ae): **~159.5M → ~142.6M Ir (−10.6%)**, and Match
+materializations 1,452 → 250 per two parses (the rest are a `.raku`/`.gist`
+guard and a few reads that need the map). Wall clock on this box, mean of 40
+runs: `load-yaml` ~32.5 → ~28.3 ms (rakudo ~25.3 ms); `Grammar.parse` with
+actions ~22.1 → ~19.1 ms, now under rakudo's ~20.4 ms. What is left of the
+gap is `concretize` (~8.6 ms against rakudo's ~4.5 ms), whose cost is the
+method-call frame (ADR-12529), not the grammar.

@@ -116,6 +116,13 @@ impl Interpreter {
         if !Self::is_sequence_role_method(method) {
             return None;
         }
+        // A lazy Match answers on its class without a `view()`, which would
+        // materialize it (#12917): only a grammar that does `Sequence` reads on.
+        if let Some(class) = target.match_lazy_class_sym()
+            && !self.class_does_role(class.as_str(), "Sequence")
+        {
+            return None;
+        }
         // A method call deconts its invocant: `$seq.item.list` reads the
         // sequence itself, not a one-element list holding it. The renderers
         // keep the container, which they show.

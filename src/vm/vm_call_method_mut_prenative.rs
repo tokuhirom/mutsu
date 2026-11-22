@@ -210,7 +210,8 @@ impl Interpreter {
         modifier: Option<&str>,
         quoted: bool,
     ) -> Option<Result<Value, RuntimeError>> {
-        if modifier.is_some() || quoted {
+        // Tag-probed: `view()` of a lazy Match would materialize it.
+        if modifier.is_some() || quoted || target.is_lazy_match_value() {
             return None;
         }
         if !matches!(
@@ -220,9 +221,7 @@ impl Interpreter {
             return None;
         }
         if Self::dispatch_branches_before_native_probe(method)
-            || args
-                .iter()
-                .any(|a| matches!(a.view(), ValueView::Junction { .. }))
+            || args.iter().any(Value::is_junction_value)
             || self.native_lever_a_user_override_sym(target, method_sym)
         {
             return None;

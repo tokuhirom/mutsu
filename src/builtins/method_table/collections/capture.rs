@@ -140,7 +140,11 @@ fn parts(target: &Value) -> Option<Parts> {
 /// itemized (a quantified capture's `Array` of matches, `\([1, 2]).values`).
 // Cost: O(e), e = elements of a flattened value; O(1) otherwise.
 fn push_flat(out: &mut Vec<Value>, value: Value) {
-    if let ValueView::Array(items, ArrayKind::List | ArrayKind::Array) = value.view() {
+    // A capture of a `Match` is itself a lazy Match: its tag says it is not a
+    // list, so it is not materialized by a `view()` (#12917).
+    if value.is_lazy_match_value() {
+        out.push(value);
+    } else if let ValueView::Array(items, ArrayKind::List | ArrayKind::Array) = value.view() {
         out.extend(items.iter().cloned());
     } else {
         out.push(value);
