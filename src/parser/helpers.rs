@@ -299,7 +299,10 @@ fn pod_block<'a>(input: &'a str, margin: &str) -> PResult<'a, &'a str> {
 
     // An `=end` no `=begin` opened (#18369).
     if keyword == "end"
-        && let Some(target) = rest.lines().next().and_then(|l| l.split_whitespace().next())
+        && let Some(target) = rest
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().next())
     {
         return Err(super::pod_delimited::orphan_end_error(input, target));
     }
