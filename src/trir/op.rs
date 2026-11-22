@@ -361,6 +361,25 @@ pub(crate) enum TrOp {
         slot: u16,
     },
 
+    // ---- inlined callees (ADR-8673 D2, `compile/inline_call.rs`) ----
+    /// Enter the inlined body of `chunk.inline_regions[region]`: the guards a
+    /// `CallTr` makes (a wrapped or replaced callee bails), the callee's
+    /// deferred routine-stack entry, its package and its free variables.
+    /// `join` is where the region ends; an error the region turns into a
+    /// `Failure` (a `fail` at the callee's boundary) resumes there.
+    InlineEnter {
+        region: u32,
+        join: u32,
+    },
+    /// The inlined callee returns the value on the boxed bank: leave its
+    /// region and continue at `join`.
+    InlineReturn {
+        region: u32,
+        join: u32,
+    },
+    /// Re-read the inlined callee's free variables after a call it makes, as
+    /// its own frame did after each call.
+    InlineReseed(u32),
     // ---- calls ----
     /// Call another TRIR routine, resolved at compile time. `site` indexes
     /// [`TrChunk::calls`](super::TrChunk::calls).
@@ -407,7 +426,9 @@ impl TrOp {
             | TrOp::JumpCmpC { target: t, .. }
             | TrOp::JumpCmpLC { target: t, .. }
             | TrOp::JumpIfEmptyLocal { target: t, .. }
-            | TrOp::JumpIfNonEmptyLocal { target: t, .. } => Some(t),
+            | TrOp::JumpIfNonEmptyLocal { target: t, .. }
+            | TrOp::InlineEnter { join: t, .. }
+            | TrOp::InlineReturn { join: t, .. } => Some(t),
             _ => None,
         }
     }
@@ -424,7 +445,9 @@ impl TrOp {
             | TrOp::JumpCmpC { target: t, .. }
             | TrOp::JumpCmpLC { target: t, .. }
             | TrOp::JumpIfEmptyLocal { target: t, .. }
-            | TrOp::JumpIfNonEmptyLocal { target: t, .. } => Some(*t),
+            | TrOp::JumpIfNonEmptyLocal { target: t, .. }
+            | TrOp::InlineEnter { join: t, .. }
+            | TrOp::InlineReturn { join: t, .. } => Some(*t),
             _ => None,
         }
     }

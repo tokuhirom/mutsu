@@ -206,6 +206,10 @@ impl Interpreter {
             super::gen_link::GenOutcome::Bail => return Ok(None),
             super::gen_link::GenOutcome::NotLinked => {}
         }
+        // The generic dispatch is a call out of TRIR: the callee can read the
+        // routine stack (ADR-8673 D1). Only the link above is served without
+        // pushing the deferred entries.
+        self.trir_observe();
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         // Only a by-variable argument can be handed over as a container, so a

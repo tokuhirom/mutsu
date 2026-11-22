@@ -27,6 +27,8 @@ impl Encode for TrChunk {
             captured_fatal_mode,
             is_hidden_from_backtrace,
             return_check,
+            inline_regions,
+            readonly_slots,
         } = self;
         ops.encode(encoder)?;
         constants.encode(encoder)?;
@@ -40,6 +42,8 @@ impl Encode for TrChunk {
         captured_fatal_mode.encode(encoder)?;
         is_hidden_from_backtrace.encode(encoder)?;
         return_check.encode(encoder)?;
+        inline_regions.encode(encoder)?;
+        readonly_slots.encode(encoder)?;
         Ok(())
     }
 }
@@ -63,6 +67,8 @@ impl Decode<DecodeCtx> for TrChunk {
             captured_fatal_mode: Decode::decode(decoder)?,
             is_hidden_from_backtrace: Decode::decode(decoder)?,
             return_check: Decode::decode(decoder)?,
+            inline_regions: Decode::decode(decoder)?,
+            readonly_slots: Decode::decode(decoder)?,
         })
     }
 }

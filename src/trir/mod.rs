@@ -49,6 +49,7 @@ mod exec_observe;
 mod exec_str;
 pub(crate) mod frame;
 pub(crate) mod gen_link;
+mod inline_exec;
 pub(crate) mod lazy_frames;
 mod link;
 mod op;
@@ -303,6 +304,25 @@ pub(crate) struct TrChunk {
     /// admitted; `--> Nil` and a definite constant are compiled into the
     /// ops instead, and every other return type declines the routine.
     pub(crate) return_check: Option<TrReturnCheck>,
+    /// The callees inlined into this body (ADR-8673 D2), indexed by
+    /// [`TrOp::InlineEnter`], [`TrOp::InlineReturn`] and
+    /// [`TrOp::InlineReseed`].
+    pub(crate) inline_regions: Vec<TrInlineRegion>,
+    /// Slots that hold an inlined callee's read-only parameter: a call that
+    /// passes one on hands over its value, never its container, exactly as
+    /// the callee's own frame did ([`TrChunk::is_readonly_param_slot`]).
+    pub(crate) readonly_slots: Vec<(u16, TrKind)>,
+}
+
+/// One callee inlined into a TRIR body (ADR-8673 D2).
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
+pub(crate) struct TrInlineRegion {
+    /// The callee, as a `CallTr` to it would have linked it: re-checked on
+    /// entry, so a replaced or wrapped callee bails as the call would.
+    pub(crate) link: TrLink,
+    /// The callee's name, for the wrapper check.
+    pub(crate) name: Symbol,
 }
 
 /// A TRIR routine's declared return type and its precomputed check plan.
@@ -315,6 +335,18 @@ pub(crate) struct TrReturnCheck {
     pub(crate) fast: Option<crate::opcode::FastParamCheck>,
     /// The definiteness smiley, when `fast` classified the base.
     pub(crate) smiley: Option<crate::opcode::TypeSmiley>,
+}
+
+/// The part of the precompilation cache key that inlining decides
+/// (ADR-8673 D2): a compiled chunk carries its inlined callees, so
+/// `MUTSU_TRIR_INLINE=0` must not be served a chunk compiled with inlining.
+// Cost: O(1).
+pub(crate) fn inline_cache_tag() -> &'static str {
+    if compile::inlining_enabled() {
+        ""
+    } else {
+        "+noinline"
+    }
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program
@@ -335,6 +367,7 @@ impl TrChunk {
         self.params
             .iter()
             .any(|p| !p.is_rw && p.slot == slot && p.kind == kind)
+            || self.readonly_slots.contains(&(slot, kind))
     }
 
     /// Whether `MUTSU_TRIR=off` has switched TRIR off for this process.

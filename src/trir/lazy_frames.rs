@@ -52,6 +52,97 @@ impl LazyFrames {
     }
 }
 
+/// The generic `nqp::` ops that run no Raku code and read nothing of the
+/// routine stack when every operand is plain data (see
+/// [`nqp_op_never_observes`]): they store, fetch and scan values in core
+/// containers and strings, and a user object among the operands is the only
+/// way one could reach a method.
+const DATA_NQP_OPS: &[&str] = &[
+    "push",
+    "pop",
+    "shift",
+    "unshift",
+    "atpos",
+    "bindpos",
+    "atkey",
+    "bindkey",
+    "existskey",
+    "deletekey",
+    "elems",
+    "hash",
+    "list",
+    "chr",
+    "iscclass",
+    "findcclass",
+    "findnotcclass",
+    "strtocodes",
+    "strfromcodes",
+    "index",
+    "rindex",
+];
+
+/// The core types `nqp::create` allocates directly (`nqp_create`'s collection
+/// and storage kinds), without running a `new` or `CREATE` a program could
+/// have written.
+const CORE_CREATE_TYPES: &[&str] = &[
+    "IterationBuffer",
+    "IterationMap",
+    "List",
+    "Map",
+    "Array",
+    "Hash",
+    "NFD",
+    "NFC",
+    "NFKD",
+    "NFKC",
+    "Uni",
+];
+
+/// Whether the generic `nqp::` op `id` on `args` can neither read the
+/// routine stack nor run code that does, so it needs no deferred entry
+/// pushed. `p6scalarwithvalue` only wraps its value; every op of
+/// [`DATA_NQP_OPS`] qualifies when its operands are plain data. Anything else
+/// (`die`, `istype`, `create`, an op on a user object) is an observer.
+// Cost: O(a), a = operands (a table probe of the op id, a tag test per
+// operand).
+pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bool {
+    use crate::value::ValueView;
+    static IDS: std::sync::OnceLock<(Vec<u16>, Option<u16>)> = std::sync::OnceLock::new();
+    let (data, wrap) = IDS.get_or_init(|| {
+        (
+            DATA_NQP_OPS
+                .iter()
+                .filter_map(|n| crate::nqp_op_ids::nqp_op_id(n))
+                .collect(),
+            crate::nqp_op_ids::nqp_op_id("p6scalarwithvalue"),
+        )
+    });
+    if *wrap == Some(id) {
+        return true;
+    }
+    if crate::nqp_op_ids::nqp_op_name(id) == "create" {
+        return matches!(args, [v] if matches!(
+            v.view(),
+            ValueView::Package(name) if CORE_CREATE_TYPES.contains(&name.as_str())
+        ));
+    }
+    data.contains(&id)
+        && args.iter().all(|v| {
+            matches!(
+                v.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Nil
+                    | ValueView::Array(..)
+                    | ValueView::Hash(_)
+                    | ValueView::Uni(_)
+            )
+        })
+}
+
 /// Whether inner TRIR calls push their entries lazily.
 // Cost: O(1) after the first call.
 pub(crate) fn lazy_frames_enabled() -> bool {
@@ -101,6 +192,30 @@ impl Interpreter {
             return self.current_source_file_sym();
         }
         self.executing_source_file_sym()
+    }
+
+    /// The lexical package the innermost deferred entry's push would record
+    /// (`push_routine_with_visibility`), computed without pushing anything:
+    /// from its declaring file, or, with none, from the unit the pushes below
+    /// it would have switched to. `None` when nothing is deferred.
+    // Cost: O(p + u), p = deferred entries walked for a unit, u = EVAL unit
+    // parents walked to a module unit.
+    pub(super) fn trir_deferred_lexical_package(&self) -> Option<Option<Symbol>> {
+        let lazy = &self.trir.lazy;
+        if !lazy.pending() {
+            return None;
+        }
+        let top = lazy.entries.last()?;
+        if let Some(file) = top.def_file {
+            return Some(self.lexical_package_for_frame(Some(file)));
+        }
+        let unit = lazy.entries[lazy.live..]
+            .iter()
+            .rev()
+            .find_map(|e| e.def_file)
+            .map(|file| self.unit_of_source_sym(Some(file)))
+            .unwrap_or(self.current_unit);
+        Some(self.lexical_package_in_unit(unit))
     }
 
     /// Drop the innermost recorded entry, popping it off the routine stack

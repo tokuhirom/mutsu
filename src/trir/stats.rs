@@ -18,7 +18,8 @@
 //!   dispatch itself.
 //!
 //! - `lazy-deferred`: an inner TRIR call deferred its routine-stack entry
-//!   (ADR-8673 D1); `lazy-pushed`: an op that observes the stack pushed one.
+//!   (ADR-8673 D1); `lazy-pushed`: an op that observes the stack pushed one;
+//!   `inlined`: an inlined callee's region was entered (ADR-8673 D2).
 //!
 //! In a program where TRIR is doing its job, `completed` is close to
 //! `entries`. A `bails` count of the same order as `entries` means the typed
@@ -33,6 +34,16 @@ static BIND_DECLINES: AtomicU64 = AtomicU64::new(0);
 static GEN_LINKS: AtomicU64 = AtomicU64::new(0);
 static LAZY_DEFERRED: AtomicU64 = AtomicU64::new(0);
 static LAZY_PUSHED: AtomicU64 = AtomicU64::new(0);
+static INLINED: AtomicU64 = AtomicU64::new(0);
+
+/// An inlined callee's region was entered (ADR-8673 D2).
+// Cost: O(1).
+#[inline]
+pub(crate) fn record_inline_entry() {
+    if crate::vm::vm_stats::enabled() {
+        INLINED.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 /// An inner TRIR call deferred its routine-stack entry.
 // Cost: O(1).
@@ -86,7 +97,7 @@ pub(crate) fn record(outcome: TrirEntry) {
 /// The report line, printed with the rest of `MUTSU_VM_STATS`.
 pub(crate) fn report() {
     eprintln!(
-        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={} gen-links={} lazy-deferred={} lazy-pushed={}",
+        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={} gen-links={} lazy-deferred={} lazy-pushed={} inlined={}",
         ENTRIES.load(Ordering::Relaxed),
         COMPLETED.load(Ordering::Relaxed),
         BAILS.load(Ordering::Relaxed),
@@ -94,5 +105,6 @@ pub(crate) fn report() {
         GEN_LINKS.load(Ordering::Relaxed),
         LAZY_DEFERRED.load(Ordering::Relaxed),
         LAZY_PUSHED.load(Ordering::Relaxed),
+        INLINED.load(Ordering::Relaxed),
     );
 }

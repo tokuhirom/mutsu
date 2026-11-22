@@ -52,12 +52,28 @@ impl Interpreter {
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
+        // An inlined callee runs inside a routine that already noted this.
         crate::runtime::begin_replay::watch::note_routine_entry();
+        if chunk.inline_regions.is_empty() {
+            return self.run_trir_ops(chunk, frame, compiled_fns, 0);
+        }
+        self.run_trir_chunk_with_regions(chunk, frame, compiled_fns)
+    }
+
+    /// The op loop of [`Self::run_trir_chunk`], from `start`.
+    // Cost: O(1) dispatch per op executed.
+    pub(super) fn run_trir_ops(
+        &mut self,
+        chunk: &TrChunk,
+        frame: TrFrame,
+        compiled_fns: &CompiledFns,
+        start: usize,
+    ) -> Result<TrOutcome, RuntimeError> {
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         let cbase = frame.outer_base as usize;
         let ops = &chunk.ops;
-        let mut ip = 0usize;
+        let mut ip = start;
         loop {
             match &ops[ip] {
                 TrOp::ConstI(v) => self.trir.ns.push(*v),
@@ -494,8 +510,16 @@ impl Interpreter {
                             // A generic `nqp::` op can read the routine stack
                             // (`die`/`throw` take a backtrace, `iscont*` reads
                             // the top frame's invocant): push the deferred
-                            // entries first (ADR-8673 D1).
-                            self.trir_observe();
+                            // entries first (ADR-8673 D1), unless it is a data
+                            // op on plain data.
+                            if self.trir.lazy.pending()
+                                && !super::lazy_frames::nqp_op_never_observes(
+                                    *id,
+                                    &self.trir.os[base..],
+                                )
+                            {
+                                self.trir_observe();
+                            }
                             let mut args = std::mem::take(&mut self.trir.nqp_args);
                             args.extend(self.trir.os.drain(base..));
                             let v = self.dispatch_nqp_op_by_id(*id, &args);
@@ -521,6 +545,36 @@ impl Interpreter {
                     // by-name lookup per ACCESS.
                     if !self.trir_reseed_outers(chunk, frame) {
                         return Ok(TrOutcome::Bail);
+                    }
+                }
+
+                // A linked site observes nothing; the generic dispatch pushes
+                // the deferred routine-stack entries itself.
+                TrOp::CallGen(site) => {
+                    if self
+                        .exec_trir_generic_call(chunk, *site, frame, compiled_fns)?
+                        .is_none()
+                    {
+                        return Ok(TrOutcome::Bail);
+                    }
+                    if !self.trir_reseed_outers(chunk, frame) {
+                        return Ok(TrOutcome::Bail);
+                    }
+                }
+
+                // ---- inlined callees (ADR-8673 D2, `inline_exec.rs`) ----
+                // Not observers: they move the deferred routine-stack entry,
+                // they never read the stack.
+                op @ (TrOp::InlineEnter { .. }
+                | TrOp::InlineReturn { .. }
+                | TrOp::InlineReseed(_)) => {
+                    match self.exec_trir_inline_op(chunk, op, frame, compiled_fns) {
+                        None => return Ok(TrOutcome::Bail),
+                        Some(Some(join)) => {
+                            ip = join;
+                            continue;
+                        }
+                        Some(None) => {}
                     }
                 }
 

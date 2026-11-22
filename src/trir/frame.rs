@@ -52,6 +52,8 @@ pub(crate) struct TrStacks {
     /// The routine-stack entries of inner TRIR calls, pushed only once
     /// something can observe them (ADR-8673 D1, `lazy_frames.rs`).
     pub(crate) lazy: super::lazy_frames::LazyFrames,
+    /// The inlined callees running now (ADR-8673 D2, `inline_exec.rs`).
+    pub(crate) inline: super::inline_exec::InlineRegions,
 }
 
 /// See [`TrStacks::str_memo`].

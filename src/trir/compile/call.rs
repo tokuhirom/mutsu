@@ -88,6 +88,14 @@ impl TrirCompiler<'_> {
                 }
             }
         }
+        // ADR-8673 D2: a small linked callee is spliced in, not called.
+        if let Some(link) = &callee
+            && self
+                .try_inline_call(link, crate::symbol::Symbol::intern(name), &plan)
+                .is_some()
+        {
+            return Some(TrKind::Obj);
+        }
         let (kind, site_callee, sym) = match callee {
             Some(link) => (
                 TrKind::Obj,
