@@ -3,7 +3,7 @@
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
