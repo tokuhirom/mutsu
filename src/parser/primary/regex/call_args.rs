@@ -112,7 +112,9 @@ pub(in crate::parser) fn paren_arg_expr(input: &str) -> PResult<'_, Expr> {
 /// whitespace.
 // Cost: O(1).
 pub(in crate::parser) fn reject_loose_infix_after_arg(rest: &str) -> Result<(), PError> {
-    let feed = ["==>>", "<<==", "==>", "<=="].iter().any(|op| rest.starts_with(op));
+    let feed = ["==>>", "<<==", "==>", "<=="]
+        .iter()
+        .any(|op| rest.starts_with(op));
     if feed || crate::parser::expr::starts_with_loose_word_logical(rest) {
         return Err(crate::parser::primary::container::fail_goal_error_at(
             "argument list",
