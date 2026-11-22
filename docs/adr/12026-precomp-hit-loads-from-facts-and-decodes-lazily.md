@@ -343,3 +343,19 @@ The steps:
     body today), sharing `params`/`param_defs` instead of the one `AdaptInputs` clone
     (§2.3 item 2), and the nested `compiled_fns` of a body, which stamps its nested
     routines (decoding them) on the body's first use.
+- **Re-measurement on 2026-11-22** (profiling build of `main` 4abb0fde, warm cache,
+  callgrind Ir of `use Test; ok 1;` minus an empty script): **37.59M**, up from the
+  32.09M recorded after step 2. The growth is outside the load path this ADR
+  restructured; the largest new or grown items on a hit were:
+  - `Interpreter::eval_declared_types` (2.29M): the pre-mainline parameter-type check
+    scanned the source of every `use`d module (`collect_use_declared_type_names`,
+    including a `split_finish_section` line scan of `Test.rakumod`) even when no
+    routine named a type;
+  - `qualified_tail_index::record_members` (1.59M);
+  - `function_key_base_name` over the whole functions map (1.25M, 8 full scans:
+    `collect_fn_keys_for_base` from the single-dirty-base and cold-miss paths of
+    `fill_fn_keys_base`, and its staleness audit).
+- **Lazy declared types** (not one of the §5 steps, a load-path regression fix):
+  `SubParamTypes` collects the declared types on the first routine that constrains a
+  parameter or return type. `use Test` load: **37.59M → 35.30M** Ir (−2.29M, paired
+  A/B in one session).
