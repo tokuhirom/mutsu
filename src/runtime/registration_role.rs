@@ -282,7 +282,7 @@ impl Interpreter {
         let base_role_name = if let Some(bracket) = parent.find('[') {
             &parent[..bracket]
         } else {
-            &parent
+            parent
         };
         let Some(candidates) = self.registry().role_candidates.get(base_role_name).cloned() else {
             if let Some(role) = self.registry().roles.get(base_role_name).map(|r| RoleDef::clone(r)) {
