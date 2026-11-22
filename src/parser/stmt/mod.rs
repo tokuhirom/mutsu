@@ -373,6 +373,15 @@ fn routine_decl_modifier(rest: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     if !matches!(stmt, Stmt::SubDecl { .. }) {
         return Ok((rest, stmt));
     }
+    same_line_modifier(rest, stmt)
+}
+
+/// A statement modifier on the same line after a statement that ends in a
+/// closing `}` (a routine declaration, a block-form phaser): the modifier
+/// governs the statement's value, and its condition or topic still runs. A
+/// line break after the `}` ends the statement instead.
+// Cost: O(w) plus the modifier's parse, w = whitespace after `stmt`.
+pub(super) fn same_line_modifier(rest: &str, stmt: Stmt) -> PResult<'_, Stmt> {
     let (r_ws, _) = ws(rest)?;
     if rest[..rest.len() - r_ws.len()].contains('\n') || !is_stmt_modifier_keyword(r_ws) {
         return Ok((rest, stmt));

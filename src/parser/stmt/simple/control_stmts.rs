@@ -551,7 +551,9 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // A unit-level `BEGIN` may run now, as on rakudo (ADR-17558 slice 5).
     if kind == PhaserKind::Begin {
         match super::begin_at_parse::run_unit_begin(&body, bare) {
-            super::begin_at_parse::UnitBegin::Ran => return Ok((rest, Stmt::Block(Vec::new()))),
+            super::begin_at_parse::UnitBegin::Ran => {
+                return block_phaser_modifier(rest, bare, Stmt::Block(Vec::new()));
+            }
             super::begin_at_parse::UnitBegin::Failed(message) => {
                 return Err(PError::fatal_at(message, input));
             }
@@ -586,7 +588,27 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         bare,
         scope: 0,
     };
-    Ok((rest, phaser))
+    block_phaser_modifier(rest, bare, phaser)
+}
+
+/// `BEGIN { ... } for ^3`: a statement modifier after a block-form phaser
+/// governs only the statement's value (the phaser's result), so its topic or
+/// condition still runs, while the phaser is installed unconditionally and
+/// runs as it always does -- a `BEGIN` once at compile time, a `FIRST` once
+/// per loop, a `LEAVE` on every exit, whatever the modifier says (#18148).
+/// The two sit side by side in a scopeless block: the phaser, then the
+/// modifier over an empty statement. A bare-form phaser's statement already
+/// took its own modifier (`BEGIN say "x" for ^2`).
+// Cost: O(w) plus the modifier's parse, w = whitespace after the phaser.
+fn block_phaser_modifier(rest: &str, bare: bool, stmt: Stmt) -> PResult<'_, Stmt> {
+    if bare {
+        return Ok((rest, stmt));
+    }
+    let (after, modified) = crate::parser::stmt::same_line_modifier(rest, Stmt::Block(Vec::new()))?;
+    if after.len() == rest.len() {
+        return Ok((rest, stmt));
+    }
+    Ok((after, Stmt::SyntheticBlock(vec![stmt, modified])))
 }
 
 /// Fold `$*RAKU.version` / `$*PERL.version` to a Version literal of the current
