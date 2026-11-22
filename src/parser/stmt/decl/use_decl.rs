@@ -441,8 +441,11 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // pair from being mistaken for this construct.
     // A parse-time `BEGIN` after it that calls a routine it imports runs this
     // import first (ADR-17558 §7.16). A conditional `use` imports only when
-    // its BEGIN-time condition holds, so it is left out.
-    if site != 0 && !empty_import && use_stmt_condition_free(&use_stmt) {
+    // its BEGIN-time condition holds, so it is left out. `use Test` is not
+    // preloaded, but its load is no prologue effect (`is_inert_pragma`): the
+    // `BEGIN` that needs it loads it, as its `use` would at that point.
+    let loads_for_begin = site != 0 || matches!(&use_stmt, Stmt::Use { module, arg: None, .. } if module == "Test");
+    if loads_for_begin && !empty_import && use_stmt_condition_free(&use_stmt) {
         super::super::simple::note_parse_time_use(&use_stmt);
     }
     let stmt = if let Some(proto) = inline_proto {
