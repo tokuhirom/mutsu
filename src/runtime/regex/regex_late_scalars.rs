@@ -187,7 +187,7 @@ impl super::super::Interpreter {
             .or_else(|| self.env.get(&format!("${name}")).cloned())
             // A package-qualified scalar (`$Pkg::v`) lives in its package.
             .or_else(|| {
-                name.contains("::")
+                crate::qualified::is_qualified_str(name)
                     .then(|| self.regex_package_chain_var_fallback(&format!("${name}")))
                     .flatten()
             })
