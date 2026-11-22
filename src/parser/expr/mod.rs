@@ -773,7 +773,7 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             index,
             value: bind,
             is_positional,
-            ..
+            spelling,
         } if matches!(*bind, Expr::IndexBindValue(_)) => {
             let Expr::IndexBindValue(rhs) = *bind else {
                 unreachable!("the guard checked the shape");
@@ -785,7 +785,8 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
                     reassociate_fat_arrow_operand(*rhs, value),
                 ))),
                 is_positional,
-                spelling: Default::default(),
+                // The subscript as written (`%h<p>`) (#18471).
+                spelling,
             }
         }
         left => reassociated_fat_arrow_pair(left, value),
