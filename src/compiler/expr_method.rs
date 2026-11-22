@@ -126,7 +126,10 @@ impl Compiler {
                 Stmt::VarDecl { name, .. } => name.clone(),
                 _ => unreachable!(),
             },
-            other => other.var_key().expect("a variable method target"),
+            other => match Self::assigned_scalar_name(other) {
+                Some(assigned) => assigned.to_string(),
+                None => other.var_key().expect("a variable method target"),
+            },
         };
         // `.dynamic` on an array/hash variable reports whether the *variable* is
         // a dynamic (`@*a`/`%*h`) one — the container's dynamism, exactly like

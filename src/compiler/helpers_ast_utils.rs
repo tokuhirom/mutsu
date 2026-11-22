@@ -35,6 +35,24 @@ impl Compiler {
                 if !*anonymous || name.starts_with(['@', '%', '&'])))
     }
 
+    /// The scalar an assignment expression `($x = EXPR)` / `($ = EXPR)`
+    /// writes, when `expr` is one (parenthesized or not). Its result is that
+    /// scalar's container, so a method called on it that mutates its
+    /// receiver (`($x = "ab").subst-mutate(...)`) writes the scalar, as in
+    /// rakudo. Array/hash/code targets and binds are not reported.
+    // Cost: O(d), d = nesting depth of the parentheses.
+    pub(super) fn assigned_scalar_name(expr: &Expr) -> Option<&str> {
+        match expr {
+            Expr::Grouped(inner) => Self::assigned_scalar_name(inner),
+            Expr::AssignExpr {
+                name,
+                is_bind: false,
+                ..
+            } if !name.starts_with(['@', '%', '&']) && !name.contains("::") => Some(name),
+            _ => None,
+        }
+    }
+
     /// An uninitialized untyped `$` scalar declaration (`my $x;`) seeds the
     /// Any type object, not Nil (PLAN 8.5 step 3). The substitution happens
     /// only at RHS-emission time: the AST keeps the synthesized

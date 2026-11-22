@@ -1126,6 +1126,7 @@ impl Compiler {
                     | Expr::CodeVar(_)
                     | Expr::BareWord(_)
             ) || Self::is_dostmt_vardecl(target)
+                || Self::assigned_scalar_name(target).is_some()
                 || Self::is_any_type_literal(target) =>
             {
                 self.compile_expr_method_on_var(target, name, args, modifier, *quoted);
