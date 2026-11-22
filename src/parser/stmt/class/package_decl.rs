@@ -29,7 +29,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     // A unit-scoped declarator after the unit has already declared a package
     // (`role R { }; unit module M;`) is too late (#18588).
     if super::super::simple::package_declared()
-        && let Ok((_, what)) = ident(rest)
+        && let Ok((_, what)) = crate::parser::stmt::ident(rest)
     {
         return Err(super::package_syntax::unit_scope_too_late(&what, rest));
     }
