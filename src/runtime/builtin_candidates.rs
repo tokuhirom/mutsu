@@ -48,6 +48,15 @@ impl Interpreter {
         {
             return Vec::new();
         }
+        self.setting_multi_candidates(package, name)
+    }
+
+    /// The setting's candidates of the multi routine `package`/`name`, as
+    /// code objects; empty when the setting routine is no multi or `package`
+    /// is not the global one.
+    // Cost: O(c * s), c = setting candidates, s = signature length (each is
+    // parsed).
+    pub(super) fn setting_multi_candidates(&self, package: &str, name: &str) -> Vec<Value> {
         let is_global = package.is_empty() || crate::qualified::is_global_name(package);
         if !is_global {
             return Vec::new();

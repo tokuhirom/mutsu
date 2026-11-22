@@ -1,54 +1,62 @@
-//! The synthetic lexical import set of a block that declares a plain built-in
-//! operator routine of its own (#17771; `runtime::block_operator_sets`).
+//! The synthetic lexical import set of a block that declares a built-in
+//! operator routine or multi candidate of its own (#17771, #18617;
+//! `runtime::block_operator_sets`).
 
 use super::*;
 use crate::runtime::block_operator_sets::{BLOCK_OPS_MARK, block_operator_set_names};
 
 impl Compiler {
-    /// The plain built-in operator routines `stmts` (a block body below the
-    /// unit's top level) declares directly, sorted: a non-multi, literally
-    /// named `my` `sub infix:<op>` of an operator whose every use in a block
-    /// can read a lexical set (`crate::lexical_builtin_op::binds_lexically`).
-    /// A name the block also declares a `multi` or `proto` of is left out: that
-    /// family keeps the registry path.
+    /// The built-in operator routines `stmts` (a block body below the unit's
+    /// top level) declares directly, sorted: a literally named, `my`, not
+    /// exported `sub infix:<op>` or `multi infix:<op>` of an operator whose
+    /// every use in a block can read a lexical set
+    /// (`crate::lexical_builtin_op::binds_lexically`). A name the block also
+    /// declares a `proto` of, or both a plain routine and a `multi` of, keeps
+    /// the registry path.
     // Cost: O(s^2) worst case, s = statements of the block (each declaration
-    // checks the block for a family of its name); O(s) without one.
-    fn block_plain_operator_names(stmts: &[Stmt]) -> Vec<Symbol> {
-        let family = |name: Symbol| {
+    // checks the block for a conflicting one of its name); O(s) without one.
+    fn block_operator_names(stmts: &[Stmt]) -> Vec<Symbol> {
+        let conflicting = |name: Symbol, multi: bool| {
             stmts.iter().any(|stmt| match stmt {
                 Stmt::SubDecl {
-                    name: n,
-                    multi: true,
-                    ..
-                } => *n == name,
+                    name: n, multi: m, ..
+                } => *n == name && *m != multi,
                 Stmt::ProtoDecl { name: n, .. } => *n == name,
                 _ => false,
             })
         };
         let mut names: Vec<Symbol> = stmts
             .iter()
-            .filter_map(Self::plain_operator_decl_name)
-            .filter(|name| !family(*name))
+            .filter_map(|stmt| match (Self::operator_decl_name(stmt), stmt) {
+                (Some(name), Stmt::SubDecl { multi, .. }) => Some((name, *multi)),
+                _ => None,
+            })
+            .filter(|(name, multi)| !conflicting(*name, *multi))
+            .map(|(name, _)| name)
             .collect();
         names.sort_by_key(|name| name.resolve());
         names.dedup();
         names
     }
 
-    /// The name `stmt` declares when it is a plain built-in operator routine
-    /// ([`Self::block_plain_operator_names`] before the family check).
+    /// The name `stmt` declares when it is a built-in operator routine
+    /// ([`Self::block_operator_names`] before the conflict check).
     // Cost: O(m), m = bytes of the name.
-    fn plain_operator_decl_name(stmt: &Stmt) -> Option<Symbol> {
+    fn operator_decl_name(stmt: &Stmt) -> Option<Symbol> {
         match stmt {
+            // A `multi` only of an operator whose ops rank the candidates
+            // against the core ones (`infix_ops_ask_user_candidates`).
             Stmt::SubDecl {
                 name,
                 name_expr: None,
-                multi: false,
                 is_export: false,
                 scope: crate::ast::SubScope::My,
+                multi,
                 ..
             } if name.with_str(|n| {
-                n.starts_with("infix:<") && crate::lexical_builtin_op::binds_lexically(n)
+                n.starts_with("infix:<")
+                    && crate::lexical_builtin_op::binds_lexically(n)
+                    && (!*multi || crate::lexical_builtin_op::infix_ops_ask_user_candidates(n))
             }) =>
             {
                 Some(*name)
@@ -58,13 +66,13 @@ impl Compiler {
     }
 
     /// The index of the statement of `stmts` (a block body) that opens the
-    /// block's import region: its first import statement, or its first plain
+    /// block's import region: its first import statement, or its first
     /// built-in operator routine, whose operator set the region holds while
     /// the block runs (#17771). `None` when the block has neither.
     // Cost: O(s), s = statements of the block.
     pub(super) fn import_region_start(stmts: &[Stmt]) -> Option<usize> {
         stmts.iter().position(|stmt| {
-            Self::opens_import_scope(stmt) || Self::plain_operator_decl_name(stmt).is_some()
+            Self::opens_import_scope(stmt) || Self::operator_decl_name(stmt).is_some()
         })
     }
 
@@ -99,7 +107,7 @@ impl Compiler {
     /// `lexical_import_chain` when the block ends.
     // Cost: O(s log s) plus the family check, s = statements of the block.
     pub(super) fn enter_block_operator_set(&mut self, stmts: &[Stmt]) {
-        let names = Self::block_plain_operator_names(stmts);
+        let names = Self::block_operator_names(stmts);
         if names.is_empty() {
             return;
         }

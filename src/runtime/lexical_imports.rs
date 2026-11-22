@@ -588,7 +588,7 @@ impl Interpreter {
     /// Record the definition of each captured candidate of `dispatcher`,
     /// built from `defs` in order (`lexical_operator_candidate_defs`).
     // Cost: O(c), c = candidates.
-    fn note_lexical_operator_candidate_defs(
+    pub(crate) fn note_lexical_operator_candidate_defs(
         &mut self,
         dispatcher: &Value,
         defs: &[std::sync::Arc<crate::ast::FunctionDef>],

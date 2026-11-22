@@ -246,12 +246,11 @@ impl Compiler {
                 .code
                 .add_sub_decl_plan(stmt, name_chunk, trait_args, pass),
         };
-        // A block's own plain built-in operator routine binds in the block's
-        // operator set (#17771).
+        // A block's own built-in operator routine or multi candidate binds in
+        // the block's operator set (#17771, #18617).
         if let Stmt::SubDecl {
             name,
             name_expr: None,
-            multi: false,
             ..
         } = stmt
             && let Some(set) = self.block_operator_set_for(*name)
