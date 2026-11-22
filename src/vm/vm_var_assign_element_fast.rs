@@ -70,7 +70,11 @@ impl Interpreter {
         // / `try_shared_array_element_assign`) are skipped by running here, and
         // they own the store whenever a thread shares this env. Their own gate
         // is this exact flag.
-        if self.threads.shared_vars_active {
+        //
+        // A `:=`-bound (celled) container is the exception: both lanes decline
+        // for it (`assign_array_elem_to_shared_var`), so it is never theirs,
+        // and the lane below serves it under the container's own lock.
+        if self.threads.shared_vars_active && !self.env_holds_container_cell(code, name_idx) {
             return None;
         }
         let stack_len = self.stack.len();
@@ -285,13 +289,14 @@ impl Interpreter {
         // stand down entirely and let the audited path run. One relaxed atomic
         // load, and the same latch `ContainerStructGuard` itself consults.
         //
-        // The cost is real and deliberate: a program that spawns a thread gets
-        // no fast store anywhere, for the rest of the process. #8069 §3 (the
-        // shared-container half of that issue) is what addresses the concurrent
-        // case; this lane is the single-threaded half.
-        if crate::value::container_lock::multi_mutator_threads_live() {
-            return None;
-        }
+        // The exception is a `:=`-bound container, reached through its shared
+        // `ContainerCell`: the name-keyed lanes decline for it and the full
+        // path's store is a guarded in-place write (ADR-0068), so this lane
+        // serves it too, taking the same container lock around the commit
+        // (`commit_celled_element_store_guarded`). A plain `@` stands down as
+        // before (#8069).
+        let concurrent = crate::value::container_lock::multi_mutator_threads_live()
+            || self.threads.shared_vars_active;
         let var_name = Self::const_str(code, name_idx);
         // Only a real `@` array. A sigilless alias (`my \a = @x`) has no sigil,
         // so this also excludes the `__mutsu_sigilless_alias::` redirect the
@@ -381,6 +386,7 @@ impl Interpreter {
         let (items, kind, cell) = {
             let v = self.env().get_sym(var_sym)?;
             match v.view() {
+                ValueView::Array(_, _) if concurrent => return None,
                 ValueView::Array(items, kind) => (items.clone(), kind, None),
                 // A holder-local itemization flavour makes a read of this cell
                 // yield something other than its contents
@@ -391,9 +397,20 @@ impl Interpreter {
                     // this lane is not certain about, and declining is what it
                     // does with those. It also keeps the panic-surface ratchet
                     // (#8186) where it was.
-                    let inner = match arc.lock().ok()?.view() {
-                        ValueView::Array(items, kind) => Some((items.clone(), kind)),
-                        _ => None,
+                    // Concurrently, a read of the cell takes its stripe
+                    // (`ContainerCell::load`): a clone under the cell's mutex
+                    // alone can take a refcount on a node a writer is dropping
+                    // (#13016).
+                    let inner = if concurrent {
+                        match arc.load().view() {
+                            ValueView::Array(items, kind) => Some((items.clone(), kind)),
+                            _ => None,
+                        }
+                    } else {
+                        match arc.lock().ok()?.view() {
+                            ValueView::Array(items, kind) => Some((items.clone(), kind)),
+                            _ => None,
+                        }
                     };
                     match inner {
                         Some((items, kind)) => (items, kind, Some(arc)),
@@ -464,20 +481,8 @@ impl Interpreter {
         // there means the store writes THROUGH it (a `:=`-bound cell, a `Proxy`,
         // an itemized `Scalar` element, a varref back-reference) and the slow
         // path owns every one of those rules. An append has no slot yet.
-        if i < items.len() {
-            match items.items().get(i).map(Value::view) {
-                Some(
-                    ValueView::ContainerRef(_)
-                    | ValueView::Scalar(_)
-                    | ValueView::Proxy { .. }
-                    | ValueView::VarRef { .. },
-                ) => return None,
-                Some(ValueView::Pair(name, _)) if name.as_str().starts_with("__mutsu_bound") => {
-                    return None;
-                }
-                None => return None,
-                Some(_) => {}
-            }
+        if !Self::element_slot_takes_plain_store(&items, i) {
+            return None;
         }
         // `@a[0] = @a` stores the array *itself* (a genuinely circular
         // structure, as in rakudo) rather than an itemized copy -- a distinction
@@ -514,6 +519,10 @@ impl Interpreter {
         }
 
         // ---- All checks passed; commit. ----
+        if concurrent {
+            let cell = cell?;
+            return self.commit_celled_element_store_guarded(&cell, &items, i);
+        }
         self.stack.pop();
         let val = self.stack.pop().unwrap();
         // ADR-0040 slice 1: an element is a Scalar container, so an aggregate
