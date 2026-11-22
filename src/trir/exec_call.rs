@@ -176,7 +176,7 @@ impl Interpreter {
             self.trir.pop_frame(callee_frame);
             return Ok(None);
         }
-        let outcome = self.run_trir_routine(&callee, callee_frame, compiled_fns);
+        let outcome = self.run_trir_inner_routine(&callee, callee_frame, compiled_fns);
         drop(guard);
         self.trir.pop_frame(callee_frame);
         match outcome? {

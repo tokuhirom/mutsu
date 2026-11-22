@@ -276,6 +276,8 @@ impl Interpreter {
                     let n = match v.as_int() {
                         Some(n) => n,
                         None => {
+                            // A failed narrowing raises an error: observe.
+                            self.trir_observe();
                             let tn = chunk.constants[*i as usize].to_string_value();
                             self.trir_narrow_store(&tn, v)?
                         }
@@ -351,23 +353,9 @@ impl Interpreter {
                     let e = Self::trir_atpos_i(&v, idx)?;
                     self.trir.ns.push(e);
                 }
-                TrOp::ConcatN(n) => {
-                    let base = self.trir.os.len().saturating_sub(*n as usize);
-                    let vals: Vec<Value> = self.trir.os.drain(base..).collect();
-                    self.stack.extend(vals);
-                    self.exec_string_concat_op(*n as u32, &[])?;
-                    let v = self.stack.pop().unwrap_or(Value::NIL);
-                    self.trir.os.push(v);
-                }
                 TrOp::DupObj => {
                     let v = self.trir.os.last().cloned().unwrap_or(Value::NIL);
                     self.trir.os.push(v);
-                }
-                TrOp::TruthyDefined => {
-                    // The same test the untyped `JumpIfNotNil` arm makes.
-                    let v = self.opop();
-                    let defined = self.value_is_defined_dispatch(&v);
-                    self.trir.ns.push(defined as i64);
                 }
                 TrOp::NewHash => self
                     .trir
@@ -380,20 +368,6 @@ impl Interpreter {
                     // `Value::array` IS the `List` kind (see its definition);
                     // `real_array` is the `Array` kind `my @a` declares.
                     self.trir.os.push(Value::array(items));
-                }
-                TrOp::TruthyObj => {
-                    let v = self.opop();
-                    let t = self.eval_truthy(&v);
-                    self.trir.ns.push(t as i64);
-                }
-                TrOp::ConcatBin => {
-                    let r = self.opop();
-                    let l = self.opop();
-                    self.stack.push(l);
-                    self.stack.push(r);
-                    self.exec_concat_op()?;
-                    let v = self.stack.pop().unwrap_or(Value::NIL);
-                    self.trir.os.push(v);
                 }
                 TrOp::CharsS => {
                     let v = self.opop();
@@ -458,15 +432,13 @@ impl Interpreter {
                         continue;
                     }
                 }
-                TrOp::ClassOperand(site) => {
-                    let v = self.trir_class_operand(site, compiled_fns)?;
-                    self.trir.os.push(v);
-                }
                 TrOp::GetAttrC(site) => {
                     let _class = self.opop();
                     let obj = self.opop();
                     let (name, conv) = **site;
                     let code_do = if name.code_do {
+                        // A `Code`'s `$!do` read can run code: an observer.
+                        self.trir_observe();
                         self.nqp_code_do_attr(&obj, name.name.as_str(), None)
                     } else {
                         None
@@ -483,6 +455,7 @@ impl Interpreter {
                     let _class = self.opop();
                     let obj = self.opop();
                     let code_do = if name.code_do {
+                        self.trir_observe();
                         self.nqp_code_do_attr(&obj, name.name.as_str(), Some(&val))
                     } else {
                         None
@@ -518,6 +491,11 @@ impl Interpreter {
                             // generic op allocates nothing. An op that
                             // re-enters TRIR finds it taken and uses a fresh
                             // one.
+                            // A generic `nqp::` op can read the routine stack
+                            // (`die`/`throw` take a backtrace, `iscont*` reads
+                            // the top frame's invocant): push the deferred
+                            // entries first (ADR-8673 D1).
+                            self.trir_observe();
                             let mut args = std::mem::take(&mut self.trir.nqp_args);
                             args.extend(self.trir.os.drain(base..));
                             let v = self.dispatch_nqp_op_by_id(*id, &args);
@@ -529,6 +507,8 @@ impl Interpreter {
                 }
 
                 // ---- calls ----
+                // A call between TRIR bodies observes nothing: the callee's
+                // routine-stack entry is deferred (ADR-8673 D1).
                 TrOp::CallTr(site) => {
                     match self.exec_trir_inner_call(chunk, *site, frame, compiled_fns)? {
                         Some(()) => {}
@@ -539,23 +519,6 @@ impl Interpreter {
                     // alternative to proving it did not (`outers.rs`). One
                     // cell read per CALL, where the untyped path pays a
                     // by-name lookup per ACCESS.
-                    if !self.trir_reseed_outers(chunk, frame) {
-                        return Ok(TrOutcome::Bail);
-                    }
-                }
-                TrOp::MethodGen(site) => {
-                    self.exec_trir_method_call(chunk, *site)?;
-                    if !self.trir_reseed_outers(chunk, frame) {
-                        return Ok(TrOutcome::Bail);
-                    }
-                }
-                TrOp::CallGen(site) => {
-                    if self
-                        .exec_trir_generic_call(chunk, *site, frame, compiled_fns)?
-                        .is_none()
-                    {
-                        return Ok(TrOutcome::Bail);
-                    }
                     if !self.trir_reseed_outers(chunk, frame) {
                         return Ok(TrOutcome::Bail);
                     }
@@ -572,6 +535,18 @@ impl Interpreter {
                 }
                 TrOp::ReturnObj => return Ok(TrOutcome::Value(self.opop())),
                 TrOp::ReturnNil => return Ok(TrOutcome::Value(Value::NIL)),
+
+                // ---- every op that can observe the routine stack ----
+                // Anything not listed above. Its deferred routine-stack
+                // entries are pushed first (ADR-8673 D1), so an op added
+                // later is an observer until it is listed as pure.
+                op => {
+                    self.trir_observe();
+                    match self.exec_trir_observing_op(chunk, op, frame, compiled_fns)? {
+                        Some(()) => {}
+                        None => return Ok(TrOutcome::Bail),
+                    }
+                }
             }
             ip += 1;
         }
