@@ -31,6 +31,7 @@ impl Compiler {
             .then(|| self.hoist_feed_sinks(stmt))
             .flatten();
         let stmt = rewritten.as_ref().unwrap_or(stmt);
+        let stmt = self.strip_tail_labels(stmt);
         match stmt {
             Stmt::MethodDecl {
                 is_my: false,

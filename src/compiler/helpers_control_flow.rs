@@ -199,6 +199,7 @@ impl Compiler {
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
+                let stmt = self.strip_tail_labels(stmt);
                 match stmt {
                     // The taken branch's tail of an `is rw` routine's tail `if`
                     // is the routine's lvalue return (ADR-0059, #9060).
@@ -1010,6 +1011,25 @@ impl Compiler {
     /// [`Self::stmt_nets_a_stack_value`]) is popped, or it parks at the frame's
     /// stack base and wins over the real tail value of the enclosing unit
     /// (`EVAL 'package P { enum E <A B> }; 42'` answered the enum's `Map`).
+    /// The goto target a statement label marks (`FOO: ...`).
+    // Cost: O(1).
+    pub(super) fn emit_label_marker(&mut self, name: &str) {
+        let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        self.code.emit(OpCode::Label(name_idx));
+    }
+
+    /// A block-final `FOO: BAR: stmt`: emit the labels' goto targets and
+    /// return `stmt`, which a tail-value compile then treats as the tail --
+    /// a labelled statement's value is its statement's (#18283).
+    // Cost: O(l), l = labels on the statement.
+    pub(super) fn strip_tail_labels<'s>(&mut self, mut stmt: &'s Stmt) -> &'s Stmt {
+        while let Stmt::Label { name, stmt: inner } = stmt {
+            self.emit_label_marker(name);
+            stmt = inner;
+        }
+        stmt
+    }
+
     pub(super) fn compile_stmt_discarding_value(&mut self, stmt: &Stmt) {
         self.compile_stmt(stmt);
         if Self::stmt_nets_a_stack_value(stmt) {
@@ -1366,6 +1386,7 @@ impl Compiler {
                 // when none), so stack discipline is unchanged for
                 // statement-context callers.
                 if is_last {
+                    let stmt = self.strip_tail_labels(stmt);
                     if let Stmt::Expr(expr) = stmt {
                         // The tail of an `is rw` routine body wrapped in an
                         // implicit try (a body with CATCH/CONTROL) is still the

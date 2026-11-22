@@ -3384,8 +3384,7 @@ impl Compiler {
                 self.code.emit(OpCode::Goto);
             }
             Stmt::Label { name, stmt } => {
-                let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::Label(name_idx));
+                self.emit_label_marker(name);
                 self.compile_stmt(stmt);
             }
             Stmt::Last(label) => {
@@ -5525,6 +5524,11 @@ impl Compiler {
             Stmt::Expr(expr) => {
                 // Tail expression escapes the frame (implicit result).
                 self.with_escape(true, |c| c.with_stmt_root(|c| c.compile_expr(expr)));
+            }
+            // `FOO: 42`: a labelled statement's value is its statement's (#18283).
+            Stmt::Label { .. } => {
+                let stmt = self.strip_tail_labels(stmt);
+                self.compile_tail_stmt_value(stmt);
             }
             Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);

@@ -1,44 +1,51 @@
 use Test;
 
-plan 7;
+plan 12;
 
-# `foo: args` at statement position, where `foo` is a declared subroutine,
-# is a colon-listop call (Raku), not a label. This is the form used as the
-# sole statement of a routine body, so it is observable via the return value.
+# A statement-initial `IDENT:` followed by whitespace is a statement label,
+# even when `IDENT` names a declared subroutine: rakudo 2026.11 (both
+# frontends) reads `trim: "hi"` as the label `trim` on the statement `"hi"`,
+# not as a colon-listop call (#18283).
 sub trim($x) { $x ~ "!" }
 sub wrap1() { trim: "hi" }
-is wrap1(), "hi!", 'colon-listop call as sub body statement';
+is wrap1(), "hi", 'IDENT: at statement start labels the statement, even for a sub name';
 
 sub add2($a, $b) { $a + $b }
 sub wrap2() { add2: 3, 4 }
-is wrap2(), 7, 'colon-listop call with multiple args';
+is wrap2(), '3 4', '... the labelled statement is the whole comma list';
 
-# A chained method-call argument after the colon.
 sub upper($s) { $s.uc }
 sub wrap3() { upper: "abc".substr(0, 2) }
-is wrap3(), "AB", 'colon-listop with a method-chain argument';
+is wrap3(), "ab", '... and a method chain is not an argument';
 
-# The side effect of a colon-listop call statement runs.
 my @log;
 sub record($x) { @log.push($x) }
 sub run-it() { record: 99 }
 run-it();
-is-deeply @log, [99], 'colon-listop call statement runs its effect';
+is-deeply @log, [], '... so the sub is not called';
 
-# Labels on loops still work (undeclared name → label).
+# The sub is still callable the usual ways.
+is trim("x"), "x!", 'a parenthesized call';
+is (trim "y"), "y!", 'a listop call';
+
+# Labels on loops still work.
 my @seen;
-OUTER: for 1..2 -> $i {
+OUTERLOOP: for 1..2 -> $i {
     for 1..2 -> $j {
         @seen.push("$i$j");
-        next OUTER if $j == 1;
+        next OUTERLOOP if $j == 1;
     }
 }
 is-deeply @seen, ['11', '21'], 'loop label still works (next LABEL)';
 
-# A label on a bare block still works when the name is not a sub.
+# A label on a bare block still runs the block.
 my $ran = 0;
 NOPE: { $ran = 42; }
 is $ran, 42, 'label on a bare block still runs';
 
-# An undeclared name with colon + statement is a label, not a call.
-lives-ok { MYLABEL: my $x = 5; $x }, 'label before a my-declaration parses';
+# A labelled statement's value is its statement's.
+sub lab1() { FOO: 42 }
+is lab1(), 42, 'a labelled tail statement is the routine value';
+is (do { FOO: 42 }), 42, '... the do-block value';
+is (BAR: 43), 43, '... a parenthesized statement value';
+is EVAL(q[BAZ: 44]), 44, '... the EVAL value';
