@@ -464,11 +464,13 @@ fn every_variant_roundtrips_losslessly() {
             key: PairKey::String("key".to_string()),
             value: Value::int(9),
             source: None,
+            which_id: Default::default(),
         })),
         ValueRepr::ValuePair(Gc::new(PairData {
             key: PairKey::Value(Value::int(1)),
             value: Value::str("v".to_string()),
             source: None,
+            which_id: Default::default(),
         })),
         ValueRepr::Enum {
             enum_type: Symbol::intern("Color"),
@@ -677,6 +679,7 @@ fn debug_matches_the_repr_debug() {
         key: PairKey::String("k".to_string()),
         value: Value::int(1),
         source: None,
+        which_id: Default::default(),
     })));
     assert_eq!(
         format!("{b:?}"),
@@ -686,6 +689,7 @@ fn debug_matches_the_repr_debug() {
                 key: PairKey::String("k".to_string()),
                 value: Value::int(1),
                 source: None,
+                which_id: Default::default(),
             }))
         )
     );

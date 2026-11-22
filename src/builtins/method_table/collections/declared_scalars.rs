@@ -31,7 +31,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("BagHash", "of", bag_of, OF),
     row!("Mix", "of", mix_of, OF),
     row!("MixHash", "of", mix_of, OF),
-    // `Pair.freeze` answers the pair's value (`$!value`).
+    // `Pair.freeze` makes the pair's value read-only and answers it.
     row!("Pair", "freeze", freeze, RowFlags::NONE),
 ];
 
@@ -52,9 +52,5 @@ fn mix_of(_target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 
 // Cost: O(1).
 fn freeze(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    match target.view() {
-        ValueView::Pair(_, value) => Ok(value.clone()),
-        ValueView::ValuePair(_, value) => Ok((*value).clone()),
-        _ => Ok(target.clone()),
-    }
+    Ok(target.freeze_pair())
 }
