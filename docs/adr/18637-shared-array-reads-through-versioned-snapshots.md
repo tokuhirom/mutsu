@@ -1,6 +1,6 @@
 # ADR-18637: A shared array's element read goes through a versioned, epoch-held snapshot
 
-- **Status**: Proposed (2026-11-22)
+- **Status**: Accepted (2026-11-22, by the maintainer)
 - Date: 2026-11-22
 - Amends: [ADR-8069](8069-shared-container-reads-without-a-contended-write.md) D3 (the
   borrowing element read), for `Array` nodes
