@@ -800,12 +800,16 @@ impl Interpreter {
                 .iter()
                 .flat_map(|alias| [*alias, crate::term_names::lexical_type_key_sym(*alias)])
                 .filter(|alias| capture_syms.contains(alias))
-                // A method that reads its class by the type-only key and also
-                // reads the bare key reads a same-named scalar of the
-                // declaring frame there (`$R`), whose cell is captured below.
+                // A block-declared class (its type-only key bound here) is read
+                // by that key in its methods, so a read of the bare key is a
+                // same-named scalar of the declaring frame (`$R`), whose cell
+                // is captured below.
                 .filter(|alias| {
                     !(outer_lexical_slots.iter().any(|(outer, _)| outer == alias)
-                        && capture_syms.contains(&crate::term_names::lexical_type_key_sym(*alias)))
+                        && self
+                            .env()
+                            .get_sym(crate::term_names::lexical_type_key_sym(*alias))
+                            .is_some())
                 })
                 .collect();
             // A lexical type of an enclosing scope that the method names (its
