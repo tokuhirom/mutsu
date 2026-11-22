@@ -126,6 +126,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::operator_origins::derive(node);
             super::prefix_operand_origins::place(names, node);
             super::hash_colonpair_origins::composer_value(names, node);
+            super::empty_fields::stub_args(node);
         }
     }
 }
@@ -209,6 +210,7 @@ pub(super) fn child_at(node: &RakuAstNode, index: usize) -> Option<&RakuAstNode>
 fn apply_infix(node: &mut RakuAstNode) {
     leading_variable(node);
     super::decl_compound_origins::leading_declaration(node);
+    super::decl_compound_origins::leading_prefix(node);
     super::lone_term_origins::variable_before_operator(node);
     let left = child(node, "left").and_then(byte_range);
     let right = child(node, "right").and_then(byte_range);
@@ -393,9 +395,15 @@ fn call_name(names: &NameScope, node: &mut RakuAstNode) {
     {
         return;
     }
-    let Some(name) = child(node, "name")
-        .and_then(|n| super::indirect_name_origins::written_operator(n).or_else(|| leaf_text(n)))
-    else {
+    let Some(name) = child(node, "name").and_then(|n| {
+        super::indirect_name_origins::written_operator(n)
+            .or_else(|| leaf_text(n))
+            // `Foo::run()`: a qualified name.
+            .or_else(|| match super::name_parts::name_shape(n)? {
+                super::name_parts::NameShape::Identifier(name) => Some(name),
+                _ => None,
+            })
+    }) else {
         return;
     };
     let parens = node.class == RakuAstClass::CallName;

@@ -332,6 +332,17 @@ pub(super) fn phaser_statement(names: &crate::scope::NameScope, node: &mut RakuA
     let Some((from, to)) = byte_range(node) else {
         return;
     };
+    // `my $r = INIT { ... }`: a phaser with a block, its braces after the
+    // keyword.
+    if let Some(at) = brace_after_word(from, to) {
+        with_child_at(node, 0, |block| {
+            if block.class == RakuAstClass::Block && block.origin.0.is_none() {
+                super::origin::set_span(block, SrcSpan::new(at, to));
+                blockoid(block, at, to);
+            }
+        });
+        return;
+    }
     let Some(span) = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
         let keyword = text.find(char::is_whitespace)?;
         if !text[..keyword].chars().all(|c| c.is_ascii_uppercase()) {

@@ -53,7 +53,10 @@ fn visited(class: RakuAstClass) -> &'static [&'static str] {
         | C::CallNameAsMethod
         | C::CallMetaMethod
         | C::CallQuotedMethod
-        | C::CallTermAsMethod => &["args"],
+        | C::CallTermAsMethod
+        | C::StubFail
+        | C::StubDie
+        | C::StubWarn => &["args"],
         C::Sub
         | C::PointyBlock
         | C::TokenDeclaration
@@ -162,4 +165,31 @@ pub(crate) fn materialized(node: &RakuAstNode) -> Option<RakuAstNode> {
     // A class that lists a visited field but declares no empty node for it
     // has nothing to fill in.
     (out.fields.len() > before_len).then_some(out)
+}
+
+/// `...` / `!!!` / `???`: the `ArgList` the stub visits holds the message
+/// after it, and sits at its end when there is none.
+// Cost: O(n), n = length of the stub's text.
+pub(super) fn stub_args(node: &mut RakuAstNode) {
+    if !matches!(
+        node.class,
+        RakuAstClass::StubFail | RakuAstClass::StubDie | RakuAstClass::StubWarn
+    ) {
+        return;
+    }
+    let Some((from, to)) = super::infix_origins::byte_range(node) else {
+        return;
+    };
+    // `!!! "x"`: the message after the stub and its blanks.
+    let Some(start) = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let rest = text.get(3..)?;
+        Some(to - rest.trim_start().len())
+    }) else {
+        return;
+    };
+    let span = SrcSpan::new(start, to);
+    set_span(node, "args", span);
+    super::infix_origins::with_child(node, "args", |args| {
+        super::origin::set_span(args, span)
+    });
 }

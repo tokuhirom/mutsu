@@ -59,6 +59,14 @@ pub(super) fn key_types(node: &mut RakuAstNode, variable: &str) {
                 // A key type is a `Type::Simple` over a `Name` of the same range;
                 // any other dimension (`@a[3]`) keeps the expression's own.
                 with_child_at(statement, 0, |ty| {
+                    // `my @md[2;*]`: a literal or `*` dimension is its text.
+                    if matches!(
+                        ty.class,
+                        RakuAstClass::IntLiteral | RakuAstClass::TermWhatever
+                    ) {
+                        super::origin::set_span(ty, span);
+                        return;
+                    }
                     if ty.class != RakuAstClass::TypeSimple {
                         return;
                     }

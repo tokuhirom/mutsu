@@ -175,6 +175,28 @@ fn postfix(node: &mut RakuAstNode) {
                 text.starts_with('*').then_some(from + 1)
             })
         }
+        // `$++`: an anonymous variable is its sigil, right at the start.
+        None if operand.is_some_and(|o| o.class == RakuAstClass::VarDeclarationAnonymous) => {
+            let sigil = operand.and_then(|o| {
+                o.fields.iter().find_map(|f| match &f.value {
+                    super::RakuAstFieldValue::Node(v) if f.name == Some("sigil") => {
+                        v.as_str().map(str::to_string)
+                    }
+                    _ => None,
+                })
+            });
+            let end = sigil.and_then(|sigil| {
+                super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+                    text.starts_with(sigil.as_str()).then_some(from + sigil.len())
+                })
+            });
+            if let Some(end) = end {
+                with_child(node, "operand", |o| {
+                    super::origin::set_span(o, SrcSpan::new(from, end))
+                });
+            }
+            end
+        }
         // `0.0i` / `3e2i`: a numeric literal written right before the
         // operator, which the parser read as one token.
         None if operand.is_some_and(|o| {
