@@ -152,10 +152,9 @@ pub(super) fn view_node(
         }),
     ));
     if !role.type_param_defs.is_empty() {
-        fields.push(node_field(
-            Some("parameterization"),
-            signature(names, role.type_param_defs, false, None)?,
-        ));
+        let mut parameterization = signature(names, role.type_param_defs, false, None)?;
+        super::routine_origins::role_parameterization(&mut parameterization, role.type_param_defs);
+        fields.push(node_field(Some("parameterization"), parameterization));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
