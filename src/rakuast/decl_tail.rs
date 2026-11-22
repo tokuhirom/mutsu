@@ -114,6 +114,80 @@ fn replace_leftmost(node: &RakuAstNode, replacement: &RakuAstNode) -> RakuAstNod
 /// The variable a declaration or assignment statement names, as the parser
 /// spells it (`x`, `@a`, `%h`).
 // Cost: O(1).
+/// A declaration written without an initializer (`my $k` of `my $k.defined`),
+/// whose tail may hold a tight operator on its spine.
+// Cost: O(f), f = fields of the node.
+fn is_bare_declaration(node: &RakuAstNode) -> bool {
+    node.class == RakuAstClass::VarDeclarationSimple
+        && !node.fields.iter().any(|f| f.name == Some("initializer"))
+}
+
+/// The infixes on the spine of a tail after an assignment are the loose
+/// word-logicals: a tight `^^` binds inside the assigned value, so a `^^`
+/// there was written as the loose `xor` (`my $y = 1 xor 2`), which rakudo
+/// keeps as `Infix("xor")` (#18340).
+// Cost: O(d), d = depth of the spine.
+fn spell_loose_xor(node: &mut RakuAstNode) {
+    if !matches!(
+        node.class,
+        RakuAstClass::ApplyInfix | RakuAstClass::ApplyListInfix
+    ) {
+        return;
+    }
+    super::infix_origins::with_child(node, "infix", |infix| {
+        if infix.class == RakuAstClass::Infix
+            && super::infix_origins::leaf_text(infix).as_deref() == Some("^^")
+        {
+            super::infix_origins::set_leaf_text(infix, "xor");
+        }
+    });
+    if node.class == RakuAstClass::ApplyInfix {
+        super::infix_origins::with_child(node, "left", spell_loose_xor);
+        return;
+    }
+    // A list infix's leading operand is the first of its operands.
+    let Some(RakuAstFieldValue::List(items)) = node
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("operands"))
+        .map(|f| &mut f.value)
+    else {
+        return;
+    };
+    if let Some(first) = items.first_mut()
+        && let Some(held) = rakuast_node_of(first)
+    {
+        let mut held = held.clone();
+        spell_loose_xor(&mut held);
+        *first = Value::rakuast(Box::new(held));
+    }
+}
+
+/// The `Infix` of a list-associative application whose leading operand is
+/// `first`: a `^^` after an unparenthesized assignment (`$x = 1 xor 2`) can
+/// only be the loose `xor`, since a tight `^^` binds inside the assigned value
+/// (#18340).
+// Cost: O(1).
+pub(super) fn list_infix_operator(
+    op: &crate::token_kind::TokenKind,
+    first: &crate::ast::Expr,
+) -> RakuAstNode {
+    let mut infix = super::view::operator_node(RakuAstClass::Infix, op);
+    if *op == crate::token_kind::TokenKind::XorXor
+        && match first {
+            crate::ast::Expr::AssignExpr { .. } => true,
+            // A `.AST` parse keeps the assignment as written.
+            crate::ast::Expr::Ast(node) => {
+                matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::Assign(_))
+            }
+            _ => false,
+        }
+    {
+        super::infix_origins::set_leaf_text(&mut infix, "xor");
+    }
+    infix
+}
+
 fn declared_variable(head: &Stmt) -> Option<(&str, &str)> {
     crate::ast::decl_tail::head_name(head).map(split_sigil)
 }
@@ -144,7 +218,11 @@ pub(super) fn view_node(
                 let statement = view_stmt(names, head)?.ok_or_else(unsupported_statement)?;
                 super::view::expression_of(&statement).ok_or_else(unsupported_statement)?
             };
-            return Ok(replace_leftmost(&converted, &operand));
+            let mut node = replace_leftmost(&converted, &operand);
+            if !is_bare_declaration(&operand) {
+                spell_loose_xor(&mut node);
+            }
+            return Ok(node);
         }
 
         let decl =

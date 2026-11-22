@@ -3382,6 +3382,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         } if is_list_infix(op) => {
             let mut operands = left.flatten_binary_chain(op);
             operands.push(right);
+            let infix = super::decl_tail::list_infix_operator(op, operands[0]);
             let mut nodes = Vec::with_capacity(operands.len());
             for e in operands {
                 nodes.push(Value::rakuast(Box::new(view_expr(names, e)?)));
@@ -3390,7 +3391,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 origin: Default::default(),
                 class: RakuAstClass::ApplyListInfix,
                 fields: vec![
-                    node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
+                    node_field(Some("infix"), infix),
                     RakuAstField {
                         name: Some("operands"),
                         value: RakuAstFieldValue::List(nodes),
@@ -5282,7 +5283,7 @@ pub(super) fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
 }
 
 /// `Infix`/`Prefix` — a single positional operator string (e.g. `Infix.new("+")`).
-fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> RakuAstNode {
+pub(super) fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> RakuAstNode {
     RakuAstNode {
         origin: Default::default(),
         class,
