@@ -6,10 +6,11 @@ use Test::Util;
 # `EXPR('e=')`: its items stop before the loose word-logicals (`and`, `or`,
 # `xor`, `andthen`, `orelse`, `notandthen`), so one of those directly inside
 # `f(...)` / `.m(...)` leaves the `)` unreachable -- a compile-time
-# X::Comp::FailGoal, as on rakudo 2026.11 (#18140). Parenthesizing the
+# X::Comp::FailGoal, as on rakudo 2026.11 (#18140). The sequencer-level feeds
+# (`==>`, `<==`) are looser still and end the argument the same way (#18628). Parenthesizing the
 # expression, a capture literal `\(...)` and a listop call are unaffected.
 
-plan 14;
+plan 18;
 
 my $fail-goal = ｢Unable to parse expression in argument list; couldn't find final ')'｣;
 
@@ -20,7 +21,10 @@ for ｢sub f(*@a) { }; f(1 and 2)｣,
     ｢sub f(*@a) { }; f(1; 2 orelse 3)｣,
     ｢my @a = 1, 2; say @a.first(* > 1 and * < 5)｣,
     ｢say 'a'.contains('a' and 'x')｣,
-    ｢sub f(*@a) { }; my $x = f(1 and 2)｣ -> $code {
+    ｢sub f(*@a) { }; my $x = f(1 and 2)｣,
+    ｢sub f(*@a) { }; f(1 ==> 2)｣,
+    ｢sub f(*@a) { }; f(2 <== 1)｣,
+    ｢my @a = 1, 2; say @a.grep(1 ==> 2)｣ -> $code {
     is_run $code, %(:out(''), :err{ .contains: $fail-goal }, :status(* != 0)),
         "rejected: $code";
 }
@@ -31,6 +35,10 @@ is-deeply f(not 1), [False], 'loose prefix `not` stays inside the argument';
 is-deeply f(1 ?? 2 !! 3, 4 Z 5), [2, 5], 'the conditional and list infixes stay inside';
 is-deeply (f 1 and 2), 2, 'a listop call ends its arguments before `and`';
 is \(1 and 2).list, (2,), 'a capture literal reads full expressions';
+{
+    my @b;
+    is-deeply f((1, 2 ==> @b)), [1, 2], 'a parenthesized feed is one argument';
+}
 
 my @a = 1, 2, 3;
 is @a.first((2 and 3)), 3, 'a parenthesized loose infix in a method call';
