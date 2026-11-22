@@ -171,6 +171,7 @@ pub(crate) mod sink_call;
 pub(crate) use infix_func::add_colonpair;
 mod angle_subscript;
 mod assign_ro;
+mod bracketed_infix;
 mod call_term_origins;
 mod carried;
 mod control_statement_origins;
