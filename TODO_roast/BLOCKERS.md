@@ -94,11 +94,13 @@ Concretely:
   finalizer refused regex literals that use an adverb with a value (`:i(1)`, `:1i`, `:s(0)`),
   `:!` on a quantifier, `|&`, or an Nd-digit backref `$٠` (#18713). That and the file's other
   gaps (#18736-#18738, `"$0"` in a regex string) are fixed, and it is whitelisted.
-- **Full-suite run** (`scripts/roast-history.sh`, HISTORY.tsv row of 2026-11-22): 1267 / 1288
-  files pass, 194545 / 195248 subtests. The four whitelisted files it reported as failing are
+- **Full-suite run** (`scripts/roast-history.sh` on a release build of `main` at 4169e39d,
+  HISTORY.tsv row of 2026-11-22T22:17): 1269 / 1288 files pass, 195587 / 196001 subtests (the
+  21:33 run: 1267 files, 194545 / 195248). No whitelisted file regressed, and no
+  non-whitelisted file passes. The four whitelisted files it reported as failing are
   environment-only: `S16-filehandles/filetest.t`, `S16-io/eof.t` and `S32-io/IO-Socket-Async.t`
   are listed in `ci/known-env-failures.toml`, and `S03-buf/write-int.t` passes standalone in 11 s
-  on the 4-core remote container (over the script's 10 s budget only under load). The other 17
+  on the 4-core remote container (over the script's 10 s budget only under load). The other 15
   failures are all non-whitelisted files from the tables below.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
