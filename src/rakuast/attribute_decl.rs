@@ -116,13 +116,18 @@ pub(super) fn view_node(
         }),
         scope,
         (type_name, twigil),
-        if *default_is_bind {
+        // A class attribute (`my $.q`, `our $.q`) has no `WillBuild`: its
+        // accessor is a `Method::ClassAccessor` (`super::method_initializer`).
+        if *default_is_bind || *is_our || *is_my {
             None
         } else {
             explicit_default
         },
         false,
     )?;
+    if (*is_our || *is_my) && twigil == Some(".") {
+        decl.origin.3 = names.enclosing_package().map(String::into_boxed_str);
+    }
     if let Some(key) = hash_key_type {
         if let Some(expression) = hash_key_type_expr {
             super::keyed_hash::insert_subset_shape(names, &mut decl, expression, key)?;
@@ -338,8 +343,9 @@ pub(super) fn initializer_value(same: bool, field: Option<&RakuAstField>) -> Opt
 /// Whether an attribute default `node` is one Rakudo keeps as written: a
 /// number, a quote with nothing interpolated (a word quote too), a
 /// colonpair or a name (`True`, `pi`). Such a default has an origin and an
-/// implicit `Trait::WillBuild` carrying it; `1 + 2`, `{ ... }` or `-1` has
-/// neither (measured on rakudo 2026.11).
+/// implicit `Trait::WillBuild` carrying it; `1 + 2`, `{ ... }` or `-1` has a
+/// `WillBuild` carrying the `Method::Initializer` thunk that computes it
+/// (`super::method_initializer`; measured on rakudo 2026.11).
 // Cost: O(s), s = segments of a quoted default.
 pub(super) fn literal_default(node: &RakuAstNode) -> bool {
     match node.class {
@@ -363,16 +369,21 @@ pub(super) fn literal_default(node: &RakuAstNode) -> bool {
     }
 }
 
-/// The `traits` field of an attribute declaration whose default is `value`:
-/// its `Trait::WillBuild`.
+/// The `traits` field of an attribute declaration whose default is `value`
+/// (written as `init`): its `Trait::WillBuild`, which holds a literal default
+/// itself and any other through its `Method::Initializer` thunk.
 // Cost: O(1).
-pub(super) fn will_build_field(value: Value) -> RakuAstField {
+pub(super) fn will_build_field(
+    value: Value,
+    init: Option<super::view::Initializer<'_>>,
+) -> RakuAstField {
+    let call = matches!(init, Some(super::view::Initializer::CallAssignMarker(_)));
     let trait_node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::TraitWillBuild,
         fields: vec![RakuAstField {
             name: None,
-            value: RakuAstFieldValue::Node(value),
+            value: RakuAstFieldValue::Node(super::method_initializer::will_build_value(value, call)),
         }],
     };
     RakuAstField {

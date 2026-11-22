@@ -299,6 +299,7 @@ mod use_origins;
 mod use_stmt;
 mod user_postfix;
 mod user_prefix;
+pub(crate) mod method_initializer;
 pub(crate) mod visit_order;
 mod will_build_origins;
 mod zip_chain;
@@ -617,6 +618,8 @@ pub enum RakuAstClass {
     /// NativeCall type declaration (`native N is Int ... { }`).
     Native,
     Method,
+    MethodInitializer,
+    MethodClassAccessor,
     // Phase 2 slice 16: role declarations.
     Role,
     RoleBody,
@@ -1005,6 +1008,8 @@ impl RakuAstClass {
             Class => "RakuAST::Class",
             Native => "RakuAST::Native",
             Method => "RakuAST::Method",
+            MethodInitializer => "RakuAST::Method::Initializer",
+            MethodClassAccessor => "RakuAST::Method::ClassAccessor",
             Role => "RakuAST::Role",
             RoleBody => "RakuAST::RoleBody",
             Label => "RakuAST::Label",
@@ -1563,6 +1568,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Class,
     RakuAstClass::Native,
     RakuAstClass::Method,
+    RakuAstClass::MethodInitializer,
+    RakuAstClass::MethodClassAccessor,
     RakuAstClass::Role,
     RakuAstClass::RoleBody,
     RakuAstClass::Label,
