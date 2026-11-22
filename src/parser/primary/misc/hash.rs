@@ -12,8 +12,17 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
     let mut spread_args = Vec::new();
     let mut rest = input;
     let mut pending_key: Option<String> = None;
+    // After a bare element (`{ a => 1, $k, 2 }`) every element stays where it
+    // was written: the composer hashes the list, pairing its elements in order.
+    let mut positional = false;
     loop {
         let (r, _) = ws_inner(rest);
+        if positional && !r.starts_with('}') {
+            let (r, item) = expression(r)?;
+            spread_args.push(item);
+            rest = skip_separator(r);
+            continue;
+        }
         if let Some(rest) = r.strip_prefix('}') {
             if pending_key.is_some() {
                 return Err(PError::expected("hash value"));
@@ -105,6 +114,15 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             // `a` followed by `~ 'b' => 1` — so fall through to the general
             // expression parse below. `R=>` (the reverse fatarrow metaop) needs
             // the same treatment.
+            if (after_key.starts_with([',', ';', '}']) || after_key.is_empty())
+                && written.is_some()
+            {
+                // `{ a => 1, "b", 2 }`: a quoted or numeric element is a bare
+                // element as written, not the key of the next one.
+                spread_args.extend(hash_args_from_pairs(std::mem::take(&mut pairs)));
+                positional = true;
+                continue;
+            }
             if after_key.starts_with([',', ';', '}']) || after_key.is_empty() {
                 pending_key = Some(key);
                 let (r_key, _) = ws_inner(r_key);
@@ -163,6 +181,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                     // of failing with "expected hash key".
                     spread_args.extend(hash_args_from_pairs(std::mem::take(&mut pairs)));
                     spread_args.push(other);
+                    positional = true;
                 }
             }
         }
@@ -176,6 +195,14 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             rest = r;
         }
     }
+}
+
+/// The input after an element's `,` / `;` separator, or after the element
+/// when none follows.
+// Cost: O(w), w = whitespace skipped.
+fn skip_separator(input: &str) -> &str {
+    let (r, _) = ws_inner(input);
+    r.strip_prefix([',', ';']).unwrap_or(r)
 }
 
 fn hash_args_from_pairs(pairs: Vec<(String, Option<Expr>)>) -> Vec<Expr> {
