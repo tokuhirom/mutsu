@@ -7070,6 +7070,11 @@ pub(crate) struct CompiledCode {
     /// compile (a hand-built chunk, a `#[test]` helper). See
     /// [`Self::location_at`].
     pub(crate) source_file: Option<Symbol>,
+    /// The package a routine or closure body is declared in (its
+    /// `$?PACKAGE`), stamped when the body is compiled; `None` for a unit's
+    /// mainline and other chunks. `CLIENT::` tells the calling code by it,
+    /// including a block that pushes no routine frame (#18845).
+    pub(crate) package: Option<Symbol>,
     /// Compile-time cursor: the source line attached to every op emitted from
     /// now on (set by the `Stmt::SetLine` marker). Not used at runtime.
     pub(crate) emit_line: u32,
@@ -8864,6 +8869,7 @@ impl CompiledCode {
             closure_compiled_codes: Vec::new(),
             compiled_fns: None,
             source_file: crate::unit_source_file::current(),
+            package: None,
             atomic_env_sync_locals: Vec::new(),
             atomic_target_syms: rustc_hash::FxHashSet::default(),
             rw_arg_env_sync_syms: rustc_hash::FxHashSet::default(),

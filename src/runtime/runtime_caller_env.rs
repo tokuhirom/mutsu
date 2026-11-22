@@ -660,17 +660,12 @@ impl Interpreter {
     /// no such frame the client is the mainline (`GLOBAL`, the revision of
     /// the file that made the outermost call). Returns the client's package
     /// and revision letter.
-    // TODO: rakudo tells the client by package, not by file, and sees a
-    // `.map` block's own context, which pushes no frame here (#18845).
+    /// The fallback of `client_code` (`vm_client_code`), for code with no
+    /// recorded package or a call chain that ends before the client.
     // Cost: O(f), f = routine frames, plus one revision-table probe.
     pub(crate) fn client_frame(&self, own_file: Option<Symbol>) -> (Symbol, char) {
         let frames: &[crate::runtime::RoutineFrame] = &self.routine_stack;
-        let revision_of = |file: Option<Symbol>| {
-            file.and_then(crate::parser::unit_revisions::unit_language_revision)
-                .and_then(|version| {
-                    version.as_str().strip_prefix("6.").and_then(|r| r.chars().next())
-                })
-        };
+        let revision_of = Self::unit_revision_letter;
         let declared_in = |frame: &crate::runtime::RoutineFrame| frame.def_file.or(frame.file);
         match frames
             .iter()
@@ -689,9 +684,17 @@ impl Interpreter {
         }
     }
 
+    /// The letter of the language revision the unit `file` is compiled
+    /// under (`d` for `6.d`), when it recorded one.
+    // Cost: O(1), one revision-table probe.
+    pub(crate) fn unit_revision_letter(file: Option<Symbol>) -> Option<char> {
+        file.and_then(crate::parser::unit_revisions::unit_language_revision)
+            .and_then(|version| version.as_str().strip_prefix("6.").and_then(|r| r.chars().next()))
+    }
+
     /// The letter of the language revision the running code is under.
     // Cost: O(1).
-    fn running_revision_letter(&self) -> char {
+    pub(crate) fn running_revision_letter(&self) -> char {
         ['e', 'd', 'c']
             .into_iter()
             .find(|r| crate::parser::current_language_version_starts_with(&format!("6.{r}")))

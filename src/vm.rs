@@ -254,6 +254,7 @@ mod vm_data_ops;
 mod vm_data_push_ops;
 mod vm_dispatch_helpers;
 pub(crate) mod vm_do_block;
+mod vm_client_code;
 mod vm_dynamic_stash;
 mod vm_element_producers;
 mod vm_env_helpers;

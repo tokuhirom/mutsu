@@ -19,6 +19,7 @@ impl Encode for CompiledCode {
             ops,
             op_lines,
             source_file,
+            package,
             emit_line,
             constants,
             const_index,
@@ -192,6 +193,7 @@ impl Encode for CompiledCode {
         ops.encode(encoder)?;
         op_lines.encode(encoder)?;
         source_file.encode(encoder)?;
+        package.encode(encoder)?;
         emit_line.encode(encoder)?;
         constants.encode(encoder)?;
         require_empty(const_index.is_empty(), "CompiledCode::const_index")?;
@@ -350,6 +352,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             ops: Decode::decode(decoder)?,
             op_lines: Decode::decode(decoder)?,
             source_file: Decode::decode(decoder)?,
+            package: Decode::decode(decoder)?,
             emit_line: Decode::decode(decoder)?,
             constants: Decode::decode(decoder)?,
             const_index: Default::default(),
