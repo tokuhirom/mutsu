@@ -361,7 +361,9 @@ impl Value {
                     && crate::qualified::qualified(s.package, s.name) == handle)
                     || seen.hook.routine_eqv(self, other)
             }
-            // Signature instances: compare by .raku string (structural equality)
+            // Signatures compare structurally, as Rakudo's `infix:<eqv>`
+            // does: a positional parameter's name does not count (#18679).
+            // A signature with no structured data compares by its `.raku`.
             (
                 ValueView::Instance {
                     class_name: cn_a, ..
@@ -370,6 +372,13 @@ impl Value {
                     class_name: cn_b, ..
                 },
             ) if cn_a == "Signature" && cn_b == "Signature" => {
+                if let (Some(a), Some(b)) = (
+                    super::signature::extract_sig_info(self),
+                    super::signature::extract_sig_info(other),
+                ) && (!a.params.is_empty() || !b.params.is_empty() || a.param_defs.is_some())
+                {
+                    return super::signature_eqv::signatures_eqv(&a, &b);
+                }
                 let raku_a = if let ValueView::Instance { attributes, .. } = self.view() {
                     attributes.as_map().get("raku").map(|v| v.to_string_value())
                 } else {
