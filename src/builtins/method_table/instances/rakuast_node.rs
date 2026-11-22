@@ -335,6 +335,9 @@ pub(super) fn sub_value(
     use crate::rakuast::RakuAstClass as K;
     match node.class {
         K::Method | K::Submethod => return method_value(interp, target, _args, _named),
+        // An attribute default's `Method::Initializer` thunk is a method of
+        // its own that no name reaches: its stand-in (#18814).
+        K::MethodInitializer => return Some(routine_stand_in(interp, target, node)),
         // A scope's candidates joined to an outer family (#17826).
         K::VarDeclarationImplicitConstant => {
             return super::rakuast_compile_state::implicit_constant_value(
@@ -1208,13 +1211,28 @@ pub(super) fn routine_meta_object(
     {
         return Some(Ok(declared));
     }
+    Some(routine_stand_in(interp, target, node))
+}
+
+/// A routine node's stand-in: the nameless routine it declares, built from the
+/// node once (before the declaration runs, or for a thunk that never is one).
+// Cost: O(size of the routine node) on the first call, O(1) after.
+fn routine_stand_in(
+    interp: &mut Interpreter,
+    target: &Value,
+    node: &crate::rakuast::RakuAstNode,
+) -> Result<Value, RuntimeError> {
     // The stand-in is built once per node: a second `meta-object` call answers
     // the object the first one returned, with whatever a `does` mixed into it
     // (#17415).
     if let Some(memo) = target.rakuast_memo_meta_object() {
-        return Some(Ok(memo));
+        return Ok(memo);
     }
     let mut anonymous = node.clone();
+    // A `Method::Initializer` thunk is an anonymous method over its body.
+    if anonymous.class == crate::rakuast::RakuAstClass::MethodInitializer {
+        anonymous.class = crate::rakuast::RakuAstClass::Method;
+    }
     // A stand-in before the declaration runs (a slang action at parse time): a
     // nameless routine, which is no `proto`/`multi` candidate of anything.
     anonymous
@@ -1225,5 +1243,5 @@ pub(super) fn routine_meta_object(
     if let Ok(routine) = &stand_in {
         target.set_rakuast_memo_meta_object(routine.clone());
     }
-    Some(stand_in)
+    stand_in
 }
