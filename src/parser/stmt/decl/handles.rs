@@ -194,6 +194,13 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
         let method_name = &after_open[..end];
         specs.push(HandleSpec::Name(method_name.to_string()));
         *rest_out = &after_open[end + 1..];
+    } else if quote_construct(r).is_some() {
+        // A quote construct: `handles q[aie]`.
+        let (rest, term) = crate::parser::primary::primary(r)?;
+        let specs_of = handle_specs_from_term(&term)
+            .ok_or_else(|| PError::expected("method names in handles quote"))?;
+        specs.extend(specs_of);
+        *rest_out = rest;
     } else {
         // Bare identifier: could be a method name or type name
         let (r_name, method_name) = ident(r)?;
@@ -201,6 +208,19 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
         *rest_out = r_name;
     }
     Ok(())
+}
+
+/// Whether `input` starts with a single-string quote construct (`q[...]`,
+/// `qq{...}`, `Q<...>`): the quote word, then its opening delimiter.
+// Cost: O(1).
+fn quote_construct(input: &str) -> Option<()> {
+    let word = ["qq", "q", "Q"]
+        .into_iter()
+        .find(|w| input.starts_with(w))?;
+    let after = &input[word.len()..];
+    after
+        .starts_with(|c: char| !c.is_alphanumeric() && !c.is_whitespace() && c != '_' && c != '-')
+        .then_some(())
 }
 
 // Cost: O(n), n = word-list source bytes.

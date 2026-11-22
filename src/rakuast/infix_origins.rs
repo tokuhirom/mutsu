@@ -88,6 +88,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         RakuAstClass::ApplyPostfix => {
             super::indirect_name_origins::package_operand(node);
+            super::subscript_operand_origins::place(node);
             super::list_origins::postcircumfix(node);
             super::hyper_subscript_origins::place(node);
             super::operator_origins::derive(node);

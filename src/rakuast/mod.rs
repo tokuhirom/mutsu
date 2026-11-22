@@ -269,6 +269,7 @@ mod string_variable_origins;
 mod stub_package;
 mod subclass;
 mod subscript_adverb;
+mod subscript_operand_origins;
 mod subst_origins;
 mod substitution;
 mod symbolic_deref;

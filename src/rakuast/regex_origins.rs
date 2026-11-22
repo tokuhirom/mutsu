@@ -600,11 +600,14 @@ impl Walk<'_> {
         };
         // `$1=(.)`: a numbered capture is written without the brackets.
         let written = if name.chars().all(|c| c.is_ascii_digit()) {
-            format!("{sigil}{name}=")
+            format!("{sigil}{name}")
         } else {
-            format!("{sigil}<{name}>=")
+            format!("{sigil}<{name}>")
         };
         self.eat(&written)?;
+        // `$<n> = (.*)`: blanks may surround the `=`.
+        self.blank();
+        self.eat("=")?;
         self.blank();
         self.child(names, node, "regex")
     }

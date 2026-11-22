@@ -332,6 +332,9 @@ pub(super) fn phaser_statement(names: &crate::scope::NameScope, node: &mut RakuA
     let Some((from, to)) = byte_range(node) else {
         return;
     };
+    // `BEGIN for E.enums { }`: a statement-control statement after the
+    // keyword.
+    super::control_statement_origins::after_prefix(node);
     // `my $r = INIT { ... }`: a phaser with a block, its braces after the
     // keyword.
     if let Some(at) = brace_after_word(from, to) {
