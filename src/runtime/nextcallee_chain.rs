@@ -132,6 +132,7 @@ impl Interpreter {
             arg_sources: None,
             in_wrapper: false,
             lazy_tail: None,
+            exhausted_falls_through: false,
         };
         let depth = self.dispatch.method_dispatch_stack.len();
         self.dispatch.method_dispatch_stack.push(frame);

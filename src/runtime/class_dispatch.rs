@@ -490,6 +490,7 @@ impl Interpreter {
                     arg_sources: None,
                     in_wrapper: false,
                     lazy_tail,
+                    exhausted_falls_through: false,
                 });
         }
         // Check for `is DEPRECATED` trait on the method

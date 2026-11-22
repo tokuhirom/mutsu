@@ -582,6 +582,12 @@ pub(crate) struct MethodDispatchFrame {
     /// `method_dispatch_lazy_tail`. Always `None` once a deferral builtin has
     /// read this frame as the innermost one.
     pub(crate) lazy_tail: Option<Box<super::method_dispatch_lazy_tail::LazyDeferralTail>>,
+    /// The frame of a mixed-in role method whose base object has no
+    /// `MethodDef` candidate behind it (#18363): it only stops a deferral in
+    /// that method from reaching an enclosing method's frame. Exhausted, a
+    /// deferral falls through to the no-frame native bases (the metamodel,
+    /// `Mu.new`) as it would with no frame at all, never to an outer frame.
+    pub(crate) exhausted_falls_through: bool,
 }
 
 /// Frame for navigating through a SUB wrapper chain during callsame/callwith.
