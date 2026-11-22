@@ -110,27 +110,16 @@ impl Compiler {
     }
 
     /// Emit the `OpCode::ImportScope` that opens the import region of `stmts`
-    /// (a block body) when it holds an import statement, and open the region
+    /// (a block body) when it holds an import statement or declares a plain
+    /// built-in operator routine of its own (#17771), and open the region
     /// for the code compiled next: its key joins `import_region_chain`, which
     /// the caller truncates when the block ends. The key is the unit's file
     /// plus the line of the block's first import statement, so a recompile of
     /// the same AST (a `.map` callback) names the same region.
     // Cost: O(s), s = statements of the block.
     pub(super) fn emit_import_scope_region(&mut self, stmts: &[Stmt]) -> Option<usize> {
-        let first = stmts.iter().position(Self::opens_import_scope)?;
-        let line = stmts[..first]
-            .iter()
-            .rev()
-            .find_map(|stmt| match stmt {
-                Stmt::SetLine(n, _) => Some(*n),
-                _ => None,
-            })
-            .or(self.last_source_line)
-            .unwrap_or(0);
-        let file = crate::unit_source_file::current()
-            .map(|file| file.resolve())
-            .unwrap_or_default();
-        let region = Symbol::intern(&format!("{file}\u{1}{line}\u{1}{first}"));
+        let first = Self::import_region_start(stmts)?;
+        let region = self.import_region_key(stmts, first);
         self.import_region_chain.push(region);
         Some(self.code.emit(OpCode::ImportScope {
             body_end: 0,
@@ -162,6 +151,9 @@ impl Compiler {
                 }
             }
         }
+        // The block's own plain operator routines bind in a set of their own
+        // (#17771).
+        self.enter_block_operator_set(stmts);
         mark
     }
 

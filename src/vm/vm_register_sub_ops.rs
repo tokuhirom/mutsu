@@ -184,6 +184,15 @@ impl Interpreter {
         {
             return self.exec_declare_frame_lexical_routine(code, idx, r, compiled_fns);
         }
+        // #17771: a block's own plain operator routine binds in the block's
+        // operator set, not in the registry.
+        if let Some(set) = code
+            .sub_decl_plans
+            .get(idx as usize)
+            .and_then(|plan| plan.block_operator_set)
+        {
+            return self.exec_declare_block_operator(code, idx, set, compiled_fns);
+        }
         self.exec_register_sub_op_in_registry(code, idx, compiled_fns)
     }
 
@@ -224,6 +233,7 @@ impl Interpreter {
             routine_metadata,
             frame_lexical: _,
             frame_lexical_value: _,
+            block_operator_set: _,
         }) = code.sub_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
