@@ -58,6 +58,8 @@ pub(crate) static PULLS: &[LazyPull] = pulls![
     "HyperSeq"."is-lazy" => hyper_is_lazy,
     "RaceSeq"."configuration" => hyper_configuration,
     "RaceSeq"."is-lazy" => hyper_is_lazy,
+    "HyperSeq"."raku" => hyper_raku,
+    "RaceSeq"."raku" => hyper_raku,
     "Seq"."cache" => cache,
     "Any"."cache" => cache,
     "Seq"."gist" => gist,
@@ -393,6 +395,26 @@ fn hyper_configuration(
     }
     let (batch, degree) = list.hyper_config().unwrap_or((None, None));
     Some(Ok(Interpreter::make_hyper_configuration(batch, degree)))
+}
+
+/// `HyperSeq.raku` / `RaceSeq.raku`: the type and its configuration, so an
+/// infinite hyper sequence renders without being pulled (#18690).
+// Cost: O(1).
+fn hyper_raku(
+    _interp: &mut Interpreter,
+    _target: &Value,
+    list: &LazyList,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    let hyper = match list.hyper_kind() {
+        crate::value::HyperKind::Hyper => true,
+        crate::value::HyperKind::Race => false,
+        crate::value::HyperKind::Plain => return None,
+    };
+    Some(Ok(Value::str(crate::value::hyper_config::seq_raku(hyper, list.hyper_config()))))
 }
 
 /// `HyperSeq.is-lazy`: a hyper or race sequence is never lazy, though the
