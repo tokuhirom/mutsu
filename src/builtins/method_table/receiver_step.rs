@@ -471,7 +471,7 @@ pub(crate) fn mixin_step(target: &Value, method_sym: Symbol) -> Option<MixinStep
     // itself in Rakudo (`method Int(Int:D:) { self }`), so the mixin survives
     // it: `(5 but R).Int` still does `R`, and `(5 but "five").Int` still
     // stringifies as `five`.
-    if crate::value::mixin_identity::is_identity_coercion(inner, method) {
+    if crate::value::mixin_identity::keeps_mixin_through(inner, mixins, method) {
         return Some(MixinStep::Answer(Ok(target.clone())));
     }
     // `.flat` runs on the whole mixin: `flat_val` flattens through a container
