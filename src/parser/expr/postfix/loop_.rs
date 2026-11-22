@@ -533,6 +533,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
             other => other,
         };
+        let (r, expr) = crate::parser::stmt::modifier::prefix_operand_expr(r, expr)?;
         return Ok((
             r,
             Expr::MethodCall {
@@ -558,6 +559,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, Expr::DoStmt(Box::new(stmt))));
         }
         let (r, expr) = parse_prefix_listop_operand(r)?;
+        let (r, expr) = crate::parser::stmt::modifier::prefix_operand_expr(r, expr)?;
         return Ok((
             r,
             Expr::MethodCall {
@@ -583,6 +585,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((r2, Expr::DoStmt(Box::new(stmt))));
         }
         let (r, expr) = parse_prefix_listop_operand(r)?;
+        let (r, expr) = crate::parser::stmt::modifier::prefix_operand_expr(r, expr)?;
         return Ok((
             r,
             Expr::MethodCall {
@@ -604,6 +607,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         let r = &input[5..];
         let (r, _) = ws(r)?;
         let (r, expr) = parse_prefix_listop_operand(r)?;
+        let (r, expr) = crate::parser::stmt::modifier::prefix_operand_expr(r, expr)?;
         return Ok((r, Expr::Eager(Box::new(expr))));
     }
     // ^expr — upto operator: ^5 means 0..^5

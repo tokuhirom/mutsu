@@ -5178,10 +5178,9 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             if statement.class != RakuAstClass::StatementExpression {
                 return Err(unsupported(node));
             }
-            Ok(Expr::Eager(Box::new(lower_expr(
-                names,
-                named_child(statement, "expression")?,
-            )?)))
+            Ok(Expr::Eager(Box::new(
+                super::prefix_call::lower_prefix_statement(names, statement)?,
+            )))
         }
         // `gather { … }` -> a gather expression over the lowered block body.
         RakuAstClass::StatementPrefixGather => {
