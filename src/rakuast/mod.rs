@@ -249,6 +249,7 @@ pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_
 mod colon_pairs;
 mod constant_decl;
 mod loop_step;
+pub(crate) mod method_initializer;
 mod role;
 mod role_header;
 mod role_implicit;
@@ -617,6 +618,8 @@ pub enum RakuAstClass {
     /// NativeCall type declaration (`native N is Int ... { }`).
     Native,
     Method,
+    MethodInitializer,
+    MethodClassAccessor,
     // Phase 2 slice 16: role declarations.
     Role,
     RoleBody,
@@ -1005,6 +1008,8 @@ impl RakuAstClass {
             Class => "RakuAST::Class",
             Native => "RakuAST::Native",
             Method => "RakuAST::Method",
+            MethodInitializer => "RakuAST::Method::Initializer",
+            MethodClassAccessor => "RakuAST::Method::ClassAccessor",
             Role => "RakuAST::Role",
             RoleBody => "RakuAST::RoleBody",
             Label => "RakuAST::Label",
@@ -1563,6 +1568,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Class,
     RakuAstClass::Native,
     RakuAstClass::Method,
+    RakuAstClass::MethodInitializer,
+    RakuAstClass::MethodClassAccessor,
     RakuAstClass::Role,
     RakuAstClass::RoleBody,
     RakuAstClass::Label,

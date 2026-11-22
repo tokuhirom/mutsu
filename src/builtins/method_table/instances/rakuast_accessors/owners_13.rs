@@ -3,6 +3,27 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Term::Enum",
+        &[
+            "RakuAST::Term::Enum",
+            "RakuAST::Term::Name",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Term::HyperWhatever",
+        &[
+            "RakuAST::Term::HyperWhatever",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Term::Name",
         &[
             "RakuAST::Term::Name",
@@ -150,24 +171,5 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     (
         "RakuAST::Trait::Will",
         &["RakuAST::Trait::Will", "RakuAST::Trait", "RakuAST::Node"],
-    ),
-    (
-        "RakuAST::Trait::WillBuild",
-        &[
-            "RakuAST::Trait::WillBuild",
-            "RakuAST::Trait",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Transliteration",
-        &[
-            "RakuAST::Transliteration",
-            "RakuAST::QuotedMatchConstruct",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
     ),
 ];

@@ -78,6 +78,32 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
+        "RakuAST::Method::ClassAccessor",
+        &[
+            "RakuAST::Method::ClassAccessor",
+            "RakuAST::Method",
+            "RakuAST::Methodish",
+            "RakuAST::Routine",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Method::Initializer",
+        &[
+            "RakuAST::Method::Initializer",
+            "RakuAST::Method",
+            "RakuAST::Methodish",
+            "RakuAST::Routine",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Mixin",
         &[
             "RakuAST::Mixin",
@@ -133,24 +159,5 @@ pub(super) const CHAINS: &[OwnerChain] = &[
     (
         "RakuAST::Nqp",
         &["RakuAST::Nqp", "RakuAST::Expression", "RakuAST::Node"],
-    ),
-    (
-        "RakuAST::Nqp::Const",
-        &[
-            "RakuAST::Nqp::Const",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::NumLiteral",
-        &[
-            "RakuAST::NumLiteral",
-            "RakuAST::Literal",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
     ),
 ];
