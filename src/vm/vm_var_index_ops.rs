@@ -414,7 +414,12 @@ impl Interpreter {
                     {
                         false
                     }
-                    ValueView::Hash(..) | ValueView::Array(..) => true,
+                    // A pseudo-stash is a snapshot of the pads it names: a
+                    // miss is no entry to vivify, but `Nil` (6.c) or an
+                    // `X::NoSuchSymbol` Failure (6.e), which the plain read
+                    // answers.
+                    ValueView::Hash(h) => h.declared_type.as_deref() != Some("PseudoStash"),
+                    ValueView::Array(..) => true,
                     ValueView::Instance { class_name, .. } => class_name.as_str() == "Stash",
                     _ => false,
                 }
@@ -2284,8 +2289,13 @@ impl Interpreter {
                 if v.is_nil() {
                     if items.declared_type.as_deref() == Some("PseudoStash") {
                         // A symbol absent from `MY::`/`CALLER::` reads as `Nil`
-                        // (not the Any type object of an ordinary hash miss).
-                        Value::NIL
+                        // (not the Any type object of an ordinary hash miss),
+                        // and as an `X::NoSuchSymbol` Failure from a 6.e stash.
+                        if items.pseudo_stash_6e && !items.contains_key(key.as_str()) {
+                            Self::no_such_symbol_failure(&format!("<{}>", key.as_str()))
+                        } else {
+                            Value::NIL
+                        }
                     } else {
                         self.typed_container_default(&Value::hash_with_data(items.clone()))
                     }

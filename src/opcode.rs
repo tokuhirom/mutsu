@@ -856,6 +856,9 @@ pub(crate) enum LexicalStashRoutines {
 /// env-only one). Its value is resolved by name as a routine.
 pub(crate) const LEXICAL_STASH_ROUTINE_SLOT: i64 = -2;
 
+/// A local-slot operand naming no slot (`OpCode::ContainerEqNamed`).
+pub(crate) const NO_LOCAL_SLOT: u32 = u32::MAX;
+
 /// The slot an [`OpCode::GetLexicalStash`] spec entry carries for the unit's
 /// own `EXPORT` package (rakudo: `MY::<EXPORT>` at a unit's root that exports
 /// anything, #13854).
@@ -1973,9 +1976,14 @@ pub(crate) enum OpCode {
     /// The VM checks the alias table to see if the two variable names
     /// resolve to the same binding root.  Falls back to `values_identical`
     /// for reference types (Array, Hash, Sub, Instance, …).
+    /// `left_slot`/`right_slot` are the local slots the names resolve to
+    /// at the comparison (`NO_LOCAL_SLOT` when none): a name an inner scope
+    /// shadows is that scope's slot, which a by-name lookup cannot tell.
     ContainerEqNamed {
         left_name_idx: u32,
         right_name_idx: u32,
+        left_slot: u32,
+        right_slot: u32,
     },
     /// Container identity (`=:=`) when one operand is a `.self` call and the
     /// other is a named variable.  `.self` hands back the invocant's *value*,

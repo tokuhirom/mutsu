@@ -157,6 +157,149 @@ impl Compiler {
         true
     }
 
+    /// Under 6.e, `MY::` is the innermost pad and nothing else: `$MY::x` or
+    /// `MY::Name` naming a symbol that pad does not declare is a `MY::<key>`
+    /// read, whose miss is an `X::NoSuchSymbol` Failure (rakudo 2026.11; 6.c
+    /// and 6.d still find an enclosing scope's `$x`). Emits that read and
+    /// returns true when `name` is such a spelling; `sigil` is the variable's
+    /// sigil (empty for a bare word).
+    // Cost: O(|name|) at compile time.
+    pub(crate) fn emit_strict_my_read(&mut self, sigil: &str, name: &str) -> bool {
+        let Some(bare) = name.strip_prefix("MY::") else {
+            return false;
+        };
+        if bare.is_empty()
+            || bare.contains("::")
+            || !super::compile_inputs::current_language_version_starts_with("6.e")
+        {
+            return false;
+        }
+        // The pad's own key for the symbol: a scalar's is its bare name.
+        let pad_key = if sigil == "$" {
+            bare.to_string()
+        } else {
+            format!("{sigil}{bare}")
+        };
+        if self.innermost_pad_declares(&pad_key, sigil.is_empty()) {
+            return false;
+        }
+        self.compile_expr(&Expr::Index {
+            target: Box::new(Expr::PseudoStash("MY::".to_string())),
+            index: Box::new(Expr::Literal(Value::str(format!("{sigil}{bare}")))),
+            is_positional: false,
+            spelling: Default::default(),
+        });
+        true
+    }
+
+    /// Whether the innermost scope declares `pad_key` (a scalar's bare name,
+    /// another variable's sigiled one), or, for a `type` spelling, the type.
+    // Cost: O(n), n = names the innermost scope declares.
+    fn innermost_pad_declares(&self, pad_key: &str, type_name: bool) -> bool {
+        let Some(frame) = self.local_scopes.last().or(self.enclosing_scopes.last()) else {
+            return false;
+        };
+        frame.all_declared_names().any(|n| n == pad_key)
+            || (type_name && frame.declared_type(pad_key).is_some())
+    }
+
+    /// `$MY::x` as an assignment or bind target names the innermost scope's
+    /// own `$x` when that scope declares it, an `our $x` alias included:
+    /// `$MY::a18 := $x` rebinds the lexical alias, as `$a18 := $x` does.
+    /// Returns the plain spelling to store through, or `None`.
+    // Cost: O(n), as `innermost_pad_declares`.
+    /// `$LEXICAL::x` names the nearest lexical `$x`, the one the plain `$x`
+    /// sees, so it is stored through that spelling too.
+    pub(crate) fn my_pad_store_name<'a>(&self, name: &'a str) -> Option<&'a str> {
+        if let Some(bare) = name.strip_prefix("LEXICAL::") {
+            return (!bare.is_empty() && !bare.contains("::") && self.lexical_chain_declares(bare))
+                .then_some(bare);
+        }
+        let bare = name.strip_prefix("MY::")?;
+        (!bare.is_empty() && !bare.contains("::") && self.innermost_pad_declares(bare, false))
+            .then_some(bare)
+    }
+
+    /// Whether any scope of this compilation's chain declares `pad_key`.
+    // Cost: O(s * n), s = scopes, n = names each declares.
+    fn lexical_chain_declares(&self, pad_key: &str) -> bool {
+        self.enclosing_scopes
+            .iter()
+            .chain(self.local_scopes.iter())
+            .any(|frame| frame.all_declared_names().any(|n| n == pad_key))
+    }
+
+    /// `$LEXICAL::x` read where a scope of this compilation declares `$x`:
+    /// the plain `$x` read, the nearest lexical (#18742). Returns the plain
+    /// spelling, or `None` to resolve the qualified name at run time.
+    // Cost: O(s * n), as `lexical_chain_declares`.
+    /// `$LEXICAL::A1::pies` names the member of the package the plain `A1`
+    /// finds, the lexical one first, so it reads as `$A1::pies`.
+    pub(crate) fn lexical_read_name<'a>(&self, name: &'a str) -> Option<&'a str> {
+        let bare = name.strip_prefix("LEXICAL::")?;
+        if bare.is_empty() {
+            return None;
+        }
+        if let Some((package, _)) = bare.split_once("::") {
+            return (self.lexical_types_in_scope.contains(package)
+                || self.lexical_chain_declares(package))
+            .then_some(bare);
+        }
+        self.lexical_chain_declares(bare).then_some(bare)
+    }
+
+    /// The variable spelling (`x`, `@a`, `*k`) a `$x`/`@a`/`$*k` stash key
+    /// names, when it is a plain variable.
+    // Cost: O(|key|).
+    fn stash_key_var_name(key: &str) -> Option<String> {
+        let sigil = key
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '$' | '@' | '%'))?;
+        let rest = &key[1..];
+        let ident = rest.strip_prefix('*').unwrap_or(rest);
+        if !ident.starts_with(|c: char| c.is_alphabetic() || c == '_') || ident.contains("::") {
+            return None;
+        }
+        Some(if sigil == '$' {
+            rest.to_string()
+        } else {
+            key.to_string()
+        })
+    }
+
+    /// `LEXICAL::<$x> := v` and the root `::<$x> := v` bind the variable the
+    /// plain `$x` names (the nearest lexical, or the dynamic `$*x`), as
+    /// `$x := v` does; the stash itself is only a view of the pads. Emits
+    /// that bind and returns true when `target`/`index`/`value` spell one.
+    pub(crate) fn emit_lexical_stash_bind(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        value: &Expr,
+    ) -> bool {
+        let (Expr::PseudoStash(stash), Expr::Literal(lit), Expr::IndexBindValue(rhs)) =
+            (target, index, value)
+        else {
+            return false;
+        };
+        if !matches!(stash.as_str(), "::" | "LEXICAL::") {
+            return false;
+        }
+        let Some(name) = lit.as_str().and_then(Self::stash_key_var_name) else {
+            return false;
+        };
+        if !name.starts_with('*') && !self.lexical_chain_declares(&name) {
+            return false;
+        }
+        self.compile_expr(&Expr::AssignExpr {
+            name,
+            expr: rhs.clone(),
+            is_bind: true,
+        });
+        true
+    }
+
     /// Emit `CORE::<key>`: the setting's entry under `key` (a `&name`
     /// routine), or Nil.
     // Cost: one keyed pseudo-stash read.

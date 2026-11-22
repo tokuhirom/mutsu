@@ -94,9 +94,18 @@ impl Compiler {
             self.compile_expr(right);
             let left_idx = self.code.add_constant(Value::str(ln.clone()));
             let right_idx = self.code.add_constant(Value::str(rn.clone()));
+            let slot_of = |name: &str| {
+                self.local_map
+                    .get(name)
+                    .copied()
+                    .unwrap_or(crate::opcode::NO_LOCAL_SLOT)
+            };
+            let (left_slot, right_slot) = (slot_of(ln), slot_of(rn));
             self.code.emit(OpCode::ContainerEqNamed {
                 left_name_idx: left_idx,
                 right_name_idx: right_idx,
+                left_slot,
+                right_slot,
             });
             return;
         }

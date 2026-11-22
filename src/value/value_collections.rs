@@ -60,6 +60,7 @@ impl HashData {
             descriptor_name: None,
             bare_values: false,
             storage_cells: false,
+            pseudo_stash_6e: false,
         }
     }
 

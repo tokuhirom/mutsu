@@ -779,6 +779,24 @@ impl Compiler {
             return;
         }
 
+        // `LEXICAL::<$*k>`: a dynamic name in a lexical view searches the
+        // dynamic scope, as `CALLER::<$*k>` and `OUTER::<$*k>` do, so it reads
+        // what the plain `$*k` reads.
+        if let Expr::PseudoStash(stash) = target
+            && matches!(stash.as_str(), "LEXICAL::" | "::")
+            && !use_autovivify
+            && !is_positional
+            && let Expr::Literal(lit) = index
+            && let Some(key) = lit.as_str()
+            && let Some(dynamic) = key.strip_prefix("$*")
+            && dynamic.starts_with(|c: char| c.is_alphabetic() || c == '_')
+            && !dynamic.contains("::")
+        {
+            self.compile_expr_var(&format!("*{dynamic}"));
+            self.bind_terminal = saved_terminal;
+            self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
+            return;
+        }
         // `LEXICAL::<&name>`: every lexical visible here, the setting's
         // routines included, so a routine no enclosing scope binds is CORE's
         // (#17846).

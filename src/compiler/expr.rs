@@ -390,6 +390,9 @@ impl Compiler {
                 self.code.emit(OpCode::ReactDone);
             }
             Expr::BareWord(name) => {
+                if self.emit_strict_my_read("", name) {
+                    return;
+                }
                 // `OUTER::OUTER::Inner` names the type that scope declares,
                 // whatever a nearer scope's same-named type shadows (#18213).
                 if let Some((bare, depth)) = Self::outer_qualified_bareword(name)
