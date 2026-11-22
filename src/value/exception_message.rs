@@ -50,7 +50,10 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
         "X::Undeclared" => {
             let what = attr_str_or(attrs, "what", "Variable");
             let symbol = attr_str(attrs, "symbol");
-            let items = attrs.get("suggestions").map(suggestion_list).unwrap_or_default();
+            let items = attrs
+                .get("suggestions")
+                .map(suggestion_list)
+                .unwrap_or_default();
             Some(undeclared_message(&what, &symbol, &items))
         }
         "X::Cannot::Lazy" => {
@@ -312,7 +315,9 @@ pub(crate) fn undeclared_message(what: &str, symbol: &str, suggestions: &[String
     let msg = format!("{} '{}' is not declared", what, symbol);
     match suggestions {
         [] => crate::word_wrap::naive_word_wrap(
-            &format!("{msg}. Perhaps you forgot a 'sub' if this was intended to be part of a signature?"),
+            &format!(
+                "{msg}. Perhaps you forgot a 'sub' if this was intended to be part of a signature?"
+            ),
             72,
         ),
         [one] => format!("{msg}. Did you mean '{one}'?"),
