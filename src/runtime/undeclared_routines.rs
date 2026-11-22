@@ -274,6 +274,7 @@ fn scan_unit_ordered(stmts: &[Stmt], mode: ScanMode, term_order: bool) -> Scan {
         }
     }
     scan.resolve_body_scoped_calls();
+    scan.adopt_code_vars();
     scan
 }
 

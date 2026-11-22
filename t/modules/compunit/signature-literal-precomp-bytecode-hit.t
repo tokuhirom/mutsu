@@ -39,3 +39,10 @@ is $warm-out, $cold-out, 'warm output matches cold output';
 END {
     try $cache.&rmtree if $cache.e;
 }
+
+sub rmtree(IO::Path $d) {
+    for $d.dir -> $e {
+        $e.d ?? rmtree($e) !! $e.unlink;
+    }
+    $d.rmdir;
+}

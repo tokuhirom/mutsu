@@ -84,6 +84,12 @@ pub(super) struct Scan {
     pub(super) eval: bool,
     /// The unit's top-level conditional `use`s (see [`conditional`]).
     pub(super) conditional_uses: Vec<conditional::ConditionalUse>,
+    /// The `&name` references, with their lines. One is judged as a call only
+    /// if no routine of that name is declared anywhere in the unit
+    /// ([`Scan::adopt_code_vars`]): a `&name` of a package's or a routine
+    /// body's routine is reachable in more ways (an `import`, an exported
+    /// symbol, a closure handed out) than a call's scope rules model.
+    code_vars: Vec<(String, i64)>,
 }
 
 /// A declared name with its sigil and twigil removed.
@@ -113,6 +119,24 @@ impl Scan {
     // Cost: O(n), n = size of the statement's AST.
     pub(super) fn walk_top_level(&mut self, stmt: &Stmt) {
         self.visit_stmt(stmt);
+    }
+
+    /// Judge each `&name` reference whose routine the unit declares nowhere,
+    /// at any scope, as a call (`say &nosuch` is "Undeclared routine").
+    // Cost: O(v + f * r), v = `&name` references, f = frames, r = routines each.
+    pub(super) fn adopt_code_vars(&mut self) {
+        let code_vars = std::mem::take(&mut self.code_vars);
+        let saved_line = self.line;
+        for (name, line) in code_vars {
+            let declared_somewhere = self.declared.contains(&name)
+                || self.body_routines.contains(&name)
+                || self.frames.iter().any(|f| f.routines.contains(&name));
+            if !declared_somewhere {
+                self.line = line;
+                self.record_call(&name);
+            }
+        }
+        self.line = saved_line;
     }
 
     /// Drop every call that a routine declared in an enclosing routine body
@@ -390,6 +414,17 @@ impl<'ast> Visit<'ast> for Scan {
                 _ => name.as_str(),
             };
             self.record_call(base);
+        }
+        // `&name` names the routine `name` as a value: rakudo rejects an
+        // undeclared one at CHECK time like a call (`say &nosuch` is
+        // "Undeclared routine"). Only a plain identifier: `&infix:<+>`,
+        // `&?ROUTINE`, `&*dyn` and `&Pkg::name` resolve otherwise.
+        if let Expr::CodeVar(name) = expr
+            && !self.bail
+            && name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+            && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+        {
+            self.code_vars.push((name.clone(), self.line));
         }
         // `$( ... )` is parsed as the `.item` of a desugared block, but is not
         // a lexical scope: a routine declared inside belongs to the enclosing one.
