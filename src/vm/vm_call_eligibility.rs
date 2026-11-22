@@ -453,12 +453,20 @@ impl Interpreter {
         args: &[Value],
         caller_code: Option<&CompiledCode>,
     ) -> bool {
-        self.is_positional_light_call_eligible_where(cf, fn_name, argc, args, caller_code, false)
+        self.is_positional_light_call_eligible_where(
+            cf,
+            fn_name,
+            argc,
+            args,
+            caller_code,
+            LightBindTrust::None,
+        )
     }
 
     /// [`Self::is_positional_light_call_eligible`] for the winner of a
     /// value-dependent `multi` whose resolution just ran every one of its
-    /// `where` clauses against these exact arguments (`where_verified`): the
+    /// `where` clauses against these exact arguments (`trust` is
+    /// [`LightBindTrust::Wheres`] or wider): the
     /// light bind never runs a `where`, and here none is left to run -- except
     /// a regex `where`, whose match is the body's `$/` and so must run at bind
     /// time (#12915). #8697's `pending_skip_constraint_recheck` is the general
@@ -470,7 +478,7 @@ impl Interpreter {
         argc: usize,
         args: &[Value],
         caller_code: Option<&CompiledCode>,
-        where_verified: bool,
+        trust: LightBindTrust,
     ) -> bool {
         !fn_name.is_empty()
             // A `Proxy` argument is FETCHed by the general binder; the light
@@ -478,11 +486,11 @@ impl Interpreter {
             && !args
                 .iter()
                 .any(|a| super::vm_call_helpers::bound_proxy(a).is_some())
-            && if where_verified {
-                Self::light_signature_static_ok(cf, true)
-            } else {
+            && if trust == LightBindTrust::None {
                 *cf.light_signature_cache
-                    .get_or_init(|| Self::light_signature_static_ok(cf, false))
+                    .get_or_init(|| Self::light_signature_static_ok(cf, LightBindTrust::None))
+            } else {
+                Self::light_signature_static_ok(cf, trust)
             }
             // A call that may OMIT a defaulted / `?`-optional positional is
             // admitted only when the precompute could reduce every one of them
@@ -515,10 +523,11 @@ impl Interpreter {
     /// The signature-level half of [`Self::is_positional_light_call_eligible_where`]:
     /// every condition that reads only the routine itself (flags, return type,
     /// parameter shapes), none that looks at this call's arguments. Memoized per
-    /// routine for `where_verified == false` (`CompiledFunction::light_signature_cache`),
+    /// routine for [`LightBindTrust::None`] (`CompiledFunction::light_signature_cache`),
     /// which is what every call but a verified-`where` multi winner asks.
     // Cost: O(p), p = parameters; O(1) once memoized.
-    fn light_signature_static_ok(cf: &CompiledFunction, where_verified: bool) -> bool {
+    fn light_signature_static_ok(cf: &CompiledFunction, trust: LightBindTrust) -> bool {
+        let where_verified = trust != LightBindTrust::None;
         cf.code.state_locals.is_empty()
             && !cf.is_cached
             // `is raw` is admitted: its raw return is compiled into the body
@@ -584,10 +593,15 @@ impl Interpreter {
                     && pd.sub_signature.is_none()
                     // Only allow basic type constraints that fast_type_check handles.
                     // Excludes subset types, parametric roles, etc.
-                    && pd
-                        .type_constraint
-                        .as_deref()
-                        .is_none_or(Self::is_fast_type_name)
+                    && pd.type_constraint.as_deref().is_none_or(|tc| {
+                        Self::is_fast_type_name(tc)
+                            // A plain type name a keyed stage program has
+                            // checked (a subset, a user class; ADR-18580 D2),
+                            // which the verified bind does not check again.
+                            || (trust == LightBindTrust::Constraints
+                                && !tc.is_empty()
+                                && !tc.contains([':', '(', '[', '{']))
+                    })
                     // A `::T` type capture needs the general binder to bind it
                     // (#7984); the `is_fast_type_name` test above used to reject
                     // it only because the capture was spelled into
@@ -999,4 +1013,19 @@ type ShadowedBinding = (String, Option<Value>);
 pub(super) struct RoutinePackageSave {
     package: Option<Symbol>,
     statics: Option<Box<[ShadowedBinding]>>,
+}
+
+/// What the caller of a positional light bind has already checked against the
+/// call's arguments, so the bind may admit (and skip) it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum LightBindTrust {
+    /// Nothing: the bind checks every constraint it admits.
+    None,
+    /// Every `where` clause (a value-dependent multi winner the resolver
+    /// just checked); type constraints are still the bind's to check.
+    Wheres,
+    /// Every parameter constraint, nominal and value: a winner a keyed stage
+    /// program picked (ADR-18580 D2), bound by
+    /// `call_compiled_function_positional_light_verified`.
+    Constraints,
 }
