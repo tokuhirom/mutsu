@@ -1068,6 +1068,10 @@ impl Compiler {
                 _ => self.compile_expr(part),
             }
         }
+        // The pieces fold through `~`'s candidates in scope, a block's own
+        // or imported ones included (#18617). Ahead of the part names, which
+        // are keyed by the `StringConcat`'s own ip.
+        self.emit_lex_import_builtin_op(&OpCode::StringConcat(n));
         self.code.note_interp_part_names(names);
         self.code.emit(OpCode::StringConcat(n));
     }

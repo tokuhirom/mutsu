@@ -370,6 +370,27 @@ impl Compiler {
             }
             return;
         };
+        // The sets around the closure that one of its call sites reads. A
+        // site's chain leaves out the sets that do not bind its name (a set
+        // opened before the block's own routine of the name), so the sites
+        // need not share a suffix: `Thing + 1` under a block's `multi
+        // infix:<+>` reads [block, unit-use] for `Thing` and [block] for `+`
+        // (#18617). Each name is filtered again as the body recompiles.
+        if !origin.enclosing_import_chain.is_empty() {
+            let used: Vec<Symbol> = origin
+                .enclosing_import_chain
+                .iter()
+                .copied()
+                .filter(|id| {
+                    origin
+                        .lexical_import_chains
+                        .iter()
+                        .any(|chain| chain.contains(id))
+                })
+                .collect();
+            self.seed_lexical_import_chain(used);
+            return;
+        }
         // Innermost first, so the shared outer sets are a common suffix.
         let mut common: &[Symbol] = first;
         for chain in chains {

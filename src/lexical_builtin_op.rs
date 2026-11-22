@@ -75,6 +75,21 @@ pub(crate) fn binds_lexically(name: &str) -> bool {
     }
 }
 
+/// Whether `name` (`infix:<+>`) is a built-in infix whose every op consults
+/// `try_user_infix`, which ranks a scope's candidates against the core ones.
+/// A block's own `multi` of such an operator binds in the block's set
+/// (#18617); one whose uses become calls of the family
+/// ([`is_call_spelled_infix`], [`is_replaced_infix`]) keeps the registry
+/// path, whose ranking a call of the bound family would skip.
+// Cost: O(m), m = bytes of `name`.
+pub(crate) fn infix_ops_ask_user_candidates(name: &str) -> bool {
+    name.strip_prefix("infix:<")
+        .and_then(|rest| rest.strip_suffix('>'))
+        .is_some_and(|op| {
+            is_lexical_infix(op) && !is_call_spelled_infix(op) && !is_replaced_infix(op)
+        })
+}
+
 /// The built-in infixes whose every op consults `try_user_infix`.
 // Cost: O(1).
 fn is_lexical_infix(op: &str) -> bool {
@@ -325,6 +340,8 @@ pub(crate) fn infix_of_opcode(op: &OpCode) -> Option<&'static str> {
         OpCode::InfixMin => "infix:<min>",
         OpCode::InfixMax => "infix:<max>",
         OpCode::Concat => "infix:<~>",
+        // A string interpolation folds its pieces through `~`'s candidates.
+        OpCode::StringConcat(_) => "infix:<~>",
         OpCode::StrEq => "infix:<eq>",
         OpCode::StrNe => "infix:<ne>",
         OpCode::StrLt => "infix:<lt>",
