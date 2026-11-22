@@ -28,8 +28,9 @@ pub(crate) fn lower(node: Modified) -> Result<Stmt, RuntimeError> {
     let mut stmt = *stmt;
     // `sub a() { } given 3`: the declaration is compile-time and happens
     // anyway; the modifier only governs evaluating the statement's (sunk)
-    // value, so its operand still runs (#10257).
-    if let Stmt::SubDecl { .. } = stmt {
+    // value, so its operand still runs (#10257). A block-form phaser is the
+    // same: it is installed, and runs, whatever the modifier says (#18148).
+    if let Stmt::SubDecl { .. } | Stmt::Phaser { .. } = stmt {
         let value = lower(Modified {
             stmt: Box::new(Stmt::Expr(Expr::Literal(Value::NIL))),
             condition,
