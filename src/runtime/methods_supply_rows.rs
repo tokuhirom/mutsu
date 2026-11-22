@@ -194,6 +194,8 @@ impl SupplyOp {
                 | SupplyOp::Encode
                 | SupplyOp::Decode
                 | SupplyOp::Repeated
+                | SupplyOp::Delayed
+                | SupplyOp::ScheduleOn
         )
     }
 }
