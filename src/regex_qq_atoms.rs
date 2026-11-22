@@ -310,7 +310,11 @@ mod tests {
         assert!(!body_wants_thunk("$0"));
         assert!(!body_wants_thunk("x $<a>"));
         assert!(!body_wants_thunk("x $/"));
-        assert!(!body_wants_thunk("x $_"));
+        // `$_` is the topic the regex runs under, which the thunk is called
+        // with; `@_` would name the block's own arguments.
+        assert!(body_wants_thunk("x $_"));
+        assert!(body_wants_thunk("x { $_ }"));
+        assert!(!body_wants_thunk("x @_"));
         assert!(body_wants_thunk("x $_foo"));
         assert!(body_wants_thunk("x @a.join(\",\")"));
         assert!(!body_wants_thunk("plain \\$x"));
