@@ -118,9 +118,10 @@ fn flags(
         p.is_invocant,
         p.multi_invocant,
         p.sigilless,
-        // Optional: a default, a `?` marker, or a named parameter that is not
-        // `!`-required.
-        !p.required || p.has_default || p.optional_marker,
+        // Optional: a default or a `?` marker; a named parameter is optional
+        // unless `!`-required. (`required` is only meaningful for a named
+        // one: construction paths set it differently for a positional.)
+        p.has_default || p.optional_marker || (p.named && !p.required),
         p.code_signature.is_some(),
     )
 }
