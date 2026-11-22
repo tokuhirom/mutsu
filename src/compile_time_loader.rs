@@ -144,8 +144,11 @@ pub(crate) trait CompileTimeLoader {
 
     /// Run `begin`, a statement-form `BEGIN` phaser of the unit's top level
     /// that the parser just finished, now, when running it ahead of the
-    /// unit's frame is unobservable (ADR-17558 slice 5).
-    fn run_begin(&mut self, begin: &crate::ast::Stmt) -> BeginOutcome;
+    /// unit's frame is unobservable (ADR-17558 slice 5). `uses` are the
+    /// unit's top-level `use` statements ahead of it that loaded at parse
+    /// time, in source order: a `BEGIN` that calls a routine one of them
+    /// imports runs after that import.
+    fn run_begin(&mut self, begin: &crate::ast::Stmt, uses: &[crate::ast::Stmt]) -> BeginOutcome;
 
     /// The installation stamp of a `multi` candidate the parser just finished
     /// at the program's top level: rakudo installs a candidate when the parser
@@ -247,8 +250,8 @@ pub(crate) fn slang_activation(
 
 /// Ask this thread's current loader to run a finished unit-level `BEGIN`.
 // Cost: O(1) when there is no loader; the phaser's analysis and run otherwise.
-pub(crate) fn run_begin(begin: &crate::ast::Stmt) -> BeginOutcome {
-    with_loader(|loader| loader.run_begin(begin)).unwrap_or(BeginOutcome::NotTaken)
+pub(crate) fn run_begin(begin: &crate::ast::Stmt, uses: &[crate::ast::Stmt]) -> BeginOutcome {
+    with_loader(|loader| loader.run_begin(begin, uses)).unwrap_or(BeginOutcome::NotTaken)
 }
 
 /// Ask this thread's current loader for the installation stamp of a `multi`

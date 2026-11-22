@@ -222,11 +222,6 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
-/// Whether the unit being parsed provides `name` at the parse position: it
-/// declares it (a routine, a type, an enum value, a term) or a `use` before it
-/// imports it. A parse-time `BEGIN` that names one is left to the prologue
-/// (ADR-17558 slice 5): none of them is bound before the unit's frame exists.
-// Cost: O(s), s = enclosing parse scopes.
 /// The key of a dynamic variable named `name` (`$*X`, `%*ENV`), in any of
 /// the spellings the tree uses (`*X`, `$*X`, `%*ENV`), with its sigil: `None`
 /// for any other name.
@@ -239,6 +234,18 @@ pub(crate) fn dynamic_var_key(name: &str) -> Option<String> {
     }
 }
 
+/// Whether the unit being parsed declares `name` at the parse position (a
+/// routine, a type, an enum value, a term), apart from what it imports.
+// Cost: O(s), s = enclosing parse scopes.
+pub(crate) fn unit_declares_name(name: &str) -> bool {
+    stmt::simple::is_declared_symbol_name(name)
+}
+
+/// Whether the unit being parsed provides `name` at the parse position: it
+/// declares it (a routine, a type, an enum value, a term) or a `use` before it
+/// imports it. A parse-time `BEGIN` that names one is left to the prologue
+/// (ADR-17558 slice 5): none of them is bound before the unit's frame exists.
+// Cost: O(s), s = enclosing parse scopes.
 pub(crate) fn unit_provides_name(name: &str) -> bool {
     stmt::simple::is_declared_symbol_name(name) || stmt::simple::is_imported_function(name)
 }
@@ -716,11 +723,13 @@ pub(crate) fn parse_fragment_unfinalized(
     // A fragment is part of the enclosing unit: a `BEGIN` before it still
     // precedes the unit's later `use`s, and one inside it does too.
     let effects_were_seen = stmt::simple::take_unit_effects_seen();
+    let parse_time_uses = stmt::simple::take_parse_time_uses();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() + 1));
     let result = parse_program_unfinalized(input);
     FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() - 1));
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
+    stmt::simple::restore_parse_time_uses(parse_time_uses);
     let (begin_now, prologue_now) = stmt::simple::take_unit_effects_seen();
     stmt::simple::restore_unit_effects_seen((
         effects_were_seen.0 || begin_now,

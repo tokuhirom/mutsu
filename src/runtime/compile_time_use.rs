@@ -208,8 +208,8 @@ impl CompileTimeLoader for Interpreter {
 
     // Cost: O(n) for the analysis, n = size of the phaser's body; the
     // phaser's own run otherwise.
-    fn run_begin(&mut self, begin: &Stmt) -> crate::compile_time_loader::BeginOutcome {
-        self.run_parse_time_begin(begin)
+    fn run_begin(&mut self, begin: &Stmt, uses: &[Stmt]) -> crate::compile_time_loader::BeginOutcome {
+        self.run_parse_time_begin(begin, uses)
     }
 
     // Cost: O(1).

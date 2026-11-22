@@ -41,7 +41,8 @@ mod slang_use;
 mod slang_wrapper_block;
 mod user_ops;
 pub(in crate::parser) use begin_at_parse::{
-    note_unit_prologue_effects_of, restore_unit_effects_seen, take_unit_effects_seen,
+    note_parse_time_use, note_unit_prologue_effects_of, restore_parse_time_uses,
+    restore_unit_effects_seen, take_parse_time_uses, take_unit_effects_seen,
 };
 
 // `pub` re-exports.
@@ -582,6 +583,7 @@ pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state
     unit.take(&DECLARE_KEYWORDS, HashMap::new());
     unit.take_cell(&UNIT_BEGIN_SEEN, false);
     unit.take_cell(&begin_at_parse::UNIT_PROLOGUE_EFFECT_SEEN, false);
+    unit.take(&begin_at_parse::UNIT_PARSE_TIME_USES, Vec::new());
     registry::suspend_unit_state(unit);
     l10n::suspend_unit_state(unit);
     slang_lang::suspend_unit_state(unit);

@@ -19,8 +19,9 @@
 //!   `BEGIN` (that declaration is a prologue effect, which keeps the `BEGIN`
 //!   in the prologue) and the compiler does not bind it (`$*R`, `$*CU`);
 //! - every routine it calls is a core one the unit does not redeclare or
-//!   import (a parse-time `use` has not imported yet), and it calls none by a
-//!   qualified name;
+//!   import, or one a `use` the parser loaded ahead of it imports (the caller
+//!   then runs that import ahead of the `BEGIN`, as the prologue would), and
+//!   it calls none by a qualified name;
 //! - it cannot reach a name dynamically (`EVAL`, `::($name)`, `CALLER::`);
 //! - every type or bare term it names is a core one the unit has not
 //!   redeclared or imported;
@@ -33,13 +34,27 @@ use super::scan::{Scan, is_core_routine};
 use crate::ast::{Expr, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 
+/// What a closed `BEGIN` body uses (see [`begin_body_core_names`]).
+pub(crate) struct ClosedBegin {
+    /// The core routines, types and terms it names. The unit must provide
+    /// none of them (declare or import one of that name ahead of the `BEGIN`)
+    /// for the body to be closed.
+    pub(crate) core: Vec<String>,
+    /// The routines it calls that `imported` answered for: a `use` loaded at
+    /// parse time imports them, and the unit must not declare one of them.
+    pub(crate) imported: Vec<String>,
+}
+
 /// The names `body`, the body of a unit-level statement-form `BEGIN`, uses,
-/// when it reaches nothing of its unit but core names (see the module docs);
-/// `None` when it reaches more. The unit must provide none of the names
-/// returned (declare or import one of that name ahead of the `BEGIN`) for the
-/// body to be closed: they then name the core routines, types and terms.
-// Cost: O(n), n = size of `body` and of the code it compiles to.
-pub(crate) fn begin_body_core_names(body: &[Stmt], bare: bool) -> Option<Vec<String>> {
+/// when it reaches nothing of its unit but core names and the routines
+/// `imported` accepts (see the module docs); `None` when it reaches more.
+// Cost: O(n), n = size of `body` and of the code it compiles to, plus one
+// `imported` call per non-core callee.
+pub(crate) fn begin_body_core_names(
+    body: &[Stmt],
+    bare: bool,
+    imported: &dyn Fn(&str) -> bool,
+) -> Option<ClosedBegin> {
     // A blockless `BEGIN my $x = ...` declares into the unit's scope.
     let mut escapes = Escapes {
         found: false,
@@ -56,6 +71,7 @@ pub(crate) fn begin_body_core_names(body: &[Stmt], bare: bool) -> Option<Vec<Str
         return None;
     }
     let mut names = Vec::new();
+    let mut imported_names: Vec<String> = Vec::new();
     for (name, kind) in &mentions.names {
         let core = match kind {
             NameKind::SubDecl | NameKind::Decl | NameKind::Attribute => false,
@@ -68,6 +84,14 @@ pub(crate) fn begin_body_core_names(body: &[Stmt], bare: bool) -> Option<Vec<Str
             _ => continue,
         };
         if !core {
+            // A routine an earlier parse-time `use` imports, named as a term
+            // (`done-testing`).
+            if matches!(kind, NameKind::Term) && imported(name) {
+                if !imported_names.contains(name) {
+                    imported_names.push(name.clone());
+                }
+                continue;
+            }
             return None;
         }
         names.push(name.clone());
@@ -87,12 +111,24 @@ pub(crate) fn begin_body_core_names(body: &[Stmt], bare: bool) -> Option<Vec<Str
         }
     }
     for callee in &scan.callees {
-        if !is_core_routine(*callee) || matches!(callee.as_str(), "require" | "EVAL" | "EVALFILE") {
+        if matches!(callee.as_str(), "require" | "EVAL" | "EVALFILE") {
             return None;
         }
-        names.push(callee.resolve());
+        if is_core_routine(*callee) {
+            names.push(callee.resolve());
+        } else if imported(callee.as_str()) {
+            let name = callee.resolve();
+            if !imported_names.contains(&name) {
+                imported_names.push(name);
+            }
+        } else {
+            return None;
+        }
     }
-    Some(names)
+    Some(ClosedBegin {
+        core: names,
+        imported: imported_names,
+    })
 }
 
 /// The dynamic variables the compile of the unit binds for its BEGIN-time
