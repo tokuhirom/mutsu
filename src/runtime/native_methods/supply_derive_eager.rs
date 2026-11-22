@@ -62,6 +62,10 @@ impl Interpreter {
                 self.stable_live_supply(sid, seconds)
             }
             "throttle" => self.throttle_live_supply(sid, &args),
+            "delayed" => {
+                let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);
+                self.delayed_live_supply(sid, seconds)
+            }
             _ => self.native_supply(&attrs, &name, args)?,
         };
         // Close the instance's tap on the source, then finish the instance,
