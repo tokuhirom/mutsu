@@ -69,7 +69,10 @@ pub(super) fn declaration(names: &crate::scope::NameScope, node: &mut RakuAstNod
         let close = open + super::subst_origins::closing(&text[open + 1..], '(', ')')? + 1;
         let inner = text.get(open + 1..close)?;
         let (spans, at) = scan(inner, &parameters, from + open + 1)?;
-        inner[at..].trim().is_empty().then(|| (spans, close, text.to_string()))
+        inner[at..]
+            .trim()
+            .is_empty()
+            .then(|| (spans, close, text.to_string()))
     });
     let Some((spans, close, text)) = spans else {
         return;

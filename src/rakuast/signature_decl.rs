@@ -71,7 +71,10 @@ pub(super) fn view_node(
         && let Some(RakuAstField {
             value: RakuAstFieldValue::List(parameters),
             ..
-        }) = signature.fields.iter_mut().find(|f| f.name == Some("parameters"))
+        }) = signature
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("parameters"))
     {
         for value in parameters.iter_mut() {
             if let ValueView::RakuAst(param) = value.view() {

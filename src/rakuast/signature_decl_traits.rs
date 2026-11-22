@@ -65,11 +65,17 @@ pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
 /// The `Trait::Is` of a group `is default(EXPR)`: the name, and the
 /// argument in parentheses.
 // Cost: O(n), n = size of the default expression's view.
-pub(super) fn default_trait(names: &NameScope, default: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn default_trait(
+    names: &NameScope,
+    default: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let semilist = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(view_expr(names, default)?))],
+        fields: vec![node_field(
+            None,
+            statement_expression(view_expr(names, default)?),
+        )],
     };
     let argument = RakuAstNode {
         origin: Default::default(),
@@ -105,15 +111,23 @@ pub(super) fn with_declaration(target: &mut RakuAstNode, traits: &[RakuAstNode])
         class: RakuAstClass::VarDeclarationSimple,
         fields: vec![traits_field(traits)],
     };
-    target.fields.push(node_field(Some("declaration"), declaration));
+    target
+        .fields
+        .push(node_field(Some("declaration"), declaration));
 }
 
 /// The group default a `VarDeclaration::Signature` carries: the argument of
 /// its `is default(...)` trait.
 // Cost: O(t + n), t = traits, n = size of the argument.
-pub(super) fn group_default(names: &NameScope, node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
-    let Some(RakuAstFieldValue::List(traits)) =
-        node.fields.iter().find(|f| f.name == Some("traits")).map(|f| &f.value)
+pub(super) fn group_default(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Result<Option<Expr>, RuntimeError> {
+    let Some(RakuAstFieldValue::List(traits)) = node
+        .fields
+        .iter()
+        .find(|f| f.name == Some("traits"))
+        .map(|f| &f.value)
     else {
         return Ok(None);
     };
@@ -149,7 +163,13 @@ pub(super) fn is_hidden(node: &RakuAstNode, field: &RakuAstField) -> bool {
 /// the clauses after it, and give each parameter's declaration its
 /// target's range and the placed traits.
 // Cost: O(n + p * t), n = length of `text`, p = parameters, t = traits.
-pub(super) fn place(names: &NameScope, node: &mut RakuAstNode, text: &str, close: usize, base: usize) {
+pub(super) fn place(
+    names: &NameScope,
+    node: &mut RakuAstNode,
+    text: &str,
+    close: usize,
+    base: usize,
+) {
     let Some(clauses) = super::decl_origins::read_traits(text, close + 1, base) else {
         return;
     };
@@ -162,7 +182,11 @@ pub(super) fn place(names: &NameScope, node: &mut RakuAstNode, text: &str, close
         _ => return,
     };
     super::infix_origins::with_child(node, "signature", |signature| {
-        let Some(field) = signature.fields.iter_mut().find(|f| f.name == Some("parameters")) else {
+        let Some(field) = signature
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("parameters"))
+        else {
             return;
         };
         let RakuAstFieldValue::List(parameters) = &mut field.value else {
@@ -178,8 +202,10 @@ pub(super) fn place(names: &NameScope, node: &mut RakuAstNode, text: &str, close
                     .map_or(SrcSpan::NONE, |(from, to)| SrcSpan::new(from, to));
                 super::infix_origins::with_child(target, "declaration", |declaration| {
                     super::origin::set_span(declaration, span);
-                    if let Some(field) =
-                        declaration.fields.iter_mut().find(|f| f.name == Some("traits"))
+                    if let Some(field) = declaration
+                        .fields
+                        .iter_mut()
+                        .find(|f| f.name == Some("traits"))
                     {
                         field.value = RakuAstFieldValue::List(placed.clone());
                     }
