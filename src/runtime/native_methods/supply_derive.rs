@@ -339,11 +339,12 @@ impl Interpreter {
                 }
                 if let Some(id) = super::supply_derive_dedup::dedup_id(attributes) {
                     // `unique` / `squish`: pass the value on unless it
-                    // repeats a key (see `supply_derive_dedup`).
-                    let squish = attributes
-                        .get("mode")
-                        .is_some_and(|m| m.to_string_value() == "squish");
-                    if self.dedup_admit(id, squish, &callable, &arg)? {
+                    // repeats a key; `repeated`: only if it does (see
+                    // `supply_derive_dedup`).
+                    let mode = attributes.get("mode").map(Value::to_string_value);
+                    let squish = mode.as_deref() == Some("squish");
+                    let repeated = mode.as_deref() == Some("repeated");
+                    if self.dedup_admit(id, squish, &callable, &arg)? != repeated {
                         self.call_method_with_values(emitter, "emit", vec![arg])?;
                     }
                     return Ok(Value::NIL);
@@ -561,7 +562,7 @@ impl Interpreter {
         }
         if attributes
             .get("mode")
-            .is_some_and(|m| matches!(m.to_string_value().as_str(), "unique" | "squish"))
+            .is_some_and(|m| matches!(m.to_string_value().as_str(), "unique" | "squish" | "repeated"))
         {
             fwd_attrs.insert(
                 "dedup_id".to_string(),
