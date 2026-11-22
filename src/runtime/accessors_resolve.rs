@@ -800,8 +800,20 @@ impl Interpreter {
             if !normalized_name.starts_with("postcircumfix:<") {
                 let multi_candidates = self.resolve_all_multi_candidates(&normalized_name);
                 if !multi_candidates.is_empty() {
-                    return self
-                        .sub_value_from_multi_candidates(&normalized_name, multi_candidates);
+                    let dispatcher =
+                        self.sub_value_from_multi_candidates(&normalized_name, multi_candidates);
+                    // The user candidates of a built-in operator add to it: a
+                    // call through the value none of them accepts is the
+                    // operator's own, as a by-name call is (#17631). A `proto`
+                    // of the program's own replaces the built-in instead.
+                    return if crate::runtime::lexical_imports::extends_builtin_operator(
+                        &normalized_name,
+                    ) && !self.has_proto(&normalized_name)
+                    {
+                        Self::with_builtin_operator_fallback(dispatcher)
+                    } else {
+                        dispatcher
+                    };
                 }
             }
             // A user operator sub with a single concrete def must become a

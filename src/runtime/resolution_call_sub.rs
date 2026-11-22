@@ -663,7 +663,11 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         if let Some(op) = name.strip_prefix("infix:<").and_then(|s| s.strip_suffix('>')) {
-            return self.call_infix_routine(Self::normalize_unicode_infix(op), args);
+            let op = Self::normalize_unicode_infix(op);
+            if let Some(result) = self.core_plain_infix_body(op, args) {
+                return result;
+            }
+            return self.call_infix_routine(op, args);
         }
         if let Some(op) = crate::runtime::native_increment_dispatch::IncrementOp::from_routine_name(name)
             && let [arg] = args
