@@ -45,6 +45,10 @@ pub(crate) fn numeric_subclass_payload(target: &Value) -> Option<Value> {
 /// the last resort, for the types with no reserved attribute of their own.
 // Cost: O(1) (at most five attribute-map lookups).
 pub(crate) fn native_base_payload(target: &Value) -> Option<Value> {
+    // A lazy Match carries no payload; its `view()` would materialize it.
+    if target.is_lazy_match_value() {
+        return None;
+    }
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };

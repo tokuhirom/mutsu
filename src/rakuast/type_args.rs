@@ -137,7 +137,7 @@ pub(super) fn parameterized_type_node_at(
             // conversion as a pair outside a type application.
             let capture = captures.iter().find(|(position, _)| *position == index);
             let node = if let Some((_, source)) = capture {
-                if !matches!(expr, Expr::BareWord(name) if *source == name.as_str()) {
+                if !matches!(expr.peel_parens(), Expr::BareWord(name) if *source == name.as_str()) {
                     return Err(unsupported("ambiguous type capture argument spelling"));
                 }
                 RakuAstNode {

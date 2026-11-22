@@ -32,6 +32,10 @@ pub(crate) const ITERATION_BUFFER: &[&str] = &["IterationBuffer"];
 /// of a user subclass carrying its state; `None` for anything else.
 // Cost: O(1): a class-name test and up to three attribute-map probes.
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
+    // A lazy Match carries no such state; its `view()` would materialize it.
+    if target.is_lazy_match_value() {
+        return None;
+    }
     let ValueView::Instance {
         class_name,
         attributes,

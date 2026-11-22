@@ -219,6 +219,13 @@ impl Interpreter {
         } else {
             args.to_vec()
         };
+        // `&infix:<orelse>(Nil, *.self)`: the routine form of the
+        // topicalizing operators calls a Callable operand with the value so far.
+        if matches!(op, "orelse" | "andthen" | "notandthen")
+            && args.iter().skip(1).any(|arg| arg.as_sub().is_some())
+        {
+            return self.fold_topicalizing_infix(op, &args);
+        }
         if args.len() == 2 {
             match op {
                 "(elem)" | "∈" => {

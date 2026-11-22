@@ -16,6 +16,7 @@
 //! `Failure` before any shape-based probe.
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -68,7 +69,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("mess", mess),
     row!("gist", gist),
     row!("Str", str_row),
-    row!("raku", raku),
+    MethodRow {
+        owner: "Failure",
+        name: "raku",
+        arity: 0,
+        handler: Handler::InterpPureFirst(raku_pure, raku),
+        flags: OWN,
+        named: &[],
+    },
     row!("Bool", bool_row),
     row!("Int", int_row),
     row!("Num", nan_row),
@@ -92,7 +100,9 @@ pub(super) static ROWS: &[MethodRow] = &[
 /// Whether `target` is a `Failure` instance.
 // Cost: O(1).
 pub(crate) fn is_failure(target: &Value) -> bool {
-    matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+    // Tag-probed: `view()` of a lazy Match would materialize it (#12917).
+    !target.is_lazy_match_value()
+        && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
 }
 
 /// The answer of the pure row for `method` on a `Failure`, or `None` when
@@ -108,6 +118,15 @@ pub(crate) fn answer(target: &Value, method: &str) -> Option<Result<Value, Runti
         .find(|row| row.name == method)
         .and_then(|row| match row.handler {
             Handler::Narrow(f) => f(target, &[]),
+            // A renderer with no interpreter: an exception other than
+            // `X::AdHoc` renders by its plain value form.
+            Handler::InterpPureFirst(pure, _) => pure(target, &[]).or_else(|| {
+                let exception = exception_value(target)?;
+                Some(Ok(raku_with(
+                    target,
+                    &crate::value::raku_repr::raku_value(&exception),
+                )))
+            }),
             _ => None,
         })
 }
@@ -249,17 +268,56 @@ fn str_row(target: &Value, args: &[Value]) -> Answer {
     gist(target, args)
 }
 
-/// `Failure.raku`: an expression that rebuilds it; a handled one is defused again.
-// Cost: O(m), m = chars of the message.
-// TODO: Rakudo renders `Failure.new(exception => ..., backtrace => Backtrace.new)`
-// and wraps a handled one in `&CORE::infix:<orelse>(..., *.self)` (#18603).
-fn raku(target: &Value, _args: &[Value]) -> Answer {
-    let msg = message(target);
-    Some(Ok(Value::str(if target.is_failure_handled() {
-        format!("do {{ my $f = Failure.new(\"{msg}\"); $f.Bool; $f }}")
+/// `Failure.raku`: Rakudo's `self.Mu::raku`, the object with its exception and
+/// a `Backtrace.new`; a handled one is wrapped in `orelse ... *.self`, which
+/// rebuilds it defused. `exception` is the exception's own `.raku`.
+// Cost: O(e), e = chars of `exception`.
+fn raku_with(target: &Value, exception: &str) -> Value {
+    let object = format!("Failure.new(exception => {exception}, backtrace => Backtrace.new)");
+    Value::str(if target.is_failure_handled() {
+        format!("&CORE::infix:<orelse>({object}, *.self)")
     } else {
-        format!("Failure.new(\"{msg}\")")
-    })))
+        object
+    })
+}
+
+/// The pure half of `Failure.raku`: the commonest exception, an `X::AdHoc`
+/// (`fail "message"`), renders without an interpreter; any other declines.
+// Cost: O(p), p = chars of the payload's rendering.
+fn raku_pure(target: &Value, _args: &[Value]) -> Answer {
+    let exception = exception_value(target)?;
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = exception.view()
+    else {
+        return None;
+    };
+    if class_name != "X::AdHoc" {
+        return None;
+    }
+    let payload = attributes.as_map().get("payload").cloned()?;
+    let rendered = format!(
+        "X::AdHoc.new(payload => {})",
+        crate::value::raku_repr::raku_value(&payload)
+    );
+    Some(Ok(raku_with(target, &rendered)))
+}
+
+/// `Failure.raku` for any exception: its rendering is the instance's own.
+// Cost: one rendering of the exception.
+fn raku(interp: &mut Interpreter, target: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    if let Some(answer) = raku_pure(target, args) {
+        return Some(answer);
+    }
+    let exception = exception_value(target)?;
+    let rendered = match interp.default_instance_repr(&exception, "raku", &[]) {
+        Some(Ok(text)) => text.to_string_value(),
+        Some(Err(err)) => return Some(Err(err)),
+        None => crate::value::raku_repr::raku_value(&exception),
+    };
+    Some(Ok(raku_with(target, &rendered)))
 }
 
 /// `Failure.Bool`: always false, and it defuses the failure.

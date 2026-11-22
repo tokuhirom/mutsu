@@ -22,6 +22,13 @@ impl Interpreter {
         target: &Value,
         method: &str,
     ) -> Option<Value> {
+        // Decided on the method name and the tag first: this runs for every
+        // native method call on an instance, and `view()` on a lazy `Match`
+        // (never an `IO::Path`) would materialize all its captures (#12917).
+        if !super::any_cool_method_gate::is_cool_only_method(method) || target.is_lazy_match_value()
+        {
+            return None;
+        }
         let ValueView::Instance {
             class_name,
             attributes,

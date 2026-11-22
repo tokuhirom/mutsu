@@ -271,7 +271,8 @@ pub(super) fn visit_step_roots(state: &StepState, visitor: &mut dyn crate::gc::R
 
 impl Interpreter {
     /// The per-tap recipe of the per-value combinator `name` (or of
-    /// `repeated`) over the live `source`; `None` for any other combinator.
+    /// `repeated`, `stable`, `migrate`) over the live `source`; `None` for any
+    /// other combinator.
     // Cost: O(a), a = the arguments.
     pub(in crate::runtime) fn per_value_recipe(
         &mut self,
@@ -285,6 +286,16 @@ impl Interpreter {
                 Self::named_value(args, "as"),
                 Self::named_value(args, "with"),
             )));
+        }
+        // `stable` (a positive window) and `migrate` over a recipe: the
+        // existing live stage, built once per tap (`supply_derive_eager`).
+        let positive_window = args.first().is_some_and(|s| s.to_f64() > 0.0);
+        let recipe = matches!(source.view(), ValueView::Instance { attributes, .. }
+            if attributes.as_map().contains_key(Self::LIVE_RECIPE_KEY));
+        let live_throttle =
+            name == "throttle" && crate::runtime::supply_throttle_live::throttle_is_live_stage(args);
+        if (name == "stable" && positive_window) || (name == "migrate" && recipe) || live_throttle {
+            return Some(Ok(Self::make_eager_stage_supply(source.clone(), name, args.to_vec())));
         }
         if !is_step_mode(name) {
             return None;

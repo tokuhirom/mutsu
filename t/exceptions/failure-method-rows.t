@@ -11,7 +11,8 @@ my $f = Failure.new("oops");
 is $f.handled, False, 'a fresh Failure is not handled';
 isa-ok $f.exception, X::AdHoc, '.exception is the wrapped exception';
 is $f.exception.message, 'oops', 'the wrapped message';
-like $f.raku, /^ 'Failure.new(' /, '.raku of an unhandled Failure';
+is $f.raku, 'Failure.new(exception => X::AdHoc.new(payload => "oops"), backtrace => Backtrace.new)',
+    '.raku of an unhandled Failure (#18603)';
 is $f.handled, False, '.raku and .exception do not defuse it';
 isa-ok $f.backtrace, Backtrace, '.backtrace is the Backtrace of the fail site';
 like $f.mess, /^ "oops\n" /, '.mess of an unhandled Failure';
@@ -28,7 +29,9 @@ like $s.gist, /^ "(HANDLED) str\n" /, '.gist of a handled Failure';
 my $b = Failure.new("again");
 is $b.Bool, False, '.Bool is False';
 is $b.handled, True, '.Bool defuses the Failure';
-like $b.raku, /'Failure'/, '.raku of a handled Failure';
+is $b.raku,
+    '&CORE::infix:<orelse>(Failure.new(exception => X::AdHoc.new(payload => "again"), backtrace => Backtrace.new), *.self)',
+    '.raku of a handled Failure rebuilds it defused';
 is (try { $b.perl }), $b.raku, '.perl is .raku';
 
 my $g = Failure.new("defined");

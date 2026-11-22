@@ -546,7 +546,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let cn = match target.view() {
+        // A lazy Match is an instance of its cursor class, read on its tag:
+        // `view()` would materialize it on every method call (#12917).
+        let cn = match target.match_lazy_class_sym() {
+            Some(class) => class.resolve(),
+            None => match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             // A type-object invocant (`P.m(5)`, not `P.new.m(5)`): a
             // non-trivial `proto method` body must still run (raku:
@@ -564,6 +568,7 @@ impl Interpreter {
                 _ => return None,
             },
             _ => return None,
+            },
         };
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;
         // A `.wrap` on the proto's dispatcher runs before the proto body (#11701).

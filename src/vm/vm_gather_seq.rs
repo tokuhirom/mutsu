@@ -333,7 +333,8 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn is_gather_arg(value: &Value) -> bool {
         Self::is_gather_seq(value)
-            || matches!(value.view(), ValueView::Pair(_, inner) if Self::is_gather_seq(inner))
+            || (value.is_any_pair_value()
+                && matches!(value.view(), ValueView::Pair(_, inner) if Self::is_gather_seq(inner)))
     }
 
     /// Run a plain gather `Seq` to completion before a reader that renders it

@@ -115,7 +115,6 @@ pub(super) fn is_metadata(field: &RakuAstField) -> bool {
             CONSTRAINT
                 | "multi-invocant"
                 | "capture-invocant"
-                | "group-default"
                 | "label-value"
                 | "export-term-name"
                 | "shadowable-term-name"

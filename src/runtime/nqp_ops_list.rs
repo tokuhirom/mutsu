@@ -35,6 +35,10 @@ pub(crate) fn iteration_buffer_items_key() -> crate::symbol::Symbol {
 /// `Interpreter::create_instance` seeds into it.
 // Cost: O(1).
 pub(crate) fn is_iteration_buffer(v: &Value) -> bool {
+    // A lazy Match is no buffer; its `view()` would materialize it.
+    if v.is_lazy_match_value() {
+        return false;
+    }
     match v.view() {
         ValueView::Instance {
             class_name,

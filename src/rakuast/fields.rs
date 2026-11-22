@@ -349,6 +349,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         VarDeclarationSignature => &[
             ("signature", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+            ("traits", Absent::EmptyList),
         ],
         // A subset without a `where` clause answers an undefined expression.
         // `traits` holds the `of` and `is` traits; a bare `subset A where ...` has none.

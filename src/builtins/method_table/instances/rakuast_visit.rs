@@ -110,6 +110,10 @@ fn visit_tree(
 /// retain the original object for the callback.
 // Cost: O(d), d = wrapper depth.
 pub(super) fn native_node(value: &Value) -> Option<Value> {
+    // A lazy Match is no RakuAST node; `view()` would materialize it.
+    if value.is_lazy_match_value() {
+        return None;
+    }
     let mut current = value.clone();
     loop {
         match current.view() {

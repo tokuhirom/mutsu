@@ -275,6 +275,10 @@ impl Value {
     /// its elements are that list's and reify on demand.
     // Cost: O(k), k = items in the Slip.
     pub(crate) fn is_lazy_tail_slip(&self) -> bool {
+        // Tag-probed: `view()` of a lazy Match would materialize it.
+        if self.is_lazy_match_value() {
+            return false;
+        }
         match self.view() {
             ValueView::Slip(items) => items.iter().any(
                 |item| matches!(item.view(), ValueView::LazyList(ll) if ll.renders_lazy_placeholder()),

@@ -51,6 +51,28 @@ pub(super) fn derive(node: &mut RakuAstNode) {
         with_child(node, "infix", |infix| {
             super::origin::set_span(infix, SrcSpan::new(op_from, op_to))
         });
+    } else if let Some(meta) = child(node, "infix")
+        && matches!(
+            meta.class,
+            RakuAstClass::MetaInfixNegate
+                | RakuAstClass::MetaInfixReverse
+                | RakuAstClass::MetaInfixZip
+                | RakuAstClass::MetaInfixCross
+        )
+        && meta.origin.0.is_none()
+        && let Some(inner) = super::infix_origins::child_at(meta, 0)
+        && inner.class == RakuAstClass::Infix
+        && super::infix_origins::leaf_text(inner)
+            .is_some_and(|op| written.get(1..) == Some(op.as_str()))
+    {
+        // `[!after]` / `[R-]`: the metaoperator over the whole operator, the
+        // infix it wraps after its one-character prefix.
+        with_child(node, "infix", |meta| {
+            super::origin::set_span(meta, SrcSpan::new(op_from, op_to));
+            super::infix_origins::with_child_at(meta, 0, |inner| {
+                super::origin::set_span(inner, SrcSpan::new(op_from + 1, op_to))
+            });
+        });
     }
     if args_from < args_to
         && let Some(args) = child(node, "args")

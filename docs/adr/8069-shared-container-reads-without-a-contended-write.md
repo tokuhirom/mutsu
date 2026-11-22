@@ -1,6 +1,6 @@
 # ADR-8069: A read of a shared container does not write a shared cache line
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-11-22; §6.1 settles the epoch implementation)
 - Date: 2026-11-22
 - Relates to: [ADR-0068](0068-cross-thread-container-writes-need-a-synchronized-store.md)
   (the cross-thread container lock; its *read side* is what this ADR replaces),
@@ -145,8 +145,35 @@ at-most-one-lock rule are unchanged. ADR-0068 is superseded for its read side on
 
 ## 6. Open questions
 
-- `crossbeam-epoch` or an in-tree epoch tied to the VM's safepoints. The dependency is proven;
-  the in-tree one avoids a new crate in the trust base and can reuse the poll points.
+### 6.1 Settled: `crossbeam-epoch` (2026-11-22, on acceptance)
+
+Measured with a standalone microbenchmark (2M reads of one shared word, 4-core container,
+release build), each row the total wall time:
+
+| read of a shared word | W=1 | W=4 |
+| --- | ---: | ---: |
+| `Mutex<u64>` lock + read (today's cell) | 35.6 ms | 238 ms |
+| `Arc` clone + drop (today's node clone) | 34.3 ms | 108 ms |
+| `crossbeam_epoch::pin()` + atomic load | 22.0 ms | 10.9 ms |
+| in-tree thread-local announce + atomic load | 19.8 ms | 5.2 ms |
+
+Both epoch shapes scale (four threads finish faster than one); the mutex and the refcount
+pair get 3-7x *slower* with four threads, which is the whole problem of §1. The in-tree
+announce is ~5 ns per read cheaper, but that figure measures only the pin: the part that
+decides memory safety is the reclamation protocol (global epoch advance, per-thread retired
+bags, the quiescence proof), and that is exactly what `crossbeam-epoch` has had audited and
+exercised across the ecosystem (rayon, crossbeam's channels and deques). Hand-rolling it would
+put a new lock-free reclamation algorithm into the trust base of docs/security.md to save a
+few nanoseconds per read that the VM can amortize anyway: a pin is reentrant, so the VM pins
+once per dispatch quantum and nested reads only bump a counter.
+
+So the implementation uses `crossbeam-epoch` (MIT/Apache-2.0, already a transitive dependency
+of nothing in this tree; it compiles for `wasm32-unknown-unknown`, where there is one thread
+and the pin is a no-op in practice). The in-tree alternative stays available if a measured
+profile ever shows the pin itself on top.
+
+### 6.2 Still open
+
 - Whether a `Hash` node read (`%h{$k}` on a shared hash) can use the same borrow, given that a
   hash read hashes the key while the node may be rehashed by a writer (it is pinned, so the old
   table stays valid, but the reader may then miss a just-inserted key; ADR-12814 allows that

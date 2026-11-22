@@ -85,6 +85,11 @@ impl Interpreter {
         let Some(target) = self.stack.get(receiver_idx) else {
             return;
         };
+        // A lazy Match is never a parametric role; its `view()` would
+        // materialize every capture (#12917).
+        if target.is_lazy_match_value() {
+            return;
+        }
         let ValueView::ParametricRole {
             base_name,
             type_args,

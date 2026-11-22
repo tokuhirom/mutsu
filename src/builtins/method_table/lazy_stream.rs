@@ -70,6 +70,10 @@ fn streamed_owners(target: &Value) -> Option<&'static [&'static str]> {
         Some(mro) => mro,
         None => panic!("Range is catalogued"),
     };
+    // A lazy Match streams nothing; its `view()` would materialize it.
+    if target.is_lazy_match_value() {
+        return None;
+    }
     match target.view() {
         ValueView::LazyList(ll) => (ll.is_genuinely_lazy()
             && (ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch()))

@@ -34,13 +34,13 @@ impl Interpreter {
         let sym = Symbol::intern(name);
         if self
             .module
-            .module_visibility
+            .world.module_visibility
             .main_shadowing_routines
             .contains(&sym)
         {
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module.module_visibility.main_shadowing_routines)
+        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.main_shadowing_routines)
             .insert(sym);
         self.invalidate_fn_resolution();
     }
@@ -54,7 +54,7 @@ impl Interpreter {
     pub(crate) fn main_routine_visible_here(&self, key: Symbol) -> bool {
         if self
             .module
-            .module_visibility
+            .world.module_visibility
             .main_shadowing_routines
             .is_empty()
         {
@@ -67,7 +67,7 @@ impl Interpreter {
         };
         if !self
             .module
-            .module_visibility
+            .world.module_visibility
             .main_shadowing_routines
             .contains(&name)
         {
@@ -101,12 +101,12 @@ impl Interpreter {
     pub(crate) fn is_main_shadowing_routine(&self, name: Symbol) -> bool {
         !self
             .module
-            .module_visibility
+            .world.module_visibility
             .main_shadowing_routines
             .is_empty()
             && self
                 .module
-                .module_visibility
+                .world.module_visibility
                 .main_shadowing_routines
                 .contains(&name)
     }

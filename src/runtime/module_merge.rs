@@ -146,10 +146,10 @@ impl Interpreter {
         names: impl IntoIterator<Item = Symbol>,
     ) {
         let module_sym = Symbol::intern(module);
-        crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_units)
+        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.module_units)
             .insert(module_sym, unit);
-        if !self.module.module_visibility.loaded_unit_set.contains(&unit) {
-            crate::runtime::cow_table_mut(&mut self.module.module_visibility.loaded_unit_set)
+        if !self.module.world.module_visibility.loaded_unit_set.contains(&unit) {
+            crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.loaded_unit_set)
                 .insert(unit);
         }
         let mut names = names.into_iter().peekable();
@@ -157,7 +157,7 @@ impl Interpreter {
             return;
         }
         let table =
-            crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_name_providers);
+            crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.module_name_providers);
         for name in names {
             table.entry(name).or_insert(module_sym);
         }
@@ -183,7 +183,7 @@ impl Interpreter {
             // binding `Enums` had in the module's scope.
             let storage = crate::qualified::segments(Symbol::intern(key))[0];
             let table = crate::runtime::cow_table_mut(
-                &mut self.module.module_visibility.unit_lexical_types,
+                &mut self.module.world.module_visibility.unit_lexical_types,
             );
             table.insert((unit, Symbol::intern(bare)), storage);
         }
@@ -194,7 +194,7 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn unit_lexical_type(&self, unit: Symbol, name: Symbol) -> Option<Symbol> {
         self.module
-            .module_visibility
+            .world.module_visibility
             .unit_lexical_types
             .get(&(unit, name))
             .copied()
@@ -216,7 +216,7 @@ impl Interpreter {
         }
         let module_sym = Symbol::intern(module);
         let table = crate::runtime::cow_table_mut(
-            &mut self.module.module_visibility.module_routine_providers,
+            &mut self.module.world.module_visibility.module_routine_providers,
         );
         for name in names {
             table.entry(name).or_insert(module_sym);
@@ -235,7 +235,7 @@ impl Interpreter {
         }
         if self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_routine_providers
             .is_empty()
         {
@@ -248,7 +248,7 @@ impl Interpreter {
         };
         match self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_routine_providers
             .get(&name)
         {
@@ -272,7 +272,7 @@ impl Interpreter {
     pub(crate) fn release_foreign_provenance(&mut self, name: &str) {
         if self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_name_providers
             .is_empty()
         {
@@ -283,7 +283,7 @@ impl Interpreter {
         };
         let Some(&provider) = self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_name_providers
             .get(&sym)
         else {
@@ -295,7 +295,7 @@ impl Interpreter {
             .last()
             .map(|m| Symbol::intern(m));
         if declaring_module != Some(provider) {
-            crate::runtime::cow_table_mut(&mut self.module.module_visibility.module_name_providers)
+            crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.module_name_providers)
                 .remove(&sym);
         }
     }
@@ -463,7 +463,7 @@ impl Interpreter {
         if modules.is_empty() {
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module.module_visibility.unit_merged_modules)
+        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.unit_merged_modules)
             .entry(unit)
             .or_default()
             .extend(modules);
@@ -489,7 +489,7 @@ impl Interpreter {
         let module_sym = Symbol::intern(module);
         {
             let inverse = crate::runtime::cow_table_mut(
-                &mut self.module.module_visibility.package_granting_modules,
+                &mut self.module.world.module_visibility.package_granting_modules,
             );
             for package in granted {
                 inverse
@@ -524,11 +524,11 @@ impl Interpreter {
             self.merge_globalish_reexports(importer, module);
             return;
         }
-        crate::runtime::cow_table_mut(&mut self.module.module_visibility.unit_merged_modules)
+        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.unit_merged_modules)
             .entry(importer)
             .or_default()
             .insert(module_sym);
-        crate::runtime::cow_table_mut(&mut self.module.module_visibility.compunit_visible_packages)
+        crate::runtime::cow_table_mut(&mut self.module.world.module_visibility.compunit_visible_packages)
             .entry(importer)
             .or_default()
             .extend(granted.iter().cloned());
@@ -542,7 +542,7 @@ impl Interpreter {
     fn merge_globalish_reexports(&mut self, importer: Symbol, module: &str) {
         let Some(stolen) = self
             .module
-            .module_visibility
+            .world.module_visibility
             .globalish_reexports
             .get(module)
             .cloned()
@@ -555,7 +555,7 @@ impl Interpreter {
             }
             let mut grant = self
                 .module
-                .module_visibility
+                .world.module_visibility
                 .module_granted_packages
                 .get(&source)
                 .cloned()
@@ -574,7 +574,7 @@ impl Interpreter {
         match self.module.module_load_stack.last().cloned() {
             Some(loading) if loading != source => {
                 crate::runtime::cow_table_mut(
-                    &mut self.module.module_visibility.globalish_reexports,
+                    &mut self.module.world.module_visibility.globalish_reexports,
                 )
                 .entry(loading)
                 .or_default()
@@ -584,7 +584,7 @@ impl Interpreter {
             None => {
                 let mut grant = self
                     .module
-                    .module_visibility
+                    .world.module_visibility
                     .module_granted_packages
                     .get(source)
                     .cloned()
@@ -648,7 +648,7 @@ impl Interpreter {
     /// [`Self::merge_anchor_units`].
     // Cost: O(u), u = units in the chain, one table probe each.
     fn module_merged_in_units(&self, units: &[Symbol], module: Symbol) -> bool {
-        let visibility = &self.module.module_visibility;
+        let visibility = &self.module.world.module_visibility;
         let own_unit = visibility.module_units.get(&module).copied();
         units.iter().any(|&unit| {
             Some(unit) == own_unit
@@ -683,7 +683,7 @@ impl Interpreter {
     pub(crate) fn module_routine_visible_statically(&self, key: Symbol) -> bool {
         if self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_routine_providers
             .is_empty()
         {
@@ -696,7 +696,7 @@ impl Interpreter {
         };
         match self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_routine_providers
             .get(&name)
         {
@@ -714,7 +714,7 @@ impl Interpreter {
     pub(crate) fn bare_name_visible_here(&self, name: Symbol) -> bool {
         if self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_name_providers
             .is_empty()
         {
@@ -722,7 +722,7 @@ impl Interpreter {
         }
         match self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_name_providers
             .get(&name)
         {
@@ -774,7 +774,7 @@ impl Interpreter {
     pub(crate) fn module_name_hidden_here(&self, name: &str) -> bool {
         if self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_name_providers
             .is_empty()
         {
@@ -823,7 +823,7 @@ impl Interpreter {
     // Cost: O(m), m = modules that granted `top`.
     pub(crate) fn package_merged_here(&self, top: &str) -> bool {
         self.module
-            .module_visibility
+            .world.module_visibility
             .package_granting_modules
             .get(top)
             .is_some_and(|modules| {

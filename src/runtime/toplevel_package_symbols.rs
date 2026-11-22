@@ -58,7 +58,7 @@ impl Interpreter {
             && !crate::qualified::is_qualified(enum_sym)
         {
             let owner = self.current_package();
-            crate::runtime::cow_table_mut(&mut self.module.module_scope_lexicals)
+            crate::runtime::cow_table_mut(&mut self.module.world.module_scope_lexicals)
                 .entry(owner)
                 .or_default()
                 .insert(key, value);
@@ -193,7 +193,7 @@ impl Interpreter {
         name_sym: Option<Symbol>,
     ) -> Option<&Value> {
         if let Some(scoped) =
-            self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
+            self.lookup_in_running_package(&self.module.world.module_scope_lexicals, name)
         {
             return Some(scoped);
         }

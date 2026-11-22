@@ -324,7 +324,7 @@ impl Interpreter {
     /// it into the returned supply. `done` flushes the held value first; a `quit`
     /// drops it and quits the output.
     // Cost: O(1) per source event; one pooled worker per stable supply.
-    fn stable_live_supply(&mut self, source_id: u64, seconds: f64) -> Value {
+    pub(in crate::runtime) fn stable_live_supply(&mut self, source_id: u64, seconds: f64) -> Value {
         use crate::value::waker::SinkEvent;
         let out_supplier_id = next_supplier_id();
         let window = std::time::Duration::from_secs_f64(seconds);

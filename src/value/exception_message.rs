@@ -34,6 +34,11 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
             "Can only call cause on a broken promise (status: {})",
             promise_status(attrs)
         )),
+        // `temp 5` / `let &f`: `localizer` is the prefix's name.
+        "X::Localizer::NoContainer" => Some(format!(
+            "Can only use '{}' on a container",
+            attr_str(attrs, "localizer")
+        )),
         "X::Method::NotFound" => {
             let method = attr_str(attrs, "method");
             let typename = attr_str(attrs, "typename");

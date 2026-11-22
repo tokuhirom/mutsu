@@ -16,8 +16,16 @@ pub(crate) fn invalid_param_smiley_error(smiley: &str) -> PError {
 /// marker (`Foo:D:` / `Foo:U:`). The param is named `self` (the implicit
 /// invocant name) and carries the full type constraint including the smiley so
 /// multi-dispatch can select on the invocant's definedness.
-pub(crate) fn make_smiley_invocant_param(invocant_type: String) -> ParamDef {
+///
+/// `head` is the source the marker was read from: the type written at its
+/// start (`A:D` of `A:D: $x`) is the parameter's range (ADR-10723 Stage 2).
+pub(crate) fn make_smiley_invocant_param(invocant_type: String, head: &str) -> ParamDef {
     let mut p = crate::parser::stmt::sub_param::make_param("self".to_string());
+    if head.starts_with(invocant_type.as_str()) {
+        let written = crate::parser::primary::source_span(head, &head[invocant_type.len()..]);
+        p.spans.param = written;
+        p.spans.type_ = written;
+    }
     p.type_constraint = Some(invocant_type);
     p.is_invocant = true;
     p.implicit_invocant = true;
@@ -260,7 +268,7 @@ pub(crate) fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> 
         // the only place `T` is recorded. An uncaptured anonymous marker
         // (`Foo:`) is still discarded here, as before.
         if let Some(name) = invocant_capture {
-            let mut inv = make_smiley_invocant_param(invocant_type);
+            let mut inv = make_smiley_invocant_param(invocant_type, head);
             inv.type_capture = Some(name);
             inv.multi_invocant = multi_invocant;
             params.push(inv);

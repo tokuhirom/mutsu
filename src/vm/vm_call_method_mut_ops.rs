@@ -624,9 +624,8 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let has_varref = raw_args
-            .iter()
-            .any(|a| matches!(a.view(), ValueView::VarRef { .. }));
+        // A tag probe: `view()` of a lazy Match argument would materialize it.
+        let has_varref = raw_args.iter().any(Value::is_varref);
         // ADR-0054 S3: spread only the positions the caller wrote as `|EXPR`
         // -- decided by call-site syntax, not by a value merely evaluating to
         // a Slip (`.method(@a.Slip)` stays one argument).
