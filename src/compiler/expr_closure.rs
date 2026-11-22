@@ -867,16 +867,18 @@ impl Compiler {
         if let Expr::PseudoStash(stash_name) = target
             && matches!(
                 stash_name.as_str(),
-                "MY::" | "PROCESS::" | "CALLER::LEXICAL::"
+                "MY::" | "PROCESS::" | "CALLER::LEXICAL::" | "DYNAMIC::"
             )
             && let Expr::Literal(lit) = index
             && let Some(key_name) = lit.as_str()
+            && (stash_name != "DYNAMIC::"
+                || (matches!(value, Expr::IndexBindValue(_)) && key_name.get(1..2) == Some("*")))
         {
             // `PROCESS::<$x> := $!attr` / `:= $var` binds the source's own
             // container, like an element bind (`%h<k> := $!attr`): compile the
             // source the same way, so an attribute arrives as the instance's
             // slot cell rather than a method-local copy.
-            if stash_name == "PROCESS::" {
+            if matches!(stash_name.as_str(), "PROCESS::" | "DYNAMIC::") {
                 self.compile_bind_index_value(value);
             } else {
                 self.compile_expr(value);
