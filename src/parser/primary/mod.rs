@@ -697,6 +697,36 @@ pub(in crate::parser) fn source_span_at(eject: &str) -> Option<(String, String)>
     })
 }
 
+/// Whether nothing but whitespace, comments and Pod precedes the parser
+/// position `at` in the unit's source: `at` starts the unit's first
+/// statement. `true` when `at` is outside the recorded source (a buffer the
+/// parse made for itself), which nothing can be said about.
+// Cost: O(p), p = the length of the source before `at`.
+pub(in crate::parser) fn is_first_in_source(at: &str) -> bool {
+    let Some(offset) = source_offset(at) else {
+        return true;
+    };
+    let prefix = ORIGINAL_SOURCE.with(|s| {
+        let origin = s.borrow();
+        if origin.ptr == 0 || offset > origin.len {
+            return None;
+        }
+        // SAFETY: as in `source_span_at`: (ptr, len) was recorded from a live
+        // `&str` and `offset` is within `[0, len]`.
+        let full = unsafe {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                origin.ptr as *const u8,
+                origin.len,
+            ))
+        };
+        full.get(..offset).map(str::to_string)
+    });
+    let Some(prefix) = prefix else {
+        return true;
+    };
+    matches!(super::helpers::ws_bol(&prefix), Ok((rest, ())) if rest.is_empty())
+}
+
 /// The (at most) `n` characters of the original source right before `at`, or
 /// an empty string when `at` is outside the recorded source buffer. A loop
 /// `Label` quotes this much context in its `.gist`.
