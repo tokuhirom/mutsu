@@ -43,7 +43,9 @@ pub(super) fn view_react(
                 },
             ],
         ) => view_whenever(names, supply, params, param_defs, body)?,
-        (true, [Stmt::Expr(expr)]) => view_expr(names, expr)?,
+        // `react STATEMENT` holds the statement itself (#18801).
+        (true, [stmt]) => super::view::view_stmt(names, stmt)?
+            .ok_or_else(|| super::view::unsupported("an empty react statement"))?,
         (true, _) => return Err(super::view::unsupported("react with a statement body")),
     };
     Ok(RakuAstNode {
@@ -126,7 +128,9 @@ pub(super) fn view_supply(names: &NameScope, body: &[Stmt]) -> Result<RakuAstNod
 pub(super) fn lower_supply(names: &NameScope, node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let block = named_child_or_positional(node)?;
     if block.class != RakuAstClass::Block {
-        return Err(super::lower::unsupported(node));
+        // `supply STATEMENT`: the statement is the whole body (#18801).
+        let body = vec![super::lower::lower_stmt(names, block)?];
+        return Ok(super::supply_lower::supply_method_call(body));
     }
     super::lower::with_block_scope(names, block, |body| {
         Ok(super::supply_lower::supply_method_call(body))
@@ -149,7 +153,7 @@ pub(super) fn lower_react(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
     let (body, is_blorst) = match blorst.class {
         RakuAstClass::Block => (lower_block(names, blorst)?, false),
         RakuAstClass::StatementWhenever => (vec![lower_whenever(names, blorst)?], true),
-        _ => (vec![Stmt::Expr(lower_expr(names, blorst)?)], true),
+        _ => (vec![super::lower::lower_stmt(names, blorst)?], true),
     };
     Ok(Stmt::React {
         body,

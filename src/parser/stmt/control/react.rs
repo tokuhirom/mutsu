@@ -32,10 +32,13 @@ pub(crate) fn react_stmt(input: &str) -> PResult<'_, Stmt> {
     // "whenever outside react/supply scope" compile error is diagnosed by the
     // post-parse whenever-scope check, matching rakudo.
     let (rest, expr) = expression(rest)?;
+    // A same-line modifier is part of the statement (`react foo if $c`),
+    // as for every statement prefix (#18801).
+    let (rest, stmt) = crate::parser::stmt::modifier::prefix_operand_statement(rest, expr)?;
     Ok((
         rest,
         Stmt::React {
-            body: vec![Stmt::Expr(expr)],
+            body: vec![stmt.unwrap_or_else(Stmt::Expr)],
             blorst: true,
         },
     ))
