@@ -703,6 +703,7 @@ pub(crate) mod attribute_class;
 pub(crate) mod param_trait_meta;
 pub(crate) mod sig_elem_flags;
 pub(crate) mod signature;
+mod signature_eqv;
 mod signature_smartmatch;
 pub(crate) mod split_lines;
 pub(crate) mod state_scope_reaper;

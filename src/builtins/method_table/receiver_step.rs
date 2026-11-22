@@ -66,8 +66,12 @@ pub(crate) fn step(target: &Value, method: &str, argc: usize) -> Option<Step> {
     }
     match target.view() {
         ValueView::Scalar(inner) => {
+            // The item's container, as a `.VAR` view: it answers `.^name`
+            // `Scalar` and the container's own `.of` (`Mu`; an item has no
+            // declared type) instead of the `Scalar` type object (#18349).
             if method == "VAR" {
-                return Some(Step::Answer(Ok(Value::package(Symbol::intern("Scalar")))));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(inner.clone()));
+                return Some(Step::Answer(Ok(Value::container_view(cell))));
             }
             if observes_container(method) && method != "item" && method != "self" {
                 return Some(Step::Itself);

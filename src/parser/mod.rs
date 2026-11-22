@@ -43,8 +43,10 @@ pub(crate) use primary::{
     prepend_does_header,
 };
 pub(crate) use stmt::class::push_also_is_parent;
+pub(crate) use stmt::class::stmt_is_also_is_rw;
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
+pub(crate) use stmt::decl::call_assign_invocant;
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::simple::superseded_declarator;
 pub(crate) use stmt::simple::{
@@ -552,6 +554,21 @@ fn take_eval_value_tail() -> bool {
 /// Consume the sink-warning suppression flag (one-shot).
 fn take_suppress_sink_warnings() -> bool {
     SUPPRESS_SINK_WARNINGS.with(|f| f.replace(false))
+}
+
+/// [`parse_fragment_unfinalized`] of `input`, a copy of the unit's text
+/// starting at unit offset `unit_offset`: every position the parse records
+/// (statement, routine, package, parameter and block ranges) is the unit's,
+/// as the RakuAST origin passes that parse a fragment again need it.
+// Cost: O(n), n = length of `input`, plus the parse.
+pub(crate) fn parse_fragment_at(
+    input: &str,
+    unit_offset: usize,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    primary::lend_span_base(Some(unit_offset));
+    let result = parse_fragment_unfinalized(input);
+    primary::clear_span_base();
+    result
 }
 
 /// [`parse_fragment`] for a block nested in the unit being parsed — a regex

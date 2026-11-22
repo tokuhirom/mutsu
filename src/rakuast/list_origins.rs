@@ -18,10 +18,12 @@ use crate::value::{Value, ValueView};
 pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
     super::feed_origins::declaration_sink(node);
     // `@a ==> f() ==> my @o`: a feed is placed as an infix is.
-    let Some(op) = child(node, "infix")
-        .filter(|infix| matches!(infix.class, RakuAstClass::Infix | RakuAstClass::Feed))
-        .and_then(leaf_text)
-    else {
+    let meta = super::list_meta_origins::written(node);
+    let Some(op) = meta.clone().or_else(|| {
+        child(node, "infix")
+            .filter(|infix| matches!(infix.class, RakuAstClass::Infix | RakuAstClass::Feed))
+            .and_then(leaf_text)
+    }) else {
         return;
     };
     let Some(operands) = node.fields.iter().find_map(|f| match &f.value {
@@ -88,6 +90,9 @@ pub(super) fn apply_list_infix(node: &mut RakuAstNode) {
         return;
     };
     super::origin::set_span(node, SrcSpan::new(from, to));
+    if meta.is_some() {
+        return super::list_meta_origins::place(node, op_at, &op);
+    }
     with_child(node, "infix", |infix| {
         if leaf_text(infix).as_deref() != Some(op.as_str()) {
             super::infix_origins::set_leaf_text(infix, &op);

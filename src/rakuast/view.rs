@@ -915,6 +915,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     node,
                 ))));
             }
+            also_statements.extend(super::also_rw::statement(marks.rw_also));
             let traits = header_trait_values(
                 names,
                 body,
@@ -922,7 +923,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     parents: &header_parents,
                     does_parents,
                     hidden_parents,
-                    is_rw: *class_is_rw,
+                    is_rw: *class_is_rw && !marks.rw_also,
                     is_hidden: *is_hidden,
                     custom_traits,
                 },
@@ -2064,7 +2065,8 @@ pub(super) fn term_declaration(
     if let Some(type_name) = decl.type_constraint {
         fields.push(node_field(Some("type"), build_type_node(names, type_name)?));
     }
-    fields.push(node_field(Some("name"), name_from_identifier(decl.name)));
+    let name = name_parts::operator_or_identifier(decl.name);
+    fields.push(node_field(Some("name"), name));
     fields.push(node_field(
         Some("initializer"),
         match decl.call_assign {
@@ -2486,9 +2488,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::ParenthesizedDeclaratorAdverb => {
                 parenthesized_expression(names, &spelled.expr)
             }
-            Spelling::BracketTraitArgument | Spelling::ParenSections(_) | Spelling::WrittenNil => {
-                view_expr(names, &spelled.expr)
-            }
+            Spelling::BracketTraitArgument
+            | Spelling::AttributeCallAssign
+            | Spelling::ParenSections(_)
+            | Spelling::WrittenNil => view_expr(names, &spelled.expr),
             Spelling::Heredoc { stop, body } => heredoc_node(names, &spelled.expr, stop, *body),
             Spelling::EmptyStatement => Ok(super::spelled_nodes::statement_empty()),
             Spelling::HyperMetaMethod => {
@@ -2968,7 +2971,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // a valid Raku name term (`A::B`). Rakudo represents it as an
         // argument-less Call::Name, including when it is later used as a
         // method-call operand; the failed lookup remains catchable at runtime.
-        Expr::BareWord(name) if name_parts::is_qualified_identifier(name) => {
+        Expr::BareWord(name) if name_parts::is_qualified_term(name) => {
             let mut node = call_name(names, name, &[], false)?;
             node.fields.push(super::declared_routines::bareword_field());
             Ok(node)
@@ -5757,8 +5760,7 @@ pub(super) fn call_name(
         return Ok(term);
     }
     // `prefix:<!>(1)`: an operator's name holds its symbol as a word quote.
-    let name_node =
-        super::name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
+    let name_node = name_parts::operator_or_identifier(name);
     let arg_list = arg_list(names, args)?;
     // A qualified name (`M::foo`) is a `Call::Name` however it is spelled:
     // raku has the `WithoutParentheses` form for a plain identifier only
@@ -6184,6 +6186,9 @@ fn colonpair_value_node(
     let ValueView::Str(key) = value.view() else {
         return Err(unsupported("colonpair value key"));
     };
+    if let Some(pair) = super::colon_pairs::sections_pair(names, &key, right)? {
+        return Ok(pair);
+    }
     let value = match right.as_ref() {
         // `:a<x y>` keeps the raw word text as one word-quote.
         Expr::Literal(_) | Expr::ArrayLiteral(_) if !parenthesize => match angle_key_text(right) {

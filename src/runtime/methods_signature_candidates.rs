@@ -435,6 +435,7 @@ impl Interpreter {
         // declaration, so it is not cached per declaration.
         let binds_for_accepts = !is_primed
             && data.body.is_empty()
+            && data.compiled_routine.is_none()
             && crate::value::signature::params_carry_code(&data.param_defs);
         let cache_key =
             (!is_primed && !binds_for_accepts).then(|| Self::sub_signature_cache_key(data));

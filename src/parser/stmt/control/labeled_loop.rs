@@ -25,8 +25,8 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
 
     // Record the label before its body is parsed, so a `next`/`last`/`redo
     // <label>` inside the body recognises it. Only the loop/block forms below
-    // are labels — the generic `IDENT: <expr>` tail can still turn out to be a
-    // colon-listop call (`trim: "x"`), which must not register a label.
+    // register — a label on any other statement cannot be the target of a
+    // loop control.
     if rest.starts_with('{')
         || ["for", "while", "until", "loop", "repeat", "do"]
             .iter()
@@ -184,17 +184,10 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
 
-    // `foo: args` where `foo` is a declared subroutine is a colon-listop call,
-    // not a label (Raku: `trim: "x"` calls `trim("x")`, while `LOOP: for ...`
-    // is a label). The loop/block label forms are handled above; only the
-    // generic `IDENT: <expr>` case is ambiguous, and a declared-sub name
-    // resolves it to a call. Parse the colon-listop argument list directly.
-    if crate::parser::stmt::simple::is_user_declared_sub(&label) {
-        let (r, call) = crate::parser::primary::ident::parse_expr_listop_args(rest, label)?;
-        return Ok((r, Stmt::Expr(call)));
-    }
-
-    // Generic labeled statement: LABEL: <statement>
+    // Generic labeled statement: LABEL: <statement>. A statement-initial
+    // `IDENT:` followed by whitespace is a label even when `IDENT` names a
+    // declared sub: rakudo reads `trim: "x"` as the label `trim` on the
+    // statement `"x"`, not as a colon-listop call (#18283).
     let (r, stmt) = statement(rest)?;
     Ok((
         r,

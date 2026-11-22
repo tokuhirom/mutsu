@@ -252,6 +252,26 @@ fn jit_threshold() -> u32 {
     })
 }
 
+/// Run the native body `f` of `code`. The only place native code is entered:
+/// like `Interpreter::exec_one`, it takes the `DispatchPolls` of the entry,
+/// which only `DispatchPolls::enter(code)` builds, so no native body runs
+/// without reporting its code (ADR-18012 S1's code watch).
+// Cost: O(1) plus the native body.
+#[cfg(feature = "jit")]
+#[inline(always)]
+fn call_native(
+    f: JitEntryFn,
+    interp: &mut Interpreter,
+    code: &CompiledCode,
+    compiled_fns: &CompiledFns,
+    _polls: crate::vm::vm_poll::DispatchPolls,
+) -> u32 {
+    // SAFETY: `f` is a finalized entry of the leaked JIT module compiled for
+    // `code` (see `try_enter`); its ABI takes the interpreter, the chunk and
+    // its functions, all valid and unaliased for the duration of the call.
+    unsafe { f(interp, code, compiled_fns) }
+}
+
 /// Try to run a function body natively. Returns `None` when the body must run
 /// on the interpreter (JIT off / still cold / bailout chunk); `Some(result)`
 /// when the whole body ran natively — the result has the same shape as the
@@ -263,6 +283,7 @@ pub(crate) fn try_enter(
     interp: &mut Interpreter,
     code: &CompiledCode,
     compiled_fns: &CompiledFns,
+    polls: crate::vm::vm_poll::DispatchPolls,
 ) -> Option<Result<(), RuntimeError>> {
     use std::sync::atomic::Ordering;
     if !jit_enabled() {
@@ -299,7 +320,7 @@ pub(crate) fn try_enter(
     // address back so Rust code after the call never reads a dangling frame.
     let caller_code = interp.current_code;
     interp.current_code = code as *const CompiledCode as usize;
-    let status = unsafe { f(interp, code, compiled_fns) };
+    let status = call_native(f, interp, code, compiled_fns, polls);
     interp.current_code = caller_code;
     #[cfg(feature = "alloc-stats")]
     crate::alloc_stats::clear_current_line();
@@ -404,7 +425,8 @@ pub(crate) fn try_enter_range(
     // loop's per-iteration poll lands here, before each native body run —
     // the same entry poll `run_range_from` takes for an interpreted body
     // (`vm_poll::DispatchPolls`; skipped for a loop's condition/step range).
-    if crate::vm::vm_poll::DispatchPolls::current().due(entry_poll) {
+    let polls = crate::vm::vm_poll::DispatchPolls::enter(code);
+    if polls.due(entry_poll) {
         crate::vm::vm_poll::poll_code(
             crate::gc::SafepointKind::Backedge,
             start as u32,
@@ -418,7 +440,7 @@ pub(crate) fn try_enter_range(
     // address back so Rust code after the call never reads a dangling frame.
     let caller_code = interp.current_code;
     interp.current_code = code as *const CompiledCode as usize;
-    let status = unsafe { f(interp, code, compiled_fns) };
+    let status = call_native(f, interp, code, compiled_fns, polls);
     interp.current_code = caller_code;
     match status {
         JIT_STATUS_ERR => {
@@ -463,6 +485,7 @@ pub(crate) fn try_enter(
     _interp: &mut Interpreter,
     _code: &CompiledCode,
     _compiled_fns: &CompiledFns,
+    _polls: crate::vm::vm_poll::DispatchPolls,
 ) -> Option<Result<(), RuntimeError>> {
     None
 }

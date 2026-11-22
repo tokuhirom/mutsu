@@ -31,6 +31,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             initializer(names, node);
             super::call_origins::call_assign_initializer(node);
             super::decl_origins::derive(names, node);
+            super::will_build_origins::place(node);
         }
         // `\(1, 2)`: the capture's arguments.
         RakuAstClass::TermCapture => super::capture_term::arg_list_origin(node),
@@ -55,7 +56,19 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::list_origins::apply_list_infix(node)
         }
         RakuAstClass::TypeEnum => super::enum_term::term_origins(names, node),
+        // `say Rat()` / `Int(Str)` as a term: its base type and constraint.
+        RakuAstClass::TypeCoercion => {
+            if let Some((from, to)) = byte_range(node) {
+                super::type_origins::coercion(node, SrcSpan::new(from, to))
+            }
+        }
         RakuAstClass::VarPackage => super::indirect_name_origins::package_variable(node),
+        // `.(1 + 2)`: the `Call::Term` from its `(`, and its arguments.
+        RakuAstClass::TermTopicCall => {
+            if let Some((from, to)) = byte_range(node) {
+                super::call_term_origins::place_topic(node, SrcSpan::new(from, to))
+            }
+        }
         RakuAstClass::VarNamedCapture => super::match_vars::named_capture_origins(node),
         // `HyperWhatever:D` as a term: the inner `Type::Simple` spans all of
         // it, its `Name` the name before the smiley.
@@ -413,8 +426,15 @@ fn initializer(names: &NameScope, node: &mut RakuAstNode) {
         // `my %o = :{ 1 => 2 }`: an object hash's range starts at its `{`.
         let before = before.strip_suffix(':').unwrap_or(before);
         let head = before.trim_end().strip_suffix(op)?;
-        // `==`, `::=` and the like are other operators.
-        (!head.ends_with(['=', ':', '!', '<', '>', '~'])).then_some(from + head.len())
+        // `==`, `::=` and the like are other operators; a `>` closing a
+        // name's adverb (`my $x:foo<a>= 1`) is not.
+        let adverb = head.rfind('<').is_some_and(|i| {
+            head.ends_with('>')
+                && head[..i].rsplit(':').next().is_some_and(|key| {
+                    !key.is_empty() && key.chars().all(|c| c.is_alphanumeric() || c == '_')
+                })
+        });
+        (adverb || !head.ends_with(['=', ':', '!', '<', '>', '~'])).then_some(from + head.len())
     });
     if let Some(op_at) = op_at {
         with_child(node, "initializer", |init| {

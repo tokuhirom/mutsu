@@ -199,7 +199,12 @@ impl Interpreter {
                 },
             );
             let mut next_ip = ip + 1;
-            let result = self.exec_one(code, &mut next_ip, compiled_fns);
+            let result = self.exec_one(
+                code,
+                &mut next_ip,
+                compiled_fns,
+                crate::vm::vm_poll::DispatchPolls::enter(code),
+            );
             self.dispatch.lexical_operator_scopes.pop();
             result?;
             return Ok(true);

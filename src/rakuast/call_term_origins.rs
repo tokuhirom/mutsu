@@ -29,6 +29,16 @@ pub(super) fn place_hyper(hyper: &mut RakuAstNode, after_marker: usize, span: Sr
     super::infix_origins::with_child_at(hyper, 0, |call| set(call, at, span.to as usize, inner));
 }
 
+/// Place the `Call::Term` of a topic call (`.(1 + 2)`, `Term::TopicCall`)
+/// written at `span`: from its `(` after the dot, and its `ArgList`.
+// Cost: O(n), n = length of the call's source.
+pub(super) fn place_topic(node: &mut RakuAstNode, span: SrcSpan) {
+    let Some((at, inner)) = measure(span.from as usize, span.to as usize) else {
+        return;
+    };
+    super::infix_origins::with_child_at(node, 0, |call| set(call, at, span.to as usize, inner));
+}
+
 /// Where a call written after `operand_end` and ending at `to` starts (at its
 /// `(`, past a `.` before it), and the range of its arguments' text.
 // Cost: O(n), n = length of the call's source.

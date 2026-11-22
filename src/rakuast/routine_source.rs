@@ -5,7 +5,7 @@ use super::lower::{
 };
 use super::name_parts;
 use super::type_build::return_constraint_node;
-use super::view::{blockoid, name_from_identifier, signature};
+use super::view::{blockoid, signature};
 use super::view::{leaf_field, node_field, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::routine_trait::{ParentKind, RoutineTrait, TraitArgument};
@@ -372,7 +372,7 @@ pub(super) fn routine_node(
     returns: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let _underscore_scope = super::underscore_bindings::Scope::parameters(param_defs);
-    let name_node = name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
+    let name_node = name_parts::operator_or_identifier(name);
     let mut fields = vec![node_field(Some("name"), name_node)];
     if !param_defs.is_empty() || returns.is_some() {
         fields.push(node_field(

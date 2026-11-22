@@ -142,6 +142,13 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
 /// `Test::Util::warns-like` relies on exactly that mechanism, so a Nil
 /// coercion warning silently vanished under it —
 /// `todo/tickets/nil-method-warnings-are-not-a-resumable-cx-warn.md`).
+/// The coercions `Nil` inherits from `Cool` whose zero-argument form
+/// `nil_predispatch_verdict` answers (a warning and a zero).
+const NIL_COOL_COERCIONS: &[&str] = &[
+    "Rat", "FatRat", "Num", "Complex", "Real", "abs", "floor", "ceiling", "round", "truncate",
+    "sign", "Stringy", "ords",
+];
+
 pub(crate) enum NilPredispatchVerdict {
     Error(RuntimeError),
     Warn {
@@ -194,6 +201,19 @@ pub(crate) fn nil_predispatch_verdict(
                 resume: zero,
             })
         }
+        // `Cool.round($scale)` is `self.Numeric.round($scale)`: `Nil.Numeric`
+        // warns and is `0`, which then rounds to the scale (`0.0` for `0.1`).
+        "round" if args.len() == 1 && !args[0].is_string_pair_value() => {
+            let rounded =
+                crate::builtins::method_table::scalars::cool_real::round_to(&Value::int(0), args)?;
+            Some(match rounded {
+                Ok(resume) => NilPredispatchVerdict::Warn {
+                    message: "Use of Nil in numeric context".into(),
+                    resume,
+                },
+                Err(err) => NilPredispatchVerdict::Error(err),
+            })
+        }
         "abs" | "floor" | "ceiling" | "round" | "truncate" | "sign" if no_args => {
             Some(NilPredispatchVerdict::Warn {
                 message: "Use of Nil in numeric context".into(),
@@ -241,14 +261,25 @@ impl Interpreter {
     // Cost: O(r + a + c), r = `Nil`'s rows of `method`, a = arguments, c =
     // the candidate signatures listed.
     pub(crate) fn nil_refused_call(method: &str, args: &[Value]) -> Option<RuntimeError> {
-        let declared = (0..=7).any(|arity| {
-            crate::builtins::method_table::owner_row(
-                crate::symbol::Symbol::intern("Nil"),
-                crate::symbol::Symbol::intern(method),
-                arity,
-            )
-            .is_some()
-        });
+        let positionals = args
+            .iter()
+            .filter(|arg| !arg.is_string_pair_value())
+            .count();
+        // The coercions `Nil` inherits from `Cool` (`nil_predispatch_verdict`
+        // answers their bound forms) refuse the positionals none of `Cool`'s
+        // candidates takes; `round($scale)` binds one (#18591).
+        let cool_coercion = positionals > 0
+            && NIL_COOL_COERCIONS.contains(&method)
+            && !(method == "round" && positionals == 1);
+        let declared = cool_coercion
+            || (0..=7).any(|arity| {
+                crate::builtins::method_table::owner_row(
+                    crate::symbol::Symbol::intern("Nil"),
+                    crate::symbol::Symbol::intern(method),
+                    arity,
+                )
+                .is_some()
+            });
         if !declared {
             return None;
         }

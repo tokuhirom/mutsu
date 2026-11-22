@@ -361,7 +361,12 @@ pub(super) unsafe extern "C" fn step(
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
     panic_boundary(|| {
         let mut ip = op_idx as usize;
-        let r = interp.exec_one(code, &mut ip, fns);
+        let r = interp.exec_one(
+            code,
+            &mut ip,
+            fns,
+            crate::vm::vm_poll::DispatchPolls::enter(code),
+        );
         interp.current_code = code as *const CompiledCode as usize;
         match r {
             Ok(()) => {

@@ -1422,6 +1422,11 @@ impl Interpreter {
         // through to "no match", misreporting a perfectly type-conforming
         // element as `Any` (`my SomeRole @x = @a.values` on an `@a` whose
         // elements are container cells).
+        // A `.VAR` view is the `Scalar` container itself, which is what its
+        // `.^name` reports: `$x.VAR ~~ Scalar` (#18349).
+        if constraint == "Scalar" && matches!(value.view(), ValueView::ContainerView(_)) {
+            return true;
+        }
         if matches!(
             value.view(),
             ValueView::ContainerRef(_) | ValueView::ContainerView(_)

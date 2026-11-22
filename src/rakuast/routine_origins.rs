@@ -214,6 +214,7 @@ pub(super) fn package_origins(
             )
         });
         with_child(decl, "body", |body| block_origins(body, block));
+        super::also_origins::place(decl);
         // The traits are written between the name and the block.
         if spans.name.is_some() && spans.block.blockoid.is_some() {
             super::package_trait_origins::apply(

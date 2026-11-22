@@ -1865,6 +1865,27 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    ADR-0094 and ADR-9170 `Superseded by ADR-12529`. Exit: no frame allocates
    an `Env` unless its code has a reflective consumer.
 
+   **Progress (2026-11-22, #18248): the closure-frame caller walk is
+   retired.** Slice 56 left a closure frame (`mark_outer_is_capture`)
+   walking its callers when a lexically scoped name missed both its capture
+   and the program scope. That miss walk is gone: such a frame now stops at
+   the program scope (`Env::closure_outer_ends`, `src/env/static_link.rs`).
+   Each shape that still reached its name only through a caller now reaches
+   it lexically:
+
+   | PR | shape |
+   | --- | --- |
+   | #18536 | A: a code variable the block declares after the closure, or that the closure's own initializer names, is a forward-declared cell in the capture |
+   | #18548 | C: a block sub recursing into itself through a closure frame |
+   | #18557 | B: a closure in a `my @s` / `my %h` own initializer (compiled as `my @s; @s = ...`) |
+   | #18565 | D: a nested lexsub's alias of an outer routine's readonly parameter |
+   | #18590 | #18570: `Signature.ACCEPTS` runs `where` clauses in the signature's own scope (a `:(...)` literal whose parameters carry code is built from an empty routine at run time; closures capture what its chunks read) |
+   | #18605 | the removal itself, and a bare `decode` naming a later `my &decode`, which now compiles as a call and counts as a forward use |
+
+   Still to do in this phase: the capture is still a creation-time snapshot
+   tier (`set_capture_fallback`), not the live scope handle §2.2 describes,
+   and `layered_capture` and the rest of the list above remain.
+
 Phases 1 and 2 are each valuable alone (they shrink the kept set and the
 per-call resolution cost) and do not change visible semantics. Phase 3 is the
 semantic change; it is the one that needs the pins from phase 0.

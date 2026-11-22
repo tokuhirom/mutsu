@@ -1908,7 +1908,7 @@ impl Interpreter {
         let gather_scope = self.enter_gather_defining_unit(list);
         let mut ip = 0;
         let mut run_result = Ok(());
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(&cc);
         while ip < cc.ops.len() {
             match self.exec_one_backedge_polled(&cc, &mut ip, run_fns, polls) {
                 Ok(()) => {}

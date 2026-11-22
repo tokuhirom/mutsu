@@ -85,6 +85,12 @@ pub(crate) fn with_then_branch(
             .as_ref()
             .is_none_or(|pd| !pd.sigilless && pd.sub_signature.is_none());
     let use_given_alias = cond_is_lvalue && (param_name.is_none() || pointy_routes_through_given);
+    // A pointy parameter over any other condition (`without Nil -> $s`,
+    // `with foo() -> $x`) binds the once-evaluated condition the way the
+    // `else -> $y` branch does: through `given $tmp`, as a readonly bound
+    // parameter. An assigning declaration turned an undefined `Nil` into
+    // `Any` and left the parameter writable (#18390).
+    let pointy_via_tmp_given = !cond_is_lvalue && pointy_routes_through_given && !pointy_is_topic;
     // A non-lvalue, non-literal topic (`with foo()`) with no pointy parameter is
     // run under `given $tmp` (the once-evaluated condition value), so `$_` is
     // properly scoped: it is saved/restored around the body and the enclosing
@@ -118,6 +124,7 @@ pub(crate) fn with_then_branch(
     // here for those.
     if let Some(ref pname) = param_name
         && !(use_given_alias && pointy_routes_through_given)
+        && !pointy_via_tmp_given
         && !pointy_is_topic
     {
         // Attributive parameter (`-> $!foo` / `-> $.foo`): bind the value to
@@ -196,6 +203,22 @@ pub(crate) fn with_then_branch(
             // condition so the body still writes back without re-running an
             // effectful index expression.
             topic: given_topic,
+            body: given_body,
+            is_statement_modifier: false,
+            with_kind: block_topic,
+        }];
+    } else if pointy_via_tmp_given && let Some(ref pd) = param_def {
+        let mut given_body = body;
+        given_body.insert(0, pointy_topic_bind(pd));
+        // A `$` parameter holds the value as an item, as a signature's
+        // scalar parameter does (`with (1, 2) -> $s` binds a Scalar).
+        let topic = if !pd.name.starts_with(['@', '%', '&']) {
+            Expr::Itemize(Box::new(tmp_var.clone()))
+        } else {
+            tmp_var.clone()
+        };
+        with_body = vec![Stmt::Given {
+            topic,
             body: given_body,
             is_statement_modifier: false,
             with_kind: block_topic,
