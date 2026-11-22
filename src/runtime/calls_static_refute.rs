@@ -55,6 +55,43 @@ impl Interpreter {
         self.pop_routine();
     }
 
+    /// [`Self::attach_callee_frame_backtrace`] for a method: `err` gets the
+    /// backtrace it would carry had it been raised inside `method_def`, at
+    /// its declaration line.
+    // Cost: O(1) amortized; the backtrace renders only when read.
+    pub(crate) fn attach_method_frame_backtrace(
+        &mut self,
+        err: &mut RuntimeError,
+        owner: Symbol,
+        name: Symbol,
+        method_def: &crate::runtime::MethodDef,
+        cc: &crate::opcode::CompiledCode,
+    ) {
+        self.push_method_routine_with_location(
+            owner,
+            method_def.lexical_package,
+            name,
+            self.current_source_line(),
+            self.executing_source_file_sym(),
+            method_def.source_file_sym(),
+            method_def.is_submethod,
+            method_def.is_hidden_from_backtrace,
+            crate::value::next_instance_id(),
+            crate::runtime::routine_stack::FrameFixtures {
+                invocant: None,
+                class: None,
+                role: None,
+            },
+        );
+        let saved_line = self.cur_source_line;
+        if let Some(line) = cc.source_line {
+            self.cur_source_line = line as _;
+        }
+        self.attach_lazy_backtrace_to_error(err, &[]);
+        self.cur_source_line = saved_line;
+        self.pop_routine();
+    }
+
     /// Whether some positional type-object argument is a strict supertype of
     /// its parameter's nominal type, so the call cannot be refuted statically.
     /// An untyped parameter's nominal type is `Any` (`Mu` for a block's).

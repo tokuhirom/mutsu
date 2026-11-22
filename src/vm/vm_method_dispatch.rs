@@ -77,7 +77,15 @@ impl Interpreter {
             self.pop_lexical_class_scope();
         }
         self.current_unit = saved_unit;
-        result
+        result.map_err(|mut err| {
+            // An error the body raised carries its backtrace already; one
+            // without is the binder's, raised before the method's frame was
+            // pushed. Rakudo reports it inside the method (`in method m`).
+            if !err.has_backtrace() && err.control.is_none() && !err.is_leave {
+                self.attach_method_frame_backtrace(&mut err, owner_sym, method_sym, method_def, cc);
+            }
+            err
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
