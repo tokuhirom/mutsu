@@ -70,18 +70,15 @@ impl Interpreter {
                 .get(&w.key)
                 .filter(|cf| cf.fingerprint == w.fingerprint)
                 .is_some_and(|cf| {
-                    let where_verified = w
-                        .def
-                        .param_defs
-                        .iter()
-                        .any(|pd| pd.where_constraint.is_some());
+                    // The program checks every constraint of the candidate it
+                    // picks (ADR-18580 D2).
                     self.is_positional_light_call_eligible_where(
                         cf,
                         name,
                         argc,
                         args,
                         Some(code),
-                        where_verified,
+                        super::vm_call_eligibility::LightBindTrust::Constraints,
                     )
                 })
         });

@@ -139,6 +139,56 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         func_name: &str,
         func_name_sym: Symbol,
+        caller_code: Option<&CompiledCode>,
+    ) -> Result<Value, RuntimeError> {
+        self.call_compiled_function_positional_light_impl(
+            cf,
+            args_base,
+            compiled_fns,
+            (func_name, func_name_sym),
+            caller_code,
+            false,
+        )
+    }
+
+    /// [`Self::call_compiled_function_positional_light`] for a multi winner a
+    /// keyed stage program picked (ADR-18580 D2): the program has already
+    /// checked every parameter's nominal type and value constraint against
+    /// these arguments, so the bind does not check them again (a native `int`
+    /// parameter is still checked, for its coercion). Never for a plain call.
+    // Cost: as `call_compiled_function_positional_light`, minus the checks.
+    pub(super) fn call_compiled_function_positional_light_verified(
+        &mut self,
+        cf: &CompiledFunction,
+        args: &[Value],
+        compiled_fns: &CompiledFns,
+        func_name: &str,
+        func_name_sym: Symbol,
+        caller_code: Option<&CompiledCode>,
+    ) -> Result<Value, RuntimeError> {
+        let args_base = self.stack.len();
+        self.stack.extend(
+            args.iter()
+                .filter(|v| !Self::is_callsite_line_marker(v))
+                .cloned(),
+        );
+        self.call_compiled_function_positional_light_impl(
+            cf,
+            args_base,
+            compiled_fns,
+            (func_name, func_name_sym),
+            caller_code,
+            true,
+        )
+    }
+
+    // Cost: O(p) binds plus the body, p = parameters.
+    fn call_compiled_function_positional_light_impl(
+        &mut self,
+        cf: &CompiledFunction,
+        args_base: usize,
+        compiled_fns: &CompiledFns,
+        (func_name, func_name_sym): (&str, Symbol),
         // ADR-0109 (#8686 Phase 2): the CALLER's own `CompiledCode` -- needed
         // only when `cf.has_rw_positional_param`, to promote a caller-lexical
         // argument to a shared `ContainerRef` cell via `capture_var_cell`,
@@ -149,19 +199,20 @@ impl Interpreter {
         // have already refused it via `positional_light_rw_args_admitted`
         // when `caller_code` is `None` (see `is_positional_light_call_eligible`).
         caller_code: Option<&CompiledCode>,
+        constraints_verified: bool,
     ) -> Result<Value, RuntimeError> {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
         // guard-page abort. Same boundary as this path's `Call` GC safepoint.
         crate::guard_native_stack!(
             self,
-            self.call_compiled_function_positional_light_at(
+            self.call_compiled_function_positional_light_impl(
                 cf,
                 args_base,
                 compiled_fns,
-                func_name,
-                func_name_sym,
+                (func_name, func_name_sym),
                 caller_code,
+                constraints_verified,
             )
         );
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
@@ -580,6 +631,16 @@ impl Interpreter {
             // to check.
             if cf.has_rw_positional_param
                 && cf.param_defs[param_idx].traits.iter().any(|t| t == "rw")
+            {
+                continue;
+            }
+            // A keyed stage program already checked this parameter
+            // (ADR-18580 D2); a native `int` still goes through for its coercion.
+            if constraints_verified
+                && !cf.param_defs[param_idx]
+                    .type_constraint
+                    .as_deref()
+                    .is_some_and(crate::runtime::native_types::is_native_int_type)
             {
                 continue;
             }

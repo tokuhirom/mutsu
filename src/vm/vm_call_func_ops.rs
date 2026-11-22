@@ -2544,7 +2544,11 @@ impl Interpreter {
                         Self::positional_light_argc(&args),
                         &args,
                         Some(code),
-                        where_verified,
+                        if where_verified {
+                            super::vm_call_eligibility::LightBindTrust::Wheres
+                        } else {
+                            super::vm_call_eligibility::LightBindTrust::None
+                        },
                     )
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
@@ -2581,6 +2585,24 @@ impl Interpreter {
                     }
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
+                }
+                // A winner whose parameter constraints only the verified bind
+                // skips (a subset-typed parameter, ADR-18580 D2): record its
+                // family so the next call with these argument types takes the
+                // multi light call; this one stays on the generic path.
+                if !call_has_named
+                    && let Some(def) = multi_def_memo.as_ref()
+                    && self.has_multi_candidates_cached_sym(name_sym)
+                    && self.is_positional_light_call_eligible_where(
+                        cf,
+                        name,
+                        Self::positional_light_argc(&args),
+                        &args,
+                        Some(code),
+                        super::vm_call_eligibility::LightBindTrust::Constraints,
+                    )
+                {
+                    self.note_multi_plan_light_call(name, name_sym, &args, def, cf, compiled_fns);
                 }
                 self.set_pending_call_arg_sources_shared(arg_sources);
                 // Hand over the winner this call already resolved (via
