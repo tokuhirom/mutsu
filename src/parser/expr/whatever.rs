@@ -202,6 +202,24 @@ fn is_wrapped_whatevercode(expr: &Expr) -> bool {
     !is_frozen_whatever(expr) && matches!(expr.peel_parens(), Expr::WhateverCurry(..))
 }
 
+/// [`contains_whatever`] of an infix or prefix operator's operand. A
+/// parenthesized bare `*` there is the `Whatever` *value*, not a priming point:
+/// rakudo's `(*) + 1` adds a `Whatever` (and dies) while `* + 1` curries
+/// (#18698). A method call or subscript target still primes through one layer
+/// (`(*).abs`, `(*)[0]` are WhateverCodes), so this applies to operands only.
+// Cost: O(n), n = nodes of the operand.
+fn operand_contains_whatever(expr: &Expr) -> bool {
+    if matches!(expr, Expr::Grouped(_))
+        && matches!(
+            expr.peel_parens(),
+            Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever
+        )
+    {
+        return false;
+    }
+    contains_whatever(expr)
+}
+
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         // A frozen `((*))` is a plain value; nothing above it primes.
@@ -259,7 +277,7 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             op: TokenKind::SmartMatch | TokenKind::BangTilde,
             left,
             ..
-        } => contains_whatever(left),
+        } => operand_contains_whatever(left),
         // Named FatArrow pairs (colonpairs): `:as(*)` produces `"as" => *` which should
         // be Pair("as", Whatever), NOT a WhateverCode.  When the left side is a string
         // literal, skip WhateverCode propagation so the Pair is not auto-curried.
@@ -288,22 +306,21 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             ..
         } if name == "xx" => contains_whatever(left) || contains_whatever(right),
         Expr::Binary { left, right, .. } => {
-            contains_whatever(left)
-                || contains_whatever(right)
+            operand_contains_whatever(left)
+                || operand_contains_whatever(right)
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
         // A hyper operator is not Whatever-aware: `(1, 2) »+» *` is a
         // WhateverCode like any other infix with a `*` operand (#16402).
         Expr::HyperOp { left, right, .. } => {
-            contains_whatever(left)
-                || contains_whatever(right)
+            operand_contains_whatever(left)
+                || operand_contains_whatever(right)
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
-            contains_whatever(expr) || is_wrapped_whatevercode(expr)
-        }
+        Expr::Unary { expr, .. } => operand_contains_whatever(expr) || is_wrapped_whatevercode(expr),
+        Expr::PostfixOp { expr, .. } => contains_whatever(expr) || is_wrapped_whatevercode(expr),
         // Non-currying pseudo-methods evaluate immediately on Whatever AND on
         // an already-built WhateverCode: `*.WHAT` is `(Whatever)` and
         // `(* + 1).WHAT` is `(WhateverCode)`. Rakudo's list is exactly these
