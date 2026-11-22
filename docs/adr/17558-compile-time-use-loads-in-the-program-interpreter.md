@@ -649,3 +649,38 @@ plan check, mutsu does not; #18918, a separate gap of every parse-time load).
 Remaining for 5b: a `BEGIN` that reads the unit's lexicals or calls its
 routines (it needs the unit frame, or ADR-0134's static cells, during the
 parse), and slice 4b after it.
+
+### 7.17 Slice 5b: a `BEGIN` over the unit's variables (2026-11-23)
+
+A top-level `BEGIN` of the program that reads or writes the unit's own
+top-level variables (`my @log; BEGIN @log.push(1);`, `my $n; BEGIN $n++;`,
+≈15 in `t/` and roast, mostly tests of the prologue itself) now runs at parse
+time too, without the unit's frame, which does not exist until the unit is
+compiled:
+
+- The parser keeps the unit's **plain** top-level `my` variables declared so
+  far (`begin_at_parse::UNIT_VARS`): a scalar, array or hash with no type,
+  trait, shape, `where`, binding or other declaration mark. Any other variable
+  the body reaches keeps it in the prologue, as before.
+- `begin_body_core_names` accepts those as the body's free variables, unless
+  the body makes a closure (a block, a pointy block, an anonymous routine, a
+  WhateverCode, a `sub`), which could keep a parse-time copy instead of the
+  unit's variable.
+- The loader binds each to a parse-time copy by name for the run: a fresh
+  `Any`, `[]` or `{}` (a `BEGIN` sees the variable without its initializer, as
+  on rakudo), or the value an earlier parse-time `BEGIN` left in it. It hands
+  back the values the run left (`BeginOutcome::Ran`), and the parser keeps, in
+  the `BEGIN`'s place, a `BEGIN` of plain assignments of those values. The
+  prologue runs it at that position, so the unit's variables start from them
+  exactly as if the original `BEGIN` had run there; that replay is no prologue
+  effect, so a later `use` or `BEGIN` still runs at parse time.
+
+The unit's frame is not involved, so this does not touch lane:env's frame
+work (ADR-12529). Identity is not kept: the unit's array is a copy of the one
+the `BEGIN` filled, which only a closure or an escaping reference could tell,
+and the body makes neither (a body that passes the variable to an imported
+routine that keeps it would; none of the measured cases does).
+
+Remaining for 5b: a `BEGIN` that calls the unit's own routines, and a `BEGIN`
+over a typed or traited variable. Slice 4b (§7.10) no longer waits on 5b for
+the program's top level.
