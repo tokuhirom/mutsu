@@ -98,6 +98,32 @@ impl Interpreter {
         Some(self.infix_pair(op, Some(plain), args[0].clone(), &args[1], true))
     }
 
+    /// The built-in body of the plain operator `op` on two operands, which
+    /// no user candidate and no lexical `&infix:<op>` of the calling scope
+    /// answers for: the fallback of a dispatcher whose user candidates
+    /// declined the call (#17631). `None` for any other operator or arity, or
+    /// a Junction operand, which keep `call_infix_routine`.
+    // Cost: O(1) probes plus the operator body.
+    pub(crate) fn core_plain_infix_body(
+        &mut self,
+        op: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let plain = plain_infix(op)?;
+        let [left, right] = args else {
+            return None;
+        };
+        // A Junction operand autothreads, and a left `method` string is the
+        // parser's marker: `call_infix_routine` handles both.
+        if matches!(right.view(), ValueView::Junction { .. })
+            || matches!(left.view(), ValueView::Junction { .. })
+            || matches!(left.view(), ValueView::Str(s) if s.as_str() == "method")
+        {
+            return None;
+        }
+        Some(self.infix_pair(op, Some(plain), left.clone(), right, true))
+    }
+
     /// `acc op rhs` for the built-in operator `op`: a user candidate, a
     /// routine or a lexical `&infix:<op>` callable in scope wins, else the
     /// operator's own body. `plain` carries the pre-built keys of a plain
