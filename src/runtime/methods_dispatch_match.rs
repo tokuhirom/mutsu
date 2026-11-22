@@ -312,8 +312,14 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        self.with_regex_closure_scope(args.first().cloned(), |me| {
+        let as_str = Self::match_wants_str(&args);
+        let result = self.with_regex_closure_scope(args.first().cloned(), |me| {
             me.dispatch_match_method(target, &args)
+        })?;
+        Ok(if as_str {
+            Self::match_result_as_str(result)
+        } else {
+            result
         })
     }
 

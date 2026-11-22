@@ -40,6 +40,7 @@ mod methods_late_walk_owners;
 mod methods_own_iteration;
 mod methods_match3_late_rows;
 mod methods_array_pos_rows;
+mod match_as_str;
 mod methods_dispatch_match;
 mod methods_dispatch_match2;
 mod methods_dispatch_match3;
