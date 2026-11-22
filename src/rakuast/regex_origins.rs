@@ -63,12 +63,12 @@ pub(super) fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpa
 }
 
 /// The cursor over a regex body.
-struct Walk<'a> {
-    text: &'a str,
+pub(super) struct Walk<'a> {
+    pub(super) text: &'a str,
     /// The unit offset of the body's first byte.
-    base: usize,
+    pub(super) base: usize,
     /// The cursor, relative to the body.
-    at: usize,
+    pub(super) at: usize,
 }
 
 impl Walk<'_> {
@@ -149,7 +149,11 @@ impl Walk<'_> {
                 let (rest, at) = (&self.text[self.at..], self.base + self.at);
                 self.at += super::regex_alias_origins::place(node, rest, at)?;
             }
-            RakuAstClass::RegexInterpolation => self.interpolation(node, false)?,
+            RakuAstClass::RegexInterpolation => {
+                if self.contextualized(names, node).is_none() {
+                    self.interpolation(node, false)?
+                }
+            }
             RakuAstClass::RegexAssertionInterpolatedVar => self.interpolation(node, true)?,
             RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs => {
                 self.named_assertion(names, node)?
@@ -558,7 +562,7 @@ impl Walk<'_> {
     /// not in the tree, and Rakudo's `Interpolation` runs over it and the
     /// whitespace after it. Consumes that text when it is at the cursor.
     // Cost: O(n), n = length of the aliased atom.
-    fn alias_tail(&mut self) {
+    pub(super) fn alias_tail(&mut self) {
         let rest = &self.text[self.at..];
         let gap = rest.len() - rest.trim_start().len();
         let Some(after) = rest[gap..].strip_prefix('=') else {
