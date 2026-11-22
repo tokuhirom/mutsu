@@ -42,6 +42,19 @@ fn mark_curry_body(expr: &mut Expr) {
     mark_expr_after_plant(expr);
 }
 
+/// A method call's target: `(*).abs` primes through its one layer of
+/// parentheses, while `((*)).abs` calls the method on the `Whatever` value.
+// Cost: O(n), n = size of the target.
+fn mark_target(target: &mut Expr) {
+    if let Expr::Grouped(inner) = target
+        && matches!(inner.as_ref(), Expr::Whatever)
+    {
+        **inner = Expr::WhateverArg;
+        return;
+    }
+    mark_expr(target);
+}
+
 fn mark_expr_after_plant(expr: &mut Expr) {
     match expr {
         Expr::Whatever => *expr = Expr::WhateverArg,
@@ -67,7 +80,10 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         // A marker's un-curried body is exactly the "argument" role: recurse
         // straight through, no wrapper of its own.
         Expr::WhateverCurry(inner, ..) => mark_curry_body(inner),
-        Expr::Grouped(inner) => mark_expr(inner),
+        // A parenthesized `*` is a value (`say (*)`, `((*) + 1)`), as in
+        // Rakudo; only a method call's target primes through one layer of
+        // parentheses (`(*).abs`, see `mark_target`).
+        Expr::Grouped(inner) => mark_value_leaf(inner),
         // A spelled term (ADR-12199) holds a word list, which has no `*`:
         // classify what it wraps as if the wrapper were not there.
         Expr::Spelled(spelled) => mark_expr(&mut spelled.expr),
@@ -135,7 +151,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             if is_noncurrying_pseudo_method(name.resolve().as_str()) {
                 mark_value_leaf(target);
             } else {
-                mark_expr(target);
+                mark_target(target);
             }
             for a in args {
                 mark_value_leaf(a);
@@ -154,7 +170,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             }
         }
         Expr::HyperMethodCall { target, args, .. } => {
-            mark_expr(target);
+            mark_target(target);
             for a in args {
                 mark_value_leaf(a);
             }

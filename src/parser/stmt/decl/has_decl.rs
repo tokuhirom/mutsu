@@ -525,6 +525,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws(rest)?;
 
     // `of` type constraint can appear before `is` traits: `has $.a of Int is rw`
+    let mut trait_order: Vec<AttrTrait> = Vec::new();
     if type_constraint.is_none()
         && let Some(r) = keyword("of", rest)
         && let Ok((r, _)) = ws1(r)
@@ -532,6 +533,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     {
         let (r, _) = ws(r)?;
         type_constraint = Some(normalize_empty_coercion_type(tc));
+        trait_order.push(AttrTrait::Of);
         rest = r;
     }
 
@@ -546,8 +548,8 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut deprecated_message: Option<String> = None;
     let mut is_built: Option<crate::ast::BuiltTrait> = None;
     let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
-    // The kinds of the traits in the order they were written (`ast::attr_trait`).
-    let mut trait_order: Vec<AttrTrait> = Vec::new();
+    // `trait_order` holds the kinds of the traits in the order they were
+    // written (`ast::attr_trait`).
     let mut handles = Vec::new();
     // The written term of each `handles` clause; `None` once a clause's
     // spelling is not one the term rebuilds the specs from.
@@ -891,6 +893,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
             let (r, _) = ws(r)?;
             type_constraint = Some(normalize_empty_coercion_type(tc));
+            trait_order.push(AttrTrait::Of);
             rest = r;
         }
 

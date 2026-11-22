@@ -440,11 +440,12 @@ pub(super) fn sym_name(name: &str) -> Option<RakuAstNode> {
         (None, Some(inner)) => (true, inner),
         (None, None) => return None,
     };
-    if text.is_empty()
-        || text
-            .chars()
-            .any(|c| matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}' | '\\'))
-    {
+    // `:sym«<foo>»`: angle brackets are plain text inside French quotes.
+    let delimiter = |c: char| match quotewords {
+        true => matches!(c, '\u{00AB}' | '\u{00BB}'),
+        false => matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}'),
+    };
+    if text.is_empty() || text.chars().any(|c| delimiter(c) || c == '\\') {
         return None;
     }
     let pair = RakuAstNode {
