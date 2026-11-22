@@ -2069,6 +2069,16 @@ pub(crate) enum Expr {
         expr: Box<Expr>,
         value: Box<Expr>,
     },
+    /// Binding through a name computed at run time: `$::($p)::A::x := v`
+    /// (`sigil` "$"/"@"/"%"/"&") or `::($p)::A := v` (`sigil` empty; the last
+    /// segment may carry its own sigil, `::($p)::('$x') := v`). `expr` is the
+    /// whole name; the target is the last segment, bound in the stash of the
+    /// package the leading segments name.
+    IndirectSymbolBind {
+        sigil: String,
+        expr: Box<Expr>,
+        value: Box<Expr>,
+    },
     PseudoStash(String),
     /// Hash hyperslice: %hash{**}:adverb
     HyperSlice {

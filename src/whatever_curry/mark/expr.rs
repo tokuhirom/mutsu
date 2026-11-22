@@ -416,7 +416,8 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             mark_expr(expr);
             mark_value_leaf(value);
         }
-        Expr::IndirectTypeLookupAssign { expr, value } => {
+        Expr::IndirectTypeLookupAssign { expr, value }
+        | Expr::IndirectSymbolBind { expr, value, .. } => {
             mark_expr(expr);
             mark_value_leaf(value);
         }

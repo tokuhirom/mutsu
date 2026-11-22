@@ -376,6 +376,11 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             v.visit_expr(expr);
             v.visit_expr(value);
         }
+        Expr::IndirectSymbolBind { sigil, expr, value } => {
+            v.visit_name(sigil, NameKind::Symbolic);
+            v.visit_expr(expr);
+            v.visit_expr(value);
+        }
         Expr::PseudoStash(name) => v.visit_name(name, NameKind::Symbolic),
         Expr::HyperSlice { target, adverb: _ } => v.visit_expr(target),
     }

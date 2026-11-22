@@ -103,6 +103,7 @@ impl<'ast> Visit<'ast> for AstScan {
                 | Expr::IndirectTypeLookup(..)
                 | Expr::IndirectTypeLookupTail { .. }
                 | Expr::IndirectTypeLookupAssign { .. }
+                | Expr::IndirectSymbolBind { .. }
                 | Expr::SymbolicDeref { .. }
                 | Expr::SymbolicDerefAssign { .. }
                 | Expr::PseudoStash(..)

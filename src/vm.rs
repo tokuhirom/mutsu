@@ -356,6 +356,7 @@ pub(crate) mod vm_method_slot_frame;
 mod vm_method_straight;
 pub(crate) mod vm_misc_assign;
 pub(crate) mod vm_misc_block;
+pub(crate) mod vm_indirect_symbol_bind;
 pub(crate) mod vm_misc_codevar;
 pub(crate) mod vm_misc_coerce;
 pub(crate) mod vm_misc_ops;

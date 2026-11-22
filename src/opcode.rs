@@ -5124,6 +5124,12 @@ pub(crate) enum OpCode {
     /// Indirect type lookup store: pop value and name from stack, store value into variable by name.
     IndirectTypeLookupStore,
 
+    /// Bind through a run-time name (`Expr::IndirectSymbolBind`): pop the name,
+    /// then the bind value, and bind the name's last segment in the stash of
+    /// the package its leading segments name. The u32 indexes the sigil
+    /// constant ("" for the `::(...)` type form).
+    IndirectSymbolBind(u32),
+
     /// Save current variable value for `let`/`temp` scope management.
     /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).
     LetSave {
