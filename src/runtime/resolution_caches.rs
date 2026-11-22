@@ -724,9 +724,12 @@ pub(crate) struct ResolutionCaches {
     /// Whether `.new` on a role-mixed type object is the default
     /// constructor's, per `(base, mixin overrides address)`, with the type
     /// object (held, so the address stays its own) and the registry write
-    /// generation the verdict was reached under (`vm_mixin_type_new.rs`).
-    pub(crate) mixin_default_new_memo:
-        rustc_hash::FxHashMap<(Symbol, usize), (crate::value::Value, u64, bool)>,
+    /// generation the verdict was reached under, and the composed class the
+    /// default constructor builds (`vm_mixin_type_new.rs`).
+    pub(crate) mixin_default_new_memo: rustc_hash::FxHashMap<
+        (Symbol, usize),
+        (crate::value::Value, u64, bool, Option<Symbol>),
+    >,
     /// A captured multi candidate with its family's dispatcher bound as
     /// `&<family>` (`bind_family_dispatcher`), by the addresses of the
     /// candidate and the dispatcher, so every call of a block's own operator

@@ -4,6 +4,7 @@ mod constructor_binding;
 mod constructor_assignment;
 mod constructor_named_attrs;
 mod methods_object_dispatch_new;
+pub(crate) use methods_object_dispatch_new::default_new_accepts_positionals;
 mod methods_object_native_ctors_buf_num;
 mod methods_object_native_ctors_io;
 mod methods_object_native_ctors_misc;
