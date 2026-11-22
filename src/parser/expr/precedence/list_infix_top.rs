@@ -131,7 +131,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     list_infix_top_feeds(input, mode, true)
 }
 
-/// [`list_infix_top`] without the sequencer-level feed operators (`==>`,
+/// [`list_infix_top()`] without the sequencer-level feed operators (`==>`,
 /// `<==`, ...): rakudo's `EXPR('e=')`, the item of a parenthesized argument
 /// list (#18628).
 // Cost: O(n), n = length of the expression.
