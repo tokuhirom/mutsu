@@ -3,7 +3,9 @@
 - **Status**: Accepted (2026-10-10, by tokuhirom; Proposed earlier the same
   day). Phase 0 is done and phases 1-3 are in progress; record each phase's
   progress in §3. Amendment A1 (§9, a precise static outer for
-  block-declared routines under a unit latch) is **Proposed** (2026-11-22).
+  block-declared routines under a unit latch) is **Accepted** (2026-11-22, by the
+  maintainer), on the condition that the implementation PR measures part (c)'s
+  cost on EVAL-heavy code (Red) and shows no regression.
 - **Date**: 2026-10-10
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md)
   (locals are slot-addressed; escaping mutable lexicals are cells — this ADR
@@ -2033,7 +2035,7 @@ the battery run named a consumer that depended on the old resolution
 - **#12526's binder half.** It is independent of this ADR and can land
   first.
 
-## 9. Amendment A1 (Proposed, 2026-11-22): a precise static outer for block-declared routines, under a unit latch
+## 9. Amendment A1 (Accepted, 2026-11-22, by the maintainer): a precise static outer for block-declared routines, under a unit latch
 
 Carrier: [#18787](https://github.com/tokuhirom/mutsu/issues/18787) (part of
 [#18742](https://github.com/tokuhirom/mutsu/issues/18742)). This amendment
