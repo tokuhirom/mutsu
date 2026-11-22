@@ -308,3 +308,53 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
     }
     Ok((rest, left))
 }
+
+/// The chaining operator written at `r` (`<`, `eq`, `!eqv`'s `eqv`), as
+/// rakudo names it when it refuses an adverb; `None` for any other text,
+/// including the non-chaining structural operators (`cmp`, `<=>`, `leg`).
+// Cost: O(1).
+pub(in crate::parser::expr) fn chaining_op_spelling(r: &str) -> Option<&str> {
+    // `!=` and `!~~` are operators of their own; any other `!` negates the
+    // operator after it (`!===`, `!=:=`), which rakudo names.
+    let own = r.starts_with("!~~") || (r.starts_with("!=") && !r[2..].starts_with(['=', ':']));
+    let negated = r.strip_prefix('!').filter(|_| !own);
+    let at = negated.unwrap_or(r);
+    let (op, len) = parse_comparison_op(at)?;
+    let chaining = !matches!(
+        op,
+        ComparisonOp::Spaceship
+            | ComparisonOp::Leg
+            | ComparisonOp::Cmp
+            | ComparisonOp::Coll
+            | ComparisonOp::Unicmp
+            | ComparisonOp::NotDivisibleBy
+    );
+    chaining.then(|| &at[..len])
+}
+
+/// A colonpair after a comparison chain: a built-in chaining operator takes
+/// no adverb, which rakudo refuses at compile time ("You can't adverb
+/// &infix:«<»", `X::Syntax::Adverb`) (#18452). `rest` follows the chain;
+/// `op` is its last operator as written.
+// Cost: O(1).
+pub(in crate::parser::expr) fn reject_chaining_adverb(rest: &str, op: &str) -> Result<(), PError> {
+    let Ok((after, _)) = ws(rest) else {
+        return Ok(());
+    };
+    let gap = &rest[..rest.len() - after.len()];
+    if gap.is_empty()
+        || gap.contains('\n')
+        || !crate::parser::expr::postfix::colonpair_adverb_follows(after)
+    {
+        return Ok(());
+    }
+    let name = if op.contains(['<', '>']) {
+        format!("&infix:\u{ab}{op}\u{bb}")
+    } else {
+        format!("&infix:<{op}>")
+    };
+    // Reported where the adverb starts, as a compile-time error.
+    let mut err = crate::parser::primary::container::adverb_not_allowed_error(&name);
+    err.remaining_len = Some(after.len());
+    Err(err)
+}
