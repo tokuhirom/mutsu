@@ -45,6 +45,7 @@ struct WarmCaches {
     routines: Arc<RoutineTables>,
     /// Its registry write generation at the end.
     registry_write_gen: u64,
+    registry_decl_gen: u64,
     caches: ResolutionCaches,
     attr_type_constraint_cache: RefCell<crate::vm::AttrTypeConstraintCache>,
     class_does_role_memo: RefCell<crate::runtime::type_state::ClassDoesRoleMemo>,
@@ -93,6 +94,9 @@ impl Interpreter {
             self.types
                 .registry_write_gen
                 .store(warm.registry_write_gen, Ordering::Relaxed);
+            self.types
+                .registry_decl_gen
+                .store(warm.registry_decl_gen, Ordering::Relaxed);
             // The registry version is the one the warm caches were filled
             // under (the warm handoff holds a reference to it, so a write
             // since would have copied it): reconcile with its generation.
@@ -114,6 +118,7 @@ impl Interpreter {
             registry,
             routines,
             registry_write_gen: self.registry_write_generation(),
+            registry_decl_gen: self.registry_decl_generation(),
             caches: std::mem::take(&mut self.caches),
             attr_type_constraint_cache: std::mem::take(&mut self.types.attr_type_constraint_cache),
             class_does_role_memo: std::mem::take(&mut self.types.class_does_role_memo),
