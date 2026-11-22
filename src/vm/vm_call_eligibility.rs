@@ -299,7 +299,7 @@ impl Interpreter {
     /// before binding. Only the cold call sites that hold such a vector need
     /// this; the hot cached dispatch already knows from its own argument scan
     /// whether a marker is present.
-    pub(super) fn positional_light_argc(args: &[Value]) -> usize {
+    pub(crate) fn positional_light_argc(args: &[Value]) -> usize {
         args.iter()
             .filter(|v| !Self::is_callsite_line_marker(v))
             .count()
@@ -471,7 +471,7 @@ impl Interpreter {
     /// a regex `where`, whose match is the body's `$/` and so must run at bind
     /// time (#12915). #8697's `pending_skip_constraint_recheck` is the general
     /// binder's equivalent of the same trust.
-    pub(super) fn is_positional_light_call_eligible_where(
+    pub(crate) fn is_positional_light_call_eligible_where(
         &self,
         cf: &CompiledFunction,
         fn_name: &str,
@@ -1018,7 +1018,7 @@ pub(super) struct RoutinePackageSave {
 /// What the caller of a positional light bind has already checked against the
 /// call's arguments, so the bind may admit (and skip) it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum LightBindTrust {
+pub(crate) enum LightBindTrust {
     /// Nothing: the bind checks every constraint it admits.
     None,
     /// Every `where` clause (a value-dependent multi winner the resolver

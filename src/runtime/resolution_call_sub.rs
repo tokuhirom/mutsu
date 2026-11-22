@@ -347,7 +347,7 @@ impl Interpreter {
     // Cost: O(e), e = size of the candidate's captured env (only when it lacks `&name`).
     // Cost: O(1) for a pair bound before; else O(e) to copy the candidate,
     // e = its env entries.
-    fn bind_family_dispatcher(
+    pub(super) fn bind_family_dispatcher(
         &mut self,
         candidate: &Value,
         family: Option<&str>,
@@ -496,7 +496,6 @@ impl Interpreter {
             {
                 return self.run_core_increment(op, arg, None);
             }
-            let candidate = self.bind_family_dispatcher(&candidate, family_name, func);
             return self.call_captured_multi_winner(
                 family_name.unwrap_or(""),
                 candidate,
@@ -595,7 +594,6 @@ impl Interpreter {
                 super::native_infix_dispatch::CoreInfixVerdict::User => {}
             }
         }
-        let candidate = self.bind_family_dispatcher(&candidate, Some(family), func);
         self.call_captured_multi_winner(family, candidate, remaining, args, func.clone(), key_decided)
             .map(Some)
     }

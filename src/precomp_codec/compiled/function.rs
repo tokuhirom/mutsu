@@ -55,6 +55,7 @@ impl Encode for CompiledFunction {
             source_file_sym_cache: _,
             package_routine_scoped_cache: _,
             light_signature_cache: _,
+            outer_var_reads_cache: _,
         } = self;
         code.encode(encoder)?;
         source_file.encode(encoder)?;
@@ -153,6 +154,7 @@ impl Decode<DecodeCtx> for CompiledFunction {
             source_file_sym_cache: Default::default(),
             package_routine_scoped_cache: Default::default(),
             light_signature_cache: Default::default(),
+            outer_var_reads_cache: Default::default(),
         })
     }
 }

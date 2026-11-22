@@ -136,6 +136,7 @@ mod vm_call_autothread;
 mod vm_call_dispatch;
 mod vm_call_dispatcher_builtin;
 mod vm_call_eligibility;
+pub(crate) use vm_call_eligibility::LightBindTrust;
 mod vm_call_exec_ops;
 mod vm_call_fast;
 mod vm_call_func_ops;
