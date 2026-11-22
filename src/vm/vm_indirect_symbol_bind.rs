@@ -91,7 +91,7 @@ impl Interpreter {
         };
         let (base, path) = match leading.split_first() {
             Some((head, rest)) if head.as_str() == "OUR" => (self.current_package(), rest),
-            Some((head, rest)) if head.as_str() == "GLOBAL" => (String::new(), rest),
+            Some((head, rest)) if crate::qualified::is_global_name(*head) => (String::new(), rest),
             // Lexical (`MY`, `OUTER`, `CALLER`, ...), dynamic and setting
             // pseudo-packages are not package stashes.
             Some((head, _)) if Self::is_pseudo_package_name(head.as_str()) => return None,

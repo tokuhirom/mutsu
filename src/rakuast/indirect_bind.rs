@@ -64,31 +64,38 @@ pub(crate) fn indirect_symbol_bind(target: Expr, value: Expr) -> Result<Expr, (E
     })
 }
 
-/// The bind as `ApplyInfix(left, Infix(":="), right)`.
+/// The bind `bind` (an [`Expr::IndirectSymbolBind`]) as
+/// `ApplyInfix(left, Infix(":="), right)`.
 // Cost: O(n), n = nodes of the name expression and the value.
-pub(super) fn view(
-    names: &NameScope,
-    sigil: &str,
-    expr: &Expr,
-    value: &Expr,
-) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn view(names: &NameScope, bind: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let Expr::IndirectSymbolBind { sigil, expr, value } = bind else {
+        return Err(RuntimeError::new("RakuAST: not a run-time name bind"));
+    };
     let target = if sigil.is_empty() {
-        Expr::IndirectTypeLookup(Box::new(expr.clone()))
+        Expr::IndirectTypeLookup(expr.clone())
     } else {
         Expr::SymbolicDeref {
             sigil: sigil.to_string(),
-            expr: Box::new(expr.clone()),
+            expr: expr.clone(),
         }
     };
-    Ok(RakuAstNode {
+    let left = view_expr(names, &target)?;
+    Ok(bind_node(left, view_expr(names, value)?))
+}
+
+/// `ApplyInfix(left, Infix(":="), right)`: a bind is a plain `Infix`, not the
+/// `Assignment` node `=` uses.
+// Cost: O(1).
+pub(super) fn bind_node(left: RakuAstNode, right: RakuAstNode) -> RakuAstNode {
+    RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), view_expr(names, &target)?),
+            node_field(Some("left"), left),
             node_field(Some("infix"), plain_infix(":=")),
-            node_field(Some("right"), view_expr(names, value)?),
+            node_field(Some("right"), right),
         ],
-    })
+    }
 }
 
 /// Whether the `ApplyInfix` bind `node` (the caller checked the `:=`) binds a
