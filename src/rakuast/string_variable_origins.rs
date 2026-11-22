@@ -14,7 +14,22 @@ pub(super) fn is_variable(class: RakuAstClass) -> bool {
             | RakuAstClass::VarDynamic
             | RakuAstClass::VarAttribute
             | RakuAstClass::VarAttributePublic
+            | RakuAstClass::VarDeclarationPlaceholderPositional
+            | RakuAstClass::VarDeclarationPlaceholderNamed
     )
+}
+
+/// How the variable `segment` is written: its name, or for a placeholder
+/// its sigil and twigil before the name (`$^a`, `$:b`).
+// Cost: O(k), k = length of the name.
+pub(super) fn written(segment: &RakuAstNode) -> Option<String> {
+    let twigil = match segment.class {
+        RakuAstClass::VarDeclarationPlaceholderPositional => '^',
+        RakuAstClass::VarDeclarationPlaceholderNamed => ':',
+        _ => return leaf_text(segment),
+    };
+    let (sigil, bare) = super::placeholder::spelling(segment).ok()?;
+    Some(format!("{sigil}{twigil}{bare}"))
 }
 
 /// The range of a variable written at `cursor`, when its spelling is there
@@ -28,7 +43,7 @@ pub(super) fn variable_at(
     end: usize,
     literal: Option<&str>,
 ) -> Option<(usize, usize)> {
-    let name = leaf_text(segment)?;
+    let name = written(segment)?;
     super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
         let rest = text.strip_prefix(name.as_str())?;
         if literal.is_some_and(|l| l.starts_with('.') && rest.starts_with(l)) {

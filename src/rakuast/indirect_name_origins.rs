@@ -255,3 +255,62 @@ pub(super) fn bare_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bo
     super::empty_fields::set_span(node, "args", end);
     true
 }
+
+/// `MY::<$j>`: a package name ending in `::` that a postfix applies to, at
+/// the start of `node`'s range. The `Term::Name` and its `Name` span the
+/// name with its `::`.
+// Cost: O(p + n), p = parts of the name, n = its length.
+pub(super) fn package_operand(node: &mut RakuAstNode) {
+    use super::infix_origins::{byte_range, child, child_at, with_child, with_child_at};
+    let Some((from, _)) = byte_range(node) else {
+        return;
+    };
+    let Some(term) = child(node, "operand")
+        .filter(|t| t.class == RakuAstClass::TermName && t.origin.0.is_none())
+    else {
+        return;
+    };
+    let Some(name) = child_at(term, 0) else {
+        return;
+    };
+    let parts: Vec<_> = name
+        .fields
+        .iter()
+        .filter(|f| f.name == Some("parts"))
+        .flat_map(|f| match &f.value {
+            RakuAstFieldValue::List(parts) => parts.as_slice(),
+            _ => &[],
+        })
+        .collect();
+    let Some((last, simple)) = parts.split_last() else {
+        return;
+    };
+    if !matches!(last.view(), ValueView::RakuAst(p) if p.class == RakuAstClass::NamePartEmptyEdge)
+    {
+        return;
+    }
+    let Some(words) = simple
+        .iter()
+        .map(|p| match p.view() {
+            ValueView::RakuAst(part) if part.class == RakuAstClass::NamePartSimple => {
+                super::name_parts::part_identifier(p)
+            }
+            _ => None,
+        })
+        .collect::<Option<Vec<String>>>()
+    else {
+        return;
+    };
+    let written = format!("{}::", words.join("::"));
+    let exact = super::unit_source::with_text_from(from, |text| {
+        text.starts_with(written.as_str()).then_some(())
+    });
+    if exact.is_none() {
+        return;
+    }
+    let span = crate::ast::SrcSpan::new(from, from + written.len());
+    with_child(node, "operand", |term| {
+        super::origin::set_span(term, span);
+        with_child_at(term, 0, |name| super::origin::set_span(name, span));
+    });
+}

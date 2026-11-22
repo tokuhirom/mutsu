@@ -181,6 +181,12 @@ impl Walk<'_> {
                     super::name_parts::NameShape::Identifier(name) => name,
                     _ => return None,
                 };
+                // `<after a b>` standing alone carries its own brackets;
+                // inside a lookaround (`<?after a>`) the caller ate them.
+                let bracketed = self.text[self.at..].starts_with('<');
+                if bracketed {
+                    self.eat("<")?;
+                }
                 let name_at = self.at;
                 self.eat(&name)?;
                 let span = SrcSpan::new(self.base + name_at, self.base + self.at);
@@ -192,7 +198,10 @@ impl Walk<'_> {
                 if self.at == before {
                     return None;
                 }
-                self.child(names, node, "regex-arg")?
+                self.child(names, node, "regex-arg")?;
+                if bracketed {
+                    self.eat(">")?;
+                }
             }
             RakuAstClass::RegexAssertionPredicateBlock => {
                 let negated = node.fields.iter().any(|f| {
