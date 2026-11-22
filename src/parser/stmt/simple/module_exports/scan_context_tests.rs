@@ -37,6 +37,10 @@ fn a_unit_module_after_using_a_block_package_keeps_its_package() {
     );
     crate::parser::stmt::simple::set_parser_lib_paths(saved);
     let _ = std::fs::remove_dir_all(&dir);
-    let qualified: Vec<&str> = scan.exported_types.iter().map(|t| t.qualified.as_str()).collect();
+    let qualified: Vec<&str> = scan
+        .exported_types
+        .iter()
+        .map(|t| t.qualified.as_str())
+        .collect();
     assert_eq!(qualified, ["ScCtxTy::ScH"]);
 }
