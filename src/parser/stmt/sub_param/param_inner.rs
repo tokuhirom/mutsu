@@ -137,7 +137,11 @@ fn target_offset(text: &str, p: &ParamDef) -> Option<(usize, usize)> {
 fn is_anonymous_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches(['@', '%', '&']),
-        "__ANON_STATE#" | "__ANON_ARRAY__" | "__ANON_HASH__" | "__ANON_CODE__"
+        "__ANON_STATE#"
+            | "__ANON_OPTIONAL__"
+            | "__ANON_ARRAY__"
+            | "__ANON_HASH__"
+            | "__ANON_CODE__"
     )
 }
 
@@ -147,7 +151,7 @@ fn is_anonymous_name(name: &str) -> bool {
 // Cost: O(n), n = length of `text`.
 fn anonymous_target_offset(text: &str, name: &str) -> Option<(usize, usize)> {
     let sigil = match name.trim_start_matches(['@', '%', '&']) {
-        "__ANON_STATE#" => '$',
+        "__ANON_STATE#" | "__ANON_OPTIONAL__" => '$',
         "__ANON_ARRAY__" => '@',
         "__ANON_HASH__" => '%',
         "__ANON_CODE__" => '&',

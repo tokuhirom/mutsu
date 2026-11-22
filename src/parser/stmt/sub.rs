@@ -11,6 +11,7 @@ use super::super::add_parse_warning;
 use super::{block_inner, ident, keyword, parse_raku_ident, routine_block};
 
 mod export_trait;
+mod install_order;
 mod op_name;
 mod outer_slurpy;
 mod param_list;
@@ -23,6 +24,8 @@ mod trait_type;
 mod traits;
 
 // --- Re-exports preserving each function's original visibility. ---
+
+pub(crate) use install_order::note_proto_installed;
 
 // Signature/parameter validation (param_validate.rs).
 pub(crate) use outer_slurpy::enter_routine_body;

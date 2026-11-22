@@ -1,6 +1,6 @@
 //! Origins of a statement-control statement in expression position
 //! (ADR-10723 Stage 2, #15780): `(for @a { })`, `(if 1 { 2 })`,
-//! `do for @a { }`. The parser keeps no range for such a statement; its
+//! `do for @a { }`, `start until $x { }`. The parser keeps no range for such a statement; its
 //! parts are placed, and the statement runs over all of its own text.
 
 use super::infix_origins::{byte_range, child_at, with_child_at};
@@ -19,6 +19,11 @@ fn is_control(class: RakuAstClass) -> bool {
             | RakuAstClass::StatementGiven
             | RakuAstClass::StatementWith
             | RakuAstClass::StatementWithout
+            | RakuAstClass::StatementLoop
+            | RakuAstClass::StatementLoopWhile
+            | RakuAstClass::StatementLoopUntil
+            | RakuAstClass::StatementLoopRepeatWhile
+            | RakuAstClass::StatementLoopRepeatUntil
     )
 }
 
@@ -46,9 +51,7 @@ pub(super) fn in_parentheses(list: &mut RakuAstNode, inside: SrcSpan) {
     }) else {
         return;
     };
-    with_child_at(list, 0, |statement| {
-        super::origin::set_span(statement, span)
-    });
+    with_child_at(list, 0, |statement| placed(statement, span));
 }
 
 /// `do for @a { }`: the statement-control statement a statement prefix
@@ -72,8 +75,16 @@ pub(super) fn after_prefix(node: &mut RakuAstNode) {
         return;
     };
     with_child_at(node, 0, |statement| {
-        super::origin::set_span(statement, SrcSpan::new(start, to))
+        placed(statement, SrcSpan::new(start, to))
     });
+}
+
+/// Give `statement` its range `span`, and a C-style loop's setup the range
+/// its text has (`do loop (my $i = 0; ...) { }`).
+// Cost: O(n), n = length of a loop's setup, plus the parse of it.
+fn placed(statement: &mut RakuAstNode, span: SrcSpan) {
+    super::origin::set_span(statement, span);
+    super::loop_setup_origins::place(&crate::scope::NameScope::default(), statement, span);
 }
 
 /// `sink $i = 5` / `try $i = 5`: the unplaced expression of the

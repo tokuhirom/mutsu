@@ -115,6 +115,10 @@ fn trait_key(node: &RakuAstNode) -> Option<(RakuAstClass, String)> {
     let name = match named.class {
         RakuAstClass::Name => named,
         RakuAstClass::TypeSimple => super::infix_origins::child_at(named, 0)?,
+        // `does R[Int:D]`: the role the parameterization applies to.
+        RakuAstClass::TypeParameterized => {
+            super::infix_origins::child_at(super::infix_origins::child_at(named, 0)?, 0)?
+        }
         _ => return None,
     };
     match super::name_parts::name_shape(name)? {
@@ -152,9 +156,22 @@ fn clauses(text: &str, base: usize) -> Vec<Clause> {
             .unwrap_or(text.len() - name_from);
         let name_to = name_from + name_len;
         let name = &text[name_from..name_to];
-        if name.is_empty() || name.ends_with(':') || text[name_to..].starts_with(['[', '<']) {
+        // `does R[Int:D]`: a parameterized role, its brackets part of the
+        // type the clause names.
+        let brackets = match text[name_to..].strip_prefix('[') {
+            Some(inner) => match super::subst_origins::closing(inner, '[', ']') {
+                Some(close) => close + 2,
+                None => break,
+            },
+            None => 0,
+        };
+        if name.is_empty()
+            || name.ends_with(':')
+            || text[name_to + brackets..].starts_with(['[', '<'])
+        {
             break;
         }
+        let name_to = name_to + brackets;
         let mut end = name_to;
         let mut argument = None;
         if text[name_to..].starts_with('(') {

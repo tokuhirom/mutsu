@@ -1626,7 +1626,7 @@ impl Interpreter {
         resolved_constraint: &str,
         arg: &Value,
     ) -> bool {
-        if let Some(expected_val) = self.enum_bare_value(resolved_constraint).cloned() {
+        if let Some(expected_val) = self.enum_bare_value(resolved_constraint) {
             if *arg != expected_val {
                 return false;
             }

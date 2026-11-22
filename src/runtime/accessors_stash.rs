@@ -739,8 +739,8 @@ impl Interpreter {
                 .package_kinds
                 .keys()
                 .any(|k| k.starts_with(&prefix))
-            || self.module.exported_subs.contains_key(package)
-            || self.module.exported_vars.contains_key(package)
+            || self.module.world.exported_subs.contains_key(package)
+            || self.module.world.exported_vars.contains_key(package)
     }
 
     pub(crate) fn stash_lookup_symbol(stash: &Value, key: &str) -> Option<Value> {
@@ -814,7 +814,7 @@ impl Interpreter {
         }
         // Symbols loaded via `$*REPO.need(...)` stay invisible to `::('Name')`
         // until they are merged into GLOBAL with `merge-symbols`.
-        if self.module.cur_repo.pending_global_symbols.contains(name) {
+        if self.module.world.cur_repo.pending_global_symbols.contains(name) {
             return Self::no_such_symbol_failure(name);
         }
         // A module's own bare declaration is visible only where that module
@@ -937,7 +937,7 @@ impl Interpreter {
             "NaN" => return Value::num(f64::NAN),
             _ => {}
         }
-        if !self.types.method_class_stack.is_empty() && self.module.loaded_modules.contains(name) {
+        if !self.types.method_class_stack.is_empty() && self.module.world.loaded_modules.contains(name) {
             return Value::package(Symbol::intern(name));
         }
 
@@ -970,6 +970,12 @@ impl Interpreter {
                 || self.is_role(name)
                 || (self.registry().enum_types.contains_key(name)
                     && !self.is_my_scoped_package_item(name))
+                // An `our` subset is a package symbol like a class (ADR-17216:
+                // one declared by `EVAL` on another thread, or in a routine
+                // that has returned, is still found). A `my subset` also files
+                // its bare name, but always next to its declaration-site key
+                // (`Name\0<id>`, ADR-0047), which rules it out here.
+                || self.is_package_scoped_subset(name)
                 // A qualified `package`/`module` a module's mainline declared
                 // is not bound in the frame env (ADR-0084 §7.6); its kind
                 // record is the persistent one.
@@ -1009,7 +1015,12 @@ impl Interpreter {
             || (name_is_qualified
                 && (self.has_package_members(first)
                     || self.has_class(first)
-                    || self.is_role(first)))
+                    || self.is_role(first)
+                    // `E::key` of an enum whose frame binding is gone (declared
+                    // in a returned routine, or on another thread): the enum's
+                    // stash lists its keys.
+                    || (self.registry().enum_types.contains_key(first)
+                        && !self.is_my_scoped_package_item(first))))
         {
             Value::package(Symbol::intern(first))
         } else {

@@ -23,6 +23,13 @@ pub(crate) enum Target {
     /// An element of a variable or a deeper subscript, as the lvalue
     /// expression (`@a[1]`, `%h<k>`, `$s[1]<k>`).
     Element(Expr),
+    /// An operand that is not a container (`temp 5`, `temp &f`,
+    /// `temp &f.wrap({ ... })`): it is evaluated, then
+    /// `X::Localizer::NoContainer` is thrown, as in Rakudo.
+    // TODO: a call to an `is rw` routine (`temp f() = 5`) yields a container
+    // in Rakudo; it lands here too until the parser can tell such a call from
+    // one that yields a value.
+    NoContainer(Expr),
 }
 
 /// The assignment that follows the prefix, if any.
@@ -68,6 +75,27 @@ pub(crate) fn element_expr(name: &str, index: &Expr, spelling: super::IndexSpell
         is_positional,
         spelling,
     }
+}
+
+/// `temp` / `let` over an operand that is not a container: the operand runs,
+/// then `X::Localizer::NoContainer` is thrown naming the prefix.
+// Cost: O(1), plus the size of the operand (it is moved, not copied).
+fn no_container(operand: Expr, is_temp: bool) -> Stmt {
+    let localizer = if is_temp { "temp" } else { "let" };
+    let error = Expr::MethodCall {
+        target: Box::new(Expr::BareWord("X::Localizer::NoContainer".to_string())),
+        name: crate::symbol::Symbol::intern("new"),
+        args: vec![Expr::Binary {
+            left: Box::new(Expr::Literal(crate::value::Value::str_from("localizer"))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(crate::value::Value::str_from(localizer))),
+            form: Default::default(),
+        }],
+        modifier: None,
+        quoted: false,
+        sugar: false,
+    };
+    Stmt::SyntheticBlock(vec![Stmt::Expr(operand), Stmt::Die(error)])
 }
 
 /// The `Stmt::Let` a `temp` / `let` over the variable (or element) `name`
@@ -135,6 +163,7 @@ pub(crate) fn expand(t: Temporized) -> Option<Stmt> {
         _ => None,
     };
     let (stmt, name, index) = match target {
+        Target::NoContainer(operand) => return Some(no_container(operand, is_temp)),
         Target::Undefine(name) => {
             return Some(Stmt::Let {
                 name,

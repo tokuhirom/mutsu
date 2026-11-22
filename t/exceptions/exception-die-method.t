@@ -81,12 +81,15 @@ throws-like 'X::AdHoc.die', Exception, '.die on a type object dies (concreteness
     is $caught, 'user-die', '.die on a user-defined Exception subclass';
 }
 
-# A Failure's `.gist` shows a `(HANDLED)` prefix once it has been marked
-# handled, both directly and via the raw fallback used inside a container
+# A Failure's `.gist` is its `.mess`, with a `(HANDLED)` prefix once it has been
+# marked handled, both directly and via the raw fallback used inside a container
 # (e.g. an Array), which used to render the type repr `Failure()`.
 {
     my $f = (sub { fail "gisted" })();
     $f.defined;
-    is $f.gist, '(HANDLED) gisted', 'a handled Failure gists with a HANDLED prefix';
-    is [$f].gist, '[(HANDLED) gisted]', 'a handled Failure inside an Array gists correctly';
+    # The gist is the Failure's `.mess`: the message, then the backtrace.
+    like $f.gist, /^ "(HANDLED) gisted\n" .* "\n" $/,
+        'a handled Failure gists with a HANDLED prefix';
+    like [$f].gist, /^ "[(HANDLED) gisted\n" .* "\n]" $/,
+        'a handled Failure inside an Array gists correctly';
 }

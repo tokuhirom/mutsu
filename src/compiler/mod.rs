@@ -1087,6 +1087,7 @@ mod bind_ternary;
 mod block_imported_vars;
 mod block_lexical_types;
 mod block_lexsubs;
+mod block_operator_sets;
 mod body_scans;
 mod call_arg_index_assign;
 pub(crate) mod compile_inputs;

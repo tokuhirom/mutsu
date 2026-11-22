@@ -806,6 +806,14 @@ fn children_without_docs(node: &RakuAstNode) -> Vec<Value> {
     if let Some(with_signature) = crate::rakuast::implicit_signature::method_with_signature(node) {
         return field_children(&with_signature);
     }
+    let role_body;
+    let node = match crate::rakuast::implicit_signature::role_body_with_signature(node) {
+        Some(with_signature) => {
+            role_body = with_signature;
+            &role_body
+        }
+        None => node,
+    };
     if let Some(expansion) = crate::rakuast::implicit_signature::public_attribute_expansion(node) {
         return vec![expansion];
     }

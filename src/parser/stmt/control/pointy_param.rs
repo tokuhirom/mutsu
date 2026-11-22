@@ -29,6 +29,11 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             return Ok((after, param));
         }
     }
+    // A parameter one of the hand-written branches below read (`-> *@a`)
+    // records where it was written, as one the signature parser read does.
+    if !param.spans.param.is_some() {
+        param.spans = crate::parser::stmt::sub_param::param_spans(input, r, &param);
+    }
     Ok((r, param))
 }
 

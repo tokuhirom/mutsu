@@ -429,7 +429,15 @@ impl Interpreter {
         // reads on the same identity are expected to return a stable object
         // for.
         let is_primed = !data.assumed_positional.is_empty() || !data.assumed_named.is_empty();
-        let cache_key = (!is_primed).then(|| Self::sub_signature_cache_key(data));
+        // An empty routine whose parameters carry code binds a capture for
+        // its signature's `ACCEPTS` (`SigInfo::binder`): that signature
+        // belongs to this closure value, not to every closure of its
+        // declaration, so it is not cached per declaration.
+        let binds_for_accepts = !is_primed
+            && data.body.is_empty()
+            && crate::value::signature::params_carry_code(&data.param_defs);
+        let cache_key =
+            (!is_primed && !binds_for_accepts).then(|| Self::sub_signature_cache_key(data));
         if let Some(key) = &cache_key
             && let Some(cached) = cached_sub_signature(key)
         {
@@ -600,7 +608,10 @@ impl Interpreter {
                 ValueView::Str(s) => Some(s.to_string()),
                 _ => None,
             });
-        let info = param_defs_to_sig_info(&param_defs, return_type);
+        let mut info = param_defs_to_sig_info(&param_defs, return_type);
+        if binds_for_accepts {
+            info.binder = Some(Value::sub_value(crate::gc::Gc::new(data.clone())));
+        }
         // Build the owner sub key for parameter doc comment lookup.
         // Must match the key format the parser's doc table (`parser::decl_doc`) uses:
         // - Subs use "&name" prefix

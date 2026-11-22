@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 /// plan.  Prefixes are the execution spelling produced by the existing parser;
 /// anything outside this small flag set stays on `parse_regex_structural`,
 /// because it may carry sigspace, captures, interpolation, or package state.
-fn static_execution_policy(pattern: &str) -> Option<(bool, bool, bool, &str)> {
+pub(super) fn static_execution_policy(pattern: &str) -> Option<(bool, bool, bool, &str)> {
     fn strip_flag<'a>(source: &'a str, flag: &str) -> Option<&'a str> {
         let rest = source.strip_prefix(flag)?;
         if rest.is_empty()
@@ -1699,6 +1699,9 @@ impl Interpreter {
         let Some(tree) = value.regex_source_tree() else {
             return self.parse_regex_for_match(&pattern);
         };
+        // What this tree says about itself is decided once per tree
+        // (`regex_value_memo`), not on every match.
+        let facts = super::regex::regex_value_memo::regex_value_facts(value, tree, &pattern);
         // Array interpolation is retained in the source tree for RakuAST,
         // but the established parser resolves its elements at match time.
         // Do not cache the resulting execution plan under either the
@@ -1707,7 +1710,7 @@ impl Interpreter {
         // for `<?before @values>`: the array is nested inside a lookaround, so
         // the outer pattern can otherwise look static to the top-level cache
         // even though its inner plan was built from the old array value.
-        if tree.contains_array_interpolation() {
+        if facts.contains_array_interpolation {
             return self
                 .parse_regex_uncached(&pattern, RegexParseMode::Match)
                 .map(std::sync::Arc::new);
@@ -1719,10 +1722,10 @@ impl Interpreter {
         // value before the next match.
         // `parse_regex` keys such a plan by the values it read
         // (`regex_value_keyed_parse`), so a rebound lexical re-parses.
-        if tree.contains_regex_value_interpolation() {
+        if facts.contains_regex_value_interpolation {
             return self.parse_regex_for_match(&pattern);
         }
-        let interpolation_names = tree.interpolation_names();
+        let interpolation_names = &facts.interpolation_names;
         // The direct tree plan's VarInterp atom intentionally handles the
         // plain scalar case. Regex values, collections, and other objects
         // retain the established parser path because their interpolation has
@@ -1733,9 +1736,7 @@ impl Interpreter {
         // Case-folding and ignore-mark also stay on the parser path: their
         // value-aware Unicode expansion needs the interpolated text to join
         // the pattern's fold/remapping pass.
-        if (!interpolation_names.is_empty()
-            && static_execution_policy(&pattern)
-                .is_some_and(|(_, ignore_case, ignore_mark, _)| ignore_case || ignore_mark))
+        if (!interpolation_names.is_empty() && facts.folds)
             || interpolation_names.iter().any(|name| {
                 self.env
                     .get(name)
@@ -1759,14 +1760,22 @@ impl Interpreter {
         {
             return self.parse_regex_for_match(&pattern);
         }
+        let pkg = self.current_package_sym();
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        // The plan this tree was lowered to for this package and token
+        // generation: the same answer the plan cache below gives, without
+        // hashing the tree and the pattern to find it.
+        if let Some(plan) = facts.plan_for(pkg, tok_gen) {
+            crate::vm::vm_stats::record_regex_parse_cache(true);
+            return Some(plan);
+        }
         // Include the tree fingerprint in the existing plan-cache key. This
         // keeps the cache honest if a future parser creates two source trees
         // with the same compatibility spelling.
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         tree.hash(&mut hasher);
-        let cache_key = (self.current_package_sym(), Some(hasher.finish()));
-        let tok_gen =
-            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        let cache_key = (pkg, Some(hasher.finish()));
         let cached = REGEX_PARSE_CACHE.with(|c| {
             c.borrow()
                 .get(&cache_key)
@@ -1776,6 +1785,7 @@ impl Interpreter {
         });
         if let Some(cached) = cached {
             crate::vm::vm_stats::record_regex_parse_cache(true);
+            facts.store_plan(pkg, tok_gen, std::sync::Arc::clone(&cached));
             return Some(cached);
         }
         crate::vm::vm_stats::record_regex_parse_cache(false);
@@ -1786,7 +1796,13 @@ impl Interpreter {
         // through `parse_regex`, whose caches key by the interpolated text.
         let Some(parsed) = lower_static_execution_tree(&pattern, tree).map(std::sync::Arc::new)
         else {
-            return self.parse_regex_for_match(&pattern);
+            let parsed = self.parse_regex_for_match(&pattern);
+            if facts.parse_plan_is_static
+                && let Some(plan) = &parsed
+            {
+                facts.store_plan(pkg, tok_gen, std::sync::Arc::clone(plan));
+            }
+            return parsed;
         };
         REGEX_PARSE_CACHE.with(|c| {
             c.borrow_mut()
@@ -1794,6 +1810,7 @@ impl Interpreter {
                 .or_default()
                 .insert(pattern, (tok_gen, std::sync::Arc::clone(&parsed)));
         });
+        facts.store_plan(pkg, tok_gen, std::sync::Arc::clone(&parsed));
         Some(parsed)
     }
 }

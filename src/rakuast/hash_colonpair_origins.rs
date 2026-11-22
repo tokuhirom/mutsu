@@ -38,6 +38,20 @@ pub(super) fn derive(names: &NameScope, composer: &mut RakuAstNode) {
     *held = Value::rakuast(Box::new(contents));
 }
 
+/// `:cat2{:sub2[2, 3]}`: a colonpair's hash composer value, placed only
+/// now from the pair's own range, places its colonpairs.
+// Cost: O(n + p), as [`derive`].
+pub(super) fn composer_value(names: &NameScope, node: &mut RakuAstNode) {
+    if node.class != RakuAstClass::ColonPairValue {
+        return;
+    }
+    super::infix_origins::with_child(node, "value", |value| {
+        if value.class == RakuAstClass::CircumfixHashComposer && byte_range(value).is_some() {
+            derive(names, value);
+        }
+    });
+}
+
 /// `%(:a(1))`: place the colonpairs of `node`, a `Contextualizer::Hash` with
 /// a range, as a composer's, inside its statement.
 // Cost: O(n + p), n = length of the contextualizer's text, p = its entries.

@@ -97,7 +97,9 @@ pub(super) fn segments(
                 )
             }
             RakuAstClass::Block => super::string_block_origins::block_at(&mut segment, cursor, end),
-            RakuAstClass::ApplyPostfix => postfix_at(names, &mut segment, cursor, end),
+            RakuAstClass::ApplyPostfix => {
+                super::string_postfix_origins::postfix_at(names, &mut segment, cursor, end)
+            }
             RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
                 super::string_variable_origins::match_variable_at(&mut segment, cursor, end)
             }
@@ -177,14 +179,30 @@ fn escaped(text: &str, at: usize) -> bool {
 // Cost: O(n), n = end - cursor.
 fn written_start(next: &RakuAstNode, cursor: usize, end: usize) -> Option<usize> {
     let needle = match next.class {
-        class if super::string_variable_origins::is_variable(class) => leaf_text(next)?,
+        class if super::string_variable_origins::is_variable(class) => {
+            super::string_variable_origins::written(next)?
+        }
         RakuAstClass::Block => "{".to_string(),
-        RakuAstClass::ApplyPostfix => leaf_text(interpolated_variable(next)?)?,
+        RakuAstClass::ApplyPostfix => {
+            leaf_text(super::string_postfix_origins::interpolated_variable(next)?)?
+        }
         RakuAstClass::VarNamedCapture | RakuAstClass::VarPositionalCapture => {
             super::match_vars::interpolated_text(next)?
         }
-        // `« :a<b> »`: a colonpair among the words.
-        RakuAstClass::QuoteWordsAtom => ":".to_string(),
+        // `« :a<b> »`: a colonpair among the words; `« a "b c" »`: a
+        // quoted word.
+        RakuAstClass::QuoteWordsAtom => {
+            match super::infix_origins::child_at(next, 0).map(|atom| atom.class) {
+                Some(RakuAstClass::QuotedString) => {
+                    return super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
+                        text.find(['"', '\''])
+                            .filter(|&at| !escaped(text, at))
+                            .map(|at| cursor + at)
+                    });
+                }
+                _ => ":".to_string(),
+            }
+        }
         _ => return None,
     };
     super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
@@ -241,115 +259,6 @@ fn dedent(text: &str, indent: usize, line_start: bool) -> String {
     out
 }
 
-/// The variable an interpolated postfix application (`@x[0]`, `%h<a>`,
-/// `@x.elems()`) is applied to.
-// Cost: O(f), f = fields of `node`.
-fn interpolated_variable(node: &RakuAstNode) -> Option<&RakuAstNode> {
-    let operand = super::infix_origins::child(node, "operand")?;
-    super::string_variable_origins::is_variable(operand.class).then_some(operand)
-}
-
-/// The range of an interpolated `$x[...]` / `%h{...}` / `%h<...>` /
-/// `$x.name(...)` written at `cursor`, its variable's and, from those, its
-/// subscript's or method call's. A subscript or argument list holding a quote,
-/// a backslash or a comment, which could hide its closing bracket, is left
-/// alone.
-// Cost: O(n), n = length of the interpolation.
-fn postfix_at(
-    names: &crate::scope::NameScope,
-    segment: &mut RakuAstNode,
-    cursor: usize,
-    end: usize,
-) -> Option<(usize, usize)> {
-    let name = leaf_text(interpolated_variable(segment)?)?;
-    let postfix = super::infix_origins::child(segment, "postfix")?.class;
-    // `"@x.[]"`: the dot a subscript may be written after.
-    let mut dot = 0;
-    let to = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
-        let mut rest = text.strip_prefix(name.as_str())?;
-        if postfix != RakuAstClass::CallMethod
-            && let Some(after) = rest.strip_prefix('.')
-            && after.starts_with(['[', '{', '<'])
-        {
-            rest = after;
-            dot = 1;
-        }
-        let at = name.len() + dot;
-        let close = match postfix {
-            RakuAstClass::PostcircumfixArrayIndex => balanced(rest, '[', ']')?,
-            RakuAstClass::PostcircumfixHashIndex => balanced(rest, '{', '}')?,
-            RakuAstClass::PostcircumfixLiteralHashIndex => {
-                let inner = rest.strip_prefix('<')?;
-                if inner.starts_with('<') || inner.contains(['\\', '"', '\'']) {
-                    return None;
-                }
-                inner.find('>')? + 2
-            }
-            RakuAstClass::CallMethod => {
-                let method = rest.strip_prefix('.')?;
-                let name_len = method
-                    .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-')))
-                    .filter(|&n| n > 0)?;
-                1 + name_len + balanced(&method[name_len..], '(', ')')?
-            }
-            _ => return None,
-        };
-        Some(cursor + at + close)
-    })?;
-    super::origin::set_span(segment, SrcSpan::new(cursor, to));
-    super::infix_origins::with_child(segment, "operand", |var| {
-        super::origin::set_span(var, SrcSpan::new(cursor, cursor + name.len()))
-    });
-    if postfix == RakuAstClass::CallMethod {
-        let mut node = RakuAstNode::clone(segment);
-        super::call_origins::postfix_call(&mut node, SrcSpan::new(cursor, to));
-        *segment = node;
-    } else {
-        // The subscript's expressions were read without positions.
-        if matches!(
-            postfix,
-            RakuAstClass::PostcircumfixArrayIndex | RakuAstClass::PostcircumfixHashIndex
-        ) {
-            let open = cursor + name.len() + dot + 1;
-            let inner =
-                super::unit_source::with_text(SrcSpan::new(open, to - 1), |t| Some(t.to_string()));
-            if let Some(inner) = inner {
-                super::infix_origins::with_child(segment, "postfix", |sub| {
-                    super::infix_origins::with_child(sub, "index", |list| {
-                        super::fragment_origins::statements(names, list, &inner, open)
-                    })
-                });
-            }
-        }
-        super::list_origins::postcircumfix(segment);
-    }
-    Some((cursor, to))
-}
-
-/// The length of the bracketed text `text` starts with, `open` to its
-/// matching `close`, when nothing inside could hide a bracket.
-// Cost: O(n), n = length of the bracketed text.
-fn balanced(text: &str, open: char, close: char) -> Option<usize> {
-    if !text.starts_with(open) {
-        return None;
-    }
-    let mut depth = 0usize;
-    for (at, c) in text.char_indices() {
-        match c {
-            '"' | '\'' | '\\' | '#' | '「' | '」' => return None,
-            c if c == open => depth += 1,
-            c if c == close => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(at + c.len_utf8());
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
 /// The range of a `QuoteWordsAtom` written at `cursor` of an interpolating
 /// word quote (`« :X<x> b »`): the colonpair it holds, placed over its text
 /// with its value.
@@ -362,14 +271,31 @@ fn quote_words_atom(
 ) -> Option<(usize, usize)> {
     let pair = super::infix_origins::child_at(atom, 0)?;
     let len = super::unit_source::with_text(SrcSpan::new(cursor, end), |text| {
-        super::hash_colonpair_origins::colonpair_len(pair, text)
+        if pair.class == RakuAstClass::QuotedString {
+            quoted_word_len(text)
+        } else {
+            super::hash_colonpair_origins::colonpair_len(pair, text)
+        }
     })?;
     let span = SrcSpan::new(cursor, cursor + len);
     super::infix_origins::with_child_at(atom, 0, |pair| {
         super::origin::set_span(pair, span);
+        super::origin::quoted_text(pair, span);
         super::infix_origins::derive(names, pair);
     });
     Some((cursor, cursor + len))
+}
+
+/// The byte length of the quoted word `text` starts with (`"b c"`, `'d'`),
+/// through its closing quote. `None` when a block or an escaped quote could
+/// hide where it ends: exact or absent.
+// Cost: O(n), n = length of the word.
+fn quoted_word_len(text: &str) -> Option<usize> {
+    let quote = text.chars().next().filter(|c| matches!(c, '"' | '\''))?;
+    let body = &text[1..];
+    let close = body.find(quote)?;
+    let inner = &body[..close];
+    (!inner.contains(['\\', '{'])).then_some(close + 2)
 }
 
 /// Place the segments of a heredoc's `node`, whose body was written at

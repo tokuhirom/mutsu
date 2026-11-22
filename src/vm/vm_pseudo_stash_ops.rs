@@ -377,7 +377,7 @@ impl Interpreter {
             if self.should_hide_from_my_global_stash(&key)
                 || !matches!(value.view(), ValueView::Package(_))
                 || self.module_name_hidden_here(&key)
-                || (block_pad && self.module.loaded_modules.contains(key.as_str()))
+                || (block_pad && self.module.world.loaded_modules.contains(key.as_str()))
             {
                 continue;
             }
@@ -628,7 +628,7 @@ impl Interpreter {
     // Cost: O(1) expected, two lookups.
     pub(super) fn imported_term(&self, name: &str) -> Option<Value> {
         self.term_binding(name)
-            .or_else(|| self.enum_bare_value(name).cloned())
+            .or_else(|| self.enum_bare_value(name))
             .or_else(|| {
                 self.env()
                     .get(name)

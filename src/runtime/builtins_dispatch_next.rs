@@ -1092,8 +1092,16 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         // Try method dispatch stack — only when it is genuinely the innermost context.
+        // An exhausted mixed-in role method frame
+        // (`MethodDispatchFrame::exhausted_falls_through`, #18363) is skipped:
+        // the deferral goes on to the no-frame native bases below, and never
+        // to an enclosing method's frame.
         if innermost == Some(DispatchFrameKind::Method)
-            && !self.dispatch.method_dispatch_stack.is_empty()
+            && self
+                .dispatch
+                .method_dispatch_stack
+                .last()
+                .is_some_and(|frame| !(frame.exhausted_falls_through && frame.remaining.is_empty()))
         {
             let frame_idx = self.dispatch.method_dispatch_stack.len() - 1;
             let is_override = override_args.is_some();

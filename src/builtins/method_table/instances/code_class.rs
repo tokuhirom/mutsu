@@ -55,6 +55,12 @@ fn chain_of(class: &str) -> Option<&'static [&'static str]> {
 /// handle, a regex, or an instance of a code class (a method object).
 // Cost: O(1) on an instance-class memo hit; O(n) otherwise, n = class-name bytes.
 pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
+    static CLASSES: crate::symbol::SymbolMemo = crate::symbol::SymbolMemo::new();
+    // A lazy Match is an instance of its cursor class, read on its tag:
+    // `view()` would materialize it (#12917).
+    if let Some(class) = target.match_lazy_class_sym() {
+        return chain_at(CLASSES.get(class, instance_class_index));
+    }
     match target.view() {
         ValueView::Sub(_)
         | ValueView::WeakSub(_)
@@ -66,7 +72,6 @@ pub(crate) fn owners_of(target: &Value) -> Option<&'static [&'static str]> {
         // A mixin (`Method+{R}`) reaches the rows of the class it derives from
         // after its own and its roles' methods (ADR-14477 §2.4).
         ValueView::Instance { class_name, .. } => {
-            static CLASSES: crate::symbol::SymbolMemo = crate::symbol::SymbolMemo::new();
             chain_at(CLASSES.get(class_name, instance_class_index))
         }
         _ => None,

@@ -146,7 +146,25 @@ pub(crate) trait CompileTimeLoader {
     /// that the parser just finished, now, when running it ahead of the
     /// unit's frame is unobservable (ADR-17558 slice 5).
     fn run_begin(&mut self, begin: &crate::ast::Stmt) -> BeginOutcome;
+
+    /// The installation stamp of a `multi` candidate the parser just finished
+    /// at the program's top level: rakudo installs a candidate when the parser
+    /// reaches it, so it ranks against the candidates of the modules loaded
+    /// at parse time in source order (ADR-17558 slice 5b). `None` when the
+    /// stamp would not outlive this process's parse (a module's compile can
+    /// be precompiled) or this loader does not run the unit.
+    fn reserve_decl_order(&mut self) -> Option<u64>;
+
+    /// Whether a declaration the parser finishes at the top level is
+    /// installed for this loader's unit at parse time, as far as the order of
+    /// later `use` loads goes: the same units [`Self::reserve_decl_order`]
+    /// stamps for.
+    fn installs_at_parse(&mut self) -> bool;
 }
+
+/// The internal routine trait that carries a stamp [`reserve_decl_order`]
+/// handed out, from the parse to the candidate's registration.
+pub(crate) const PARSE_DECL_ORDER_TRAIT: &str = "__decl_order";
 
 thread_local! {
     /// The loaders whose parse is in progress on this thread, innermost last.
@@ -231,6 +249,21 @@ pub(crate) fn slang_activation(
 // Cost: O(1) when there is no loader; the phaser's analysis and run otherwise.
 pub(crate) fn run_begin(begin: &crate::ast::Stmt) -> BeginOutcome {
     with_loader(|loader| loader.run_begin(begin)).unwrap_or(BeginOutcome::NotTaken)
+}
+
+/// Ask this thread's current loader for the installation stamp of a `multi`
+/// candidate the parser just finished (see
+/// [`CompileTimeLoader::reserve_decl_order`]).
+// Cost: O(1).
+pub(crate) fn reserve_decl_order() -> Option<u64> {
+    with_loader(|loader| loader.reserve_decl_order()).flatten()
+}
+
+/// Whether this thread's current loader installs a finished top-level
+/// declaration at parse time (see [`CompileTimeLoader::installs_at_parse`]).
+// Cost: O(1).
+pub(crate) fn installs_at_parse() -> bool {
+    with_loader(|loader| loader.installs_at_parse()).unwrap_or(false)
 }
 
 /// Run `call` on this thread's innermost loader, if one is reachable: none

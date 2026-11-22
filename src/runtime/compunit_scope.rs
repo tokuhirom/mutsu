@@ -129,7 +129,7 @@ impl Interpreter {
     // Cost: O(1).
     #[inline]
     pub(crate) fn has_prelude_functions(&self) -> bool {
-        !self.module.prelude_registered_functions.is_empty()
+        !self.module.world.prelude_registered_functions.is_empty()
     }
 
     /// Whether a routine registered under `key` is visible to the code that is
@@ -145,12 +145,12 @@ impl Interpreter {
     /// Every other key answers `true` without touching the map, and the whole
     /// check short-circuits on the (overwhelmingly common) empty prelude set.
     pub(crate) fn prelude_visible_here(&self, key: Symbol) -> bool {
-        if self.module.prelude_registered_functions.is_empty()
-            || !self.module.prelude_registered_functions.contains(&key)
+        if self.module.world.prelude_registered_functions.is_empty()
+            || !self.module.world.prelude_registered_functions.contains(&key)
         {
             return true;
         }
-        match self.module.prelude_declaring_units.get(&key) {
+        match self.module.world.prelude_declaring_units.get(&key) {
             // No provenance recorded (a thread clone that predates the splice,
             // a synthetic registration): stay permissive rather than hide a
             // helper the running code legitimately declared.
@@ -229,7 +229,7 @@ impl Interpreter {
     /// `Interpreter::resolve_type_in_current_package` already uses for the
     /// analogous "prepend each enclosing package in turn" problem.
     pub(crate) fn qualified_name_visible_here(&self, name: &str) -> bool {
-        if self.module.package_declaring_units.is_empty() {
+        if self.module.world.package_declaring_units.is_empty() {
             return true;
         }
         let name_sym = crate::qualified::known_symbol(name);
@@ -265,7 +265,7 @@ impl Interpreter {
         // own `our constant S = Md::Dsr::WXF::Symbol` runs before its user's
         // `unit module Md::Dsr` is registered, and a sibling `Md::Ser` already
         // owns the prefix `Md`.
-        if let Some(&declaring) = self.module.class_declaring_units.get(name)
+        if let Some(&declaring) = self.module.world.class_declaring_units.get(name)
             && (declaring == executing || declaring == self.current_unit)
         {
             return true;
@@ -348,12 +348,12 @@ impl Interpreter {
         if let Some(sym) = Symbol::lookup(top)
             && let Some(&module) = self
                 .module
-                .module_visibility
+                .world.module_visibility
                 .module_name_providers
                 .get(&sym)
             && !self
                 .module
-                .module_visibility
+                .world.module_visibility
                 .unit_package_names
                 .contains(&sym)
         {
@@ -447,7 +447,7 @@ impl Interpreter {
             let Some(sym) = unit else { return false };
             if self
                 .module
-                .module_visibility
+                .world.module_visibility
                 .compunit_visible_packages
                 .get(&sym)
                 .is_some_and(|granted| granted.contains(top))
@@ -484,7 +484,7 @@ impl Interpreter {
         crate::qualified::package_ancestors(Symbol::intern(name)).find_map(|candidate| {
             let candidate = candidate.as_str();
             self.module
-                .package_declaring_units
+                .world.package_declaring_units
                 .get(candidate)
                 .map(|&unit| (candidate, unit))
         })
@@ -511,7 +511,7 @@ impl Interpreter {
             }
             if self
                 .module
-                .module_visibility
+                .world.module_visibility
                 .compunit_visible_packages
                 .get(&sym)
                 .is_some_and(|granted| granted.contains(prefix))
@@ -581,7 +581,7 @@ impl Interpreter {
         // `use` was the one that lost.
         let mut grant: HashSet<String> = self
             .module
-            .module_visibility
+            .world.module_visibility
             .module_granted_packages
             .get(module)
             .cloned()

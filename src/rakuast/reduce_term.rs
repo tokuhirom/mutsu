@@ -6,7 +6,8 @@
 //!   `ArgList(IntLiteral(1), IntLiteral(2))`), not one comma `ApplyListInfix`;
 //! - a metaoperator reduction carries the metaoperator node as its infix
 //!   (`[Z+]` is `MetaInfix::Zip(Infix("+"))`, `[R-]` `MetaInfix::Reverse(...)`),
-//!   where `[Z]` / `[X]` alone stay plain infixes.
+//!   where `[Z]` / `[X]` alone stay plain infixes; `[!after]` is
+//!   `MetaInfix::Negate(Infix("after"))`, `[!=]` and `[!~~]` plain infixes.
 //!
 //! mutsu keeps `Expr::Reduction { op, expr }` with the metaoperator as part of
 //! the operator string and the list as one expression, so the view splits them
@@ -23,7 +24,12 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// operator it wraps (`Z+` -> Zip over `+`), or `None` for a plain infix.
 // Cost: O(1).
 fn meta_split(op: &str) -> Option<(RakuAstClass, &str)> {
+    // `[!=]` / `[!~~]`: operators of their own, not negations of `=`/`~~`.
+    if matches!(op, "!=" | "!~~") {
+        return None;
+    }
     let class = match op.chars().next()? {
+        '!' => RakuAstClass::MetaInfixNegate,
         'Z' => RakuAstClass::MetaInfixZip,
         'X' => RakuAstClass::MetaInfixCross,
         'R' => RakuAstClass::MetaInfixReverse,
@@ -40,6 +46,7 @@ fn meta_letter(class: RakuAstClass) -> Option<char> {
         RakuAstClass::MetaInfixZip => Some('Z'),
         RakuAstClass::MetaInfixCross => Some('X'),
         RakuAstClass::MetaInfixReverse => Some('R'),
+        RakuAstClass::MetaInfixNegate => Some('!'),
         _ => None,
     }
 }

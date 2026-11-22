@@ -688,6 +688,8 @@ pub(crate) use nanbox::jit_words;
 pub(crate) mod buf_bytes;
 pub(crate) mod eqv_container_type;
 mod native_backing;
+mod uni_codes;
+pub use uni_codes::UniCodes;
 mod promise_await;
 pub(crate) mod promise_wake;
 pub(crate) mod quanthash_keys;
@@ -3339,43 +3341,47 @@ pub struct CustomTypeData {
 /// the normalized `String` instead left a Uni with no element store at all, so
 /// `nqp::elems` answered 0 and the escaper silently emitted unescaped JSON.
 ///
-/// `codes` is a `Value::Array`, which carries the usual shared `Gc` node — two
-/// clones of one Uni therefore share one codepoint store, the way two
-/// references to a VMArray do.
+/// `codes` is a packed `uint32` store ([`UniCodes`]) in its own shared `Gc`
+/// node — two clones of one Uni therefore share one codepoint store, the way
+/// two references to a VMArray do.
 #[derive(Debug, Clone)]
 pub struct UniData {
     pub form: String,
-    pub codes: Value,
+    pub(crate) codes: Gc<UniCodes>,
 }
 
 impl UniData {
-    /// The codepoints, as a plain vector.
-    pub fn codepoints(&self) -> Vec<u32> {
-        match self.codes.view() {
-            ValueView::Array(items, _) => items
-                .iter()
-                .map(|v| u32::try_from(numeric_coerce::to_int(v)).unwrap_or(0))
-                .collect(),
-            _ => Vec::new(),
+    /// A Uni in normalization form `form` holding `codes`.
+    // Cost: O(1) (the vector is moved in).
+    pub fn new(form: String, codes: Vec<u32>) -> Self {
+        UniData {
+            form,
+            codes: Gc::new(UniCodes::from_vec(codes)),
         }
+    }
+
+    /// The codepoints, as a plain vector.
+    // Cost: O(e), e = codepoints.
+    pub fn codepoints(&self) -> Vec<u32> {
+        self.codes.as_slice().to_vec()
     }
 
     /// The string these codepoints spell. A codepoint that is not a Unicode
     /// scalar value (a lone surrogate, which a VMArray of uint32 can hold but
     /// a Rust `String` cannot) becomes U+FFFD rather than disappearing.
+    // Cost: O(e), e = codepoints.
     pub fn text(&self) -> String {
-        self.codepoints()
-            .into_iter()
-            .map(|c| char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER))
+        self.codes
+            .as_slice()
+            .iter()
+            .map(|&c| char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER))
             .collect()
     }
 
     /// How many codepoints this Uni holds.
+    // Cost: O(1).
     pub fn len(&self) -> usize {
-        match self.codes.view() {
-            ValueView::Array(items, _) => items.len(),
-            _ => 0,
-        }
+        self.codes.len()
     }
 
     pub fn is_empty(&self) -> bool {

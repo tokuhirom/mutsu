@@ -444,13 +444,14 @@ pub(crate) fn lowered_assignment(expr: crate::ast::Expr) -> crate::ast::Expr {
     }
 }
 pub(crate) use expr::precedence_meta_ops::negated_glyph_relation;
+/// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
+/// Re-exported for the compiler's `Expr::Feed` arm.
+pub(crate) use primary::misc::signature_literal_expr;
 pub(crate) use stmt::assign::written_assignment;
 pub(crate) use stmt::simple::{
     fold_use_lib_path, register_module_exports_with_tags, try_add_parse_time_lib_path, use_lib_args,
 };
 pub(crate) use stmt::simple_expr_stmt::lvalue::{bind_source_metadata_expr, index_bind_expr};
-/// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
-/// Re-exported for the compiler's `Expr::Feed` arm.
 pub(crate) use stmt::sub::is_builtin_param_trait;
 
 /// Descend a feed chain to its textually-leftmost operand slot — for splitting a

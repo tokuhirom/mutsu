@@ -734,7 +734,7 @@ impl Interpreter {
             // package declares a type of that name (`MCP::JSONRPC::Error`),
             // which is what its source means.
             own
-        } else if let Some(enum_val) = self.enum_bare_value(name).cloned() {
+        } else if let Some(enum_val) = self.enum_bare_value(name) {
             // An enum key read by its bare spelling. It lives in its own key
             // namespace (`runtime::enum_bare_names`) because `$s` and the enum key
             // `s` are DIFFERENT symbols in Raku but share `env`'s sigil-less key
@@ -781,7 +781,12 @@ impl Interpreter {
             });
             let active_package_term = composed_role_term.or_else(|| {
                 frame_package
-                    .and_then(|package| self.module.module_scope_lexicals.get(package.as_str()))
+                    .and_then(|package| {
+                        self.module
+                            .world
+                            .module_scope_lexicals
+                            .get(package.as_str())
+                    })
                     .and_then(|lexicals| {
                         lexicals
                             .get(term_key.as_str())

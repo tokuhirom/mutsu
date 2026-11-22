@@ -117,12 +117,12 @@ impl Interpreter {
             let mut symbols: ValueMap = ValueMap::default();
             if let Some(subs) = self
                 .module
-                .exported_subs
+                .world.exported_subs
                 .get(module)
                 // A package-less compunit's exports are recorded under GLOBAL;
                 // the module the load attributed them to still names them
                 // (`CompUnit::Handle.export-package`, #15371).
-                .or_else(|| self.module.module_owned_exports.get(module))
+                .or_else(|| self.module.world.module_owned_exports.get(module))
             {
                 for (name, tags) in subs {
                     if tag != "ALL" && !tags.contains(tag) {
@@ -156,7 +156,7 @@ impl Interpreter {
                     symbols.insert(format!("&{name}"), code);
                 }
             }
-            if let Some(vars) = self.module.exported_vars.get(module) {
+            if let Some(vars) = self.module.world.exported_vars.get(module) {
                 for (name, tags) in vars {
                     if tag != "ALL" && !tags.contains(tag) {
                         continue;
@@ -173,18 +173,18 @@ impl Interpreter {
             let mut tags = std::collections::BTreeSet::new();
             if let Some(subs) = self
                 .module
-                .exported_subs
+                .world.exported_subs
                 .get(module)
                 // A package-less compunit's exports are recorded under GLOBAL;
                 // the module the load attributed them to still names them
                 // (`CompUnit::Handle.export-package`, #15371).
-                .or_else(|| self.module.module_owned_exports.get(module))
+                .or_else(|| self.module.world.module_owned_exports.get(module))
             {
                 for tagset in subs.values() {
                     tags.extend(tagset.iter().cloned());
                 }
             }
-            if let Some(vars) = self.module.exported_vars.get(module) {
+            if let Some(vars) = self.module.world.exported_vars.get(module) {
                 for tagset in vars.values() {
                     tags.extend(tagset.iter().cloned());
                 }
@@ -282,6 +282,7 @@ impl Interpreter {
             .module
             .module_toplevel
             .enum_keys
+            .read()
             .get("GLOBAL")
             .into_iter()
             .flat_map(|keys| keys.iter())
@@ -348,7 +349,7 @@ impl Interpreter {
         // stored in the export-variable table rather than the routine
         // registry.  They are still ordinary members of the defining module's
         // stash (`Module::<&alias>`), so expose them alongside exported subs.
-        if let Some(vars) = self.module.exported_vars.get(package_name.as_str()) {
+        if let Some(vars) = self.module.world.exported_vars.get(package_name.as_str()) {
             for name in vars.keys() {
                 if let Some(value) = self.exported_var_value(&package_name, name) {
                     symbols
@@ -500,7 +501,7 @@ impl Interpreter {
         // custom EXPORT hook is running, before its module-qualified stash is
         // available through a lexical package binding.
         if is_lowercase_export_stash {
-            for (module, vars) in self.module.exported_vars.iter() {
+            for (module, vars) in self.module.world.exported_vars.iter() {
                 for name in vars.keys() {
                     if let Some(value) = self.exported_var_value(module, name) {
                         let value = if let (true, ValueView::Sub(data)) =
@@ -533,11 +534,11 @@ impl Interpreter {
         // `EXPORT` even though `Foo::EXPORT::ALL` resolves when spelled whole.
         if self
             .module
-            .exported_subs
+            .world.exported_subs
             .contains_key(package_name.as_str())
             || self
                 .module
-                .exported_vars
+                .world.exported_vars
                 .contains_key(package_name.as_str())
         {
             symbols.entry("EXPORT".to_string()).or_insert_with(|| {
@@ -586,8 +587,8 @@ impl Interpreter {
         for class_name in self.registry().classes.keys() {
             let class_short = crate::qualified::last_segment(Symbol::intern(class_name)).as_str();
             if (package_name == "MY" || pkg_is_global)
-                && (self.module.need_hidden_classes.contains(class_name)
-                    || self.module.need_hidden_classes.contains(class_short))
+                && (self.module.world.need_hidden_classes.contains(class_name)
+                    || self.module.world.need_hidden_classes.contains(class_short))
             {
                 continue;
             }
@@ -703,8 +704,8 @@ impl Interpreter {
             }
             let decl_short = crate::qualified::last_segment(Symbol::intern(package_decl)).as_str();
             if (package_name == "MY" || pkg_is_global)
-                && (self.module.need_hidden_classes.contains(package_decl)
-                    || self.module.need_hidden_classes.contains(decl_short))
+                && (self.module.world.need_hidden_classes.contains(package_decl)
+                    || self.module.world.need_hidden_classes.contains(decl_short))
             {
                 continue;
             }
@@ -732,8 +733,8 @@ impl Interpreter {
             });
         }
 
-        if self.module.exported_subs.contains_key(&package_name)
-            || self.module.exported_vars.contains_key(&package_name)
+        if self.module.world.exported_subs.contains_key(&package_name)
+            || self.module.world.exported_vars.contains_key(&package_name)
         {
             symbols.entry("EXPORT".to_string()).or_insert_with(|| {
                 Value::package(Symbol::intern(&Self::qualify_stash_name(
@@ -769,7 +770,7 @@ impl Interpreter {
         let key = Self::self_qualified_member(key, module).unwrap_or(key);
         let is_scalar = self
             .module
-            .exported_scalar_vars
+            .world.exported_scalar_vars
             .get(module)
             .is_some_and(|names| names.contains(name));
         if is_scalar {

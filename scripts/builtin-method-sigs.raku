@@ -18,7 +18,9 @@
 my %seen;
 my %groups;
 for CORE::.keys.sort -> $name {
-    my $t = CORE::{$name};
+    # Bound, not assigned: assigning `Nil` would store `Any`, and Nil's own
+    # candidates (`Nil.Str`, `Nil.uc`) would never be listed.
+    my $t := CORE::{$name};
     next unless $t.HOW ~~ Metamodel::ClassHOW | Metamodel::ParametricRoleHOW
         | Metamodel::ParametricRoleGroupHOW | Metamodel::EnumHOW;
     my $tn = $t.^name;
@@ -26,9 +28,9 @@ for CORE::.keys.sort -> $name {
     # A role's own method table holds its protos without their candidates;
     # the pun composes them (`Buf.allocate` lists Blob's and Buf's).
     # A role with stubbed methods cannot be punned (`Awaitable`): skip it.
-    my $mt = $t;
+    my $mt := $t;
     if $t.HOW ~~ Metamodel::ParametricRoleHOW | Metamodel::ParametricRoleGroupHOW {
-        $mt = try $t.^pun;
+        $mt := try $t.^pun;
         next if $!;
     }
     for $mt.^methods(:local) -> $m {

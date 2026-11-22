@@ -816,6 +816,12 @@ impl Interpreter {
         kind: ArrayKind,
         seen_hashes: &mut Vec<usize>,
     ) {
+        // A leaf or a lazy Match (an action's `$/` sits in the env this runs
+        // over) holds no array: skip it on its tag, since `view()` would
+        // materialize the Match (#12917).
+        if v.is_scalar_leaf() || v.is_lazy_match_value() {
+            return;
+        }
         if matches!(
             v.view(),
             ValueView::Array(inner_arc, _) if crate::gc::Gc::as_ptr(&inner_arc) as usize == old_ptr

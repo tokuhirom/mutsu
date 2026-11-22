@@ -210,6 +210,13 @@ impl Interpreter {
         named: NamedArgs,
     ) -> bool {
         for (pos_idx, raw) in args.iter().enumerate() {
+            // A lazy Match keys by its class, as its materialized `Instance`
+            // would, read on its tag: each `view()` below would materialize
+            // it (#12917).
+            if let Some(class) = raw.match_lazy_class_sym() {
+                keys.push(class);
+                continue;
+            }
             // A `VarRef` (a variable passed as an argument) dispatches on the
             // *source variable's declared type* as well as on the value's own
             // type: `unwrap_varref_for_dispatch` feeds that declared type into

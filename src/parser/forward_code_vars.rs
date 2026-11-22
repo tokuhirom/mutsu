@@ -176,6 +176,11 @@ impl<'ast> Visit<'ast> for ClosureNames<'_> {
             {
                 self.found = true;
             }
+            // A bare `decode` term (no argument list) calls `&decode` too
+            // (CBOR::Simple's decoders).
+            Expr::BareWord(name) if self.closure_depth > 0 && name == self.bare => {
+                self.found = true;
+            }
             Expr::AnonSub { .. }
             | Expr::AnonSubParams { .. }
             | Expr::Lambda { .. }

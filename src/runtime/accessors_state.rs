@@ -1812,6 +1812,7 @@ impl Interpreter {
                 // `Wrapper` entry at all).
                 in_wrapper: true,
                 lazy_tail,
+                exhausted_falls_through: false,
             });
         Ok(())
     }
@@ -1850,6 +1851,7 @@ impl Interpreter {
                 arg_sources,
                 in_wrapper: true,
                 lazy_tail: None,
+                exhausted_falls_through: false,
             });
     }
 

@@ -612,7 +612,7 @@ impl Interpreter {
         let Some(key) = key else {
             return true;
         };
-        let Some(&declaring_unit) = self.module.class_declaring_units.get(&key) else {
+        let Some(&declaring_unit) = self.module.world.class_declaring_units.get(&key) else {
             // Roles and enums do not currently record a declaring unit. Keep
             // their existing behavior until they have equivalent provenance.
             return true;
@@ -642,7 +642,7 @@ impl Interpreter {
             }
             // Only the running unit's own declarations: a type another unit
             // declared (a module this one imported) is not in this pad.
-            let Some(&declaring_unit) = self.module.class_declaring_units.get(item) else {
+            let Some(&declaring_unit) = self.module.world.class_declaring_units.get(item) else {
                 continue;
             };
             if self
@@ -695,10 +695,11 @@ impl Interpreter {
             && current_scope
                 .iter()
                 .any(|(n, inv)| n == name && *inv == invocation)
-            && let Some(ValueView::Enum {
+            && let Some(prev) = self.enum_bare_value(name)
+            && let ValueView::Enum {
                 enum_type: prev_type,
                 ..
-            }) = self.enum_bare_value(name).map(Value::view)
+            } = prev.view()
             && prev_type.resolve() != enum_type
         {
             crate::runtime::cow_table_mut(&mut self.types.poisoned_enum_aliases)

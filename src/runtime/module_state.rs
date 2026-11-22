@@ -17,12 +17,14 @@ pub(crate) type ExportTagTable =
 /// (`set-unit`), its name, and its value.
 pub(crate) type GeneratedLexical = (bool, String, Value);
 
-pub(crate) struct ModuleState {
-    /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
-    /// imported into the current lexical scope via `use Module`. Used to
-    /// preseed the parser when EVAL is called so that imported operators
-    /// remain visible, but non-exported operators from loaded modules do not.
-    pub(crate) imported_operator_names: std::sync::Arc<HashSet<String>>,
+/// What the program knows about the compunits it has loaded: which modules
+/// are loaded, what each one registered, exports and declared, and the
+/// per-unit visibility tables an import consults. A compunit loads once per
+/// process in rakudo, so this is program-world state (ADR-17216 slice 3);
+/// it is gathered here, apart from the per-load stacks and the lexical
+/// import state of [`ModuleState`], so it can be shared by every thread.
+#[derive(Clone, Default)]
+pub(crate) struct ModuleWorld {
     /// Per loaded module, the nested packages it publishes under their short
     /// name, `(short, package)` (`package Gender { enum Gender ... }` in
     /// `unit module Enums` publishes `Gender` = `Enums::Gender`, #13940).
@@ -32,28 +34,6 @@ pub(crate) struct ModuleState {
     /// `(directive, declarator)` (`DECLARE`, `pokemon`), which
     /// `CompUnit::Handle.export-how-package` publishes (#14173).
     pub(crate) exporthow_declares: std::sync::Arc<HashMap<String, Vec<(String, String)>>>,
-    /// The compilation units that imported an operator candidate family,
-    /// keyed by operator name and then by the candidates' declaring unit. An
-    /// operator candidate that a `use` imported is visible only to its
-    /// declaring unit and to these importers (#9944); see
-    /// `runtime/operator_scope.rs`.
-    ///
-    /// An `rustc_hash` map: [`Interpreter::operator_has_import_scope_sym`]
-    /// probes it on every function call once any unit imported an operator
-    /// (`use Test` does), and std's SipHash made that probe ~65 instructions
-    /// for a `Symbol` that is already a small integer (#7565).
-    pub(crate) operator_import_units:
-        std::sync::Arc<rustc_hash::FxHashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
-    /// Bumped whenever `operator_import_units` gains an entry, so a memo of an
-    /// operator-visibility answer (`bare_multi_plan_cache`) can key on it.
-    pub(crate) operator_import_gen: u64,
-    /// Imports of a candidate family that carried no `operator_import_units`
-    /// record yet (same shape). A family is scoped lazily -- when a module it
-    /// declared is first used as the importer of a nested load -- and the
-    /// record must then start with the units that already imported it, or
-    /// they would lose a family they had a perfectly good import of.
-    pub(crate) unscoped_import_units:
-        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
     /// Package-less top-level routines a loaded compunit declared but did NOT
     /// export, keyed by that compunit's unit symbol and then by routine name.
     ///
@@ -101,63 +81,6 @@ pub(crate) struct ModuleState {
     /// and belong to no module's export map, so they are ambient rather than
     /// compunit-private and are never secluded.
     pub(crate) prelude_sub_names: std::sync::Arc<HashSet<Symbol>>,
-    pub(crate) lib_paths: std::sync::Arc<Vec<String>>,
-    /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
-    /// alongside the binary). Searched *after* every `lib_paths` entry so the
-    /// bundle is the lowest-priority source — an explicit `-I`/`MUTSULIB` path,
-    /// a project-local module, or an `mzef`-installed (site-repo) version all
-    /// shadow it. This is the batteries "floor + independent-update" mechanism
-    /// (BATTERIES.md §3/§6). Resolved once at startup (exe-relative, or via
-    /// `MUTSU_BUNDLE_DIR`).
-    pub(crate) bundled_lib_paths: std::sync::Arc<Vec<String>>,
-    /// Set while `require` resolves a module: a missing `Test::`-namespace
-    /// module must surface as a catchable X::CompUnit::UnsatisfiedDependency
-    /// instead of the silent no-op `use Test::Util` relies on.
-    pub(crate) require_propagates_missing_module: bool,
-    /// Distribution selectors (`:ver`/`:auth`/`:api`) of the `use` currently
-    /// being resolved, split off the module name by `use_module_with_tags` and
-    /// consulted by `resolve_module_path` to pick among installed dists that
-    /// provide the same short name. Saved/restored around each load so a
-    /// transitive `use` resolves with its own (usually absent) selectors.
-    /// The `-M` modules of the command line, re-announced to the parser
-    /// before the mainline parse so their exports are lexically in scope
-    /// (`set_compiling_options`, `run`).
-    pub(crate) preload_modules: Vec<String>,
-    pub(crate) pending_dist_selectors: Vec<(String, String)>,
-    /// Arguments passed to the `use` currently being loaded (`use Foo "a", "b"`
-    /// / `use Foo <a b c>`), evaluated by the caller and pushed for the
-    /// `UseModule` op. Consumed once by `load_module`, which snapshots them into
-    /// a local before running the module body (so a transitive `use` inside the
-    /// body cannot see them) and hands them to the module's `sub EXPORT`.
-    pub(crate) pending_use_export_args: Option<Vec<Value>>,
-    /// An `&EXPORT` sub a module *imported* from another module's EXPORT map
-    /// (the Slangify pattern: `sub EXPORT($grammar, ...) { ...; Map.new:
-    /// '&EXPORT' => &inner-EXPORT }`), keyed by the name of the module that was
-    /// loading when the import happened. `apply_module_export` consumes the
-    /// entry: the imported sub becomes that module's own EXPORT for *its*
-    /// importers, called with their `use` arguments.
-    pub(crate) pending_inner_export_subs: ValueMap,
-    /// Declarations a running `sub EXPORT` asked to merge into its importer's
-    /// scope (`$*CU.merge-generated-lexical-declaration`, CompUnit::Util's
-    /// `set-unit` / `set-lexpad`, #15371): installed with the hook's returned
-    /// map once the hook is done and the importer's env is back. The flag is
-    /// whether the declaration targets the block the `use` is in (`set-lexpad`)
-    /// rather than the importing unit (`set-unit`).
-    pub(crate) pending_generated_lexicals: Vec<GeneratedLexical>,
-    /// The `$*R.current-scope` a BEGIN phaser of a nested block answers, one
-    /// per block id (`CheckPhaserStart::scope`), so every BEGIN of the block
-    /// sees the same scope object (#17515).
-    pub(crate) begin_block_scopes: HashMap<u32, Value>,
-    /// Each loaded module's EXPORT (own `sub EXPORT` or a Slangify-style
-    /// imported one), remembered so a re-`use` of the already-loaded module
-    /// can run it again with the new import's arguments.
-    pub(crate) module_export_defs:
-        HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
-    /// Each loaded package-less module's own `multi`/`proto` candidates, kept
-    /// so a re-`use` can put them back for the module's `sub EXPORT` after an
-    /// import-scope pop dropped them (#11246).
-    pub(crate) module_own_families:
-        HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
     pub(crate) loaded_modules: std::sync::Arc<HashSet<String>>,
     /// The lexical pad `CompUnit::Handle.unit` answers for each loaded unit,
     /// built on the first ask so every later ask returns the same `Hash` and
@@ -247,28 +170,9 @@ pub(crate) struct ModuleState {
     /// the stack (see `run_block_raw`), and nested module loads stack full copies,
     /// so keeping rarely-used state off the inline struct preserves stack budget.
     pub(crate) cur_repo: Box<CurRepoState>,
-    /// Package names declared via `package X {}` during the current module
-    /// loading chain. Saved/restored around each top-level `use_module_with_tags`
-    /// call so it only contains packages from the current loading chain.
-    pub(crate) chain_declared_packages: std::sync::Arc<HashSet<String>>,
-    /// What a loaded module's mainline declares directly at its top level,
-    /// kept off the env the module body ran in (ADR-0084 §2 groups 1 and 2),
-    /// and the depths the executing mainline started at. See
-    /// `runtime::toplevel_callable_ids` and `runtime::toplevel_package_symbols`.
-    pub(crate) module_toplevel: toplevel_callable_ids::ModuleToplevel,
     /// Maps module names to the set of packages declared during their loading.
     /// Used to propagate package declarations when a module is re-used.
     pub(crate) module_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
-    pub(crate) module_load_stack: Vec<String>,
-    /// The current distribution context ($?DISTRIBUTION).
-    pub(crate) current_distribution: Option<Value>,
-    /// `routine_stack` height when the in-progress module load established
-    /// `current_distribution`. Frames at or above it were pushed by code the
-    /// loading module called, so they are the ones whose own distribution owns a
-    /// `%?RESOURCES` they read; frames below belong to whoever triggered the
-    /// load and must not shadow the module being loaded. See
-    /// `build_resources_for_package`.
-    pub(crate) current_distribution_frame_floor: usize,
     /// Maps package names to their distribution context.
     /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
     pub(crate) package_distributions: std::sync::Arc<ValueMap>,
@@ -292,37 +196,6 @@ pub(crate) struct ModuleState {
     /// stays here so the declaring module's own routines and methods still read
     /// it; see `collect_unit_package_scope_names`.
     pub(crate) module_scope_lexicals: std::sync::Arc<PackageLexicals>,
-    /// Names the module currently being loaded imported from another module,
-    /// accumulated by `import_module` and folded into `module_scope_lexicals`
-    /// when the load finishes. The env diff `load_module` takes cannot see these:
-    /// re-importing a name a *previously* loaded module already installed adds
-    /// nothing to `env`, so `DBDish::mysql::StatementHandle`'s `use
-    /// DBDish::mysql::Native` looked like a no-op even though `intptr` is part of
-    /// its lexical scope. Saved/restored around each nested load.
-    pub(crate) module_imported_names: Vec<(String, Value, Option<Value>)>,
-    /// Sigilless terms a `sub EXPORT` hook installed while the module being
-    /// loaded imported it (see `install_export_symbol`). Folded into that
-    /// module's `module_scope_lexicals` when its load finishes, but never into
-    /// `module_imported_lexical_names`, whose entries beat a same-keyed
-    /// `$scalar`. Saved/restored around each nested load (#9389).
-    pub(crate) module_export_terms: Vec<(String, Value)>,
-    /// Package-qualified terms a loaded module's `sub EXPORT` hook handed to
-    /// the module that `use`d it, as `(importer, key, value)`. The hook runs
-    /// inside the hook module's own load, so `module_export_terms` (the
-    /// innermost load's list) would file them under the wrong module; the
-    /// importer drains its own rows when its load finishes.
-    pub(crate) importer_export_terms: Vec<(String, String, Value)>,
-    /// The env keys of the variables, constants and types the module being
-    /// loaded binds in its mainline's pad for its own top-level `use`s
-    /// (`lexical_imports::MODULE_UNIT_MARK`). When the load finishes they
-    /// move into the module's compunit lexicals, as its own file-scope `my`s
-    /// do. Saved/restored around each nested load.
-    pub(crate) module_unit_bound_imports: Vec<crate::symbol::Symbol>,
-    /// Imported bare names recorded for each module owner. This is narrower
-    /// than `module_scope_lexicals`: the latter also contains a module's own
-    /// `our`/class-body names, while the VM's env fallback must only redirect
-    /// aliases imported from a nested module.
-    pub(crate) module_imported_lexical_names: std::sync::Arc<PackageKeyed<bool>>,
     /// The module name owning each loaded source file. Ordinary (non-`unit`)
     /// module files register top-level routines under `GLOBAL`, but their
     /// private file-scope names remain lexical to the module.
@@ -332,9 +205,6 @@ pub(crate) struct ModuleState {
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
     pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
-    /// The last answer of `Interpreter::lexical_package_for_frame`, valid while
-    /// the unit-scope epoch is unchanged (#15048).
-    pub(crate) lexical_package_memo: std::cell::Cell<Option<LexicalPackageMemo>>,
     /// Declared unit package by requested module path. A module file may be
     /// loaded as `A::B` while declaring `unit module A::C`.
     pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
@@ -376,16 +246,173 @@ pub(crate) struct ModuleState {
     /// Populated during `load_module` so that `import_module` can perform
     /// tag validation and raise `X::Import::NoSuchTag` for bad tags.
     pub(crate) unit_module_exported_subs: std::sync::Arc<ExportTagTable>,
-    /// Stack of unit-module names currently being loaded; used by
-    /// `register_exported_sub` to mirror GLOBAL registrations into
-    /// `unit_module_exported_subs`.
-    pub(crate) unit_module_loading_stack: Vec<String>,
     /// The `EXPORT` hook routine(s) each loaded compunit declared, by module
     /// name: what `CompUnit::Handle.export-sub` answers once the load is over
     /// and the registry's `GLOBAL::EXPORT` has been handed back to the
     /// enclosing compunit (#15371).
     pub(crate) module_export_hooks:
         std::sync::Arc<HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>,
+    /// Exports each module registered while it was the module currently being
+    /// loaded (attributed via `module_load_stack`), mapping module -> name ->
+    /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
+    /// export ever hoisted, this correctly attributes an export to the module
+    /// that declared it. The `use MOD` tag-filter consults this so it only
+    /// hides MOD's *own* exports and never a symbol MOD imported from a
+    /// transitively-`use`d module (which MOD's methods must still resolve).
+    pub(crate) module_owned_exports: std::sync::Arc<ExportTagTable>,
+    /// Qualified classes and roles declared by each module's own body. A
+    /// module without a `unit` declarator may still declare a type in an
+    /// unrelated package (for example `class Test::Handle`); that package is
+    /// visible to a direct importer, but declarations from the module's
+    /// dependencies are not. The load stack lets registration attribute the
+    /// type to the correct compunit while nested modules are loading.
+    pub(crate) module_owned_types:
+        std::sync::Arc<HashMap<String, runtime_module::ModuleOwnedTypes>>,
+}
+
+
+pub(crate) struct ModuleState {
+    /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
+    /// imported into the current lexical scope via `use Module`. Used to
+    /// preseed the parser when EVAL is called so that imported operators
+    /// remain visible, but non-exported operators from loaded modules do not.
+    pub(crate) imported_operator_names: std::sync::Arc<HashSet<String>>,
+    /// The compilation units that imported an operator candidate family,
+    /// keyed by operator name and then by the candidates' declaring unit. An
+    /// operator candidate that a `use` imported is visible only to its
+    /// declaring unit and to these importers (#9944); see
+    /// `runtime/operator_scope.rs`.
+    ///
+    /// An `rustc_hash` map: [`Interpreter::operator_has_import_scope_sym`]
+    /// probes it on every function call once any unit imported an operator
+    /// (`use Test` does), and std's SipHash made that probe ~65 instructions
+    /// for a `Symbol` that is already a small integer (#7565).
+    pub(crate) operator_import_units:
+        std::sync::Arc<rustc_hash::FxHashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
+    /// Bumped whenever `operator_import_units` gains an entry, so a memo of an
+    /// operator-visibility answer (`bare_multi_plan_cache`) can key on it.
+    pub(crate) operator_import_gen: u64,
+    /// Imports of a candidate family that carried no `operator_import_units`
+    /// record yet (same shape). A family is scoped lazily -- when a module it
+    /// declared is first used as the importer of a nested load -- and the
+    /// record must then start with the units that already imported it, or
+    /// they would lose a family they had a perfectly good import of.
+    pub(crate) unscoped_import_units:
+        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
+    pub(crate) lib_paths: std::sync::Arc<Vec<String>>,
+    /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
+    /// alongside the binary). Searched *after* every `lib_paths` entry so the
+    /// bundle is the lowest-priority source — an explicit `-I`/`MUTSULIB` path,
+    /// a project-local module, or an `mzef`-installed (site-repo) version all
+    /// shadow it. This is the batteries "floor + independent-update" mechanism
+    /// (BATTERIES.md §3/§6). Resolved once at startup (exe-relative, or via
+    /// `MUTSU_BUNDLE_DIR`).
+    pub(crate) bundled_lib_paths: std::sync::Arc<Vec<String>>,
+    /// Set while `require` resolves a module: a missing `Test::`-namespace
+    /// module must surface as a catchable X::CompUnit::UnsatisfiedDependency
+    /// instead of the silent no-op `use Test::Util` relies on.
+    pub(crate) require_propagates_missing_module: bool,
+    /// Distribution selectors (`:ver`/`:auth`/`:api`) of the `use` currently
+    /// being resolved, split off the module name by `use_module_with_tags` and
+    /// consulted by `resolve_module_path` to pick among installed dists that
+    /// provide the same short name. Saved/restored around each load so a
+    /// transitive `use` resolves with its own (usually absent) selectors.
+    /// The `-M` modules of the command line, re-announced to the parser
+    /// before the mainline parse so their exports are lexically in scope
+    /// (`set_compiling_options`, `run`).
+    pub(crate) preload_modules: Vec<String>,
+    pub(crate) pending_dist_selectors: Vec<(String, String)>,
+    /// Arguments passed to the `use` currently being loaded (`use Foo "a", "b"`
+    /// / `use Foo <a b c>`), evaluated by the caller and pushed for the
+    /// `UseModule` op. Consumed once by `load_module`, which snapshots them into
+    /// a local before running the module body (so a transitive `use` inside the
+    /// body cannot see them) and hands them to the module's `sub EXPORT`.
+    pub(crate) pending_use_export_args: Option<Vec<Value>>,
+    /// An `&EXPORT` sub a module *imported* from another module's EXPORT map
+    /// (the Slangify pattern: `sub EXPORT($grammar, ...) { ...; Map.new:
+    /// '&EXPORT' => &inner-EXPORT }`), keyed by the name of the module that was
+    /// loading when the import happened. `apply_module_export` consumes the
+    /// entry: the imported sub becomes that module's own EXPORT for *its*
+    /// importers, called with their `use` arguments.
+    pub(crate) pending_inner_export_subs: ValueMap,
+    /// Declarations a running `sub EXPORT` asked to merge into its importer's
+    /// scope (`$*CU.merge-generated-lexical-declaration`, CompUnit::Util's
+    /// `set-unit` / `set-lexpad`, #15371): installed with the hook's returned
+    /// map once the hook is done and the importer's env is back. The flag is
+    /// whether the declaration targets the block the `use` is in (`set-lexpad`)
+    /// rather than the importing unit (`set-unit`).
+    pub(crate) pending_generated_lexicals: Vec<GeneratedLexical>,
+    /// The `$*R.current-scope` a BEGIN phaser of a nested block answers, one
+    /// per block id (`CheckPhaserStart::scope`), so every BEGIN of the block
+    /// sees the same scope object (#17515).
+    pub(crate) begin_block_scopes: HashMap<u32, Value>,
+    /// Each loaded module's EXPORT (own `sub EXPORT` or a Slangify-style
+    /// imported one), remembered so a re-`use` of the already-loaded module
+    /// can run it again with the new import's arguments.
+    pub(crate) module_export_defs:
+        HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
+    /// Each loaded package-less module's own `multi`/`proto` candidates, kept
+    /// so a re-`use` can put them back for the module's `sub EXPORT` after an
+    /// import-scope pop dropped them (#11246).
+    pub(crate) module_own_families:
+        HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
+    /// Package names declared via `package X {}` during the current module
+    /// loading chain. Saved/restored around each top-level `use_module_with_tags`
+    /// call so it only contains packages from the current loading chain.
+    pub(crate) chain_declared_packages: std::sync::Arc<HashSet<String>>,
+    /// What a loaded module's mainline declares directly at its top level,
+    /// kept off the env the module body ran in (ADR-0084 §2 groups 1 and 2),
+    /// and the depths the executing mainline started at. See
+    /// `runtime::toplevel_callable_ids` and `runtime::toplevel_package_symbols`.
+    pub(crate) module_toplevel: toplevel_callable_ids::ModuleToplevel,
+    pub(crate) module_load_stack: Vec<String>,
+    /// The current distribution context ($?DISTRIBUTION).
+    pub(crate) current_distribution: Option<Value>,
+    /// `routine_stack` height when the in-progress module load established
+    /// `current_distribution`. Frames at or above it were pushed by code the
+    /// loading module called, so they are the ones whose own distribution owns a
+    /// `%?RESOURCES` they read; frames below belong to whoever triggered the
+    /// load and must not shadow the module being loaded. See
+    /// `build_resources_for_package`.
+    pub(crate) current_distribution_frame_floor: usize,
+    /// Names the module currently being loaded imported from another module,
+    /// accumulated by `import_module` and folded into `module_scope_lexicals`
+    /// when the load finishes. The env diff `load_module` takes cannot see these:
+    /// re-importing a name a *previously* loaded module already installed adds
+    /// nothing to `env`, so `DBDish::mysql::StatementHandle`'s `use
+    /// DBDish::mysql::Native` looked like a no-op even though `intptr` is part of
+    /// its lexical scope. Saved/restored around each nested load.
+    pub(crate) module_imported_names: Vec<(String, Value, Option<Value>)>,
+    /// Sigilless terms a `sub EXPORT` hook installed while the module being
+    /// loaded imported it (see `install_export_symbol`). Folded into that
+    /// module's `module_scope_lexicals` when its load finishes, but never into
+    /// `module_imported_lexical_names`, whose entries beat a same-keyed
+    /// `$scalar`. Saved/restored around each nested load (#9389).
+    pub(crate) module_export_terms: Vec<(String, Value)>,
+    /// Package-qualified terms a loaded module's `sub EXPORT` hook handed to
+    /// the module that `use`d it, as `(importer, key, value)`. The hook runs
+    /// inside the hook module's own load, so `module_export_terms` (the
+    /// innermost load's list) would file them under the wrong module; the
+    /// importer drains its own rows when its load finishes.
+    pub(crate) importer_export_terms: Vec<(String, String, Value)>,
+    /// The env keys of the variables, constants and types the module being
+    /// loaded binds in its mainline's pad for its own top-level `use`s
+    /// (`lexical_imports::MODULE_UNIT_MARK`). When the load finishes they
+    /// move into the module's compunit lexicals, as its own file-scope `my`s
+    /// do. Saved/restored around each nested load.
+    pub(crate) module_unit_bound_imports: Vec<crate::symbol::Symbol>,
+    /// Imported bare names recorded for each module owner. This is narrower
+    /// than `module_scope_lexicals`: the latter also contains a module's own
+    /// `our`/class-body names, while the VM's env fallback must only redirect
+    /// aliases imported from a nested module.
+    pub(crate) module_imported_lexical_names: std::sync::Arc<PackageKeyed<bool>>,
+    /// The last answer of `Interpreter::lexical_package_for_frame`, valid while
+    /// the unit-scope epoch is unchanged (#15048).
+    pub(crate) lexical_package_memo: std::cell::Cell<Option<LexicalPackageMemo>>,
+    /// Stack of unit-module names currently being loaded; used by
+    /// `register_exported_sub` to mirror GLOBAL registrations into
+    /// `unit_module_exported_subs`.
+    pub(crate) unit_module_loading_stack: Vec<String>,
     /// The package a `use`/`need` must import INTO, when the statement is run
     /// by a body that is not a compunit mainline: a role's deferred body, or an
     /// `augment` body. Both re-point `current_package` at the declaring package
@@ -441,22 +468,6 @@ pub(crate) struct ModuleState {
     /// module's, so it runs against this env instead and its writes land here
     /// (#16968).
     pub(crate) export_hook_importer_envs: Vec<(usize, crate::env::Env)>,
-    /// Exports each module registered while it was the module currently being
-    /// loaded (attributed via `module_load_stack`), mapping module -> name ->
-    /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
-    /// export ever hoisted, this correctly attributes an export to the module
-    /// that declared it. The `use MOD` tag-filter consults this so it only
-    /// hides MOD's *own* exports and never a symbol MOD imported from a
-    /// transitively-`use`d module (which MOD's methods must still resolve).
-    pub(crate) module_owned_exports: std::sync::Arc<ExportTagTable>,
-    /// Qualified classes and roles declared by each module's own body. A
-    /// module without a `unit` declarator may still declare a type in an
-    /// unrelated package (for example `class Test::Handle`); that package is
-    /// visible to a direct importer, but declarations from the module's
-    /// dependencies are not. The load stack lets registration attribute the
-    /// type to the correct compunit while nested modules are loading.
-    pub(crate) module_owned_types:
-        std::sync::Arc<HashMap<String, runtime_module::ModuleOwnedTypes>>,
     /// When true, `is export` trait is ignored (used by `CompUnit::Repository.need`
     /// to load without importing; the `need` statement itself registers exports).
     pub(crate) suppress_exports: bool,
@@ -738,6 +749,10 @@ pub(crate) struct ModuleState {
     /// Populated at export-symbol installation and never removed, mirroring
     /// `export_amp_override_names`.
     pub(crate) export_term_override_names: std::collections::HashSet<Symbol>,
+    /// Load-time knowledge about the loaded compunits: which modules are
+    /// loaded, what each one exports and registered, and the per-unit
+    /// visibility tables (ADR-17216 slice 3; see [`ModuleWorld`]).
+    pub(crate) world: ModuleWorld,
 }
 
 /// One memoised `lexical_package_for_frame` answer: the question
@@ -755,20 +770,11 @@ pub(crate) struct LexicalPackageMemo {
 impl ModuleState {
     pub(crate) fn new() -> Self {
         Self {
+            world: ModuleWorld::default(),
             imported_operator_names: Default::default(),
-            published_outer_packages: Default::default(),
-            exporthow_declares: Default::default(),
             operator_import_units: Default::default(),
             unscoped_import_units: Default::default(),
             operator_import_gen: 0,
-            unit_private_routines: Default::default(),
-            unit_private_names: Default::default(),
-            class_declaring_units: Default::default(),
-            package_declaring_units: Default::default(),
-            unit_export_namespaces: Default::default(),
-            package_export_namespaces: Default::default(),
-            module_visibility: Default::default(),
-            prelude_sub_names: Default::default(),
             lib_paths: Default::default(),
             bundled_lib_paths: Interpreter::bundled_lib_paths_shared(),
             require_propagates_missing_module: false,
@@ -780,51 +786,22 @@ impl ModuleState {
             begin_block_scopes: HashMap::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
-            loaded_modules: Default::default(),
-            loaded_unit_pads: HashMap::new(),
-            module_registered_functions: Default::default(),
-            module_registered_protos: Default::default(),
-            packages_with_deferred_use_imports: Default::default(),
-            prelude_registered_functions: Default::default(),
-            prelude_declaring_units: Default::default(),
-            module_package_globals: Default::default(),
-            named_repositories: Default::default(),
-            need_hidden_classes: Default::default(),
-            module_registered_types: Default::default(),
-            cur_repo: Box::new(CurRepoState::default()),
             chain_declared_packages: Default::default(),
             module_toplevel: Default::default(),
-            module_packages: Default::default(),
             module_load_stack: Vec::new(),
             current_distribution: None,
             current_distribution_frame_floor: 0,
-            package_distributions: Default::default(),
-            module_scope_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
             importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
-            module_source_packages: Default::default(),
-            unit_module_packages: Default::default(),
             lexical_package_memo: std::cell::Cell::new(None),
-            module_declared_unit_packages: Default::default(),
-            module_block_packages: Default::default(),
-            exported_subs: Default::default(),
-            exported_sub_values: Default::default(),
-            exported_token_defs: Default::default(),
-            exported_vars: Default::default(),
-            exported_scalar_vars: Default::default(),
-            reexported_var_owners: Default::default(),
-            unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
-            module_export_hooks: Default::default(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
             export_hook_importer_envs: Vec::new(),
-            module_owned_exports: Default::default(),
-            module_owned_types: Default::default(),
             suppress_exports: false,
             loading_without_import: false,
             import_scope_stack: Vec::new(),
@@ -880,20 +857,11 @@ impl ModuleState {
     /// and handoff state of an in-flight `use` start empty.
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self {
+            world: self.world.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
-            published_outer_packages: self.published_outer_packages.clone(),
-            exporthow_declares: self.exporthow_declares.clone(),
             operator_import_units: self.operator_import_units.clone(),
             unscoped_import_units: self.unscoped_import_units.clone(),
             operator_import_gen: self.operator_import_gen,
-            unit_private_routines: self.unit_private_routines.clone(),
-            unit_private_names: self.unit_private_names.clone(),
-            class_declaring_units: self.class_declaring_units.clone(),
-            package_declaring_units: self.package_declaring_units.clone(),
-            unit_export_namespaces: self.unit_export_namespaces.clone(),
-            package_export_namespaces: self.package_export_namespaces.clone(),
-            module_visibility: self.module_visibility.clone(),
-            prelude_sub_names: self.prelude_sub_names.clone(),
             lib_paths: self.lib_paths.clone(),
             bundled_lib_paths: self.bundled_lib_paths.clone(),
             require_propagates_missing_module: false,
@@ -905,51 +873,22 @@ impl ModuleState {
             begin_block_scopes: HashMap::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
-            loaded_modules: self.loaded_modules.clone(),
-            loaded_unit_pads: self.loaded_unit_pads.clone(),
-            module_registered_functions: self.module_registered_functions.clone(),
-            module_registered_protos: self.module_registered_protos.clone(),
-            packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),
-            prelude_registered_functions: self.prelude_registered_functions.clone(),
-            prelude_declaring_units: self.prelude_declaring_units.clone(),
-            module_package_globals: self.module_package_globals.clone(),
-            named_repositories: self.named_repositories.clone(),
-            need_hidden_classes: self.need_hidden_classes.clone(),
-            module_registered_types: self.module_registered_types.clone(),
-            cur_repo: self.cur_repo.clone(),
             chain_declared_packages: self.chain_declared_packages.clone(),
             module_toplevel: self.module_toplevel.for_thread(),
-            module_packages: self.module_packages.clone(),
             module_load_stack: Vec::new(),
             current_distribution: self.current_distribution.clone(),
             current_distribution_frame_floor: 0,
-            package_distributions: self.package_distributions.clone(),
-            module_scope_lexicals: self.module_scope_lexicals.clone(),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
             importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
-            module_source_packages: self.module_source_packages.clone(),
-            unit_module_packages: self.unit_module_packages.clone(),
             lexical_package_memo: std::cell::Cell::new(None),
-            module_declared_unit_packages: self.module_declared_unit_packages.clone(),
-            module_block_packages: self.module_block_packages.clone(),
-            exported_subs: self.exported_subs.clone(),
-            exported_vars: self.exported_vars.clone(),
-            exported_scalar_vars: self.exported_scalar_vars.clone(),
-            reexported_var_owners: self.reexported_var_owners.clone(),
-            exported_sub_values: self.exported_sub_values.clone(),
-            exported_token_defs: self.exported_token_defs.clone(),
-            unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
-            module_export_hooks: self.module_export_hooks.clone(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
             export_hook_importer_envs: Vec::new(),
-            module_owned_exports: self.module_owned_exports.clone(),
-            module_owned_types: self.module_owned_types.clone(),
             suppress_exports: false,
             loading_without_import: false,
             import_scope_stack: Vec::new(),

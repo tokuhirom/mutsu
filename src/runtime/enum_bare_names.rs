@@ -115,10 +115,13 @@ impl Interpreter {
             } else {
                 self.current_package_str()
             };
-            crate::runtime::cow_table_mut(&mut self.module.module_toplevel.enum_keys)
-                .entry(owner.to_string())
-                .or_default()
-                .insert(name.to_string(), value);
+            let owner = owner.to_string();
+            self.module.module_toplevel.enum_keys.write(|table| {
+                table
+                    .entry(owner)
+                    .or_default()
+                    .insert(name.to_string(), value);
+            });
             return;
         }
         self.env.insert(key, value);
@@ -142,18 +145,31 @@ impl Interpreter {
         // top-level key the program imported is a lexical of the program's
         // top level in rakudo, which a block's same-named enum shadows only
         // inside the block.
-        let table = crate::runtime::cow_table_mut(&mut self.module.module_toplevel.enum_keys);
-        let keys = table.entry(owner).or_default();
-        if !keys.contains_key(name) {
-            keys.insert(name.to_string(), value);
+        let enum_keys = &self.module.module_toplevel.enum_keys;
+        // Already there: not a write (a re-entered declaration must not move
+        // every thread's world generation).
+        if enum_keys
+            .read()
+            .get(owner.as_str())
+            .is_some_and(|keys| keys.contains_key(name))
+        {
+            return;
         }
+        enum_keys.write(|table| {
+            let keys = table.entry(owner).or_default();
+            if !keys.contains_key(name) {
+                keys.insert(name.to_string(), value);
+            }
+        });
     }
 
     /// Look an enum key up in the bare-name namespace.
     ///
     /// This is the ONLY way the value is reachable by its bare spelling — a plain
     /// `env` probe under `name` deliberately misses it.
-    pub(crate) fn enum_bare_value(&self, name: &str) -> Option<&Value> {
+    // Cost: O(|name|) for the key, one env probe, and on a miss the
+    // `toplevel_enum_key` probe.
+    pub(crate) fn enum_bare_value(&self, name: &str) -> Option<Value> {
         // Two misses that are free to rule out before paying for the key:
         // the program has declared no enum at all (`ENUM_BARE_KEY_SEEN`), and a
         // QUALIFIED name (`U::s`), which the registration loop stores under its own
@@ -167,6 +183,7 @@ impl Interpreter {
         }
         self.env
             .get(&enum_bare_key(name))
+            .cloned()
             .or_else(|| self.toplevel_enum_key(name))
     }
 
@@ -175,13 +192,14 @@ impl Interpreter {
     /// a package-less module's (`GLOBAL`) key.
     // Cost: O(1) when no package holds `name`; else O(c * d), c = running
     // package candidates (at most 4), d = package nesting depth.
-    fn toplevel_enum_key(&self, name: &str) -> Option<&Value> {
-        let table = &self.module.module_toplevel.enum_keys;
+    fn toplevel_enum_key(&self, name: &str) -> Option<Value> {
+        let table = self.module.module_toplevel.enum_keys.read();
         if table.is_empty() || !table.contains_name(name) {
             return None;
         }
-        self.lookup_enum_key_in_running_package(table, name)
+        self.lookup_enum_key_in_running_package(&table, name)
             .or_else(|| table.get(GLOBAL_OWNER).and_then(|keys| keys.get(name)))
+            .cloned()
     }
 
     /// [`Self::lookup_in_running_package`] for an enum key, which a package
@@ -217,9 +235,9 @@ impl Interpreter {
                 if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
                     let owner_unit = self
                         .module
-                        .unit_module_packages
+                        .world.unit_module_packages
                         .iter()
-                        .chain(self.module.module_source_packages.iter())
+                        .chain(self.module.world.module_source_packages.iter())
                         .find(|(_, package)| package.as_str() == pkg)
                         .map(|(unit, _)| *unit);
                     if owner_unit.is_none_or(|unit| unit == running_unit) {

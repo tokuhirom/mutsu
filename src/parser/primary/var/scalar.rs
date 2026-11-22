@@ -434,7 +434,13 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         ));
     }
     let rest = super::ident::skip_trailing_package_sep(rest);
-    let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
+    // A positional capture variable (`$0`) is not a long name, so it takes no
+    // name colonpairs: `$0:exists` is `$/[0]:exists`, a subscript adverb.
+    let (rest, name) = if name.starts_with(|c: char| c.is_ascii_digit()) {
+        (rest, name)
+    } else {
+        parse_var_name_adverb_suffixes(rest, name)
+    };
     let full_name = if twigil.is_empty() {
         name
     } else {

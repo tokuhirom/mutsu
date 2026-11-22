@@ -128,7 +128,12 @@ pub(crate) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
 /// not a plain name (or no field at all) is left alone.
 // Cost: O(k), k = number of parts of the name.
 pub(super) fn with_leading_empty(fields: &mut [RakuAstField]) {
-    let Some(field) = fields.iter_mut().find(|f| f.name == Some("name")) else {
+    // The `name` field, or a lone positional one (`Type::Simple`'s name).
+    let at = fields
+        .iter()
+        .position(|f| f.name == Some("name"))
+        .or_else(|| (fields.len() == 1 && fields[0].name.is_none()).then_some(0));
+    let Some(field) = at.map(|at| &mut fields[at]) else {
         return;
     };
     let RakuAstFieldValue::Node(value) = &field.value else {
@@ -153,6 +158,22 @@ pub(super) fn with_leading_empty(fields: &mut [RakuAstField]) {
     };
     parts.insert(0, leading_empty());
     field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(name_from_parts(parts))));
+}
+
+/// `::Array`, `::Int:D`: the view of a type term written after a leading
+/// `::`, its name (or its smiley's base type's) starting with the empty edge.
+// Cost: O(k), k = number of parts of the name.
+pub(super) fn leading_colons(mut node: RakuAstNode) -> RakuAstNode {
+    match node.class {
+        RakuAstClass::TypeSimple | RakuAstClass::TermName => with_leading_empty(&mut node.fields),
+        RakuAstClass::TypeDefinedness => {
+            super::infix_origins::with_child(&mut node, "base-type", |base| {
+                with_leading_empty(&mut base.fields)
+            })
+        }
+        _ => {}
+    }
+    node
 }
 
 /// Whether a `RakuAST::Name` starts with the empty edge (`::Foo`).

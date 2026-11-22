@@ -27,6 +27,7 @@ pub(super) use lambda::capture_literal;
 pub(super) use reduction::reduction_op;
 
 pub(in crate::parser) use anon_decl::anon_role_expr;
+pub(crate) use colonpair::signature_literal_expr;
 pub(in crate::parser) use colonpair::{colonpair_expr, wrap_colonpair_sink_source};
 pub(in crate::parser) use lambda::{
     block_or_hash_expr, braces_are_hash_composer, double_closure_error, parse_block_body,

@@ -162,7 +162,15 @@ fn method_signature(method: &RakuAstNode) -> Value {
 /// in field order (after the name, ahead of the traits and the body).
 // Cost: O(f + p), f = fields of `method`, p = written parameters.
 pub(crate) fn method_with_signature(method: &RakuAstNode) -> Option<RakuAstNode> {
-    if !matches!(method.class, RakuAstClass::Method | RakuAstClass::Submethod) {
+    // A regex declaration is a method too (`my regex r { }`, `token t { }`).
+    if !matches!(
+        method.class,
+        RakuAstClass::Method
+            | RakuAstClass::Submethod
+            | RakuAstClass::RegexDeclaration
+            | RakuAstClass::TokenDeclaration
+            | RakuAstClass::RuleDeclaration
+    ) {
         return None;
     }
     let signature = method_signature(method);
@@ -237,4 +245,62 @@ pub(super) fn pkg(
 ) -> Result<RakuAstNode, crate::value::RuntimeError> {
     let _package = crate::scope::PackageGuard::enter(names, name.map(|n| n.resolve().to_string()));
     super::view::block_node(names, body)
+}
+
+/// `role P[$x] { }` / `role P { }`: a role's signature visits, ahead of the written
+/// parameters, the implicit one capturing the class it is composed into
+/// (`Parameter(type-captures => ($?CLASS, ::?CLASS))`), which the source
+/// never wrote and so has no origin. `None` for any other node.
+// Cost: O(f + p), f = fields of `body`, p = written parameters.
+pub(crate) fn role_body_with_signature(body: &RakuAstNode) -> Option<RakuAstNode> {
+    if body.class != RakuAstClass::RoleBody {
+        return None;
+    }
+    let at = body
+        .fields
+        .iter()
+        .position(|f| matches!(f.name, Some("parameterization" | "signature")))?;
+    let RakuAstFieldValue::Node(signature) = &body.fields[at].value else {
+        return None;
+    };
+    let ValueView::RakuAst(signature) = signature.view() else {
+        return None;
+    };
+    let capture = |name: &str| {
+        node(
+            RakuAstClass::TypeCapture,
+            vec![field(
+                None,
+                Value::rakuast(Box::new(super::view::name_from_identifier(name))),
+            )],
+        )
+    };
+    let implicit = node(
+        RakuAstClass::Parameter,
+        vec![RakuAstField {
+            name: Some("type-captures"),
+            value: RakuAstFieldValue::List(vec![capture("$?CLASS"), capture("::?CLASS")]),
+        }],
+    );
+    let mut signature = signature.clone();
+    match signature
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("parameters"))
+    {
+        Some(RakuAstField {
+            value: RakuAstFieldValue::List(params),
+            ..
+        }) => params.insert(0, implicit),
+        _ => signature.fields.insert(
+            0,
+            RakuAstField {
+                name: Some("parameters"),
+                value: RakuAstFieldValue::List(vec![implicit]),
+            },
+        ),
+    }
+    let mut out = body.clone();
+    out.fields[at].value = RakuAstFieldValue::Node(Value::rakuast(Box::new(signature)));
+    Some(out)
 }
