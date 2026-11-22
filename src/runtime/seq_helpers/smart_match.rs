@@ -229,11 +229,27 @@ impl Interpreter {
             });
             self.env.insert(k.clone(), v.clone());
         }
-        // A `"..."` atom's compiled qq thunk (`crate::regex_qq_atoms`) runs
-        // once per install; the interpolation pre-pass splices the resulting
-        // string in as a literal. A thunk that throws is left out, and the
-        // pre-pass falls back to its own reading of the atom.
+        // A `"..."` atom's compiled qq thunk (`crate::regex_qq_atoms`): a
+        // body of compile-time constants runs once per install, and the
+        // interpolation pre-pass splices the resulting string in as a
+        // literal; any other body is bound as the thunk, which the atom runs
+        // when the cursor reaches it (`regex_qq_interp`, #14510). A constant
+        // body whose thunk throws is left out, and the pre-pass falls back
+        // to its own reading of the atom.
         for (k, thunk) in qq_thunks {
+            let body = &k[qq_prefix.len()..];
+            if !self.qq_body_is_constant(body) {
+                saved.push(RegexClosureBinding {
+                    name: k.clone(),
+                    shadowed: self.env.get(k.as_str()).cloned(),
+                    installed: thunk.clone(),
+                    pins_topic: false,
+                    qq_result: false,
+                    restores_unit: None,
+                });
+                self.env.insert(k.clone(), thunk.clone());
+                continue;
+            }
             let Some(result) = self.eval_regex_qq_thunk(thunk) else {
                 continue;
             };

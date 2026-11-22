@@ -217,13 +217,13 @@ impl Interpreter {
         let mut saved: super::regex_dynparams::SavedDynParams = Vec::with_capacity(scope.len());
         let qq_prefix = crate::meta_ns::MetaNs::RegexQq.prefix();
         for (key, value) in scope.iter() {
-            // A `"..."` atom's qq thunk is bound to its result, which the
-            // pre-pass splices in while the pattern is parsed (see
-            // `regex_qq_token_scope`); one that throws is left out.
+            // A `"..."` atom's qq thunk is bound as `regex_qq_install_value`
+            // says (a constant body's result, else the thunk the atom runs
+            // at match time); a constant one that throws is left out.
             let value = if key.starts_with(qq_prefix) {
-                match self.call_sub_value(value.clone(), Vec::new()) {
-                    Ok(result) => Value::str(result.to_string_value()),
-                    Err(_) => continue,
+                match self.regex_qq_install_value(key, value) {
+                    Some(v) => v,
+                    None => continue,
                 }
             } else {
                 value.clone()

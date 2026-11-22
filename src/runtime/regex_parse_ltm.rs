@@ -1588,6 +1588,13 @@ impl Interpreter {
         // A regex parsed (and cached) on its own, even when a `<$var>` splice
         // asks for it in the middle of another pattern's parse.
         let _independent = super::regex_parse_numbering::IndependentParseScope::enter();
+        // A qq atom's fallback parse is not cached (see
+        // `in_regex_qq_fallback_parse`).
+        if super::regex_qq_array_interp::in_regex_qq_fallback_parse() {
+            return self
+                .parse_regex_uncached(pattern, RegexParseMode::Match)
+                .map(std::sync::Arc::new);
+        }
         let package = self.current_package_sym();
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);

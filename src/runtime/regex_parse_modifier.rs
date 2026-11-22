@@ -571,6 +571,15 @@ impl Interpreter {
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
                     let inside_qq = quotes.inside_double(&chars, i);
+                    // A dynamic variable is read where the cursor reaches it
+                    // (a code block earlier in the pattern, or the rule that
+                    // binds it, may set it): left verbatim, the structural
+                    // parser lowers it to a match-time `VarInterp` (#14510).
+                    if name.starts_with('*') && !inside_qq {
+                        out.extend(chars[i..j].iter());
+                        i = j;
+                        continue;
+                    }
                     let is_const = self.is_compile_time_constant_scalar(&name);
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
