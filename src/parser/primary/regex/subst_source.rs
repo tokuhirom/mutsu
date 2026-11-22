@@ -208,15 +208,15 @@ pub(crate) fn regex_execution_value(body: String, adverbs: &[RegexAdverb]) -> Op
     })
 }
 
+/// An `m//`'s `:nth` and `:x` argument expressions, each when written.
+pub(crate) type MatchAdverbExprs = (Option<Box<Expr>>, Option<Box<Expr>>);
+
 /// The `:nth` and `:x` arguments among a match's written `adverbs`, as the
 /// expressions an `m//` evaluates where it runs (see
 /// `Expr::MatchRegexDynamicAdverbs`). `None` for an adverb list the parser
 /// does not take.
 // Cost: O(a), a = size of the adverbs.
-#[allow(clippy::type_complexity)]
-pub(crate) fn match_adverb_exprs(
-    adverbs: &[RegexAdverb],
-) -> Option<(Option<Box<Expr>>, Option<Box<Expr>>)> {
+pub(crate) fn match_adverb_exprs(adverbs: &[RegexAdverb]) -> Option<MatchAdverbExprs> {
     let written = written_adverbs(adverbs);
     let (rest, parsed) = parse_match_adverbs(&written, "m").ok()?;
     if !rest.is_empty() {

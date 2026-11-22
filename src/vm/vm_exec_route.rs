@@ -26,8 +26,8 @@ impl Interpreter {
             | OpCode::LoadTrue
             | OpCode::PatchRegexAdverbContinue
             | OpCode::PatchRegexAdverbNth
-            | OpCode::PatchRegexAdverbX
-            | OpCode::PatchRegexAdverbPos => self.exec_ops_group_00(code, ip, compiled_fns),
+            | OpCode::PatchRegexAdverbPos
+            | OpCode::PatchRegexAdverbX => self.exec_ops_group_00(code, ip, compiled_fns),
             OpCode::GetArrayVar(..) | OpCode::GetHashVar(..) | OpCode::GetSelfOrNoSelf(..) => {
                 self.exec_ops_group_01(code, ip, compiled_fns)
             }
