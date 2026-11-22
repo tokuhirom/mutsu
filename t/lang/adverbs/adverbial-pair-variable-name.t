@@ -5,7 +5,7 @@ use Test;
 # do not count as part of it; only the quoted data matters", so <>, <<>>, «»,
 # [] and () are interchangeable spellings of the same name.
 
-plan 23;
+plan 31;
 
 # --- keyed colon pairs: $foo:bar<baz> ------------------------------------
 
@@ -86,5 +86,29 @@ plan 23;
     my $k:foo<a>:bar:baz<c> = 'novalue';
     is $k:foo<a>:bar:baz<c>, 'novalue', 'a valueless adverb between valued ones';
 }
+
+# --- subscript-adverb names are ordinary keys in a variable name ---------
+# rakudo reads `$y:k[1,2]` as the variable `$y:k<1 2>`; `:k`, `:v`, `:kv`,
+# `:p`, `:exists` and `:delete` are subscript adverbs only after a subscript.
+
+{
+    my $y:k[1,2] = 3;
+    is $y:k<1 2>, 3, ':k with a [] list value names k<1 2>';
+    is $y:k[1,2], 3, '... read back with the same [] spelling';
+    is $y:k(1,2), 3, '... and with ()';
+
+    my $x:k = 5;
+    my $x = 7;
+    is $x:k, 5, 'a valueless :k is part of the name';
+    is $x, 7, '... distinct from the bare variable';
+
+    my @a:v<1> = 1, 2;
+    is @a:v<1>.elems, 2, ':v on an array name';
+
+    my $p:exists = 'e';
+    is $p:exists, 'e', ':exists on a scalar name';
+}
+
+throws-like '$q:delete', Exception, 'an undeclared $q:delete is not $q with an adverb';
 
 # vim: expandtab shiftwidth=4
