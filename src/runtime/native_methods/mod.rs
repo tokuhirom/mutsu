@@ -35,6 +35,8 @@ mod supply_collector;
 mod supply_derive;
 mod supply_derive_dedup;
 mod supply_derive_buffer;
+mod supply_derive_classify;
+mod supply_derive_multi;
 mod supply_quit_forwarder;
 mod system;
 pub(crate) mod thread_lock_count;
@@ -563,6 +565,7 @@ impl Interpreter {
                 | "__SupplyCollector"
                 | "__SupplyQuitForwarder"
                 | "__SupplyDerive"
+                | "__SupplyDeriveMulti"
                 | "__ChannelSupply"
                 | "__PromiseSupply"
                 | "ThreadPoolScheduler"
@@ -615,6 +618,7 @@ impl Interpreter {
                             | "__SupplyCollector"
                             | "__SupplyQuitForwarder"
                             | "__SupplyDerive"
+                            | "__SupplyDeriveMulti"
                             | "__ChannelSupply"
                             | "__PromiseSupply"
                             | "ThreadPoolScheduler"
@@ -727,6 +731,7 @@ impl Interpreter {
             "__SupplyCollector" => self.native_supply_collector(attributes, method, args),
             "__SupplyQuitForwarder" => self.native_supply_quit_forwarder(attributes, method, args),
             "__SupplyDerive" => self.native_supply_derive(attributes, method, args),
+            "__SupplyDeriveMulti" => self.native_supply_derive_multi(attributes, method, args),
             "__ChannelSupply" => self.native_channel_supply(attributes, method, args),
             "__PromiseSupply" => self.native_promise_supply(attributes, method, args),
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),

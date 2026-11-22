@@ -81,7 +81,7 @@ pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: cr
         return;
     }
     node.origin.0 = Some(super::unit_source::origin_value(line, span));
-    super::use_origins::module_name(node, span);
+    super::use_origins::module_name(names, node, span);
     if node.class == super::RakuAstClass::StatementWhenever {
         super::expr_block_origins::whenever(node, span);
     }

@@ -33,6 +33,7 @@ mod builtins_collection_classify;
 mod builtins_collection_deepmap;
 mod builtins_collection_extrema;
 mod builtins_collection_listops;
+mod join_separator_junction;
 mod builtins_collection_mapgrep;
 mod builtins_collection_minmax;
 mod builtins_control_flow;

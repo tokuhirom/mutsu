@@ -325,10 +325,21 @@ pub(super) fn try_keyword_dispatch(
         return Ok(Some((r, stmt)));
     }
     // my regex/token/rule Name { ... }
-    if keyword("regex", rest).is_some()
-        || keyword("token", rest).is_some()
-        || keyword("rule", rest).is_some()
+    if let Some(after) = keyword("regex", rest)
+        .or_else(|| keyword("token", rest))
+        .or_else(|| keyword("rule", rest))
     {
+        // `my regex ($x) { ... }` / `my token { ... }`: an anonymous one is
+        // the same term the unscoped declarator makes.
+        let (body, _) = ws(after)?;
+        if body.starts_with(['{', '(']) {
+            let (r, expr) = expression(rest)?;
+            let stmt = Stmt::Expr(expr);
+            if apply_modifier {
+                return parse_statement_modifier(r, stmt).map(Some);
+            }
+            return Ok(Some((r, stmt)));
+        }
         let (rest, mut stmt) = super::super::class::token_decl(rest)?;
         // Record the `my`/`our` scope so a duplicate `my token`/`our token` in one
         // grammar body is detected as X::Redeclaration. `my` is the default

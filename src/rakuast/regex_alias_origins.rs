@@ -104,21 +104,50 @@ fn capturing(node: &RakuAstNode) -> bool {
     node.fields.iter().any(|f| f.name == Some("capturing"))
 }
 
-/// The length of the callee variable (`&wc`) of `callable` written at the
-/// start of `text` (byte `at` of the unit), placed there. A callable with
-/// arguments is not read.
-// Cost: O(v), v = length of the variable's name.
+/// The length of the callee of `callable` written at the start of `text`
+/// (byte `at` of the unit): a variable (`&wc`) or an item contextualizer over
+/// one (`&$p`), then its arguments in parentheses when it has any
+/// (`&q("b")`), each placed there.
+// Cost: O(v + a), v = length of the callee, a = length of the arguments,
+// plus their parse.
 fn callee(callable: &mut RakuAstNode, text: &str, at: usize) -> Option<usize> {
-    if callable.fields.iter().any(|f| f.name == Some("args")) {
-        return None;
-    }
-    let var = leaf_text(child(callable, "callee")?)?;
-    let rest = text.strip_prefix(var.as_str())?;
-    if rest.starts_with(|c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '(')) {
-        return None;
-    }
+    let held = child(callable, "callee")?;
+    // `<&$p>`: an item contextualizer over the variable, written `&` then
+    // the variable.
+    let (written, inner) = match held.class {
+        RakuAstClass::ContextualizerItem => {
+            let var = leaf_text(super::infix_origins::child_at(held, 0)?)?;
+            (format!("&{var}"), Some(var.len()))
+        }
+        _ => (leaf_text(held)?, None),
+    };
+    let rest = text.strip_prefix(written.as_str())?;
+    let has_args = callable.fields.iter().any(|f| f.name == Some("args"));
+    let len = if has_args {
+        // `<&q("b")>`: the arguments in parentheses right after the callee.
+        let args = rest.strip_prefix('(')?;
+        let args_len = super::regex_call_origins::args_len(args)?;
+        super::regex_call_origins::place(
+            &crate::scope::NameScope::default(),
+            callable,
+            &args[..args_len],
+            at + written.len() + 1,
+        )?;
+        written.len() + 1 + args_len + 1
+    } else {
+        if rest.starts_with(|c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '(')) {
+            return None;
+        }
+        written.len()
+    };
     with_child(callable, "callee", |v| {
-        super::origin::set_span(v, SrcSpan::new(at, at + var.len()))
+        super::origin::set_span(v, SrcSpan::new(at, at + written.len()));
+        if let Some(var) = inner {
+            let end = at + written.len();
+            super::infix_origins::with_child_at(v, 0, |var_node| {
+                super::origin::set_span(var_node, SrcSpan::new(end - var, end))
+            });
+        }
     });
-    Some(var.len())
+    Some(len)
 }

@@ -30,7 +30,9 @@ impl Compiler {
         self.code.emit(OpCode::LoadConst(idx));
     }
 
-    /// Semicolon subscripts bind the RHS value, unlike chained subscripts.
+    /// A semicolon-subscript bind (`@s[0;0] := $x`): like a chained one, it
+    /// binds the source's container when the RHS names a variable (rakudo
+    /// 2026.11; #18541), and the value otherwise.
     // Cost: O(n + d), n = RHS expression size, d = dimensions.
     pub(super) fn compile_multidim_value_bind(
         &mut self,
@@ -42,14 +44,8 @@ impl Compiler {
         let Expr::IndexBindValue(rhs) = value else {
             unreachable!("indexed bind has a bind value");
         };
-        // No source metadata and no lvalue promotion: BIND-POS receives the
-        // value, even when the expression names a writable scalar container.
-        self.compile_call_arg(&Expr::Call {
-            name: Symbol::intern("nqp::decont"),
-            args: vec![rhs.as_ref().clone()],
-            listop: false,
-        });
-        self.compile_call_arg(&Expr::Literal(Value::NIL));
+        self.compile_call_arg(rhs);
+        self.emit_index_bind_sources(rhs);
         self.code.emit(OpCode::IndexBindValue);
         for dimension in dimensions.iter().rev() {
             self.compile_expr(dimension);

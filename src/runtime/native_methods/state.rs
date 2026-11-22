@@ -802,6 +802,8 @@ pub(crate) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<V
 pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::RootVisitor) {
     super::supply_derive_dedup::visit_dedup_roots(visitor);
     super::supply_derive_buffer::visit_buffer_roots(visitor);
+    super::supply_derive_multi::visit_multi_roots(visitor);
+    super::supply_derive_classify::visit_classify_roots(visitor);
     if let Ok(map) = supply_taps_map().lock() {
         for taps in map.values() {
             for v in taps {

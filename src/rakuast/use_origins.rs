@@ -13,7 +13,11 @@ use crate::value::{Value, ValueView};
 /// Place the module `Name` of `statement`, a `Statement::Use`, `Need` or
 /// `Import` occupying `span`.
 // Cost: O(n), n = length of the statement's source.
-pub(super) fn module_name(statement: &mut RakuAstNode, span: SrcSpan) {
+pub(super) fn module_name(
+    names: &crate::scope::NameScope,
+    statement: &mut RakuAstNode,
+    span: SrcSpan,
+) {
     let keyword = match statement.class {
         RakuAstClass::StatementUse => "use",
         RakuAstClass::StatementNeed => "need",
@@ -57,6 +61,11 @@ pub(super) fn module_name(statement: &mut RakuAstNode, span: SrcSpan) {
         let mut name = RakuAstNode::clone(name);
         super::origin::set_span(&mut name, at);
         *held = Value::rakuast(Box::new(name));
+        arguments(
+            names,
+            statement,
+            SrcSpan::new(at.to as usize, span.to as usize),
+        );
     }
 }
 
@@ -107,4 +116,27 @@ fn written_name(text: &str) -> &str {
         }
     }
     &text[..end]
+}
+
+/// `use CuTypes :DEFAULT, :types`: the argument written after the module
+/// name, at `after` (blanks first), parsed again on its own.
+// Cost: O(n), n = length of the argument's text, plus the parse of it.
+fn arguments(names: &crate::scope::NameScope, statement: &mut RakuAstNode, after: SrcSpan) {
+    if statement.class != RakuAstClass::StatementUse
+        || super::infix_origins::child(statement, "argument").is_none_or(|a| a.origin.0.is_some())
+    {
+        return;
+    }
+    let Some((at, text)) = super::unit_source::with_text(after, |text| {
+        let written = text.trim_start();
+        (written.len() < text.len() && !written.trim_end().is_empty()).then(|| {
+            let at = after.from as usize + (text.len() - written.len());
+            (at, written.trim_end().to_string())
+        })
+    }) else {
+        return;
+    };
+    super::infix_origins::with_child(statement, "argument", |arg| {
+        super::fragment_origins::expression(names, arg, &text, at)
+    });
 }

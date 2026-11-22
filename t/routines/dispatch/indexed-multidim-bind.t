@@ -9,4 +9,5 @@ is @a[0;1], 9, 'semicolon dimensions bind the selected nested element';
 my $x = 5;
 @a[1;0] := $x;
 $x = 8;
-is @a[1;0], 5, 'semicolon indexing binds the source value rather than its container';
+# rakudo 2026.11 binds the source's container (#18541).
+is @a[1;0], 8, 'semicolon indexing binds the source container';

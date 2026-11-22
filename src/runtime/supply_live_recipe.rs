@@ -138,7 +138,7 @@ impl Interpreter {
             }
             if attrs
                 .get("derive_mode")
-                .is_some_and(|m| !matches!(m.to_string_value().as_str(), "map" | "grep" | "do"))
+                .is_some_and(|m| !matches!(m.to_string_value().as_str(), "map" | "grep" | "do" | "start"))
             {
                 return false;
             }
@@ -148,5 +148,47 @@ impl Interpreter {
             drop(attrs);
             cur = next;
         }
+    }
+
+    /// `merge` / `zip` / `zip-latest` (`kind`) over `sources` plus the
+    /// named `:with` / `:initial` in `args`, as a per-tap recipe
+    /// (ADR-18443), when a source is live or a recipe and none is backed by a
+    /// native event channel (those keep their pump). `None` otherwise, and
+    /// for anything but Supply instances, which the eager paths report.
+    // Cost: O(n), n = the arguments.
+    pub(crate) fn multi_source_recipe(kind: &str, args: &[Value]) -> Option<Value> {
+        let mut flat = Vec::with_capacity(args.len());
+        super::types::flatten_into_slurpy(args, &mut flat);
+        let mut with_fn = None;
+        let mut initial = None;
+        let mut sources = Vec::with_capacity(flat.len());
+        for arg in flat {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "with" => with_fn = Some(value.clone()),
+                ValueView::Pair(key, value) if key == "initial" => {
+                    if let ValueView::Array(items, ..) = value.view() {
+                        initial = Some(items.to_vec());
+                    }
+                }
+                ValueView::Instance { class_name, .. }
+                    if crate::value::supply_class::is_supply_class(class_name) =>
+                {
+                    sources.push(arg.clone())
+                }
+                _ => return None,
+            }
+        }
+        let mut any_live = false;
+        for source in &sources {
+            let ValueView::Instance { attributes, .. } = source.view() else {
+                return None;
+            };
+            let attrs = attributes.as_map();
+            if Self::is_channel_backed_source(&attrs) || attrs.contains_key("supply_id") {
+                return None;
+            }
+            any_live |= Self::stage_is_live_recipe(&attrs);
+        }
+        any_live.then(|| Self::make_multi_source_recipe(kind, sources, with_fn, initial))
     }
 }
