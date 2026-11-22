@@ -23,6 +23,20 @@ struct Marker;
 
 impl VisitMut for Marker {
     fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        // A bare `*` as a condition (`when * { }`, `if * { }`) is a value,
+        // as in Rakudo; a compound one (`when * > 1`) primes as usual.
+        let mut taken: Vec<Expr> = conditions(stmt)
+            .into_iter()
+            .map(|c| std::mem::replace(c, Expr::Whatever))
+            .collect();
+        if !taken.is_empty() {
+            taken.iter_mut().for_each(mark_value_leaf);
+            walk_stmt_mut(self, stmt);
+            for (cond, taken) in conditions(stmt).into_iter().zip(taken) {
+                *cond = taken;
+            }
+            return;
+        }
         match stmt {
             // A bare `*` standing alone as a whole statement (`*;`, a proto's
             // `{*}` body) stays a value, as does an assignment's RHS.
@@ -118,6 +132,24 @@ impl VisitMut for Marker {
     // A regex's code blocks are not classified: `expr.rs` stops at regex
     // literals too, whose pattern the runtime also keeps as source text.
     fn visit_regex_node_mut(&mut self, _node: &mut RegexNode) {}
+}
+
+/// The conditions of an `if` / `elsif` / `unless` / `when` statement, in
+/// either its lowered or its parsed form.
+// Cost: O(c), c = clauses of the statement.
+fn conditions(stmt: &mut Stmt) -> Vec<&mut Expr> {
+    use crate::ast::parsed::ParsedStmt;
+    match stmt {
+        Stmt::When { cond, .. } | Stmt::If { cond, .. } => vec![cond],
+        Stmt::Ast(node) => match node.as_mut() {
+            ParsedStmt::When { condition, .. } => vec![condition],
+            ParsedStmt::Conditional(c) => std::iter::once(&mut c.condition)
+                .chain(c.clauses.iter_mut().map(|clause| &mut clause.condition))
+                .collect(),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
 }
 
 fn mark_call_arg(arg: &mut CallArg) {

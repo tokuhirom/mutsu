@@ -846,7 +846,7 @@ impl Interpreter {
         if crate::qualified::is_qualified_str(bare_name)
             && let Some(val) = self.toplevel_package_symbol(&var_key)
         {
-            return val.clone();
+            return val;
         }
         // `return` is a control-flow keyword that also resolves as &return
         // so that it can be rebound (proxied return pattern).

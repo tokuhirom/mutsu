@@ -10,11 +10,11 @@ still-open per-file investigation notes were carried over (see "Investigation no
 The completed cluster diagnostics (①③⑤, man-or-boy, the ② parse cluster) moved to
 [news/2026-07.md](../news/2026-07.md).
 
-**Last full re-measurement 2026-10-14** (commit `c5896649`): every non-whitelisted file was
-re-run under mutsu (`MUTSU_FUDGE=1`, **release** build, cwd `roast/`, 120 s budget) and under
-the local **Rakudo v2026.09** (unfudged, same cwd). The mutsu and raku columns below are those
-numbers unless a row says otherwise; the per-file diagnoses were re-checked where the numbers
-moved. Previous full re-measurement: 2026-07-14.
+**Last full re-measurement 2026-11-22** (commit `14474c6a`, roast at upstream `7639d080ee3f`):
+every non-whitelisted file was re-run under mutsu (`MUTSU_FUDGE=1`, **release** build, cwd
+`roast/`, 120 s budget) and under the local **Rakudo v2026.11** (unfudged, same cwd). The mutsu
+and raku columns below are those numbers unless a row says otherwise; the per-file diagnoses
+were re-checked where the numbers moved. Previous full re-measurements: 2026-10-14, 2026-07-14.
 The raku column (and `raku-baseline.tsv`) was re-captured on Rakudo v2026.09 on 2026-10-24 (#14851); see "v2026.09 refresh" in `raku-baseline.md`.
 
 ## How to read this document
@@ -77,24 +77,22 @@ Concretely:
 
 ## Current assumptions
 
-- The whitelist stands at **1426 / 1454** (2026-10-14, `wc -l roast-whitelist.txt` against
-  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **28** files not whitelisted (26
-  excluding roast's own Perl 5 tooling tests). The total shrank by 11 files since 2026-09-12
-  (roast re-vendor); the non-whitelisted count is unchanged at 28. Since the previous
-  re-measure `6.c/APPENDICES/A04-experimental/01-misc.t` and `S02-types/quanthash.t` reached
-  the whitelist, and `S24-testing/6-done_testing.t` (a file raku itself aborts on) joined the
-  non-whitelisted set.
-- **The 2026-10-14 re-measure found several files that moved backwards** (not whitelisted, so no
-  gate caught them): `S05-mass/rx.t`, `S12-meta/exporthow.t` and
-  `APPENDICES/A02-some-day-maybe/misc.t` now fail to *compile*, `6.c/MISC/bug-coverage-stress.t`
-  now hangs, and `S10-packages/basic.t` loses its last subtest. Each now has an issue
-  (#13469-#13473, linked from its row). `S05-mass/rx.t`'s cause is a general regex bug, not a
-  roast curiosity.
-- **Full-suite run** (`scripts/roast-history.sh`, HISTORY.tsv row of 2026-10-14): 1262 / 1287
-  files pass, 193653 / 194402 subtests. The four whitelisted files it reported as failing are
+- The whitelist stands at **1434 / 1455** (2026-11-22, `wc -l roast-whitelist.txt` against
+  `find roast -name '*.t' -not -path 'roast/packages/*'`) = **21** files not whitelisted (19
+  excluding roast's own Perl 5 tooling tests `t/fudge.t` and `t/fudgeandrun.t`), down from 28
+  on 2026-10-14. The re-measure found no non-whitelisted file that now passes, so nothing was
+  added to the whitelist.
+- **The 2026-10-14 regressions are all fixed** (#13469-#13474, #13468 are closed, and their
+  files reached the whitelist), except `S05-mass/rx.t`. That file got past #13470 and now fails
+  to *compile* on a new cause: the RakuAST finalizer refuses regex literals that use an adverb
+  with a value (`:i(1)`, `:1i`, `:s(0)`), `:!` on a quantifier, `|&`, or an Nd-digit backref
+  `$٠` (#18713). It is a general regex bug, not a roast curiosity.
+- **Full-suite run** (`scripts/roast-history.sh`, HISTORY.tsv row of 2026-11-22): 1267 / 1288
+  files pass, 194545 / 195248 subtests. The four whitelisted files it reported as failing are
   environment-only: `S16-filehandles/filetest.t`, `S16-io/eof.t` and `S32-io/IO-Socket-Async.t`
-  are listed in `ci/known-env-failures.toml`, and `S03-buf/write-int.t` passes standalone in 21 s
-  on the 4-core remote container (over the script's 10 s budget only under load).
+  are listed in `ci/known-env-failures.toml`, and `S03-buf/write-int.t` passes standalone in 11 s
+  on the 4-core remote container (over the script's 10 s budget only under load). The other 17
+  failures are all non-whitelisted files from the tables below.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -105,7 +103,7 @@ Concretely:
   ([ADR-0009](../docs/adr/0009-regex-code-assertion-execution-model.md)). The former
   ①(stack overflow)/②(unparseable)/③(hang)/④(error-message) clusters are all cleared
   (history: [news/2026-07.md](../news/2026-07.md)).
-- **No cluster remains.** The 28 non-whitelisted files are nearly all non-goal / no-oracle /
+- **No cluster remains.** The 21 non-whitelisted files are nearly all non-goal / no-oracle /
   awaiting-infrastructure (see the tables below); the few ★achievable ones each need their own
   unrelated feature. (`APPENDICES/A02-some-day-maybe/misc.t`, the last ★, is whitelisted
   since #16393.) **roast is no longer the productive axis** — prefer PLAN.md §1 (Batteries),
@@ -117,8 +115,8 @@ Concretely:
 N/M" = a runtime error kills the file after N of M planned tests (the first unexpected
 exception aborts everything after it, so one root cause usually hides more).
 
-mutsu column: `MUTSU_FUDGE=1 target/release/mutsu` from `roast/` on 2026-10-14 (release build)
-unless noted.
+mutsu column: `MUTSU_FUDGE=1 target/release/mutsu` from `roast/` on 2026-11-22 (release build)
+unless noted. Both rows were unchanged by the 2026-11-22 re-measure.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
@@ -128,20 +126,20 @@ unless noted.
 
 ## S* per-file remaining items
 
-| Classification | File | mutsu | raku (v2026.06/6.d) | Blocker (one line) |
+| Classification | File | mutsu | raku (v2026.11/6.d) | Blocker (one line) |
 |---|---|---|---|---|
 | No oracle | `S11-modules/re-export.t` | 0/3 (aborts: `Unknown function: foo`) | **SORRY** (`no such tag 'EXPORT'`) | `OuterModule` does `use InnerModule :ALL, :EXPORT` to re-export; **rakudo rejects `:EXPORT` as an undeclared tag**, so this file cannot pass upstream either. mutsu *appeared* to pass it until 2026-07-24 purely because a `unit module`'s routines leaked into `GLOBAL::` — the consumer saw Inner's subs without any re-export happening (news `2026-07/unit-module-routines-stay-in-their-package.md`). Dewhitelisted with that fix. Two independent things would be needed to revisit: real `:EXPORT` re-export semantics, and mutsu raising `X::Import::NoSuchTag` for an unknown tag even when `:ALL` is also requested (today `:ALL` short-circuits tag validation, so `:EXPORT` is silently accepted) |
 | No oracle | `S02-names/pseudo-6d.t` | aborts at 56/159 (2026-10-14, unchanged since 2026-10-02) | SORRY (`::=` NYI) | Until #10657 mutsu SORRYd at parse time on `::($our)::A43` (an indirect name with a static tail). It now runs 56 tests on release and stops at line 188, where `::($our)::A43` is a `Failure` (the autovivifying bind on line 186 is fudged out) and `.WHO` throws — raku throws there too. A debug build panics earlier, after test 41, on the ADR-0097 §15 env/slot invariant at `$OUR::x30 := $x` (#10731). Beyond that: `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
-| No oracle | `S02-names/pseudo-6e.t` | runs 77/202, 30 failing (2026-10-14, unchanged since 2026-10-02) | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Parses since #10657; fails the root/`MY::` binding subtests (`Can bind via root`, `MY::classname`, failed tests 1, 5, 8-11, 13-15, 18, 24-25, 28-30, 32-33) and stops at 77. Still SORRY on v2026.06 |
+| No oracle | `S02-names/pseudo-6e.t` | runs 77/202, 24 failing (2026-11-22; was 30 failing on 2026-10-14) | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Parses since #10657; fails the root/`MY::` binding subtests (`Can bind via root`, `MY::classname`, failed tests 1, 5, 8-11, 13-15, 18, 24-25, 28-30, 32-33) and stops at 77. Still SORRY on v2026.06 |
 | No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 (2026-10-14, unchanged) | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
 | No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 (aborts: `Dynamic variable $*OS not found`) | 0/8 (aborts too, `$*OS`; same on v2026.09) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
 | Non-goal | `S05-capture/hash.t` | rejected (matches raku) | SORRY (removed) | Hash captures in regexes `%<name>=(...)` are removed/reserved in the current spec. mutsu also gives a compile error, matching raku = **no implementation needed** |
-| Non-goal | `S05-mass/rx.t` | **SORRY** (was: aborts at test 20) | SORRY (`::` NYI) | rakudo itself cannot compile it: `::` backtracking control NYI. **Regressed** to a compile-time failure: mutsu rejects `^` after another atom (`/def \n ^ abc/`, line 596) as an unrecognized metacharacter instead of an anchor — #13470, a general regex bug. Behind it: `<commit>`, `::`/`:::` cuts, the compile-time exceptions for removed metacharacters |
+| Non-goal | `S05-mass/rx.t` | **compile error** (2026-11-22; was: aborts at test 20) | SORRY (`::` NYI) | rakudo itself cannot compile it: `::` backtracking control NYI. The #13470 `^`-anchor regression is fixed, but the file still fails to compile: the RakuAST finalizer refuses (`literal Regex without a declarator tree`) regex literals with `:i(N)`/`:Ni`/`:s(N)`, `:!` on a quantifier, `\|&`, or an Nd-digit backref `$٠` — #18713, a general regex bug (35 single-line sites plus multi-line ones). Behind it: `<commit>`, `::`/`:::` cuts, the compile-time exceptions for removed metacharacters |
 | Non-goal | `S05-metasyntax/angle-brackets.t` | aborts at 51/95 (2026-10-14, unchanged) | SORRY (v2026.06 rejects `<*xyz>` at compile time) | All 51 reachable subtests pass. test 52's code-string subrule (turning a string containing `{...}` into a regex) also kills old raku = requires the equivalent of MONKEY-SEE-NO-EVAL. New raku does not even run due to the unfudged `<*xyz>` at line 267 |
 | Non-goal | `S05-nonstrings/basic.t` | 0/5 (compile error: `Undeclared name: Antelope`) | SORRY (removed) | Regex matching against non-strings (streams/arrays) = early Perl 6 spec. Removed from the language while Rakudo never implemented it |
 | Non-goal | `S06-advanced/caller.t` | aborts at 3/22 (1, 3 fail) | SORRY | Stale test, over-stated plan (22 planned vs effectively 19 assertions). Confirmed unpassable (#3975). Now stops at line 30: `Placeholder variable '@_' may not be used here because the surrounding block does not take a signature` (a Perl-5-style `@_` in a sub with an explicit signature — raku rejects it at compile time too) |
 | Non-goal | `S06-advanced/return_function.t` | 0/4 (runs, all fail) | SORRY | Expects the old Pair-flattening behavior. rakudo also rejects it at compile time. Outside spectest.data |
-| Non-goal | `S10-packages/require-and-use--dead-file.t` | 3/18 | 2/18 FAIL | Return values of `require`/`use`/`no` and `%*INC` updates unimplemented. But raku itself also fails this file |
+| Non-goal | `S10-packages/require-and-use--dead-file.t` | 2/18 (2026-11-22; 1-16 match raku exactly) | 2/18 FAIL (dies after 16) | Return values of `require`/`use`/`no` and `%*INC` updates unimplemented. But raku itself also fails this file |
 | Non-goal | `S12-class/open_closed.t` | **SORRY** at line 17 (was 8/9) | SORRY (no `oo` module) | Line 17 is a roast-side typo: `throws-like '…', Exception, '…');` has an unbalanced `)`, so the file cannot compile anywhere; test 7 also had a typo (`method h` says `'called Qux.i'`). raku cannot load the `oo` module either. Awaiting an upstream fix |
 | Non-goal | `S12-traits/basic.t` | 0 (dies before the plan: `Can only use : as invocant marker…`) | SORRY (removed) | Removed `trait_auxiliary` syntax. raku also rejects it |
 | Non-goal | `S12-traits/parameterized.t` | aborts at 6/8 | SORRY (removed) | Same as above (the `trait_auxiliary:<is>` category has been removed from the language) |
@@ -180,15 +178,14 @@ completed fix history lives in `news/`.
 
 ## Recommended order of attack right now
 
-**Re-measured 2026-10-14.** Trust nothing here without re-running it; this ledger's
+**Re-measured 2026-11-22.** Trust nothing here without re-running it; this ledger's
 *diagnoses* have been wrong before (see `my-6c.t` in [news/2026-07.md](../news/2026-07.md),
 where "needs lexical hoisting" was simply false).
 
-1. **Fix the regressions the re-measure found** — each is a general bug that only happens to
-   surface in a non-whitelisted file, so nothing gated it: #13470 (regex `^` after an atom; kills
-   all of `S05-mass/rx.t`), #13472 (merged signal supplies complete at once; `exit` inside a signal
-   `whenever` hangs — `6.c/MISC/bug-coverage-stress.t`), #13473 (`plan` unresolvable in a late
-   subtest — `S10-packages/basic.t`). (`S12-meta/exporthow.t` is whitelisted since #14536.)
+1. **#18713** — the RakuAST finalizer refuses several regex-literal constructs, which kills all
+   of `S05-mass/rx.t` at compile time. It is a general regex bug that only happens to surface in
+   a non-whitelisted file, so nothing gated it. (The 2026-10-14 regressions #13469-#13474 are
+   all fixed.)
 2. **`6.c/S02-names/pseudo-6c.t` — the stash road** (aborts at 56/161 on `::($our)::A43`; the
    earlier per-subtest split is in its inventory row). `CALLERS::`, `OUR::` and inline-block
    `CALLER::`/`CALLERS::` are done; the biggest remaining cluster is the `::($x)::('$y')`
@@ -196,9 +193,7 @@ where "needs lexical hoisting" was simply false).
    the SymbolicDeref deref road. It carries `::("CORE")` plus 116/125; 137 `CALLER::OUTER::`
    (literal-name lookup instead of pseudo-package re-entry) is orthogonal. Per-snippet oracles
    work (raku SORRYs only on line 67's `::=`).
-3. Smaller single-file blockers with issues: #13474 (`S32-basics/xxPOS.t`, sigilless `-> \a`
-   overwritten by `my $a`), #13468 (`MISC/misc.t`, anonymous role punning).
-4. **Everything else in the tables is non-goal / no-oracle / awaiting-infrastructure.** Per the
+3. **Everything else in the tables is non-goal / no-oracle / awaiting-infrastructure.** Per the
    Current assumptions above, **roast is no longer the productive axis** — prefer PLAN.md §1
    (Batteries) and pick up a roast file only when that work happens to unblock it.
 

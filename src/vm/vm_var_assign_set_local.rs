@@ -1668,7 +1668,10 @@ impl Interpreter {
         } else {
             None
         };
-        if let Some(kind) = readonly_mark {
+        // A code variable is marked under its exact `&name` key below, never
+        // under the bare name: that is the key of a same-named `$name`, which
+        // a `my &name := ...` must not make readonly (#18414).
+        if let Some(kind) = readonly_mark.filter(|_| !code.locals[idx].starts_with('&')) {
             // A `$` local is stored under its bare name, whose symbol the
             // chunk already holds: no `String` and no intern per bind.
             let local = code.locals[idx].as_str();
@@ -3445,7 +3448,8 @@ impl Interpreter {
                 return Err(RuntimeError::readonly_variable());
             }
             let proxy_val = self.locals[idx].clone();
-            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
+            // `SetLocal` pushes nothing: STORE only, no FETCH (#18337).
+            loan_env!(self, store_proxy_lvalue(&proxy_val, val))?;
             // A Proxy STORE wrote the referent caller lexical by name; drain the
             // precise retain-on-miss writeback it recorded instead of the blanket
             // env→locals pull.

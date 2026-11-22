@@ -8,6 +8,7 @@
 mod accessors;
 mod adverb_origins;
 mod model_methods;
+mod param_default_origins;
 mod positional_fields;
 mod postfix_power;
 mod routine_stub;
@@ -120,6 +121,8 @@ mod declarator_docs;
 pub(crate) fn declarator_docs_of(node: &RakuAstNode) -> Option<(Option<String>, Option<String>)> {
     declarator_docs::docs_of(node)
 }
+mod also_origins;
+mod also_rw;
 mod anon_body_origins;
 pub(crate) mod apply_queries;
 pub(crate) mod arg_invocant;
@@ -187,6 +190,7 @@ mod initializer_origins;
 mod keyed_hash;
 mod label_context;
 mod label_origins;
+mod list_meta_origins;
 mod list_origins;
 mod listop_origins;
 mod literal_parameter;
@@ -245,6 +249,7 @@ pub(crate) use resolve::{regex_with_declarations, resolve_lexical, resolve_node_
 mod colon_pairs;
 mod constant_decl;
 mod loop_step;
+pub(crate) mod method_initializer;
 mod role;
 mod role_header;
 mod role_implicit;
@@ -296,6 +301,7 @@ mod use_stmt;
 mod user_postfix;
 mod user_prefix;
 pub(crate) mod visit_order;
+mod will_build_origins;
 mod zip_chain;
 pub(crate) use user_prefix::user_prefix_overrides_core;
 mod var_decl_constructor;
@@ -612,6 +618,8 @@ pub enum RakuAstClass {
     /// NativeCall type declaration (`native N is Int ... { }`).
     Native,
     Method,
+    MethodInitializer,
+    MethodClassAccessor,
     // Phase 2 slice 16: role declarations.
     Role,
     RoleBody,
@@ -1000,6 +1008,8 @@ impl RakuAstClass {
             Class => "RakuAST::Class",
             Native => "RakuAST::Native",
             Method => "RakuAST::Method",
+            MethodInitializer => "RakuAST::Method::Initializer",
+            MethodClassAccessor => "RakuAST::Method::ClassAccessor",
             Role => "RakuAST::Role",
             RoleBody => "RakuAST::RoleBody",
             Label => "RakuAST::Label",
@@ -1558,6 +1568,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Class,
     RakuAstClass::Native,
     RakuAstClass::Method,
+    RakuAstClass::MethodInitializer,
+    RakuAstClass::MethodClassAccessor,
     RakuAstClass::Role,
     RakuAstClass::RoleBody,
     RakuAstClass::Label,

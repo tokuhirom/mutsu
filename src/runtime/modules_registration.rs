@@ -47,6 +47,7 @@ mod registry_method_table;
 pub(crate) mod repl_compiler;
 mod repl_compiler_prelude;
 mod require_stub;
+pub(crate) mod proto_variant_index;
 pub(crate) mod resolution;
 pub(crate) mod resolution_caches;
 mod resolution_call_by_name;

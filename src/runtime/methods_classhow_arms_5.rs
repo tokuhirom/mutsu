@@ -122,6 +122,11 @@ impl Interpreter {
                 ValueView::Str(name) => name.to_string(),
                 _ => return Ok(Value::NIL),
             };
+            // The roles a class HOW `compose` override held back specialize
+            // here, inside its `nextsame` (#18145).
+            if !self.registry().pending_role_specialize.is_empty() {
+                self.drive_role_how_specialize(&class_name)?;
+            }
             // A `Metamodel::GrammarHOW.new_type` type given no parent
             // composes as a `Grammar` (rakudo's GrammarHOW default parent
             // type), so `.parse` and `~~ Grammar` work on it.

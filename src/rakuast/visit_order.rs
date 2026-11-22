@@ -11,6 +11,12 @@ use super::{RakuAstClass, RakuAstField, RakuAstNode};
 /// statement its labels after everything else (`L: for @a { }`).
 // Cost: O(f), f = fields of `node`.
 pub(crate) fn reorder(node: &RakuAstNode, fields: &mut Vec<&RakuAstField>) {
+    // `has R $.r .= new` / `has $.x = 1 + 2`: Rakudo visits the default
+    // through the thunk in the attribute's `Trait::WillBuild`, not its
+    // initializer.
+    if super::method_initializer::is_thunked(node) {
+        fields.retain(|f| f.name != Some("initializer"));
+    }
     // `L: for @a { }`: a statement visits its labels last.
     if let Some(at) = fields.iter().position(|f| f.name == Some("labels")) {
         let field = fields.remove(at);

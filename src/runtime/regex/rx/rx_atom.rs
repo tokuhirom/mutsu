@@ -34,39 +34,35 @@ fn fast_char(c: u32) -> bool {
 }
 
 impl RxProgram {
-    /// The per-atom ASCII acceptance sets, probed on first use. `None` for
-    /// an atom the probe cannot stand in for: a composite class with a named
+    /// Atom `i`'s ASCII acceptance set, probed on first use. `None` for an
+    /// atom the probe cannot stand in for: a composite class with a named
     /// item (`<+alpha -[x]>`) may fall back to a grammar token of that name,
     /// which depends on the package and reads the real subject past `pos`.
-    // Cost: O(1) after the first call; O(a * 95) on it, a = atoms.
-    fn ascii_sets(&self, interp: &mut Interpreter, pkg: Symbol) -> &[Option<u128>] {
-        self.ascii.get_or_init(|| {
-            self.atoms
-                .iter()
-                .zip(&self.atom_ic)
-                .map(|(atom, &ic)| {
-                    let mut set = 0u128;
-                    // The table is shared with the zero-width assertions,
-                    // which never reach `rx_atom_at`.
-                    if !super::rx_compile::is_consuming(atom) {
-                        return Some(set);
-                    }
-                    if composite_has_named_item(atom) {
-                        return None;
-                    }
-                    for c in (0x09..0x7f).filter(|&c| fast_char(c)).filter_map(char::from_u32) {
-                        match interp.match_consuming_atom(atom, &[c, ' '], 0, pkg, ic) {
-                            Some(1) => set |= 1u128 << (c as u32),
-                            None => {}
-                            // An atom that can consume more than the one
-                            // character (a case fold that expands) is not a
-                            // yes/no set: leave it to the full test.
-                            Some(_) => return None,
-                        }
-                    }
-                    Some(set)
-                })
-                .collect()
+    // Cost: O(1) after the first call for atom `i`; O(95) on it.
+    fn ascii_set(&self, i: usize, interp: &mut Interpreter, pkg: Symbol) -> Option<u128> {
+        *self.ascii[i].get_or_init(|| {
+            let atom = &self.atoms[i];
+            let ic = self.atom_ic[i];
+            let mut set = 0u128;
+            // The table is shared with the zero-width assertions, which never
+            // reach `rx_atom_at`.
+            if !super::rx_compile::is_consuming(atom) {
+                return Some(set);
+            }
+            if composite_has_named_item(atom) {
+                return None;
+            }
+            for c in (0x09..0x7f).filter(|&c| fast_char(c)).filter_map(char::from_u32) {
+                match interp.match_consuming_atom(atom, &[c, ' '], 0, pkg, ic) {
+                    Some(1) => set |= 1u128 << (c as u32),
+                    None => {}
+                    // An atom that can consume more than the one character (a
+                    // case fold that expands) is not a yes/no set: leave it to
+                    // the full test.
+                    Some(_) => return None,
+                }
+            }
+            Some(set)
         })
     }
 }
@@ -117,7 +113,7 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Option<usize> {
         if let Some(c) = single_ascii(chars, pos)
-            && let Some(set) = program.ascii_sets(self, pkg)[i]
+            && let Some(set) = program.ascii_set(i, self, pkg)
         {
             return (set & (1u128 << c) != 0).then_some(pos + 1);
         }
@@ -187,7 +183,7 @@ impl Interpreter {
         pkg: Symbol,
         ends: &mut Vec<usize>,
     ) -> (u32, bool) {
-        let set = program.ascii_sets(self, pkg)[i];
+        let set = program.ascii_set(i, self, pkg);
         let mut at = pos;
         let mut n = 0u32;
         let mut plain = true;
@@ -230,14 +226,17 @@ impl Interpreter {
         n: usize,
         pkg: Symbol,
     ) -> Option<usize> {
-        let sets = program.ascii_sets(self, pkg);
-        let Some(set) = sets[next_atom] else {
+        let Some(set) = program.ascii_set(next_atom, self, pkg) else {
             return n.checked_sub(1).filter(|&j| j >= min);
         };
         // Every character the run consumed is one printable ASCII grapheme its
         // own set accepted: if the next atom's set shares none of them, no
         // give-back position can match it.
-        if plain && sets[run_atom].is_some_and(|run_set| run_set & set == 0) {
+        if plain
+            && program
+                .ascii_set(run_atom, self, pkg)
+                .is_some_and(|run_set| run_set & set == 0)
+        {
             return None;
         }
         (min..n).rev().find(|&j| match single_ascii(chars, run_ends[j]) {

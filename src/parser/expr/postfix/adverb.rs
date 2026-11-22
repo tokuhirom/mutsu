@@ -15,6 +15,7 @@ use crate::ast::Expr;
 use crate::ast::parsed::{ParsedExpr, SubscriptAdverbs};
 use crate::ast::subscript_adverb::pair_key;
 use crate::parser::helpers::ws;
+use crate::parser::parse_result::PError;
 use crate::value::Value;
 
 /// Read the chain of colonpairs starting at `input` (whitespace may precede
@@ -62,6 +63,55 @@ pub(crate) fn scan_subscript_adverbs(input: &str) -> Option<(&str, Vec<Expr>)> {
         rest = after;
     }
     (!pairs.is_empty()).then_some((rest, pairs))
+}
+
+/// `Array[Int]:D`: a colonpair after a type application. A subscript on a
+/// type name is a type application, not a subscript, so rakudo refuses the
+/// adverb at compile time (`X::Syntax::Adverb`, "You can't adverb
+/// `Array[Int]`") instead of passing it to `postcircumfix:<[ ]>` (#18323).
+/// `rest` is the input right after the `]`.
+// Cost: O(n), n = length of the subscript's source.
+pub(super) fn reject_type_application_adverb(subscript: &Expr, rest: &str) -> Result<(), PError> {
+    let Expr::Index {
+        target,
+        is_positional: true,
+        ..
+    } = subscript.peel_spelled()
+    else {
+        return Ok(());
+    };
+    let Expr::BareWord(name) = target.peel_spelled() else {
+        return Ok(());
+    };
+    if !crate::known_types::is_known_type_constraint(name)
+        && !crate::parser::stmt::simple::is_user_declared_type(name)
+    {
+        return Ok(());
+    }
+    let written = crate::parser::primary::source_chars_before(rest, 256);
+    let brackets = matching_open_bracket(&written).map_or("[...]", |open| &written[open..]);
+    Err(crate::parser::primary::container::adverb_not_allowed_error(
+        &format!("{name}{brackets}"),
+    ))
+}
+
+/// The byte offset of the `[` matching the `]` that ends `text`.
+// Cost: O(n), n = length of `text`.
+fn matching_open_bracket(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, c) in text.char_indices().rev() {
+        match c {
+            ']' => depth += 1,
+            '[' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The node for `subscript` carrying the colonpairs `pairs`. An empty

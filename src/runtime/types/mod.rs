@@ -26,6 +26,7 @@ mod readonly_capture;
 mod role_candidate;
 mod mixin_type_object_class;
 mod minted_type_publication;
+mod mixin_compose_lock;
 mod role_mixin_class;
 mod roles;
 pub(crate) mod running_package;

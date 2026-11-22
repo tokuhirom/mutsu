@@ -9,7 +9,7 @@
 //! `$blob[$i]` and `$blob.AT-POS($i)` cannot drift apart (#13312).
 
 use super::{Handler, MethodRow, RowFlags};
-use crate::value::value_buf::{buf_len_or_zero, with_buf_elems};
+use crate::value::value_buf::{buf_elem_at, buf_len_or_zero};
 use crate::value::{RuntimeError, Value, ValueView};
 
 const fn row(
@@ -68,8 +68,7 @@ fn at_pos(
 // Cost: O(1).
 fn element_at(attributes: &crate::value::InstanceAttrs, pos: i64, past_end: Option<i64>) -> Value {
     if pos >= 0
-        && let Some(item) =
-            with_buf_elems(attributes, |items| items.get(pos as usize).cloned()).flatten()
+        && let Some(item) = buf_elem_at(attributes, pos as usize)
     {
         return item;
     }

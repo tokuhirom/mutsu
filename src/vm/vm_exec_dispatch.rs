@@ -169,6 +169,12 @@ impl Interpreter {
         err
     }
 
+    /// Execute the op at `ip`.
+    ///
+    /// `_polls` is the entry of the loop that runs `code`: only
+    /// `DispatchPolls::enter(code)` builds one, so no op runs in a loop that
+    /// did not report its code (ADR-18012 S1's code watch). `exec_one` is the
+    /// only caller of the per-op dispatch.
     // Cost: O(1) wrapper around `exec_one_dispatch` (a pending-where probe); the error
     // path attaches a backtrace, O(s), s = routine-stack depth.
     pub(crate) fn exec_one(
@@ -176,6 +182,7 @@ impl Interpreter {
         code: &CompiledCode,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
+        _polls: crate::vm::vm_poll::DispatchPolls,
     ) -> Result<(), RuntimeError> {
         let at = *ip;
         let result = self.exec_one_dispatch(code, ip, compiled_fns);
@@ -709,7 +716,7 @@ impl Interpreter {
                         // frame loaded it, so that binding dies with the frame (a
                         // `require` inside a method); `module_scope_lexicals` keeps it
                         // attached to the module. Last resort, after every live store.
-                        .or_else(|| self.module_scope_lexical(name).cloned())
+                        .or_else(|| self.module_scope_lexical(name))
                         // A `PROCESS::<$name> := ...` install that ran in a frame
                         // which has since exited: `env`'s parent chain no longer
                         // has it, but `process_dynamics` outlives every frame
@@ -996,7 +1003,7 @@ impl Interpreter {
                     })
                     // A file-scope `my @a` of the running routine's own module
                     // (see `module_scope_lexicals`; keys keep the `@` sigil).
-                    .or_else(|| self.module_scope_lexical(name).cloned())
+                    .or_else(|| self.module_scope_lexical(name))
                     // A nested class method can close over a class-body array
                     // declared by an enclosing package (`class Outer { my @a;
                     // class Inner { method m { @a } } }`). Walk package
@@ -1185,7 +1192,7 @@ impl Interpreter {
                     // belongs to (see `module_scope_lexicals`; the table keys
                     // keep the `%` sigil). Last resort, after every live store —
                     // mirrors the scalar fallback in `GetGlobal`.
-                    .or_else(|| self.module_scope_lexical(name).cloned())
+                    .or_else(|| self.module_scope_lexical(name))
                     // Nested classes inherit enclosing package-body container
                     // lexicals; mirror the array read's package-chain fallback.
                     .or_else(|| self.package_chain_var_fallback(code.const_sym(*name_idx)))
@@ -2911,7 +2918,8 @@ impl Interpreter {
                             return Err(RuntimeError::readonly_variable());
                         }
                         let val = if assigned_nil { Value::NIL } else { val };
-                        loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
+                        // A statement-form store: STORE only, no FETCH (#18337).
+                        loan_env!(self, store_proxy_lvalue(&proxy_val, val))?;
                         // The STORE wrote a caller lexical by name (a Proxy in the
                         // process stash, `PROCESS::<$P> := Proxy.new(...)`): drain the
                         // recorded names so the owner's slot refreshes, as the other
@@ -3434,7 +3442,15 @@ impl Interpreter {
                             .get_sym(name_sym)
                             .cloned()
                             .unwrap_or_else(|| val.clone());
-                        self.bind_self_attr_through_alias(&current_alias, bound);
+                        // A bound plain value leaves the method's own names
+                        // readonly too, as the attribute is (#18365).
+                        if let Some(cell) = self.bind_self_attr_through_alias(&current_alias, bound)
+                        {
+                            self.env_mut().insert_sym(name_sym, cell.clone());
+                            self.set_env_with_main_alias(&current_alias, cell.clone());
+                            self.update_local_if_exists(code, &current_alias, &cell);
+                            self.update_local_if_exists(code, &name, &cell);
+                        }
                     } else {
                         self.write_self_attr_cell(&current_alias, val.clone());
                     }
@@ -5881,6 +5897,12 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match &code.ops[*ip] {
             // -- Indexing --
+            // Cost: O(1) for a snapshot hit (ADR-18637); otherwise as
+            // `GetUpvalue` followed by `Index`.
+            OpCode::IndexUpvalue { index, name_idx } => {
+                self.exec_index_upvalue_op(code, *index, *name_idx)?;
+                *ip += 1;
+            }
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices (see
             // exec_index_op_with_positional).
             OpCode::Index { is_positional } => {

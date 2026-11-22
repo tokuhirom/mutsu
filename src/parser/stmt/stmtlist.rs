@@ -451,6 +451,7 @@ fn stmt_list_inner(
                     body_parents,
                     class_is_rw,
                     implicit_grammar_parent,
+                    marks,
                     ..
                 } => {
                     // A `class Foo { ... }` block extracts `also is Parent` and
@@ -470,6 +471,7 @@ fn stmt_list_inner(
                     tail_stmts.retain(|stmt| {
                         if class::stmt_is_also_is_rw(stmt) {
                             *class_is_rw = true;
+                            marks.rw_also = true;
                             false
                         } else if let Some(parent_name) = class::stmt_also_is_parent(stmt) {
                             class::push_also_is_parent(

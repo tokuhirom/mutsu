@@ -214,6 +214,7 @@ pub(super) fn package_origins(
             )
         });
         with_child(decl, "body", |body| block_origins(body, block));
+        super::also_origins::place(decl);
         // The traits are written between the name and the block.
         if spans.name.is_some() && spans.block.blockoid.is_some() {
             super::package_trait_origins::apply(
@@ -312,6 +313,7 @@ pub(super) fn parameters(signature: &mut RakuAstNode, params: &[ParamDef]) {
             param.spans.type_,
         );
         list_origins(&mut node, "traits", &param.spans.traits);
+        super::param_default_origins::place(&mut node, param.spans.param);
         if let Some(inner) = &param.sub_signature {
             sub_signature(&mut node, inner);
         }

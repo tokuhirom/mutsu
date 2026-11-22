@@ -3,6 +3,29 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::Regex::CharClass::Nul",
+        &[
+            "RakuAST::Regex::CharClass::Nul",
+            "RakuAST::Regex::CharClass",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::CharClass::Space",
+        &[
+            "RakuAST::Regex::CharClass::Space",
+            "RakuAST::Regex::CharClass::Negatable",
+            "RakuAST::Regex::CharClass",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Regex::CharClass::Specified",
         &[
             "RakuAST::Regex::CharClass::Specified",
@@ -175,26 +198,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Regex::MatchFrom",
         &[
             "RakuAST::Regex::MatchFrom",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::MatchTo",
-        &[
-            "RakuAST::Regex::MatchTo",
-            "RakuAST::Regex::Atom",
-            "RakuAST::Regex::Term",
-            "RakuAST::Regex",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Regex::NamedCapture",
-        &[
-            "RakuAST::Regex::NamedCapture",
             "RakuAST::Regex::Atom",
             "RakuAST::Regex::Term",
             "RakuAST::Regex",

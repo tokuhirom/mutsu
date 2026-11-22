@@ -903,64 +903,12 @@ impl Interpreter {
         let ValueView::Array(items, kind) = target.view() else {
             return None;
         };
-        // `Shaped` dies on an out-of-range read and defaults its unwritten
-        // slots, and `Lazy` may still need reifying: both are left to the
-        // general path. An itemized Array (`$[...]`, the Array a `$` scalar or
-        // a `for` parameter holds) indexes exactly like the Array itself; an
-        // itemized List is left to the general path.
-        if !matches!(
-            kind,
-            ArrayKind::List | ArrayKind::Array | ArrayKind::ItemArray
-        ) {
-            return None;
-        }
-        let real_array = kind != ArrayKind::List;
-        // ADR-0030 native backing changes where a read comes from. An element
-        // type or an `is default(...)` only changes what a MISS answers -- a
-        // hole, an index past the end, a stored `Nil` -- so such an array still
-        // answers a present ordinary element here (`TYPE @!keys` of a
-        // parameterized role, read in a binary search); every miss shape is
-        // left to the general path below.
-        if items.has_native_backing() {
-            return None;
-        }
-        let plain_misses = !items.has_type_meta() && items.default.is_none();
         // Another thread's `push`/`shift` can be restructuring the node; read
         // under its stripe (ADR-0068, #13016). One relaxed load until a second
         // mutator thread exists.
         let _structure =
             crate::value::container_lock::ContainerStructGuard::acquire_for(None, target);
-        let Some(elem) = items.get(i as usize) else {
-            // Past the end of an untyped real Array the read is its element
-            // default, `Any` (`typed_container_default`); a List's is `Nil`,
-            // which the general path answers.
-            return (real_array && plain_misses).then(|| Value::package(crate::symbol::wk::any()));
-        };
-        match elem.view() {
-            // In an untyped real Array a hole is the `Any` gap marker, and
-            // `resolve_array_entry` answers it with the element default --
-            // `Any` again -- while a type object stored there is read back as
-            // itself. A List's `Mu` hole reads as `Nil` instead.
-            ValueView::Package(..) if real_array && plain_misses => Some(elem.clone()),
-            // A `:=`-bound element cell decontainerizes on read
-            // (`resolve_array_entry`), unless it holds something the general
-            // path still has to fetch or resolve.
-            ValueView::ContainerRef(_) => {
-                let value = elem.deref_container();
-                (!value.is_proxy_value()
-                    && !value.is_container_ref()
-                    && !value.is_lazy_thunk_value()
-                    && !matches!(
-                        value.view(),
-                        ValueView::Nil | ValueView::HashEntryRef { .. }
-                    ))
-                .then_some(value)
-            }
-            // A deferred array-entry bind token resolves to the entry it
-            // names, and a `Nil` slot keeps the general path's handling.
-            ValueView::Package(..) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
-            _ => Some(elem.clone()),
-        }
+        items.plain_positional_read(kind, i)
     }
 
     /// The associative twin of [`Interpreter::index_fast_path_element`]:
@@ -985,6 +933,15 @@ impl Interpreter {
         if items.key_type.is_some() || items.has_typed_keys() {
             return None;
         }
+        // Another thread can be inserting into (and rehashing) the table or
+        // refilling it in place; read under its stripe, as the positional
+        // twin does (ADR-0068, #18651). One relaxed load until a second
+        // mutator thread exists.
+        let _structure = if crate::value::container_lock::multi_mutator_threads_live() {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
+        } else {
+            None
+        };
         let entry = items.get(key.as_str())?;
         match entry.view() {
             ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
@@ -1042,13 +999,20 @@ impl Interpreter {
         }
         // A package stash holds its `our` scalars as the variables' own cells;
         // a bind source or `.VAR` subscript of one keeps the cell, like an
-        // Array element does above (#16920).
+        // Array element does above (#16920), and so does a hash element that
+        // holds a caller's container (`hash_element_cell`).
         if !is_positional
             && self.stack.len() >= 2
             && let Some(cell) = Self::stash_element_cell(
                 &self.stack[self.stack.len() - 2],
                 &self.stack[self.stack.len() - 1],
             )
+            .or_else(|| {
+                Self::hash_element_cell(
+                    &self.stack[self.stack.len() - 2],
+                    &self.stack[self.stack.len() - 1],
+                )
+            })
         {
             let n = self.stack.len();
             self.stack.truncate(n - 2);
@@ -1915,9 +1879,16 @@ impl Interpreter {
         // another thread may be restructuring. They run no user code, so they
         // hold the node's stripe -- except a `WhateverCode` index (`@a[*-1]`,
         // `@a[0, *-2]`), whose closure runs in the arm: that reads a snapshot.
+        // A string-keyed Hash's arms run no user code either and read a table
+        // another thread can rehash or refill in place (#18651); an object
+        // hash keys through `.WHICH`, which can be user code, so it is not
+        // held across that.
         let _read = if crate::value::container_lock::multi_mutator_threads_live()
-            && matches!(target.view(), ValueView::Array(..))
-        {
+            && match target.view() {
+                ValueView::Array(..) => true,
+                ValueView::Hash(items) => items.key_type.is_none() && !items.has_typed_keys(),
+                _ => false,
+            } {
             if Self::index_needs_target_elems(&index) {
                 if let Some(copy) = crate::value::container_read::shared_snapshot(&target) {
                     target = copy;

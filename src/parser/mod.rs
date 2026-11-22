@@ -43,8 +43,10 @@ pub(crate) use primary::{
     prepend_does_header,
 };
 pub(crate) use stmt::class::push_also_is_parent;
+pub(crate) use stmt::class::stmt_is_also_is_rw;
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
+pub(crate) use stmt::decl::call_assign_invocant;
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::simple::superseded_declarator;
 pub(crate) use stmt::simple::{
@@ -153,8 +155,9 @@ pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutabl
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.
+// Cost: O(n) in `input` plus the parse, n = its length (a rule body's text).
 pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate::ast::Expr>)> {
-    primary::parse_call_arg_list(input).ok()
+    primary::parse_bounded_call_arg_list(input).ok()
 }
 
 pub(crate) mod stmt_ending_brace;
@@ -222,6 +225,18 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
 /// imports it. A parse-time `BEGIN` that names one is left to the prologue
 /// (ADR-17558 slice 5): none of them is bound before the unit's frame exists.
 // Cost: O(s), s = enclosing parse scopes.
+/// The key of a dynamic variable named `name` (`$*X`, `%*ENV`), in any of
+/// the spellings the tree uses (`*X`, `$*X`, `%*ENV`), with its sigil: `None`
+/// for any other name.
+// Cost: O(m), m = length of `name`.
+pub(crate) fn dynamic_var_key(name: &str) -> Option<String> {
+    match name.as_bytes() {
+        [b'*', _, ..] => Some(format!("${name}")),
+        [b'$' | b'@' | b'%' | b'&', b'*', _, ..] => Some(name.to_string()),
+        _ => None,
+    }
+}
+
 pub(crate) fn unit_provides_name(name: &str) -> bool {
     stmt::simple::is_declared_symbol_name(name) || stmt::simple::is_imported_function(name)
 }
@@ -551,6 +566,21 @@ fn take_eval_value_tail() -> bool {
 /// Consume the sink-warning suppression flag (one-shot).
 fn take_suppress_sink_warnings() -> bool {
     SUPPRESS_SINK_WARNINGS.with(|f| f.replace(false))
+}
+
+/// [`parse_fragment_unfinalized`] of `input`, a copy of the unit's text
+/// starting at unit offset `unit_offset`: every position the parse records
+/// (statement, routine, package, parameter and block ranges) is the unit's,
+/// as the RakuAST origin passes that parse a fragment again need it.
+// Cost: O(n), n = length of `input`, plus the parse.
+pub(crate) fn parse_fragment_at(
+    input: &str,
+    unit_offset: usize,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    primary::lend_span_base(Some(unit_offset));
+    let result = parse_fragment_unfinalized(input);
+    primary::clear_span_base();
+    result
 }
 
 /// [`parse_fragment`] for a block nested in the unit being parsed — a regex

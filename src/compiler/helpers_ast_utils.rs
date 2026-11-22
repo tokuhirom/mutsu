@@ -25,8 +25,14 @@ impl Compiler {
         }
     }
 
+    /// A declaration whose method calls go through the variable it declares.
+    /// An anonymous scalar (`(my $ = 5).VAR`, `(my Int $ = 5).VAR`) is not
+    /// one: its value is already the container on the stack, and its
+    /// synthesized name holds only the bare value (#18349).
     pub(super) fn is_dostmt_vardecl(expr: &Expr) -> bool {
-        matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
+        matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(),
+            Stmt::VarDecl { anonymous, name, .. }
+                if !*anonymous || name.starts_with(['@', '%', '&'])))
     }
 
     /// An uninitialized untyped `$` scalar declaration (`my $x;`) seeds the

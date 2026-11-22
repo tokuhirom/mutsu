@@ -70,6 +70,7 @@ fn colonpair_key(pair: &RakuAstNode) -> Option<String> {
 }
 
 /// Place `quote`, a `QuotedString` of one `StrLiteral` written as `<text>`
+/// (`<<text>>`, `«text»`)
 /// ending at `to` (after `floor`), and its literal; the offset it starts at.
 // Cost: O(f + t), f = fields of the quote, t = length of its text.
 fn word_quote_at_end(quote: &mut RakuAstNode, floor: usize, to: usize) -> Option<usize> {
@@ -94,15 +95,24 @@ fn word_quote_at_end(quote: &mut RakuAstNode, floor: usize, to: usize) -> Option
         RakuAstFieldValue::Node(v) => Some(v.to_string_value()),
         _ => None,
     })?;
-    // `<` + text + `>`, the last characters of the name.
-    let from = to.checked_sub(text.len() + 2)?;
-    let written = super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |t| {
-        (t.strip_prefix('<').and_then(|t| t.strip_suffix('>')) == Some(text.as_str())).then_some(())
-    });
-    if from <= floor || written.is_none() {
+    // `<` + text + `>` (or `<<...>>`, `«...»`), the last characters of the name.
+    let (from, open, close) = [("<", ">"), ("<<", ">>"), ("\u{ab}", "\u{bb}")]
+        .into_iter()
+        .find_map(|(open, close)| {
+            let from = to.checked_sub(text.len() + open.len() + close.len())?;
+            super::unit_source::with_text(crate::ast::SrcSpan::new(from, to), |t| {
+                (t.strip_prefix(open).and_then(|t| t.strip_suffix(close)) == Some(text.as_str()))
+                    .then_some(())
+            })
+            .map(|()| (from, open.len(), close.len()))
+        })?;
+    if from <= floor {
         return None;
     }
-    super::origin::set_span(&mut literal, crate::ast::SrcSpan::new(from + 1, to - 1));
+    super::origin::set_span(
+        &mut literal,
+        crate::ast::SrcSpan::new(from + open, to - close),
+    );
     *item = Value::rakuast(Box::new(literal));
     super::origin::set_span(quote, crate::ast::SrcSpan::new(from, to));
     Some(from)

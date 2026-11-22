@@ -590,13 +590,16 @@ impl Interpreter {
             ),
         ];
         // `stable` / `migrate`: this tap's own instance of the stage.
-        let (source, closers) = if mode == super::supply_derive_eager::EAGER_STAGE_MODE {
+        let (source, mut closers, feed) = if mode == super::supply_derive_eager::EAGER_STAGE_MODE {
             let params = attributes.get("callable").cloned().unwrap_or(Value::NIL);
             self.eager_stage_for_tap(source, &params)?
         } else {
-            (source, Vec::new())
+            (source, Vec::new(), None)
         };
         let source_tap = self.call_method_with_values(source, "tap", tap_args)?;
+        if let Some(feed) = feed {
+            closers.extend(self.feed_eager_stage(feed)?);
+        }
         if matches!(source_tap.view(), ValueView::Instance { .. })
             && let ValueView::Instance { attributes, .. } = emitter.view()
             && let Some(ValueView::Int(sid)) =

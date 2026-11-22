@@ -116,13 +116,13 @@ impl Interpreter {
         let module = &self.module;
         let unit_mod = self.declared_unit_module_here();
         let loading = module.module_load_stack.last();
-        tags_recorded(&module.world.exported_subs, package, name, tags)
+        tags_recorded(&module.world.exported_subs.read(), package, name, tags)
             && loading
-                .is_none_or(|owner| tags_recorded(&module.world.module_owned_exports, owner, name, tags))
+                .is_none_or(|owner| tags_recorded(&module.world.module_owned_exports.read(), owner, name, tags))
             && unit_mod.is_none_or(|unit_mod| {
-                tags_recorded(&module.world.unit_module_exported_subs, unit_mod, name, tags)
+                tags_recorded(&module.world.unit_module_exported_subs.read(), unit_mod, name, tags)
                     && loading
-                        .is_none_or(|owner| tags_recorded(&module.world.exported_subs, owner, name, tags))
+                        .is_none_or(|owner| tags_recorded(&module.world.exported_subs.read(), owner, name, tags))
             })
     }
 
@@ -269,7 +269,7 @@ impl Interpreter {
         if let Some(unit_mod) = self.declared_unit_module_here().cloned() {
             self.declare_export_namespaces(&unit_mod, tags);
             record_export_tags(
-                &mut self.module.world.unit_module_exported_subs,
+                &mut self.module.world.unit_module_exported_subs.write_guard(),
                 &unit_mod,
                 name,
                 tags,
@@ -280,7 +280,7 @@ impl Interpreter {
         // to hide only MOD's own exports, never a symbol MOD imported from a
         // transitively-`use`d module.
         if let Some(owner) = self.module.module_load_stack.last() {
-            record_export_tags(&mut self.module.world.module_owned_exports, owner, name, tags);
+            record_export_tags(&mut self.module.world.module_owned_exports.write_guard(), owner, name, tags);
         }
         // The module load stack names the requested compunit path. Keep a
         // second metadata entry under that path when the declared unit package
@@ -290,16 +290,16 @@ impl Interpreter {
             && let Some(module) = self.module.module_load_stack.last().cloned()
         {
             self.declare_export_namespaces(&module, tags);
-            record_export_tags(&mut self.module.world.exported_subs, &module, name, tags);
+            record_export_tags(&mut self.module.world.exported_subs.write_guard(), &module, name, tags);
             // The unit-module table is read by the requested compunit path as
             // well (`import_module`), which is how a bodied `proto` of a
             // `unit module` named differently from its file is found.
             if module != unit_mod_name_for_path(self.declared_unit_module_here()) {
-                record_export_tags(&mut self.module.world.unit_module_exported_subs, &module, name, tags);
+                record_export_tags(&mut self.module.world.unit_module_exported_subs.write_guard(), &module, name, tags);
             }
         }
         self.declare_export_namespaces(package, tags);
-        record_export_tags(&mut self.module.world.exported_subs, package, name, tags);
+        record_export_tags(&mut self.module.world.exported_subs.write_guard(), package, name, tags);
     }
 
     /// Refresh the export aliases for a multi family after a later candidate
@@ -324,16 +324,21 @@ impl Interpreter {
     ) {
         let package = self.current_package();
         let recorded = if crate::qualified::is_global_name(&package) {
+            let module_owned_exports_r = self.module.world.module_owned_exports.read();
             self.module
                 .module_load_stack
                 .last()
-                .and_then(|module| self.module.world.module_owned_exports.get(module))
+                .and_then(|module| module_owned_exports_r.get(module))
                 .and_then(|exports| exports.get(name))
+                .cloned()
         } else {
             self.module
-                .world.exported_subs
+                .world
+                .exported_subs
+                .read()
                 .get(&package)
                 .and_then(|exports| exports.get(name))
+                .cloned()
         };
         let tags: Option<Vec<String>> = match recorded {
             Some(recorded) => {

@@ -45,11 +45,39 @@ pub(crate) fn block_spans(start: &str, brace: &str, rest: &str, body: &[Stmt]) -
         brace
     };
     let blockoid = crate::parser::primary::source_span(brace, rest);
+    let mut list = statement_list_span(body, blockoid);
+    if !list.is_some() && blockoid.is_some() {
+        let inside = &brace[1..brace.len() - rest.len()]
+            .strip_suffix('}')
+            .unwrap_or("");
+        list = empty_statements_span(inside, blockoid.from as usize + 1);
+    }
     BlockSpans {
         span: crate::parser::primary::source_span(start, rest),
         blockoid,
-        list: statement_list_span(body, blockoid),
+        list,
     }
+}
+
+/// `{ ;  ; }`: a block of only empty statements. Rakudo's list runs from the
+/// first `;` to past the last one.
+// Cost: O(n), n = length of the block's inside.
+fn empty_statements_span(inside: &str, base: usize) -> SrcSpan {
+    let lead = crate::source_comments::trivia_len(inside).unwrap_or(usize::MAX);
+    let Some(body) = inside.get(lead..).filter(|b| b.starts_with(';')) else {
+        return SrcSpan::NONE;
+    };
+    let mut end = 0;
+    let mut rest = body;
+    while let Some(after) = rest.strip_prefix(';') {
+        end = body.len() - after.len();
+        let gap = crate::source_comments::trivia_len(after).unwrap_or(usize::MAX);
+        rest = after.get(gap..).unwrap_or("x");
+    }
+    if !rest.is_empty() {
+        return SrcSpan::NONE;
+    }
+    SrcSpan::new(base + lead, base + lead + end)
 }
 
 /// The statement a `for` loop becomes: the loop itself, with the positions of

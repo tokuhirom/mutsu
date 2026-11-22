@@ -442,7 +442,8 @@ impl Interpreter {
             // through the ordinary Code `.raku` dispatch.
             // `HyperSeq.configuration` has no class declaration to read its
             // public attributes from: its two fields are the whole object.
-            "HyperConfiguration" if method == "raku" => {
+            // `Mu.gist` of an instance renders the same way (#18709).
+            "HyperConfiguration" if matches!(method, "raku" | "gist") => {
                 let attrs = attributes.as_map();
                 let fields: Vec<String> = ["batch", "degree"]
                     .iter()

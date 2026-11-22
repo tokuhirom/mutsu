@@ -52,6 +52,8 @@ impl Interpreter {
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
+        // An inlined callee runs inside a routine that already noted this.
+        crate::runtime::begin_replay::watch::note_routine_entry();
         if chunk.inline_regions.is_empty() {
             return self.run_trir_ops(chunk, frame, compiled_fns, 0);
         }

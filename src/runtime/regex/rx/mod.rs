@@ -392,9 +392,12 @@ pub(crate) struct RxProgram {
     pub(super) has_call: bool,
     /// One per `|`: its token (in `toks`) and each branch's first op.
     pub(super) ltm_alts: Vec<LtmAltTable>,
-    /// Per-atom printable-ASCII acceptance sets, probed on first run (see
-    /// `rx_atom`).
-    pub(super) ascii: std::sync::OnceLock<Box<[Option<u128>]>>,
+    /// Per-atom printable-ASCII acceptance sets, each probed the first time
+    /// that atom is matched (see `rx_atom`): a grammar compiles a program
+    /// per rule and most of their atoms are never reached on a given input,
+    /// so probing every atom of a program on its first run cost a large
+    /// grammar's first parse ~160M instructions (#17640).
+    pub(super) ascii: Box<[std::sync::OnceLock<Option<u128>>]>,
     /// The pattern's derived slots, read for [`Self::declared_ratchet`] when a
     /// call enters this program as a frame. Shared, not copied: the flag is set
     /// when the body is parsed for a subrule call, which can come after the

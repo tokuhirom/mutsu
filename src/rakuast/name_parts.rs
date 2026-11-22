@@ -343,6 +343,21 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
     })
 }
 
+/// The `Name` of a routine or term name: an operator's (`term:<x>`) with its
+/// word quote, any other one from its identifier.
+// Cost: O(n), n = length of the name.
+pub(super) fn operator_or_identifier(name: &str) -> RakuAstNode {
+    operator_name(name).unwrap_or_else(|| super::view::name_from_identifier(name))
+}
+
+/// A qualified name used as a term: `A::B`, or a package-qualified operator
+/// name (`M::term:<ab>`).
+// Cost: O(n), n = length of the name.
+pub(super) fn is_qualified_term(name: &str) -> bool {
+    is_qualified_identifier(name)
+        || (crate::qualified::is_qualified_str(name) && operator_name(name).is_some())
+}
+
 /// The `Name` of an operator routine written with a quote form the canonical
 /// name does not keep (`postcircumfix:«<< >>»`, `infix:<< a >>`): the written
 /// colonpair is viewed as the quote it was, with its delimiters and spaces.
@@ -425,11 +440,12 @@ pub(super) fn sym_name(name: &str) -> Option<RakuAstNode> {
         (None, Some(inner)) => (true, inner),
         (None, None) => return None,
     };
-    if text.is_empty()
-        || text
-            .chars()
-            .any(|c| matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}' | '\\'))
-    {
+    // `:sym«<foo>»`: angle brackets are plain text inside French quotes.
+    let delimiter = |c: char| match quotewords {
+        true => matches!(c, '\u{00AB}' | '\u{00BB}'),
+        false => matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}'),
+    };
+    if text.is_empty() || text.chars().any(|c| delimiter(c) || c == '\\') {
         return None;
     }
     let pair = RakuAstNode {

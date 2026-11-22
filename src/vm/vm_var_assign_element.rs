@@ -1278,7 +1278,8 @@ impl Interpreter {
             {
                 self.stack.pop();
                 let val = self.stack.pop().unwrap_or(Value::NIL);
-                loan_env!(self, assign_proxy_lvalue(existing, val.clone()))?;
+                // The expression value is the right-hand side: STORE only (#18337).
+                loan_env!(self, store_proxy_lvalue(&existing, val.clone()))?;
                 // The STORE may have written a caller lexical by name (the same
                 // drain the scalar Proxy-store site runs).
                 self.apply_pending_rw_writeback(code);

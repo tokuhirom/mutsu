@@ -223,7 +223,11 @@ pub(super) fn bare_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bo
     if exact.is_none() {
         return false;
     }
-    with_child(node, "name", |n| super::origin::set_span(n, span));
+    // `M::term:<ab>`: the operator's `<...>` quote too.
+    with_child(node, "name", |n| {
+        super::origin::set_span(n, span);
+        operator_quote(n, span);
+    });
     let end = crate::ast::SrcSpan::new(span.to as usize, span.to as usize);
     super::empty_fields::set_span(node, "args", end);
     true

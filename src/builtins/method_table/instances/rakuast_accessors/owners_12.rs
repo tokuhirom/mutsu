@@ -3,6 +3,33 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::StatementPrefix::Phaser::Quit",
+        &[
+            "RakuAST::StatementPrefix::Phaser::Quit",
+            "RakuAST::StatementPrefix::Phaser::Sinky",
+            "RakuAST::StatementPrefix::Phaser",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::StatementPrefix::Phaser::Undo",
+        &[
+            "RakuAST::StatementPrefix::Phaser::Undo",
+            "RakuAST::StatementPrefix::Phaser::Block",
+            "RakuAST::StatementPrefix::Phaser::Sinky",
+            "RakuAST::StatementPrefix::Phaser",
+            "RakuAST::StatementPrefix",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::StatementPrefix::Quietly",
         &[
             "RakuAST::StatementPrefix::Quietly",
@@ -197,27 +224,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Term::EmptySet",
         &[
             "RakuAST::Term::EmptySet",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Term::Enum",
-        &[
-            "RakuAST::Term::Enum",
-            "RakuAST::Term::Name",
-            "RakuAST::Term",
-            "RakuAST::Termish",
-            "RakuAST::Expression",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Term::HyperWhatever",
-        &[
-            "RakuAST::Term::HyperWhatever",
             "RakuAST::Term",
             "RakuAST::Termish",
             "RakuAST::Expression",

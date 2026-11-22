@@ -32,8 +32,11 @@ pub(super) fn name(node: &mut RakuAstNode) {
         .then_some(from + slash + 1 + lead)
     });
     if let Some(at) = at {
+        // `my \term:<ℵ₀>`: the operator name's `<...>` quote too.
         super::infix_origins::with_child(node, "name", |name| {
-            super::origin::set_span(name, SrcSpan::new(at, at + text.len()))
+            let span = SrcSpan::new(at, at + text.len());
+            super::origin::set_span(name, span);
+            super::name_quote_origins::place(name, span);
         });
     }
     // `my Int \n`: the type between the declarator and the backslash.

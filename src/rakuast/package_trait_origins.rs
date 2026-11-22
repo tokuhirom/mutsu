@@ -357,9 +357,14 @@ pub(super) fn handles_term(trait_node: &mut RakuAstNode, whole: SrcSpan) {
     super::infix_origins::with_child_at(trait_node, 0, |held| match held.class {
         RakuAstClass::TermWhatever => super::origin::set_span(held, term),
         RakuAstClass::QuotedString => {
-            let Some((open, close)) =
-                super::unit_source::with_text(term, super::origin::word_brackets)
-            else {
+            // `handles <a b>` / `handles 'uc'` / `handles "uc"`: the literal
+            // between the delimiters, when it is exactly what is written.
+            let Some((open, close)) = super::unit_source::with_text(term, |t| {
+                super::origin::word_brackets(t).or_else(|| {
+                    let quoted = |q: char| t.len() >= 2 && t.starts_with(q) && t.ends_with(q);
+                    (quoted('\'') || quoted('"')).then_some((1, 1))
+                })
+            }) else {
                 return;
             };
             super::origin::set_span(held, term);

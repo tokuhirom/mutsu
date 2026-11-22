@@ -167,6 +167,8 @@ pub(crate) fn method_with_signature(method: &RakuAstNode) -> Option<RakuAstNode>
         method.class,
         RakuAstClass::Method
             | RakuAstClass::Submethod
+            | RakuAstClass::MethodInitializer
+            | RakuAstClass::MethodClassAccessor
             | RakuAstClass::RegexDeclaration
             | RakuAstClass::TokenDeclaration
             | RakuAstClass::RuleDeclaration

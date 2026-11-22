@@ -1,4 +1,5 @@
-//! Public attributes in the default instance `.raku` and `.gist` rendering.
+//! Buildable attributes (public, or private `is built`) in the default
+//! instance `.raku` and `.gist` rendering.
 
 use super::*;
 use crate::meta_ns::MetaNs;
@@ -24,6 +25,14 @@ impl Interpreter {
             } else {
                 class_attrs
             };
+        // A built-in exception class declares its attributes in the table
+        // `builtin_exception_attrs` carries, not in its `ClassDef`.
+        if class_attrs.is_empty() && mixin.is_none() {
+            let exception_attrs = self.builtin_exception_raku_attrs(class_name, attributes);
+            if !exception_attrs.is_empty() {
+                return exception_attrs;
+            }
+        }
         let mut entries: Vec<(ClassAttributeDef, Option<String>)> = Vec::new();
         if let Some(mixins) = mixin {
             let mut seen = std::collections::HashSet::new();
@@ -60,9 +69,8 @@ impl Interpreter {
         }
         let mut parts = Vec::new();
         for (attr, role) in entries {
-            if !attr.is_public {
-                continue;
-            }
+            // Rakudo's `Mu.raku` lists the attributes `.new` builds: the public
+            // ones and a private one declared `is built`.
             let owner = role.as_deref().unwrap_or(class_name);
             if !self.is_attribute_buildable(owner, &attr.name) {
                 continue;
@@ -85,6 +93,30 @@ impl Interpreter {
                 rendered
             };
             parts.push(format!("{} => {}", attr.name, rendered));
+        }
+        parts
+    }
+
+    /// The `name => value` parts of a built-in exception's `.raku`: every
+    /// attribute its class and its built-in parents declare
+    /// (`builtin_exception_attrs`), own ones first, unset ones as their type
+    /// object.
+    // Cost: O(m + a), m = MRO length, a = declared attributes.
+    fn builtin_exception_raku_attrs(&mut self, class_name: &str, attributes: &AttrMap) -> Vec<String> {
+        let mro = self.class_mro(class_name);
+        let rows: Vec<&super::builtin_exception_attrs::Row> = std::iter::once(class_name)
+            .chain(mro.iter().map(|p| p.as_str()).filter(|p| *p != class_name))
+            .filter_map(super::builtin_exception_attrs::declared)
+            .flatten()
+            .collect();
+        let mut parts = Vec::with_capacity(rows.len());
+        for row in rows {
+            let value = row.value(attributes).deref_container();
+            let rendered = self
+                .dispatch_raku_leaf(&value)
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|_| value.to_string_value());
+            parts.push(format!("{} => {}", row.name, rendered));
         }
         parts
     }

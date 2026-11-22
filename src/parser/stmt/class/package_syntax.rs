@@ -20,6 +20,26 @@ pub(crate) fn check_pseudo_package_in_decl(name: &str) -> Result<(), PError> {
     Ok(())
 }
 
+/// `X::UnitScope::TooLate`: a semicolon-form (`unit`) package declarator
+/// where a block form is required -- inside a package, or after the unit
+/// has already declared one. `at` is where the error is reported.
+// Cost: O(1).
+pub(in crate::parser::stmt) fn unit_scope_too_late(what: &str, at: &str) -> PError {
+    let message =
+        format!("Too late for unit-scoped {what} definition;\nPlease use the block form.");
+    let mut error = PError::raw_with_what(
+        message.clone(),
+        Some(at.len()),
+        "X::UnitScope::TooLate",
+        what,
+    );
+    let exception = error
+        .exception
+        .take()
+        .expect("raw_with_what carries its exception");
+    PError::fatal_with_exception_at(message, exception, at)
+}
+
 pub(super) fn require_block(rest: &str, what: &str) -> Result<(), PError> {
     if !rest.starts_with(';') {
         return Ok(());

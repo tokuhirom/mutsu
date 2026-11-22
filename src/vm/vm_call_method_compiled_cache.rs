@@ -748,6 +748,15 @@ impl Interpreter {
         RuntimeError,
     > {
         self.refresh_method_caches_for_generation();
+        // A role type object answers the names rakudo keeps on `Mu` from
+        // `Mu`, never from the role's own method (#18062).
+        if matches!(target.view(), ValueView::Package(_))
+            && crate::runtime::role_type_object_keeps_mu_method(method)
+            && !self.registry().classes.contains_key(cn)
+            && self.is_role(cn)
+        {
+            return Ok(None);
+        }
         // Non-multi resolution depends only on (class, method) — not on arg
         // types/values — so it can be memoized. This mirrors the cache hierarchy
         // already used by the interpret path (`vm_call_method_compiled_interpret`);

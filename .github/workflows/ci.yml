@@ -1147,6 +1147,57 @@ jobs:
           cargo miri test --no-default-features --features native \
             --lib gc::soundness_smoke -- --test-threads=1
 
+  # ADR-8069 / ADR-18637's lock-free cell reads under Miri, as a job of its
+  # own so it runs beside `miri` instead of adding ~11 min to it (that job is
+  # near its timeout). Same gating, toolchain and setup as `miri`.
+  miri-cell-reads:
+    needs: changes
+    if: needs.changes.outputs.gc-value == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned nightly with Miri
+        run: |
+          rustup toolchain install nightly-2026-09-01 --profile minimal \
+            --component miri --component rust-src --no-self-update
+          rustup default nightly-2026-09-01
+
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: "ci-miri-cell-reads"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo miri setup
+        run: cargo miri setup
+
+      # The published
+      # cell word (`value::cell_publish`) and the epoch-held array snapshot
+      # (`value::cell_snapshot`), whose threaded test races readers against a
+      # writer so Miri's data-race and use-after-free checks see the protocol.
+      # `-Zmiri-ignore-leaks` is needed and is not a weakening: a snapshot
+      # retired through `crossbeam_epoch` is freed when the global epoch next
+      # advances, and the test process can exit with retired garbage still
+      # queued. Race and aliasing checks are unaffected by the flag.
+      # `-Zmiri-tree-borrows`: crossbeam-epoch's own intrusive list of thread
+      # records (`internal.rs`, `IsElement::element_of`) is rejected by the
+      # experimental Stacked Borrows model inside the library (0.9.18 and
+      # 0.9.21 alike), before any of our code runs. Tree Borrows is the newer
+      # aliasing model and accepts it; the data-race and use-after-free
+      # checks this step exists for run unchanged under either model.
+      - name: cargo miri test (lock-free cell reads)
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-tree-borrows
+        run: |
+          cargo miri test --no-default-features --features native \
+            --lib value::cell_publish -- --test-threads=1
+          cargo miri test --no-default-features --features native \
+            --lib value::cell_snapshot -- --test-threads=1
+
   wasm-e2e:
     # POST-MERGE ONLY (ADR-11581): runs on `main` (hourly) and in the release gate
     # (release.yml calls this workflow), never on a pull request. It is ~10
@@ -1378,7 +1429,7 @@ jobs:
   # would otherwise add a comment per hour). Only scheduled runs report: a
   # dispatch reports to whoever started it, and a release gate to the release.
   report:
-    needs: [test-check, lint-configs, test-suites, wasm-e2e, debug-tap, miri]
+    needs: [test-check, lint-configs, test-suites, wasm-e2e, debug-tap, miri, miri-cell-reads]
     if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -1397,6 +1448,7 @@ jobs:
             wasm-e2e=${{ needs.wasm-e2e.result }}
             debug-tap=${{ needs.debug-tap.result }}
             miri=${{ needs.miri.result }}
+            miri-cell-reads=${{ needs.miri-cell-reads.result }}
         run: |
           set -euo pipefail
           failed=""

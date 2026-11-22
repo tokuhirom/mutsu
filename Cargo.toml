@@ -9,6 +9,8 @@
 # package. The server is built and tested explicitly (`-p mutsu-lsp`), which is
 # what CI does.
 members = ["crates/mutsu-lsp"]
+# The loom model of ADR-18637 is its own workspace, so loom stays out of this one.
+exclude = ["crates/loom-cell-snapshot"]
 default-members = ["."]
 
 [package]
@@ -110,6 +112,13 @@ wasm-bindgen = { version = "0.2", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 # KEEP (c): FxHash for internal (non-user-keyed) maps.
 rustc-hash = "2.1.1"
+# KEEP (a): epoch-based deferred reclamation for the lock-free shared-array
+# snapshot read (ADR-8069 §6.1, ADR-18637): a reader pins, a replaced snapshot
+# is freed only once every pinned reader is done. Lock-free reclamation is a
+# genuinely hard algorithm not to own (maintainer-approved 2026-11-22). Pinned
+# to the reviewed release; pulls in only `crossbeam-utils` (already in the
+# graph through `crossbeam-channel`).
+crossbeam-epoch = "=0.9.18"
 # KEEP (c): fast seeded hasher for maps keyed by user data (`value/user_key_map.rs`).
 foldhash = "0.2"
 # KEEP (a): AST/value serialization for precomp and the scan cache.
