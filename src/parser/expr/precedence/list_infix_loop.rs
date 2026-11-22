@@ -260,9 +260,7 @@ fn parse_list_infix_loop_impl<'a>(
                     // RakuAST keeps `MetaInfix::Negate` at the application
                     // (its brackets are recovered from the source, #18504).
                     *left = if is_binary {
-                        Expr::spelled(negation, || {
-                            crate::ast::spelled::Spelling::NegatedInfix
-                        })
+                        Expr::spelled(negation, || crate::ast::spelled::Spelling::NegatedInfix)
                     } else {
                         negation
                     };
