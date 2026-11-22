@@ -599,8 +599,17 @@ impl Interpreter {
     // Cost: O(c * r), as `guards_for_recorded_calls`.
     fn judge_found(&self, found: &Unexplained, guards: &mut Vec<Stmt>) -> Result<(), RuntimeError> {
         let mut guarded: HashSet<&str> = HashSet::new();
+        // Without conditions every undeclared routine is reported at once, as
+        // rakudo's CHECK does: one line per name, at its last use.
+        let mut undeclared: Vec<(&str, i64, Vec<String>)> = Vec::new();
         for (name, line) in &found.calls {
             if self.call_resolves_in_scope(name, found) {
+                continue;
+            }
+            if found.condition_slots.is_empty()
+                && let Some(seen) = undeclared.iter_mut().find(|(n, ..)| n == name)
+            {
+                seen.1 = *line;
                 continue;
             }
             // Rakudo suggests the unit's own routines, not just core ones:
@@ -610,7 +619,8 @@ impl Interpreter {
             // them, so pass them along as extra candidates.
             let suggestions = self.suggest_routine_names_including(name, &found.declared_routines);
             if found.condition_slots.is_empty() {
-                return Err(Self::undeclared_routine_error(name, *line, suggestions));
+                undeclared.push((name, *line, suggestions));
+                continue;
             }
             if !guarded.insert(name) {
                 continue;
@@ -624,7 +634,42 @@ impl Interpreter {
             };
             guards.push(conditional::guard(call, &found.condition_slots));
         }
-        Ok(())
+        match undeclared.len() {
+            0 => Ok(()),
+            1 => {
+                let (name, line, suggestions) = undeclared.pop().expect("one entry");
+                Err(Self::undeclared_routine_error(name, line, suggestions))
+            }
+            _ => Err(Self::undeclared_routines_error(undeclared)),
+        }
+    }
+
+    /// [`Self::undeclared_routine_error`] for several names: rakudo's
+    /// `Undeclared routines:` list, sorted by name, each at its last use.
+    // Cost: O(u log u + m), u = the names, m = chars of the message.
+    fn undeclared_routines_error(mut undeclared: Vec<(&str, i64, Vec<String>)>) -> RuntimeError {
+        undeclared.sort_by(|a, b| a.0.cmp(b.0));
+        let lines: Vec<String> = undeclared
+            .iter()
+            .map(|(name, line, suggestions)| {
+                let mut entry = format!("    {name} used at line {line}");
+                if !suggestions.is_empty() {
+                    entry.push_str(&format!(". Did you mean '{}'?", suggestions.join("', '")));
+                }
+                entry
+            })
+            .collect();
+        let (first, first_line, _) = &undeclared[0];
+        let mut err = RuntimeError::undeclared_routine_symbols(
+            first,
+            format!("Undeclared routines:\n{}", lines.join("\n")),
+            Vec::new(),
+        );
+        err.set_code(Some(RuntimeErrorCode::ParseGeneric));
+        if *first_line > 0 {
+            err.set_line(Some(*first_line as usize));
+        }
+        err
     }
 }
 
