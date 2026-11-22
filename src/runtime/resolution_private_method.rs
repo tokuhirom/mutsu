@@ -67,6 +67,22 @@ impl Interpreter {
         // `func_multi_resolve_cache` had (#6425) before it gained its own
         // read-site refresh.
         self.refresh_method_caches_for_generation();
+        // Private methods are not inherited or overridden: an unqualified
+        // `self!m` inside class P's method names P's own `!m`, even when the
+        // receiver is a subclass that declares a `!m` of its own (#18831). So
+        // the calling class answers first; only a caller with no `!m` (or no
+        // caller to ask) falls back to the receiver's MRO walk below, whose
+        // memo is therefore caller-independent.
+        if let Some(caller) = self.private_caller_owner(class_name)
+            && let Some(found) = self.resolve_private_method_with_owner(
+                class_name,
+                &caller,
+                method_name,
+                arg_values,
+            )?
+        {
+            return Ok(Some(found));
+        }
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         if arg_values.is_empty()
             && let Some(cached) = self
@@ -246,7 +262,7 @@ impl Interpreter {
         } else {
             self.multi_arg_type_keys(arg_values)
         };
-        let Some(keys) = keys else {
+        let Some(mut keys) = keys else {
             return Ok(self
                 .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)?
                 .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def))));
@@ -270,6 +286,13 @@ impl Interpreter {
             return Ok(self
                 .resolve_private_method_for_vm(class_sym.as_str(), method, arg_values)?
                 .map(|(owner, def)| (Symbol::intern(&owner), std::sync::Arc::new(def))));
+        }
+        // The answer depends on the calling class when it is not the
+        // receiver's (see `resolve_private_method_any_owner`), so such a call
+        // keys on it too, behind a separator no type name can spell.
+        if let Some(caller) = self.private_caller_owner(class_sym.as_str()) {
+            keys.push(Symbol::intern("\0caller"));
+            keys.push(Symbol::intern(&caller));
         }
         let key = (class_sym, method_sym, keys);
         if let Some(hit) = self.caches.private_resolve_cache.get(&key) {
@@ -404,6 +427,39 @@ impl Interpreter {
         self.lexical_self_class()
             .is_some_and(|class| class.as_str() == owner_class)
             || self.private_calling_package().as_deref() == Some(owner_class)
+    }
+
+    /// The class an unqualified `self!m` is written in, when it is not the
+    /// receiver's own class: the running method's class, refined to the
+    /// package a closure was written in (`private_calling_package`). `None`
+    /// when no method frame is running or the caller is the receiver's class,
+    /// where the receiver-MRO walk already answers.
+    // Cost: O(1) when the caller is the receiver's class; else one
+    // package-name copy and a registry probe.
+    fn private_caller_owner(&self, receiver: &str) -> Option<String> {
+        let top = self.method_class_stack_top_str()?;
+        if top == receiver {
+            return None;
+        }
+        let caller = self
+            .private_calling_package()
+            .filter(|caller| caller != receiver)?;
+        // A role's method runs as a method of the class that composed it, and
+        // that class's own `!m` overrides the role's: map the role to the
+        // first class in the receiver's MRO that composes it itself
+        // (`class_does_role` would also answer for every subclass).
+        if self.registry().roles.contains_key(caller.as_str()) {
+            let mro = self.class_mro(receiver);
+            let registry = self.registry();
+            let composer = mro.iter().find(|cn| {
+                registry
+                    .class_composed_roles
+                    .get(cn.as_str())
+                    .is_some_and(|roles| roles.contains(&caller))
+            });
+            return composer.map(|cn| cn.resolve()).filter(|cn| cn != receiver);
+        }
+        Some(caller)
     }
 
     /// Resolve the MRO for `class_name`. Tries the read-only resolution first
