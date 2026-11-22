@@ -1134,9 +1134,15 @@ jobs:
       # retired through `crossbeam_epoch` is freed when the global epoch next
       # advances, and the test process can exit with retired garbage still
       # queued. Race and aliasing checks are unaffected by the flag.
+      # `-Zmiri-tree-borrows`: crossbeam-epoch's own intrusive list of thread
+      # records (`internal.rs`, `IsElement::element_of`) is rejected by the
+      # experimental Stacked Borrows model inside the library (0.9.18 and
+      # 0.9.21 alike), before any of our code runs. Tree Borrows is the newer
+      # aliasing model and accepts it; the data-race and use-after-free
+      # checks this step exists for run unchanged under either model.
       - name: cargo miri test (lock-free cell reads)
         env:
-          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-tree-borrows
         run: |
           cargo miri test --no-default-features --features native \
             --lib value::cell_publish -- --test-threads=1
