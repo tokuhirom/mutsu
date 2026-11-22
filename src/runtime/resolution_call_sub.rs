@@ -345,17 +345,47 @@ impl Interpreter {
     /// dispatcher being called under `&name` for this call (the Subs are
     /// immutable once built, so a standing back-reference is not an option).
     // Cost: O(e), e = size of the candidate's captured env (only when it lacks `&name`).
-    fn bind_family_dispatcher(candidate: &Value, family: Option<&str>, dispatcher: &Value) -> Value {
+    // Cost: O(1) for a pair bound before; else O(e) to copy the candidate,
+    // e = its env entries.
+    fn bind_family_dispatcher(
+        &mut self,
+        candidate: &Value,
+        family: Option<&str>,
+        dispatcher: &Value,
+    ) -> Value {
         let (Some(family), ValueView::Sub(cand)) = (family, candidate.view()) else {
             return candidate.clone();
         };
+        let key = match dispatcher.view() {
+            ValueView::Sub(disp) => Some((
+                crate::gc::Gc::as_ptr(&cand) as usize,
+                crate::gc::Gc::as_ptr(&disp) as usize,
+            )),
+            _ => None,
+        };
+        if let Some(key) = key
+            && let Some((_, _, bound)) = self.caches.bound_family_dispatchers.get(&key)
+        {
+            return bound.clone();
+        }
         let amp = format!("&{family}");
         if cand.env.contains_key(&amp) {
             return candidate.clone();
         }
         let mut next: crate::value::SubData = (**cand).clone();
         next.env.insert(amp, dispatcher.clone());
-        Value::sub_value(crate::gc::Gc::new(next))
+        let bound = Value::sub_value(crate::gc::Gc::new(next));
+        if let Some(key) = key {
+            // Bounded: a program that keeps minting operator scopes starts over.
+            if self.caches.bound_family_dispatchers.len() >= 256 {
+                self.caches.bound_family_dispatchers.clear();
+            }
+            self.caches.bound_family_dispatchers.insert(
+                key,
+                (candidate.clone(), dispatcher.clone(), bound.clone()),
+            );
+        }
+        bound
     }
 
     /// A Junction argument that no candidate of a captured family takes as a
@@ -466,7 +496,7 @@ impl Interpreter {
             {
                 return self.run_core_increment(op, arg, None);
             }
-            let candidate = Self::bind_family_dispatcher(&candidate, family_name, func);
+            let candidate = self.bind_family_dispatcher(&candidate, family_name, func);
             return self.call_captured_multi_winner(
                 family_name.unwrap_or(""),
                 candidate,
@@ -481,7 +511,7 @@ impl Interpreter {
             if let ValueView::Sub(cand_data) = candidate.view()
                 && cand_data.param_defs.iter().any(|pd| pd.slurpy)
             {
-                let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
+                let candidate = self.bind_family_dispatcher(candidate, family_name, func);
                 self.set_pending_call_arg_sources_shared(arg_sources);
                 return self.call_sub_value(candidate, call_args);
             }
@@ -508,7 +538,7 @@ impl Interpreter {
             return Err(self.multi_no_match_error(family, &call_args));
         }
         if let Some(candidate) = candidates.first() {
-            let candidate = Self::bind_family_dispatcher(candidate, family_name, func);
+            let candidate = self.bind_family_dispatcher(candidate, family_name, func);
             self.set_pending_call_arg_sources_shared(arg_sources);
             return self.call_sub_value(candidate, call_args);
         }
@@ -565,7 +595,7 @@ impl Interpreter {
                 super::native_infix_dispatch::CoreInfixVerdict::User => {}
             }
         }
-        let candidate = Self::bind_family_dispatcher(&candidate, Some(family), func);
+        let candidate = self.bind_family_dispatcher(&candidate, Some(family), func);
         self.call_captured_multi_winner(family, candidate, remaining, args, func.clone(), key_decided)
             .map(Some)
     }
