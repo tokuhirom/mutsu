@@ -556,6 +556,7 @@ impl Interpreter {
                     }
                     if let Some(value) = self
                         .module
+                        .world
                         .module_scope_lexicals
                         .get(pkg.as_str())
                         .and_then(|entries| entries.get(name))

@@ -377,7 +377,7 @@ impl Interpreter {
             if self.should_hide_from_my_global_stash(&key)
                 || !matches!(value.view(), ValueView::Package(_))
                 || self.module_name_hidden_here(&key)
-                || (block_pad && self.module.loaded_modules.contains(key.as_str()))
+                || (block_pad && self.module.world.loaded_modules.contains(key.as_str()))
             {
                 continue;
             }

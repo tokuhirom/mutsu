@@ -2175,7 +2175,7 @@ impl Interpreter {
                                 captured_unit.or_else(|| {
                                     declaring_package
                                         .and_then(|p| {
-                                            self.module.class_declaring_units.get(p.as_str())
+                                            self.module.world.class_declaring_units.get(p.as_str())
                                         })
                                         .copied()
                                 }),
