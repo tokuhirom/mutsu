@@ -392,7 +392,7 @@ fn lower_call_assign(
         Err(_) => return Err(unsupported(node)),
     };
     Ok(crate::ast::Expr::MethodCall {
-        target: Box::new(crate::ast::Expr::BareWord(invocant)),
+        target: Box::new(crate::parser::call_assign_invocant(invocant)),
         name: crate::symbol::Symbol::intern(&method),
         args,
         modifier: None,

@@ -45,6 +45,7 @@ pub(crate) use primary::{
 pub(crate) use stmt::class::push_also_is_parent;
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
+pub(crate) use stmt::decl::call_assign_invocant;
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::simple::superseded_declarator;
 pub(crate) use stmt::simple::{

@@ -965,20 +965,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Vec::new())
         };
-        let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
-        // `has Inp() $.x .= new` / `has Int(Str) $.x .= new`: the method is
-        // called on the target type of the coercion, not on the coercion.
-        let target_name = match target_name.split_once('(') {
-            Some((target, rest)) if rest.ends_with(')') && !target.is_empty() => target.to_string(),
-            _ => target_name,
-        };
-        let target_expr = if target_name == "::?CLASS" {
-            Expr::Var("?CLASS".to_string())
-        } else if target_name == "::?ROLE" {
-            Expr::Var("?ROLE".to_string())
-        } else {
-            Expr::BareWord(target_name)
-        };
+        let target_expr = super::call_assign_target::call_assign_invocant(
+            type_constraint.clone().unwrap_or_else(|| name.clone()),
+        );
         let call = Expr::MethodCall {
             target: Box::new(target_expr),
             name: Symbol::intern(&method_name),
