@@ -38,7 +38,11 @@ fn grammar_action_reads_do_not_materialize_the_match() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "run failed: {stderr}");
-    assert_eq!(stdout.trim(), "50 7 50", "wrong parse result; stderr: {stderr}");
+    assert_eq!(
+        stdout.trim(),
+        "50 7 50",
+        "wrong parse result; stderr: {stderr}"
+    );
     let stats_line = stderr
         .lines()
         .find(|l| l.contains("regex-captures:"))
