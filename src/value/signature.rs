@@ -1746,7 +1746,9 @@ fn render_param(p: &SigParam) -> String {
         if !p.name.is_empty() {
             result.push_str(&p.name);
         }
-        for t in &p.traits {
+        // Raw by construction: rakudo renders no explicit `is raw` on it
+        // (`:(\x is raw).raku` is `:(\x)`).
+        for t in p.traits.iter().filter(|t| *t != "raw") {
             result.push_str(" is ");
             result.push_str(t);
         }
