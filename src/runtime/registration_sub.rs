@@ -1949,8 +1949,12 @@ impl Interpreter {
             // A named wrap chain belongs to the declaration it wrapped, not
             // to every later routine with the same name. Retire it before an
             // EVAL-local redeclaration replaces the registry entry; named
-            // call dispatch otherwise finds the stale chain by name.
-            self.clear_wrap_chains_for_name(Symbol::intern(&package), name);
+            // call dispatch otherwise finds the stale chain by name. A role
+            // body's sub re-registered for a later composition keeps the
+            // chain its traits built at the first one (#18097).
+            if !self.role_body_sub_traits_recorded(name, registration_identity(&arc)) {
+                self.clear_wrap_chains_for_name(Symbol::intern(&package), name);
+            }
             self.routines_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches — one key moved (#8314).
             self.invalidate_fn_resolution_for_keys([fq_sym]);
@@ -2110,9 +2114,23 @@ impl Interpreter {
             self.env
                 .insert(MetaNs::MethodValue.owned_key_for_str(name), Value::TRUE);
         }
-        // Apply custom trait_mod:<is> for each non-builtin trait
+        // Apply custom trait_mod:<is> for each non-builtin trait; a role-body
+        // sub's traits run at its first registration only (#18097).
         let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
-        {
+        let role_trait_key = has_trait_mod
+            .then(|| {
+                let def = self
+                    .routines()
+                    .functions
+                    .get(&Symbol::intern(self.current_package_qualified(name)))
+                    .cloned()?;
+                self.role_body_sub_trait_key(name, registration_identity(&def))
+            })
+            .flatten();
+        let replayed = role_trait_key
+            .as_ref()
+            .is_some_and(|key| self.replay_role_body_sub_traits(key, name));
+        if !replayed {
             // `is hidden-from-USAGE` on a `MAIN` candidate keeps it dispatchable
             // but drops it from the generated usage message. Record its body
             // fingerprint (the same key `collect_main_candidates` dedupes on) so
@@ -2279,6 +2297,11 @@ impl Interpreter {
                     // swallowed.
                     Err(e) => return Err(e),
                 }
+            }
+            if let Some(key) = role_trait_key
+                && !custom_traits.is_empty()
+            {
+                self.record_role_body_sub_traits(key, name);
             }
         }
         if imported_routine_alias {

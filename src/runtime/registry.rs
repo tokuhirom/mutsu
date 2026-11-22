@@ -719,6 +719,11 @@ pub(crate) struct Registry {
     /// The value is the env bindings the first evaluation left (the constant's
     /// own name and its term key), put back for the later compositions.
     pub(crate) role_evaluated_constants: Sharded<(String, String), Vec<(String, Value)>>,
+    /// The routine a role-body `sub`'s traits left at its first
+    /// registration: (role, `name\0<body identity>`) -> `&name`. Later
+    /// compositions re-register the sub without re-running its traits and
+    /// take the recorded mixin (#18097, `role_body_sub_traits.rs`).
+    pub(crate) role_body_traited_subs: Sharded<(String, String), Value>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,

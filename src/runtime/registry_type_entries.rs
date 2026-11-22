@@ -386,6 +386,7 @@ impl Registry {
             param_role_attribute_traits: _,
             role_registered_sub_protos,
             role_evaluated_constants,
+            role_body_traited_subs,
             roles,
             user_declared_roles,
             role_candidates,
@@ -526,6 +527,7 @@ impl Registry {
         );
         copy(role_registered_sub_protos, &mut dst.role_registered_sub_protos, names);
         copy(role_evaluated_constants, &mut dst.role_evaluated_constants, names);
+        copy(role_body_traited_subs, &mut dst.role_body_traited_subs, names);
         copy(roles, &mut dst.roles, names);
         copy(user_declared_roles, &mut dst.user_declared_roles, names);
         copy(role_candidates, &mut dst.role_candidates, names);

@@ -6,6 +6,7 @@ mod registration_class;
 mod registration_class_attr;
 mod registration_class_augment;
 mod role_plain_pun;
+mod role_body_sub_traits;
 mod registration_class_body;
 mod registration_class_body_aliases;
 mod registration_class_body_attr;
