@@ -352,6 +352,8 @@ impl Registry {
             minted_type_names,
             // In-flight: cleared for a type when it composes.
             pending_multi_methods: _,
+            // In-flight: installed for a type when it composes.
+            deferred_multi_methods: _,
             attr_trait_composed,
             declaring_role_ids,
             // In-flight declaration state of the creating thread.
