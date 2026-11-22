@@ -14,6 +14,11 @@ use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
+/// One `mixin_default_new_memo` entry: the type object (held, so its
+/// overrides address stays its own), the registry write generation, whether
+/// the default constructor applies, and the composed class it builds through.
+pub(crate) type MixinDefaultNewVerdict = (Value, u64, bool, Option<Symbol>);
+
 impl Interpreter {
     /// `.new(args)` on a role-mixed type object whose construction is the
     /// default constructor's, made directly; `None` for any other receiver or
