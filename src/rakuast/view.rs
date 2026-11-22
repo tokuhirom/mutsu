@@ -915,6 +915,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     node,
                 ))));
             }
+            also_statements.extend(super::also_rw::statement(marks.rw_also));
             let traits = header_trait_values(
                 names,
                 body,
@@ -922,7 +923,7 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                     parents: &header_parents,
                     does_parents,
                     hidden_parents,
-                    is_rw: *class_is_rw,
+                    is_rw: *class_is_rw && !marks.rw_also,
                     is_hidden: *is_hidden,
                     custom_traits,
                 },

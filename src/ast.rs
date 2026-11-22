@@ -4156,6 +4156,10 @@ pub struct PackageMarks {
     /// when the name is a trait instead (`is foo`) it is dispatched as written
     /// (#11349).
     pub parent_spellings: Vec<(String, String)>,
+    /// `is rw` was written in the body as `also is rw;` (a `Statement::Also`
+    /// in RakuAST), not on the declaration.
+    #[serde(default)]
+    pub rw_also: bool,
 }
 
 #[cfg(test)]
