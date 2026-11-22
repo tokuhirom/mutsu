@@ -10,3 +10,9 @@ which also showed up inside a container's `.raku` (`Set.new($failure).raku`)
 
 The row renders an `X::AdHoc` without an interpreter. Any other exception is
 rendered by the instance's own `.raku`.
+
+For that form to round-trip (`$failure.raku.EVAL.handled`), the routine form of
+`orelse`, `andthen` and `notandthen` now folds its operands as Rakudo's
+`infix:<orelse>(+a)` does. A `Callable` operand is called with the value so far
+(`&infix:<orelse>(Nil, *.self)` is `Nil`, not the `WhateverCode`), and the
+definedness test handles a Failure, as `.defined` does.
