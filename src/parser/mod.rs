@@ -153,8 +153,9 @@ pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutabl
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.
+// Cost: O(n) in `input` plus the parse, n = its length (a rule body's text).
 pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate::ast::Expr>)> {
-    primary::parse_call_arg_list(input).ok()
+    primary::parse_bounded_call_arg_list(input).ok()
 }
 
 pub(crate) mod stmt_ending_brace;
