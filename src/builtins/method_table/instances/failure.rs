@@ -220,7 +220,12 @@ fn mess_text(target: &Value) -> String {
     } else {
         ""
     };
-    format!("{handled}{}\n{}", message(target), backtrace_text(target))
+    // `Backtrace.Str` ends each frame with a newline.
+    let mut backtrace = backtrace_text(target);
+    if !backtrace.is_empty() && !backtrace.ends_with('\n') {
+        backtrace.push('\n');
+    }
+    format!("{handled}{}\n{backtrace}", message(target))
 }
 
 // Cost: as `mess_text`.
