@@ -63,12 +63,12 @@ pub(super) fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpa
 }
 
 /// The cursor over a regex body.
-struct Walk<'a> {
-    text: &'a str,
+pub(super) struct Walk<'a> {
+    pub(super) text: &'a str,
     /// The unit offset of the body's first byte.
-    base: usize,
+    pub(super) base: usize,
     /// The cursor, relative to the body.
-    at: usize,
+    pub(super) at: usize,
 }
 
 impl Walk<'_> {
@@ -149,7 +149,11 @@ impl Walk<'_> {
                 let (rest, at) = (&self.text[self.at..], self.base + self.at);
                 self.at += super::regex_alias_origins::place(node, rest, at)?;
             }
-            RakuAstClass::RegexInterpolation => self.interpolation(node, false)?,
+            RakuAstClass::RegexInterpolation => {
+                if self.contextualized(names, node).is_none() {
+                    self.interpolation(node, false)?
+                }
+            }
             RakuAstClass::RegexAssertionInterpolatedVar => self.interpolation(node, true)?,
             RakuAstClass::RegexAssertionNamed | RakuAstClass::RegexAssertionNamedArgs => {
                 self.named_assertion(names, node)?
@@ -558,7 +562,7 @@ impl Walk<'_> {
     /// not in the tree, and Rakudo's `Interpolation` runs over it and the
     /// whitespace after it. Consumes that text when it is at the cursor.
     // Cost: O(n), n = length of the aliased atom.
-    fn alias_tail(&mut self) {
+    pub(super) fn alias_tail(&mut self) {
         let rest = &self.text[self.at..];
         let gap = rest.len() - rest.trim_start().len();
         let Some(after) = rest[gap..].strip_prefix('=') else {
@@ -605,20 +609,22 @@ impl Walk<'_> {
         self.child(names, node, "regex")
     }
 
-    /// `<[a..z]>`, `<-[x y]>`, `<[a]+[b]-[c]>`: each enumeration runs from
-    /// its sign (none on an unsigned first one) to its `]`.
+    /// `<[a..z]>`, `<-[x y]>`, `<[a]+[b]-[c]>`, `<:Alpha>`: each element runs
+    /// from its sign (none on an unsigned first one) to its end.
     // Cost: O(n), n = length of the class's text.
     fn char_class(&mut self, node: &mut RakuAstNode) -> Option<()> {
         self.eat("<")?;
-        for i in 0..node.fields.len() {
+        let count = node.fields.len();
+        for (i, field) in node.fields.iter_mut().enumerate() {
             let start = self.at;
-            let RakuAstFieldValue::Node(held) = &mut node.fields[i].value else {
+            let RakuAstFieldValue::Node(held) = &mut field.value else {
                 return None;
             };
             let ValueView::RakuAst(element) = held.view() else {
                 return None;
             };
-            if element.class != RakuAstClass::RegexCharClassElementEnumeration {
+            let property = element.class == RakuAstClass::RegexCharClassElementProperty;
+            if element.class != RakuAstClass::RegexCharClassElementEnumeration && !property {
                 return None;
             }
             let negated = element.fields.iter().any(|f| {
@@ -631,7 +637,23 @@ impl Walk<'_> {
                 return None;
             }
             let mut element = RakuAstNode::clone(element);
-            let placed = self.enumeration(&mut element);
+            // `<:Alpha>`: a property, its colon then its name.
+            let placed = if property {
+                let name = element.fields.iter().find_map(|f| match &f.value {
+                    RakuAstFieldValue::Node(v) if f.name == Some("property") => {
+                        v.as_str().map(str::to_string)
+                    }
+                    _ => None,
+                });
+                name.and_then(|name| self.eat(&format!(":{name}")))
+            } else {
+                self.enumeration(&mut element)
+            };
+            // An element followed by another runs through the blanks
+            // between them.
+            if placed.is_some() && i + 1 < count {
+                self.blank();
+            }
             if placed.is_some() {
                 super::origin::set_span(
                     &mut element,

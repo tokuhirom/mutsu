@@ -175,7 +175,14 @@ fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
         if name_len == 0 {
             return Some(traits);
         }
-        let name_to = name_from + name_len;
+        let mut name_to = name_from + name_len;
+        // `is Array[Int]`: a type application, its brackets part of the type.
+        if text[name_to..].starts_with('[') {
+            let Some(close) = closing_bracket(&text[name_to..]) else {
+                return Some(traits);
+            };
+            name_to += close + 1;
+        }
         let mut end = name_to;
         let mut argument = None;
         if text[name_to..].starts_with('(') {
@@ -266,7 +273,7 @@ fn type_origin(ty: &mut RakuAstNode, (from, to, name_to): (usize, usize, usize))
             super::origin::set_span(ty, SrcSpan::new(from, to));
             super::type_origins::coercion(ty, SrcSpan::new(from, to))
         }
-        RakuAstClass::TypeDefinedness if name_to < to => {
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness if name_to < to => {
             let Some(inner) = super::infix_origins::child_at(ty, 0) else {
                 return;
             };
@@ -363,8 +370,14 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         // `my @a is Array`: a trait naming a type holds a `type`, placed over
         // the name.
         if let Some(ty) = child(trait_node, "type") {
-            let named = child_name(ty).is_some_and(|name| {
+            // `is Array[Int]`: the applied type's name before its brackets.
+            let (base, applied) = match ty.class {
+                RakuAstClass::TypeParameterized => (child_at(ty, 0), true),
+                _ => (Some(ty), false),
+            };
+            let named = base.and_then(child_name).is_some_and(|name| {
                 super::unit_source::with_text(SrcSpan::new(clause.name.0, clause.name.1), |w| {
+                    let w = if applied { w.split_once('[')?.0 } else { w };
                     (w == name).then_some(())
                 })
                 .is_some()

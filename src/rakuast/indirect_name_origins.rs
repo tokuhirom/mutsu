@@ -256,23 +256,10 @@ pub(super) fn bare_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bo
     true
 }
 
-/// `MY::<$j>`: a package name ending in `::` that a postfix applies to, at
-/// the start of `node`'s range. The `Term::Name` and its `Name` span the
-/// name with its `::`.
+/// How the `Name` `name` is written when it is simple parts ending in `::`
+/// (`MY::`, `A::B::`): `None` for any other name.
 // Cost: O(p + n), p = parts of the name, n = its length.
-pub(super) fn package_operand(node: &mut RakuAstNode) {
-    use super::infix_origins::{byte_range, child, child_at, with_child, with_child_at};
-    let Some((from, _)) = byte_range(node) else {
-        return;
-    };
-    let Some(term) = child(node, "operand")
-        .filter(|t| t.class == RakuAstClass::TermName && t.origin.0.is_none())
-    else {
-        return;
-    };
-    let Some(name) = child_at(term, 0) else {
-        return;
-    };
+pub(super) fn package_spelling(name: &RakuAstNode) -> Option<String> {
     let parts: Vec<_> = name
         .fields
         .iter()
@@ -282,13 +269,13 @@ pub(super) fn package_operand(node: &mut RakuAstNode) {
             _ => &[],
         })
         .collect();
-    let Some((last, simple)) = parts.split_last() else {
-        return;
-    };
-    if !matches!(last.view(), ValueView::RakuAst(p) if p.class == RakuAstClass::NamePartEmptyEdge) {
-        return;
+    let (last, simple) = parts.split_last()?;
+    if !matches!(last.view(), ValueView::RakuAst(p) if p.class == RakuAstClass::NamePartEmptyEdge)
+        || simple.is_empty()
+    {
+        return None;
     }
-    let Some(words) = simple
+    let words = simple
         .iter()
         .map(|p| match p.view() {
             ValueView::RakuAst(part) if part.class == RakuAstClass::NamePartSimple => {
@@ -296,11 +283,26 @@ pub(super) fn package_operand(node: &mut RakuAstNode) {
             }
             _ => None,
         })
-        .collect::<Option<Vec<String>>>()
+        .collect::<Option<Vec<String>>>()?;
+    Some(format!("{}::", words.join("::")))
+}
+
+/// `MY::<$j>`: a package name ending in `::` that a postfix applies to, at
+/// the start of `node`'s range. The `Term::Name` and its `Name` span the
+/// name with its `::`.
+// Cost: O(p + n), p = parts of the name, n = its length.
+pub(super) fn package_operand(node: &mut RakuAstNode) {
+    use super::infix_origins::{byte_range, child, child_at, with_child, with_child_at};
+    let Some((from, _)) = byte_range(node) else {
+        return;
+    };
+    let Some(written) = child(node, "operand")
+        .filter(|t| t.class == RakuAstClass::TermName && t.origin.0.is_none())
+        .and_then(|t| child_at(t, 0))
+        .and_then(package_spelling)
     else {
         return;
     };
-    let written = format!("{}::", words.join("::"));
     let exact = super::unit_source::with_text_from(from, |text| {
         text.starts_with(written.as_str()).then_some(())
     });
