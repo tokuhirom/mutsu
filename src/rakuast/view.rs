@@ -2896,26 +2896,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             fields: vec![node_field(None, block_node(names, body)?)],
         }),
         // `eager EXPR` -> `StatementPrefix::Eager(Statement::Expression(EXPR))`.
-        Expr::Eager(inner) => {
-            let statement = match inner.as_ref() {
-                // `eager EXPR if COND`: the modified statement (#18510).
-                Expr::DoStmt(stmt) if is_modifier_statement(stmt) => {
-                    super::prefix_call::prefix_statement(names, inner)?
-                }
-                _ => {
-                    let operand = view_expr(names, inner)?;
-                    if operand.class == RakuAstClass::Block {
-                        return Err(unsupported("eager block"));
-                    }
-                    statement_expression(operand)
-                }
-            };
-            Ok(RakuAstNode {
-                origin: Default::default(),
-                class: RakuAstClass::StatementPrefixEager,
-                fields: vec![node_field(None, statement)],
-            })
-        }
+        Expr::Eager(inner) => super::prefix_call::view_eager(names, inner),
         // `$@a` / `$%h` / `$[1, 2]` -> `Contextualizer::Item` over the term.
         Expr::Itemize(inner) => super::contextualizer::view_itemize(names, inner),
         // `1 ==> foo()` -> `ApplyListInfix(Feed("==>"), operands)`.

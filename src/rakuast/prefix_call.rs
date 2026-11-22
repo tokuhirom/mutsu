@@ -211,3 +211,26 @@ pub(super) fn lower_method(names: &NameScope, node: &RakuAstNode) -> Result<Expr
         sugar: true,
     })
 }
+
+/// `eager EXPR` -> `StatementPrefix::Eager(Statement::Expression(EXPR))`,
+/// or over the modified statement for `eager EXPR if COND` (#18510).
+// Cost: O(n), n = size of the operand.
+pub(super) fn view_eager(names: &NameScope, inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let statement = match inner {
+        Expr::DoStmt(stmt) if super::view::is_modifier_statement(stmt) => {
+            prefix_statement(names, inner)?
+        }
+        _ => {
+            let operand = view_expr(names, inner)?;
+            if operand.class == RakuAstClass::Block {
+                return Err(super::view::unsupported("eager block"));
+            }
+            statement_expression(operand)
+        }
+    };
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::StatementPrefixEager,
+        fields: vec![node_field(None, statement)],
+    })
+}
