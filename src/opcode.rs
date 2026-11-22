@@ -5554,6 +5554,11 @@ pub(crate) struct CompiledSubDeclPlan {
     /// interpreter and binds nothing in the program-global registry; every
     /// call site resolves it through [`CompiledCode::lexical_routines`].
     pub(crate) frame_lexical: Option<FrameLexicalRef>,
+    /// The synthetic lexical import set of the block that declares this
+    /// plain built-in operator routine (`sub infix:<**>` below the unit's
+    /// top level, #17771): the registration binds it there and leaves the
+    /// unit's operator gate alone (`runtime::block_operator_sets`).
+    pub(crate) block_operator_set: Option<Symbol>,
     /// A frame-lexical routine the body also reads as a code object
     /// (`&name`). Each execution of the declaration then mints the callable
     /// identity a registration would have, so every `&name` read in one
@@ -13813,6 +13818,7 @@ impl CompiledCode {
             compiled_routine_keys: Vec::new(),
             frame_lexical: None,
             frame_lexical_value: false,
+            block_operator_set: None,
             free_var_decl_slots: Vec::new(),
             hoist_seed_slots: Vec::new(),
             own_scope_decl_slots: Vec::new(),

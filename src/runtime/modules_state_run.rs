@@ -7,6 +7,7 @@ pub(crate) mod io_state;
 pub(crate) mod lexical_state;
 pub(crate) mod lexical_import_hooks;
 pub(crate) mod lexical_imports;
+pub(crate) mod block_operator_sets;
 pub(crate) mod lexical_operator_import_flag;
 mod decl_arg_constant;
 pub(crate) mod lexical_import_family_merge;
