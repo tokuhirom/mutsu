@@ -2607,8 +2607,15 @@ fn construct_class(
     // or the expression of `::($x)`. An all-identifier name is the same node
     // `from-identifier-parts` builds; the renderer picks the spelling.
     if class_name == "RakuAST::Name" && method == "new" {
+        // `:colonpairs(...)`: an operator name (`infix:<+>`), whose name parts
+        // are followed by the colonpairs (#18441).
+        let colonpairs = named_arg(args, "colonpairs").map(|pairs| match pairs.view() {
+            ValueView::Array(items, _) => items.iter().cloned().collect::<Vec<_>>(),
+            _ => vec![pairs.clone()],
+        });
         let parts = args
             .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .map(|part| {
                 if is_name_part(part) {
                     Ok(part.clone())
@@ -2619,6 +2626,11 @@ fn construct_class(
                 }
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
+        if let Some(colonpairs) = colonpairs {
+            return Ok(Some(Value::rakuast(Box::new(
+                name_parts::name_with_colonpairs(parts, colonpairs),
+            ))));
+        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::Name,
