@@ -154,6 +154,12 @@ pub(crate) trait CompileTimeLoader {
     /// stamp would not outlive this process's parse (a module's compile can
     /// be precompiled) or this loader does not run the unit.
     fn reserve_decl_order(&mut self) -> Option<u64>;
+
+    /// Whether a declaration the parser finishes at the top level is
+    /// installed for this loader's unit at parse time, as far as the order of
+    /// later `use` loads goes: the same units [`Self::reserve_decl_order`]
+    /// stamps for.
+    fn installs_at_parse(&mut self) -> bool;
 }
 
 /// The internal routine trait that carries a stamp [`reserve_decl_order`]
@@ -251,6 +257,13 @@ pub(crate) fn run_begin(begin: &crate::ast::Stmt) -> BeginOutcome {
 // Cost: O(1).
 pub(crate) fn reserve_decl_order() -> Option<u64> {
     with_loader(|loader| loader.reserve_decl_order()).flatten()
+}
+
+/// Whether this thread's current loader installs a finished top-level
+/// declaration at parse time (see [`CompileTimeLoader::installs_at_parse`]).
+// Cost: O(1).
+pub(crate) fn installs_at_parse() -> bool {
+    with_loader(|loader| loader.installs_at_parse()).unwrap_or(false)
 }
 
 /// Run `call` on this thread's innermost loader, if one is reachable: none

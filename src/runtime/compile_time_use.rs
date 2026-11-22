@@ -205,6 +205,11 @@ impl CompileTimeLoader for Interpreter {
         crate::runtime::compile_time_begin::is_program_parse()
             .then(crate::runtime::resolution::next_decl_order)
     }
+
+    // Cost: O(1).
+    fn installs_at_parse(&mut self) -> bool {
+        crate::runtime::compile_time_begin::is_program_parse()
+    }
 }
 
 impl Interpreter {
