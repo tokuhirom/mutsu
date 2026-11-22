@@ -280,6 +280,11 @@ impl BacktraceCapture {
             let mut frame_attrs = HashMap::new();
             frame_attrs.insert("subname".to_string(), Value::str((*name).to_string()));
             frame_attrs.insert("is-setting".to_string(), Value::TRUE);
+            // `throw` and `rethrow` are `Exception` methods; `die` is a sub.
+            frame_attrs.insert(
+                "is-method".to_string(),
+                Value::truth(matches!(*name, "throw" | "rethrow")),
+            );
             frame_attrs.insert(
                 "file".to_string(),
                 current_file
@@ -335,7 +340,14 @@ impl BacktraceCapture {
                 if subname == "<unit>" {
                     text_lines.push(format!("  in block <unit>{}", location));
                 } else {
-                    text_lines.push(format!("  in sub {}{}", subname, location));
+                    let kind = if frame.is_submethod {
+                        "submethod"
+                    } else if frame.is_method {
+                        "method"
+                    } else {
+                        "sub"
+                    };
+                    text_lines.push(format!("  in {} {}{}", kind, subname, location));
                 }
             }
 
@@ -344,6 +356,7 @@ impl BacktraceCapture {
             // The routine's declaring package, so `.code.package` answers it.
             frame_attrs.insert("package".to_string(), Value::str(frame.package.resolve()));
             frame_attrs.insert("is-method".to_string(), Value::truth(frame.is_method));
+            frame_attrs.insert("is-submethod".to_string(), Value::truth(frame.is_submethod));
             frame_attrs.insert(
                 "is-hidden".to_string(),
                 Value::truth(frame.is_hidden_from_backtrace),

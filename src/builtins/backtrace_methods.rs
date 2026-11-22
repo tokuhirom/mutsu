@@ -37,18 +37,42 @@ pub(crate) fn frame_str(attributes: &Gc<InstanceAttrs>) -> String {
         .get("line")
         .map(|v| v.to_string_value())
         .unwrap_or_else(|| "0".to_string());
-    format!("{}\n", frame_entry(&subname, &file, &line))
+    format!(
+        "{}\n",
+        frame_entry(frame_kind(&map), &subname, &file, &line)
+    )
+}
+
+/// The routine kind a frame's `Str` names: `method`, `submethod` or `sub`.
+// Cost: O(1).
+fn frame_kind(map: &crate::value::AttrMap) -> &'static str {
+    if map.get("is-submethod").is_some_and(Value::truthy) {
+        "submethod"
+    } else if map.get("is-method").is_some_and(Value::truthy) {
+        "method"
+    } else {
+        "sub"
+    }
+}
+
+/// [`frame_kind`] of a `Backtrace::Frame` value.
+// Cost: O(1).
+fn frame_kind_of(frame: &Value) -> &'static str {
+    match frame.view() {
+        ValueView::Instance { attributes, .. } => frame_kind(&attributes.as_map()),
+        _ => "sub",
+    }
 }
 
 /// The un-terminated `  in <subtype> <name> at <file> line <n>` body.
 ///
 /// A frame with no subname is an anonymous block, and Rakudo renders it as
 /// `  in block  at ...` (an empty name after the subtype), not as a `sub`.
-fn frame_entry(subname: &str, file: &str, line: &str) -> String {
+fn frame_entry(kind: &str, subname: &str, file: &str, line: &str) -> String {
     if subname == "<unit>" || subname.is_empty() {
         format!("  in block {} at {} line {}", subname, file, line)
     } else {
-        format!("  in sub {} at {} line {}", subname, file, line)
+        format!("  in {} {} at {} line {}", kind, subname, file, line)
     }
 }
 
@@ -260,11 +284,20 @@ fn nice_entry(frames: &[Value], idx: usize) -> (String, Option<usize>) {
     {
         let name = subname_of(&frames[caller]);
         return (
-            format!("{}\n", frame_entry(&name, &file, &line)),
+            format!(
+                "{}\n",
+                frame_entry(frame_kind_of(&frames[caller]), &name, &file, &line)
+            ),
             Some(caller),
         );
     }
-    (format!("{}\n", frame_entry(&subname, &file, &line)), None)
+    (
+        format!(
+            "{}\n",
+            frame_entry(frame_kind_of(frame), &subname, &file, &line)
+        ),
+        None,
+    )
 }
 
 /// `Backtrace.nice(:$oneline)` -- the "interesting" frames, one per line.
