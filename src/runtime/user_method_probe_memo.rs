@@ -145,7 +145,10 @@ impl Interpreter {
         method: Symbol,
         compute: impl FnOnce(&mut Self) -> T::Answer,
     ) -> T::Answer {
-        let generation = self.registry_write_generation();
+        // Every table here answers from the registry alone (class methods,
+        // accessors, their MRO), never from the routine tables: keyed by the
+        // registry's own generation, it survives a routine-table swap (#14812).
+        let generation = self.registry_decl_generation();
         let memo = &mut self.caches.user_method_probe_memo;
         if memo.generation != generation {
             memo.generation = generation;
@@ -165,7 +168,7 @@ impl Interpreter {
         // Record it only if resolving the answer wrote nothing to the registry
         // (a role pun, an MRO computed and cached, say): an answer computed
         // across a registry write is not an answer for either generation.
-        if self.registry_write_generation() == generation {
+        if self.registry_decl_generation() == generation {
             T::table(&mut self.caches.user_method_probe_memo)
                 .insert((class, method), answer.clone());
         }
