@@ -219,6 +219,14 @@ impl Interpreter {
         {
             crate::value::register_container_constraint(&cell, &tc);
         }
+        // So does its `is default`: a `Nil` stored through the container
+        // resets to it (#18755). A per-owner copy is the owner's declaration.
+        if !already_cell && let ValueView::ContainerRef(cell) = cell_val.view() {
+            let decl_class = owner
+                .filter(|_| !owner_is_role)
+                .map_or_else(|| class_name.resolve(), |o| o.resolve());
+            self.register_attr_cell_default(&cell, &decl_class, attr);
+        }
         Some(cell_val)
     }
 
@@ -246,6 +254,28 @@ impl Interpreter {
             ValueView::Array(_, kind) => !kind.is_itemized(),
             ValueView::Hash(_) => !inner.hash_is_itemized(),
             _ => false,
+        }
+    }
+
+    /// Give an attribute's promoted cell the attribute's `is default(...)`,
+    /// searched up `class_name`'s MRO, so a `Nil` stored through the cell
+    /// resets to it (`cell_nil_reset_value`). A cell that already has one keeps
+    /// it.
+    // Cost: O(m), m = the class's MRO length.
+    fn register_attr_cell_default(
+        &mut self,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+        class_name: &str,
+        attr: &str,
+    ) {
+        if cell.default_value().is_some() {
+            return;
+        }
+        for cn in self.class_mro(class_name).iter() {
+            if let Some(def) = self.class_attribute_default_with_role_fallback(cn.as_str(), attr) {
+                cell.set_default(def);
+                return;
+            }
         }
     }
 
@@ -312,6 +342,9 @@ impl Interpreter {
             && !matches!(tc.as_str(), "Mu" | "Any")
         {
             crate::value::register_container_constraint(&cell, tc);
+        }
+        if let ValueView::ContainerRef(cell) = cell_val.view() {
+            self.register_attr_cell_default(&cell, class_name, method);
         }
         if let Some(msg) = self.class_attribute_deprecated(class_name, method) {
             self.check_deprecation_for_method(method, class_name, &msg);
