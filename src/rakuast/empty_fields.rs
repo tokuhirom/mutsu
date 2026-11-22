@@ -189,7 +189,5 @@ pub(super) fn stub_args(node: &mut RakuAstNode) {
     };
     let span = SrcSpan::new(start, to);
     set_span(node, "args", span);
-    super::infix_origins::with_child(node, "args", |args| {
-        super::origin::set_span(args, span)
-    });
+    super::infix_origins::with_child(node, "args", |args| super::origin::set_span(args, span));
 }

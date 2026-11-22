@@ -187,7 +187,8 @@ fn postfix(node: &mut RakuAstNode) {
             });
             let end = sigil.and_then(|sigil| {
                 super::unit_source::with_text(SrcSpan::new(from, to), |text| {
-                    text.starts_with(sigil.as_str()).then_some(from + sigil.len())
+                    text.starts_with(sigil.as_str())
+                        .then_some(from + sigil.len())
                 })
             });
             if let Some(end) = end {

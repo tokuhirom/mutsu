@@ -2,8 +2,8 @@
 //! #15780): `/$<cat>=@(%what.keys) 4/`. A method of the regex body walk
 //! (`regex_origins::Walk`), kept apart from it.
 
-use super::RakuAstNode;
 use super::RakuAstClass;
+use super::RakuAstNode;
 use super::regex_origins::Walk;
 use crate::ast::SrcSpan;
 use crate::scope::NameScope;
@@ -12,7 +12,11 @@ impl Walk<'_> {
     /// `@(%what.keys)`: an interpolated contextualizer runs from its sigil
     /// to its `)`, and its statements are the text inside, parsed again.
     // Cost: O(n), n = length of the contextualizer's text, plus its parse.
-    pub(super) fn contextualized(&mut self, names: &NameScope, node: &mut RakuAstNode) -> Option<()> {
+    pub(super) fn contextualized(
+        &mut self,
+        names: &NameScope,
+        node: &mut RakuAstNode,
+    ) -> Option<()> {
         let var = super::infix_origins::child(node, "var")?;
         let sigil = match var.class {
             RakuAstClass::ContextualizerItem => "$(",
@@ -43,5 +47,4 @@ impl Walk<'_> {
         self.alias_tail();
         Some(())
     }
-
 }

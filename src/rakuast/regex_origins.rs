@@ -609,15 +609,15 @@ impl Walk<'_> {
         self.child(names, node, "regex")
     }
 
-    /// `<[a..z]>`, `<-[x y]>`, `<[a]+[b]-[c]>`: each enumeration runs from
-    /// its sign (none on an unsigned first one) to its `]`.
+    /// `<[a..z]>`, `<-[x y]>`, `<[a]+[b]-[c]>`, `<:Alpha>`: each element runs
+    /// from its sign (none on an unsigned first one) to its end.
     // Cost: O(n), n = length of the class's text.
     fn char_class(&mut self, node: &mut RakuAstNode) -> Option<()> {
         self.eat("<")?;
         let count = node.fields.len();
-        for i in 0..count {
+        for (i, field) in node.fields.iter_mut().enumerate() {
             let start = self.at;
-            let RakuAstFieldValue::Node(held) = &mut node.fields[i].value else {
+            let RakuAstFieldValue::Node(held) = &mut field.value else {
                 return None;
             };
             let ValueView::RakuAst(element) = held.view() else {
