@@ -419,6 +419,7 @@ mod vm_attribute_meta_row;
 mod vm_bind_decl_lane;
 mod vm_code_var_infix_lane;
 mod vm_decl_lane;
+mod vm_hash_element_cell;
 mod vm_hash_key_user_str;
 mod vm_incdec_mixin_subscript;
 mod vm_method_value;

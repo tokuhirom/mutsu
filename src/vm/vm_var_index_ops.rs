@@ -1042,13 +1042,20 @@ impl Interpreter {
         }
         // A package stash holds its `our` scalars as the variables' own cells;
         // a bind source or `.VAR` subscript of one keeps the cell, like an
-        // Array element does above (#16920).
+        // Array element does above (#16920), and so does a hash element that
+        // holds a caller's container (`hash_element_cell`).
         if !is_positional
             && self.stack.len() >= 2
             && let Some(cell) = Self::stash_element_cell(
                 &self.stack[self.stack.len() - 2],
                 &self.stack[self.stack.len() - 1],
             )
+            .or_else(|| {
+                Self::hash_element_cell(
+                    &self.stack[self.stack.len() - 2],
+                    &self.stack[self.stack.len() - 1],
+                )
+            })
         {
             let n = self.stack.len();
             self.stack.truncate(n - 2);
