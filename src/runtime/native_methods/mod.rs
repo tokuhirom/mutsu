@@ -64,6 +64,7 @@ pub(in crate::runtime) use supply_derive_buffer::batch_stage_params;
 // re-exported `pub(crate)` below for the VM-side react/supply drive loop
 // (`crate::vm::vm_react_loop`): the supplier registry accessors it polls.
 pub(in crate::runtime) use state::{
+    supplier_mark_block_terminated,
     UdpBoundSocketState, discard_supply_channel, get_supply_collected_output, get_supply_enc,
     get_tcp_stream, register_tcp_stream, remove_tcp_stream,
     get_supply_done_taps, get_supply_quit_taps, get_supply_taps, is_supply_live_tapped,

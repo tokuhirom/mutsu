@@ -424,6 +424,11 @@ struct SupplierRuntimeState {
     /// the one later tap that replays it. Taps after that see nothing at all,
     /// exactly as Rakudo's single `@!replay` list gives.
     preserved_terminal_delivered: bool,
+    /// A `supply { }` block's emitter that has already terminated (a `done`
+    /// or `quit` forwarded from one of its `whenever`s). A block terminates
+    /// exactly once, and unlike `done`/`quit_reason` this survives the reset
+    /// `Supplier.quit` does after delivering.
+    block_terminated: bool,
     /// Push sinks registered by consuming drive loops (react / `await
     /// $supply` / control waits). Every emit/done/quit is pushed to each
     /// registered sink under this registry's lock, so a later
@@ -960,6 +965,16 @@ pub(in crate::runtime) fn supplier_emit_push(
     state.last_emitted = state.emitted.last().cloned();
     state.emitted_count += 1;
     Some(PendingSinkDelivery { wakers, seq })
+}
+
+/// Mark the supply block whose emitter is `supplier_id` terminated; `true`
+/// when it was not already, i.e. when this is the terminal event to deliver.
+// Cost: O(1).
+pub(in crate::runtime) fn supplier_mark_block_terminated(supplier_id: u64) -> bool {
+    supplier_state_map().lock().is_ok_and(|mut map| {
+        let state = map.entry(supplier_id).or_default();
+        !std::mem::replace(&mut state.block_terminated, true)
+    })
 }
 
 /// Mark a public, non-preserving Supplier and release history no longer held
