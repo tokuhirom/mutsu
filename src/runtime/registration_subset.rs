@@ -151,6 +151,7 @@ impl Interpreter {
             self.registry_mut()
                 .subsets
                 .insert(storage.clone(), def.clone());
+            self.mark_my_scoped_package_item(storage.clone());
             canonical = storage;
         }
         // Keep the final name available by its leaf inside the declaring
@@ -181,7 +182,29 @@ impl Interpreter {
                 .routine_local_subsets
                 .insert(name.to_string(), (def.clone(), depth));
         }
-        self.registry_mut().subsets.insert(name.to_string(), def);
+        if is_my && decl_id != 0 {
+            // The block's exit reverts the spelling's env binding like a
+            // `my $x`, as for a `my class` (#18178, #18217): a bare block and
+            // an `EVAL` through `block_declared_vars`, a branch or loop body
+            // through the saved binding.
+            // Once the scope has exited, its name is suppressed, so a lookup
+            // that reaches the registry's lexical index does not find the
+            // block's storage name either (`pop_lexical_class_scope`).
+            self.save_lexical_type_binding_for_scope_exit(name);
+            self.unsuppress_name(name);
+            self.register_lexical_class(name.to_string());
+            // A `my subset` is reached through its storage name, which the
+            // declaring scope binds its spelling to just below. It files the
+            // bare key only when no other subset holds it: overwriting an
+            // outer `subset S` left every check by that spelling answering
+            // the block's subset after the block (#18217).
+            self.registry_mut()
+                .subsets
+                .entry(name.to_string())
+                .or_insert(def);
+        } else {
+            self.registry_mut().subsets.insert(name.to_string(), def);
+        }
         if !self.qualified_identity_binding_is_redundant(name, &canonical) {
             self.env
                 .insert(name.to_string(), Value::package(Symbol::intern(&canonical)));
