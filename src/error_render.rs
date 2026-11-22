@@ -106,6 +106,17 @@ pub fn format_parse_error(err: &RuntimeError, source: &str, program_name: &str) 
         program_name
     ));
 
+    // An undeclared-symbol report (`Undeclared routine:` / `routines:` /
+    // `name:`) already names each symbol's line; rakudo prints it as is,
+    // with no source snippet, and a blank line after it.
+    let body = RuntimeError::split_typed_message_convention(&err.message)
+        .map_or(err.message.as_ref(), |(_, text)| text);
+    if body.starts_with("Undeclared routine") || body.starts_with("Undeclared name") {
+        out.push_str(body);
+        out.push('\n');
+        return out;
+    }
+
     let short_msg = short_parse_message(&err.message);
     out.push_str(&short_msg);
     out.push('\n');
