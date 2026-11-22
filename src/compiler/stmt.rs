@@ -5520,15 +5520,12 @@ impl Compiler {
     /// assignment yields the assigned value, and only genuinely valueless
     /// statements fall back to `True` ("completed" success).
     pub(super) fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
+        // `FOO: 42`: a labelled statement's value is its statement's (#18283).
+        let stmt = self.strip_tail_labels(stmt);
         match stmt {
             Stmt::Expr(expr) => {
                 // Tail expression escapes the frame (implicit result).
                 self.with_escape(true, |c| c.with_stmt_root(|c| c.compile_expr(expr)));
-            }
-            // `FOO: 42`: a labelled statement's value is its statement's (#18283).
-            Stmt::Label { .. } => {
-                let stmt = self.strip_tail_labels(stmt);
-                self.compile_tail_stmt_value(stmt);
             }
             Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);
