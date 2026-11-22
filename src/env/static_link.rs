@@ -608,19 +608,11 @@ impl Env {
     /// before its callers (ADR-12529 phase 3, #18175). A lexically scoped
     /// name that misses the frame's own tiers answers from the capture --
     /// the scope the closure was created in -- and then from the live
-    /// program scope; only a name neither binds walks on into the caller
-    /// frames ([`Self::closure_outer_hit`]). Without it a caller's block
-    /// that declares a same-named `my $X` or `my class Inner` answered a
-    /// closure written outside that block.
-    ///
-    /// Unlike a [`StaticLink`] this keeps the caller walk for a miss: the
-    /// capture is a snapshot of the creating scope, so a name that scope
-    /// declares *after* the closure (`my &a = { b() }; my &b = ...`) is not
-    /// in it, and the frame that created the closure is still the place
-    /// that binds it when it calls the closure.
-    // TODO: once a closure's outer is a live scope
-    // handle (ADR-12529 §2.2), a later declaration of the creating scope is
-    // read through it and the caller walk on a miss goes (phase 4).
+    /// program scope; a name neither binds is not the closure's, and the
+    /// lookup ends there instead of walking on into the caller frames
+    /// ([`Self::closure_outer_ends`], ADR-12529 phase 4, #18248). Without
+    /// it a caller's block that declares a same-named `my $X` or
+    /// `my class Inner` answered a closure written outside that block.
     // Cost: O(1).
     #[inline]
     pub(crate) fn mark_outer_is_capture(&mut self) {
@@ -630,9 +622,10 @@ impl Env {
 
     /// What a closure frame root marked [`Self::mark_outer_is_capture`]
     /// answers for `key` ahead of its callers: the capture's binding, else
-    /// the program scope's. `None` -- walk on into the callers -- for a name
-    /// that is not lexically scoped, a variable's record (it follows its
-    /// variable, `walk_with_fallback`), or a name neither binds.
+    /// the program scope's. `None` for a name that is not lexically scoped or
+    /// a variable's record (it follows its variable, `walk_with_fallback`),
+    /// which walk on, and for a lexical name neither binds, whose lookup
+    /// [`Self::closure_outer_ends`] then ends.
     // Cost: O(l + d), l = the capture's layers, d = caller-chain tiers walked
     // to the program scope (only when the capture misses).
     #[inline]
