@@ -203,6 +203,18 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         ],
     ),
     (
+        "RakuAST::Var::Compiler::Resources",
+        &[
+            "RakuAST::Var::Compiler::Resources",
+            "RakuAST::Var::Lexical",
+            "RakuAST::Var",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Var::Compiler::Routine",
         &[
             "RakuAST::Var::Compiler::Routine",

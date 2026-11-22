@@ -3260,6 +3260,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Ok(var_lexical("@", name))
         }
         Expr::HashVar(name) => {
+            if let Some(node) = super::compiler_var::view_hash_var(name) {
+                return Ok(node);
+            }
             if is_desugar_marker(name) && !crate::ast::anon_state::is_hash(name) {
                 return Err(desugared(name));
             }

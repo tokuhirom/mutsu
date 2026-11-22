@@ -504,6 +504,7 @@ pub enum RakuAstClass {
     VarCompilerFile,
     VarCompilerLine,
     VarCompilerDistribution,
+    VarCompilerResources,
     // A package-qualified variable `$Foo::v`: a `Name` plus its sigil.
     VarPackage,
     // A dynamic variable `$*x`: its whole spelling, twigil included.
@@ -915,6 +916,7 @@ impl RakuAstClass {
             VarCompilerFile => "RakuAST::Var::Compiler::File",
             VarCompilerLine => "RakuAST::Var::Compiler::Line",
             VarCompilerDistribution => "RakuAST::Var::Compiler::Distribution",
+            VarCompilerResources => "RakuAST::Var::Compiler::Resources",
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
             VarDoc => "RakuAST::Var::Doc",
@@ -1172,6 +1174,7 @@ impl RakuAstClass {
                 | RakuAstClass::VarCompilerBlock
                 | RakuAstClass::VarCompilerRoutine
                 | RakuAstClass::VarCompilerDistribution
+                | RakuAstClass::VarCompilerResources
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexQuantifierBlockRange
                 | RakuAstClass::RegexCharClass(_)
@@ -1482,6 +1485,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarCompilerFile,
     RakuAstClass::VarCompilerLine,
     RakuAstClass::VarCompilerDistribution,
+    RakuAstClass::VarCompilerResources,
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
     RakuAstClass::VarDoc,
@@ -2069,7 +2073,14 @@ fn parse_unit_ast(
     file: Option<&str>,
 ) -> Result<Value, RuntimeError> {
     let _origins_wanted = crate::parser::term_origins::Wanted::enter();
-    let (mut stmts, _finish) = crate::parse_dispatch::parse_source_unfinalized(source)?;
+    // A string's unit is its own file: `$?FILE` reads `EVAL_N`, a
+    // `Var::Compiler::File` (#18689).
+    let previous_file = file.map(|f| crate::parser::set_parser_source_file(Some(f.to_string())));
+    let parsed = crate::parse_dispatch::parse_source_unfinalized(source);
+    if let Some(previous) = previous_file {
+        crate::parser::set_parser_source_file(previous);
+    }
+    let (mut stmts, _finish) = parsed?;
     let unit_docs = crate::parser::decl_doc::take_unit_docs();
     // Rakudo's `.AST` raises the compile errors running the code does
     // (ADR-15760 Amendment 1, slice 1c): a type or term used before its
@@ -4070,6 +4081,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Var::Compiler::Block", "new") => RakuAstClass::VarCompilerBlock,
         ("RakuAST::Var::Compiler::Routine", "new") => RakuAstClass::VarCompilerRoutine,
         ("RakuAST::Var::Compiler::Distribution", "new") => RakuAstClass::VarCompilerDistribution,
+        ("RakuAST::Var::Compiler::Resources", "new") => RakuAstClass::VarCompilerResources,
         ("RakuAST::Statement::Empty", "new") => RakuAstClass::StatementEmpty,
         ("RakuAST::DottyInfix::Call", "new") => RakuAstClass::DottyInfixCall,
         ("RakuAST::DottyInfix::CallAssign", "new") => RakuAstClass::DottyInfixCallAssign,

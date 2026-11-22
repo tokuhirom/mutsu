@@ -4724,7 +4724,8 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
         RakuAstClass::VarCompilerLookup
         | RakuAstClass::VarCompilerFile
         | RakuAstClass::VarCompilerLine
-        | RakuAstClass::VarCompilerDistribution => super::compiler_var::lower(node),
+        | RakuAstClass::VarCompilerDistribution
+        | RakuAstClass::VarCompilerResources => super::compiler_var::lower(node),
         // `class { }` / `role { }` / `grammar { }` as a term: the parser carries
         // a declaration in expression position as a `DoStmt`.
         RakuAstClass::Class | RakuAstClass::Grammar | RakuAstClass::Role => {
