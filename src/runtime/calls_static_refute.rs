@@ -27,8 +27,11 @@ impl Interpreter {
         // A run-time binding failure happens inside the callee: Rakudo's
         // backtrace starts `in sub f at <file> line <declaration line>`. The
         // callee's routine frame is not pushed until its parameters bound, so
-        // capture the backtrace with that frame on the stack now.
-        if !static_site && !func_name.is_empty() {
+        // capture the backtrace with that frame on the stack now. Only the
+        // compile-time refutation ("Calling f(Str) will never work") is
+        // reported at the call site; a static site's `where` constraint or
+        // missing required named argument is a run-time check like any other.
+        if !func_name.is_empty() && !Self::is_compile_time_refutation(&err) {
             self.attach_callee_frame_backtrace(&mut err, package, func_name);
         }
         err
@@ -53,6 +56,16 @@ impl Interpreter {
         self.attach_lazy_backtrace_to_error(err, &[]);
         self.cur_source_line = saved_line;
         self.pop_routine();
+    }
+
+    /// Whether `err` is the compile-time `X::TypeCheck::Argument` a statically
+    /// refuted call raises.
+    // Cost: O(1).
+    fn is_compile_time_refutation(err: &RuntimeError) -> bool {
+        err.exception.as_ref().is_some_and(|ex| {
+            matches!(ex.view(), ValueView::Instance { class_name, .. }
+                if class_name.resolve() == "X::TypeCheck::Argument")
+        })
     }
 
     /// [`Self::attach_callee_frame_backtrace`] for a method: `err` gets the
