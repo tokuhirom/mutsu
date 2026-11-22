@@ -213,10 +213,6 @@ pub(crate) fn nil_predispatch_verdict(
             message: "Use of Nil in string context".into(),
             resume: Value::seq(vec![]),
         }),
-        "chrs" if no_args => Some(NilPredispatchVerdict::Warn {
-            message: "Use of Nil in string context".into(),
-            resume: Value::str("\0".to_string()),
-        }),
         _ => None,
     }
 }
@@ -231,6 +227,46 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         crate::builtins::method_table::invoke_owner(self, &["Nil"], method, args, || Value::NIL)
+    }
+
+    /// The bind failure of a call to one of `Nil`'s own methods that none of
+    /// its candidates binds (`Nil.Str(1)`, `Nil.uc(1, 2)`, `Nil.Numeric(1)`),
+    /// #18575: Rakudo reaches `Nil`'s `FALLBACK` only for a name no candidate
+    /// declares. Asked after [`Self::nil_own_row`] declined, for a name `Nil`
+    /// has rows for: their signatures are Rakudo's `Nil` candidates, and the
+    /// inherited `Cool:D`/`Mu:D` ones never bind the undefined `Nil`, so a
+    /// missed row is a refused call. A multi answers as Rakudo's dispatcher
+    /// does (its bounded proto's "Too many positionals", else
+    /// `X::Multi::NoMatch`); an only method fails its own bind.
+    // Cost: O(r + a + c), r = `Nil`'s rows of `method`, a = arguments, c =
+    // the candidate signatures listed.
+    pub(crate) fn nil_refused_call(method: &str, args: &[Value]) -> Option<RuntimeError> {
+        let declared = (0..=7).any(|arity| {
+            crate::builtins::method_table::owner_row(
+                crate::symbol::Symbol::intern("Nil"),
+                crate::symbol::Symbol::intern(method),
+                arity,
+            )
+            .is_some()
+        });
+        if !declared {
+            return None;
+        }
+        if let Some(err) = crate::runtime::methods_signature_errors::builtin_multi_arity_mismatch(
+            &Value::NIL,
+            method,
+            args,
+        ) {
+            return Some(err);
+        }
+        let got = args
+            .iter()
+            .filter(|arg| !arg.is_string_pair_value())
+            .count()
+            + 1;
+        Some(RuntimeError::new(
+            crate::runtime::types::arity_message::too_many_positionals(1, 1, got),
+        ))
     }
 
     /// Rendering (`.raku`, `.gist`) a Rakudo metarole (`Metamodel::Naming`), or
@@ -2088,6 +2124,9 @@ impl Interpreter {
                         );
                         self.stack.push(result?);
                         return Ok(());
+                    }
+                    if let Some(err) = Self::nil_refused_call(method, &args) {
+                        return Err(err);
                     }
                     // The warn-and-resume coercions `Nil` inherits from `Cool`
                     // live in `nil_predispatch_verdict`, shared with the
