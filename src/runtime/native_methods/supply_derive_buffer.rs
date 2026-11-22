@@ -53,6 +53,9 @@ enum BufferState {
     /// A combinator that needs every value before it emits anything
     /// (`sort`, `reverse`, ...): the values so far.
     Collect { buffer: Vec<Value> },
+    /// `skip` / `min` / `max` / `minmax` / `rotor` / `encode` / `decode`
+    /// ([`super::supply_derive_step`]); `None` while a value runs through it.
+    PerValue(Option<Box<super::supply_derive_step::StepState>>),
 }
 
 fn states() -> &'static std::sync::Mutex<HashMap<u64, BufferState>> {
@@ -93,8 +96,11 @@ pub(super) fn buffer_register(mode: &str, params: &Value) -> Option<u64> {
         "flat" => BufferState::Flat,
         "start" => BufferState::Start,
         "collect" => BufferState::Collect { buffer: Vec::new() },
-        other => BufferState::Classify {
-            categorize: super::supply_derive_classify::classify_mode(other)?,
+        other => match super::supply_derive_step::step_state(other, params) {
+            Some(state) => BufferState::PerValue(Some(Box::new(state))),
+            None => BufferState::Classify {
+                categorize: super::supply_derive_classify::classify_mode(other)?,
+            },
         },
     };
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -138,6 +144,7 @@ pub(super) fn buffer_finish(id: u64) -> Vec<Value> {
             .into_iter()
             .map(Value::str)
             .collect(),
+        BufferState::PerValue(Some(state)) => super::supply_derive_step::step_finish(*state),
         _ => Vec::new(),
     }
 }
@@ -161,6 +168,9 @@ pub(in crate::runtime) fn visit_buffer_roots(visitor: &mut dyn crate::gc::RootVi
                 BufferState::Tail { buffer, .. } => buffer.iter().for_each(|v| visitor.visit_value(v)),
                 BufferState::Collect { buffer } => buffer.iter().for_each(|v| visitor.visit_value(v)),
                 BufferState::Produce { acc: Some(acc) } => visitor.visit_value(acc),
+                BufferState::PerValue(Some(state)) => {
+                    super::supply_derive_step::visit_step_roots(state, visitor)
+                }
                 _ => {}
             }
         }
@@ -302,6 +312,8 @@ enum Step {
     Start(Value),
     /// `classify` / `categorize`: map the value to its group(s).
     Classify(bool, Value),
+    /// A per-value combinator: run the state taken out of the map.
+    PerValue(Option<Box<super::supply_derive_step::StepState>>, Value),
 }
 
 impl Interpreter {
@@ -408,6 +420,7 @@ impl Interpreter {
                 BufferState::Flat => Step::Emit(flat_items(&arg)),
                 BufferState::Start => Step::Start(arg),
                 BufferState::Classify { categorize } => Step::Classify(*categorize, arg),
+                BufferState::PerValue(state) => Step::PerValue(state.take(), arg),
                 BufferState::Collect { buffer } => {
                     buffer.push(arg);
                     Step::Emit(Vec::new())
@@ -425,6 +438,19 @@ impl Interpreter {
         };
         let out = match step {
             Step::Emit(values) => values,
+            Step::PerValue(None, _) => Vec::new(),
+            Step::PerValue(Some(mut state), value) => {
+                let out = self.step_emit(&mut state, value);
+                if let Ok(mut map) = states().lock()
+                    && let Some(BufferState::PerValue(slot)) = map.get_mut(&id)
+                {
+                    *slot = Some(state);
+                }
+                match out {
+                    Ok(out) => out,
+                    Err(err) => return self.buffer_stage_quit(id, err, emitter),
+                }
+            }
             Step::Classify(categorize, value) => {
                 return self.classify_stage_emit(id, categorize, callable, value, emitter);
             }
@@ -443,14 +469,9 @@ impl Interpreter {
                     Some(acc) => {
                         match self.call_supply_callback(callable.clone(), vec![acc, arg]) {
                             Ok(next) => next,
-                            Err(err) => {
-                                // A dying callable quits the stage, as `map`'s
-                                // does (#18473).
-                                buffer_retire(id);
-                                let reason = Self::supply_stage_quit_reason(err)?;
-                                self.call_method_with_values(emitter.clone(), "quit", vec![reason])?;
-                                return Ok(true);
-                            }
+                            // A dying callable quits the stage, as `map`'s
+                            // does (#18473).
+                            Err(err) => return self.buffer_stage_quit(id, err, emitter),
                         }
                     }
                     None => arg,
@@ -467,5 +488,15 @@ impl Interpreter {
             self.call_method_with_values(emitter.clone(), "emit", vec![value])?;
         }
         Ok(false)
+    }
+
+    /// A stage's callable (or its own check) died: quit the stage, as
+    /// `map`'s does (#18473), and report it stopped.
+    // Cost: O(1) plus the downstream quit.
+    fn buffer_stage_quit(&mut self, id: u64, err: RuntimeError, emitter: &Value) -> Result<bool, RuntimeError> {
+        buffer_retire(id);
+        let reason = Self::supply_stage_quit_reason(err)?;
+        self.call_method_with_values(emitter.clone(), "quit", vec![reason])?;
+        Ok(true)
     }
 }

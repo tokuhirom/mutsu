@@ -125,10 +125,7 @@ impl Interpreter {
                     Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
-                let mut emitted: Vec<Value> = Vec::with_capacity(source_values.len());
-                for chunk in source_values {
-                    emitted.push(self.call_method_with_values(chunk, "encode", args.clone())?);
-                }
+                let emitted = self.step_fold("encode", args, source_values)?;
 
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(emitted));
@@ -140,38 +137,13 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "decode" => {
-                let encoding = args
-                    .first()
-                    .map(Value::to_string_value)
-                    .unwrap_or_else(|| "utf-8".to_string());
                 let source_values = match attributes.get("values").map(Value::view) {
                     Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
-
-                let mut emitted: Vec<Value> = Vec::new();
-                let mut carry = String::new();
-                for chunk in source_values {
-                    let bytes = self.supply_chunk_to_bytes(&chunk, &encoding);
-                    let decoded = self.decode_bytes_for_supply(&bytes, &encoding)?;
-                    let normalized = self.translate_newlines_for_decode_native(&decoded);
-                    let mut merged = String::new();
-                    merged.push_str(&carry);
-                    merged.push_str(&normalized);
-                    let graphemes: Vec<&str> = merged.graphemes(true).collect();
-                    if graphemes.is_empty() {
-                        carry.clear();
-                        continue;
-                    }
-                    let keep = graphemes.len().saturating_sub(1);
-                    if keep > 0 {
-                        emitted.push(Value::str(graphemes[..keep].concat()));
-                    }
-                    carry = graphemes[keep].to_string();
-                }
-                if !carry.is_empty() {
-                    emitted.push(Value::str(carry));
-                }
+                // The partial-grapheme carry is the per-tap state
+                // machine's, folded over the chunks (#18579).
+                let emitted = self.step_fold("decode", args, source_values)?;
 
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(emitted));
@@ -1203,27 +1175,11 @@ impl Interpreter {
             }
             "throttle" => self.supply_throttle(attributes, args),
             "rotor" => {
+                // rakudo's `Supply.rotor` batches into Arrays as values
+                // arrive; the per-tap state machine does that, folded over
+                // the values (#18579).
                 let source_values = self.supply_get_values(attributes)?;
-                let rotored = self.dispatch_rotor(Value::array(source_values), &args)?;
-                let items = match rotored.view() {
-                    ValueView::Array(items, ..) => items.to_vec(),
-                    ValueView::Seq(items) => items.to_vec(),
-                    _ => vec![rotored.clone()],
-                };
-                // `Supply.rotor` emits each group as an `Array`, not the `List`
-                // that `List.rotor` produces — rakudo's Supply combinator
-                // collects into an `@batched` array before emitting, so
-                // `.rotor(3 => -2)` gives `[1, 2, 3]`, not `(1, 2, 3)`.
-                let items: Vec<Value> = items
-                    .into_iter()
-                    .map(|group| match group.view() {
-                        ValueView::Array(elems, kind) if !kind.is_itemized() => {
-                            Value::real_array(elems.to_vec())
-                        }
-                        ValueView::Seq(elems) => Value::real_array(elems.to_vec()),
-                        _ => group,
-                    })
-                    .collect();
+                let items = self.step_fold("rotor", args, source_values)?;
                 Ok(self.make_supply_from_values(items, attributes))
             }
             "rotate" => {
@@ -1395,42 +1351,9 @@ impl Interpreter {
                     ));
                 }
                 let source_values = self.supply_get_values(attributes)?;
-                let mut results: Vec<Value> = Vec::new();
-                let mut cur_min: Option<Value> = None;
-                let mut cur_max: Option<Value> = None;
-                let mut cur_min_key: Option<Value> = None;
-                let mut cur_max_key: Option<Value> = None;
-                for val in source_values {
-                    let key = if let Some(ref func) = mapper {
-                        self.call_supply_callback(func.clone(), vec![val.clone()])?
-                    } else {
-                        val.clone()
-                    };
-                    let mut changed = false;
-                    if cur_min_key.is_none()
-                        || super::utils::compare_values(&key, cur_min_key.as_ref().unwrap()) < 0
-                    {
-                        cur_min = Some(val.clone());
-                        cur_min_key = Some(key.clone());
-                        changed = true;
-                    }
-                    if cur_max_key.is_none()
-                        || super::utils::compare_values(&key, cur_max_key.as_ref().unwrap()) > 0
-                    {
-                        cur_max = Some(val.clone());
-                        cur_max_key = Some(key.clone());
-                        changed = true;
-                    }
-                    if changed && let (Some(mn), Some(mx)) = (&cur_min, &cur_max) {
-                        let range = match (mn.view(), mx.view()) {
-                            (ValueView::Int(a), ValueView::Int(b)) => {
-                                crate::builtins::arith::range::int_range(a, b, false, false)
-                            }
-                            _ => Value::generic_range(mn.clone(), mx.clone(), false, false),
-                        };
-                        results.push(range);
-                    }
-                }
+                // The running extremes are the per-tap state machine's,
+                // folded over the values (#18579).
+                let results = self.step_fold("minmax", args, source_values)?;
                 Ok(self.make_supply_from_values(results, attributes))
             }
             "zip" | "zip-latest" => {
