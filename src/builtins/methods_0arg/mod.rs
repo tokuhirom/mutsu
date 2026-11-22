@@ -12,6 +12,7 @@ pub(crate) use crate::value::match_helpers;
 pub(crate) use crate::value::raku_repr;
 pub(crate) mod temporal;
 pub(crate) mod temporal_dispatch;
+pub(crate) mod type_capture;
 
 /// Create an X::Multi::NoMatch error for a method called on a type object.
 pub(crate) fn make_no_match_error(method_name: &str) -> RuntimeError {
