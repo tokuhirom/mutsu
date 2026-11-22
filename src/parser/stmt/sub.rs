@@ -25,6 +25,8 @@ mod traits;
 
 // --- Re-exports preserving each function's original visibility. ---
 
+pub(crate) use install_order::note_proto_installed;
+
 // Signature/parameter validation (param_validate.rs).
 pub(crate) use outer_slurpy::enter_routine_body;
 pub(crate) use param_validate::validate_signature_params;

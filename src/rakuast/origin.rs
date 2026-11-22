@@ -346,16 +346,21 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         let (mut close, _) = written.char_indices().last()?;
         // A doubled bracket delimiter (`Q[[a]]`) holds its text between the
         // inner pair.
+        // `Q««a»»` doubles a two-byte bracket.
         let doubled = written[start..]
             .chars()
-            .take_while(|c| *c == delimiter && matches!(delimiter, '[' | '{' | '<' | '('))
+            .take_while(|c| {
+                *c == delimiter && matches!(delimiter, '[' | '{' | '<' | '(' | '\u{ab}')
+            })
             .count();
+        let open_len = doubled * delimiter.len_utf8();
+        let close_len = doubled * written[close..].chars().next()?.len_utf8();
         if doubled > 0
-            && let Some(inner) = written.get(start + doubled..close.checked_sub(doubled)?)
+            && let Some(inner) = written.get(start + open_len..close.checked_sub(close_len)?)
             && super::infix_origins::leaf_text(text).as_deref() == Some(inner)
         {
-            start += doubled;
-            close -= doubled;
+            start += open_len;
+            close -= close_len;
         }
         (close >= start).then(|| {
             crate::ast::SrcSpan::new(span.from as usize + start, span.from as usize + close)
@@ -387,8 +392,19 @@ pub(super) fn named_term(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
         if super::indirect_name_origins::place(name, span) {
             return;
         }
-        let Some(NameShape::Identifier(written)) = name_shape(name) else {
-            return;
+        let written = match name_shape(name) {
+            Some(NameShape::Identifier(written)) => written,
+            // `RT::.WHAT`: a package name ending in `::`.
+            _ => match super::indirect_name_origins::package_spelling(name) {
+                Some(written) => written,
+                None => return,
+            },
+        };
+        // `::Array`: a name with a leading empty edge is written after `::`.
+        let written = if super::name_parts::has_leading_empty(name) {
+            format!("::{written}")
+        } else {
+            written
         };
         let exact = super::unit_source::with_text(span, |text| (text == written).then_some(()));
         if exact.is_some() {

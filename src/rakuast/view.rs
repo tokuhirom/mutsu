@@ -2408,6 +2408,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 Ok(node)
             }
             Spelling::SourceIdentifier => written_identifier(names, &spelled.expr),
+            // `::Array`: the name starts with its empty edge.
+            Spelling::LeadingColons => {
+                Ok(name_parts::leading_colons(view_expr(names, &spelled.expr)?))
+            }
             Spelling::ArraySections(sections) => {
                 let fields = sections
                     .iter()

@@ -339,11 +339,12 @@ impl Interpreter {
                 }
                 if let Some(id) = super::supply_derive_dedup::dedup_id(attributes) {
                     // `unique` / `squish`: pass the value on unless it
-                    // repeats a key (see `supply_derive_dedup`).
-                    let squish = attributes
-                        .get("mode")
-                        .is_some_and(|m| m.to_string_value() == "squish");
-                    if self.dedup_admit(id, squish, &callable, &arg)? {
+                    // repeats a key; `repeated`: only if it does (see
+                    // `supply_derive_dedup`).
+                    let mode = attributes.get("mode").map(Value::to_string_value);
+                    let squish = mode.as_deref() == Some("squish");
+                    let repeated = mode.as_deref() == Some("repeated");
+                    if self.dedup_admit(id, squish, &callable, &arg)? != repeated {
                         self.call_method_with_values(emitter, "emit", vec![arg])?;
                     }
                     return Ok(Value::NIL);
@@ -369,6 +370,7 @@ impl Interpreter {
                     .as_deref()
                 {
                     Some("map") => self.call_supply_callback(callable, vec![arg]).map(Some),
+                    Some(super::supply_derive_eager::EAGER_STAGE_MODE) => Ok(Some(arg)),
                     Some("do") => self
                         .call_supply_callback(callable, vec![arg.clone()])
                         .map(|_| Some(arg)),
@@ -561,7 +563,7 @@ impl Interpreter {
         }
         if attributes
             .get("mode")
-            .is_some_and(|m| matches!(m.to_string_value().as_str(), "unique" | "squish"))
+            .is_some_and(|m| matches!(m.to_string_value().as_str(), "unique" | "squish" | "repeated"))
         {
             fwd_attrs.insert(
                 "dedup_id".to_string(),
@@ -587,6 +589,13 @@ impl Interpreter {
                 native_method_shim(forwarder, "__mutsu_derive_quit", true),
             ),
         ];
+        // `stable` / `migrate`: this tap's own instance of the stage.
+        let (source, closers) = if mode == super::supply_derive_eager::EAGER_STAGE_MODE {
+            let params = attributes.get("callable").cloned().unwrap_or(Value::NIL);
+            self.eager_stage_for_tap(source, &params)?
+        } else {
+            (source, Vec::new())
+        };
         let source_tap = self.call_method_with_values(source, "tap", tap_args)?;
         if matches!(source_tap.view(), ValueView::Instance { .. })
             && let ValueView::Instance { attributes, .. } = emitter.view()
@@ -604,6 +613,9 @@ impl Interpreter {
                 false,
             );
             register_supplier_close_callback(sid as u64, closer);
+            for closer in closers {
+                register_supplier_close_callback(sid as u64, closer);
+            }
         }
         Ok(Value::NIL)
     }

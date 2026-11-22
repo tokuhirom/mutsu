@@ -69,15 +69,22 @@ fn prefix(node: &mut RakuAstNode) {
     else {
         return;
     };
-    let written = super::unit_source::with_text(SrcSpan::new(from, from + op.len()), |text| {
-        (text == op).then_some(())
+    // `−∞`: the minus may be written as U+2212.
+    let written = super::unit_source::with_text_from(from, |text| {
+        if text.starts_with(op.as_str()) {
+            Some(op.len())
+        } else if op == "-" && text.starts_with('\u{2212}') {
+            Some('\u{2212}'.len_utf8())
+        } else {
+            None
+        }
     });
-    if written.is_some() {
+    if let Some(len) = written {
         with_child(node, "prefix", |p| {
-            super::origin::set_span(p, SrcSpan::new(from, from + op.len()))
+            super::origin::set_span(p, SrcSpan::new(from, from + len))
         });
         if let Some(index) = node.fields.iter().position(|f| f.name == Some("operand")) {
-            glued_variable_operand(node, index, from + op.len());
+            glued_variable_operand(node, index, from + len);
         }
     }
 }
@@ -167,6 +174,29 @@ fn postfix(node: &mut RakuAstNode) {
             super::unit_source::with_text(SrcSpan::new(from, to), |text| {
                 text.starts_with('*').then_some(from + 1)
             })
+        }
+        // `$++`: an anonymous variable is its sigil, right at the start.
+        None if operand.is_some_and(|o| o.class == RakuAstClass::VarDeclarationAnonymous) => {
+            let sigil = operand.and_then(|o| {
+                o.fields.iter().find_map(|f| match &f.value {
+                    super::RakuAstFieldValue::Node(v) if f.name == Some("sigil") => {
+                        v.as_str().map(str::to_string)
+                    }
+                    _ => None,
+                })
+            });
+            let end = sigil.and_then(|sigil| {
+                super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+                    text.starts_with(sigil.as_str())
+                        .then_some(from + sigil.len())
+                })
+            });
+            if let Some(end) = end {
+                with_child(node, "operand", |o| {
+                    super::origin::set_span(o, SrcSpan::new(from, end))
+                });
+            }
+            end
         }
         // `0.0i` / `3e2i`: a numeric literal written right before the
         // operator, which the parser read as one token.

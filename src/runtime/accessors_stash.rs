@@ -739,8 +739,8 @@ impl Interpreter {
                 .package_kinds
                 .keys()
                 .any(|k| k.starts_with(&prefix))
-            || self.module.exported_subs.contains_key(package)
-            || self.module.exported_vars.contains_key(package)
+            || self.module.world.exported_subs.contains_key(package)
+            || self.module.world.exported_vars.contains_key(package)
     }
 
     pub(crate) fn stash_lookup_symbol(stash: &Value, key: &str) -> Option<Value> {
@@ -814,7 +814,7 @@ impl Interpreter {
         }
         // Symbols loaded via `$*REPO.need(...)` stay invisible to `::('Name')`
         // until they are merged into GLOBAL with `merge-symbols`.
-        if self.module.cur_repo.pending_global_symbols.contains(name) {
+        if self.module.world.cur_repo.pending_global_symbols.contains(name) {
             return Self::no_such_symbol_failure(name);
         }
         // A module's own bare declaration is visible only where that module
@@ -937,7 +937,7 @@ impl Interpreter {
             "NaN" => return Value::num(f64::NAN),
             _ => {}
         }
-        if !self.types.method_class_stack.is_empty() && self.module.loaded_modules.contains(name) {
+        if !self.types.method_class_stack.is_empty() && self.module.world.loaded_modules.contains(name) {
             return Value::package(Symbol::intern(name));
         }
 

@@ -550,10 +550,7 @@ fn every_variant_roundtrips_losslessly() {
             positional: Box::new(vec![Value::int(1)]),
             named: Box::new(ValueMap::from_iter([("n".to_string(), Value::int(2))])),
         },
-        ValueRepr::Uni(Box::new(UniData {
-            form: "NFC".to_string(),
-            codes: Value::real_array(vec![Value::int(97), Value::int(98), Value::int(99)]),
-        })),
+        ValueRepr::Uni(Box::new(UniData::new("NFC".to_string(), vec![97, 98, 99]))),
         ValueRepr::RakuAst(Box::new(crate::rakuast::RakuAstNode {
             origin: Default::default(),
             class: crate::rakuast::RakuAstClass::IntLiteral,

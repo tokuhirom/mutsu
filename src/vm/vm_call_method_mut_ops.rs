@@ -624,9 +624,8 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let has_varref = raw_args
-            .iter()
-            .any(|a| matches!(a.view(), ValueView::VarRef { .. }));
+        // A tag probe: `view()` of a lazy Match argument would materialize it.
+        let has_varref = raw_args.iter().any(Value::is_varref);
         // ADR-0054 S3: spread only the positions the caller wrote as `|EXPR`
         // -- decided by call-site syntax, not by a value merely evaluating to
         // a Slip (`.method(@a.Slip)` stays one argument).
@@ -976,49 +975,13 @@ impl Interpreter {
             );
             return Err(err);
         }
-        // Unhandled Failure explosion: calling a non-Failure method on an
-        // unhandled Failure should throw before native dispatch can mistake
-        // the Failure for an ordinary Cool value (for example, `Failure.lines`
-        // reaches the native Str/Cool method table).
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.as_str() == "Failure"
-            && !target.is_failure_handled()
-            && !matches!(
-                method,
-                "exception"
-                    | "handled"
-                    | "self"
-                    | "defined"
-                    | "Bool"
-                    | "so"
-                    | "not"
-                    | "gist"
-                    | "Str"
-                    | "raku"
-                    | "WHICH"
-                    | "WHERE"
-                    | "HOW"
-                    | "WHY"
-                    | "WHO"
-                    | "backtrace"
-                    | "is-handling"
-                    | "WHAT"
-                    | "DEFINITE"
-                    | "VAR"
-                    | "^name"
-                    | "isa"
-                    | "does"
-                    | "ACCEPTS"
-                    | "Failure"
-                    | "sink"
-            )
-            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmut",
-                "failure-explode",
-            );
-            return Err(err);
+        // A `Failure`'s own methods, and the throw of an unhandled one before
+        // native dispatch can mistake it for an ordinary `Cool` value
+        // (`Failure.lines`), `failure_calls.rs`.
+        if let Some(result) = self.failure_own_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "failure-own");
+            self.stack.push(result?);
+            return Ok(());
         }
         if method == "value"
             && args.is_empty()
@@ -1771,6 +1734,9 @@ impl Interpreter {
                 );
                 self.stack.push(result?);
                 return Ok(());
+            }
+            if let Some(err) = Self::nil_refused_call(method, &args) {
+                return Err(err);
             }
             match crate::vm::vm_call_method_ops::nil_predispatch_verdict(method, &args) {
                 Some(crate::vm::vm_call_method_ops::NilPredispatchVerdict::Error(err)) => {

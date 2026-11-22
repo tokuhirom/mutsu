@@ -86,3 +86,53 @@ pub(super) fn left_call(node: &mut RakuAstNode) {
         super::call_origins::postfix_call(left, SrcSpan::new(from, to))
     });
 }
+
+/// `temp $_ = 42`: a word prefix over a variable, as the left operand at the
+/// start of the application: the application, its `Prefix` and the variable.
+// Cost: O(n), n = length of the operand's text.
+pub(super) fn leading_prefix(node: &mut RakuAstNode) {
+    use super::infix_origins::leaf_text;
+    let Some((from, _)) = byte_range(node) else {
+        return;
+    };
+    let Some(left) = child(node, "left") else {
+        return;
+    };
+    if left.class != RakuAstClass::ApplyPrefix || left.origin.0.is_some() {
+        return;
+    }
+    let Some(op) = child(left, "prefix")
+        .filter(|p| p.class == RakuAstClass::Prefix)
+        .and_then(leaf_text)
+        .filter(|op| op.chars().all(char::is_alphabetic))
+    else {
+        return;
+    };
+    let Some(operand) = child(left, "operand") else {
+        return;
+    };
+    let Some(var) = (operand.class == RakuAstClass::VarLexical)
+        .then(|| leaf_text(operand))
+        .flatten()
+    else {
+        return;
+    };
+    let Some(var_at) = super::unit_source::with_text_from(from, |text| {
+        let rest = text.strip_prefix(op.as_str())?;
+        let blanks = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        let after = rest[blanks..].strip_prefix(var.as_str())?;
+        (blanks > 0 && !after.starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+            .then(|| from + op.len() + blanks)
+    }) else {
+        return;
+    };
+    with_child(node, "left", |left| {
+        super::origin::set_span(left, SrcSpan::new(from, var_at + var.len()));
+        with_child(left, "prefix", |p| {
+            super::origin::set_span(p, SrcSpan::new(from, from + op.len()))
+        });
+        with_child(left, "operand", |v| {
+            super::origin::set_span(v, SrcSpan::new(var_at, var_at + var.len()))
+        });
+    });
+}

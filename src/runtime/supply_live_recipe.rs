@@ -31,6 +31,14 @@ impl Interpreter {
         out_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         out_attrs.insert("supplier_id".to_string(), Value::int(out_sid as i64));
         out_attrs.insert("live".to_string(), Value::TRUE);
+        // `delayed` / `schedule-on` over a recipe mark the recipe itself;
+        // the subscriber's tap on this tap's own output honors the mark, so
+        // each tap delays (or schedules) its own instance of the chain.
+        for key in ["delay_seconds", "scheduler"] {
+            if let Some(mark) = attributes.get(key) {
+                out_attrs.insert(key.to_string(), mark.clone());
+            }
+        }
         let out = Value::make_instance(Symbol::intern("Supply"), out_attrs);
         let tap = self.call_method_with_values(out, method, args)?;
         let mut emitter_attrs = HashMap::new();

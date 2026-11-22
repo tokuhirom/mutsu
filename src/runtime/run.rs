@@ -1296,7 +1296,7 @@ impl Interpreter {
         // from a module that had a distribution.
         compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
             self.module
-                .package_distributions
+                .world.package_distributions
                 .get(&self.current_package())
                 .cloned()
         });

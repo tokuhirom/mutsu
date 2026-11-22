@@ -30,6 +30,7 @@ mod attribute_decl;
 mod attribute_group;
 mod bare_prefix;
 mod bareword;
+mod call_name_origins;
 mod call_origins;
 mod callable_context;
 mod capture_term;
@@ -82,6 +83,7 @@ mod quote_nesting;
 mod regex_block_origins;
 mod regex_call_origins;
 mod regex_decl_origins;
+mod regex_interpolation_origins;
 mod regex_origins;
 mod regex_symbolic_origins;
 pub(crate) mod sections;
@@ -254,6 +256,7 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod signature_decl_origins;
+mod signature_decl_traits;
 mod signature_literal;
 pub(crate) mod slang_block_scope;
 pub(crate) mod slang_bridge;
@@ -263,10 +266,12 @@ mod source_identifier;
 mod source_identifier_tests;
 mod string_block_origins;
 mod string_origins;
+mod string_postfix_origins;
 mod string_variable_origins;
 mod stub_package;
 mod subclass;
 mod subscript_adverb;
+mod subscript_operand_origins;
 mod subst_origins;
 mod substitution;
 mod symbolic_deref;
@@ -2766,7 +2771,7 @@ fn construct_class(
         }))));
     }
     if class_name == "RakuAST::VarDeclaration::Signature" && method == "new" {
-        return signature_decl::construct(args).map(Some);
+        return signature_decl_traits::construct(args).map(Some);
     }
     if class_name == "RakuAST::Parameter" && method == "new" {
         let target = named_arg(args, "target");

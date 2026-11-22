@@ -436,8 +436,9 @@ fn rakudo_iterator_empty(i: &mut Interpreter, _: &Value, _: &[Value], _: Named<'
 }
 
 /// `Rakudo::Iterator.OneValue($v)`: an iterator that yields `$v` once.
+/// `Nil.iterator` is `Rakudo::Iterator.OneValue(Nil)` (`nil_own.rs`).
 // Cost: O(1).
-fn rakudo_iterator_one_value(
+pub(crate) fn rakudo_iterator_one_value(
     i: &mut Interpreter,
     _: &Value,
     args: &[Value],

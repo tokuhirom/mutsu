@@ -41,7 +41,7 @@ pub(super) struct Written {
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
 /// parameters.
 // Cost: O(n + p), n = length of the signature's source, p = parameters.
-pub(super) fn declaration(node: &mut RakuAstNode) {
+pub(super) fn declaration(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -65,12 +65,16 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
         {
             return None;
         }
-        let close = text.trim_end().strip_suffix(')')?.len();
+        // `my ($a, $b) is default(42)`: traits may follow the `)`.
+        let close = open + super::subst_origins::closing(&text[open + 1..], '(', ')')? + 1;
         let inner = text.get(open + 1..close)?;
         let (spans, at) = scan(inner, &parameters, from + open + 1)?;
-        inner[at..].trim().is_empty().then_some(spans)
+        inner[at..]
+            .trim()
+            .is_empty()
+            .then(|| (spans, close, text.to_string()))
     });
-    let Some(spans) = spans else {
+    let Some((spans, close, text)) = spans else {
         return;
     };
     let whole = SrcSpan::new(
@@ -81,6 +85,7 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
         super::origin::set_span(signature, whole);
         place(signature, &spans);
     });
+    super::signature_decl_traits::place(names, node, &text, close, from);
 }
 
 /// The spans of one parameter.
@@ -461,36 +466,13 @@ pub(super) fn place(signature: &mut RakuAstNode, spans: &[Spans]) {
         };
         let mut node = RakuAstNode::clone(node);
         super::routine_origins::parameter(&mut node, span.param, span.var, span.ty);
-        place_traits(&mut node, &span.traits);
+        super::signature_decl_traits::param_traits(&mut node, &span.traits);
         if let Some((range, spans)) = &span.sub {
             super::infix_origins::with_child(&mut node, "sub-signature", |signature| {
                 super::origin::set_span(signature, *range);
                 place(signature, spans);
             });
         }
-        *value = Value::rakuast(Box::new(node));
-    }
-}
-
-/// Give a parameter's `Trait::Is` nodes their ranges and their names'.
-// Cost: O(t), t = traits.
-fn place_traits(param: &mut RakuAstNode, traits: &[(SrcSpan, SrcSpan)]) {
-    if traits.is_empty() {
-        return;
-    }
-    let Some(field) = param.fields.iter_mut().find(|f| f.name == Some("traits")) else {
-        return;
-    };
-    let RakuAstFieldValue::List(nodes) = &mut field.value else {
-        return;
-    };
-    for (value, &(whole, name)) in nodes.iter_mut().zip(traits) {
-        let ValueView::RakuAst(node) = value.view() else {
-            continue;
-        };
-        let mut node = RakuAstNode::clone(node);
-        super::origin::set_span(&mut node, whole);
-        super::infix_origins::with_child(&mut node, "name", |n| super::origin::set_span(n, name));
         *value = Value::rakuast(Box::new(node));
     }
 }

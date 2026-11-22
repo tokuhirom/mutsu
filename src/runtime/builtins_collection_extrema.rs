@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    fn failure_exception_from_value(value: &Value) -> Option<Value> {
+    pub(in crate::runtime) fn failure_exception_from_value(value: &Value) -> Option<Value> {
         match value.view() {
             ValueView::Instance {
                 class_name,

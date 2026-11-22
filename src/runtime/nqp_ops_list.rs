@@ -35,6 +35,10 @@ pub(crate) fn iteration_buffer_items_key() -> crate::symbol::Symbol {
 /// `Interpreter::create_instance` seeds into it.
 // Cost: O(1).
 pub(crate) fn is_iteration_buffer(v: &Value) -> bool {
+    // A lazy Match is no buffer; its `view()` would materialize it.
+    if v.is_lazy_match_value() {
+        return false;
+    }
     match v.view() {
         ValueView::Instance {
             class_name,
@@ -52,6 +56,7 @@ pub(crate) fn is_iteration_buffer(v: &Value) -> bool {
 }
 
 pub(crate) use super::nqp_backing::{nqp_backing_array, with_nqp_backing_array};
+use super::nqp_backing::{uni_code_of, uni_code_value, with_uni_codes, with_uni_codes_mut};
 
 fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
@@ -101,6 +106,22 @@ impl Interpreter {
         if let Some(r) = edited {
             return Ok(r);
         }
+        // A `Uni` stores packed codepoints: an edit no direct op covers
+        // (`splice`, `unshift`) sees them as elements and writes them back,
+        // as a Buf's bytes are below. The common per-element ops (`shift_i`,
+        // `push_i`, `atpos_i`, `bindpos_i`, `elems`, `pop_i`) do not come
+        // here; each reaches the store directly.
+        // Cost: O(e) for a Uni, e = codepoints.
+        if let Some(f) = f.take_if(|_| matches!(target.deref_container().view(), ValueView::Uni(_)))
+        {
+            return with_uni_codes_mut(target, |codes| {
+                let mut elems: Vec<Value> = codes.as_slice().iter().map(|&c| uni_code_value(c)).collect();
+                let out = f(&mut elems);
+                codes.replace(elems.iter().map(|v| uni_code_of(crate::runtime::to_int(v))));
+                out
+            })
+            .ok_or_else(|| RuntimeError::new(format!("nqp::{op}: expected a Uni")));
+        }
         // `f` is still here: the edit above took it only when it ran.
         if let Some(f) = f
             && let Some((_, attributes)) = crate::value::value_buf::buf_target(target)
@@ -132,6 +153,9 @@ impl Interpreter {
         .flatten();
         if let Some(elem) = shifted {
             return Ok(elem);
+        }
+        if let Some(code) = with_uni_codes_mut(target, |codes| codes.shift()) {
+            return Ok(code.map(uni_code_value));
         }
         if let Some((_, attrs)) = value_buf::buf_target(target)
             && let Some(elem) = value_buf::shift_buf_elem(&attrs)
@@ -181,6 +205,9 @@ impl Interpreter {
         }) {
             return len;
         }
+        if let Some(len) = with_uni_codes(target, |codes| codes.len()) {
+            return Some(len);
+        }
         if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) {
             return crate::value::value_buf::buf_len(&attributes);
         }
@@ -219,6 +246,9 @@ impl Interpreter {
         }) {
             return elem;
         }
+        if let Some(code) = with_uni_codes(target, |codes| codes.get(idx)) {
+            return code.map(uni_code_value);
+        }
         if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) {
             return crate::value::value_buf::buf_elem_at(&attributes, idx);
         }
@@ -247,6 +277,11 @@ impl Interpreter {
             _ => None,
         }) {
             return elems;
+        }
+        if let Some(elems) =
+            with_uni_codes(target, |codes| codes.as_slice().iter().map(|&c| uni_code_value(c)).collect())
+        {
+            return Some(elems);
         }
         if let Some((_, attributes)) = crate::value::value_buf::buf_target(target) {
             return crate::value::value_buf::with_buf_elems(&attributes, |e| e.to_vec());
@@ -392,7 +427,9 @@ impl Interpreter {
         offset: usize,
         count: usize,
     ) -> Option<Result<Value, RuntimeError>> {
-        nqp_backing_array(target)?;
+        if with_uni_codes(target, |_| ()).is_none() {
+            nqp_backing_array(target)?;
+        }
         let Some(src) = Self::nqp_elems_of(source) else {
             return Some(Err(RuntimeError::new(format!(
                 "nqp::{op}: expected a list source, got {}",
@@ -424,7 +461,9 @@ impl Interpreter {
         start: i64,
         end: i64,
     ) -> Option<Result<Value, RuntimeError>> {
-        nqp_backing_array(source)?;
+        if with_uni_codes(source, |_| ()).is_none() {
+            nqp_backing_array(source)?;
+        }
         let elems = Self::nqp_elems_of(source)?;
         let len = elems.len() as i64;
         let start = if start < 0 { start + len } else { start };
@@ -472,6 +511,9 @@ impl Interpreter {
                     && let Some(elem) = value_buf::pop_buf_elem(&attrs)
                 {
                     return Some(Ok(coerce_like(op, elem)));
+                }
+                if let Some(code) = with_uni_codes_mut(&target, |codes| codes.pop()) {
+                    return Some(Ok(coerce_like(op, code.map(uni_code_value))));
                 }
                 match Self::nqp_with_elems_mut(op, &target, |elems| elems.pop()) {
                     Ok(elem) => Ok(coerce_like(op, elem)),

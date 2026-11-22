@@ -50,7 +50,7 @@ impl Interpreter {
             .iter()
             .map(|(name, value, _)| (name.clone(), value.clone()))
             .collect();
-        let lexicals = crate::runtime::cow_table_mut(&mut self.module.module_scope_lexicals)
+        let lexicals = crate::runtime::cow_table_mut(&mut self.module.world.module_scope_lexicals)
             .entry(owner.to_string())
             .or_default();
         for (name, value) in &imported {

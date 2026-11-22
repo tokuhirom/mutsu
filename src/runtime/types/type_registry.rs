@@ -714,10 +714,10 @@ impl Interpreter {
         // make every imported routine's topic read see the stale module value.
         // This runs on free-variable reads, so the key-union probe goes first
         // and the qualification test (a symbol lookup) is paid only on a hit.
-        if self.module.module_scope_lexicals.is_empty()
+        if self.module.world.module_scope_lexicals.is_empty()
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
-            || !self.module.module_scope_lexicals.contains_name(name)
+            || !self.module.world.module_scope_lexicals.contains_name(name)
         {
             return None;
         }
@@ -725,7 +725,7 @@ impl Interpreter {
         // under that exact spelling (`Map.new: 'Graph::Grid' => Graph::Grid`);
         // the table is keyed by the full text, so the exact-name probe above is
         // the whole test.
-        self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
+        self.lookup_in_running_package(&self.module.world.module_scope_lexicals, name)
     }
 
     /// The module-scope value for a name that came from a nested `use`, rather
@@ -887,10 +887,10 @@ impl Interpreter {
     /// declaration the name belongs to (a CStruct field's type alias) even
     /// though no frame of that module is running.
     pub(crate) fn module_scope_lexical_for_owner(&self, owner: &str, name: &str) -> Option<&Value> {
-        if self.module.module_scope_lexicals.is_empty() || name.is_empty() {
+        if self.module.world.module_scope_lexicals.is_empty() || name.is_empty() {
             return None;
         }
-        Self::lookup_in_package_chain(&self.module.module_scope_lexicals, owner, name)
+        Self::lookup_in_package_chain(&self.module.world.module_scope_lexicals, owner, name)
     }
 
     /// Whether `name` is a core type name that no user declaration shadows.

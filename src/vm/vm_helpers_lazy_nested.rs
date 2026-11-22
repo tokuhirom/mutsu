@@ -31,6 +31,13 @@ impl Interpreter {
         // structure nested deeper than the stack holds (#11217).
         crate::vm::vm_stack_guard::check_now()?;
         self.reify_map_grep_seq(value)?;
+        // Nothing below a scalar leaf or a lazy `Match` is walked (neither is
+        // one of the arms below), and `view()` on a lazy `Match` would
+        // materialize every capture: `~$/` in grammar-action code reaches this
+        // walk once per action (#12917).
+        if value.is_scalar_leaf() || value.is_lazy_match_value() {
+            return Ok(());
+        }
         match value.view() {
             ValueView::Seq(body) => {
                 // A plain gather nested in a collection (ADR-11678): run it so

@@ -294,10 +294,12 @@ impl Interpreter {
                         failure_exception = Some(exc.clone());
                     }
                 }
-                // `my $x = try %*UNDECLARED`: the caught Failure is not the
-                // declaration's value (rakudo leaves `Any`); a handled one
-                // (the dynamic-variable lookup's) included.
+                // `my $x = try %*UNDECLARED`: the Failure this `try` caught is
+                // not the declaration's value (rakudo leaves `Any`). A Failure
+                // that was already handled is an ordinary value the `try`
+                // answers (`my $s = try { $handled }` is that Failure, #18604).
                 if decay_failure
+                    && failure_exception.is_some()
                     && self.stack.last().is_some_and(|top| {
                         matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
                     })

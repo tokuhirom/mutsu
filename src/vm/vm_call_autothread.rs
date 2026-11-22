@@ -115,7 +115,9 @@ impl Interpreter {
             .enumerate()
             .filter(|(_, v)| {
                 // Check for junction in named arg (Pair value)
-                if let ValueView::Pair(_, val) = v.view() {
+                if v.is_any_pair_value()
+                    && let ValueView::Pair(_, val) = v.view()
+                {
                     return Self::unwrap_junction_value(val).is_some();
                 }
                 Self::unwrap_junction_value(v).is_some()
@@ -288,6 +290,11 @@ impl Interpreter {
         if let Some((_, inner, _)) = val.as_varref() {
             return Self::unwrap_junction_value(inner);
         }
+        // Tag-probed: a leaf or a lazy Match (whose `view()` would
+        // materialize it) is no Junction.
+        if val.is_scalar_leaf() || val.is_lazy_match_value() {
+            return None;
+        }
         match val.view() {
             ValueView::Junction { kind, values } => Some((kind, values.clone())),
             ValueView::Scalar(inner) => {
@@ -440,7 +447,9 @@ impl Interpreter {
             .iter()
             .enumerate()
             .filter(|(_, v)| {
-                if let ValueView::Pair(_, val) = v.view() {
+                if v.is_any_pair_value()
+                    && let ValueView::Pair(_, val) = v.view()
+                {
                     return Self::unwrap_junction_value(val).is_some();
                 }
                 Self::unwrap_junction_value(v).is_some()
@@ -731,7 +740,8 @@ impl Interpreter {
     /// methods never autothread a Junction argument.
     // Cost: O(1).
     pub(crate) fn is_metamodel_primitives(target: &Value) -> bool {
-        matches!(target.view(), ValueView::Package(name) if name.as_str() == "Metamodel::Primitives")
+        target.is_package_value()
+            && matches!(target.view(), ValueView::Package(name) if name.as_str() == "Metamodel::Primitives")
     }
 
     /// Rakudo quirk: a class that declares `multi method ACCEPTS` without a

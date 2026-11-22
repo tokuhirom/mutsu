@@ -89,7 +89,7 @@ struct Parts {
 }
 
 #[derive(Clone, Copy)]
-struct TraitAt {
+pub(super) struct TraitAt {
     whole: (usize, usize),
     name: (usize, usize),
     argument: Option<(usize, usize)>,
@@ -154,11 +154,28 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
 /// `at` on, `base` being where `text` starts in the unit; reading stops at
 /// the first clause it cannot read whole.
 // Cost: O(n), n = length of `text` after `at`.
-fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
+pub(super) fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
     let mut traits = Vec::new();
     loop {
         let gap = trivia_len(&text[at..])?;
         let rest = &text[at + gap..];
+        // `handles q[aie]`: the term to the end of the declaration.
+        if let Some(after) = rest
+            .strip_prefix("handles")
+            .filter(|r| r.starts_with(char::is_whitespace))
+        {
+            let start = at + gap;
+            let term_from = start + "handles".len() + trivia_len(after)?;
+            let end = text.trim_end().len();
+            if term_from < end && !text[term_from..end].contains(" = ") {
+                traits.push(TraitAt {
+                    whole: (base + start, base + end),
+                    name: (base + term_from, base + end),
+                    argument: None,
+                });
+            }
+            return Some(traits);
+        }
         // `is NAME` / `of TYPE` / `does ROLE`.
         let Some((keyword, after)) = ["is", "of", "does"]
             .into_iter()
@@ -175,7 +192,14 @@ fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
         if name_len == 0 {
             return Some(traits);
         }
-        let name_to = name_from + name_len;
+        let mut name_to = name_from + name_len;
+        // `is Array[Int]`: a type application, its brackets part of the type.
+        if text[name_to..].starts_with('[') {
+            let Some(close) = closing_bracket(&text[name_to..]) else {
+                return Some(traits);
+            };
+            name_to += close + 1;
+        }
         let mut end = name_to;
         let mut argument = None;
         if text[name_to..].starts_with('(') {
@@ -266,7 +290,7 @@ fn type_origin(ty: &mut RakuAstNode, (from, to, name_to): (usize, usize, usize))
             super::origin::set_span(ty, SrcSpan::new(from, to));
             super::type_origins::coercion(ty, SrcSpan::new(from, to))
         }
-        RakuAstClass::TypeDefinedness if name_to < to => {
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness if name_to < to => {
             let Some(inner) = super::infix_origins::child_at(ty, 0) else {
                 return;
             };
@@ -297,7 +321,7 @@ fn child_name(ty: &RakuAstNode) -> Option<String> {
 /// Give `node`'s `Trait::Is` nodes the clauses in `at`, when there is one
 /// clause per trait and each names its trait.
 // Cost: O(t), t = traits.
-fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
+pub(super) fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("traits")) else {
         return;
     };
@@ -320,6 +344,25 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         let ValueView::RakuAst(trait_node) = value.view() else {
             return;
         };
+        // `handles q[aie]`: the term, parsed again from its text.
+        if trait_node.class == RakuAstClass::TraitHandles {
+            let (from, to) = clause.name;
+            let Some(text) =
+                super::unit_source::with_text(SrcSpan::new(from, to), |t| Some(t.to_string()))
+            else {
+                return;
+            };
+            let mut trait_node = RakuAstNode::clone(trait_node);
+            super::origin::set_span(
+                &mut trait_node,
+                SrcSpan::new(clause.whole.0, clause.whole.1),
+            );
+            super::infix_origins::with_child_at(&mut trait_node, 0, |term| {
+                super::fragment_origins::expression(names, term, &text, from)
+            });
+            *value = Value::rakuast(Box::new(trait_node));
+            continue;
+        }
         // `my @a of Int` / `my @a does R`: a `Trait::Of` / `Trait::Does`
         // over its type.
         if matches!(
@@ -363,8 +406,14 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
         // `my @a is Array`: a trait naming a type holds a `type`, placed over
         // the name.
         if let Some(ty) = child(trait_node, "type") {
-            let named = child_name(ty).is_some_and(|name| {
+            // `is Array[Int]`: the applied type's name before its brackets.
+            let (base, applied) = match ty.class {
+                RakuAstClass::TypeParameterized => (child_at(ty, 0), true),
+                _ => (Some(ty), false),
+            };
+            let named = base.and_then(child_name).is_some_and(|name| {
                 super::unit_source::with_text(SrcSpan::new(clause.name.0, clause.name.1), |w| {
+                    let w = if applied { w.split_once('[')?.0 } else { w };
                     (w == name).then_some(())
                 })
                 .is_some()

@@ -238,14 +238,28 @@ impl Compiler {
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
         self.bubble_trait_arg_writes(trait_args.iter().flatten());
-        match self.with_param_type_aliases_resolved(stmt) {
+        let idx = match self.with_param_type_aliases_resolved(stmt) {
             Some(resolved) => self
                 .code
                 .add_sub_decl_plan(&resolved, name_chunk, trait_args, pass),
             None => self
                 .code
                 .add_sub_decl_plan(stmt, name_chunk, trait_args, pass),
+        };
+        // A block's own plain built-in operator routine binds in the block's
+        // operator set (#17771).
+        if let Stmt::SubDecl {
+            name,
+            name_expr: None,
+            multi: false,
+            ..
+        } = stmt
+            && let Some(set) = self.block_operator_set_for(*name)
+            && let Some(plan) = self.code.sub_decl_plans.last_mut()
+        {
+            plan.block_operator_set = Some(set);
         }
+        idx
     }
 
     /// Box the outer lexicals a routine's custom-trait argument closures write
