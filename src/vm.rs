@@ -167,6 +167,7 @@ pub(crate) use vm_lexsub_aliases::{LexSubAliasTable, LexSubLatestCells};
 pub(crate) use vm_lexsub_free_cache::LexSubFreeCache;
 pub(crate) use vm_method_return_spec::MethodReturnSpecMemo;
 pub(crate) use vm_method_role_bindings::MethodRoleBindingsMemo;
+pub(crate) use vm_mixin_type_new::MixinDefaultNewVerdict;
 mod vm_call_light_typed;
 mod vm_call_light_uint;
 mod vm_call_method_compiled;
