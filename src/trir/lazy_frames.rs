@@ -58,17 +58,44 @@ impl LazyFrames {
 /// containers and strings, and a user object among the operands is the only
 /// way one could reach a method.
 const DATA_NQP_OPS: &[&str] = &[
-    "push", "pop", "shift", "unshift", "atpos", "bindpos", "atkey", "bindkey", "existskey",
-    "deletekey", "elems", "hash", "list", "chr", "iscclass", "findcclass", "findnotcclass",
-    "strtocodes", "strfromcodes", "index", "rindex",
+    "push",
+    "pop",
+    "shift",
+    "unshift",
+    "atpos",
+    "bindpos",
+    "atkey",
+    "bindkey",
+    "existskey",
+    "deletekey",
+    "elems",
+    "hash",
+    "list",
+    "chr",
+    "iscclass",
+    "findcclass",
+    "findnotcclass",
+    "strtocodes",
+    "strfromcodes",
+    "index",
+    "rindex",
 ];
 
 /// The core types `nqp::create` allocates directly (`nqp_create`'s collection
 /// and storage kinds), without running a `new` or `CREATE` a program could
 /// have written.
 const CORE_CREATE_TYPES: &[&str] = &[
-    "IterationBuffer", "IterationMap", "List", "Map", "Array", "Hash", "NFD", "NFC", "NFKD",
-    "NFKC", "Uni",
+    "IterationBuffer",
+    "IterationMap",
+    "List",
+    "Map",
+    "Array",
+    "Hash",
+    "NFD",
+    "NFC",
+    "NFKD",
+    "NFKC",
+    "Uni",
 ];
 
 /// Whether the generic `nqp::` op `id` on `args` can neither read the
