@@ -41,7 +41,7 @@ pub(super) struct Written {
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
 /// parameters.
 // Cost: O(n + p), n = length of the signature's source, p = parameters.
-pub(super) fn declaration(node: &mut RakuAstNode) {
+pub(super) fn declaration(names: &crate::scope::NameScope, node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
@@ -65,12 +65,13 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
         {
             return None;
         }
-        let close = text.trim_end().strip_suffix(')')?.len();
+        // `my ($a, $b) is default(42)`: traits may follow the `)`.
+        let close = open + super::subst_origins::closing(&text[open + 1..], '(', ')')? + 1;
         let inner = text.get(open + 1..close)?;
         let (spans, at) = scan(inner, &parameters, from + open + 1)?;
-        inner[at..].trim().is_empty().then_some(spans)
+        inner[at..].trim().is_empty().then(|| (spans, close, text.to_string()))
     });
-    let Some(spans) = spans else {
+    let Some((spans, close, text)) = spans else {
         return;
     };
     let whole = SrcSpan::new(
@@ -81,6 +82,7 @@ pub(super) fn declaration(node: &mut RakuAstNode) {
         super::origin::set_span(signature, whole);
         place(signature, &spans);
     });
+    super::signature_decl_traits::place(names, node, &text, close, from);
 }
 
 /// The spans of one parameter.
