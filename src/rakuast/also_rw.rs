@@ -13,9 +13,9 @@ use crate::token_kind::TokenKind;
 // Cost: O(1).
 pub(super) fn statement(rw_also: bool) -> Option<RakuAstNode> {
     rw_also.then(|| {
-        super::role::also_is_statement(Value::rakuast(Box::new(
-            super::routine_traits::trait_is("rw", None),
-        )))
+        super::role::also_is_statement(Value::rakuast(Box::new(super::routine_traits::trait_is(
+            "rw", None,
+        ))))
     })
 }
 

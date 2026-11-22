@@ -47,8 +47,11 @@ fn statements(list: &mut RakuAstNode) {
         };
         cursor = written.end;
         let mut statement = RakuAstNode::clone(statement);
-        if !place_statement(&mut statement, &text[written.start..written.end], from + written.start)
-        {
+        if !place_statement(
+            &mut statement,
+            &text[written.start..written.end],
+            from + written.start,
+        ) {
             return;
         }
         *value = Value::rakuast(Box::new(statement));
@@ -102,7 +105,11 @@ fn place_statement(statement: &mut RakuAstNode, text: &str, at: usize) -> bool {
     let name_at = trait_at + after.len() - name.len();
     let name_span = SrcSpan::new(name_at, name_at + name.len());
     let mut placed = false;
-    let Some(field) = statement.fields.iter_mut().find(|f| f.name == Some("traits")) else {
+    let Some(field) = statement
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("traits"))
+    else {
         return false;
     };
     let RakuAstFieldValue::List(traits) = &mut field.value else {
@@ -121,7 +128,9 @@ fn place_statement(statement: &mut RakuAstNode, text: &str, at: usize) -> bool {
     // `is rw`: a name; `is Int` / `does R`: a type over a name.
     if let Some(written) = child(&trait_node, "name").and_then(leaf_text) {
         if written == name {
-            with_child(&mut trait_node, "name", |n| super::origin::set_span(n, name_span));
+            with_child(&mut trait_node, "name", |n| {
+                super::origin::set_span(n, name_span)
+            });
             placed = true;
         }
     } else if let Some(ty) = child(&trait_node, "type").or_else(|| child_at(&trait_node, 0))
