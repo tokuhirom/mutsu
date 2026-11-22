@@ -97,7 +97,12 @@ impl Interpreter {
                 dispatcher,
                 depth: self.routine_stack().len(),
             });
-        let result = self.exec_one(code, &mut next_ip, compiled_fns);
+        let result = self.exec_one(
+            code,
+            &mut next_ip,
+            compiled_fns,
+            crate::vm::vm_poll::DispatchPolls::enter(code),
+        );
         self.dispatch.lexical_operator_scopes.pop();
         result.map(|()| next_ip)
     }

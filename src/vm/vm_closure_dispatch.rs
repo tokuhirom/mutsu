@@ -1415,7 +1415,7 @@ impl Interpreter {
             // paths, so without this hook a closure-shaped hot loop never
             // entered the JIT at all.
             let step = if ip == 0
-                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns, polls)
             {
                 ip = cc.ops.len();
                 r

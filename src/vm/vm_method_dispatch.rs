@@ -816,7 +816,7 @@ impl Interpreter {
             // Tier A-compilable; the native outcome threads through the same
             // match arms below.
             let step = if ip == 0
-                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns, polls)
             {
                 ip = cc.ops.len();
                 r

@@ -398,7 +398,7 @@ impl Interpreter {
             let polls = crate::vm::vm_poll::DispatchPolls::enter(cc);
             while ip < cc.ops.len() {
                 let step = if ip == 0
-                    && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+                    && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns, polls)
                 {
                     ip = cc.ops.len();
                     r

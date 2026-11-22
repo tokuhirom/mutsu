@@ -322,7 +322,7 @@ impl Interpreter {
                 at_entry = false;
             }
             let op_ip = ip;
-            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns, polls) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
@@ -723,7 +723,7 @@ impl Interpreter {
                 at_entry = false;
             }
             let op_ip = ip;
-            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns, polls) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)
@@ -1120,7 +1120,7 @@ impl Interpreter {
                 );
             }
             let op_ip = ip;
-            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
+            if let Err(e) = self.exec_one(code, &mut ip, compiled_fns, polls) {
                 if e.is_goto()
                     && let Some(label) = e.label.as_deref()
                     && let Some(target_ip) = self.find_label_target(code, label)

@@ -1081,7 +1081,8 @@ impl Interpreter {
                 // (explicit return / fail / error travel as `Err`), so it
                 // threads through the same match arms below.
                 let step = if ip == 0
-                    && let Some(r) = crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns)
+                    && let Some(r) =
+                        crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns, polls)
                 {
                     ip = cf.code.ops.len();
                     r

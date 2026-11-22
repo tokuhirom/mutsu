@@ -162,6 +162,13 @@ pub(crate) fn armed() -> bool {
 /// (`record_line`) need to see each line transition, and ADR-0106 §D4's
 /// region attribution assumes the gap between a tick and the next poll is
 /// one opcode, so profile runs keep the old placement exactly.
+///
+/// It is also the proof that a loop reported its code to ADR-18012 S1's code
+/// watch: its fields are private, [`DispatchPolls::enter`] is its only
+/// constructor, and both ways to run a code object's ops take one --
+/// `Interpreter::exec_one` (the only caller of the per-op dispatch) and
+/// `vm_jit::call_native` (the only call into native code). So a new dispatch
+/// loop cannot run an op without reporting its code; it does not compile.
 #[derive(Clone, Copy)]
 pub(crate) struct DispatchPolls {
     armed: bool,
@@ -312,7 +319,7 @@ impl Interpreter {
             // below; this poll on the same line is not a transition.
             poll_code(SafepointKind::Backedge, op_ip as u32, code, self, false);
         }
-        let r = self.exec_one(code, ip, compiled_fns);
+        let r = self.exec_one(code, ip, compiled_fns, polls);
         if *ip <= op_ip && r.is_ok() && polls.due(true) {
             poll_code(SafepointKind::Backedge, *ip as u32, code, self, true);
         }
