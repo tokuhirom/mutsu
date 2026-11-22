@@ -455,6 +455,16 @@ impl Interpreter {
                 if caller_allowed && let Some(ref cc) = method_def.compiled_code {
                     // See the lane install in `compiled_mut_resolved_dispatch`.
                     self.note_plain_method_lane_reached(class_sym, method_sym);
+                    // ADR-15737 D1: record this arm's outcome for a lane gate
+                    // that asked (`vm_method_call_plan`), as the tail does.
+                    self.install_method_call_plan(
+                        class_sym,
+                        method_sym,
+                        owner_class,
+                        &method_def,
+                        target,
+                        args,
+                    );
                     let cc = cc.clone();
                     let target_id = match target.view() {
                         ValueView::Instance { id, .. } => Some(id),

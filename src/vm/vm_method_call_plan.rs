@@ -80,6 +80,11 @@ pub(crate) struct MethodCallPlan {
     /// variables to shared cells (`promote_method_container_args`), exactly
     /// as the dispatch tail would.
     pub(crate) container_params: bool,
+    /// A private method (`$obj!name`): whether the calling context may
+    /// dispatch it depends on the caller, not on the lane key, so a replay
+    /// re-asks `can_fast_dispatch_private_method_vm` on every call, as the
+    /// private dispatch arm does.
+    pub(crate) private: bool,
 }
 
 /// An argument whose fast-path gate reading is fixed by its type key.
@@ -300,9 +305,12 @@ impl Interpreter {
         };
         let attributes = attributes.clone();
         // The entry of the tail's prefix that a hit skips and that is not a
-        // probe: a native array's retyped answer, `.new` on a built-in
-        // instance, and a private call's own dispatch arm.
+        // probe: a native array's retyped answer and `.new` on a built-in
+        // instance. A private call is planned by its own dispatch arm
+        // (`try_private_compiled_mut_dispatch`); its multi resolution reads
+        // the arguments by a path of its own, so a private multi is not.
         let method = method_sym.as_str();
+        let private = method.starts_with('!');
         // A multi is planned only when its family's winner is a function of the
         // argument type keys the lane key holds (no `where`, literal, subset,
         // smiley or `is rw` candidate; `multi_dispatch_type_cacheable`), which
@@ -325,7 +333,7 @@ impl Interpreter {
                     _ => true,
                 });
         if method == "new"
-            || method.starts_with('!')
+            || (private && def.is_multi)
             || crate::builtins::method_table::native_array_result::retypes(method)
             || multi_unplannable
             || def.deprecated_message.is_some()
@@ -372,6 +380,7 @@ impl Interpreter {
             lean,
             slot_frame,
             container_params: def.has_container_params(),
+            private,
         }))
     }
 
@@ -397,8 +406,12 @@ impl Interpreter {
             unreachable!("a method-call plan is only looked up for an instance receiver");
         };
         let attrs_cell = attributes.clone();
-        // The one per-instance input of the gate (see the module docs).
-        if CallAttrs::Cell(&attrs_cell).has_alias_meta() {
+        // The one per-instance input of the gate (see the module docs), and
+        // a private method's per-call permission check: a caller the private
+        // dispatch arm would refuse takes the whole path, as it did unplanned.
+        if CallAttrs::Cell(&attrs_cell).has_alias_meta()
+            || (plan.private && !self.can_fast_dispatch_private_method_vm(plan.owner.as_str()))
+        {
             return self.run_plain_method_lane(
                 code,
                 target_name,
