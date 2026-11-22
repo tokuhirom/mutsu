@@ -43,6 +43,7 @@ mod match1_late;
 mod match3_late;
 mod mu_late;
 mod mu_render_late;
+mod nil_own;
 pub(crate) mod pair;
 pub(crate) mod positional;
 pub(crate) mod quanthash;
@@ -111,6 +112,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     accepts_open::ROWS,
     any_subscript::ROWS,
     any_subscript::NIL_ROWS,
+    nil_own::ROWS,
     range::ROWS,
     sampling::BOOL_ROWS,
     sampling::PICK_ROWS,

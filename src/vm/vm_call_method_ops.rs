@@ -180,17 +180,9 @@ pub(crate) fn nil_predispatch_verdict(
                 ),
             ))
         }
-        "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
-            Some(NilPredispatchVerdict::Error(RuntimeError::new(format!(
-                "Invocant of method '{}' must be an object instance of type \
-                 'Any', not a type object of type 'Nil'.  Did you forget a \
-                 '.new'?",
-                method
-            ))))
-        }
-        "Rat" | "FatRat" | "Int" | "Num" | "Complex" | "Numeric" | "Real" if no_args => {
+        "Rat" | "FatRat" | "Num" | "Complex" | "Real" if no_args => {
             let zero = match method {
-                "Int" | "Numeric" | "Real" => Value::int(0),
+                "Real" => Value::int(0),
                 "Num" => Value::num(0.0),
                 "Rat" => crate::value::make_rat(0, 1),
                 "FatRat" => crate::value::make_big_fat_rat(0.into(), 1.into()),
@@ -208,7 +200,7 @@ pub(crate) fn nil_predispatch_verdict(
                 resume: Value::int(0),
             })
         }
-        "Str" | "Stringy" if no_args => Some(NilPredispatchVerdict::Warn {
+        "Stringy" if no_args => Some(NilPredispatchVerdict::Warn {
             message: "Use of Nil in string context".into(),
             resume: Value::str(String::new()),
         }),
@@ -217,16 +209,6 @@ pub(crate) fn nil_predispatch_verdict(
             message: "Use of Nil in string context".into(),
             resume: Value::str(String::new()),
         }),
-        // Cool's string methods coerce the `Nil` invocant through `Nil.Str`:
-        // rakudo warns "Use of Nil.<method> coerced to empty string" and
-        // resumes with the empty string (not the method's usual result type).
-        "chars" | "chop" | "chomp" | "uc" | "lc" | "tc" | "flip" | "codes" | "lines" | "words"
-        | "comb" | "index" | "rindex" | "contains" | "starts-with" | "ends-with" | "substr" => {
-            Some(NilPredispatchVerdict::Warn {
-                message: format!("Use of Nil.{method} coerced to empty string").into(),
-                resume: Value::str(String::new()),
-            })
-        }
         "ords" if no_args => Some(NilPredispatchVerdict::Warn {
             message: "Use of Nil in string context".into(),
             resume: Value::seq(vec![]),
@@ -240,6 +222,17 @@ pub(crate) fn nil_predispatch_verdict(
 }
 
 impl Interpreter {
+    /// The answer of `Nil`'s own method `method` (its rows, `nil_own.rs`), or
+    /// `None` when `Nil` declares no candidate for these arguments.
+    // Cost: O(1) to find the row, plus the handler's own cost.
+    pub(crate) fn nil_own_row(
+        &mut self,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        crate::builtins::method_table::invoke_owner(self, &["Nil"], method, args, || Value::NIL)
+    }
+
     /// Rendering (`.raku`, `.gist`) a Rakudo metarole (`Metamodel::Naming`), or
     /// a junction of them, dies: it is an NQP-level object whose `HOW` has no
     /// `find_method`. `Kind`'s naming relies on that to fall back to the type
@@ -2087,10 +2080,19 @@ impl Interpreter {
                 // which lets the hyper-method path (`».foo`) reach the same
                 // Nil-absorbing verdict without duplicating this dispatch.
                 if target.is_nil() {
-                    // The warn-and-resume coercions and the element-mutator
-                    // errors live in `nil_predispatch_verdict`, shared with the
+                    // `Nil`'s own methods are its rows (`nil_own.rs`).
+                    if let Some(result) = Self::nil_own_row(self, method, &args) {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethod",
+                            "nil-own-row",
+                        );
+                        self.stack.push(result?);
+                        return Ok(());
+                    }
+                    // The warn-and-resume coercions `Nil` inherits from `Cool`
+                    // live in `nil_predispatch_verdict`, shared with the
                     // named-receiver opcode (`exec_call_method_mut_op_impl`)
-                    // so `my $v := Nil; $v.Int` reaches the same verdict.
+                    // so `my $v := Nil; $v.Num` reaches the same verdict.
                     match nil_predispatch_verdict(method, &args) {
                         Some(NilPredispatchVerdict::Error(err)) => {
                             crate::vm::vm_stats::record_dispatch_entry_intercept(

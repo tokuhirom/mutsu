@@ -82,3 +82,54 @@ fn set(call: &mut RakuAstNode, at: usize, to: usize, inner: (usize, usize)) {
         super::empty_fields::set_span(call, "args", SrcSpan::new(at + 1, at + 1));
     }
 }
+
+/// `$o.$meth` / `$o.$meth(1)`: the `Call::TermAsMethod` of `node`, an
+/// application ending at `span.to` whose operand ends at byte `operand_end`,
+/// runs from the variable after the dot to the end; the variable is placed,
+/// and the `ArgList` sits inside the parentheses (empty at the end without
+/// them).
+// Cost: O(n), n = length of the call's source.
+pub(super) fn place_term_as_method(node: &mut RakuAstNode, operand_end: usize, span: SrcSpan) {
+    use super::infix_origins::{child, leaf_text, with_child};
+    let to = span.to as usize;
+    let Some(call) = child(node, "postfix").filter(|c| c.class == RakuAstClass::CallTermAsMethod)
+    else {
+        return;
+    };
+    let Some(var) = child(call, "callee")
+        .filter(|v| v.class == RakuAstClass::VarLexical)
+        .and_then(leaf_text)
+    else {
+        return;
+    };
+    let Some((at, args)) = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
+        let rest = text.strip_prefix('.')?.strip_prefix(var.as_str())?;
+        let at = operand_end + 1;
+        let args = if rest.is_empty() {
+            SrcSpan::new(to, to)
+        } else {
+            rest.strip_prefix('(')?.strip_suffix(')')?;
+            SrcSpan::new(at + var.len() + 1, to - 1)
+        };
+        Some((at, args))
+    }) else {
+        return;
+    };
+    with_child(node, "postfix", |call| {
+        super::origin::set_span(call, SrcSpan::new(at, to));
+        with_child(call, "callee", |v| {
+            super::origin::set_span(v, SrcSpan::new(at, at + var.len()))
+        });
+        let list = if args.from == args.to {
+            Some((args.from as usize, args.to as usize))
+        } else {
+            super::call_origins::parenthesized(child(call, "args"), args)
+        };
+        if let Some((from, end)) = list {
+            super::empty_fields::set_span(call, "args", SrcSpan::new(from, end));
+            with_child(call, "args", |list| {
+                super::origin::set_span(list, SrcSpan::new(from, end))
+            });
+        }
+    });
+}

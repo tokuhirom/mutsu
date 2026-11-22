@@ -150,6 +150,14 @@ impl Interpreter {
         categorize: bool,
     ) -> Result<Value, RuntimeError> {
         let mapper = args.first().cloned().unwrap_or(Value::NIL);
+        // Over a live source the stage is a per-tap recipe (ADR-18443).
+        if Self::stage_is_live_recipe(attributes) {
+            return Ok(Self::make_on_demand_buffer_supply(
+                Self::supply_from_attrs(attributes),
+                if categorize { "categorize" } else { "classify" },
+                mapper,
+            ));
+        }
 
         if let Some(ValueView::Int(source_supplier_id)) =
             attributes.get("supplier_id").map(Value::view)
@@ -351,7 +359,7 @@ impl Interpreter {
     /// Flatten a `.categorize` mapper result into a list of keys.
     /// Lists/Arrays/Seqs/Slips contribute their elements; an empty list
     /// contributes no keys (the value is dropped); anything else is a single key.
-    fn flatten_categorize_keys(mapped: Value) -> Vec<Value> {
+    pub(super) fn flatten_categorize_keys(mapped: Value) -> Vec<Value> {
         match mapped.view() {
             ValueView::Array(items, ..) => return items.iter().cloned().collect(),
             ValueView::Seq(items) => {

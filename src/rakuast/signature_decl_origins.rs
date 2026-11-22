@@ -33,6 +33,9 @@ pub(super) struct Written {
     sub: Option<Vec<Written>>,
     /// The names of the `is NAME` traits after the variable (`$x is copy`).
     traits: Vec<String>,
+    /// A slurpy's marker (`*@a`, `**@a`, `+@a`), which the parameter's range
+    /// includes and its target's does not.
+    slurpy: Option<&'static str>,
 }
 
 /// Place the `Signature` of `node`, a `VarDeclaration::Signature`, and its
@@ -116,12 +119,26 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
             if param.fields.iter().any(|f| {
                 matches!(
                     f.name,
-                    Some("where" | "type-captures" | "invocant" | "array-shape" | "slurpy")
+                    Some("where" | "type-captures" | "invocant" | "array-shape")
                 )
             }) {
                 return None;
             }
             let traits = is_traits(param)?;
+            let slurpy = match param.fields.iter().find(|f| f.name == Some("slurpy")) {
+                None => None,
+                Some(field) => {
+                    let RakuAstFieldValue::Node(marker) = &field.value else {
+                        return None;
+                    };
+                    Some(match super::slurpy_marker_class(marker)? {
+                        RakuAstClass::ParameterSlurpyFlattened => "*",
+                        RakuAstClass::ParameterSlurpyUnflattened => "**",
+                        RakuAstClass::ParameterSlurpySingleArgument => "+",
+                        _ => return None,
+                    })
+                }
+            };
             // `($a, $b)`: a sub-signature in place of the variable.
             if let Some(sub) = child(param, "sub-signature") {
                 if child(param, "target").is_some()
@@ -140,6 +157,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     default: None,
                     sub: Some(parameters(sub)?),
                     traits,
+                    slurpy,
                 });
             }
             let target = child(param, "target")?;
@@ -188,6 +206,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                     default,
                     sub: None,
                     traits,
+                    slurpy,
                 });
             }
             if target.class != RakuAstClass::ParameterTargetVar {
@@ -202,6 +221,7 @@ pub(super) fn parameters(signature: &RakuAstNode) -> Option<Vec<Written>> {
                 default,
                 sub: None,
                 traits,
+                slurpy,
             })
         })
         .collect()
@@ -350,6 +370,10 @@ pub(super) fn scan(
         if written.named {
             inner[at..].strip_prefix(':')?;
             at += 1;
+        }
+        if let Some(marker) = written.slurpy {
+            inner[at..].strip_prefix(marker)?;
+            at += marker.len();
         }
         if let Some(sub) = &written.sub {
             // `( ... )`: the parameters inside, then the closing paren.

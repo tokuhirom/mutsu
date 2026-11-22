@@ -806,6 +806,14 @@ fn children_without_docs(node: &RakuAstNode) -> Vec<Value> {
     if let Some(with_signature) = crate::rakuast::implicit_signature::method_with_signature(node) {
         return field_children(&with_signature);
     }
+    let role_body;
+    let node = match crate::rakuast::implicit_signature::role_body_with_signature(node) {
+        Some(with_signature) => {
+            role_body = with_signature;
+            &role_body
+        }
+        None => node,
+    };
     if let Some(expansion) = crate::rakuast::implicit_signature::public_attribute_expansion(node) {
         return vec![expansion];
     }
@@ -962,7 +970,24 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
                     _ => None,
                 })
                 .collect();
-            (!exprs.is_empty()).then_some(exprs)
+            // `infix:<|>`: the word quote of an operator's name is visited
+            // too; `M::foo` visits nothing.
+            let mut exprs = exprs;
+            for f in node.fields.iter().filter(|f| f.name == Some("colonpairs")) {
+                match &f.value {
+                    RakuAstFieldValue::Node(v) if crate::rakuast::is_node_value(v) => {
+                        exprs.push(v.clone())
+                    }
+                    RakuAstFieldValue::List(items) => exprs.extend(
+                        items
+                            .iter()
+                            .filter(|v| crate::rakuast::is_node_value(v))
+                            .cloned(),
+                    ),
+                    _ => {}
+                }
+            }
+            Some(exprs)
         }
         // Rakudo's `Term::Enum` visits its `Name`, written where the term is.
         RakuAstClass::TermEnum => {

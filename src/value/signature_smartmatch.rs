@@ -90,11 +90,13 @@ pub(crate) fn signature_smartmatch_with(
                 params: sub1.clone(),
                 return_type: None,
                 param_defs: None,
+                binder: None,
             };
             let sub_info2 = SigInfo {
                 params: sub2.clone(),
                 return_type: None,
                 param_defs: None,
+                binder: None,
             };
             if !signature_smartmatch_with(&sub_info1, &sub_info2, user_type) {
                 return false;
@@ -186,11 +188,13 @@ pub(crate) fn signature_smartmatch_with(
                     params: os1.clone(),
                     return_type: None,
                     param_defs: None,
+                    binder: None,
                 };
                 let sub_info2 = SigInfo {
                     params: os2.clone(),
                     return_type: None,
                     param_defs: None,
+                    binder: None,
                 };
                 if !signature_smartmatch_with(&sub_info1, &sub_info2, user_type) {
                     return false;
