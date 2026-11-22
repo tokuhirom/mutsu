@@ -70,22 +70,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         use crate::runtime::native_methods::{native_method_shim, next_supplier_id};
         let out_sid = next_supplier_id();
-        let mut supplier_attrs = HashMap::new();
-        supplier_attrs.insert("done".to_string(), Value::FALSE);
-        supplier_attrs.insert("supplier_id".to_string(), Value::int(out_sid as i64));
-        let supplier = Value::make_instance(Symbol::intern("Supplier"), supplier_attrs);
-        let tap = self.call_method_with_values(
-            recipe.clone(),
-            "tap",
-            vec![
-                native_method_shim(supplier.clone(), "emit", true),
-                Value::pair(
-                    "done".to_string(),
-                    native_method_shim(supplier.clone(), "done", false),
-                ),
-                Value::pair("quit".to_string(), native_method_shim(supplier, "quit", true)),
-            ],
-        )?;
+        let tap = self.tap_supply_into(recipe, out_sid)?;
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
@@ -103,6 +88,29 @@ impl Interpreter {
             Value::array(vec![native_method_shim(tap, "close", false)]),
         );
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+    }
+
+    /// Tap `supply` with forwarders that emit, finish and quit the supplier
+    /// `out_sid`; answer the tap.
+    // Cost: O(1) plus the supply's own tap.
+    pub(crate) fn tap_supply_into(&mut self, supply: &Value, out_sid: u64) -> Result<Value, RuntimeError> {
+        use crate::runtime::native_methods::native_method_shim;
+        let mut supplier_attrs = HashMap::new();
+        supplier_attrs.insert("done".to_string(), Value::FALSE);
+        supplier_attrs.insert("supplier_id".to_string(), Value::int(out_sid as i64));
+        let supplier = Value::make_instance(Symbol::intern("Supplier"), supplier_attrs);
+        self.call_method_with_values(
+            supply.clone(),
+            "tap",
+            vec![
+                native_method_shim(supplier.clone(), "emit", true),
+                Value::pair(
+                    "done".to_string(),
+                    native_method_shim(supplier.clone(), "done", false),
+                ),
+                Value::pair("quit".to_string(), native_method_shim(supplier, "quit", true)),
+            ],
+        )
     }
 
     /// The attributes of the source a live per-tap recipe ultimately taps.
@@ -191,4 +199,39 @@ impl Interpreter {
         }
         any_live.then(|| Self::make_multi_source_recipe(kind, sources, with_fn, initial))
     }
+
+    /// Record `sid`, a supplier a `migrate` tapped an inner supply into
+    /// ([`Self::tap_supply_into`]), with that `tap`, so switching away from
+    /// it releases the inner supply.
+    // Cost: O(c), c = the close callbacks.
+    pub(crate) fn migrate_own_inner(sid: u64, tap: Value) {
+        crate::runtime::native_methods::register_supplier_close_callback(
+            sid,
+            crate::runtime::native_methods::native_method_shim(tap, "close", false),
+        );
+        if let Ok(mut owned) = migrate_owned().lock() {
+            owned.insert(sid);
+        }
+    }
+
+    /// A `migrate` switched away from the inner supplier `sid`: if the
+    /// migration tapped it itself, close that tap. A supplier the program
+    /// emitted (`$supplier.Supply`) is left alone.
+    // Cost: O(c), c = the close callbacks.
+    pub(crate) fn migrate_release_inner(&mut self, sid: u64) -> Result<(), RuntimeError> {
+        let owned = migrate_owned().lock().is_ok_and(|mut owned| owned.remove(&sid));
+        if owned {
+            for closer in crate::runtime::native_methods::take_supplier_close_callbacks(sid) {
+                self.call_sub_value(closer, vec![])?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The inner suppliers a `migrate` tapped for itself.
+fn migrate_owned() -> &'static std::sync::Mutex<std::collections::HashSet<u64>> {
+    static SET: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<u64>>> =
+        std::sync::OnceLock::new();
+    SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
 }
