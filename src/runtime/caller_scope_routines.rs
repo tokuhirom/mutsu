@@ -108,14 +108,15 @@ impl Interpreter {
         let packages: Vec<Symbol> = scope.packages().collect();
         let mut names: Vec<String> = Vec::new();
         for key in self.routines().functions.keys() {
-            let key = key.as_str();
-            let Some(name) = packages.iter().find_map(|pkg| {
-                key.strip_prefix(pkg.as_str())?.strip_prefix("::")
-            }) else {
+            let Some((package, tail)) = crate::qualified::split_qualified(*key) else {
                 continue;
             };
-            let name = crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(name);
-            if !name.is_empty() && !crate::qualified::is_qualified_str(name) {
+            if !packages.contains(&package) {
+                continue;
+            }
+            let tail = tail.as_str();
+            let name = crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(&tail);
+            if !name.is_empty() {
                 names.push(name.to_string());
             }
         }
