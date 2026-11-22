@@ -126,7 +126,10 @@ pub(super) fn trait_is_name_or_type(
         return Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::TraitIs,
-            fields: vec![node_field(Some("type"), super::bareword::simple_type_node(name))],
+            fields: vec![node_field(
+                Some("type"),
+                super::bareword::simple_type_node(name),
+            )],
         }));
     }
     trait_is(name)

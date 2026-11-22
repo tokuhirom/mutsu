@@ -77,7 +77,9 @@ pub(super) fn view_node(
         ));
     }
     // `has @.a of Int`: the type is the `Trait::Of`, not the declaration's.
-    let of_type = trait_order.contains(&crate::ast::attr_trait::AttrTrait::Of).then(|| type_constraint.clone());
+    let of_type = trait_order
+        .contains(&crate::ast::attr_trait::AttrTrait::Of)
+        .then(|| type_constraint.clone());
     let type_name = match of_type {
         Some(_) => None,
         None => smiley_type.as_deref().or(type_constraint.as_deref()),
