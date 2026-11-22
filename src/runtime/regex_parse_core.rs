@@ -1033,6 +1033,16 @@ impl Interpreter {
         // before structural parsing. `Validate` mode (parse-time dry run) has no
         // variable values available, so it skips interpolation and treats sigil
         // references as opaque atoms further down.
+        // Plain scalars are read where the cursor reaches them (#14510): a
+        // pattern reached here directly (a `<$var>` source, a Regex value's
+        // own text, a sub-pattern) hoists them like `parse_regex` does.
+        let hoisted;
+        let pattern = if mode == RegexParseMode::Match {
+            hoisted = self.with_match_time_scalars(pattern, Vec::new());
+            &*hoisted
+        } else {
+            pattern
+        };
         let interpolated = if mode == RegexParseMode::Match {
             match self.interpolate_regex_scalars(pattern) {
                 Ok(s) => {
