@@ -100,12 +100,10 @@ pub(super) fn lower_prefix_statement(
     names: &NameScope,
     statement: &RakuAstNode,
 ) -> Result<Expr, RuntimeError> {
-    let modified = statement.fields.iter().any(|field| {
-        matches!(
-            field.name.as_deref(),
-            Some("condition-modifier" | "loop-modifier")
-        )
-    });
+    let modified = statement
+        .fields
+        .iter()
+        .any(|field| matches!(field.name, Some("condition-modifier" | "loop-modifier")));
     if modified {
         return Ok(Expr::DoStmt(Box::new(super::lower::lower_stmt(
             names, statement,
