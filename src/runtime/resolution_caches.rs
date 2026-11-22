@@ -724,6 +724,16 @@ pub(crate) struct ResolutionCaches {
     /// generation the verdict was reached under (`vm_mixin_type_new.rs`).
     pub(crate) mixin_default_new_memo:
         rustc_hash::FxHashMap<(Symbol, usize), (crate::value::Value, u64, bool)>,
+    /// A captured multi candidate with its family's dispatcher bound as
+    /// `&<family>` (`bind_family_dispatcher`), by the addresses of the
+    /// candidate and the dispatcher, so every call of a block's own operator
+    /// runs the same code object, whose per-object caches stay warm, instead
+    /// of a fresh copy (ADR-18580 D3). The entry holds both inputs, so neither
+    /// address can be reused while it lives.
+    pub(crate) bound_family_dispatchers: rustc_hash::FxHashMap<
+        (usize, usize),
+        (crate::value::Value, crate::value::Value, crate::value::Value),
+    >,
 }
 
 impl ResolutionCaches {
