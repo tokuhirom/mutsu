@@ -1352,8 +1352,8 @@ pub(super) fn assignment_around(
 /// Unlike `=`, binding uses a plain `Infix`, not the special `Assignment` node.
 fn bind_infix(names: &NameScope, name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
-    let right = view_expr(names, rhs)?;
-    Ok(super::indirect_bind::bind_node(var_lexical(sigil, desigil), right))
+    let (left, right) = (var_lexical(sigil, desigil), view_expr(names, rhs)?);
+    Ok(super::indirect_bind::bind_node(left, right))
 }
 
 /// A yada-yada stub (`...`, `!!!`, `???`) -> `Stub::Fail` / `Die` / `Warn`,
