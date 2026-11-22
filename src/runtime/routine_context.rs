@@ -81,7 +81,11 @@ impl Interpreter {
             .routines
             .write()
             .unwrap_or_else(|e| e.into_inner());
-        if Arc::ptr_eq(&theirs, &ours) {
+        // The same content under another `Arc` (this context forked the
+        // creator's tables and since only renewed their version, as a
+        // resolution-memo invalidation does) resolves every name alike:
+        // swapping would only retire every memo twice per call (#14812).
+        if Arc::ptr_eq(&theirs, &ours) || theirs.same_content_as(&ours) {
             return None;
         }
         let saved = std::mem::replace(&mut *ours, theirs);
