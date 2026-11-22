@@ -92,6 +92,20 @@ then checks that the word still names that node before it writes; a cell re-seat
 sends it to today's path. An escaped cell (`PUB_ESCAPED`) publishes nothing and keeps today's
 path.
 
+### D6. Conditions of acceptance (maintainer, 2026-11-22)
+
+- **C1. Soundness table.** §3 covers the cycle collector's trace of a node's items and the
+  pre-latch path (the two rows added there).
+- **C2. Prototype gate with a stop rule.** Before the full implementation, measure
+  `bench-threads`' write section with D1 and D2 only, without D4. If 4 workers on a release
+  build in the 4-core container are not at or under **150 ms**, stop and record why before
+  going further.
+- **C3. D4 only after the latch.** The node word of D4 is published only once a second mutator
+  thread exists (ADR-0068's sticky latch), so a single-threaded program pays nothing. This
+  settles §7's second question.
+- **C4. After the release.** The implementation PR starts only once the release freeze ends.
+  This document can merge now.
+
 ### D5. Scope
 
 - Plain `Array` nodes with no native backing, no shape and no laziness. A typed or defaulted
@@ -110,6 +124,8 @@ path.
 | a store vs. another store, same slot | both are atomic swaps on one word, and each drops only the word its own swap returned |
 | a store vs. another store, different slots | distinct words; no `&mut ArrayData` is created, only element pointers |
 | a store vs. a snapshot reader | the reader never touches the live node (ADR-18637 §6.1) and revalidates against the version (D3) |
+| a store vs. the cycle collector tracing the node's items | the collector traces only under its stop-the-world (`gc::stw`): every mutator thread is parked at a safepoint first, and an in-range store contains no safepoint (no poll between taking the shared stripe and dropping the displaced word), so a trace never overlaps a store. The SeqCst handshake that parks a thread orders its completed swaps before the trace reads the slots |
+| the pre-latch path (no second mutator thread yet) | before ADR-0068's sticky latch is set, no stripe is taken and no node word is published (C3), and only one thread runs mutator code, so no store or reader can overlap another. The latch is set by the spawning thread before the spawned thread runs, so every store after the spawn already sees it and takes the shared side |
 | the store's node lookup vs. a cell re-seat | the node word is held by the epoch (D4); the store re-checks it after taking the stripe |
 
 The `unsafe` steps are: deriving the element pointer from the buffer pointer while holding the
@@ -157,5 +173,4 @@ of them win, as on rakudo. Nothing in that race can free or tear memory.
 - Whether an `RwLock` writer-preferring policy starves stores while a reader iterates in a
   loop. `std`'s `RwLock` on Linux prefers writers, which here are the *exclusive* side, so a
   steady stream of stores cannot starve a reader.
-- Whether to publish the node word (D4) for every celled array or only once a second mutator
-  thread exists. The latter matches ADR-8069 §3's "a single-threaded program pays nothing".
+- (Settled by C3: the node word of D4 is published only after the second-mutator latch.)
