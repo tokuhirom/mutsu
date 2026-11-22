@@ -444,7 +444,8 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // its BEGIN-time condition holds, so it is left out. `use Test` is not
     // preloaded, but its load is no prologue effect (`is_inert_pragma`): the
     // `BEGIN` that needs it loads it, as its `use` would at that point.
-    let loads_for_begin = site != 0 || matches!(&use_stmt, Stmt::Use { module, arg: None, .. } if module == "Test");
+    let loads_for_begin =
+        site != 0 || matches!(&use_stmt, Stmt::Use { module, arg: None, .. } if module == "Test");
     if loads_for_begin && !empty_import && use_stmt_condition_free(&use_stmt) {
         super::super::simple::note_parse_time_use(&use_stmt);
     }
@@ -464,7 +465,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
 /// Whether `use_stmt` has no `:if`/`:unless` condition.
 // Cost: O(1).
 fn use_stmt_condition_free(use_stmt: &Stmt) -> bool {
-    matches!(use_stmt, Stmt::Use { condition: None, .. })
+    matches!(
+        use_stmt,
+        Stmt::Use {
+            condition: None,
+            ..
+        }
+    )
 }
 
 /// The positional arguments of a `use` whose elements are all literals, as
