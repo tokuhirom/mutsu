@@ -424,6 +424,35 @@ pub(crate) fn strip_parse_marks(expr: &mut Expr) {
     Strip.visit_expr_mut(expr);
 }
 
+/// `::(A)::(B)...` as the parser runs it: the symbolic lookup of
+/// `A ~ "::" ~ B ...`, spelled with its parts.
+// Cost: O(p), p = parts.
+pub(crate) fn indirect_parts_lookup(parts: Vec<Expr>) -> Expr {
+    let mut iter = parts.iter().cloned();
+    let mut joined = iter
+        .next()
+        .unwrap_or(Expr::Literal(crate::value::Value::str(String::new())));
+    for part in iter {
+        let sep = Expr::Binary {
+            left: Box::new(joined),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(Expr::Literal(crate::value::Value::str("::".to_string()))),
+            form: Default::default(),
+        };
+        joined = Expr::Binary {
+            left: Box::new(sep),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(part),
+            form: Default::default(),
+        };
+    }
+    let lookup = Expr::SymbolicDeref {
+        sigil: String::new(),
+        expr: Box::new(joined),
+    };
+    Expr::spelled(lookup, || Spelling::IndirectParts(parts))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,33 +485,4 @@ mod tests {
         assert!(matches!(expr, Expr::Spelled(_)));
         assert!(matches!(expr.peel_parens(), Expr::ArrayLiteral(items) if items.len() == 2));
     }
-}
-
-/// `::(A)::(B)...` as the parser runs it: the symbolic lookup of
-/// `A ~ "::" ~ B ...`, spelled with its parts.
-// Cost: O(p), p = parts.
-pub(crate) fn indirect_parts_lookup(parts: Vec<Expr>) -> Expr {
-    let mut iter = parts.iter().cloned();
-    let mut joined = iter
-        .next()
-        .unwrap_or(Expr::Literal(crate::value::Value::str(String::new())));
-    for part in iter {
-        let sep = Expr::Binary {
-            left: Box::new(joined),
-            op: crate::token_kind::TokenKind::Tilde,
-            right: Box::new(Expr::Literal(crate::value::Value::str("::".to_string()))),
-            form: Default::default(),
-        };
-        joined = Expr::Binary {
-            left: Box::new(sep),
-            op: crate::token_kind::TokenKind::Tilde,
-            right: Box::new(part),
-            form: Default::default(),
-        };
-    }
-    let lookup = Expr::SymbolicDeref {
-        sigil: String::new(),
-        expr: Box::new(joined),
-    };
-    Expr::spelled(lookup, || Spelling::IndirectParts(parts))
 }
