@@ -4,7 +4,7 @@ use Test;
 # the EVAL's own unit -- its `EVAL_N` name, the line within the EVAL text and
 # that text's excerpt -- not against the calling file's line 1.
 
-plan 8;
+plan 10;
 
 my $code = q:to/END/;
 say 1;
@@ -26,3 +26,11 @@ my $qerr = $q.err.slurp(:close);
 $q.out.slurp(:close);
 like $qerr, /'at EVAL_' \d+ ':1'/, "a .AST parse failure names the string's unit";
 like $qerr, /'my $x = 1' \s* '2'/, "a .AST parse failure quotes the string's text";
+
+# Leading blank lines of the EVAL text count toward the line (they used to be
+# trimmed off, shifting `.line` and the report).
+my $line = (try { EVAL "\n\nmy \$x = 1 2"; Nil }) // $!.line;
+is $line, 3, '.line counts the EVAL text\'s leading blank lines';
+my $b = run $*EXECUTABLE, '-e', "EVAL q\{\n\nmy \$x = 1 2\};", :err, :out;
+$b.out.slurp(:close);
+like $b.err.slurp(:close), /'at EVAL_' \d+ ':3'/, 'so does the report';
