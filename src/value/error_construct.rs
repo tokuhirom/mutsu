@@ -551,7 +551,11 @@ impl RuntimeError {
         let message = if matches!(value.view(), super::ValueView::Nil) {
             "Cannot modify an immutable Nil value".to_string()
         } else {
-            format!("Cannot modify an immutable {} ({})", typename, gist)
+            format!(
+                "Cannot modify an immutable {} ({})",
+                typename,
+                crate::value::exception_message::shorten_assignment_ro_gist(gist)
+            )
         };
         let mut attrs = ValueMap::default();
         attrs.insert("message".to_string(), Value::str(message));

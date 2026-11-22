@@ -193,11 +193,19 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
         }
         "X::Assignment::RO" => {
             if let Some(val) = defined_attr(attrs, "value") {
-                let type_name = value_type_label(val);
-                let val_str = val.to_string_value();
+                let held = val.clone().into_deref();
+                let type_name = if matches!(
+                    held.view(),
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                ) {
+                    crate::value::types::what_type_name(&held)
+                } else {
+                    crate::value::type_name::value_type_name(&held).to_string()
+                };
                 Some(format!(
                     "Cannot modify an immutable {} ({})",
-                    type_name, val_str
+                    type_name,
+                    assignment_ro_value_gist(val)
                 ))
             } else {
                 Some("Cannot modify an immutable value".to_string())
@@ -352,15 +360,22 @@ fn suggestion_list(v: &Value) -> Vec<String> {
 }
 
 /// Get a human-readable type label for a value (used by X::Assignment::RO).
-fn value_type_label(v: &Value) -> String {
-    match v.view() {
-        ValueView::Int(_) => "Int".to_string(),
-        ValueView::Num(_) => "Num".to_string(),
-        ValueView::Str(_) => "Str".to_string(),
-        ValueView::Bool(_) => "Bool".to_string(),
-        ValueView::Rat(_, _) => "Rat".to_string(),
-        ValueView::Complex(_, _) => "Complex".to_string(),
-        ValueView::Instance { class_name, .. } => class_name.resolve(),
-        _ => "Any".to_string(),
+/// The value part of rakudo's `X::Assignment::RO.message`: the value's
+/// `.gist`, cut to its first 20 graphemes plus `...` when longer than 23.
+// Cost: O(g), g = the gist's length.
+fn assignment_ro_value_gist(v: &Value) -> String {
+    shorten_assignment_ro_gist(&crate::value::gist::gist_value(v))
+}
+
+/// [`assignment_ro_value_gist`]'s cut, for a caller that already holds the
+/// gist text.
+// Cost: O(g), g = the gist's length.
+pub(crate) fn shorten_assignment_ro_gist(gist: &str) -> String {
+    use crate::grapheme_break::UnicodeSegmentation;
+    if gist.graphemes(true).nth(23).is_none() {
+        return gist.to_string();
     }
+    let mut short: String = gist.graphemes(true).take(20).collect();
+    short.push_str("...");
+    short
 }
