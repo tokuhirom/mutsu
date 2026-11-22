@@ -48,8 +48,8 @@ is nat(True), 1, 'an int parameter still binds a Bool by value';
 nok True ~~ int, 'a Bool is not the native int type';
 nok True ~~ Enumeration, 'a Bool is not an Enumeration';
 
-sub co(Int(Bool) $x) { $x.^name }
-is co(True), 'Bool', 'a coercion type to Int keeps a Bool, which already is one';
+sub co(Str(Bool) $x) { $x }
+is co(True), 'True', 'a coercion type from Bool coerces';
 
 subset Yes of Bool where *.so;
 sub yes(Yes $x) { 'yes' }
