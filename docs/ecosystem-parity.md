@@ -122,6 +122,23 @@ the rest of the distribution stays measured. A file that starts failing any othe
 normally again. `scripts/ecosystem-sweep.py --regrade` applies an edit to the list to the stored
 records without re-measuring.
 
+`ecosystem/file-overrides.txt` changes how one known-slow test file is *run*, not how it is
+graded, so a file whose measurement depends on the runner's load stops flapping between sweeps.
+One line per file: `<Dist::Name> <test/path> <option>... -- <reason with an issue link>`. Each
+option applies to that file only, and the global `--timeout` stays the cap for every other file.
+
+- `timeout=<seconds>` gives the file a longer budget on both sides. An override never shortens the
+  default, and a first attempt that times out still gets the usual doubled retry.
+- `alone` runs the file while no other sweep job (`--jobs N` worker) runs an interpreter. It is for
+  a suite whose own timing assertion fails on a loaded runner. Every interpreter run takes a shared
+  gate, and an `alone` file takes it exclusively. Other runs wait while an `alone` file is queued,
+  so a busy pool cannot starve it.
+
+A record shows the override it ran under (`"override": {...}` on the file entry). Every entry is a
+workaround with an end: once the issue it cites is tuned, meaning the file passes comfortably
+under the normal cap and load, delete its line. The loader refuses an entry with no reason, an
+unknown option or a duplicate.
+
 ## 2. The fairness contract
 
 Both interpreters must be running the same code under the same conditions, or
@@ -238,6 +255,7 @@ ecosystem/
   README.md                     # [main] what this is and how to read it (points here)
   exclude.txt                   # [main] distributions confirmed permanently unfixable
   accepted-divergences.toml     # [main] per-file accepted divergences (ADR-0130)
+  file-overrides.txt            # [main] per-file run conditions for known-slow files
   index-snapshot.json           # [data] fez index provenance: fetch date, sha256, dist count
   dists/<S>/<Dist--Name>.json   # [data] ONE FILE PER DIST — the record
   summary.json                  # [data] generated rollup: the three KPIs + per-shard counts

@@ -812,6 +812,140 @@ def load_exclude(path: str) -> dict[str, tuple[str | None, str]]:
     return out
 
 
+class FileOverride:
+    """How the sweep runs one listed test file: see [`load_file_overrides`]."""
+
+    __slots__ = ("timeout", "alone", "reason")
+
+    def __init__(self, timeout: int | None, alone: bool, reason: str):
+        self.timeout = timeout
+        self.alone = alone
+        self.reason = reason
+
+    def budget(self, default: int) -> int:
+        """The per-file timeout for this file: the override when it is longer
+        than `default`, which an override never shortens."""
+        return max(default, self.timeout or 0)
+
+    def as_record(self) -> dict:
+        """The override as the record states it, so the ledger shows which
+        measurements ran under one."""
+        out: dict = {}
+        if self.timeout:
+            out["timeout"] = self.timeout
+        if self.alone:
+            out["alone"] = True
+        return out
+
+
+def load_file_overrides(path: str) -> dict[tuple[str, str], FileOverride]:
+    """Per-file run conditions for known-slow test files
+    (`ecosystem/file-overrides.txt`).
+
+    One entry per line:
+
+        <Dist::Name> <test/path> <option>[ <option>...] -- <reason, with an issue link>
+
+    where an option is `timeout=<seconds>` (a longer per-file budget, both
+    sides; the default is never shortened) or `alone` (the file runs while no
+    other sweep job runs an interpreter, for a suite whose own timing assertion
+    fails on a loaded runner). Only the listed file is affected. A line whose
+    first non-blank character is `#`, and every blank line, is ignored; a
+    missing file means no overrides.
+
+    Returns `{(dist, path): FileOverride}`. An entry is a workaround with an
+    end: once the issue it cites is tuned, its line is deleted.
+    """
+    if not os.path.isfile(path):
+        return {}
+    out: dict[tuple[str, str], FileOverride] = {}
+    with open(path, encoding="utf-8") as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            head, sep, reason = line.partition(" -- ")
+            fields = head.split()
+            if not sep or not reason.strip():
+                raise SystemExit(f"{path}:{lineno}: an override needs ` -- <reason>`")
+            if len(fields) < 3:
+                raise SystemExit(f"{path}:{lineno}: expected <dist> <path> <option>...")
+            dist, test_path, options = fields[0], fields[1], fields[2:]
+            timeout, alone = None, False
+            for option in options:
+                if option == "alone":
+                    alone = True
+                elif option.startswith("timeout="):
+                    value = option.partition("=")[2]
+                    if not value.isdigit() or int(value) <= 0:
+                        raise SystemExit(f"{path}:{lineno}: bad timeout {option!r}")
+                    timeout = int(value)
+                else:
+                    raise SystemExit(f"{path}:{lineno}: unknown option {option!r}")
+            if (dist, test_path) in out:
+                raise SystemExit(f"{path}:{lineno}: {dist} {test_path} is listed twice")
+            out[(dist, test_path)] = FileOverride(timeout, alone, reason.strip())
+    return out
+
+
+class RunGate:
+    """Lets interpreter runs overlap, except a run that must be alone.
+
+    Every interpreter run of the sweep takes the gate `shared()`, so `--jobs N`
+    workers run side by side as before. A file listed `alone` in
+    `file-overrides.txt` takes it `alone()`: it waits for the running ones to
+    finish, holds back new ones while it waits (so a busy pool cannot starve
+    it), and runs with the runner to itself. Never nest the two.
+    """
+
+    def __init__(self):
+        import threading
+        self._cond = threading.Condition()
+        self._running = 0
+        self._alone = False
+        self._waiting = 0
+
+    def shared(self):
+        return _GateHold(self, alone=False)
+
+    def alone(self):
+        return _GateHold(self, alone=True)
+
+    def _enter(self, alone: bool):
+        with self._cond:
+            if alone:
+                self._waiting += 1
+                while self._alone or self._running:
+                    self._cond.wait()
+                self._waiting -= 1
+                self._alone = True
+            else:
+                while self._alone or self._waiting:
+                    self._cond.wait()
+                self._running += 1
+
+    def _exit(self, alone: bool):
+        with self._cond:
+            if alone:
+                self._alone = False
+            else:
+                self._running -= 1
+            self._cond.notify_all()
+
+
+class _GateHold:
+    def __init__(self, gate: RunGate, alone: bool):
+        self._gate, self._alone = gate, alone
+
+    def __enter__(self):
+        self._gate._enter(self._alone)
+        return self
+
+    def __exit__(self, *exc):
+        self._gate._exit(self._alone)
+        return False
+
+
 def is_excluded(exclude: dict[str, tuple[str | None, str]], dist: str,
                 version: str | None) -> bool:
     """Whether `dist` at `version` is excluded by a [`load_exclude`] table.
