@@ -89,8 +89,8 @@ impl Interpreter {
 /// answers after an EVAL'd `unit module M` (#17944). The registry's
 /// transition memo does not name these keys (`install_export_aliases` writes
 /// them directly), so the table is scanned.
-// Cost: O(R · k), R = routine-registry entries, k = segments of a key; run
-// once per EVAL.
+// Cost: O(R · k), R = routine-registry entries, k = segments of a key (memo
+// hits); run once per EVAL.
 pub(crate) fn export_stash_entries(
     current: &FunctionTable,
     functions: &FunctionTable,
@@ -98,7 +98,10 @@ pub(crate) fn export_stash_entries(
     current
         .iter()
         .filter(|(key, _)| !functions.contains_key(key))
-        .filter(|(key, _)| key.as_str().split("::").any(|segment| segment == "EXPORT"))
+        .filter(|(key, _)| {
+            crate::qualified::package_ancestors(**key)
+                .any(|package| crate::qualified::last_segment(package).as_str() == "EXPORT")
+        })
         .map(|(key, def)| (*key, def.clone()))
         .collect()
 }
