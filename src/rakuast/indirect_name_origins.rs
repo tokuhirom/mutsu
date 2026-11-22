@@ -47,7 +47,11 @@ pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
         let mut rest = text;
         for (i, part) in written.iter().enumerate() {
             if i > 0 {
-                rest = rest.strip_prefix("::")?;
+                // The `::` before every part but the first.
+                if crate::qualified::separators(rest).next() != Some(0) {
+                    return None;
+                }
+                rest = &rest[2..];
             }
             rest = match part {
                 Some(word) => rest.strip_prefix(word.as_str())?,
