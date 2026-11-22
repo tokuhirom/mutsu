@@ -1692,11 +1692,12 @@ impl Compiler {
             // each is compiled as a bind value of its own and keeps its
             // container (an anonymous `my $` stays a writable Scalar) instead
             // of the ternary decontainerizing it (#18566).
-            Expr::IndexBindValue(rhs) if let Expr::Ternary {
-                cond,
-                then_expr,
-                else_expr,
-            } = rhs.as_ref() =>
+            Expr::IndexBindValue(rhs)
+                if let Expr::Ternary {
+                    cond,
+                    then_expr,
+                    else_expr,
+                } = rhs.as_ref() =>
             {
                 self.compile_expr(cond);
                 let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
