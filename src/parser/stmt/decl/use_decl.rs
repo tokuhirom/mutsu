@@ -7,6 +7,43 @@ use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
+/// Where a unit's leading language-version pragma (`use v6.c;`, after any
+/// whitespace, comments and Pod) ends in `source`, or `0` when the unit does
+/// not start with one. A program prologue (`-MModule`) goes after it, so the
+/// pragma stays the unit's first statement.
+// Cost: O(p), p = the length of the leading blanks and pragma.
+pub(crate) fn leading_version_pragma_end(source: &str) -> usize {
+    let Ok((rest, ())) = super::super::super::helpers::ws_bol(source) else {
+        return 0;
+    };
+    let Some(after_use) = keyword("use", rest) else {
+        return 0;
+    };
+    let Ok((after_use, _)) = ws1(after_use) else {
+        return 0;
+    };
+    if !after_use.starts_with("v6") {
+        return 0;
+    }
+    match after_use.find(';') {
+        Some(semi) => source.len() - after_use.len() + semi + 1,
+        None => 0,
+    }
+}
+
+/// `X::Language::TooLate`: a `use v6...` that is not the unit's first
+/// statement.
+fn too_late_to_switch_version() -> PError {
+    let message =
+        "Too late to switch language version. Must be used as the very first statement."
+            .to_string();
+    let ex = Value::make_instance(
+        Symbol::intern("X::Language::TooLate"),
+        std::collections::HashMap::from([("message".to_string(), Value::str(message.clone()))]),
+    );
+    PError::fatal_with_exception(message, Box::new(ex))
+}
+
 /// Parse a `use` statement.
 pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("use", input).ok_or_else(|| PError::expected("use statement"))?;
@@ -18,6 +55,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, version_token) = take_while1(rest, |c: char| {
             c.is_alphanumeric() || c == '.' || c == '*' || c == '+'
         })?;
+        // A language version is chosen before anything is compiled: rakudo
+        // takes it only as the unit's first statement (comments and Pod
+        // aside), and anywhere else it is X::Language::TooLate.
+        if !crate::parser::primary::is_first_in_source(input) {
+            return Err(too_late_to_switch_version());
+        }
         let version = normalize_language_version(version_token);
         super::super::simple::set_current_language_version(&version);
         let (r, _) = ws(r)?;
