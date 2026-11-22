@@ -1796,7 +1796,13 @@ impl Interpreter {
         // through `parse_regex`, whose caches key by the interpolated text.
         let Some(parsed) = lower_static_execution_tree(&pattern, tree).map(std::sync::Arc::new)
         else {
-            return self.parse_regex_for_match(&pattern);
+            let parsed = self.parse_regex_for_match(&pattern);
+            if facts.parse_plan_is_static
+                && let Some(plan) = &parsed
+            {
+                facts.store_plan(pkg, tok_gen, std::sync::Arc::clone(plan));
+            }
+            return parsed;
         };
         REGEX_PARSE_CACHE.with(|c| {
             c.borrow_mut()

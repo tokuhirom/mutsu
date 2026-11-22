@@ -38,6 +38,12 @@ pub(crate) struct RegexValueFacts {
     pub(crate) interpolation_names: Vec<String>,
     /// The pattern folds case or ignores marks (`static_execution_policy`).
     pub(crate) folds: bool,
+    /// The string parser's plan for this pattern depends on nothing but the
+    /// pattern, the package and the token generation: the pattern names no
+    /// scalar read at match time and is static to `parse_regex`, which caches
+    /// it under exactly that key. When the tree does not lower directly, that
+    /// plan may be kept here too.
+    pub(crate) parse_plan_is_static: bool,
     /// The lowered plan, with the (package, token generation) it was cached
     /// under.
     plan: Mutex<Option<(Symbol, u64, Arc<RegexPattern>)>>,
@@ -88,6 +94,8 @@ pub(crate) fn regex_value_facts(tree: &RegexTree, pattern: &str) -> Arc<RegexVal
         folds: crate::runtime::regex_parse_ltm::static_execution_policy(pattern)
             .is_some_and(|(_, ignore_case, ignore_mark, _)| ignore_case || ignore_mark),
         interpolation_names,
+        parse_plan_is_static: super::regex_late_scalars::scalars_in_pattern(pattern).0.is_empty()
+            && crate::runtime::regex_parse::regex_pattern_is_static(pattern),
         plan: Mutex::new(None),
     });
     tree.exec_memo
