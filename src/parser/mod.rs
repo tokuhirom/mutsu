@@ -224,6 +224,18 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
 /// imports it. A parse-time `BEGIN` that names one is left to the prologue
 /// (ADR-17558 slice 5): none of them is bound before the unit's frame exists.
 // Cost: O(s), s = enclosing parse scopes.
+/// The key of a dynamic variable named `name` (`$*X`, `%*ENV`), in any of
+/// the spellings the tree uses (`*X`, `$*X`, `%*ENV`), with its sigil: `None`
+/// for any other name.
+// Cost: O(m), m = length of `name`.
+pub(crate) fn dynamic_var_key(name: &str) -> Option<String> {
+    match name.as_bytes() {
+        [b'*', _, ..] => Some(format!("${name}")),
+        [b'$' | b'@' | b'%' | b'&', b'*', _, ..] => Some(name.to_string()),
+        _ => None,
+    }
+}
+
 pub(crate) fn unit_provides_name(name: &str) -> bool {
     stmt::simple::is_declared_symbol_name(name) || stmt::simple::is_imported_function(name)
 }
