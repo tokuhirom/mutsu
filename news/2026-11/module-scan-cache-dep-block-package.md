@@ -10,7 +10,7 @@ dropped as too late. The on-disk scan cache recorded the module's exported
 types under GLOBAL, and every later importer read that poisoned entry.
 
 #18785 (restoring the flag after a nested scan) had already fixed the root
-cause. This entry adds the regression test for the cache path:
-`t/modules/module-scan-cache-dep-block-package.t` warms a fresh cache with a
-probe, then checks the importer that used to fail. Selkie is green again,
+cause. This entry adds unit tests for the scan itself:
+`module_exports/scan_context_tests.rs` checks that a nested scan of a block
+package leaves the importer's `unit module` package intact. Selkie is green again,
 96/96 files.
