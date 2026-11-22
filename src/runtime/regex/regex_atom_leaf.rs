@@ -139,6 +139,9 @@ impl Interpreter {
             .get(name)
             .or_else(|| caps.regex_vars().get(&*sigiled))
             .cloned()
+            // A Regex value's own pattern reads the scalars it closed over
+            // (`REGEX_INTERP_CLOSURE_SCOPE`), not the matching frame's.
+            .or_else(|| super::regex_helpers::interp_closure_scope_get(name))
             .or_else(|| self.env.get(name).cloned())
             .or_else(|| self.env.get(&sigiled).cloned())
             // A `constant` the running module imported lives only in the
@@ -153,6 +156,14 @@ impl Interpreter {
         }
         if assertion {
             return self.var_assertion_target(val, ignore_case);
+        }
+        // `Nil` and a type object match nothing, as rakudo's
+        // interpolation of an undefined value does.
+        if val
+            .as_ref()
+            .is_some_and(|v| matches!(v.view(), ValueView::Nil | ValueView::Package(_)))
+        {
+            return VarInterpTarget::End(None);
         }
         let is_regex = val.as_ref().is_some_and(|v| {
             matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_))
@@ -172,7 +183,6 @@ impl Interpreter {
                 std::borrow::Cow::Owned(text)
             }
             Some(v) => match v.view() {
-                ValueView::Nil | ValueView::Package(_) => std::borrow::Cow::Borrowed(""),
                 // A string value is compared in place, not copied per atom
                 // evaluation (one per start position of the find loop).
                 ValueView::Str(_) => match v.as_str() {

@@ -170,31 +170,25 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
 }
 
 impl super::super::Interpreter {
-    /// Whether a `$name` after a code block should be read at match time: the
-    /// variable is a lexical scalar holding a plain value, a list (matched as its
-    /// string), a junction (an alternation) or a regex, which `VarInterp`
-    /// matches exactly as the splice did. Anything else (a callable, an unbound
-    /// name) keeps the splice path.
+    /// Whether a `$name` should be read at match time: the variable is bound
+    /// to anything but a hash. `VarInterp` matches a plain value or a callable
+    /// as its string, a list as its string, a junction as an alternation, a
+    /// regex as a call frame and a type object as nothing, exactly as the
+    /// splice did (#14510). An unbound name keeps the pre-pass, which resolves
+    /// it through the package chain.
     // Cost: O(1).
     pub(crate) fn late_scalar_reads_at_match_time(&self, name: &str, allow_regex: bool) -> bool {
         use crate::value::ValueView;
-        let value = self
-            .env
-            .get(name)
-            .or_else(|| self.env.get(&format!("${name}")))
-            .cloned()
+        let value = super::regex_helpers::interp_closure_scope_get(name)
+            .or_else(|| self.env.get(name).cloned())
+            .or_else(|| self.env.get(&format!("${name}")).cloned())
             .map(crate::value::Value::into_deref);
-        value.is_some_and(|v| {
-            matches!(
-                v.view(),
-                ValueView::Str(_)
-                    | ValueView::Int(_)
-                    | ValueView::Num(_)
-                    | ValueView::Array(..)
-                    | ValueView::Junction { .. }
-                    | ValueView::Nil
-            ) || (allow_regex
-                && matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)))
+        value.is_some_and(|v| match v.view() {
+            // A hash is rejected by the interpolation pre-pass
+            // (`X::Syntax::Reserved`), at parse time as rakudo does.
+            ValueView::Hash(_) => false,
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => allow_regex,
+            _ => true,
         })
     }
 }

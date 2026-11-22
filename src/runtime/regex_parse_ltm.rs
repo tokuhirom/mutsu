@@ -1634,6 +1634,10 @@ impl Interpreter {
         // value parses only once. The structural parse can still consult
         // ambient state (for example `<$var>` or `<~~>`), so such entries are
         // kept out of this cache by the flag maintained by the parser.
+        // Every plain scalar the pattern names is read where the cursor
+        // reaches it (ADR-12917 direction 2, #14510), whichever entry point
+        // parses it.
+        let pattern = &*self.with_match_time_scalars(pattern, Vec::new());
         let interpolated = match self.interpolate_regex_scalars(pattern) {
             Ok(s) => s,
             Err(e) => {
