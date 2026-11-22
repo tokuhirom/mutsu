@@ -353,7 +353,10 @@ fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
                 return;
             };
             let mut trait_node = RakuAstNode::clone(trait_node);
-            super::origin::set_span(&mut trait_node, SrcSpan::new(clause.whole.0, clause.whole.1));
+            super::origin::set_span(
+                &mut trait_node,
+                SrcSpan::new(clause.whole.0, clause.whole.1),
+            );
             super::infix_origins::with_child_at(&mut trait_node, 0, |term| {
                 super::fragment_origins::expression(names, term, &text, from)
             });

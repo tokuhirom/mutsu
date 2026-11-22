@@ -27,9 +27,8 @@ pub(super) fn place(node: &mut RakuAstNode) {
     };
     // A curried `*` (`*.[0]`, `*{}`) has no origin in Rakudo.
     if postfix.origin.0.is_some()
-        || child(node, "operand").is_none_or(|o| {
-            o.origin.0.is_some() || o.class == RakuAstClass::WhateverCodeArgument
-        })
+        || child(node, "operand")
+            .is_none_or(|o| o.origin.0.is_some() || o.class == RakuAstClass::WhateverCodeArgument)
     {
         return;
     }
@@ -48,7 +47,10 @@ pub(super) fn place(node: &mut RakuAstNode) {
             let inner = &after[..after.len() - 1];
             let lead = inner.len() - inner.trim_start().len();
             let inside = inner.trim();
-            return Some(SrcSpan::new(from + 1 + lead, from + 1 + lead + inside.len()));
+            return Some(SrcSpan::new(
+                from + 1 + lead,
+                from + 1 + lead + inside.len(),
+            ));
         }
         Some(SrcSpan::new(from, from + head.len()))
     }) else {
