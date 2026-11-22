@@ -53,7 +53,21 @@ impl Interpreter {
         if matches!(value.view(), ValueView::Whatever | ValueView::Sub(_)) {
             return true;
         }
+        // A Seq (`1…3`) or lazy list has no eager expansion here either; the
+        // shared resolver reads it, as `.match` does.
+        if matches!(value.view(), ValueView::Seq(_) | ValueView::LazyList(_)) {
+            return true;
+        }
         Self::deferred_nth_range_end(value).is_some()
+    }
+
+    /// Whether a deferred `:nth` value selects a span of matches, so the
+    /// substitution's `$/` is a list: a Range too large to expand eagerly, or a
+    /// Seq / lazy list (`1…3`). A Callable or `*` selects one.
+    // Cost: O(1).
+    pub(super) fn deferred_nth_is_multi(value: &Value) -> bool {
+        Self::deferred_nth_range_end(value).is_some()
+            || matches!(value.view(), ValueView::Seq(_) | ValueView::LazyList(_))
     }
 
     /// The upper endpoint of a `:nth` Range too large to expand eagerly, or
@@ -281,7 +295,7 @@ impl Interpreter {
                 // deferred `Whatever` selects exactly one and is not.
                 let deferred_nth_is_range = nth_deferred
                     .iter()
-                    .any(|v| Self::deferred_nth_range_end(v).is_some());
+                    .any(Self::deferred_nth_is_multi);
                 let single_nth = nth_len == Some(1) && !deferred_nth_is_range;
                 let nth_is_multi = nth_len.is_some_and(|n| n > 1) || deferred_nth_is_range;
                 let result_is_list =

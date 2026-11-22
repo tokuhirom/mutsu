@@ -190,8 +190,13 @@ impl Interpreter {
             }
             if selected.is_empty() {
                 self.env.assign_match_var(Value::NIL);
-                // :nth with a single value returns Nil, not empty array
-                if nth_arg.is_some() && repeat_bounds.is_none() && !global && !overlap {
+                // :nth with a single index returns Nil; a list of indices (a
+                // List, Seq or Range) returns the empty list, as `:g` does.
+                if nth_arg.as_ref().is_some_and(Self::is_single_nth)
+                    && repeat_bounds.is_none()
+                    && !global
+                    && !overlap
+                {
                     return Ok(Value::NIL);
                 }
                 return Ok(Value::array(Vec::new()));
