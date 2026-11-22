@@ -168,12 +168,13 @@ pub(crate) struct SigInfo {
     /// assembled from parts (`Signature.new`, a synthesized native one).
     #[serde(default, with = "param_defs_serde")]
     pub(crate) param_defs: Option<std::sync::Arc<Vec<ParamDef>>>,
-    /// A routine with this signature and an empty body, when a parameter
-    /// carries code that reads names of the scope the signature is written
-    /// in (a `where` clause, a computed default; see [`params_carry_code`]).
-    /// `Signature.ACCEPTS(Capture)` binds the capture by calling it, so that
-    /// code runs in the routine's own scope -- as rakudo's trial bind does --
-    /// rather than in the scope of whoever smartmatches (#18570).
+    /// The routine this signature belongs to, when a parameter carries code
+    /// that reads names of the scope the signature is written in (a `where`
+    /// clause, a computed default; see [`params_carry_code`]).
+    /// `Signature.ACCEPTS(Capture)` binds the capture in that routine's own
+    /// scope -- as rakudo's trial bind does -- rather than in the scope of
+    /// whoever smartmatches (#18570, #18661). The signature is one object per
+    /// declaration, so this is the closure it was last read from (#18728).
     #[serde(skip)]
     pub(crate) binder: Option<Value>,
 }
