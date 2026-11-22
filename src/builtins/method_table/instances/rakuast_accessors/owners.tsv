@@ -769,6 +769,7 @@ RakuAST::VarDeclaration::Signature	initializer	RakuAST::VarDeclaration::Signatur
 RakuAST::VarDeclaration::Signature	scope	RakuAST::VarDeclaration::Signature
 RakuAST::VarDeclaration::Signature	signature	RakuAST::VarDeclaration::Signature
 RakuAST::VarDeclaration::Signature	type	RakuAST::VarDeclaration::Signature
+RakuAST::VarDeclaration::Signature	traits	RakuAST::VarDeclaration::Signature
 RakuAST::VarDeclaration::Simple	compile-time-value	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Simple	container-type	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Simple	default-scope	RakuAST::VarDeclaration::Simple

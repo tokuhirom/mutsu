@@ -257,6 +257,7 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod signature_decl_origins;
+mod signature_decl_traits;
 mod signature_literal;
 pub(crate) mod slang_block_scope;
 pub(crate) mod slang_bridge;
@@ -2771,7 +2772,7 @@ fn construct_class(
         }))));
     }
     if class_name == "RakuAST::VarDeclaration::Signature" && method == "new" {
-        return signature_decl::construct(args).map(Some);
+        return signature_decl_traits::construct(args).map(Some);
     }
     if class_name == "RakuAST::Parameter" && method == "new" {
         let target = named_arg(args, "target");

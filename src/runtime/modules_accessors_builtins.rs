@@ -82,6 +82,7 @@ mod builtins_operators_infix_control;
 mod builtins_operators_infix_identity;
 pub(crate) use builtins_operators_infix::is_set_operator;
 mod builtins_operators_infix_pair;
+mod builtins_operators_topicalize;
 mod builtins_operators_prefix;
 mod builtins_operators_repeat;
 pub(crate) mod builtins_reduce;

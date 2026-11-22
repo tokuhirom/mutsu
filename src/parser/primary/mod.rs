@@ -829,7 +829,7 @@ pub(super) fn primary_memo_stats() -> (usize, usize, usize) {
 pub(in crate::parser) use misc::arrow_lambda as arrow_lambda_pub;
 pub(in crate::parser) use misc::{colonpair_expr, parse_block_body, wrap_colonpair_sink_source};
 pub(in crate::parser) use number::wrap_divergent_literal;
-pub(in crate::parser) use regex::parse_call_arg_list;
+pub(in crate::parser) use regex::{parse_call_arg_list, parse_capture_arg_list};
 
 /// Note where `expr`, parsed from `input` up to `rest`, was written, for a
 /// parse that keeps origins for the RakuAST conversion (ADR-10723 Stage 2,

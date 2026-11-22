@@ -48,7 +48,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
         }
         RakuAstClass::VarDeclarationSignature => {
             initializer(names, node);
-            super::signature_decl_origins::declaration(node);
+            super::signature_decl_origins::declaration(names, node);
         }
         RakuAstClass::ApplyListInfix => {
             super::fragment_origins::list_operands(names, node);
