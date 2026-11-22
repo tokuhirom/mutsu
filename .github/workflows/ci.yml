@@ -1126,6 +1126,23 @@ jobs:
           cargo miri test --no-default-features --features native \
             --lib value::seq_body_shapes -- --test-threads=1
 
+      # Step 1b — ADR-8069 / ADR-18637's lock-free cell reads: the published
+      # cell word (`value::cell_publish`) and the epoch-held array snapshot
+      # (`value::cell_snapshot`), whose threaded test races readers against a
+      # writer so Miri's data-race and use-after-free checks see the protocol.
+      # `-Zmiri-ignore-leaks` is needed and is not a weakening: a snapshot
+      # retired through `crossbeam_epoch` is freed when the global epoch next
+      # advances, and the test process can exit with retired garbage still
+      # queued. Race and aliasing checks are unaffected by the flag.
+      - name: cargo miri test (lock-free cell reads)
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks
+        run: |
+          cargo miri test --no-default-features --features native \
+            --lib value::cell_publish -- --test-threads=1
+          cargo miri test --no-default-features --features native \
+            --lib value::cell_snapshot -- --test-threads=1
+
       # Step 2 — the VM-level half (`gc::soundness_smoke`): a real `Interpreter`
       # running a Raku program, so Miri watches the actual `gc_contents_mut` call
       # sites rather than the primitive alone. This is the coverage ADR-0013 §4
