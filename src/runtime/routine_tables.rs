@@ -111,37 +111,9 @@ pub(crate) struct RoutineTables {
     /// The signature of a `proto token`/`proto rule` that declares positional
     /// parameters, keyed like `proto_tokens`.
     pub(crate) proto_token_params: HashMap<String, Arc<Vec<crate::ast::ParamDef>>>,
-    /// Names this content: shared by every copy-on-write fork, and replaced
-    /// by every write through [`RoutinesWriteGuard`] except a version-only
-    /// renewal ([`RoutinesWriteGuard::renew_functions_version`]). Two tables
-    /// with the same id resolve every name alike, so a closure created on
-    /// another context runs on this one's tables without swapping them in
-    /// (`Interpreter::enter_closure_routine_context`).
-    content_id: ContentId,
-}
-
-/// See [`RoutineTables::content_id`]: a fresh value for every newly built
-/// table, so two tables built apart never share one.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct ContentId(u64);
-
-impl Default for ContentId {
-    // Cost: O(1), one atomic increment.
-    fn default() -> Self {
-        Self(crate::runtime::registry_gen::next_generation())
-    }
 }
 
 impl RoutineTables {
-    /// Whether `other` holds the same content as these tables (see
-    /// [`RoutineTables::content_id`]); the function map's version stamp may
-    /// differ.
-    // Cost: O(1).
-    #[inline]
-    pub(crate) fn same_content_as(&self, other: &RoutineTables) -> bool {
-        self.content_id == other.content_id
-    }
-
     /// The `proto_subs` invalidation generation (see the field doc).
     pub(crate) fn proto_generation(&self) -> u64 {
         self.proto_gen
@@ -442,32 +414,15 @@ impl std::ops::Deref for RoutinesWriteGuard<'_> {
 impl std::ops::DerefMut for RoutinesWriteGuard<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut RoutineTables {
-        let tables = self.make_mut();
-        // Any write may change what the tables resolve.
-        tables.content_id = ContentId::default();
-        tables
-    }
-}
-
-impl RoutinesWriteGuard<'_> {
-    // Cost: O(1), or one copy of the tables while a fork still shares them.
-    #[inline]
-    fn make_mut(&mut self) -> &mut RoutineTables {
         let arc: &mut Arc<RoutineTables> = &mut self.inner;
         if Arc::strong_count(arc) > 1 {
             crate::vm::vm_stats::record_registry_cow_clone();
         }
         Arc::make_mut(arc)
     }
+}
 
-    /// [`RoutineTables::renew_functions_version`]: the function map gets a
-    /// version it never had, and its content -- what every name resolves to
-    /// -- keeps its id.
-    // Cost: O(1), or one copy of the tables while a fork still shares them.
-    pub(crate) fn renew_functions_version(&mut self) {
-        self.make_mut().renew_functions_version();
-    }
-
+impl RoutinesWriteGuard<'_> {
     /// `&mut RoutineTables` by name, for a call chain that reads better than
     /// `&mut *guard`.
     // Cost: O(1) (copy-on-write share aside).
