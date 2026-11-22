@@ -840,6 +840,16 @@ impl Interpreter {
             // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
             // resolves `foo` before the `$foo` slot is assigned.
             Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
+        } else if let Some(own) = foreign_unit
+            .then(|| self.module_own_type_shadowing_global(name))
+            .flatten()
+        {
+            // A loaded module's routine names its own package's type -- its
+            // file-scope `my class R`, registered as `M::R` -- before a type of
+            // the same short name the importing program bound in the env it
+            // runs against: the module's declaration is the lexically
+            // visible one (#18677).
+            Value::package(own)
         } else if let Some(module_val) = preferred_module_bareword
             .take()
             .or_else(|| self.running_module_bareword(name))
