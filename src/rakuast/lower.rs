@@ -1181,9 +1181,14 @@ fn class_traits(names: &NameScope, node: &RakuAstNode) -> Result<ClassTraits, Ru
 /// expansion of a sigilless declaration. Only the default scope round-trips.
 // Cost: O(n), n = size of the initializer.
 fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    if node.fields.iter().any(|f| f.name == Some("scope")) {
-        return Err(unsupported(node));
-    }
+    // `our \x` / `state \x` (#18426); `my` is the default.
+    let scope = leaf_str(node, "scope").ok();
+    let (is_our, is_state) = match scope.as_deref() {
+        None | Some("my") => (false, false),
+        Some("our") => (true, false),
+        Some("state") => (false, true),
+        Some(_) => return Err(unsupported(node)),
+    };
     let name = call_name_str(node)?;
     let type_constraint = match named_child(node, "type") {
         Ok(type_node) => Some(simple_type_name(names, node, type_node)?),
@@ -1222,8 +1227,8 @@ fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
                 name,
                 expr,
                 type_constraint,
-                is_state: false,
-                is_our: false,
+                is_state,
+                is_our,
                 form: crate::ast::parsed::SigillessForm::CallAssign,
             },
             &|name| super::shadowed_terms::is_declared_term(names, name),
@@ -1240,8 +1245,8 @@ fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
             name,
             expr,
             type_constraint,
-            is_state: false,
-            is_our: false,
+            is_state,
+            is_our,
             form,
         },
         &|name| super::shadowed_terms::is_declared_term(names, name),

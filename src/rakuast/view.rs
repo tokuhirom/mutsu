@@ -2045,17 +2045,18 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
 
 pub(super) use super::type_build::{build_type_node, is_pseudo_type, is_simple_type};
 
-/// `my \x = 5` / `my Int \x := $s` -> `VarDeclaration::Term(type?, name,
-/// initializer)`. A scoped one (`our \x`, `state \x`) stays the boundary.
+/// `my \x = 5` / `our Int \x := $s` -> `VarDeclaration::Term(scope?, type?,
+/// name, initializer)`; `scope` only for `our` / `state` (#18426).
 // Cost: O(n), n = size of the initializer.
 pub(super) fn term_declaration(
     names: &NameScope,
     decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    if decl.is_our || decl.is_state {
-        return Err(unsupported("scoped sigilless declaration"));
-    }
     let mut fields = Vec::new();
+    if decl.is_our || decl.is_state {
+        let scope = if decl.is_our { "our" } else { "state" };
+        fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
+    }
     if let Some(type_name) = decl.type_constraint {
         fields.push(node_field(Some("type"), build_type_node(names, type_name)?));
     }
