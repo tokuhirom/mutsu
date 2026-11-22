@@ -498,15 +498,21 @@ def rollup(append_history=False):
     by_status = collections.Counter(r["status"] for r in records)
     accepted = sum(1 for r in records for f in r.get("files", [])
                    if f.get("cmp") == "accepted")
+    exclude = eco.load_exclude(EXCLUDE_LIST)
     # The KPI itself is eco.kpi(), shared with gen-ecosystem-manifest.py so the
     # site page and this summary publish one definition.
-    numbers = eco.kpi(records, eco.load_exclude(EXCLUDE_LIST))
+    numbers = eco.kpi(records, exclude)
 
     summary = {
         "schema": SCHEMA,
         "generated": dt.date.today().isoformat(),
         "distributions": len(records),
+        # Every record's own status, excluded distributions included (the
+        # history row's `measured` / `blocked_dep` read this).
         "status": dict(sorted(by_status.items())),
+        # The status table as summary.md shows it: in-scope records by status,
+        # and the exclude.txt ones on a row of their own.
+        "status_table": status_rows(records, exclude),
         **numbers,
         "accepted_files": accepted,
     }
@@ -519,6 +525,30 @@ def rollup(append_history=False):
         append_history_row(summary, records)
     render_chart()
     return summary
+
+
+# The status-table row that counts the exclude.txt distributions.
+EXCLUDED_ROW = "excluded"
+
+
+def status_rows(records, exclude) -> list[list]:
+    """The rollup's status table: `[status, count]` for every in-scope record,
+    by status, then one `[EXCLUDED_ROW, count]` row for the distributions
+    `exclude.txt` lists, whatever their own status. An excluded record is
+    counted only there, so its frozen old status (a `red` the project decided
+    never to support) does not read as a failing distribution. The KPI is
+    `eco.kpi()`'s and does not change."""
+    in_scope = collections.Counter()
+    excluded = 0
+    for r in records:
+        if eco.is_excluded(exclude, r.get("dist"), r.get("version")):
+            excluded += 1
+        else:
+            in_scope[r["status"]] += 1
+    rows = [[status, count] for status, count in sorted(in_scope.items())]
+    if excluded:
+        rows.append([EXCLUDED_ROW, excluded])
+    return rows
 
 
 def write_summary_md(summary, records):
@@ -545,8 +575,10 @@ def write_summary_md(summary, records):
         "| status | distributions |",
         "|---|---|",
     ]
-    for status, count in summary["status"].items():
-        lines.append(f"| `{status}` | {count} |")
+    for status, count in summary["status_table"]:
+        label = (f"`{status}`" if status != EXCLUDED_ROW
+                 else "out of scope (`exclude.txt`, any status)")
+        lines.append(f"| {label} | {count} |")
     lines += ["", "## Distributions", "",
               "| distribution | version | status | baseline files passed |", "|---|---|---|---|"]
     for r in sorted(records, key=lambda r: r["dist"].lower()):
@@ -999,6 +1031,20 @@ def _self_test() -> int:
         t.join()
     check("an alone run never overlaps another run", not active["overlap"])
     check("shared runs still overlap", active["max_shared"] > 1)
+
+    # status_rows(): an excluded record is counted on the excluded row only,
+    # whatever its own status; an in-scope one by its status.
+    rows = status_rows(
+        [{"dist": "Red::Out", "version": "1", "status": "red"},
+         {"dist": "Green::In", "version": "1", "status": "green"},
+         {"dist": "Red::In", "version": "1", "status": "red"},
+         {"dist": "Pinned", "version": "2", "status": "red"}],
+        {"Red::Out": (None, "out of scope"), "Pinned": ("1", "only 1")})
+    check("the status table counts an excluded record only on its own row",
+          rows == [["green", 1], ["red", 2], [EXCLUDED_ROW, 1]])
+    check("no excluded row when nothing is excluded",
+          status_rows([{"dist": "A", "version": "1", "status": "green"}], {})
+          == [["green", 1]])
 
     run = real_run
     print(f"ecosystem-sweep self-test: "

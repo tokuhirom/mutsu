@@ -100,7 +100,9 @@ Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_
 (a provided module does not even `use`) · `blocked_dep` (§3) · `skipped`.
 
 `ecosystem/exclude.txt` is orthogonal to `status` — a listed distribution keeps its record and its
-status — but it leaves the KPI: all three numbers above are computed without it, exactly as for a
+status — but it leaves the KPI and the rollup's status table, which counts it only on its own
+"out of scope" row (`summary.json`'s `status_table`; `status` keeps every record's own status), so
+its frozen `red` does not read as a failing distribution: all three numbers above are computed without it, exactly as for a
 `no_baseline` distribution, and `ecosystem-tickets.py --queue`/`ecosystem-sweep.py --all` never
 offer it. Bulk sweeps skip it, so its record is a frozen old measurement that must not steer a
 figure about the current interpreter. The definition lives in one function,
