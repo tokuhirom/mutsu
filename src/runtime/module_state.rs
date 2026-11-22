@@ -17,6 +17,10 @@ pub(crate) type ExportTagTable =
 /// (`set-unit`), its name, and its value.
 pub(crate) type GeneratedLexical = (bool, String, Value);
 
+/// One `ModuleWorld` table: a process-wide world cell holding the table's
+/// current version (ADR-17216).
+pub(crate) type WorldTable<T> = crate::runtime::world_cell::WorldCell<std::sync::Arc<T>>;
+
 /// What the program knows about the compunits it has loaded: which modules
 /// are loaded, what each one registered, exports and declared, and the
 /// per-unit visibility tables an import consults. A compunit loads once per
@@ -29,11 +33,11 @@ pub(crate) struct ModuleWorld {
     /// name, `(short, package)` (`package Gender { enum Gender ... }` in
     /// `unit module Enums` publishes `Gender` = `Enums::Gender`, #13940).
     /// Copied into every importer's `package_type_aliases`.
-    pub(crate) published_outer_packages: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, Vec<(String, String)>>>>,
+    pub(crate) published_outer_packages: WorldTable<HashMap<String, Vec<(String, String)>>>,
     /// Per loaded module, the `EXPORTHOW` entries its source declares as
     /// `(directive, declarator)` (`DECLARE`, `pokemon`), which
     /// `CompUnit::Handle.export-how-package` publishes (#14173).
-    pub(crate) exporthow_declares: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, Vec<(String, String)>>>>,
+    pub(crate) exporthow_declares: WorldTable<HashMap<String, Vec<(String, String)>>>,
     /// Package-less top-level routines a loaded compunit declared but did NOT
     /// export, keyed by that compunit's unit symbol and then by routine name.
     ///
@@ -46,18 +50,18 @@ pub(crate) struct ModuleWorld {
     /// in the same unit (or in an `EVAL` nested inside it). See
     /// `runtime/unit_private_routines.rs`.
     pub(crate) unit_private_routines:
-        crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<Symbol, HashMap<Symbol, Arc<FunctionDef>>>>>,
+        WorldTable<HashMap<Symbol, HashMap<Symbol, Arc<FunctionDef>>>>,
     /// Every name that appears in any `unit_private_routines` table. A cheap
     /// negative test on the resolution hot path, and the signal that a name's
     /// resolution is unit-dependent and therefore must bypass the name-keyed
     /// resolution caches (which are not keyed by unit).
-    pub(crate) unit_private_names: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<Symbol>>>,
+    pub(crate) unit_private_names: WorldTable<HashSet<Symbol>>,
     /// The compilation unit that declared each user class. Attribute defaults
     /// run later, while constructing an instance from an arbitrary caller, so
     /// they need the same unit anchor as the class body to resolve compunit-
     /// private routines. Method parameter defaults use this metadata before the
     /// method's routine frame exists as well.
-    pub(crate) class_declaring_units: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, Symbol>>>,
+    pub(crate) class_declaring_units: WorldTable<HashMap<String, Symbol>>,
     /// #7797: the compunit that declared each `use`/`need`/`require`d
     /// top-level package, keyed by the first `::`-segment of the `use`
     /// argument (or the module's own `unit module` name — the two normally
@@ -66,11 +70,11 @@ pub(crate) struct ModuleWorld {
     /// reference to it as permissive (same-compunit `package Foo { }`
     /// blocks, and a script's own top-level `unit module`, never populate
     /// this table, so they are never mistakenly gated).
-    pub(crate) package_declaring_units: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, Symbol>>>,
+    pub(crate) package_declaring_units: WorldTable<HashMap<String, Symbol>>,
     /// Generated EXPORT stashes belong to their declaring compilation unit.
-    pub(crate) unit_export_namespaces: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<(Symbol, Symbol)>>>,
+    pub(crate) unit_export_namespaces: WorldTable<HashSet<(Symbol, Symbol)>>,
     /// Qualified export stashes of named packages, gated by module visibility.
-    pub(crate) package_export_namespaces: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<Symbol>>>,
+    pub(crate) package_export_namespaces: WorldTable<HashSet<Symbol>>,
     /// Which module declarations resolve where: the #7797 package grants and
     /// ADR-11136's GLOBAL-merge provenance and merges
     /// (`runtime::module_merge::ModuleVisibility`).
@@ -80,8 +84,8 @@ pub(crate) struct ModuleWorld {
     /// They deliberately live under `GLOBAL` for every compunit that uses them
     /// and belong to no module's export map, so they are ambient rather than
     /// compunit-private and are never secluded.
-    pub(crate) prelude_sub_names: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<Symbol>>>,
-    pub(crate) loaded_modules: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<String>>>,
+    pub(crate) prelude_sub_names: WorldTable<HashSet<Symbol>>,
+    pub(crate) loaded_modules: WorldTable<HashSet<String>>,
     /// The lexical pad `CompUnit::Handle.unit` answers for each loaded unit,
     /// built on the first ask so every later ask returns the same `Hash` and
     /// the same Pod objects (`at-unit($cu, '$=pod')[0] === $pod`).
@@ -95,11 +99,11 @@ pub(crate) struct ModuleWorld {
     /// `EVAL`) would otherwise leave the module marked as loaded while its own
     /// routines are gone, and a re-`use` — being a no-op — could not bring them
     /// back. See `reinstate_module_functions`.
-    pub(crate) module_registered_functions: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<Symbol>>>,
+    pub(crate) module_registered_functions: WorldTable<HashSet<Symbol>>,
     /// The package-qualified `proto sub` keys a module load introduced
     /// (`M::it`): the proto twin of `module_registered_functions`, put back
     /// by a scope restore that resets the proto tables wholesale (#13877).
-    pub(crate) module_registered_protos: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<Symbol>>>,
+    pub(crate) module_registered_protos: WorldTable<HashSet<Symbol>>,
     /// Packages that received a routine import from a role's own deferred
     /// `use`/`need` body statement (`run_role_deferred_use_stmt`). Consulted
     /// by method dispatch (`vm_method_dispatch.rs`) as an extra reason to set
@@ -109,7 +113,7 @@ pub(crate) struct ModuleWorld {
     /// name can still own package-qualified imported routines that
     /// `bare_name_packages()` can only find by walking outward from itself
     /// (#8646 shape 1).
-    pub(crate) packages_with_deferred_use_imports: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<Symbol>>>,
+    pub(crate) packages_with_deferred_use_imports: WorldTable<HashSet<Symbol>>,
     /// The `GLOBAL::`-qualified keys of routines spliced in as a PRELUDE
     /// (`PRELUDE_SUB_TRAIT` — mutsu's NativeCall helpers).
     ///
@@ -125,7 +129,7 @@ pub(crate) struct ModuleWorld {
     /// loaded inside a routine call — `lives-ok { EVAL 'use M' }` — permanently
     /// unable to resolve the helper its own body calls, since `loaded_modules`
     /// still claimed it was loaded and the later real `use` short-circuited.
-    pub(crate) prelude_registered_functions: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<Symbol>>>,
+    pub(crate) prelude_registered_functions: WorldTable<HashSet<Symbol>>,
     /// For each prelude key in `prelude_registered_functions`, the compilation
     /// units the declaration was actually spliced into (`?FILE` at registration
     /// time; `main_unit()` for the main script).
@@ -142,7 +146,7 @@ pub(crate) struct ModuleWorld {
     /// A splice happens per compunit and is idempotent (the first registration
     /// wins, later ones return `Unchanged`), so this set is what records the
     /// later ones. `prelude_visible_here` reads it.
-    pub(crate) prelude_declaring_units: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<Symbol, HashSet<Symbol>>>>,
+    pub(crate) prelude_declaring_units: WorldTable<HashMap<Symbol, HashSet<Symbol>>>,
     /// The package-qualified globals (`Base::flag`, `$NativeLibs::config`) each
     /// loaded module declared with `our`, keyed by module name.
     ///
@@ -153,16 +157,16 @@ pub(crate) struct ModuleWorld {
     /// `use` of that module is a no-op and could not bring them back. The
     /// already-loaded path of `use_module_with_tags_inner` reinstates whatever
     /// is missing from here instead.
-    pub(crate) module_package_globals: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, Vec<(Symbol, Value)>>>>,
+    pub(crate) module_package_globals: WorldTable<HashMap<String, Vec<(Symbol, Value)>>>,
     /// Repositories registered by name (`CompUnit::RepositoryRegistry.register-name`),
     /// answered by `repository-for-name` ahead of the built-in names.
-    pub(crate) named_repositories: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, Value>>>,
-    pub(crate) need_hidden_classes: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashSet<String>>>,
+    pub(crate) named_repositories: WorldTable<HashMap<String, Value>>,
+    pub(crate) need_hidden_classes: WorldTable<HashSet<String>>,
     /// Per loaded module, the classes and roles registered while it loaded
     /// (its own declarations plus those of the modules it pulled in). The
     /// stash-hiding pass subtracts these, for every *other* module, to tell a
     /// module's own declarations from its transitive dependencies'.
-    pub(crate) module_registered_types: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, HashSet<String>>>>,
+    pub(crate) module_registered_types: WorldTable<HashMap<String, HashSet<String>>>,
     /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
     /// pulled in by `.need` but not yet merged into GLOBAL).
     ///
@@ -172,10 +176,10 @@ pub(crate) struct ModuleWorld {
     pub(crate) cur_repo: crate::runtime::world_cell::WorldCell<Box<CurRepoState>>,
     /// Maps module names to the set of packages declared during their loading.
     /// Used to propagate package declarations when a module is re-used.
-    pub(crate) module_packages: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, HashSet<String>>>>,
+    pub(crate) module_packages: WorldTable<HashMap<String, HashSet<String>>>,
     /// Maps package names to their distribution context.
     /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
-    pub(crate) package_distributions: crate::runtime::world_cell::WorldCell<std::sync::Arc<ValueMap>>,
+    pub(crate) package_distributions: WorldTable<ValueMap>,
     /// The module's other file-scope bare names — `constant`s and sigilless
     /// declarations its own routines close over — keyed the same way as
     /// `package_type_aliases`, and lost for the same reason. Consulted by
@@ -195,41 +199,41 @@ pub(crate) struct ModuleWorld {
     /// compunit rather than names the importer sees bare (#7787). The value
     /// stays here so the declaring module's own routines and methods still read
     /// it; see `collect_unit_package_scope_names`.
-    pub(crate) module_scope_lexicals: crate::runtime::world_cell::WorldCell<std::sync::Arc<PackageLexicals>>,
+    pub(crate) module_scope_lexicals: WorldTable<PackageLexicals>,
     /// The module name owning each loaded source file. Ordinary (non-`unit`)
     /// module files register top-level routines under `GLOBAL`, but their
     /// private file-scope names remain lexical to the module.
-    pub(crate) module_source_packages: crate::runtime::world_cell::WorldCell<std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>>,
+    pub(crate) module_source_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Compilation units declared by `unit module`/`unit class` files, keyed by
     /// their compilation-unit symbol. A unit module body runs under GLOBAL, so
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
-    pub(crate) unit_module_packages: crate::runtime::world_cell::WorldCell<std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>>,
+    pub(crate) unit_module_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Declared unit package by requested module path. A module file may be
     /// loaded as `A::B` while declaring `unit module A::C`.
-    pub(crate) module_declared_unit_packages: crate::runtime::world_cell::WorldCell<std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>>,
+    pub(crate) module_declared_unit_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// The one top-level `package`/`module` block a module file declares under
     /// a name other than the one it was loaded as (`package Cro::WebSocket::Message
     /// { enum Opcode is export (...) }` in `Cro/WebSocket/Message/Opcode.rakumod`),
     /// by requested module path. What the file exports lives under that package.
-    pub(crate) module_block_packages: crate::runtime::world_cell::WorldCell<std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>>,
+    pub(crate) module_block_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Exported subroutine symbols by package and export tag.
-    pub(crate) exported_subs: crate::runtime::world_cell::WorldCell<std::sync::Arc<ExportTagTable>>,
+    pub(crate) exported_subs: WorldTable<ExportTagTable>,
     /// Exported variable/constant symbols by package and export tag.
-    pub(crate) exported_vars: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>>,
+    pub(crate) exported_vars: WorldTable<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// The `$`-scalars among [`Self::exported_vars`] (recorded without their
     /// sigil), by package: an `EXPORT::` stash publishes them as `$name`.
-    pub(crate) exported_scalar_vars: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, HashSet<String>>>>,
+    pub(crate) exported_scalar_vars: WorldTable<HashMap<String, HashSet<String>>>,
     /// An exported variable/constant a module re-exports from another module
     /// (`UNIT::EXPORT::{$tag} := Other::EXPORT::{$tag}`): `(module, name)` ->
     /// the module that owns the value.
     pub(crate) reexported_var_owners:
-        crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<(String, String), String>>>,
+        WorldTable<HashMap<(String, String), String>>,
     /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
     /// mixed a role into it) keyed by package and routine name. Captured at
     /// `is export` registration time so `import` can restore the `&name` env
     /// binding with the role mixed in, rather than just the plain FunctionDef.
-    pub(crate) exported_sub_values: crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, ValueMap>>>,
+    pub(crate) exported_sub_values: WorldTable<HashMap<String, ValueMap>>,
     /// Regex bodies of `token`/`rule`/`regex` declarations marked `is export`,
     /// keyed by the module being loaded and the declarator's name.
     ///
@@ -240,18 +244,18 @@ pub(crate) struct ModuleWorld {
     /// registration time and re-installed under the importing package by
     /// `import_module`, which is what makes both `&foo` and `<foo>` resolve in
     /// the importer.
-    pub(crate) exported_token_defs: crate::runtime::world_cell::WorldCell<std::sync::Arc<ExportedTokenDefs>>,
+    pub(crate) exported_token_defs: WorldTable<ExportedTokenDefs>,
     /// Mirrored export tables for modules declared with `unit module X`
     /// when the actual runtime package registration used "GLOBAL".
     /// Populated during `load_module` so that `import_module` can perform
     /// tag validation and raise `X::Import::NoSuchTag` for bad tags.
-    pub(crate) unit_module_exported_subs: crate::runtime::world_cell::WorldCell<std::sync::Arc<ExportTagTable>>,
+    pub(crate) unit_module_exported_subs: WorldTable<ExportTagTable>,
     /// The `EXPORT` hook routine(s) each loaded compunit declared, by module
     /// name: what `CompUnit::Handle.export-sub` answers once the load is over
     /// and the registry's `GLOBAL::EXPORT` has been handed back to the
     /// enclosing compunit (#15371).
     pub(crate) module_export_hooks:
-        crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>>,
+        WorldTable<HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>,
     /// Exports each module registered while it was the module currently being
     /// loaded (attributed via `module_load_stack`), mapping module -> name ->
     /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
@@ -259,7 +263,7 @@ pub(crate) struct ModuleWorld {
     /// that declared it. The `use MOD` tag-filter consults this so it only
     /// hides MOD's *own* exports and never a symbol MOD imported from a
     /// transitively-`use`d module (which MOD's methods must still resolve).
-    pub(crate) module_owned_exports: crate::runtime::world_cell::WorldCell<std::sync::Arc<ExportTagTable>>,
+    pub(crate) module_owned_exports: WorldTable<ExportTagTable>,
     /// Qualified classes and roles declared by each module's own body. A
     /// module without a `unit` declarator may still declare a type in an
     /// unrelated package (for example `class Test::Handle`); that package is
@@ -267,7 +271,7 @@ pub(crate) struct ModuleWorld {
     /// dependencies are not. The load stack lets registration attribute the
     /// type to the correct compunit while nested modules are loading.
     pub(crate) module_owned_types:
-        crate::runtime::world_cell::WorldCell<std::sync::Arc<HashMap<String, runtime_module::ModuleOwnedTypes>>>,
+        WorldTable<HashMap<String, runtime_module::ModuleOwnedTypes>>,
 }
 
 
