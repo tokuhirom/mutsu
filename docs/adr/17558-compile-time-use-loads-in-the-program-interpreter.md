@@ -618,3 +618,34 @@ Remaining for 5b: a `BEGIN` that reads the unit's lexicals or calls its
 routines (it needs the unit frame, or ADR-0134's static cells, during the
 parse), and slice 4b after it.
 
+
+### 7.16 Slice 5b: a `BEGIN` that calls an imported routine (2026-11-23)
+
+A top-level `BEGIN` of the program that calls a routine an earlier `use`
+imports (`use Test; BEGIN plan 3;`, ≈11 of the top-level `BEGIN`s in `t/` and
+roast) now runs at parse time too:
+
+- The parser records each top-level `use` the loader loaded at parse time, in
+  source order (`begin_at_parse::UNIT_PARSE_TIME_USES`). `use Test` is
+  recorded although it is not preloaded: its load is no prologue effect
+  (`is_inert_pragma`). A conditional `use` is not recorded.
+- `begin_body_core_names` accepts a non-core callee (or term) that one of those
+  `use`s imports (`Stmt::Use::imports`), when the unit does not declare that
+  name itself (`parser::unit_declares_name`).
+- The loader runs the `use` statements that import the routines the body calls
+  ahead of the body, in one compile. Their module is loaded, so running one
+  imports (a hook module installs the map its parse-time load recorded for
+  that statement's site, which a re-run of the statement reuses); `use Test`
+  loads Test there. The prologue runs the same `use`s again in position, as a
+  block entered twice would.
+- An `exit` in such a `BEGIN` ends the program there: the parse stops, and the
+  run finishes as after an `exit` in the prologue (END phasers, the status),
+  without reporting the rest of the unit (rakudo: `BEGIN { plan 1;
+  skip-rest; exit }; 1 +;` reports no syntax error).
+
+Not covered: a module END phaser after a later syntax error (rakudo runs Test's
+plan check, mutsu does not; #18918, a separate gap of every parse-time load).
+
+Remaining for 5b: a `BEGIN` that reads the unit's lexicals or calls its
+routines (it needs the unit frame, or ADR-0134's static cells, during the
+parse), and slice 4b after it.
