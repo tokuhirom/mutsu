@@ -368,6 +368,17 @@ impl Interpreter {
         // is pre-installed (`EndWalker::install_our_symbol`), so a dead-branch
         // `class Foo { if False { our $c = 1 } }` still lists `$c`. `or_insert`
         // so a live env value always wins over the pre-installed type object.
+        // A root `our` (`our $x` at the mainline, `GLOBAL::<$x> = ...`) is
+        // in the env only of the frame that declared it; read from a routine,
+        // the store is where it lives (#18835).
+        if pkg_is_global {
+            let table = self.our_table();
+            for (key, val) in table.iter() {
+                if let Some(stash_key) = self.root_our_stash_key(key, val) {
+                    symbols.entry(stash_key).or_insert_with(|| val.clone());
+                }
+            }
+        }
         if let Some(names) = &candidates {
             let mut sub_packages = Vec::new();
             for name in names {
