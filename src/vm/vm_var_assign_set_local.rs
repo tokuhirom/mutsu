@@ -2339,6 +2339,20 @@ impl Interpreter {
             // a `for` alias, a `:=` binding): the `Nil` decays to THAT
             // container's default, which the cell carries (#9831).
             val = def;
+        } else if !is_bind
+            && !is_rebind
+            && !is_vardecl
+            && !name.starts_with(['@', '%', '&'])
+            && let Some(cell) = match self.locals[idx].view() {
+                ValueView::ContainerRef(cell) => Some(cell.clone()),
+                _ => None,
+            }
+            && crate::value::lookup_container_constraint(&cell).is_some()
+        {
+            // Without an `is default`, the aliased container's `of` type
+            // object is what the `Nil` resets to: `my $r := $obj.typed-attr;
+            // $r = Nil` stores `Int`, not this untyped name's `Any` (#18755).
+            val = self.cell_nil_reset_value(&cell);
         }
         // For array variables with `is default(X)`, replace Nil elements
         // with the default value (Raku container semantics).
