@@ -1467,6 +1467,15 @@ pub(crate) struct SubstThunk {
     pub(crate) infix: Option<Box<str>>,
 }
 
+/// Where a substitution starts: the `:c(N)` / `:continue(N)` or `:p(N)` /
+/// `:pos(N)` argument (`Expr::Subst::start`). `anchored` is `:pos`, which
+/// requires the first match to start exactly there (#18892).
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SubstStart {
+    pub(crate) expr: Expr,
+    pub(crate) anchored: bool,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
@@ -1628,6 +1637,9 @@ pub(crate) enum Expr {
         /// expression evaluated where the substitution runs. `None` when `:x`
         /// is absent.
         x: Option<Box<Expr>>,
+        /// The `:c` / `:pos` argument, evaluated where the substitution runs;
+        /// `None` when neither is written.
+        start: Option<Box<SubstStart>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -1659,6 +1671,9 @@ pub(crate) enum Expr {
         /// expression evaluated where the substitution runs. `None` when `:x`
         /// is absent.
         x: Option<Box<Expr>>,
+        /// The `:c` / `:pos` argument, evaluated where the substitution runs;
+        /// `None` when neither is written.
+        start: Option<Box<SubstStart>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a

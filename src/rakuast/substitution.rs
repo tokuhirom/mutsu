@@ -518,6 +518,7 @@ pub(super) fn lower_substitution(
         global,
         nth,
         x,
+        start,
     } = flags;
     Ok(if bool_field(node, "immutable")? {
         Expr::NonDestructiveSubst {
@@ -530,6 +531,7 @@ pub(super) fn lower_substitution(
             global,
             nth,
             x,
+            start,
             replacement_thunk: thunk,
             tree,
         }
@@ -544,6 +546,7 @@ pub(super) fn lower_substitution(
             global,
             nth,
             x,
+            start,
             replacement_thunk: thunk,
             tree,
         }

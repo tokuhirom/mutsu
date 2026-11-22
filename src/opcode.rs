@@ -4116,6 +4116,10 @@ pub(crate) enum OpCode {
         /// The `:x` argument's value is on the stack, above `:nth`'s
         /// (`[Code?, Nth?, X] → …`).
         x: bool,
+        /// `:c(N)` / `:pos(N)` (#18892): 0 when neither is written; else the
+        /// start's value is on the stack above `:x`'s (`[Code?, Nth?, X?,
+        /// Start] → …`), and 2 marks `:pos`, which anchors the first match.
+        start: u8,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -4163,6 +4167,10 @@ pub(crate) enum OpCode {
         /// The `:x` argument's value is on the stack, above `:nth`'s
         /// (`[Code?, Nth?, X] → …`).
         x: bool,
+        /// `:c(N)` / `:pos(N)` (#18892): 0 when neither is written; else the
+        /// start's value is on the stack above `:x`'s (`[Code?, Nth?, X?,
+        /// Start] → …`), and 2 marks `:pos`, which anchors the first match.
+        start: u8,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and

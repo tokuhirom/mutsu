@@ -7057,6 +7057,7 @@ impl Interpreter {
                 global,
                 nth,
                 x,
+                start,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -7072,6 +7073,7 @@ impl Interpreter {
                     *global,
                     *nth,
                     *x,
+                    *start,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -7088,6 +7090,7 @@ impl Interpreter {
                 global,
                 nth,
                 x,
+                start,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -7103,6 +7106,7 @@ impl Interpreter {
                     *global,
                     *nth,
                     *x,
+                    *start,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
