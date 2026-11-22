@@ -2557,8 +2557,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::BareStatement => {
                 super::bare_prefix::bare_statement_node(names, &spelled.expr)
             }
-            Spelling::PackageIndirect { package, key } => {
-                super::symbolic_deref::view_package_indirect(names, package, key)
+            Spelling::PackageIndirect { .. } | Spelling::IndirectParts(_) => {
+                super::symbolic_deref::view_spelled(names, &spelled.spelling)
             }
             Spelling::CompositionWhatever(source) => {
                 super::composition_source::view_node(names, source, &spelled.expr)

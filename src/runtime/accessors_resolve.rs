@@ -663,6 +663,15 @@ impl Interpreter {
     /// routine of that name would be hidden by (a `sub abs`, a `multi
     /// infix:<eqv>`).
     // Cost: O(1) hashed probes.
+    /// The routine a program bound into the setting's stash under `name`
+    /// (`&CORE::name := &f` or `CORE::<&name> := &f`), kept in the package
+    /// store under `&CORE::name`.
+    // Cost: O(|name|), one memoized name build and one hashed `our` probe.
+    fn core_stash_routine(&self, name: &str) -> Option<Value> {
+        let key = crate::qualified::qualified_text("&CORE", name);
+        self.get_our_var_sym(key).map(|value| value.deref_container())
+    }
+
     pub(crate) fn user_declares_routine(&self, name: &str) -> bool {
         self.has_proto(name)
             || self.has_multi_candidates_unindexed(name)
@@ -789,6 +798,14 @@ impl Interpreter {
         // user-defined overrides.
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
+        if has_packages
+            && core_visible
+            && Self::is_builtin_function(lookup_name)
+            && matches!(Self::leading_pseudo_packages(name).1, Some("CORE" | "SETTING"))
+            && let Some(bound) = self.core_stash_routine(lookup_name)
+        {
+            return bound;
+        }
         if has_packages
             && core_visible
             && Self::is_builtin_function(lookup_name)
@@ -923,6 +940,18 @@ impl Interpreter {
             )))
         {
             return sub_val.clone();
+        }
+        // A routine bound into the setting's stash (`&CORE::none := &f`,
+        // `CORE::<&none> := &f`) is the routine every scope that does not
+        // declare its own sees, as with rakudo's one shared CORE stash.
+        if def.is_none()
+            && !has_packages
+            && Self::is_builtin_function(lookup_name)
+            && !self.has_proto(lookup_name)
+            && !self.has_multi_candidates_unindexed(lookup_name)
+            && let Some(bound) = self.core_stash_routine(lookup_name)
+        {
+            return bound;
         }
         if def.is_none() && core_visible {
             match lookup_name {

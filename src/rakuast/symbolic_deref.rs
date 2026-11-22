@@ -299,7 +299,7 @@ fn is_lexical_pseudo_package(segment: &str) -> bool {
 /// `MY::(EXPR)` / `GLOBAL::(EXPR)`: the package's parts, then the key as a
 /// `Name::Part::Expression`.
 // Cost: O(n), n = nodes of the key, plus the package's segments.
-pub(super) fn view_package_indirect(
+fn view_package_indirect(
     names: &NameScope,
     package: &str,
     key: &Expr,
@@ -415,4 +415,81 @@ pub(super) fn replace_declarator_name(
         }
     }
     Ok(())
+}
+
+/// A symbolic lookup's written spelling: `PKG::(EXPR)` or `::($a)::($b)`.
+// Cost: O(n), n = nodes of the key or parts.
+pub(super) fn view_spelled(
+    names: &NameScope,
+    spelling: &crate::ast::spelled::Spelling,
+) -> Result<RakuAstNode, RuntimeError> {
+    use crate::ast::spelled::Spelling;
+    match spelling {
+        Spelling::PackageIndirect { package, key } => view_package_indirect(names, package, key),
+        Spelling::IndirectParts(parts) => view_indirect_parts(names, parts),
+        _ => Err(RuntimeError::new("RakuAST: not a symbolic lookup spelling")),
+    }
+}
+
+/// `::($a)::($b)` (`Spelling::IndirectParts`) as
+/// `Term::Name(Name(EmptyEdge, Part::Expression($a), Part::Expression($b)))`.
+// Cost: O(n), n = nodes of the parts.
+fn view_indirect_parts(names: &NameScope, parts: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let mut name = vec![name_parts::leading_empty()];
+    for part in parts {
+        name.push(Value::rakuast(Box::new(RakuAstNode {
+            origin: Default::default(),
+            class: RakuAstClass::NamePartExpression,
+            fields: vec![node_field(None, view_expr(names, part)?)],
+        })));
+    }
+    Ok(RakuAstNode {
+        origin: Default::default(),
+        class: RakuAstClass::TermName,
+        fields: vec![node_field(None, name_parts::name_from_parts(name))],
+    })
+}
+
+/// A `Term::Name` over `Name(EmptyEdge, Part::Expression…)` with two or more
+/// expression parts and nothing else, as the parser's lookup; `None` for any
+/// other node.
+// Cost: O(n), n = nodes of the parts.
+pub(super) fn lower_indirect_parts(
+    names: &NameScope,
+    node: &RakuAstNode,
+) -> Option<Result<Expr, RuntimeError>> {
+    if node.class != RakuAstClass::TermName {
+        return None;
+    }
+    let name = super::lower::named_child_or_positional(node).ok()?;
+    let field = name.fields.first()?;
+    let (Some("parts"), super::RakuAstFieldValue::List(parts)) = (&field.name, &field.value) else {
+        return None;
+    };
+    let (first, rest) = parts.split_first()?;
+    if rest.len() < 2 || !name_parts::is_empty_part(first) {
+        return None;
+    }
+    let exprs = rest
+        .iter()
+        .map(|part| match part.view() {
+            ValueView::RakuAst(part) if part.class == RakuAstClass::NamePartExpression => {
+                match &part.fields.first()?.value {
+                    super::RakuAstFieldValue::Node(expr) => match expr.view() {
+                        ValueView::RakuAst(expr) => Some(expr),
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(
+        exprs
+            .into_iter()
+            .map(|expr| lower_expr(names, expr))
+            .collect::<Result<Vec<_>, _>>()
+            .map(crate::ast::spelled::indirect_parts_lookup),
+    )
 }
