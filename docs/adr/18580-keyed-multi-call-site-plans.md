@@ -1,6 +1,8 @@
 # ADR-18580: Multi sub and operator calls run a keyed call-site plan
 
-- **Status**: Proposed (2026-11-22)
+- **Status**: Accepted (2026-11-22, by the maintainer). Conditions: D2 applies only to a winner
+  picked by a keyed program, never to a plain call, and its PR carries the `S06-multi` /
+  `S12-subset` roast files, `t/routines/dispatch` and an ecosystem parity table.
 - **Issue**: [#18580](https://github.com/tokuhirom/mutsu/issues/18580) (`bench-multi-dispatch@section`
   at ~1.75x rakudo; close condition ratio <= 1.00 on that row and its `+jit` row).
 - **Builds on**:
