@@ -526,6 +526,9 @@ impl Interpreter {
                     }.into(),
                 );
             }
+            // The `Method` object keeps the code's own name (`my method dm`
+            // added as `m` is `dm`, an anonymous one ``), #18225.
+            let own_name = multi_family.is_none().then(|| sub_data.name.resolve());
             let mut defs = multi_family.unwrap_or_else(|| vec![def]);
             for d in &mut defs {
                 d.is_private = private;
@@ -548,6 +551,9 @@ impl Interpreter {
                 Symbol::intern(&method_name),
                 defs,
             );
+            if let Some(own_name) = own_name {
+                self.registry_mut().rename_method_candidate(&class_name, &method_name, 0, &own_name);
+            }
             // Class shape changed (an added BUILD/TWEAK/new flips ctor
             // eligibility) — drop cached construction plans.
             self.caches.native_ctor_plan_cache.clear();
