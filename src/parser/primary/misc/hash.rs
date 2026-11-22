@@ -114,8 +114,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
             // `a` followed by `~ 'b' => 1` — so fall through to the general
             // expression parse below. `R=>` (the reverse fatarrow metaop) needs
             // the same treatment.
-            if (after_key.starts_with([',', ';', '}']) || after_key.is_empty())
-                && written.is_some()
+            if (after_key.starts_with([',', ';', '}']) || after_key.is_empty()) && written.is_some()
             {
                 // `{ a => 1, "b", 2 }`: a quoted or numeric element is a bare
                 // element as written, not the key of the next one.
