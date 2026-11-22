@@ -311,7 +311,7 @@ impl Interpreter {
     }
 
     /// Whether a `my $*X` for `key` is visible from the current frame.
-    fn dynamic_declared_lexically(&self, key: &str) -> bool {
+    pub(crate) fn dynamic_declared_lexically(&self, key: &str) -> bool {
         self.env()
             .contains_key_sym(MetaNs::LexicalDynamic.key_for_str(key))
     }

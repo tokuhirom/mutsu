@@ -3760,15 +3760,32 @@ impl Interpreter {
             self.stack.push(stored);
             return Ok(());
         }
-        // `DYNAMIC::<$*x> := v` (6.e): the dynamic chain ends in `GLOBAL`
-        // and then `PROCESS`, so a `$*x` no frame binds is bound where the
-        // chain finds it.
-        // TODO: a frame's own `my $*x` bound through `DYNAMIC::` from a
-        // callee is not reached yet; it still binds the process-level one.
+        // `DYNAMIC::<$*x> := v` (6.e): a frame's `my $*x` is bound first;
+        // the dynamic chain then ends in `GLOBAL` and `PROCESS`, so a `$*x`
+        // no frame binds is bound where the chain finds it.
         if stash_name == "DYNAMIC::" {
             let raw_key = Self::const_str(code, key_name_idx).to_string();
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let (sigil, bare) = (&raw_key[..1], &raw_key[2..]);
+            // The env key of the dynamic: `*x`, `@*x`, `%*x`, `&*x`.
+            let env_key = if sigil == "$" {
+                format!("*{bare}")
+            } else {
+                format!("{sigil}*{bare}")
+            };
+            if self.dynamic_declared_lexically(&env_key) {
+                let plain = match Self::split_bind_index_marker(val) {
+                    Ok((bound, _)) => bound,
+                    Err(plain) => plain,
+                };
+                // The binding is the declaring frame's: a by-name store
+                // reaches it, and is carried back across every return as a
+                // `$*x := v` the code does not declare is.
+                self.set_env_with_main_alias(&env_key, plain.clone());
+                self.record_foreign_dynamic_write(code, Symbol::intern(&env_key));
+                self.stack.push(plain);
+                return Ok(());
+            }
             let global = if sigil == "$" {
                 format!("GLOBAL::{bare}")
             } else {
