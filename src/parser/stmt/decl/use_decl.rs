@@ -439,6 +439,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // wrapper. Parsing it here (rather than recovering a `sub MAIN` later in
     // stmt-list parsing) also keeps an unrelated `use Foo proto; sub MAIN`
     // pair from being mistaken for this construct.
+    // A parse-time `BEGIN` after it that calls a routine it imports runs this
+    // import first (ADR-17558 §7.16). A conditional `use` imports only when
+    // its BEGIN-time condition holds, so it is left out.
+    if site != 0 && !empty_import && use_stmt_condition_free(&use_stmt) {
+        super::super::simple::note_parse_time_use(&use_stmt);
+    }
     let stmt = if let Some(proto) = inline_proto {
         crate::parser::stmt::control::parsed_block::finish_total(
             crate::ast::parsed::ParsedStmt::InlineProtoUse {
@@ -450,6 +456,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         use_stmt
     };
     Ok((rest, stmt))
+}
+
+/// Whether `use_stmt` has no `:if`/`:unless` condition.
+// Cost: O(1).
+fn use_stmt_condition_free(use_stmt: &Stmt) -> bool {
+    matches!(use_stmt, Stmt::Use { condition: None, .. })
 }
 
 /// The positional arguments of a `use` whose elements are all literals, as

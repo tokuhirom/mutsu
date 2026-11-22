@@ -40,13 +40,20 @@ pub(crate) fn is_program_parse() -> bool {
 
 impl Interpreter {
     /// Run a unit-level statement-form `BEGIN` the parser just finished, if
-    /// the parse is the program's and the body reaches nothing of the unit.
-    // Cost: O(n) for the analysis, n = size of the phaser's body; the
-    // phaser's own run otherwise.
-    pub(crate) fn run_parse_time_begin(&mut self, begin: &Stmt) -> BeginOutcome {
+    /// the parse is the program's and the body reaches nothing of the unit
+    /// but core names and the routines that `uses` (the unit's `use`s ahead of
+    /// it that loaded at parse time) import. The imports it needs run first,
+    /// as the prologue would have run them ahead of it.
+    // Cost: O(n + u * i) for the analysis, n = size of the phaser's body, u =
+    // `uses`, i = names each imports; the phaser's own run otherwise.
+    pub(crate) fn run_parse_time_begin(&mut self, begin: &Stmt, uses: &[Stmt]) -> BeginOutcome {
         if !is_program_parse() {
             return BeginOutcome::NotTaken;
         }
+        let imports_name = |use_stmt: &Stmt, name: &str| {
+            matches!(use_stmt, Stmt::Use { imports, .. } if imports.iter().any(|i| i == name))
+        };
+        let imported = |name: &str| uses.iter().any(|u| imports_name(u, name));
         // The lowering and the run are not part of the unit's parse: a parse
         // they trigger (the lowering itself, a regex compiled at run time)
         // must not see or disturb the unit's parser state, which resumes
@@ -57,26 +64,47 @@ impl Interpreter {
         // is (`parse_compilation_unit_of`); the phaser alone needs nothing of
         // the rest of the unit to lower, since a closed body names none of it.
         let lowered = crate::rakuast::frontend::finish_unit(vec![begin.clone()]);
-        let names = match lowered.as_deref() {
+        let closed = match lowered.as_deref() {
             Ok([Stmt::Phaser { body, bare, .. }]) => {
-                crate::runtime::begin_prologue::begin_body_core_names(body, *bare)
+                crate::runtime::begin_prologue::begin_body_core_names(body, *bare, &imported)
             }
             _ => None,
         };
         drop(suspended);
-        let (Ok(lowered), Some(names)) = (lowered, names) else {
+        let (Ok(lowered), Some(closed)) = (lowered, closed) else {
             return BeginOutcome::NotTaken;
         };
-        if names.iter().any(|name| crate::parser::unit_provides_name(name)) {
+        if closed.core.iter().any(|name| crate::parser::unit_provides_name(name))
+            || closed.imported.iter().any(|name| crate::parser::unit_declares_name(name))
+        {
             return BeginOutcome::NotTaken;
         }
+        // The imports the body needs, in source order, ahead of it: the `use`
+        // statements themselves, whose module is loaded, so running one only
+        // imports (a hook module's map is the one its parse-time load
+        // recorded for that statement's site).
+        let mut program: Vec<Stmt> = uses
+            .iter()
+            .filter(|u| closed.imported.iter().any(|name| imports_name(u, name)))
+            .cloned()
+            .collect();
         let suspended = crate::parser::unit_state::suspend();
+        if !program.is_empty() {
+            match crate::rakuast::frontend::finish_unit(program) {
+                Ok(lowered_uses) => program = lowered_uses,
+                Err(_) => {
+                    drop(suspended);
+                    return BeginOutcome::NotTaken;
+                }
+            }
+        }
+        program.extend(lowered);
         // Compiled as the prologue compiles it, so a failure is the same
         // `X::Comp::BeginTime` the prologue would raise.
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
-        let (code, compiled_fns) = compiler.compile(&lowered);
+        let (code, compiled_fns) = compiler.compile(&program);
         let result = self.run_top(&code, &compiled_fns);
         drop(suspended);
         match result {

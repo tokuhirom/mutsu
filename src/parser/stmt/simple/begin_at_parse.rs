@@ -16,6 +16,23 @@ thread_local! {
     /// rather than running at parse time ahead of it.
     pub(super) static UNIT_PROLOGUE_EFFECT_SEEN: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
+    /// The unit's top-level `use` statements before the parse position that
+    /// loaded at parse time, in source order: a parse-time `BEGIN` that calls
+    /// a routine one of them imports runs that import first (§7.16).
+    pub(super) static UNIT_PARSE_TIME_USES: std::cell::RefCell<Vec<Stmt>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Note `use_stmt`, a `use` the loader loaded at parse time and that imports
+/// into the scope it stands in, if that is the unit's top level.
+// Cost: O(n), n = size of `use_stmt`, at the top level; O(1) elsewhere.
+pub(in crate::parser) fn note_parse_time_use(use_stmt: &Stmt) {
+    if !super::in_nested_scope()
+        && !crate::parser::in_fragment_parse()
+        && super::statement_package().is_none()
+    {
+        UNIT_PARSE_TIME_USES.with(|uses| uses.borrow_mut().push(use_stmt.clone()));
+    }
 }
 
 /// What became of a unit-level `BEGIN` the parser finished.
@@ -54,7 +71,8 @@ pub(in crate::parser) fn run_unit_begin(body: &[Stmt], bare: bool) -> UnitBegin 
         scope: 0,
     };
     crate::parser::stmt::trace::number_statements_so_far(&mut begin);
-    match crate::compile_time_loader::run_begin(&begin) {
+    let uses = UNIT_PARSE_TIME_USES.with(|uses| uses.borrow().clone());
+    match crate::compile_time_loader::run_begin(&begin, &uses) {
         crate::compile_time_loader::BeginOutcome::Ran => UnitBegin::Ran,
         crate::compile_time_loader::BeginOutcome::Failed(error) => {
             let message = error.message.to_string();
@@ -95,4 +113,18 @@ pub(in crate::parser) fn take_unit_effects_seen() -> (bool, bool) {
 pub(in crate::parser) fn restore_unit_effects_seen((begin, prologue): (bool, bool)) {
     super::UNIT_BEGIN_SEEN.with(|seen| seen.set(begin));
     UNIT_PROLOGUE_EFFECT_SEEN.with(|seen| seen.set(prologue));
+}
+
+/// The unit's parse-time `use`s so far ([`UNIT_PARSE_TIME_USES`]), cleared,
+/// to save around a nested parse that resets them
+/// ([`restore_parse_time_uses`]).
+// Cost: O(1).
+pub(in crate::parser) fn take_parse_time_uses() -> Vec<Stmt> {
+    UNIT_PARSE_TIME_USES.with(|uses| std::mem::take(&mut *uses.borrow_mut()))
+}
+
+/// Put back what [`take_parse_time_uses`] returned.
+// Cost: O(1).
+pub(in crate::parser) fn restore_parse_time_uses(saved: Vec<Stmt>) {
+    UNIT_PARSE_TIME_USES.with(|uses| *uses.borrow_mut() = saved);
 }
