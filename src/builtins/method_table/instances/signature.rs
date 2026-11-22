@@ -1,5 +1,5 @@
 //! `Signature`'s rows: `gist` and `raku` (ADR-11276 §9.39), `arity`, `count`, `params` and
-//! `returns` (§9.55).
+//! `returns` (§9.55), and `Capture`.
 //!
 //! A `Signature` instance carries its two renderings as the attributes `gist`
 //! and `raku` (the compiler renders them once, from the parsed parameters), so
@@ -30,7 +30,29 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("count", count),
     row!("params", params),
     row!("returns", returns),
+    // `Signature.Capture` (both the type object and an instance).
+    MethodRow {
+        owner: "Signature",
+        name: "Capture",
+        arity: 0,
+        handler: Handler::Narrow(capture),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
 ];
+
+/// `Signature.Capture`: rakudo's `X::Cannot::Capture`, naming the signature
+/// by its `.gist` (`($a)`, `(Signature)`).
+// Cost: O(n), n = chars of the gist.
+fn capture(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let gist = match rendering(target, "gist") {
+        Some(Ok(g)) => g.to_string_value(),
+        _ => crate::value::gist::gist_value(target),
+    };
+    Some(Err(
+        crate::builtins::methods_0arg::coercion::cannot_capture_described(target, &gist),
+    ))
+}
 
 fn rendering(target: &Value, key: &str) -> Option<Result<Value, RuntimeError>> {
     let ValueView::Instance {

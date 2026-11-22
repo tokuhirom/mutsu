@@ -198,14 +198,16 @@ pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         // Version.Capture throws X::Cannot::Capture
         ValueView::Version { .. } => Err(cannot_capture_value(target)),
         // Signature/Failure .Capture throw X::Cannot::Capture (both the type
-        // object and an instance).
+        // object and an instance), as their rows do: those name the value by
+        // its `.gist` (a handled Failure's `.mess`), which a pure render
+        // cannot always build.
         ValueView::Instance { class_name, .. }
             if matches!(class_name.resolve().as_str(), "Signature" | "Failure") =>
         {
-            Err(cannot_capture(&class_name.resolve()))
+            Err(cannot_capture_value(target))
         }
         ValueView::Package(name) if matches!(name.resolve().as_str(), "Signature" | "Failure") => {
-            Err(cannot_capture(&name.resolve()))
+            Err(cannot_capture_value(target))
         }
         // Pair.Capture → \(:key($pair.key), :value($pair.value))
         ValueView::Pair(k, v) => {
@@ -461,6 +463,13 @@ pub(crate) fn cannot_capture(type_name: &str) -> RuntimeError {
 /// and explains how to write a `Capture`, and keeps the value as `.what`.
 // Cost: O(n), n = chars of the value's gist.
 pub(crate) fn cannot_capture_value(target: &Value) -> RuntimeError {
+    cannot_capture_described(target, &crate::value::gist::gist_value(target))
+}
+
+/// [`cannot_capture_value`] naming `target` by `gist`, its `.gist` when the
+/// pure renderer cannot build it (a handled `Failure`'s is its `.mess`).
+// Cost: O(n), n = chars of `gist`.
+pub(crate) fn cannot_capture_described(target: &Value, gist: &str) -> RuntimeError {
     let mut attrs = ValueMap::default();
     attrs.insert("what".to_string(), target.clone());
     attrs.insert(
@@ -469,7 +478,7 @@ pub(crate) fn cannot_capture_value(target: &Value) -> RuntimeError {
             "Cannot unpack or Capture `{}`.\nTo create a Capture, add parentheses: \\(...)\n\
              If unpacking in a signature, perhaps you needlessly used parentheses? -> ($x) {{}} vs. -> $x {{}}\n\
              or missed `:` in signature unpacking? -> &c:(Int) {{}}",
-            crate::value::gist::gist_value(target)
+            gist
         )),
     );
     RuntimeError::typed("X::Cannot::Capture", attrs)

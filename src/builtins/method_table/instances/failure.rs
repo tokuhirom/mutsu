@@ -89,6 +89,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("AT-KEY", itself, ANY),
     row!("CALL-ME", throw, ANY),
     row!("STORE", throw, ANY),
+    row!("Capture", capture, OWN.or(RowFlags::TYPE_OBJECT_OK)),
     quanthash!("Set"),
     quanthash!("SetHash"),
     quanthash!("Bag"),
@@ -160,7 +161,12 @@ fn exception_value(target: &Value) -> Option<Value> {
 fn message(target: &Value) -> String {
     match exception_value(target) {
         Some(ex) => {
-            let text = ex.to_string_value();
+            // A built-in exception's message is built from its attributes
+            // (`X::NYI`'s from `feature`), not its stringified object.
+            let text = match crate::builtins::method_table::exception::answer(&ex, "message") {
+                Some(Ok(msg)) if !msg.is_nil() => msg.to_string_value(),
+                _ => ex.to_string_value(),
+            };
             if text.is_empty() {
                 format!(
                     "{} with no message",
@@ -245,6 +251,21 @@ fn mess_text(target: &Value) -> String {
         backtrace.push('\n');
     }
     format!("{handled}{}\n{backtrace}", message(target))
+}
+
+/// `Failure.Capture`: a handled Failure (or the type object) cannot be
+/// captured, and says so naming its `.gist` -- the `.mess`; an unhandled one
+/// throws its exception.
+// Cost: as `mess_text`.
+fn capture(target: &Value, _args: &[Value]) -> Answer {
+    use crate::builtins::methods_0arg::coercion::{cannot_capture_described, cannot_capture_value};
+    Some(Err(if !is_failure(target) {
+        cannot_capture_value(target)
+    } else if target.is_failure_handled() {
+        cannot_capture_described(target, &mess_text(target))
+    } else {
+        explode(target)
+    }))
 }
 
 // Cost: as `mess_text`.
