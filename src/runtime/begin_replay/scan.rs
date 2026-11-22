@@ -105,6 +105,7 @@ fn op_is_recordable(code: &CompiledCode, op: &OpCode, declared: &[u32]) -> bool 
         | OpCode::Add
         | OpCode::Sub
         | OpCode::Mul
+        | OpCode::NativeIntArithmetic { .. }
         | OpCode::ContainerizePair
         | OpCode::MarkBindContext
         | OpCode::MarkVarDeclContext

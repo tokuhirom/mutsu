@@ -25,11 +25,13 @@
 //!   other compiled code, so reaching one makes the body unrecordable;
 //! - the unit lexicals the body could reach are values the log can hold, so a
 //!   change to them is seen by comparing their encodings before and after;
-//! - the value and every changed lexical encode ([`crate::value::PortableValue`]).
+//! - the value and every changed lexical encode ([`crate::value::PortableValue`])
+//!   and decode back to exactly what they are, sharing nothing ([`faithful`]).
 //!
 //! `MUTSU_BEGIN_REPLAY=0` turns recording and replay off (every body runs, as
 //! before this module).
 
+pub(crate) mod faithful;
 pub(crate) mod scan;
 pub(crate) mod watch;
 
@@ -108,6 +110,12 @@ struct Frame {
     code: usize,
     plan: Plan,
     recorded: Vec<SiteRecord>,
+    /// A `BEGIN` of the mainline had already run in this process (during the
+    /// module's compile) when the mainline reached it, so this run could not
+    /// record it. A log missing it would make later loads neither replay nor
+    /// record it, so none is stored: the next load, which compiles nothing,
+    /// records the whole mainline.
+    missed: bool,
 }
 
 thread_local! {
@@ -130,6 +138,7 @@ pub(crate) fn begin_mainline(code: &CompiledCode, plan: Option<Plan>) -> Mainlin
             code: code_key(code),
             plan,
             recorded: Vec::new(),
+            missed: false,
         });
     });
     MainlineGuard { active: true }
@@ -150,7 +159,7 @@ impl MainlineGuard {
         let Some(frame) = FRAMES.with(|frames| frames.borrow_mut().pop()) else {
             return;
         };
-        if !ok {
+        if !ok || frame.missed {
             return;
         }
         if let Plan::Record {
@@ -223,6 +232,20 @@ pub(crate) fn site_action(code: &CompiledCode, site_id: u64) -> SiteAction {
             }
         }
     }
+}
+
+/// The `BEGIN` expression `site_id` that [`site_action`] said to record had
+/// already run in this process, so its value was not observed.
+// Cost: O(1).
+pub(crate) fn note_site_missed(site_id: u64) {
+    FRAMES.with(|frames| {
+        if let Some(frame) = frames.borrow_mut().last_mut() {
+            trace(&format!(
+                "BEGIN {site_id} ran before the mainline: the log is stored on a later load"
+            ));
+            frame.missed = true;
+        }
+    });
 }
 
 /// `MUTSU_PRECOMP_TRACE`: one stderr line per recorded or replayed `BEGIN`.

@@ -71,18 +71,29 @@ impl Interpreter {
             return;
         }
         let mut changed = Vec::new();
+        let mut unchanged = Vec::new();
         for (slot, before) in recording.before {
             let Some(current) = self.locals.get(slot).map(Value::deref_container) else {
                 return;
             };
             let after = begin_replay::encoding_of(&current);
             match (&before, &after) {
-                (Some(b), Some(a)) if b == a => {}
+                (Some(b), Some(a)) if b == a => unchanged.push(current),
                 // Still a type object: the body cannot have changed it.
                 (None, None) if Self::begin_opaque_ok(&current) => {}
                 (_, Some(_)) => changed.push((slot, current)),
                 _ => return,
             }
+        }
+        // The value and the changed lexicals must decode to what they are, and
+        // share no container with each other or with a lexical left as it was
+        // (a decode would build the shared one twice).
+        let mut all: Vec<&Value> = vec![value];
+        all.extend(changed.iter().map(|(_, v)| v));
+        all.extend(unchanged.iter());
+        if let Err(why) = begin_replay::faithful::check(&all) {
+            begin_replay::trace(&format!("BEGIN {site_id} is not recorded: {why}"));
+            return;
         }
         begin_replay::record_site(site_id, value, &changed);
     }

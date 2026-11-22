@@ -12,6 +12,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+mod typed_containers;
+
 /// A serializable representation of Value.
 /// Only includes variants that can appear in parsed AST literals.
 #[derive(Serialize, Deserialize)]
@@ -151,6 +153,18 @@ enum SerValue {
     Nil,
     Whatever,
     HyperWhatever,
+    /// An `Array` that carries container metadata ([`typed_containers`]).
+    /// Appended last so every earlier variant keeps its encoding.
+    TypedArray {
+        items: Vec<SerValue>,
+        kind: ArrayKind,
+        meta: Box<typed_containers::ContainerMeta>,
+    },
+    /// A `Hash` (or `Map`) that carries container metadata.
+    TypedHash {
+        map: HashMap<String, SerValue>,
+        meta: Box<typed_containers::ContainerMeta>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -204,17 +218,8 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             excl_start,
             excl_end,
         }),
-        ValueView::Array(items, kind) => {
-            let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
-            Ok(SerValue::Array(ser_items?, kind))
-        }
-        ValueView::Hash(map) => {
-            let ser_map: Result<HashMap<_, _>, _> = map
-                .iter()
-                .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
-                .collect();
-            Ok(SerValue::Hash(ser_map?))
-        }
+        ValueView::Array(items, kind) => typed_containers::ser_array(&items, kind),
+        ValueView::Hash(map) => typed_containers::ser_hash(&map),
         ValueView::Rat(n, d) => Ok(SerValue::Rat(n, d)),
         ValueView::FatRat(n, d) => Ok(SerValue::FatRat(n, d)),
         ValueView::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone(), v.is_bigfatrat())),
@@ -660,6 +665,10 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Nil => Value::Nil,
         SerValue::Whatever => Value::Whatever,
         SerValue::HyperWhatever => Value::HyperWhatever,
+        SerValue::TypedArray { items, kind, meta } => {
+            typed_containers::de_array(items, kind, *meta)
+        }
+        SerValue::TypedHash { map, meta } => typed_containers::de_hash(map, *meta),
     }
 }
 
@@ -712,6 +721,10 @@ impl SerValue {
             | SerValue::Junction { values: vs, .. }
             | SerValue::ParametricRole { type_args: vs, .. } => any(vs),
             SerValue::Hash(map) => map.values().any(SerValue::has_identity),
+            SerValue::TypedArray { items, meta, .. } => any(items) || meta.has_identity(),
+            SerValue::TypedHash { map, meta } => {
+                map.values().any(SerValue::has_identity) || meta.has_identity()
+            }
             SerValue::Set(_, objs) => objs.values().any(|v| v.has_identity()),
             SerValue::Bag(_, objs) => objs.values().any(|v| v.has_identity()),
             SerValue::Mix(_, objs) => objs.values().any(|v| v.has_identity()),

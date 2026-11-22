@@ -6,18 +6,24 @@
 //! turns out to be a user object (`.comb` on an instance of a class with its
 //! own `comb`), an `augment`ed built-in type, a user `infix:<~>` candidate, a
 //! regex code block, a `where` clause: each of those runs compiled code other
-//! than the body's own. Every such run starts in [`note_code_entry`] (the
-//! bytecode run loop's entries) or [`note_routine_entry`] (TRIR), so marking
-//! the body there is enough.
+//! than the body's own.
 //!
-//! The check costs one relaxed atomic load while no body is recorded, which is
-//! always outside a module's first load.
+//! Every dispatch loop that runs a code object's ops, and the JIT's entry into
+//! one, takes its polls from `vm_poll::DispatchPolls::enter(code)`, the only
+//! constructor there is; while a body is recorded that reports the code to
+//! [`note_code_entry`]. TRIR routines report to [`note_routine_entry`]. So any
+//! other code a body reaches marks it, and a marked body is not recorded.
+//!
+//! The report costs one bit test of a state word the loop entry loads anyway;
+//! the bit is set only while a body is recorded, which is only during a
+//! module's first load.
 
 use std::cell::Cell;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
-/// How many threads are recording a body right now.
-static WATCHING: AtomicUsize = AtomicUsize::new(0);
+/// How many bodies are recorded right now, process-wide. Guarded so that the
+/// count and the `vm_poll` bit change together.
+static WATCHING: Mutex<usize> = Mutex::new(0);
 
 thread_local! {
     /// The body being recorded on this thread: its code object, 0 when none.
@@ -26,27 +32,35 @@ thread_local! {
     static TAINTED: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Code object `code` starts running.
-// Cost: O(1) (one relaxed load while nothing is watched).
-#[inline]
+/// Code object `code` starts running (reported only while some body is
+/// recorded).
+// Cost: O(1).
 pub(crate) fn note_code_entry(code: &crate::opcode::CompiledCode) {
-    if WATCHING.load(Ordering::Relaxed) != 0 {
-        let key = std::ptr::from_ref(code) as usize;
-        WATCHED.with(|w| {
-            let watched = w.get();
-            if watched != 0 && watched != key {
-                TAINTED.with(|t| t.set(true));
-            }
-        });
-    }
+    let key = std::ptr::from_ref(code) as usize;
+    WATCHED.with(|w| {
+        let watched = w.get();
+        if watched != 0 && watched != key {
+            TAINTED.with(|t| t.set(true));
+        }
+    });
 }
 
 /// A TRIR routine starts running: always other code than a body.
-// Cost: O(1).
+// Cost: O(1) (one bit test while nothing is recorded).
 #[inline]
 pub(crate) fn note_routine_entry() {
-    if WATCHING.load(Ordering::Relaxed) != 0 && WATCHED.with(Cell::get) != 0 {
+    if crate::vm::vm_poll::code_watch_on() && WATCHED.with(Cell::get) != 0 {
         TAINTED.with(|t| t.set(true));
+    }
+}
+
+// Cost: O(1).
+fn adjust_watching(delta: isize) {
+    let mut count = WATCHING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let was = *count;
+    *count = was.saturating_add_signed(delta);
+    if (was == 0) != (*count == 0) {
+        crate::vm::vm_poll::set_code_watch(*count != 0);
     }
 }
 
@@ -60,7 +74,7 @@ impl Watch {
     /// Start watching a body of `code`.
     // Cost: O(1).
     pub(crate) fn start(code: &crate::opcode::CompiledCode) -> Watch {
-        WATCHING.fetch_add(1, Ordering::Relaxed);
+        adjust_watching(1);
         let outer = WATCHED.with(|w| w.replace(std::ptr::from_ref(code) as usize));
         let outer_tainted = TAINTED.with(|t| t.replace(false));
         Watch {
@@ -83,6 +97,6 @@ impl Drop for Watch {
         WATCHED.with(|w| w.set(self.outer));
         // An inner body's run is part of the outer one's.
         TAINTED.with(|t| t.set(self.outer_tainted || t.get()));
-        WATCHING.fetch_sub(1, Ordering::Relaxed);
+        adjust_watching(-1);
     }
 }

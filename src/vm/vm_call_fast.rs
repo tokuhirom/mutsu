@@ -253,7 +253,7 @@ impl Interpreter {
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
         let mut fail_bypass = false;
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(&cf.code);
         let frame_caller_code = self.current_code;
         while ip < cf.code.ops.len() {
             // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body

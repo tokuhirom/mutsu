@@ -94,6 +94,9 @@ impl Interpreter {
         }
         match store.claim(&cache_key) {
             crate::runtime::once_store::OnceClaim::Cached(value) => {
+                if recording_wanted {
+                    crate::runtime::begin_replay::note_site_missed(site_id);
+                }
                 self.stack.push(value);
                 *ip = body_end as usize;
                 Ok(())

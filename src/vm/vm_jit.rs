@@ -404,7 +404,7 @@ pub(crate) fn try_enter_range(
     // loop's per-iteration poll lands here, before each native body run —
     // the same entry poll `run_range_from` takes for an interpreted body
     // (`vm_poll::DispatchPolls`; skipped for a loop's condition/step range).
-    if crate::vm::vm_poll::DispatchPolls::current().due(entry_poll) {
+    if crate::vm::vm_poll::DispatchPolls::enter(code).due(entry_poll) {
         crate::vm::vm_poll::poll_code(
             crate::gc::SafepointKind::Backedge,
             start as u32,

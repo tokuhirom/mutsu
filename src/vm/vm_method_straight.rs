@@ -150,7 +150,7 @@ impl Interpreter {
         let compiled_fns = method_def.compiled_fns.as_deref();
         let empty_fns = crate::opcode::CompiledFns::default();
         let compiled_fns = compiled_fns.unwrap_or(&empty_fns);
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(cc);
         let frame_caller_code = self.current_code;
         let mut ip = 0;
         let mut raised: Option<Result<Value, RuntimeError>> = None;

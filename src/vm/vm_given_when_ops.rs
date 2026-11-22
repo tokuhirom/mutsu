@@ -322,7 +322,7 @@ impl Interpreter {
         };
 
         let mut inner_ip = body_start;
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(code);
         while inner_ip < end {
             if let Err(e) = self.exec_one_backedge_polled(code, &mut inner_ip, compiled_fns, polls)
             {
