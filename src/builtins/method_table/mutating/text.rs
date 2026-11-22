@@ -35,6 +35,17 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::SLURPY,
         named: &[],
     },
+    // `Cool.subst-mutate` (6.c, deprecated in 6.d but still there) works on the
+    // invocant's `.Str` and stores the result back as that `Str`; a `Str`
+    // receiver reaches `Str`'s row first.
+    MethodRow {
+        owner: "Cool",
+        name: "subst-mutate",
+        arity: 0,
+        handler: Handler::Mut(cool_subst_mutate_row),
+        flags: RowFlags::SLURPY.or(RowFlags::ANY_NAMED),
+        named: &[],
+    },
     // `Cool` declares `substr-rw` too; a `Str` receiver reaches `Str`'s row first.
     MethodRow {
         owner: "Cool",
@@ -79,16 +90,38 @@ fn subst_mutate_row(
     // `.subst` and `.match` read the adverbs among their arguments.
     let mut all = args.to_vec();
     all.extend_from_slice(named.pairs());
-    Some(subst_mutate(interp, place, target, &all))
+    Some(subst_mutate(interp, place, target, &all, true))
 }
 
-/// The body of [`subst_mutate_row`].
+/// `$cool.subst-mutate(...)` on a `Cool` that is no `Str` (an `IO::Path`, an
+/// `Int`): rakudo's `Cool.subst-mutate` substitutes in the invocant's `.Str`
+/// and leaves that `Str` in the variable when something matched; a miss
+/// leaves the invocant as it was.
+// Cost: see `subst_mutate_row`, plus the invocant's stringification.
+fn cool_subst_mutate_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if matches!(place.value().view(), ValueView::Str(_)) || place.name().is_none() {
+        return None;
+    }
+    let target = Value::str(place.value().to_string_value());
+    let mut all = args.to_vec();
+    all.extend_from_slice(named.pairs());
+    Some(subst_mutate(interp, place, target, &all, false))
+}
+
+/// The body of [`subst_mutate_row`]. The new string is stored back always for
+/// a `Str` (`store_on_miss`), and only on a match for another `Cool`.
 // Cost: see `subst_mutate_row`.
 fn subst_mutate(
     interp: &mut Interpreter,
     place: &mut ReceiverPlace<'_>,
     target: Value,
     args: &[Value],
+    store_on_miss: bool,
 ) -> Result<Value, RuntimeError> {
     let new_str = interp.dispatch_subst(target.clone(), args)?;
     // `.match` takes the pattern + adverbs but not the replacement (the 2nd
@@ -123,7 +156,9 @@ fn subst_mutate(
         // which is exactly what `.match` returns.
         interp.dispatch_match_method(target, &match_args)?
     };
-    place.assign(interp, new_str);
+    if store_on_miss || ret.truthy() {
+        place.assign(interp, new_str);
+    }
     Ok(ret)
 }
 
