@@ -2486,9 +2486,10 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             Spelling::ParenthesizedDeclaratorAdverb => {
                 parenthesized_expression(names, &spelled.expr)
             }
-            Spelling::BracketTraitArgument | Spelling::ParenSections(_) | Spelling::WrittenNil => {
-                view_expr(names, &spelled.expr)
-            }
+            Spelling::BracketTraitArgument
+            | Spelling::AttributeCallAssign
+            | Spelling::ParenSections(_)
+            | Spelling::WrittenNil => view_expr(names, &spelled.expr),
             Spelling::Heredoc { stop, body } => heredoc_node(names, &spelled.expr, stop, *body),
             Spelling::EmptyStatement => Ok(super::spelled_nodes::statement_empty()),
             Spelling::HyperMetaMethod => {

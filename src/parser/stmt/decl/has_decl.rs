@@ -979,16 +979,19 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             Expr::BareWord(target_name)
         };
+        let call = Expr::MethodCall {
+            target: Box::new(target_expr),
+            name: Symbol::intern(&method_name),
+            args,
+            modifier: None,
+            quoted: false,
+            sugar: false,
+        };
         (
             rest,
-            Some(Expr::MethodCall {
-                target: Box::new(target_expr),
-                name: Symbol::intern(&method_name),
-                args,
-                modifier: None,
-                quoted: false,
-                sugar: false,
-            }),
+            Some(Expr::spelled(call, || {
+                crate::ast::spelled::Spelling::AttributeCallAssign
+            })),
         )
     } else if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];
