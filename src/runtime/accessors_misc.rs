@@ -266,6 +266,10 @@ impl Interpreter {
                 .and_then(|m| module_owned_exports_r.get(m))
         };
         let new_exported: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = match owned_exports {
+            // An EVAL keeps the EXPORT stash aliases it added (#17944).
+            None if is_eval => {
+                super::our_scoped_restore::export_stash_entries(&self.routines().functions, &functions)
+            }
             None => Vec::new(),
             Some(owned) => {
                 let registry = self.routines();

@@ -945,6 +945,18 @@ impl Interpreter {
             // they outlive the block (`loaded_modules` does), so put them back
             // before the snapshot lands. See `reinstate_module_functions`.
             self.reinstate_module_functions(&mut saved_functions, is_eval_unit);
+            // So do the EXPORT stash aliases an EVAL unit declared (#17944).
+            if is_eval_unit {
+                let kept = super::our_scoped_restore::export_stash_entries(
+                    &self.routines().functions,
+                    &saved_functions,
+                );
+                if !kept.is_empty() {
+                    crate::runtime::cow_table_mut(&mut saved_functions)
+                        .map_mut()
+                        .extend(kept);
+                }
+            }
             {
                 let mut reg = self.routines_mut();
                 reg.functions = saved_functions;

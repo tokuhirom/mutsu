@@ -643,7 +643,6 @@ impl Interpreter {
             let capture_bucket: Option<String> = if self.at_eval_unit_top_level()
                 && !self.module_load_active()
                 && !self.is_thread_clone()
-                && self.current_package_sym() == crate::symbol::wk::global_package()
                 && let Some(key) = self.module.eval_unit_capture_key.clone()
             {
                 // An EVAL unit's own top level is a scope of its own: its

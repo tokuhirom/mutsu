@@ -95,7 +95,12 @@ impl Interpreter {
                 self.env_mut().insert_sym(lane, value);
             }
         }
+        // A package block is not the top level of the EVAL unit it sits in:
+        // its routines keep their lexicals in the package store, and two
+        // blocks of one unit may each declare the same name (#17944).
+        let saved_unit_capture_key = self.module.eval_unit_capture_key.take();
         let result = self.run_range(code, *ip + 1, body_end, compiled_fns);
+        self.module.eval_unit_capture_key = saved_unit_capture_key;
         // What the body declared, recorded per package: its routines read the
         // record whatever way they are entered (`declared_meta_lane` asks the
         // running package's record before the calling frames', as a unit's)
