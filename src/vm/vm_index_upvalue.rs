@@ -24,19 +24,19 @@ impl Interpreter {
         index: u32,
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
-        if let Some(elem) = self.index_upvalue_snapshot_element(index) {
-            *self
-                .stack
-                .last_mut()
-                .expect("IndexUpvalue: subscript on the stack") = elem;
+        if let Some(elem) = self.index_upvalue_snapshot_element(index)
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = elem;
             return Ok(());
         }
         // The unfused pair: push the upvalue's value under the subscript, then
         // index it exactly as `Index { is_positional: true }` does.
-        let subscript = self
-            .stack
-            .pop()
-            .expect("IndexUpvalue: subscript on the stack");
+        let Some(subscript) = self.stack.pop() else {
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in IndexUpvalue",
+            ));
+        };
         let mut get_ip = 0usize;
         self.exec_get_upvalue_op(code, index, name_idx, &mut get_ip)?;
         self.stack.push(subscript);
