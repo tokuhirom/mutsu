@@ -1,6 +1,6 @@
 # ADR-0068: A cross-thread aliased container write needs a synchronized store, not a name-keyed lane
 
-- Status: **Accepted** (2026-09-06; §4 steps 1-3 implemented — see §13.4, with four routes added in §15; the read-side guard's cost measured in §14)
+- Status: **Accepted** (2026-09-06; §4 steps 1-3 implemented — see §13.4, with four routes added in §15; the read-side guard's cost measured in §14). Read side superseded by [ADR-8069](8069-shared-container-reads-without-a-contended-write.md) (2026-11-22); the write side stands.
 - Date: 2026-09-05
 - Relates to: [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c),
   [ADR-0013](0013-container-interior-mutability-cellvalue.md) §1.3-2 / §3 / §5 Q2,
