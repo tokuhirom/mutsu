@@ -5,7 +5,7 @@ use Test;
 # do not count as part of it; only the quoted data matters", so <>, <<>>, «»,
 # [] and () are interchangeable spellings of the same name.
 
-plan 31;
+plan 35;
 
 # --- keyed colon pairs: $foo:bar<baz> ------------------------------------
 
@@ -110,5 +110,15 @@ plan 31;
 }
 
 throws-like '$q:delete', Exception, 'an undeclared $q:delete is not $q with an adverb';
+
+# A positional capture variable is not a long name: `$0:exists` is
+# `$/[0]:exists`, a subscript adverb.
+{
+    'ab' ~~ /(a)/;
+    is $0:exists, True, '$0:exists is the subscript adverb';
+    is $1:exists, False, '... and false for a missing capture';
+    is $0:k, 0, '$0:k is the index';
+    is "$0:exists", 'a:exists', 'interpolated $0 leaves the adverb as text';
+}
 
 # vim: expandtab shiftwidth=4
