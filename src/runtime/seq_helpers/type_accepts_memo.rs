@@ -118,20 +118,29 @@ impl Interpreter {
         Some((class, Symbol::intern(constraint), MemoCheck::Matches))
     }
 
-    /// Whether `value` is an instance of a user class whose MRO reaches the
-    /// core `Any`, memoized per class for one registry write generation.
-    /// `false` also when the memo does not apply (not a plain user-class
-    /// instance, or the program declares its own `Any`); the caller then
-    /// takes the full check.
+    /// Whether `value` is an instance of a user class, or a type object,
+    /// whose MRO reaches the core `Any`, memoized per class (per type) for one
+    /// registry write generation. `false` also when the memo does not apply
+    /// (another kind of value, or the program declares its own `Any`); the
+    /// caller then takes the full check.
     // Cost: O(1) expected on a hit; the core `Any` check on a miss.
     pub(crate) fn instance_matches_core_any(&mut self, value: &Value) -> bool {
         if self.types.user_declared_classes.contains("Any") {
             return false;
         }
-        let Some(receiver) = self.memo_receiver_key(value) else {
-            return false;
+        // A type object's answer reads only the type it names and the
+        // registry: the untyped parameter of every routine checks it on each
+        // call that hands one over (Monad's `some-type(Mu \M, ...)` callers,
+        // #17376).
+        let key = match self.memo_receiver_key(value) {
+            Some(receiver) => (receiver, crate::symbol::wk::any(), MemoCheck::CoreAny),
+            None => match value.view() {
+                ValueView::Package(name) => {
+                    (name, crate::symbol::wk::any(), MemoCheck::CoreAnyTypeObject)
+                }
+                _ => return false,
+            },
         };
-        let key = (receiver, crate::symbol::wk::any(), MemoCheck::CoreAny);
         self.memoized_instance_type_check(key, |vm| {
             vm.type_matches_value_why_core("Any", value, &mut None)
         })

@@ -51,6 +51,9 @@ pub(crate) enum MemoCheck {
     /// reaches `Any`, i.e. it is not declared `is Mu`), keyed by its class
     /// (#12875).
     CoreAny,
+    /// Whether a type object matches the core `Any`, keyed by the type's
+    /// storage name (an untyped parameter handed `Any`, a class: #17376).
+    CoreAnyTypeObject,
 }
 
 #[derive(Default)]
