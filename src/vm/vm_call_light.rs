@@ -145,8 +145,7 @@ impl Interpreter {
             cf,
             args_base,
             compiled_fns,
-            func_name,
-            func_name_sym,
+            (func_name, func_name_sym),
             caller_code,
             false,
         )
@@ -177,22 +176,19 @@ impl Interpreter {
             cf,
             args_base,
             compiled_fns,
-            func_name,
-            func_name_sym,
+            (func_name, func_name_sym),
             caller_code,
             true,
         )
     }
 
     // Cost: O(p) binds plus the body, p = parameters.
-    #[allow(clippy::too_many_arguments)]
     fn call_compiled_function_positional_light_impl(
         &mut self,
         cf: &CompiledFunction,
         args_base: usize,
         compiled_fns: &CompiledFns,
-        func_name: &str,
-        func_name_sym: Symbol,
+        (func_name, func_name_sym): (&str, Symbol),
         // ADR-0109 (#8686 Phase 2): the CALLER's own `CompiledCode` -- needed
         // only when `cf.has_rw_positional_param`, to promote a caller-lexical
         // argument to a shared `ContainerRef` cell via `capture_var_cell`,
@@ -214,8 +210,7 @@ impl Interpreter {
                 cf,
                 args_base,
                 compiled_fns,
-                func_name,
-                func_name_sym,
+                (func_name, func_name_sym),
                 caller_code,
                 constraints_verified,
             )
