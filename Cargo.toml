@@ -9,6 +9,8 @@
 # package. The server is built and tested explicitly (`-p mutsu-lsp`), which is
 # what CI does.
 members = ["crates/mutsu-lsp"]
+# The loom model of ADR-18637 is its own workspace, so loom stays out of this one.
+exclude = ["crates/loom-cell-snapshot"]
 default-members = ["."]
 
 [package]
