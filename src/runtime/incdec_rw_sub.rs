@@ -188,7 +188,7 @@ impl Interpreter {
         if operand.is_proxy_value() {
             let current = self.auto_fetch_proxy(operand)?;
             let new = step(self, &current)?;
-            self.store_proxy_lvalue(&operand, new.clone())?;
+            self.store_proxy_lvalue(operand, new.clone())?;
             return Ok(if is_prefix { new } else { current });
         }
         if let ValueView::ContainerRef(cell) = operand.view() {
