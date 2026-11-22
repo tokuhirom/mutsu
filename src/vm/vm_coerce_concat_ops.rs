@@ -355,6 +355,13 @@ impl Interpreter {
     // type declares `^find_method` (the user metamethod runs).
     pub(super) fn exec_bool_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // `?(True but R)` is the value itself, as `.Bool` of a Bool is.
+        if crate::value::mixin_identity::prefix_coercion_keeps_mixin(&val, "Bool")
+            && !self.mixin_composes_method(&val, "Bool")
+        {
+            self.stack.push(val);
+            return Ok(());
+        }
         let out = match val.view() {
             ValueView::Regex(_)
             | ValueView::RegexWithAdverbs { .. }

@@ -613,6 +613,7 @@ pub(crate) mod compare;
 pub(crate) mod container_lock;
 pub(crate) mod container_read;
 mod dispatch_shape;
+pub(crate) mod mixin_identity;
 pub(crate) use dispatch_shape::iterator_kind::native_iterator_is_lazy;
 pub(crate) mod render_guard;
 pub(crate) mod seq_gen;
