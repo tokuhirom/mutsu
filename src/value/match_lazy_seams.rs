@@ -40,7 +40,12 @@ impl Value {
     /// The named capture `key` of an unforced lazy Match, as its `.hash`
     /// presents the slot (`Nil` when there is none), read from the capture
     /// node without materializing the Match: `$<key>` in grammar-action code
-    /// reads one per action (#12917). `None` for an eager or forced Match.
+    /// reads one per action (#12917). `None` for an eager or forced Match, and
+    /// for a slot that reads as an Array (a quantified or repeated name): that
+    /// Array is a container of the Match, and an action may mutate it
+    /// (`shift @<operands>` in a loop), so every read must reach the same one
+    /// -- the materialized `.hash` holds it, a node read would build a fresh
+    /// copy each time.
     // Cost: O(k), k = the node's named capture slots (a short list).
     pub(crate) fn match_lazy_named_capture(&self, key: &str) -> Option<Value> {
         let node = self.0.as_match_node()?;
@@ -56,6 +61,7 @@ impl Value {
             return Some(Value::NIL);
         }
         Some(match node.cap.kids().named.get(&sym) {
+            Some(slot) if slot.quantified || slot.nodes.len() != 1 => return None,
             Some(slot) => Value::named_slot_value(slot, &node.target),
             None => Value::NIL,
         })
