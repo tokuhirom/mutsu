@@ -663,6 +663,47 @@ impl Interpreter {
     /// routine of that name would be hidden by (a `sub abs`, a `multi
     /// infix:<eqv>`).
     // Cost: O(1) hashed probes.
+    /// `&SETTING::name` in an `EVAL` and `&CALLER::SETTING::name` from a frame
+    /// an `EVAL` compiled: under 6.c/6.d an `EVAL`'s setting is the lexical
+    /// scope it runs in (rakudo compiles the snippet against that scope), so
+    /// the routine is the one that scope sees, a lexical `sub` shadowing the
+    /// core one.
+    /// `None` for any other name, which resolves as usual.
+    // Cost: O(d) for the memoized segments, d = segments of `name`; a hit costs
+    // the plain lookup of `bare` (or the caller-pad walk for `CALLER::`).
+    fn eval_setting_routine(&self, name: &str, bare: &str) -> Option<Value> {
+        // From 6.e an EVAL's setting is the core setting again (rakudo 2026.11:
+        // `EVAL('&SETTING::not(False)')` is True under `use v6.e.PREVIEW`).
+        if crate::parser::current_language_version().starts_with("6.e") {
+            return None;
+        }
+        let segments = crate::qualified::segments(crate::qualified::known_symbol(name));
+        let (_, pseudo) = segments.split_last()?;
+        let is_eval_unit = |unit| crate::runtime::eval_unit_parent(unit).is_some();
+        match pseudo {
+            [setting] if setting.as_str() == "SETTING" && is_eval_unit(self.current_unit) => {
+                Some(self.resolve_code_var(bare))
+            }
+            [caller, setting]
+                if caller.as_str() == "CALLER"
+                    && setting.as_str() == "SETTING"
+                    && is_eval_unit(self.caller_frame_unit()) =>
+            {
+                self.get_callers_var(&format!("&{bare}"), 1, true).ok()
+            }
+            _ => None,
+        }
+    }
+
+    /// The routine a program bound into the setting's stash under `name`
+    /// (`&CORE::name := &f` or `CORE::<&name> := &f`), kept in the package
+    /// store under `&CORE::name`.
+    // Cost: O(|name|), one memoized name build and one hashed `our` probe.
+    fn core_stash_routine(&self, name: &str) -> Option<Value> {
+        let key = crate::qualified::qualified_text("&CORE", name);
+        self.get_our_var_sym(key).map(|value| value.deref_container())
+    }
+
     pub(crate) fn user_declares_routine(&self, name: &str) -> bool {
         self.has_proto(name)
             || self.has_multi_candidates_unindexed(name)
@@ -699,6 +740,9 @@ impl Interpreter {
         // resolve the bare function name.
         let bare_name = Self::strip_pseudo_packages(name);
         let has_packages = bare_name != name;
+        if has_packages && let Some(found) = self.eval_setting_routine(name, bare_name) {
+            return found;
+        }
         // GLOBAL::/OUR:: are package namespaces that do NOT contain CORE symbols,
         // unlike the lexical/core pseudo-packages (CORE, SETTING, MY, OUTER, ...).
         // A builtin name qualified through them is undefined (roast pseudo-6c:
@@ -789,6 +833,14 @@ impl Interpreter {
         // user-defined overrides.
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
+        if has_packages
+            && core_visible
+            && Self::is_builtin_function(lookup_name)
+            && matches!(Self::leading_pseudo_packages(name).1, Some("CORE" | "SETTING"))
+            && let Some(bound) = self.core_stash_routine(lookup_name)
+        {
+            return bound;
+        }
         if has_packages
             && core_visible
             && Self::is_builtin_function(lookup_name)
@@ -923,6 +975,18 @@ impl Interpreter {
             )))
         {
             return sub_val.clone();
+        }
+        // A routine bound into the setting's stash (`&CORE::none := &f`,
+        // `CORE::<&none> := &f`) is the routine every scope that does not
+        // declare its own sees, as with rakudo's one shared CORE stash.
+        if def.is_none()
+            && !has_packages
+            && Self::is_builtin_function(lookup_name)
+            && !self.has_proto(lookup_name)
+            && !self.has_multi_candidates_unindexed(lookup_name)
+            && let Some(bound) = self.core_stash_routine(lookup_name)
+        {
+            return bound;
         }
         if def.is_none() && core_visible {
             match lookup_name {

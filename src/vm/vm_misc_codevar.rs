@@ -384,23 +384,52 @@ impl Interpreter {
         // `CALLERS::('$_')` names the caller's `$_` exactly as `$::('CALLERS::_')`
         // and the literal `CALLERS::<$_>` do: a caller frame's variable, found
         // by walking the call stack, which the stash snapshot built below does
-        // not hold (AkeTester's `$cwd //= CALLERS::('$_')`). Move the sigil
-        // off the last component and take the sigiled CALLERS path.
+        // not hold (AkeTester's `$cwd //= CALLERS::('$_')`). The same goes for
+        // `::('CALLER')::('$*bar')` (the routine frame holding `$*bar` is not on
+        // the caller-env stack the snapshot reads), and for the lexical walks
+        // `OUTER::`/`OUTERS::`/`UNIT::`, which the sigiled path answers against
+        // the scope chain baked at this site. Move the sigil off the last
+        // component and take the sigiled path.
         let (sigil, name) = {
-            let mut rest = name.as_str();
-            let mut depth = 0usize;
-            while let Some(after) = rest.strip_prefix("CALLERS::") {
-                depth += 1;
-                rest = after;
-            }
-            if sigil.is_empty() && depth > 0 && rest.starts_with(['$', '@', '%']) {
-                let mut unsigiled = "CALLERS::".repeat(depth);
-                unsigiled.push_str(&rest[1..]);
-                (rest[..1].to_string(), unsigiled)
-            } else {
-                (sigil, name)
+            let walked = ["CALLERS::", "CALLER::", "OUTERS::", "OUTER::", "UNIT::"]
+                .into_iter()
+                .find_map(|prefix| {
+                    let mut rest = name.as_str();
+                    let mut depth = 0usize;
+                    while let Some(after) = rest.strip_prefix(prefix) {
+                        depth += 1;
+                        rest = after;
+                    }
+                    (depth > 0).then_some((prefix, depth, rest))
+                });
+            match walked {
+                Some((prefix, depth, rest))
+                    if sigil.is_empty() && rest.starts_with(['$', '@', '%']) =>
+                {
+                    let mut unsigiled = prefix.repeat(depth);
+                    unsigiled.push_str(&rest[1..]);
+                    (rest[..1].to_string(), unsigiled)
+                }
+                _ => (sigil, name),
             }
         };
+        // `::('CORE')::('&not')`: the setting's routine, which a user `sub not`
+        // shadows in the stash snapshot but not in the core resolver.
+        if sigil.is_empty()
+            && let [head, routine] = crate::qualified::segments(Symbol::intern(&name))
+            && matches!(head.as_str(), "CORE" | "SETTING")
+            && let Some(bare) = routine.as_str().strip_prefix('&')
+        {
+            let qualified = crate::qualified::qualified_text(*head, bare);
+            let val = loan_env!(self, resolve_code_var(qualified.as_str()));
+            let val = if val.is_nil() {
+                Self::no_such_symbol_failure(&name)
+            } else {
+                val
+            };
+            self.stack.push(val);
+            return;
+        }
         if sigil.is_empty() {
             let mut parts = crate::qualified::segments(Symbol::intern(&name))
                 .iter()
@@ -416,6 +445,12 @@ impl Interpreter {
                         // Unlike ordinary stash indexing, a symbolic name is
                         // exact: `MY::("x")` must not fall back to `$x`.
                         ValueView::Hash(symbols) => symbols.get(part).cloned(),
+                        // A package member (`::('OUR')::('A')::('$x')`) is
+                        // looked up in that package's stash.
+                        ValueView::Package(package) => Self::stash_lookup_symbol(
+                            &self.package_stash_value(&package.resolve()),
+                            part,
+                        ),
                         _ => Self::stash_lookup_symbol(&current, part),
                     };
                     if let Some(next) = next {

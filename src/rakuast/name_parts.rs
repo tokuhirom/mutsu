@@ -40,7 +40,7 @@ fn is_empty_part_type_object(name: &str) -> bool {
 
 /// Whether a name part is an empty edge, in either spelling, as a type object
 /// or an instance.
-fn is_empty_part(value: &Value) -> bool {
+pub(super) fn is_empty_part(value: &Value) -> bool {
     match value.view() {
         ValueView::RakuAst(node) => matches!(
             node.class,
