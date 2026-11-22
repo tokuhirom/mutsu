@@ -60,15 +60,18 @@ impl Interpreter {
                 .and_then(|c| Self::subscript_peek_step(c, &key, positional));
         }
         let positional = positional_flags.get(inner.len()).copied().unwrap_or(true);
-        let takes_bind = container.is_some_and(|c| {
-            match c.deref_container().descalarize().view() {
+        let takes_bind =
+            container.is_some_and(|c| match c.deref_container().descalarize().view() {
                 ValueView::Array(_, kind) => {
-                    positional && !matches!(kind, crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList)
+                    positional
+                        && !matches!(
+                            kind,
+                            crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+                        )
                 }
                 ValueView::Hash(_) => !positional,
                 _ => false,
-            }
-        });
+            });
         if !takes_bind {
             return Ok(ChainedSliceBind::Refused);
         }
@@ -82,7 +85,10 @@ impl Interpreter {
                 // Each element binds the value, not a source variable's
                 // container: rakudo leaves `@s[0][0,1] := ($a, $b)` unaliased.
                 let value = values.get(i).map_or(Value::NIL, Value::deref_container);
-                (key, Self::bind_index_marker(value, Value::array(Vec::new())))
+                (
+                    key,
+                    Self::bind_index_marker(value, Value::array(Vec::new())),
+                )
             })
             .collect();
         Ok(ChainedSliceBind::PerKey(pairs))
