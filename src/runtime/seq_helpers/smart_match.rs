@@ -888,7 +888,7 @@ impl Interpreter {
             (_, ValueView::RegexWithAdverbs(a)) if a.nth.is_some() => {
                 let nth = a.nth.clone().unwrap_or(Value::NIL);
                 let text = self.regex_match_text(left);
-                let start = self.multi_match_scan_start(&a, &text);
+                let start = self.multi_match_scan_start(a, &text);
                 self.smart_match_nth(&a.pattern, &nth, &text, start)
             }
             // :c/:continue -- search from $/.to (or 0) onwards (non-anchored)
@@ -938,7 +938,7 @@ impl Interpreter {
             {
                 let x = a.repeat.clone().unwrap_or(Value::NIL);
                 let text = self.regex_match_text(left);
-                let start = self.multi_match_scan_start(&a, &text);
+                let start = self.multi_match_scan_start(a, &text);
                 self.smart_match_x(&a.pattern, &x, &text, start)
             }
             // :g (global) -- find all non-overlapping matches
@@ -949,7 +949,7 @@ impl Interpreter {
                 let repeat = &a.repeat;
                 let text = self.regex_match_text(left);
                 let pattern = pattern.to_string();
-                let start = self.multi_match_scan_start(&a, &text);
+                let start = self.multi_match_scan_start(a, &text);
                 let all = self.regex_match_non_overlapping_from(&pattern, &text, start.from);
                 // Filter to non-overlapping: take longest match at each position,
                 // then skip matches that overlap with already-selected ones
@@ -986,7 +986,7 @@ impl Interpreter {
                 let pattern = &a.pattern;
                 let text = self.regex_match_text(left);
                 let pattern = pattern.to_string();
-                let start = self.multi_match_scan_start(&a, &text);
+                let start = self.multi_match_scan_start(a, &text);
                 let all = self.regex_match_all_with_captures_from(&pattern, &text, start.from);
                 if all.is_empty() {
                     self.clear_multi_match_state();
@@ -1018,7 +1018,7 @@ impl Interpreter {
                 let repeat = &a.repeat;
                 let text = self.regex_match_text(left);
                 let pattern = pattern.to_string();
-                let start = self.multi_match_scan_start(&a, &text);
+                let start = self.multi_match_scan_start(a, &text);
                 let mut all = self.regex_match_all_with_captures_from(&pattern, &text, start.from);
                 if all.is_empty() {
                     self.clear_multi_match_state();
