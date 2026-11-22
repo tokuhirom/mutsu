@@ -41,8 +41,8 @@ pub(super) use chain_cmp::range_expr;
 pub(super) use custom_infix::{
     is_declared_custom_infix_word, parse_custom_infix_word, try_custom_infix_word,
 };
-pub(super) use operands::{loose_prefix_operand, multiplicative_operand};
 pub(in crate::parser) use operands::power_operand;
+pub(super) use operands::{loose_prefix_operand, multiplicative_operand};
 pub(super) use ternary::{ternary, ternary_mode, ternary_no_assign};
 // These take `pub(super)` types (ComparisonOp/FeedOp), so re-export at the same
 // visibility to avoid leaking a more-private type (private_interfaces).
