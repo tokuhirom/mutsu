@@ -864,8 +864,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // `try foo for @x`) binds inside it, as in raku. The statement is
             // an expression here because a full statement parse would also
             // swallow the terminator. It is the whole comma list
-            // (`say try 1, 2` says `(1 2)`).
-            let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
+            // (`say try 1, 2` says `(1 2)`); `try(...)` written without a
+            // blank covers only its parentheses.
+            let (r, expr) = if rest.starts_with('(') {
+                expression(r)?
+            } else {
+                crate::parser::stmt::assign::parse_comma_or_expr(r)?
+            };
             // `try retry { ... }`: the statement after `try` may be a call to a
             // post-declared routine taking a block (Pakku).
             let (r, expr) = match ws(r).ok().and_then(|(r_ws, _)| {
@@ -1536,8 +1541,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // INLINE in the current scope under a warning-suppression frame
             // (so `quietly my $x = ...` leaks `$x`, matching Raku). A block form
             // `quietly { ... }` arrives as an AnonSub and is handled there too.
-            // The prefix covers the whole comma list (`say quietly 1, 2`).
-            let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
+            // The prefix covers the whole comma list (`say quietly 1, 2`);
+            // `quietly(...)` written without a blank covers only its parentheses.
+            let (r, expr) = if rest.starts_with('(') {
+                expression(r)?
+            } else {
+                crate::parser::stmt::assign::parse_comma_or_expr(r)?
+            };
             return Ok((
                 r,
                 Expr::Call {
