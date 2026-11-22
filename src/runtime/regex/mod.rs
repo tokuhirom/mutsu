@@ -15,6 +15,7 @@ pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;
 pub(crate) mod regex_alias_var_call;
 pub(crate) mod regex_late_scalars;
+pub(crate) mod regex_value_memo;
 pub(crate) mod regex_rule_params;
 mod regex_eval;
 mod regex_eval_class;
