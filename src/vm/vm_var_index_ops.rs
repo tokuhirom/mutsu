@@ -930,18 +930,19 @@ impl Interpreter {
         let ValueView::Hash(items) = target.view() else {
             return None;
         };
-        if items.key_type.is_some() || items.has_typed_keys() {
-            return None;
-        }
         // Another thread can be inserting into (and rehashing) the table or
-        // refilling it in place; read under its stripe, as the positional
-        // twin does (ADR-0068, #18651). One relaxed load until a second
-        // mutator thread exists.
+        // refilling it in place, which rewrites every field of the node; read
+        // under its stripe, the key-type test included, as the positional
+        // twin does (ADR-0068, #18651, #18667). One relaxed load until a
+        // second mutator thread exists.
         let _structure = if crate::value::container_lock::multi_mutator_threads_live() {
             crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
         } else {
             None
         };
+        if items.key_type.is_some() || items.has_typed_keys() {
+            return None;
+        }
         let entry = items.get(key.as_str())?;
         match entry.view() {
             ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
@@ -1884,18 +1885,27 @@ impl Interpreter {
         // hash keys through `.WHICH`, which can be user code, so it is not
         // held across that.
         let _read = if crate::value::container_lock::multi_mutator_threads_live()
-            && match target.view() {
-                ValueView::Array(..) => true,
-                ValueView::Hash(items) => items.key_type.is_none() && !items.has_typed_keys(),
-                _ => false,
-            } {
+            && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(..))
+        {
             if Self::index_needs_target_elems(&index) {
                 if let Some(copy) = crate::value::container_read::shared_snapshot(&target) {
                     target = copy;
                 }
                 None
             } else {
-                ContainerStructGuard::acquire_for(None, &target)
+                let guard = ContainerStructGuard::acquire_for(None, &target);
+                // The key-type test reads the node too, so it runs under the
+                // stripe (#18667); an object hash then lets it go before its
+                // `.WHICH` keying can run user code.
+                match target.view() {
+                    ValueView::Hash(items)
+                        if items.key_type.is_some() || items.has_typed_keys() =>
+                    {
+                        drop(guard);
+                        None
+                    }
+                    _ => guard,
+                }
             }
         } else {
             None
