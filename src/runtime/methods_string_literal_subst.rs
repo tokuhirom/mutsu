@@ -47,7 +47,7 @@ impl Interpreter {
         let nth_len = nth.as_ref().map(Vec::len);
         let deferred_nth_is_range = nth_deferred
             .iter()
-            .any(|v| Self::deferred_nth_range_end(v).is_some());
+            .any(Self::deferred_nth_is_multi);
         let single_nth = nth_len == Some(1) && !deferred_nth_is_range;
         let nth_is_multi = nth_len.is_some_and(|n| n > 1) || deferred_nth_is_range;
         let result_is_list =
