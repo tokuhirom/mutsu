@@ -179,8 +179,9 @@ completed fix history lives in `news/`.
 where "needs lexical hoisting" was simply false).
 
 1. **`S05-mass/rx.t`'s remaining regex gaps** — #18737 (`\x[21,21]` multi-codepoint escapes),
-   #18738 (`\Q`/`//` exception types, `"{ $_ }"` in a regex), #18736 (a backreference in a
-   repeated group). #18713 (the compile-time refusal that killed the whole file) is fixed. The
+   #18738 (`\Q`/`//` exception types, `"{ $_ }"` in a regex). #18713 (the compile-time
+   refusal that killed the whole file) and #18736 (a backreference in a repeated group) are
+   fixed. The
    file stays non-goal (rakudo SORRYs on `::`), but each of these is a general regex bug.
 2. **`6.c/S02-names/pseudo-6c.t` — the stash road** (aborts at 56/161 on `::($our)::A43`; the
    earlier per-subtest split is in its inventory row). `CALLERS::`, `OUR::` and inline-block

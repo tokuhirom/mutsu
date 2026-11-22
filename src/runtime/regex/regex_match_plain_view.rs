@@ -15,16 +15,21 @@
 //! (`OpenSepIter`).
 
 use super::super::*;
-use super::regex_helpers::{atom_contains_code, fold_quantified_captures};
+use super::regex_helpers::{atom_contains_backref, atom_contains_code, fold_quantified_captures};
 
 /// Does an iteration of an unseparated quantifier over `atom`, which takes
 /// `stride` positional captures per iteration, need the folded view? Only a
 /// sub-pattern of the same regex (`[ … ]`, an alternation, …) that runs code
-/// reads the level its iterations append to: a capture group's code reads its
-/// own level, and a quantifier that captures nothing has nothing to fold.
+/// or holds a backreference reads the level its iterations append to: a
+/// capture group's code reads its own level, and a quantifier that captures
+/// nothing has nothing to fold. A backreference needs the view to find the
+/// iteration's own capture first: in `[ (.) $0 ]+` the `$0` of the second
+/// iteration is that iteration's `(.)`, not the first one's (#18736).
 // Cost: O(1) (the code scan is memoized on the pattern).
 pub(crate) fn plain_iter_needs_view(atom: &RegexAtom, stride: usize) -> bool {
-    stride > 0 && atom_shares_backref_scope(atom) && atom_contains_code(atom)
+    stride > 0
+        && atom_shares_backref_scope(atom)
+        && (atom_contains_code(atom) || atom_contains_backref(atom))
 }
 
 /// `caps` with the iterations appended since `pos_base` folded into the
