@@ -10,7 +10,7 @@ use std::collections::HashMap;
 /// `X::Syntax::Adverb`: a colonpair immediately follows a term that cannot
 /// take one. `spelled` is the term's own source text and appears in both the
 /// message and the `.what` attribute.
-fn adverb_not_allowed_error(spelled: &str) -> PError {
+pub(in crate::parser) fn adverb_not_allowed_error(spelled: &str) -> PError {
     let message = format!("You can't adverb {spelled}");
     let mut attrs = HashMap::new();
     attrs.insert("message".to_string(), Value::str(message.clone()));
