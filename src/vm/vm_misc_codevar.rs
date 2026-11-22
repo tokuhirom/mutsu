@@ -413,6 +413,23 @@ impl Interpreter {
                 _ => (sigil, name),
             }
         };
+        // `::('CORE')::('&not')`: the setting's routine, which a user `sub not`
+        // shadows in the stash snapshot but not in the core resolver.
+        if sigil.is_empty()
+            && let [head, routine] = crate::qualified::segments(Symbol::intern(&name))
+            && matches!(head.as_str(), "CORE" | "SETTING")
+            && let Some(bare) = routine.as_str().strip_prefix('&')
+        {
+            let qualified = crate::qualified::qualified_text(*head, bare);
+            let val = loan_env!(self, resolve_code_var(qualified.as_str()));
+            let val = if val.is_nil() {
+                Self::no_such_symbol_failure(&name)
+            } else {
+                val
+            };
+            self.stack.push(val);
+            return;
+        }
         if sigil.is_empty() {
             let mut parts = crate::qualified::segments(Symbol::intern(&name))
                 .iter()
