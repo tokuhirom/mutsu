@@ -530,3 +530,42 @@ needs the unit's frame (or its static cells, ADR-0134 §2.2) to exist while the
 parse is in progress; the `multi`/`proto` part of §7.6 needs candidate order
 to follow source order across a parse-time load. Until then those keep the
 transitional rule, and slice 4b (§7.10) still waits on them.
+
+### 7.13 Slice 5b, first part: a program `multi` before a `use` (2026-11-22)
+
+A `multi` at the top level of the **program** no longer keeps a later `use`
+in the prologue (§7.6). The candidate takes its installation order from the
+parse, as rakudo installs it when the parser reaches it:
+
+- When the parser finishes such a candidate, it asks the loader for a stamp
+  (`CompileTimeLoader::reserve_decl_order`: the next `decl_order`, only while
+  the program's own unit is parsed) and carries it as the internal trait
+  `__decl_order` (`compile_time_loader::PARSE_DECL_ORDER_TRAIT`). Its
+  registrations, hoisted and in sequence, take that stamp instead of a fresh
+  one. A module loaded at parse time after it stamps its candidates later, one
+  loaded before it earlier, so an equally narrow tie and `.candidates` follow
+  source order across the load (`parser::stmt::sub::install_order`).
+- A stamp from one process means nothing to another, so a module's compile
+  (precompilable) takes none, and neither does an `EVAL`, a nested scope, a
+  package body, or a declaration the RakuAST finalization rebuilds rather
+  than keeps (an operator with `is assoc`/`is tighter`, a symbolic name, a
+  signature alternation). Those keep §7.6's rule, as does every `proto`: a
+  program `proto` followed by a `use` of a bare-file module that exports the
+  family resolves through the program's proto once the module loads first,
+  where rakudo (and the prologue order) dispatch through the module's.
+- The in-position import of a module loaded at parse time finds the
+  program's earlier candidates already registered, where the prologue load
+  hid them for the load's extent. A top-level import of a bare-file module
+  hid the whole visible family before installing its own
+  (`shadow_imported_proto_family`); it now leaves the importer's own
+  candidates, which are in the `use`'s scope and which the import extends
+  (`multi f(Str) {}; use M;` dispatches over both, on rakudo and on mutsu).
+
+Measured against rakudo 2026.09: a `trait_mod:<is>` candidate declared before
+`use M` wins the tie against M's equal one and one declared after loses it;
+equal `multi greet(Int)` candidates of the program and the module are
+ambiguous in either order; a module loaded after a program `multi` prints its
+load-time output before a later syntax error is reported
+(`t/modules/module-multi-before-use-candidate-order.t`).
+
+Remaining for 5b: a `proto` (above), and a `BEGIN` that needs the unit's frame.

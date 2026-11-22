@@ -306,9 +306,10 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // unit provides beyond what the static scan above could see: routines
     // whose names the module computed, operator precedence, declarators an
     // `EXPORTHOW` merge gave it. Until the unit's own compile-time effects
-    // (a `BEGIN`, a `multi`/`proto`) happen at parse time too (§7.1), a `use`
-    // after one loads in the prologue, so the module never runs, or installs
-    // candidates, ahead of what was written before it.
+    // (a `BEGIN`, a `proto`, a `multi` the parse did not stamp) happen at
+    // parse time too (§7.1), a `use` after one loads in the prologue, so the
+    // module never runs, or installs candidates, ahead of what was written
+    // before it.
     // The statement's parse site keys the hook map a parse-time load records
     // for it; a `use` the loader does not take keeps none (`0`), so a parse
     // that loads nothing stays deterministic.

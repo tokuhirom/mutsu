@@ -289,9 +289,20 @@ pub(crate) fn sub_decl_body(
     supersede: bool,
     allow_main_semicolon_decl: bool,
 ) -> PResult<'_, Stmt> {
+    let parsed = sub_decl_body_parsed(input, multi, supersede, allow_main_semicolon_decl);
     if multi {
-        crate::parser::stmt::simple::note_unit_compile_time_effect();
+        super::install_order::note_multi_installed(parsed)
+    } else {
+        parsed
     }
+}
+
+fn sub_decl_body_parsed(
+    input: &str,
+    multi: bool,
+    supersede: bool,
+    allow_main_semicolon_decl: bool,
+) -> PResult<'_, Stmt> {
     let name_start = input;
     let (rest, name, name_expr) = if input.starts_with("::") {
         let (rest, (name, expr)) = parse_indirect_decl_name(input)?;

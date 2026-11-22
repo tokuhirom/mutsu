@@ -1450,7 +1450,9 @@ impl Interpreter {
             }),
             source_file: self.executing_source_file_for_module_load(),
             source_line: None,
-            decl_order: crate::runtime::resolution::next_decl_order(),
+            // Stamped by the parse at the program's top level (ADR-17558 5b).
+            decl_order: crate::runtime::compile_time_use::parse_decl_order(custom_traits)
+                .unwrap_or_else(crate::runtime::resolution::next_decl_order),
             compiled: None,
             dispatchee: None,
             // Seed the structural fingerprint eagerly from the plan (ADR-0019

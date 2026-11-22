@@ -29,16 +29,22 @@ pub(crate) fn with_parse_kind<T>(program: bool, parse: impl FnOnce() -> T) -> T 
     result
 }
 
+/// Whether the parse in progress is the program's own unit, on the program
+/// interpreter's thread (not the slang activation interpreter's).
+// Cost: O(1).
+pub(crate) fn is_program_parse() -> bool {
+    PROGRAM_PARSE.with(std::cell::Cell::get)
+        && std::thread::current().name()
+            != Some(crate::runtime::slang_activation::ACTIVATION_THREAD_NAME)
+}
+
 impl Interpreter {
     /// Run a unit-level statement-form `BEGIN` the parser just finished, if
     /// the parse is the program's and the body reaches nothing of the unit.
     // Cost: O(n) for the analysis, n = size of the phaser's body; the
     // phaser's own run otherwise.
     pub(crate) fn run_parse_time_begin(&mut self, begin: &Stmt) -> BeginOutcome {
-        if !PROGRAM_PARSE.with(std::cell::Cell::get)
-            || std::thread::current().name()
-                == Some(crate::runtime::slang_activation::ACTIVATION_THREAD_NAME)
-        {
+        if !is_program_parse() {
             return BeginOutcome::NotTaken;
         }
         // The lowering and the run are not part of the unit's parse: a parse
