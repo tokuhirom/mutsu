@@ -37,7 +37,10 @@ pub(crate) fn frame_str(attributes: &Gc<InstanceAttrs>) -> String {
         .get("line")
         .map(|v| v.to_string_value())
         .unwrap_or_else(|| "0".to_string());
-    format!("{}\n", frame_entry(frame_kind(&map), &subname, &file, &line))
+    format!(
+        "{}\n",
+        frame_entry(frame_kind(&map), &subname, &file, &line)
+    )
 }
 
 /// The routine kind a frame's `Str` names: `method`, `submethod` or `sub`.
@@ -289,7 +292,10 @@ fn nice_entry(frames: &[Value], idx: usize) -> (String, Option<usize>) {
         );
     }
     (
-        format!("{}\n", frame_entry(frame_kind_of(frame), &subname, &file, &line)),
+        format!(
+            "{}\n",
+            frame_entry(frame_kind_of(frame), &subname, &file, &line)
+        ),
         None,
     )
 }
