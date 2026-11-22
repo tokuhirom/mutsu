@@ -254,6 +254,17 @@ Pinned by `t/vm/codegen/adr0110-trir-int-ops.t` (TRIR on = off = rakudo's transc
   bodies of heavy ops, which is more evidence against D3's native lowering
   paying for itself.
 
+- **A `Uni` stores packed codepoints** (`news/2026-11/uni-stores-packed-codepoints.md`,
+  #8673, 2026-11-22). Re-cut on `main` at 1d3bd4ae: the non-word string path was
+  over half of a record, ~870 instructions per character, of which ~400 were
+  `shift_i` / `push_i` / `elems` on a `Uni` whose codepoints were an `Array` of
+  boxed `Value`s. `UniData` now holds a `uint32` buffer with a start offset
+  (`value::UniCodes`), which is what rakudo's `uint32` VMArray is. Per 100
+  records: **71.13 M to 62.25 M instructions (-12.5%)**. The same re-cut puts
+  the TRIR switch loop at ~27% of a record and TRIR-to-TRIR call overhead at
+  ~1,050 instructions per call (~85 calls per record), which is well above the
+  3.5% §3.3 measured for "frames and calls" and so reopens §6's inlining item.
+
 ## 8. Reproduction
 
 - Wall clock: `benchmarks/bench-json-fast-spdx.raku`, with and without `MUTSU_TRIR_JIT=off`, on a
