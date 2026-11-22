@@ -99,7 +99,11 @@ impl Interpreter {
         block: Option<Value>,
         span: Option<crate::slang_link::ActionSpan>,
     ) -> bool {
-        let answer = self.hook_answer(rule, source, start, node, block, span, true);
+        let roles = (
+            self.regex_state.slang_grammar_roles.clone(),
+            self.regex_state.slang_action_roles.clone(),
+        );
+        let answer = self.hook_answer(rule, source, start, node, block, span, &roles, true);
         HOST_LINK.with(|l| {
             l.borrow()
                 .as_ref()
@@ -121,6 +125,7 @@ impl Interpreter {
         node: Option<Value>,
         block: Option<Value>,
         span: Option<crate::slang_link::ActionSpan>,
+        roles: &(Vec<Value>, Vec<Value>),
         replay_log: bool,
     ) -> HostAnswer {
         let depth = HOOK_DEPTH.with(std::cell::Cell::get);
@@ -134,12 +139,12 @@ impl Interpreter {
         // actions are not classes the production installed, so they must
         // not be replayed into the unit (where the grammar would lack its
         // host base's `panic`).
-        let composed = self.compose_slang_host();
+        let composed = self.compose_slang_host(roles);
         if replay_log {
             super::slang_class_replay::begin_class_log();
         }
         let answer =
-            composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block, span));
+            composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block, span, roles));
         if replay_log {
             super::slang_class_replay::end_class_log();
         }
@@ -163,13 +168,13 @@ impl Interpreter {
     /// Compose (or reuse) the grammar and actions classes for the slang's
     /// current roles.
     // Cost: O(1) when the roles are unchanged; the composition otherwise.
-    fn compose_slang_host(&mut self) -> Result<(), String> {
+    fn compose_slang_host(&mut self, roles: &(Vec<Value>, Vec<Value>)) -> Result<(), String> {
         let run = self.slang_host_entry()?;
         let args = vec![
             Value::str(String::new()),
             Value::str(String::new()),
-            Value::array(self.regex_state.slang_grammar_roles.clone()),
-            Value::array(self.regex_state.slang_action_roles.clone()),
+            Value::array(roles.0.clone()),
+            Value::array(roles.1.clone()),
             Value::pair("compose-only".to_string(), Value::TRUE),
         ];
         self.call_sub_value(run, args)
@@ -188,10 +193,11 @@ impl Interpreter {
         node: Option<Value>,
         block: Option<Value>,
         span: Option<crate::slang_link::ActionSpan>,
+        roles: &(Vec<Value>, Vec<Value>),
     ) -> HostAnswer {
         let run = self.slang_host_entry()?;
-        let grammar_roles = Value::array(self.regex_state.slang_grammar_roles.clone());
-        let action_roles = Value::array(self.regex_state.slang_action_roles.clone());
+        let grammar_roles = Value::array(roles.0.clone());
+        let action_roles = Value::array(roles.1.clone());
         let answer = self
             .call_sub_value(
                 run,

@@ -17,6 +17,10 @@ pub(crate) struct ParseTimeSlangActivation {
     /// Whether the slang has productions a host runs (a hook, an action
     /// override, a wrapper): this interpreter hosts them (ADR-17558 slice 4b).
     pub(crate) hosted: bool,
+    /// The roles the slang registered, grammar half and actions half, which
+    /// its host composes.
+    pub(crate) grammar_roles: Vec<Value>,
+    pub(crate) action_roles: Vec<Value>,
 }
 
 #[derive(Default)]

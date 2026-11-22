@@ -29,6 +29,8 @@ impl Interpreter {
         load: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let rules_before = self.regex_state.defined_slang_rules.len();
+        let grammar_roles_before = self.regex_state.slang_grammar_roles.len();
+        let action_roles_before = self.regex_state.slang_action_roles.len();
         let declarators_before = self.regex_state.defined_slang_declarators.clone();
         let declares_before = self.exporthow_stash_keywords("DECLARE");
         let supersedes_before = self.exporthow_stash_keywords("SUPERSEDE");
@@ -51,7 +53,12 @@ impl Interpreter {
             }
         }
         result?;
-        let rules = self.regex_state.defined_slang_rules[rules_before..].to_vec();
+        // What this load registered is this `use`'s alone: taken out, so an
+        // enclosing load (a module whose own compile `use`s this slang) does
+        // not count it as its own (#17267).
+        let rules = self.regex_state.defined_slang_rules.split_off(rules_before);
+        let grammar_roles = self.regex_state.slang_grammar_roles.split_off(grammar_roles_before);
+        let action_roles = self.regex_state.slang_action_roles.split_off(action_roles_before);
         // A production a slang host has to run runs here, in this interpreter.
         let hosted = rules.iter().any(|rule| {
             crate::parser::slang_hook_rule(&rule.name).is_some()
@@ -101,6 +108,8 @@ impl Interpreter {
                 declarators,
                 supersede_keywords,
                 hosted,
+                grammar_roles,
+                action_roles,
             });
         Ok(())
     }
@@ -123,7 +132,9 @@ impl Interpreter {
             rules: found.rules.clone(),
             declarators: found.declarators.clone(),
             supersede_keywords: found.supersede_keywords.clone(),
-            host: found.hosted.then(crate::slang_link::in_process),
+            host: found.hosted.then(|| {
+                crate::slang_link::in_process(found.grammar_roles.clone(), found.action_roles.clone())
+            }),
             exports: Vec::new(),
         })
     }

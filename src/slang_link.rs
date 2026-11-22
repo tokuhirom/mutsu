@@ -82,8 +82,12 @@ enum HostLink {
         from_host: Receiver<FromHost>,
     },
     /// The program interpreter, the parse's compile-time loader, through
-    /// nested calls on this thread (ADR-17558 §2.8, slice 4b).
-    InProcess,
+    /// nested calls on this thread (ADR-17558 §2.8, slice 4b), composing the
+    /// slang's own grammar and actions roles.
+    InProcess {
+        grammar_roles: Vec<Value>,
+        action_roles: Vec<Value>,
+    },
 }
 
 /// One production a slang host runs (a [`ToHost::Hook`] without a channel).
@@ -94,6 +98,9 @@ pub(crate) struct HookRequest {
     pub(crate) node: Option<Value>,
     pub(crate) block: Option<Value>,
     pub(crate) span: Option<ActionSpan>,
+    /// The slang's grammar and actions roles, for a host that serves more than
+    /// one slang.
+    pub(crate) roles: (Vec<Value>, Vec<Value>),
 }
 
 /// The parser's answer to a host's back-call for a core production.
@@ -102,9 +109,12 @@ pub(crate) type BackCall<'a> = dyn FnMut(&str, usize, BackCallDynamics) -> HostA
 /// The host on the program interpreter, which loaded the slang module at
 /// parse time: its hooks run through the parse's compile-time loader.
 // Cost: O(1).
-pub(crate) fn in_process() -> SlangHost {
+pub(crate) fn in_process(grammar_roles: Vec<Value>, action_roles: Vec<Value>) -> SlangHost {
     SlangHost {
-        link: HostLink::InProcess,
+        link: HostLink::InProcess {
+            grammar_roles,
+            action_roles,
+        },
     }
 }
 
@@ -153,7 +163,12 @@ impl SlangHost {
                 })
             })
         };
-        let HostLink::Thread { to_host, from_host } = &self.link else {
+        let (to_host, from_host) = match &self.link {
+            HostLink::Thread { to_host, from_host } => (to_host, from_host),
+            HostLink::InProcess {
+                grammar_roles,
+                action_roles,
+            } => {
             let request = HookRequest {
                 rule: rule.to_string(),
                 source: text.to_string(),
@@ -161,12 +176,14 @@ impl SlangHost {
                 node: None,
                 block,
                 span: None,
+                roles: (grammar_roles.clone(), action_roles.clone()),
             };
             let answer = crate::compile_time_loader::run_slang_hook(request, &mut |rule, pos, dynamics| {
                 back_call(rule, pos.saturating_sub(start), dynamics)
                     .map(|found| found.map(|(end, node)| (end + start, node)))
             });
             return shift(answer);
+            }
         };
         to_host
             .send(ToHost::Hook {
@@ -228,7 +245,12 @@ impl SlangHost {
         start: usize,
         span: Option<ActionSpan>,
     ) -> Result<Value, String> {
-        let HostLink::Thread { to_host, from_host } = &self.link else {
+        let (to_host, from_host) = match &self.link {
+            HostLink::Thread { to_host, from_host } => (to_host, from_host),
+            HostLink::InProcess {
+                grammar_roles,
+                action_roles,
+            } => {
             let request = HookRequest {
                 rule: rule.to_string(),
                 source: source.to_string(),
@@ -236,6 +258,7 @@ impl SlangHost {
                 node: Some(node),
                 block: None,
                 span,
+                roles: (grammar_roles.clone(), action_roles.clone()),
             };
             let answer = crate::compile_time_loader::run_slang_hook(request, &mut |_, _, _| {
                 Err(format!("the action override {rule} asked the parser for a production"))
@@ -245,6 +268,7 @@ impl SlangHost {
                 Ok(None) => Err(format!("the action override {rule} answered no node")),
                 Err(message) => Err(message),
             };
+            }
         };
         to_host
             .send(ToHost::Hook {
