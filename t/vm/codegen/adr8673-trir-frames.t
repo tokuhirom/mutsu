@@ -51,8 +51,8 @@ is $lazy-out, q:to/END/, 'the transcript is what rakudo prints';
 # The warning's location is a backtrace taken from inside a TRIR routine.
 ok $lazy-err.contains("careful 4\n  in sub leaf-warn at "),
     'the warning names the TRIR routine it was raised in';
-is $eager-err.lines.grep(*.starts-with('careful') | *.starts-with('  in ')).join("\n"),
-    $lazy-err.lines.grep(*.starts-with('careful') | *.starts-with('  in ')).join("\n"),
+is $eager-err.lines.grep({ .starts-with('careful') || .starts-with('  in ') }).join("\n"),
+    $lazy-err.lines.grep({ .starts-with('careful') || .starts-with('  in ') }).join("\n"),
     'the warning is the same with lazy and eager entries';
 
 # Not vacuous: entries were deferred, and only some had to be pushed.
