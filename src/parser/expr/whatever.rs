@@ -202,22 +202,19 @@ fn is_wrapped_whatevercode(expr: &Expr) -> bool {
     !is_frozen_whatever(expr) && matches!(expr.peel_parens(), Expr::WhateverCurry(..))
 }
 
-/// [`contains_whatever`] of an infix or prefix operator's operand. A
-/// parenthesized bare `*` there is the `Whatever` *value*, not a priming point:
-/// rakudo's `(*) + 1` adds a `Whatever` (and dies) while `* + 1` curries
-/// (#18698). A method call or subscript target still primes through one layer
-/// (`(*).abs`, `(*)[0]` are WhateverCodes), so this applies to operands only.
-// Cost: O(n), n = nodes of the operand.
-fn operand_contains_whatever(expr: &Expr) -> bool {
-    if matches!(expr, Expr::Grouped(_))
+/// True when `expr` is a parenthesized bare `*` (`(*)`, `(**)`). As the
+/// operand of an infix or prefix operator it is the `Whatever` *value*, not a
+/// priming point: rakudo's `(*) + 1` adds a `Whatever` (and dies) while
+/// `* + 1` curries (#18698). A method call or subscript target still primes
+/// through one layer (`(*).abs`, `(*)[0]` are WhateverCodes), so only the
+/// operator operand checks of [`contains_whatever`] consult this.
+// Cost: O(d), d = the parenthesization depth.
+fn is_grouped_bare_whatever(expr: &Expr) -> bool {
+    matches!(expr, Expr::Grouped(_))
         && matches!(
             expr.peel_parens(),
             Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever
         )
-    {
-        return false;
-    }
-    contains_whatever(expr)
 }
 
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {
@@ -277,7 +274,7 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             op: TokenKind::SmartMatch | TokenKind::BangTilde,
             left,
             ..
-        } => operand_contains_whatever(left),
+        } => !is_grouped_bare_whatever(left) && contains_whatever(left),
         // Named FatArrow pairs (colonpairs): `:as(*)` produces `"as" => *` which should
         // be Pair("as", Whatever), NOT a WhateverCode.  When the left side is a string
         // literal, skip WhateverCode propagation so the Pair is not auto-curried.
@@ -306,21 +303,22 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             ..
         } if name == "xx" => contains_whatever(left) || contains_whatever(right),
         Expr::Binary { left, right, .. } => {
-            operand_contains_whatever(left)
-                || operand_contains_whatever(right)
+            (!is_grouped_bare_whatever(left) && contains_whatever(left))
+                || (!is_grouped_bare_whatever(right) && contains_whatever(right))
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
         // A hyper operator is not Whatever-aware: `(1, 2) »+» *` is a
         // WhateverCode like any other infix with a `*` operand (#16402).
         Expr::HyperOp { left, right, .. } => {
-            operand_contains_whatever(left)
-                || operand_contains_whatever(right)
+            (!is_grouped_bare_whatever(left) && contains_whatever(left))
+                || (!is_grouped_bare_whatever(right) && contains_whatever(right))
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
         Expr::Unary { expr, .. } => {
-            operand_contains_whatever(expr) || is_wrapped_whatevercode(expr)
+            (!is_grouped_bare_whatever(expr) && contains_whatever(expr))
+                || is_wrapped_whatevercode(expr)
         }
         Expr::PostfixOp { expr, .. } => contains_whatever(expr) || is_wrapped_whatevercode(expr),
         // Non-currying pseudo-methods evaluate immediately on Whatever AND on
