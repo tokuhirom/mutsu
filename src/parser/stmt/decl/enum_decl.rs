@@ -369,14 +369,17 @@ fn quote_words_form(start: &str, after: &str) -> EnumVariantForm {
 /// a lone element is [`EnumVariantForm::Lone`].
 // Cost: O(v), v = variants.
 fn pair_list_form(body: &Expr) -> EnumVariantForm {
-    fn form_of(e: &Expr) -> crate::ast::BinaryForm {
-        match e.peel_parens() {
+    let form_of = |e: &Expr| {
+        // A lone pair is wrapped as a positional pair by the term parser.
+        let e = match e.peel_parens() {
+            Expr::PositionalPair(inner) => inner.peel_parens(),
+            other => other,
+        };
+        match e {
             Expr::Binary { form, .. } => *form,
-            // A lone pair is wrapped as a positional pair by the term parser.
-            Expr::PositionalPair(inner) => form_of(inner),
             _ => crate::ast::BinaryForm::Infix,
         }
-    }
+    };
     // `(a => 3)`: one element and no comma is no list.
     let Expr::ArrayLiteral(items) = body.peel_parens() else {
         return EnumVariantForm::Lone(form_of(body));
