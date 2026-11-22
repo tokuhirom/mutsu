@@ -40,7 +40,7 @@ impl Interpreter {
         &mut self,
         source: Value,
         params: &Value,
-    ) -> Result<(Value, Vec<Value>), RuntimeError> {
+    ) -> Result<(Value, Vec<Value>, Option<StageFeed>), RuntimeError> {
         let (name, args) = match params.view() {
             ValueView::Array(items, ..) => (
                 items.first().map(Value::to_string_value).unwrap_or_default(),
@@ -48,13 +48,22 @@ impl Interpreter {
             ),
             _ => (String::new(), Vec::new()),
         };
+        // `delayed` listens on a fresh supplier first, and the source is fed
+        // into it only once the stage's own tap is in place: a finite source
+        // emits everything (and `done`) while it is tapped (#18696).
+        if name == "delayed" {
+            let sid = super::next_supplier_id();
+            let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);
+            let stage = self.delayed_live_supply(sid, seconds);
+            return Ok((stage, Vec::new(), Some(StageFeed { source, sid })));
+        }
         let instance = self.instantiate_live_recipe(&source, false)?;
         let ValueView::Instance { attributes, .. } = instance.view() else {
-            return Ok((instance, Vec::new()));
+            return Ok((instance, Vec::new(), None));
         };
         let attrs = attributes.as_map();
         let Some(sid) = super::supplier_id_from_attrs(&attrs) else {
-            return Ok((instance.clone(), Vec::new()));
+            return Ok((instance.clone(), Vec::new(), None));
         };
         let stage = match name.as_str() {
             "stable" => {
@@ -62,23 +71,43 @@ impl Interpreter {
                 self.stable_live_supply(sid, seconds)
             }
             "throttle" => self.throttle_live_supply(sid, &args),
-            "delayed" => {
-                let seconds = args.first().map(Value::to_f64).unwrap_or(0.0);
-                self.delayed_live_supply(sid, seconds)
-            }
             _ => self.native_supply(&attrs, &name, args)?,
         };
         // Close the instance's tap on the source, then finish the instance,
         // so the stage's worker sees `done` and stops.
-        let mut closers = match attrs.get("on_close_callbacks").map(Value::view) {
+        let closers = match attrs.get("on_close_callbacks").map(Value::view) {
             Some(ValueView::Array(items, ..)) => items.to_vec(),
             _ => Vec::new(),
         };
-        let mut supplier_attrs = HashMap::new();
-        supplier_attrs.insert("done".to_string(), Value::FALSE);
-        supplier_attrs.insert("supplier_id".to_string(), Value::int(sid as i64));
-        let supplier = Value::make_instance(Symbol::intern("Supplier"), supplier_attrs);
-        closers.push(super::native_method_shim(supplier, "done", false));
-        Ok((stage, closers))
+        Ok((stage, with_finish(closers, sid), None))
     }
+
+    /// Feed a stage that listens on `feed.sid`: tap its source into that
+    /// supplier, and answer the callbacks that release the source when the
+    /// stage's tap closes.
+    // Cost: O(1) plus the source's own tap (a finite source emits every
+    // value here).
+    pub(super) fn feed_eager_stage(&mut self, feed: StageFeed) -> Result<Vec<Value>, RuntimeError> {
+        let tap = self.tap_supply_into(&feed.source, feed.sid)?;
+        Ok(with_finish(vec![super::native_method_shim(tap, "close", false)], feed.sid))
+    }
+}
+
+/// The source a stage still has to be fed from, once the stage is tapped:
+/// `source` emits into the supplier `sid` the stage listens on.
+pub(super) struct StageFeed {
+    source: Value,
+    sid: u64,
+}
+
+/// `closers` plus finishing the supplier `sid`, so the stage's worker sees
+/// `done` and stops.
+// Cost: O(1).
+fn with_finish(mut closers: Vec<Value>, sid: u64) -> Vec<Value> {
+    let mut supplier_attrs = HashMap::new();
+    supplier_attrs.insert("done".to_string(), Value::FALSE);
+    supplier_attrs.insert("supplier_id".to_string(), Value::int(sid as i64));
+    let supplier = Value::make_instance(Symbol::intern("Supplier"), supplier_attrs);
+    closers.push(super::native_method_shim(supplier, "done", false));
+    closers
 }
