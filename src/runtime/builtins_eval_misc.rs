@@ -654,6 +654,11 @@ impl Interpreter {
         if let Err(ref mut e) = result
             && e.code().is_some_and(|c| c.is_parse())
         {
+            // An uncaught one is reported against the EVAL's own unit name and
+            // text, not the calling file's (#18870).
+            if e.source_text().is_none() {
+                e.set_source_file_text(unit_name.clone(), code.to_string());
+            }
             match e.exception.as_ref().map(|exc| exc.view()) {
                 Some(ValueView::Instance { attributes, .. }) => {
                     attributes
