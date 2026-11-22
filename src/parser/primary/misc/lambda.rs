@@ -33,7 +33,7 @@ pub(crate) fn capture_literal(input: &str) -> PResult<'_, Expr> {
     // Parenthesized capture literal: \(a, b, :c)
     let (r, _) = parse_char(r, '(')?;
     let (r, _) = ws(r)?;
-    let (r, items) = crate::parser::primary::parse_call_arg_list(r)?;
+    let (r, items) = crate::parser::primary::parse_capture_arg_list(r)?;
     let (r, _) = ws(r)?;
     let (r, _) = parse_char(r, ')')?;
     Ok((r, Expr::CaptureLiteral(items, true)))
