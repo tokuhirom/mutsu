@@ -6,7 +6,7 @@ use MONKEY-SEE-NO-EVAL;
 # EVAL returns, and its `is export` subs stay in the package's EXPORT stash
 # (#17944).
 
-plan 14;
+plan 16;
 
 module QQ { EVAL q[my $pcs = 5; our sub f { $pcs }] }
 is QQ::f(), 5, 'an EVAL in a package: the our sub reads the unit lexical';
@@ -46,3 +46,10 @@ is ExpBlock::EXPORT::t::<&tg>(), 8, 'a tagged export of a package block in an EV
 
 EVAL q[unit module ExpLex; sub h is export { 1 }];
 nok (try EVAL q[h()]).defined, 'the exported sub is still not lexical to the caller';
+
+# Package blocks inside one EVAL keep their own lexicals: they are not the
+# unit's top level.
+is EVAL(q[module BlkC { my $t = 'C'; our sub r { $t } }; module BlkD { my $t = 'D'; our sub r { $t } }; BlkC::r() ~ BlkD::r()]),
+    'CD', 'two package blocks of one EVAL with a same-named `my`';
+is EVAL(q[module OurC { our $t = 'C'; our sub r { $t } }; module OurD { our $t = 'D'; our sub r { $t } }; OurC::r() ~ OurD::r()]),
+    'CD', 'two package blocks of one EVAL with a same-named `our`';
