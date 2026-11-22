@@ -311,7 +311,7 @@ impl Interpreter {
             && matches!(left.view(), ValueView::Capture { .. })
         {
             let args = Self::capture_to_call_args(left);
-            return self.call_sub_value(binder.clone(), args).is_ok();
+            return self.signature_binds_in_scope(binder, &args);
         }
         let capture_source = self.coerce_via_user_capture(left);
         let Some((positional, named)) = Self::signature_capture_like(&capture_source) else {
