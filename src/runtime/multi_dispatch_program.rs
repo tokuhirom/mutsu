@@ -25,6 +25,7 @@
 
 use super::multi_dispatch_plan::PlanEntry;
 use super::multi_rank::MultiRank;
+use crate::predicate_shape::{IntCompareOp, TopicIntCompare};
 use super::*;
 
 /// A value-dependent check left for call time, against argument `arg`.
@@ -35,6 +36,16 @@ enum ValueCheck {
     /// Parameter `param`'s one-argument WhateverCode `where`, precompiled
     /// inline (ADR-0133), run with `$_` bound to the argument.
     Where { arg: usize, param: usize },
+    /// A `subset` (or `UInt`) whose whole value-dependent half is one integer
+    /// comparison of the argument (`subset Small of Int where * < 100`,
+    /// `UInt`'s `* >= 0`), its base type already answered by the key. A
+    /// non-`Int` argument, or a user override of the comparison, falls back
+    /// to the full `type_matches_value` check of `constraint`.
+    IntCompare {
+        arg: usize,
+        cmp: TopicIntCompare,
+        constraint: String,
+    },
 }
 
 struct ProgramStep {
@@ -71,8 +82,9 @@ impl StageProgram {
         self.steps.iter().map(|step| &step.def)
     }
 
-    /// Whether every value check is an inline WhateverCode `where` (no
-    /// `subset` predicate, which may be any user block). The multi light
+    /// Whether every value check is an inline WhateverCode `where` or a
+    /// subset's single integer comparison ([`ValueCheck::IntCompare`]); no
+    /// other `subset` predicate, which may be any user block. The multi light
     /// call (`vm_multi_plan_light_call`) runs such a program and may still
     /// fall back to the generic path, which runs the checks again; it takes
     /// only a program whose checks are inline expressions of the argument.
@@ -82,7 +94,7 @@ impl StageProgram {
             && self.steps.iter().all(|step| {
             step.checks
                 .iter()
-                .all(|check| matches!(check, ValueCheck::Where { .. }))
+                .all(|check| matches!(check, ValueCheck::Where { .. } | ValueCheck::IntCompare { .. }))
         })
     }
 }
@@ -226,10 +238,16 @@ impl Interpreter {
                         return None;
                     }
                     if self.constraint_is_subset(tc) {
-                        checks.push(ValueCheck::Type {
-                            arg: idx,
-                            constraint: tc.to_string(),
-                        });
+                        match self.int_compare_subset_check(idx, tc, &arg) {
+                            Some((base_ok, check)) => {
+                                nominal_ok &= base_ok;
+                                checks.push(check);
+                            }
+                            None => checks.push(ValueCheck::Type {
+                                arg: idx,
+                                constraint: tc.to_string(),
+                            }),
+                        }
                     } else if !self.native_dispatch_arg_matches(tc, args, Some(idx))
                         || !self.param_constraint_accepts(tc, &arg)
                     {
@@ -250,6 +268,51 @@ impl Interpreter {
             }
         }
         Some((nominal_ok, checks))
+    }
+
+    /// The [`ValueCheck::IntCompare`] for an argument `arg` constrained by
+    /// the subset `tc`, with whether the key admits the subset's base type,
+    /// or `None` when the subset's check is not that shape: its predicate is
+    /// not one integer comparison of the value or closes over lexicals, its
+    /// base is not a plain nominal type, or the name resolves through a
+    /// lexical alias or a spelling `type_matches_value` takes apart.
+    // Cost: O(1) plus one nominal type check of `arg`; once per key.
+    fn int_compare_subset_check(
+        &mut self,
+        idx: usize,
+        tc: &str,
+        arg: &Value,
+    ) -> Option<(bool, ValueCheck)> {
+        let check = |cmp| ValueCheck::IntCompare {
+            arg: idx,
+            cmp,
+            constraint: tc.to_string(),
+        };
+        if tc == "UInt" {
+            // `subset UInt of Int where * >= 0`, matched natively.
+            let cmp = TopicIntCompare {
+                op: IntCompareOp::Ge,
+                rhs: 0,
+            };
+            return Some((self.type_matches_value("Int", arg), check(cmp)));
+        }
+        if tc.contains([':', '[', '(', '\0']) {
+            return None;
+        }
+        let subset = self.registry().subsets.get(tc).cloned()?;
+        if subset.predicate_closure.is_some()
+            || subset.base.contains([':', '[', '(', '\0'])
+            || self.constraint_is_subset(&subset.base)
+        {
+            return None;
+        }
+        let cmp = subset.predicate_int_compare?;
+        if let Some(bound) = self.type_name_binding(tc)
+            && !matches!(bound.view(), ValueView::Package(name) if name.as_str() == tc)
+        {
+            return None;
+        }
+        Some((self.type_matches_value(&subset.base, arg), check(cmp)))
     }
 
     /// Run `program` against this call's arguments: the per-call half of a
@@ -326,6 +389,21 @@ impl Interpreter {
                     let value =
                         crate::runtime::types::unwrap_varref_value_for_dispatch(&args[*arg]);
                     if !self.simple_where_holds(&param_defs[*param], value) {
+                        return false;
+                    }
+                }
+                ValueCheck::IntCompare {
+                    arg,
+                    cmp,
+                    constraint,
+                } => {
+                    let value =
+                        crate::runtime::types::unwrap_varref_value_for_dispatch(&args[*arg]);
+                    let holds = match self.topic_int_compare_holds(*cmp, &value) {
+                        Some(holds) => holds,
+                        None => self.type_matches_value(constraint, &value),
+                    };
+                    if !holds {
                         return false;
                     }
                 }
