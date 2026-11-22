@@ -1,6 +1,7 @@
 # ADR-8673: TRIR-to-TRIR calls push no routine frame until something can observe it, and small callees are inlined
 
-- **Status**: Proposed (2026-11-22)
+- **Status**: Accepted (2026-11-22, by the maintainer). It reopens and reverses ADR-0116 §6's
+  rejection of inlining; the evidence is in §1.
 - **Issue**: [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (goal:
   `bench-json-fast-spdx@section+jit` below 1.0x rakudo; 1.65-1.71 on 2026-11-21).
 - **Builds on**: [ADR-0110](0110-typed-resolved-ir-for-statically-typed-routines.md) (TRIR),
