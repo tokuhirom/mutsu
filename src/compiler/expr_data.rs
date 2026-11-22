@@ -850,7 +850,10 @@ impl Compiler {
                 }
             }
         } else if let Expr::PseudoStash(stash) = target
-            && !use_autovivify
+            // A `CLIENT::` stash is a view of another frame, so even a bind's
+            // read of it (`$p := CLIENT::LEXICAL::<$?PACKAGE>`) has no entry
+            // to vivify.
+            && (!use_autovivify || stash.starts_with("CLIENT::"))
             && !is_positional
             && !Self::is_lexical_stash_name(stash)
         {
