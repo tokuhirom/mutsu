@@ -1060,6 +1060,11 @@ fn view_stmt_node(names: &NameScope, stmt: &Stmt) -> Result<Option<RakuAstNode>,
                 });
             }
             fields.push(node_field(Some("term"), term));
+            fields.extend(super::enum_implicit_traits::field(
+                base_type.as_deref(),
+                variants,
+                variant_form,
+            ));
             Ok(Some(statement_expression(RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::TypeEnum,

@@ -365,15 +365,21 @@ fn quote_words_form(start: &str, after: &str) -> EnumVariantForm {
 }
 
 /// The form of a static parenthesized body: the elements as written when one
-/// is a colonpair (`:x(1)`), plain [`EnumVariantForm::PairList`] otherwise.
+/// is a colonpair (`:x(1)`), plain [`EnumVariantForm::PairList`] otherwise;
+/// a lone element is [`EnumVariantForm::Lone`].
 // Cost: O(v), v = variants.
 fn pair_list_form(body: &Expr) -> EnumVariantForm {
+    fn form_of(e: &Expr) -> crate::ast::BinaryForm {
+        match e.peel_parens() {
+            Expr::Binary { form, .. } => *form,
+            // A lone pair is wrapped as a positional pair by the term parser.
+            Expr::PositionalPair(inner) => form_of(inner),
+            _ => crate::ast::BinaryForm::Infix,
+        }
+    }
+    // `(a => 3)`: one element and no comma is no list.
     let Expr::ArrayLiteral(items) = body.peel_parens() else {
-        return EnumVariantForm::PairList;
-    };
-    let form_of = |e: &Expr| match e.peel_parens() {
-        Expr::Binary { form, .. } => *form,
-        _ => crate::ast::BinaryForm::Infix,
+        return EnumVariantForm::Lone(form_of(body));
     };
     let forms: Vec<_> = items.iter().map(form_of).collect();
     if forms.iter().any(|f| *f != crate::ast::BinaryForm::Infix) {

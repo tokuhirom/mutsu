@@ -145,6 +145,7 @@ mod topic_postfix;
 mod topic_subscript_origins;
 pub(crate) use doc_str::legacy_row_text;
 mod dynamic_method;
+mod enum_implicit_traits;
 mod enum_term;
 mod expr_block_origins;
 mod feed_op;

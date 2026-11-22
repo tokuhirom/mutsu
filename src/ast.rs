@@ -2207,6 +2207,10 @@ pub(crate) enum EnumVariantForm {
     /// A `<< >>` / `« »` body with its text as written (spacing, colonpair atoms).
     WrittenQuoteWords(Box<str>),
     PairList,
+    /// A parenthesized body of one element written without a comma
+    /// (`(a => 3)`, `(:a(1))`, `('a')`): RakuAST holds the element itself,
+    /// not a one-operand list, written in this form.
+    Lone(BinaryForm),
     /// A parenthesized pair list with a colonpair spelling the variants do
     /// not keep (`:x(1)`, `:y`): how each element was written.
     WrittenPairs(Vec<BinaryForm>),
