@@ -5,6 +5,7 @@ mod class_body_free_vars;
 mod nested_decl_names_tests;
 mod proto_decl;
 mod reflective_names;
+mod regex_code_writes;
 use reflective_names::{names_package_member_prefix, pseudo_stash_names_enclosing_scope};
 mod role_body_outer_refs;
 mod upvalue_index_fuse;
@@ -12105,6 +12106,20 @@ impl CompiledCode {
                 ValueView::RegexWithAdverbs(a) => Some(a.pattern.clone()),
                 _ => None,
             };
+            // The regex's own code may write a scalar while it matches, which
+            // no op of this chunk shows: count it as mutated so a closure
+            // capturing it (the regex's `"..."` thunk) shares its cell
+            // (#18630).
+            if let Some(tree) = c.regex_source_tree() {
+                for sym in regex_code_writes::regex_code_scalar_names(tree) {
+                    if sym.with_str(|s| own.contains(s)) {
+                        self_mutated.insert(sym);
+                    } else {
+                        free.insert(sym);
+                        free_writes.insert(sym);
+                    }
+                }
+            }
             if let Some(pattern) = pattern {
                 // Kebab-case names are captured under their full spelling too
                 // (`regex_literal_closure_captures`), so they need the same
