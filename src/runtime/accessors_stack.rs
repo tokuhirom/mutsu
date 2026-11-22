@@ -1165,6 +1165,18 @@ impl Interpreter {
     /// the role's own lexical subs with the wrong file and make the role's
     /// methods unable to call them (zef's `role Plugin`'s `sub DEBUG`, caught by
     /// the bundled-library gate).
+    /// [`Self::executing_source_file_for_module_load`] as a symbol, without
+    /// building a `String`.
+    // Cost: O(f), f = routine frames walked.
+    pub(crate) fn executing_source_file_for_module_load_sym(&self) -> Option<Symbol> {
+        if let Some(&(_, depth_at_push)) = self.module.module_loading_unit_stack.last()
+            && self.routine_stack.len() == depth_at_push
+        {
+            return self.current_source_file_sym();
+        }
+        self.executing_source_file_sym()
+    }
+
     pub(crate) fn executing_source_file_for_module_load(&self) -> Option<String> {
         if let Some(&(_, depth_at_push)) = self.module.module_loading_unit_stack.last()
             && self.routine_stack.len() == depth_at_push

@@ -1088,6 +1088,10 @@ impl Interpreter {
             // `contains_key` test would then report "already installed" and
             // leave that other routine's definition live inside this body —
             // `Digest::SHA2`'s `sha256` computing with `sha512`'s `rotr`.
+            // The same declaration also means the same file: two modules
+            // can each declare a same-bodied `sub foo is export` in GLOBAL
+            // (roast's `Pseudo6c`/`Pseudo6e` each `sub pseudo-stash { MY:: }`),
+            // and the second must not be taken for the first.
             let already_installed = self
                 .dispatch
                 .registered_fn_fingerprints
@@ -1099,6 +1103,10 @@ impl Interpreter {
                             .functions
                             .get(&fq_sym)
                             .is_some_and(|current| std::sync::Arc::ptr_eq(current, installed))
+                        && installed.source_file.as_deref()
+                            == self
+                                .executing_source_file_for_module_load_sym()
+                                .map(|file| file.as_str())
                 });
             if already_installed {
                 self.note_registration_callable_id(&self.current_package(), name);

@@ -51,6 +51,12 @@ impl Interpreter {
 
     // Cost: O(n + v), n = type name bytes, v = declared version value size.
     pub(crate) fn mop_ver(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+            // `PseudoStash` is the one core class 6.e redefines: its
+            // version is the revision that defines it (`CORE::v6e::PseudoStash`,
+            // or a stash 6.e code built).
+            if let Some(is_6e) = args.first().and_then(Self::pseudo_stash_revision) {
+                return Ok(Value::str_from(if is_6e { "6.e" } else { "6.c" }));
+            }
             let name = self.mop_receiver_owner(&args[0]);
             if matches!(
                 self.registry().package_kinds.get(&name),

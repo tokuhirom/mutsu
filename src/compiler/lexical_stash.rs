@@ -2,6 +2,7 @@
 //! a fixed description of one scope frame — or, for `LEXICAL::`, of that
 //! frame and every frame enclosing it (`OpCode::GetLexicalStash`).
 use super::*;
+use crate::value::V6E_PSEUDO_STASH;
 
 impl Compiler {
     /// Emit a pseudo-stash for exactly one lexical frame when `name` is a
@@ -297,6 +298,40 @@ impl Compiler {
             expr: rhs.clone(),
             is_bind: true,
         });
+        true
+    }
+
+    /// `CORE::v6c::Name` (also `v6d`, `v6e`): the setting of one language
+    /// revision. Its `CORE-SETTING-REV` is that revision's letter, and its
+    /// `PseudoStash` is that revision's class: 6.e redefines it (a miss
+    /// fails), while 6.d has none of its own and so names 6.c's. Any other
+    /// name is the core one. Emits the name and returns true for such a
+    /// spelling.
+    // Cost: O(|name|) at compile time.
+    pub(crate) fn emit_core_revision_name(&mut self, name: &str) -> bool {
+        let Some(rest) = name.strip_prefix("CORE::v6") else {
+            return false;
+        };
+        let mut chars = rest.chars();
+        let (Some(rev @ ('c' | 'd' | 'e')), Some(':'), Some(':')) =
+            (chars.next(), chars.next(), chars.next())
+        else {
+            return false;
+        };
+        let member = &rest[3..];
+        if member.is_empty() || member.contains("::") {
+            return false;
+        }
+        let value = match member {
+            "CORE-SETTING-REV" => Value::str(rev.to_string()),
+            "PseudoStash" if rev == 'e' => Value::package(Symbol::intern(V6E_PSEUDO_STASH)),
+            _ => {
+                self.compile_expr(&Expr::BareWord(format!("CORE::{member}")));
+                return true;
+            }
+        };
+        let idx = self.code.add_constant(value);
+        self.code.emit(OpCode::LoadConst(idx));
         true
     }
 

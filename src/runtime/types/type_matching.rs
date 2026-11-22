@@ -1039,10 +1039,19 @@ impl Interpreter {
         // `CORE::v6c::Name` (also `v6d`, `v6e`) is a core type spelled through
         // its revision's package (`use v6.*` code writes
         // `CORE::v6c::PseudoStash:D`): the type is the plain core `Name`.
+        // `PseudoStash` is the one class 6.e redefines (6.d has none of its
+        // own): a stash or type object matches its own revision's class only.
         for revision in ["CORE::v6c::", "CORE::v6d::", "CORE::v6e::"] {
             if let Some(plain) = constraint.strip_prefix(revision)
                 && !plain.starts_with(|c: char| c.is_ascii_lowercase())
             {
+                let class = plain.trim_end_matches(":D").trim_end_matches(":U");
+                if class == "PseudoStash"
+                    && let Some(is_6e) = Self::pseudo_stash_revision(value)
+                    && is_6e != (revision == "CORE::v6e::")
+                {
+                    return false;
+                }
                 return self.type_matches_value_unviewed_why(plain, value, why);
             }
         }
