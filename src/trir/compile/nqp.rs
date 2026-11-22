@@ -364,7 +364,11 @@ impl TrirCompiler<'_> {
             | TrOp::JumpIfFalseI(_)
             | TrOp::JumpIfTrueI(_)
             | TrOp::JumpIfFalseKeepI(_)
-            | TrOp::JumpIfTrueKeepI(_) => false,
+            | TrOp::JumpIfTrueKeepI(_)
+            // An inlined callee's region (ADR-8673 D2) jumps and calls.
+            | TrOp::InlineEnter { .. }
+            | TrOp::InlineReturn { .. }
+            | TrOp::InlineReseed(_) => false,
             _ => true,
         })
     }

@@ -84,6 +84,16 @@ pub(crate) struct TrirCompiler<'a> {
     /// Addresses of the routine body's own top-level statements: only a
     /// declaration there is a frame lexical.
     top_level: HashSet<usize>,
+    /// The callees inlined into this body so far (ADR-8673 D2).
+    pub(super) inline_regions: Vec<crate::trir::TrInlineRegion>,
+    /// Slots holding an inlined callee's read-only parameter.
+    pub(super) readonly_slots: Vec<(u16, TrKind)>,
+    /// Ops reading an inlined callee's free variable: their index is
+    /// relative to the end of this body's own free variables, which is known
+    /// only once the body is compiled.
+    pub(super) inline_outer_fixups: Vec<usize>,
+    /// `use fatal` where this routine is declared.
+    pub(super) captured_fatal_mode: bool,
 }
 
 /// What the enclosing compile hands a routine's TRIR compile: the routines
@@ -182,6 +192,10 @@ impl<'a> TrirCompiler<'a> {
             inline_stack: Vec::new(),
             methods: Vec::new(),
             top_level: body.iter().map(|s| s as *const Stmt as usize).collect(),
+            inline_regions: Vec::new(),
+            readonly_slots: Vec::new(),
+            inline_outer_fixups: Vec::new(),
+            captured_fatal_mode,
         };
         c.collect_inline_subs(body, frame_lexicals);
         if c.declare_params(param_defs).is_none() {
@@ -200,6 +214,7 @@ impl<'a> TrirCompiler<'a> {
             (false, Some(TrKind::Num)) => c.ops.push(TrOp::ReturnN),
             (false, Some(TrKind::Obj)) => c.ops.push(TrOp::ReturnObj),
         }
+        c.apply_inline_outer_fixups();
         Some(TrChunk {
             id: super::next_chunk_id(),
             ops: super::peephole::optimize(c.ops),
@@ -215,6 +230,8 @@ impl<'a> TrirCompiler<'a> {
             captured_fatal_mode,
             is_hidden_from_backtrace: false,
             return_check,
+            inline_regions: c.inline_regions,
+            readonly_slots: c.readonly_slots,
         })
     }
 
@@ -247,6 +264,23 @@ impl<'a> TrirCompiler<'a> {
         };
         self.locals.insert(name.to_string(), Binding { slot, kind });
         slot
+    }
+
+    /// A native slot with no name, for an inlined callee (`inline_call.rs`).
+    // Cost: O(1).
+    pub(super) fn fresh_native_slot(&mut self) -> u16 {
+        let s = self.n_native;
+        self.n_native += 1;
+        s
+    }
+
+    /// A boxed slot with no name, for an inlined callee.
+    // Cost: O(1).
+    pub(super) fn fresh_obj_slot(&mut self) -> u16 {
+        let s = self.n_obj;
+        self.n_obj += 1;
+        self.obj_written.push(true);
+        s
     }
 
     pub(super) fn outer(&mut self, name: &str) -> u16 {
@@ -411,18 +445,12 @@ impl<'a> TrirCompiler<'a> {
     pub(super) fn insert_op(&mut self, at: usize, op: TrOp) {
         self.ops.insert(at, op);
         let at = at as u32;
+        // Every jump form, an inlined callee's join included (ADR-8673 D2).
         for o in &mut self.ops {
-            match o {
-                TrOp::Jump(t)
-                | TrOp::JumpIfFalseI(t)
-                | TrOp::JumpIfTrueI(t)
-                | TrOp::JumpIfFalseKeepI(t)
-                | TrOp::JumpIfTrueKeepI(t)
-                    if *t >= at =>
-                {
-                    *t += 1;
-                }
-                _ => {}
+            if let Some(t) = o.target_mut()
+                && *t >= at
+            {
+                *t += 1;
             }
         }
     }
@@ -483,6 +511,8 @@ mod call;
 mod dump;
 mod expr;
 mod inline;
+mod inline_call;
+pub(crate) use inline_call::inlining_enabled;
 mod method;
 mod nqp;
 mod params;

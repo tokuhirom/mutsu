@@ -174,11 +174,12 @@ pub(crate) fn interpreter_version() -> String {
                 .map(|d| d.as_nanos())
                 .unwrap_or(0);
             format!(
-                "{}+cf{}+fe{}+exe{}",
+                "{}+cf{}+fe{}+exe{}{}",
                 env!("CARGO_PKG_VERSION"),
                 CACHE_FORMAT_VERSION,
                 crate::rakuast::frontend::cache_tag(),
-                exe_stamp
+                exe_stamp,
+                crate::trir::inline_cache_tag()
             )
         })
         .clone()

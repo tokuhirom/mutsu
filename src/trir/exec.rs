@@ -52,11 +52,68 @@ impl Interpreter {
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
+        if chunk.inline_regions.is_empty() {
+            return self.run_trir_ops(chunk, frame, compiled_fns, 0);
+        }
+        // A body with inlined callees (ADR-8673 D2): leaving it any way but
+        // through a region's own return undoes the regions still active, and
+        // a `fail` raised inside one is that callee's `Failure` value, as its
+        // routine boundary made it (`run_trir_inner_routine`).
+        let base = self.trir.inline.len();
+        let mut ip = 0usize;
+        loop {
+            let outcome = self.run_trir_ops(chunk, frame, compiled_fns, ip);
+            match outcome {
+                Err(e) if e.is_fail() && self.trir.inline.len() > base => {
+                    let Some(a) = self.trir_inline_leave() else {
+                        return Err(e);
+                    };
+                    let callee = chunk
+                        .inline_regions
+                        .get(a.region as usize)
+                        .map(|r| r.link.chunk.name)
+                        .unwrap_or(chunk.name);
+                    let callable_id = self.registration_clone_id(
+                        &self.current_package_sym().resolve(),
+                        &callee.resolve(),
+                    );
+                    self.trir_inline_restore_pkg(&a);
+                    if e.fail_passes_frame(callable_id) {
+                        self.trir_inline_unwind(base);
+                        return Err(e);
+                    }
+                    let v = self.fail_error_to_failure_value(&e);
+                    self.trir.ns.truncate(a.ns_mark as usize);
+                    self.trir.os.truncate(a.os_mark as usize);
+                    self.trir.os.push(v);
+                    if !self.trir_reseed_outers(chunk, frame) {
+                        self.trir_inline_unwind(base);
+                        return Ok(TrOutcome::Bail);
+                    }
+                    ip = a.join as usize;
+                }
+                other => {
+                    self.trir_inline_unwind(base);
+                    return other;
+                }
+            }
+        }
+    }
+
+    /// The op loop of [`Self::run_trir_chunk`], from `start`.
+    // Cost: O(1) dispatch per op executed.
+    fn run_trir_ops(
+        &mut self,
+        chunk: &TrChunk,
+        frame: TrFrame,
+        compiled_fns: &CompiledFns,
+        start: usize,
+    ) -> Result<TrOutcome, RuntimeError> {
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         let cbase = frame.outer_base as usize;
         let ops = &chunk.ops;
-        let mut ip = 0usize;
+        let mut ip = start;
         loop {
             match &ops[ip] {
                 TrOp::ConstI(v) => self.trir.ns.push(*v),
@@ -519,6 +576,27 @@ impl Interpreter {
                     // cell read per CALL, where the untyped path pays a
                     // by-name lookup per ACCESS.
                     if !self.trir_reseed_outers(chunk, frame) {
+                        return Ok(TrOutcome::Bail);
+                    }
+                }
+
+                // ---- inlined callees (ADR-8673 D2, `inline_exec.rs`) ----
+                // Not observers: they move the deferred routine-stack entry,
+                // they never read the stack.
+                TrOp::InlineEnter { region, join } => {
+                    if !self.trir_inline_enter(chunk, *region, *join, frame, compiled_fns) {
+                        return Ok(TrOutcome::Bail);
+                    }
+                }
+                TrOp::InlineReturn { join, .. } => {
+                    if !self.trir_inline_return(chunk, frame) {
+                        return Ok(TrOutcome::Bail);
+                    }
+                    ip = *join as usize;
+                    continue;
+                }
+                TrOp::InlineReseed(_) => {
+                    if !self.trir_inline_reseed(chunk, frame) {
                         return Ok(TrOutcome::Bail);
                     }
                 }
