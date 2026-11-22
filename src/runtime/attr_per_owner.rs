@@ -46,10 +46,11 @@ impl Interpreter {
             .resolve_method_with_owner(class_name, method, &[])?
             .map(|(owner, _)| owner);
         let map = attributes.as_map();
-        let key = Self::attr_key_in_map(owner, crate::symbol::Symbol::intern(bare), true, '$', &map)
-            .filter(|key| key.with_str(|k| k.contains('\0')))
-            .zip(owner)
-            .map(|(key, owner)| (key.resolve(), owner.resolve()));
+        let key =
+            Self::attr_key_in_map(owner, crate::symbol::Symbol::intern(bare), true, '$', &map)
+                .filter(|key| key.with_str(|k| k.contains('\0')))
+                .zip(owner)
+                .map(|(key, owner)| (key.resolve(), owner.resolve()));
         Ok(Some(key))
     }
 }
