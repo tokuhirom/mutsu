@@ -266,7 +266,7 @@ fn type_origin(ty: &mut RakuAstNode, (from, to, name_to): (usize, usize, usize))
             super::origin::set_span(ty, SrcSpan::new(from, to));
             super::type_origins::coercion(ty, SrcSpan::new(from, to))
         }
-        RakuAstClass::TypeDefinedness if name_to < to => {
+        RakuAstClass::TypeDefinedness | RakuAstClass::TypeAnyDefinedness if name_to < to => {
             let Some(inner) = super::infix_origins::child_at(ty, 0) else {
                 return;
             };

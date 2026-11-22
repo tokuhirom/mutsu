@@ -69,15 +69,22 @@ fn prefix(node: &mut RakuAstNode) {
     else {
         return;
     };
-    let written = super::unit_source::with_text(SrcSpan::new(from, from + op.len()), |text| {
-        (text == op).then_some(())
+    // `−∞`: the minus may be written as U+2212.
+    let written = super::unit_source::with_text_from(from, |text| {
+        if text.starts_with(op.as_str()) {
+            Some(op.len())
+        } else if op == "-" && text.starts_with('\u{2212}') {
+            Some('\u{2212}'.len_utf8())
+        } else {
+            None
+        }
     });
-    if written.is_some() {
+    if let Some(len) = written {
         with_child(node, "prefix", |p| {
-            super::origin::set_span(p, SrcSpan::new(from, from + op.len()))
+            super::origin::set_span(p, SrcSpan::new(from, from + len))
         });
         if let Some(index) = node.fields.iter().position(|f| f.name == Some("operand")) {
-            glued_variable_operand(node, index, from + op.len());
+            glued_variable_operand(node, index, from + len);
         }
     }
 }

@@ -610,7 +610,8 @@ impl Walk<'_> {
     // Cost: O(n), n = length of the class's text.
     fn char_class(&mut self, node: &mut RakuAstNode) -> Option<()> {
         self.eat("<")?;
-        for i in 0..node.fields.len() {
+        let count = node.fields.len();
+        for i in 0..count {
             let start = self.at;
             let RakuAstFieldValue::Node(held) = &mut node.fields[i].value else {
                 return None;
@@ -618,7 +619,8 @@ impl Walk<'_> {
             let ValueView::RakuAst(element) = held.view() else {
                 return None;
             };
-            if element.class != RakuAstClass::RegexCharClassElementEnumeration {
+            let property = element.class == RakuAstClass::RegexCharClassElementProperty;
+            if element.class != RakuAstClass::RegexCharClassElementEnumeration && !property {
                 return None;
             }
             let negated = element.fields.iter().any(|f| {
@@ -631,7 +633,23 @@ impl Walk<'_> {
                 return None;
             }
             let mut element = RakuAstNode::clone(element);
-            let placed = self.enumeration(&mut element);
+            // `<:Alpha>`: a property, its colon then its name.
+            let placed = if property {
+                let name = element.fields.iter().find_map(|f| match &f.value {
+                    RakuAstFieldValue::Node(v) if f.name == Some("property") => {
+                        v.as_str().map(str::to_string)
+                    }
+                    _ => None,
+                });
+                name.and_then(|name| self.eat(&format!(":{name}")))
+            } else {
+                self.enumeration(&mut element)
+            };
+            // An element followed by another runs through the blanks
+            // between them.
+            if placed.is_some() && i + 1 < count {
+                self.blank();
+            }
             if placed.is_some() {
                 super::origin::set_span(
                     &mut element,
