@@ -976,49 +976,16 @@ impl Interpreter {
             );
             return Err(err);
         }
-        // Unhandled Failure explosion: calling a non-Failure method on an
-        // unhandled Failure should throw before native dispatch can mistake
-        // the Failure for an ordinary Cool value (for example, `Failure.lines`
-        // reaches the native Str/Cool method table).
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.as_str() == "Failure"
-            && !target.is_failure_handled()
-            && !matches!(
-                method,
-                "exception"
-                    | "handled"
-                    | "self"
-                    | "defined"
-                    | "Bool"
-                    | "so"
-                    | "not"
-                    | "gist"
-                    | "Str"
-                    | "raku"
-                    | "WHICH"
-                    | "WHERE"
-                    | "HOW"
-                    | "WHY"
-                    | "WHO"
-                    | "backtrace"
-                    | "is-handling"
-                    | "WHAT"
-                    | "DEFINITE"
-                    | "VAR"
-                    | "^name"
-                    | "isa"
-                    | "does"
-                    | "ACCEPTS"
-                    | "Failure"
-                    | "sink"
-            )
-            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
-        {
+        // A `Failure`'s own methods, and the throw of an unhandled one before
+        // native dispatch can mistake it for an ordinary `Cool` value
+        // (`Failure.lines`), `failure_calls.rs`.
+        if let Some(result) = self.failure_own_method(&target, method, &args) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
-                "failure-explode",
+                "failure-own",
             );
-            return Err(err);
+            self.stack.push(result?);
+            return Ok(());
         }
         if method == "value"
             && args.is_empty()

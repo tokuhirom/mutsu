@@ -827,36 +827,10 @@ impl Interpreter {
         if let Some(result) = self.exception_rows_by_owner(&target, method, &args) {
             return result;
         }
-        // Unhandled Failure explosion
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.resolve() == "Failure"
-            && !target.is_failure_handled()
-            && !matches!(
-                method,
-                "exception"
-                    | "handled"
-                    | "self"
-                    | "defined"
-                    | "Bool"
-                    | "so"
-                    | "not"
-                    | "gist"
-                    | "Str"
-                    | "raku"
-                    | "WHICH"
-                    | "backtrace"
-                    | "is-handling"
-                    | "WHAT"
-                    | "^name"
-                    | "isa"
-                    | "does"
-                    | "ACCEPTS"
-                    | "Failure"
-                    | "sink"
-            )
-            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
-        {
-            return Err(err);
+        // A `Failure`'s own methods, and the throw of an unhandled one
+        // (`failure_calls.rs`).
+        if let Some(result) = self.failure_own_method(&target, method, &args) {
+            return result;
         }
         // A junction's own methods are `Junction`'s rows (ADR-11276 §9.151).
         if let Some(result) = self.junction_own_method(&target, method, &args) {

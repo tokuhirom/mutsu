@@ -1946,38 +1946,14 @@ impl Interpreter {
             );
             return Err(err);
         }
-        // Unhandled Failure explosion: calling a non-Failure method on an unhandled
-        // Failure should throw the stored exception (Raku behavior).
-        if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.as_str() == "Failure"
-            && !target.is_failure_handled()
-            && !matches!(
-                method,
-                "exception"
-                    | "handled"
-                    | "self"
-                    | "defined"
-                    | "Bool"
-                    | "so"
-                    | "not"
-                    | "gist"
-                    | "Str"
-                    | "raku"
-                    | "WHICH"
-                    | "backtrace"
-                    | "is-handling"
-                    | "WHAT"
-                    | "^name"
-                    | "isa"
-                    | "does"
-                    | "ACCEPTS"
-                    | "Failure"
-                    | "sink"
-            )
-            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
+        // A `Failure`'s own methods, and the throw of an unhandled one
+        // (`failure_calls.rs`).
+        if modifier.is_none()
+            && let Some(result) = self.failure_own_method(&target, method, &args)
         {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "failure-explode");
-            return Err(err);
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "failure-own");
+            self.stack.push(result?);
+            return Ok(());
         }
         // Pseudo-methods (WHAT, WHICH, etc.) cannot be used with .* or .+
         if matches!(modifier, Some("*") | Some("+"))
